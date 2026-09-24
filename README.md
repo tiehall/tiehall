@@ -14,5 +14,6 @@ Design phase: no product code yet. **Start with [docs/HANDOFF.md](docs/HANDOFF.m
 
 - Market research (software teams, current focus): [docs/research/2026-09-24-devteam-handoff-scan.md](docs/research/2026-09-24-devteam-handoff-scan.md)
 - Market research (API contract drift between teams): [docs/research/2026-09-24-api-contract-scan.md](docs/research/2026-09-24-api-contract-scan.md)
+- Market research (which tracker to mirror requests into): [docs/research/2026-09-24-tracker-sync-scan.md](docs/research/2026-09-24-tracker-sync-scan.md)
 - Market research (general, cross-department): [docs/research/2026-09-24-market-scan.md](docs/research/2026-09-24-market-scan.md)
 - Naming: [round 1](docs/research/2026-09-24-naming-round-1.md), [round 2](docs/research/2026-09-24-naming-round-2.md)
