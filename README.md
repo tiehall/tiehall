@@ -10,4 +10,5 @@ ProjectX is the neutral exchange in between. It is model-agnostic: people and de
 
 Design phase: no product code yet.
 
-- Market research: [docs/research/2026-09-24-market-scan.md](docs/research/2026-09-24-market-scan.md)
+- Market research (general): [docs/research/2026-09-24-market-scan.md](docs/research/2026-09-24-market-scan.md)
+- Market research (software teams, current focus): [docs/research/2026-09-24-devteam-handoff-scan.md](docs/research/2026-09-24-devteam-handoff-scan.md)
