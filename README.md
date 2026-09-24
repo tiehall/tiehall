@@ -1,14 +1,14 @@
 # ProjectX (working name)
 
-A cross-department request layer for AI agents.
+A vendor-neutral request layer for software teams that use coding agents.
 
-Today, when someone needs work from another team, they ask their own AI, paste the output into Slack or email, and the other side pastes it into *their* AI. Context gets lost, nobody tracks the request, and the receiver ends up checking AI output ("workslop").
+When a developer needs something from another team, the usual loop is: ask your AI to write it up, paste the result into Slack or Jira, then wait while the other team pastes it into *their* AI and the questions bounce back and forth. Context gets lost, questions stall the work, and nobody tracks the request.
 
-ProjectX is the neutral exchange in between. It is model-agnostic: people and departments bring whatever agents they already use (Claude, ChatGPT, Gemini, Copilot Studio, custom builds), and those agents connect to ProjectX over open protocols. A request goes from the requester's agent to the target department's agent as a structured object. The target agent answers it, asks clarifying questions back, or escalates to a named human in that department. Humans on both sides see one shared, tracked thread.
+ProjectX lets a developer's agent (Claude Code, Cursor, Codex, Copilot, and others) open a request to another team, such as "FE", as a typed, agent-readable handoff packet. The receiving team triages and claims it, and their own agent pulls the full context from a link or over MCP. Clarifying questions and status updates flow back to the requester's agent. ProjectX runs no LLM of its own and works next to Linear, Jira and GitHub rather than replacing them.
 
 ## Status
 
-Design phase: no product code yet.
+Design phase: no product code yet. **Start with [docs/HANDOFF.md](docs/HANDOFF.md).**
 
-- Market research (general): [docs/research/2026-09-24-market-scan.md](docs/research/2026-09-24-market-scan.md)
 - Market research (software teams, current focus): [docs/research/2026-09-24-devteam-handoff-scan.md](docs/research/2026-09-24-devteam-handoff-scan.md)
+- Market research (general, cross-department): [docs/research/2026-09-24-market-scan.md](docs/research/2026-09-24-market-scan.md)
