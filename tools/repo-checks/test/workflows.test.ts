@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { checkWorkflows, type Violation } from "../src/workflows.ts";
+import { checkWorkflows, jobPermissions, type Violation } from "../src/workflows.ts";
 
 // The CI check for operations: Build pipeline integrity. It runs the same
 // script as the CI job against committed fixture repositories and the real tree.
@@ -126,5 +126,14 @@ describe("the workflow check", () => {
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("ci.yml#test");
+  });
+
+  it("leaves packages: write to the build job alone, and no other write permission to any job", () => {
+    const writes = jobPermissions(repoRoot).flatMap(({ job, permissions }) =>
+      Object.entries((permissions ?? {}) as Record<string, string>)
+        .filter(([, level]) => level === "write")
+        .map(([scope]) => `${job}: ${scope}`),
+    );
+    expect(writes).toEqual(["build.yml#build: packages"]);
   });
 });

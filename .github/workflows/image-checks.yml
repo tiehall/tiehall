@@ -1,0 +1,68 @@
+name: Image checks
+
+# The image's container tests and the self-host boot test, as one reusable
+# workflow: CI calls it on pull requests to test a build of the pull request,
+# and the Build workflow calls it on main to test, by digest, the image it
+# pushed (operations: Production runs the self-host Compose file and image).
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: The image to test, pinned by digest. Empty tests a build of the checked-out commit.
+        type: string
+        required: false
+        default: ""
+
+permissions: {}
+
+jobs:
+  image-tests:
+    name: Image tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/image-tests
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      # Each role on a read-only root filesystem, as a non-root uid; an unknown role exits non-zero.
+      - run: pnpm test:image
+
+  boot-test:
+    name: Self-host boot test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      # Boots deploy/compose.yaml with the image in role all against stock
+      # postgres:17 and waits for /healthz to report healthy.
+      - run: node tools/image-tests/src/boot-test.ts

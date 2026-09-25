@@ -29,6 +29,10 @@ RUN test -n "$TIEHALL_COMMIT_SHA" || { echo "Build with --build-arg TIEHALL_COMM
 RUN pnpm --filter @tiehall/web build && pnpm --filter @tiehall/server build
 
 FROM base
+# The app needs only node at run time: remove the package managers the base
+# image ships, so nothing in a running container can fetch and install code.
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ARG TIEHALL_COMMIT_SHA
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

@@ -1,0 +1,97 @@
+name: Build
+
+# On every push to main: build the release image once, push it to GHCR by
+# digest, then scan it and test it by that digest (operations: Releases are
+# built once in CI and pulled by the servers; operations: Build pipeline
+# integrity). The build job is the only job that can write packages
+# (.github/workflow-policy.json) and runs only first-party steps; the scanner
+# is third-party code and runs in its own job, with read-only package access
+# and no secrets.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and push the image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      # To check out the private repository.
+      contents: read
+      # To push the image.
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image once and push it by digest, tagged sha-<commit>
+        id: push
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          # The owner comes from the repository, lowercased as GHCR requires, so
+          # the image name follows the repository when it moves to the tiehall
+          # organization (D32).
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          repository="ghcr.io/$owner/tiehall"
+          tag="$repository:sha-$GITHUB_SHA"
+          # One plain image manifest, so each build leaves exactly one digest in GHCR.
+          docker build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            .
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$tag"
+          digest="$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}')"
+          docker logout ghcr.io
+          echo "image=$repository@$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed \`$repository@$digest\`, tagged \`sha-$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+
+  scan:
+    name: Scan the image
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      packages: read
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+      # Third-party, pinned by digest; Renovate proposes new digests after the 7-day release age.
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+    steps:
+      - name: Pull the image by digest and save it for the scanner
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull --quiet "$IMAGE"
+          docker logout ghcr.io
+          docker save "$IMAGE" --output "$RUNNER_TEMP/image.tar"
+      # The scanner gets only the saved image: no token, no Docker socket, no
+      # checkout, a read-only root filesystem and no capabilities.
+      - name: Scan for fixable high and critical vulnerabilities
+        run: |
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" \
+            "$TRIVY_IMAGE" image --input /image.tar --cache-dir /tmp/trivy \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+
+  image:
+    name: Image
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/image-checks.yml
+    with:
+      image: ${{ needs.build.outputs.image }}

@@ -70,6 +70,28 @@ describe("the image", () => {
     expect(revision()).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it("carries node but no package manager, so nothing at run time can install code", () => {
+    const run = docker([
+      "run",
+      "--rm",
+      ...confined,
+      "--entrypoint",
+      "sh",
+      image,
+      "-c",
+      "for tool in node npm npx corepack yarn yarnpkg pnpm; do command -v $tool || echo no-$tool; done",
+    ]);
+    expect(run.stdout.trim().split("\n")).toEqual([
+      "/usr/local/bin/node",
+      "no-npm",
+      "no-npx",
+      "no-corepack",
+      "no-yarn",
+      "no-yarnpkg",
+      "no-pnpm",
+    ]);
+  });
+
   it("exits non-zero on an unknown role, and names the roles it knows", () => {
     const run = docker(["run", "--rm", ...confined, ...unusedDatabase, image, "api"]);
     expect(run.status).toBe(2);

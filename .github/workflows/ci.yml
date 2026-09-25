@@ -134,48 +134,12 @@ jobs:
       # checkout mounted read-only; the script uses only Node built-ins.
       - run: node tools/repo-checks/src/scan-secrets.ts
 
-  image-tests:
-    name: Image tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  # Pull requests test a build of the pull request; main tests the pushed
+  # digest in the Build workflow instead.
+  image:
+    name: Image
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Install pnpm (the version in package.json "packageManager")
-        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/image-tests
-      - name: Build the image
-        run: docker build --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" --tag tiehall:ci .
-      # Each role on a read-only root filesystem, as a non-root uid; an unknown role exits non-zero.
-      - run: pnpm test:image
-        env:
-          TIEHALL_IMAGE: tiehall:ci
-
-  boot-test:
-    name: Self-host boot test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Build the image
-        run: docker build --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" --tag tiehall:ci .
-      # Boots deploy/compose.yaml with the image in role all against stock
-      # postgres:17 and waits for /healthz to report healthy.
-      - run: node tools/image-tests/src/boot-test.ts
-        env:
-          TIEHALL_IMAGE: tiehall:ci
+      packages: read
+    uses: ./.github/workflows/image-checks.yml
