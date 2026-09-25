@@ -1,5 +1,0 @@
-# Breaks the policy: a web server receives a backup passphrase.
-services:
-  web-a:
-    secrets:
-      - backup_repo1_passphrase

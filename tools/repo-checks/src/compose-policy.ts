@@ -1,8 +1,8 @@
 import { roleOf, type ComposeModel, type ComposeService } from "./compose.ts";
 
-// The Compose rules CI enforces before merge (operations: Releases are built
-// once in CI and pulled by the servers). The servers check a wider, fixed
-// policy of their own before each release (task 5.2).
+// The Compose rules CI enforces before merge (self-host-install: Tiehall's
+// containers are confined; self-host-install: Only the migrate step holds the
+// database owner's credentials). Task 5.4 extends them for the `.env` file.
 
 export interface PolicyViolation {
   service: string;
@@ -10,23 +10,14 @@ export interface PolicyViolation {
   detail: string;
 }
 
-/** The reverse proxy: the only service that may publish ports (operations: Only the reverse proxy is reachable). */
+/** The reverse proxy of the optional `caddy` profile: the only service that may publish ports. */
 export const REVERSE_PROXY = "caddy";
 
 /** Roles of the Tiehall image that run the web server or the worker; `all` runs both. */
 const APP_ROLES = new Set(["web", "worker", "all"]);
 
-/**
- * The only secrets web and worker may receive (operations: Secrets are never
- * stored in plaintext): the app database password, the integration-secret
- * master key, the app's signing keys and the error-tracking key.
- */
-export const APP_SECRETS = new Set([
-  "app_database_password",
-  "integration_master_key",
-  "app_signing_keys",
-  "error_tracking_dsn",
-]);
+/** The only secret the app (the web and worker roles) may receive: the app database password. */
+export const APP_SECRETS = new Set(["app_database_password"]);
 
 interface Port {
   host_ip?: string;

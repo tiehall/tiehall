@@ -22,10 +22,9 @@ export type ComposeService = Record<string, unknown> & {
   networks?: Record<string, unknown>;
 };
 
-/** Stand-ins for the variables that release.env sets on a server, so the files can be read anywhere. */
+/** Stand-ins for the variables an install sets, so the files can be read anywhere. */
 export const EXAMPLE_ENVIRONMENT = {
   TIEHALL_IMAGE: `ghcr.io/example/tiehall@sha256:${"0".repeat(64)}`,
-  TIEHALL_POSTGRES_IMAGE: `ghcr.io/example/postgres@sha256:${"1".repeat(64)}`,
 };
 
 export interface ComposeResult {

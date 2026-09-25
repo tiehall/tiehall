@@ -1,8 +1,6 @@
 # Tiehall, self-hosted: the image in its all-in-one role, stock Postgres 17
-# and, optionally, Caddy in front (operations: Production runs the self-host
-# Compose file and image). Production runs this same file plus
-# compose.saas.yaml, and CI boots this file on every pull request and every
-# build of main.
+# and, optionally, Caddy in front (self-host-install: Compose runs Tiehall and
+# Postgres). CI boots this file on every pull request and every build of main.
 #
 # Start it with the image pinned by digest and the database password in a file:
 #   export TIEHALL_IMAGE=ghcr.io/<owner>/tiehall@sha256:<digest>

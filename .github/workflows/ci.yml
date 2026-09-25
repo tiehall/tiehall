@@ -108,9 +108,9 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      # Only Caddy publishes ports, and web and worker receive only their own
-      # secrets, in the self-host file and in the production stack. It reads
-      # them through `docker compose config` and uses only Node built-ins.
+      # Only Caddy publishes ports, and the app receives only its own secrets,
+      # in the self-host Compose file. It reads the file through
+      # `docker compose config` and uses only Node built-ins.
       - run: node tools/repo-checks/src/check-compose.ts
 
   secret-scan:
