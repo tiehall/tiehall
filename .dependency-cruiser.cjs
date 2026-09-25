@@ -55,16 +55,12 @@ const NETWORK_MODULES = [
 // packages/core holds the pure domain rules, with no I/O at all (T2).
 const OTHER_IO_MODULES = builtin("fs", "child_process", "cluster", "worker_threads");
 
-// The Apache-2.0 client pieces of S16, by folder and package name. Every other
-// workspace package is AGPL-3.0 server code, the command catalog included.
-const APACHE_2_0_PACKAGES = [
-  { folder: "packages/cli", name: "tiehall" },
-  { folder: "packages/client", name: "@tiehall/client" },
-  { folder: "packages/claude-plugin", name: "@tiehall/claude-plugin" },
-  { folder: "actions/contract", name: "@tiehall/contract-action" },
-  // The packet schema directory, from which @tiehall/packet is built.
-  { folder: "packages/packet", name: "@tiehall/packet" },
-];
+// The Apache-2.0 client pieces of S16, by folder and package name, from the
+// license map that `pnpm check:licenses` enforces. Every other workspace
+// package is AGPL-3.0 server code, the command catalog included.
+const APACHE_2_0_PACKAGES = Object.entries(require("./tools/repo-checks/license-map.json").clientPieces).map(
+  ([folder, name]) => ({ folder, name }),
+);
 const APACHE_2_0_FOLDERS = APACHE_2_0_PACKAGES.map(({ folder }) => `^${folder}/`);
 const APACHE_2_0_MODULES = APACHE_2_0_PACKAGES.flatMap(({ folder, name }) => [`^${folder}/`, npm(name)]);
 // Every workspace package, by folder or by package name.

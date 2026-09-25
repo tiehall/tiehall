@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Pure domain rules with no I/O: the state machine, the side rules, the confirmation rules, the canonical text and the Merkle module.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

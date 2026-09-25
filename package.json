@@ -1,6 +1,7 @@
 {
   "name": "tiehall-monorepo",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "packageManager": "pnpm@12.6.0",
   "engines": {
@@ -16,7 +17,8 @@
     "test:image": "pnpm --filter @tiehall/image-tests test",
     "check:compose": "node tools/repo-checks/src/check-compose.ts",
     "test:boot": "node tools/image-tests/src/boot-test.ts",
-    "check:renovate": "node tools/repo-checks/src/check-renovate.ts"
+    "check:renovate": "node tools/repo-checks/src/check-renovate.ts",
+    "check:licenses": "node tools/repo-checks/src/check-licenses.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "The Next.js app: the UI, /api/v1, /mcp, the OAuth server and webhooks.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

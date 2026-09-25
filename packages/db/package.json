@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "The Drizzle schema, the RLS SQL and withOrg().",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

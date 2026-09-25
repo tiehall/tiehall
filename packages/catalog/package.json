@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "The command definitions and their zod schemas. Holds no database code, and no Apache-2.0 client piece imports it.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "The image's one entrypoint: `main.mjs <role>` starts web, worker, migrate or all, with configuration read only from environment variables and *_FILE secrets.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

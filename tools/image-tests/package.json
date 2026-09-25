@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Container tests of the Tiehall image and the self-host boot test. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone); `pnpm test` leaves them out.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=24"

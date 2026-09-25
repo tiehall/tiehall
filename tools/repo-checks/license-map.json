@@ -1,0 +1,12 @@
+{
+  "$comment": "The license map (public-api: The license map; design.md, Self-hosting decisions: S16; D34). The repository's root and every workspace package are licensed under serverLicense, the command catalog included, except the client pieces below, which are licensed under clientLicense. Each client piece is keyed by its folder and names its package. tools/repo-checks/src/check-licenses.ts enforces the map in CI, and .dependency-cruiser.cjs reads the same client pieces to stop them importing AGPL-3.0 code. A published license cannot be taken back, so a change here needs a maintainer decision.",
+  "serverLicense": "AGPL-3.0-only",
+  "clientLicense": "Apache-2.0",
+  "clientPieces": {
+    "packages/cli": "tiehall",
+    "packages/client": "@tiehall/client",
+    "packages/claude-plugin": "@tiehall/claude-plugin",
+    "actions/contract": "@tiehall/contract-action",
+    "packages/packet": "@tiehall/packet"
+  }
+}
