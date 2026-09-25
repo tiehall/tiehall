@@ -2,7 +2,7 @@
   "name": "@tiehall/db",
   "version": "0.0.0",
   "private": true,
-  "description": "The Drizzle schema, the RLS SQL and withOrg().",
+  "description": "The schema, the migrations and their runner, and the database roles.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {

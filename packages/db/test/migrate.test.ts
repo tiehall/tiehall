@@ -1,10 +1,12 @@
+import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import { migrate } from "../src/migrate.ts";
 
-// The migrate role's entry point. Task 3.2 turns it into the migration runner;
-// until then it checks that the database accepts the role's connection.
+// The migrate role's entry point: it connects as the database owner and sets
+// up the app role (self-host-install: Only the migrate step holds the database
+// owner's credentials). Task 4.2 adds the migration runner.
 
 describe("migrate", () => {
   let database: TestDatabase;
@@ -38,6 +40,29 @@ describe("migrate", () => {
     url.username = "migrate_test_role";
     url.password = "";
     await expect(migrate({ connectionString: url.toString(), password })).resolves.toBeUndefined();
+  });
+
+  it("creates the app role it is given, which then logs in with its own password", async () => {
+    const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
+    try {
+      await migrate({ connectionString: database.url }, { appRole });
+      const url = new URL(database.url);
+      url.username = appRole.name;
+      url.password = appRole.password;
+      const app = new pg.Client({ connectionString: url.toString() });
+      await app.connect();
+      try {
+        expect((await app.query("SELECT current_user AS user")).rows).toEqual([{ user: appRole.name }]);
+      } finally {
+        await app.end();
+      }
+    } finally {
+      await database.drop();
+      database = await createTestDatabase();
+      const admin = new pg.Client({ connectionString: inject("postgresUrl") });
+      await admin.connect();
+      await admin.query(`DROP ROLE IF EXISTS ${pg.escapeIdentifier(appRole.name)}`).finally(() => admin.end());
+    }
   });
 
   it("fails when the database refuses the password", async () => {

@@ -14,6 +14,13 @@ export interface Config {
   /** The database to connect to. The password may be left out of it and given as DATABASE_PASSWORD. */
   databaseUrl: string;
   databasePassword?: string;
+  /**
+   * The app role, which only the migrate role reads: it connects as the
+   * database owner and creates or updates this role. APP_DATABASE_URL names the
+   * role as its user; the password may be left out of it and given as
+   * APP_DATABASE_PASSWORD.
+   */
+  appRole?: { name: string; password: string };
   /** The port the web server listens on. */
   port: number;
 }
@@ -24,11 +31,33 @@ export function readConfig(env: Environment): Config {
   const databaseUrl = required(env, "DATABASE_URL");
   if (!isPostgresUrl(databaseUrl)) throw new ConfigError("DATABASE_URL must be a postgres:// or postgresql:// URL.");
   const databasePassword = optional(env, "DATABASE_PASSWORD");
+  const appRole = readAppRole(env);
   const port = Number(optional(env, "PORT") ?? "3000");
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new ConfigError("PORT must be a whole number from 1 to 65535.");
   }
-  return { databaseUrl, ...(databasePassword === undefined ? {} : { databasePassword }), port };
+  return {
+    databaseUrl,
+    ...(databasePassword === undefined ? {} : { databasePassword }),
+    ...(appRole === undefined ? {} : { appRole }),
+    port,
+  };
+}
+
+function readAppRole(env: Environment): Config["appRole"] {
+  const appDatabaseUrl = optional(env, "APP_DATABASE_URL");
+  if (appDatabaseUrl === undefined) return undefined;
+  if (!isPostgresUrl(appDatabaseUrl)) throw new ConfigError("APP_DATABASE_URL must be a postgres:// or postgresql:// URL.");
+  const url = new URL(appDatabaseUrl);
+  const name = decodeURIComponent(url.username);
+  if (name === "") throw new ConfigError("APP_DATABASE_URL must name the app role as its user.");
+  const password = optional(env, "APP_DATABASE_PASSWORD") ?? decodeURIComponent(url.password);
+  if (password === "") {
+    throw new ConfigError(
+      "The app role has no password. Set APP_DATABASE_PASSWORD or APP_DATABASE_PASSWORD_FILE, or give it in APP_DATABASE_URL.",
+    );
+  }
+  return { name, password };
 }
 
 function required(env: Environment, name: string): string {

@@ -31,12 +31,15 @@ export async function startPostgres(): Promise<StartedPostgres> {
 
 /**
  * Creates a fresh, empty database in the project's container, so test files
- * running in parallel never see each other's tables.
+ * running in parallel never see each other's tables. By default the container's
+ * superuser owns it; `owner` names an existing role to own it instead. Roles
+ * belong to the whole container, so tests that create roles give them unique names.
  */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export async function createTestDatabase(options: { owner?: string } = {}): Promise<TestDatabase> {
   const serverUrl = inject("postgresUrl");
   const name = `test_${randomUUID().replaceAll("-", "")}`;
-  await runAsAdmin(serverUrl, `CREATE DATABASE ${name}`);
+  const owner = options.owner === undefined ? "" : ` OWNER ${pg.escapeIdentifier(options.owner)}`;
+  await runAsAdmin(serverUrl, `CREATE DATABASE ${name}${owner}`);
   const url = new URL(serverUrl);
   url.pathname = `/${name}`;
   return {

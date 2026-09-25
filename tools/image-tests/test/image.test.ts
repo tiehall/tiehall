@@ -199,6 +199,7 @@ describe("the migrate role", () => {
     for (const [file, value] of [
       ["database_password", "correct-horse-battery-staple\n"],
       ["wrong_password", "not-the-password\n"],
+      ["app_database_password", "app-role-password\n"],
     ] as const) {
       writeFileSync(join(secrets, file), value);
       chmodSync(join(secrets, file), 0o644);
@@ -233,7 +234,7 @@ describe("the migrate role", () => {
   });
 
   /** Runs the migrate role to completion with a password file and returns the result. */
-  function migrate(passwordFile: string) {
+  function migrate(passwordFile: string, ...options: string[]) {
     return docker([
       "run",
       "--rm",
@@ -246,8 +247,33 @@ describe("the migrate role", () => {
       "DATABASE_PASSWORD_FILE=/run/secrets/database_password",
       "--volume",
       `${join(secrets, passwordFile)}:/run/secrets/database_password:ro`,
+      ...options,
       image,
       "migrate",
+    ]);
+  }
+
+  /** Runs a query over the network as a user with a password, from a psql client in its own container. */
+  function psql(user: string, password: string, query: string) {
+    return docker([
+      "run",
+      "--rm",
+      "--network",
+      network,
+      "--env",
+      `PGPASSWORD=${password}`,
+      POSTGRES_IMAGE,
+      "psql",
+      "--host",
+      database,
+      "--username",
+      user,
+      "--dbname",
+      "tiehall",
+      "--tuples-only",
+      "--no-align",
+      "--command",
+      query,
     ]);
   }
 
@@ -256,6 +282,25 @@ describe("the migrate role", () => {
     expect(run.stderr).not.toContain("tiehall migrate: failed");
     expect(run.stdout).toMatch(/tiehall migrate: starting as uid [1-9]\d*/);
     expect(run.status).toBe(0);
+  });
+
+  it("creates the app role that APP_DATABASE_URL names, with the password from its secret file", () => {
+    const run = migrate(
+      "database_password",
+      "--env",
+      `APP_DATABASE_URL=postgres://tiehall_app@${database}:5432/tiehall`,
+      "--env",
+      "APP_DATABASE_PASSWORD_FILE=/run/secrets/app_database_password",
+      "--volume",
+      `${join(secrets, "app_database_password")}:/run/secrets/app_database_password:ro`,
+    );
+    expect(run.stderr).not.toContain("tiehall migrate: failed");
+    expect(run.status).toBe(0);
+    expect(run.stderr + run.stdout).not.toContain("app-role-password");
+
+    const login = psql("tiehall_app", "app-role-password", "SELECT current_user, rolsuper FROM pg_roles WHERE rolname = current_user");
+    expect(login.stdout.trim()).toBe("tiehall_app|f");
+    expect(psql("tiehall", "app-role-password", "SELECT 1").stderr).toContain("password authentication failed");
   });
 
   it("exits non-zero when the database refuses it", () => {

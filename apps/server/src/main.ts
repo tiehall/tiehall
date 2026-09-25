@@ -80,12 +80,18 @@ function runWorker(): void {
 
 async function runMigrate(config: Config): Promise<void> {
   try {
-    await migrate({
-      connectionString: config.databaseUrl,
-      ...(config.databasePassword === undefined ? {} : { password: config.databasePassword }),
-    });
+    // The migrate role connects as the database owner and sets up the app role.
+    // Task 5.1 makes the app role a required setting, and 5.3 gives it to the migrate service.
+    await migrate(
+      {
+        connectionString: config.databaseUrl,
+        ...(config.databasePassword === undefined ? {} : { password: config.databasePassword }),
+      },
+      config.appRole === undefined ? {} : { appRole: config.appRole },
+    );
   } catch (error) {
-    // The driver's message names the failure (for example a refused password), never the password.
+    // The message names the failure (for example a refused password or an app role with too many
+    // rights), never a password.
     console.error(`tiehall migrate: failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }

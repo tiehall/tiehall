@@ -1,4 +1,5 @@
 import pg from "pg";
+import { setUpAppRole, type AppRole } from "./database-roles.ts";
 
 export interface DatabaseConnection {
   connectionString: string;
@@ -6,17 +7,23 @@ export interface DatabaseConnection {
   password?: string;
 }
 
+export interface MigrateOptions {
+  /** The app role to create or update, with the password from the install's settings. */
+  appRole?: AppRole;
+}
+
 /**
- * The migrate role's work, run once before each roll. Task 3.2 turns this into
- * the migration runner (advisory lock, lock_timeout, non-transactional steps);
- * until there are migrations, it only checks that the database accepts the
- * role's connection, so a broken connection stops the release before the app starts.
+ * The migrate role's work, run once before the app starts. It connects as the
+ * database owner, so a broken connection stops the release before the app
+ * starts, and sets up the app role that the app connects as. Task 4.2 adds the
+ * migration runner (advisory lock, lock_timeout, non-transactional steps).
  */
-export async function migrate(connection: DatabaseConnection): Promise<void> {
+export async function migrate(connection: DatabaseConnection, options: MigrateOptions = {}): Promise<void> {
   const client = new pg.Client({ connectionString: withPassword(connection), connectionTimeoutMillis: 10_000 });
   await client.connect();
   try {
     await client.query("SELECT 1");
+    if (options.appRole !== undefined) await setUpAppRole(client, options.appRole);
   } finally {
     await client.end();
   }

@@ -65,6 +65,34 @@ describe("readConfig", () => {
     );
   });
 
+  it("reads the app role the migrate step sets up, from its URL and a password given apart from it", () => {
+    writeFileSync(join(secrets, "app_database_password"), "app-s3cret\n");
+    const config = readConfig({
+      DATABASE_URL: url,
+      APP_DATABASE_URL: "postgres://tiehall_app@postgres:5432/tiehall",
+      APP_DATABASE_PASSWORD_FILE: join(secrets, "app_database_password"),
+    });
+    expect(config.appRole).toEqual({ name: "tiehall_app", password: "app-s3cret" });
+    expect(
+      readConfig({ DATABASE_URL: url, APP_DATABASE_URL: "postgres://tiehall%2Dapp:p%40ss@db.example.com/tiehall" }).appRole,
+    ).toEqual({ name: "tiehall-app", password: "p@ss" });
+    expect(readConfig({ DATABASE_URL: url }).appRole).toBeUndefined();
+  });
+
+  it("refuses an app database URL without a user or a password, without echoing it", () => {
+    expect(() =>
+      readConfig({ DATABASE_URL: url, APP_DATABASE_URL: "postgres://postgres:5432/tiehall", APP_DATABASE_PASSWORD: "x" }),
+    ).toThrow(new ConfigError("APP_DATABASE_URL must name the app role as its user."));
+    expect(() => readConfig({ DATABASE_URL: url, APP_DATABASE_URL: "postgres://tiehall_app@postgres:5432/tiehall" })).toThrow(
+      new ConfigError(
+        "The app role has no password. Set APP_DATABASE_PASSWORD or APP_DATABASE_PASSWORD_FILE, or give it in APP_DATABASE_URL.",
+      ),
+    );
+    expect(() => readConfig({ DATABASE_URL: url, APP_DATABASE_URL: "mysql://app:hunter2@db/app" })).toThrow(
+      new ConfigError("APP_DATABASE_URL must be a postgres:// or postgresql:// URL."),
+    );
+  });
+
   it("reads the web port, and refuses one that is not a TCP port", () => {
     expect(readConfig({ DATABASE_URL: url, PORT: "8080" }).port).toBe(8080);
     expect(() => readConfig({ DATABASE_URL: url, PORT: "http" })).toThrow(
