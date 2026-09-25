@@ -1,0 +1,7 @@
+on: pull_request
+permissions: {}
+jobs:
+  shared:
+    permissions:
+      contents: read
+    uses: octo-org/shared/.github/workflows/check.yml@v1

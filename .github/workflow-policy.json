@@ -1,0 +1,5 @@
+{
+  "$comment": "The only CI jobs that may hold a write permission or use a secret other than their own GITHUB_TOKEN, keyed by <workflow file>#<job id> (operations: Build pipeline integrity). tools/repo-checks/src/check-workflows.ts enforces it; a change here needs review like any other permission change.",
+  "writePermissions": {},
+  "secrets": {}
+}

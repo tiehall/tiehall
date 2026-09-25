@@ -1,5 +1,11 @@
 name: CI
 
+# The checks every pull request and every push to main must pass. Workflows are
+# split by the permissions their jobs need (operations: Build pipeline
+# integrity): every job here reads the repository and nothing more. A job that
+# needs a write permission or a secret lives in its own workflow and is listed
+# in .github/workflow-policy.json, which the "Workflow rules" job enforces.
+
 on:
   pull_request:
   push:
@@ -66,3 +72,24 @@ jobs:
           package-manager-cache: false
       # Uses only Node built-ins, so it needs no install.
       - run: node tools/repo-checks/src/check-model-sdks.ts
+
+  workflow-rules:
+    name: Workflow rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      # Actions pinned by commit SHA, declared permissions, writes and secrets
+      # only where the policy lists them, and frozen, script-free installs.
+      - run: pnpm check:workflows

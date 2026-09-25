@@ -1,0 +1,41 @@
+name: Clean
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions: {}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/local
+      - uses: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      - name: Install pnpm
+        run: npm install --global --ignore-scripts pnpm@12.6.0
+      - run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vitest run
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - run: echo "$TOKEN" | docker login ghcr.io --password-stdin
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./release.sh
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_DEPLOY_KEY }}
+  reuse:
+    permissions:
+      contents: read
+    uses: octo-org/shared/.github/workflows/check.yml@3d3c42e5aac5ba805825da76410c181273ba90b1
+  reuse-local:
+    permissions: {}
+    uses: ./.github/workflows/called.yml

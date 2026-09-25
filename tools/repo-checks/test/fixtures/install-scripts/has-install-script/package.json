@@ -1,0 +1,8 @@
+{
+  "name": "has-install-script",
+  "version": "1.0.0",
+  "description": "A dependency whose postinstall script leaves a marker file where the install ran.",
+  "scripts": {
+    "postinstall": "node -e \"require('node:fs').writeFileSync(require('node:path').join(process.env.INIT_CWD, 'install-script-ran'), '')\""
+  }
+}

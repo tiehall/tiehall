@@ -1,0 +1,17 @@
+on: pull_request
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - run: echo build
+  everything:
+    runs-on: ubuntu-24.04
+    permissions: write-all
+    steps:
+      - run: echo everything

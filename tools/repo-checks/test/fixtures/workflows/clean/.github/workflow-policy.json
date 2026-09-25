@@ -1,0 +1,8 @@
+{
+  "writePermissions": {
+    "ci.yml#publish": ["packages"]
+  },
+  "secrets": {
+    "ci.yml#publish": ["STAGING_DEPLOY_KEY"]
+  }
+}

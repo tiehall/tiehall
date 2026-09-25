@@ -12,7 +12,10 @@ packages:
 # release age Renovate waits for (operations: Build pipeline integrity).
 minimumReleaseAge: 10080
 
-# Dependency install scripts are denied unless listed here as true.
+# Dependency install scripts are denied unless listed here as true, and an
+# install fails while a dependency's script is on neither side of the list
+# (operations: Build pipeline integrity; checked by `pnpm check:workflows`).
+strictDepBuilds: true
 allowBuilds:
   # Optional native helper of ssh2 (Testcontainers); a pure-JS path is used without it.
   cpu-features: false
@@ -30,3 +33,4 @@ catalog:
   pg: 8.23.0
   typescript: 6.0.3
   vitest: 5.0.1
+  yaml: 2.9.1

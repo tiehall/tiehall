@@ -1,0 +1,15 @@
+on: pull_request
+permissions: {}
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      API_KEY: ${{ secrets.SCANNER_API_KEY }}
+    steps:
+      - run: echo scan
+  reuse:
+    permissions: {}
+    uses: ./.github/workflows/called.yml
+    secrets: inherit

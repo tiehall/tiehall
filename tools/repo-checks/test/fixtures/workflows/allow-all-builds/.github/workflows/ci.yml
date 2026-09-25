@@ -1,0 +1,9 @@
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  called:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - run: echo called

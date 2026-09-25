@@ -1,0 +1,14 @@
+on: pull_request
+permissions: {}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: npm install --global pnpm@12.6.0
+      - run: pnpm install
+      - run: |
+          pnpm i --prefer-offline && \
+            npx renovate-config-validator
+      - run: pnpm dlx cowsay hi; npm ci
