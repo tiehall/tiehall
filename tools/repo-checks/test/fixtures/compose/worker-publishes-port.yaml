@@ -1,0 +1,5 @@
+# Breaks the policy: the worker publishes a port.
+services:
+  worker:
+    ports:
+      - "127.0.0.1:9229:9229"

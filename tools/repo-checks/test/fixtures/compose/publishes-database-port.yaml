@@ -1,0 +1,5 @@
+# Breaks the policy: the database publishes its port on the host.
+services:
+  postgres:
+    ports:
+      - "5432:5432"

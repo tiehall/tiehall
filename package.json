@@ -13,7 +13,8 @@
     "check:model-sdks": "node tools/repo-checks/src/check-model-sdks.ts",
     "check:workflows": "node tools/repo-checks/src/check-workflows.ts",
     "scan:secrets": "node tools/repo-checks/src/scan-secrets.ts",
-    "test:image": "pnpm --filter @tiehall/image-tests test"
+    "test:image": "pnpm --filter @tiehall/image-tests test",
+    "check:compose": "node tools/repo-checks/src/check-compose.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
