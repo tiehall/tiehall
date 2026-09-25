@@ -1,0 +1,20 @@
+{
+  "name": "@tiehall/contract-action",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The contract Action that runs oasdiff in the customer's CI. Mirrored to tiehall/contract-action.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

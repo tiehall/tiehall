@@ -1,0 +1,30 @@
+packages:
+  - apps/*
+  - packages/*
+  - actions/*
+  # Never workspace projects: agent state, throwaway spikes and the OpenSpec plan.
+  - "!.claude/**"
+  - "!spikes/**"
+  - "!openspec/**"
+
+# Resolve only versions published at least 7 days ago (10080 minutes), the same
+# release age Renovate waits for (operations: Build pipeline integrity).
+minimumReleaseAge: 10080
+
+# Dependency install scripts are denied unless listed here as true.
+allowBuilds:
+  # Optional native helper of ssh2 (Testcontainers); a pure-JS path is used without it.
+  cpu-features: false
+  # A version-check postinstall only.
+  protobufjs: false
+  # Builds an optional native crypto binding; ssh2 falls back to pure JS.
+  ssh2: false
+
+# One version for tools that several workspace packages use.
+catalog:
+  "@types/node": 24.13.5
+  "@types/pg": 8.23.1
+  "@testcontainers/postgresql": 12.1.0
+  pg: 8.23.0
+  typescript: 6.0.3
+  vitest: 5.0.1
