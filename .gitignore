@@ -8,6 +8,8 @@
 .env
 .env.*
 !.env.example
+# Secret files for a local run of deploy/compose.yaml
+deploy/secrets/
 
 # Node
 node_modules/

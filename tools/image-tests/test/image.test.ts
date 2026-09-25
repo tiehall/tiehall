@@ -1,6 +1,7 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { containerState, docker, dockerOk, processUid, uniqueName, waitFor } from "../src/docker.ts";
 
@@ -12,7 +13,12 @@ import { containerState, docker, dockerOk, processUid, uniqueName, waitFor } fro
 const image = inject("image");
 
 /** The stock Postgres 17 image that the self-host Compose file runs, pinned by digest. */
-const POSTGRES_IMAGE = "postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675";
+const POSTGRES_IMAGE = (() => {
+  const compose = readFileSync(fileURLToPath(new URL("../../../deploy/compose.yaml", import.meta.url)), "utf8");
+  const image = /^\s+image: (postgres:17@sha256:[0-9a-f]{64})$/m.exec(compose)?.[1];
+  if (image === undefined) throw new Error("deploy/compose.yaml names no postgres:17 image pinned by digest");
+  return image;
+})();
 
 const confined = ["--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges"];
 /** A database URL for roles that do not connect yet; every role requires one. */

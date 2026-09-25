@@ -1,0 +1,5 @@
+# Self-host: Caddy gets a certificate for APP_DOMAIN and passes requests to the app.
+# Production's Caddyfile lives in its deploy repository (design.md decision 23).
+{$APP_DOMAIN} {
+	reverse_proxy app:3000
+}

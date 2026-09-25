@@ -1,0 +1,109 @@
+# Tiehall, self-hosted: the image in its all-in-one role, stock Postgres 17
+# and, optionally, Caddy in front (operations: Production runs the self-host
+# Compose file and image). Production runs this same file plus
+# compose.saas.yaml, and CI boots this file on every pull request and every
+# build of main.
+#
+# Start it with the image pinned by digest and the database password in a file:
+#   export TIEHALL_IMAGE=ghcr.io/<owner>/tiehall@sha256:<digest>
+#   mkdir -p secrets && openssl rand -hex 32 > secrets/app_database_password
+#   docker compose up -d                                   # the app, on the compose network only
+#   APP_DOMAIN=tiehall.example.com docker compose --profile caddy up -d   # with Caddy and TLS
+# Upgrade with `docker compose pull && docker compose up -d`: the one-shot
+# migrate service finishes before the app starts on the new image.
+# Configuration is environment variables and *_FILE secrets only.
+
+name: tiehall
+
+services:
+  postgres:
+    image: postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    environment:
+      POSTGRES_USER: tiehall
+      POSTGRES_DB: tiehall
+      POSTGRES_PASSWORD_FILE: /run/secrets/app_database_password
+    secrets:
+      - app_database_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "--username", "tiehall", "--dbname", "tiehall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 1s
+    restart: unless-stopped
+
+  # Runs the migrations once, then exits; the app waits for it to succeed.
+  migrate:
+    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
+    command: [migrate]
+    environment:
+      DATABASE_URL: postgres://tiehall@postgres:5432/tiehall
+      DATABASE_PASSWORD_FILE: /run/secrets/app_database_password
+    secrets:
+      - app_database_password
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # The web server and the worker in one container.
+  app:
+    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
+    command: [all]
+    environment:
+      DATABASE_URL: postgres://tiehall@postgres:5432/tiehall
+      DATABASE_PASSWORD_FILE: /run/secrets/app_database_password
+    secrets:
+      - app_database_password
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --eval
+        - 'fetch("http://127.0.0.1:3000/healthz").then((response) => process.exit(response.ok ? 0 : 1), () => process.exit(1))'
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  # Optional: TLS for APP_DOMAIN in front of the app. The only service that publishes ports.
+  caddy:
+    profiles: [caddy]
+    image: caddy:2.11.4@sha256:14a9c00d4e833ebc2b65d36515b37bde3b73f0b323a2663aaafc88953d8c4e3f
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  app_database_password:
+    file: ${TIEHALL_SECRETS_DIR:-./secrets}/app_database_password
