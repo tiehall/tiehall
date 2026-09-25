@@ -1,0 +1,5 @@
+# The app cannot start: it is pointed at a database password file that does not exist.
+services:
+  app:
+    environment:
+      DATABASE_PASSWORD_FILE: /run/secrets/missing_database_password

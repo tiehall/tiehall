@@ -2,7 +2,7 @@
   "name": "@tiehall/image-tests",
   "version": "0.0.0",
   "private": true,
-  "description": "Container tests of the Tiehall image. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset. Run with `pnpm test:image`; `pnpm test` leaves them out.",
+  "description": "Container tests of the Tiehall image and the self-host boot test. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone); `pnpm test` leaves them out.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
