@@ -6,6 +6,7 @@ import { defineConfig } from "vitest/config";
 // projects, and no project root contains them.
 export default defineConfig({
   test: {
-    projects: ["apps/*", "packages/*", "actions/*", "tools/*"],
+    // The container tests need an image; they run with `pnpm test:image`.
+    projects: ["apps/*", "packages/*", "actions/*", "tools/*", "!tools/image-tests"],
   },
 });

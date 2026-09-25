@@ -1,0 +1,17 @@
+# The build context holds only what the image build needs.
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+**/.DS_Store
+.git
+.github
+.claude
+spikes
+openspec
+docs
+deploy
+**/test
+**/*.test.ts
+.env
+.env.*

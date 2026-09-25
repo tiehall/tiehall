@@ -1,0 +1,61 @@
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
+
+export interface Run {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs the docker CLI and returns its exit status and output. */
+export function docker(args: string[], timeoutSeconds = 120): Run {
+  const run = spawnSync("docker", args, { encoding: "utf8", timeout: timeoutSeconds * 1000, maxBuffer: 64 * 1024 * 1024 });
+  if (run.error) throw run.error;
+  return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+}
+
+/** Like docker(), but throws unless the command succeeds, and returns its trimmed output. */
+export function dockerOk(args: string[], timeoutSeconds = 120): string {
+  const run = docker(args, timeoutSeconds);
+  if (run.status !== 0) throw new Error(`docker ${args.join(" ")} exited with ${run.status}: ${run.stderr}`);
+  return run.stdout.trim();
+}
+
+/** A name that no other test run uses. */
+export function uniqueName(prefix: string): string {
+  return `${prefix}-${randomBytes(4).toString("hex")}`;
+}
+
+/** Polls until check() returns a value other than undefined, or throws after the timeout. */
+export async function waitFor<T>(what: string, check: () => T | undefined | Promise<T | undefined>, timeoutSeconds = 60): Promise<T> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const value = await check();
+      if (value !== undefined) return value;
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(500);
+  }
+  throw new Error(`Timed out after ${timeoutSeconds}s waiting for ${what}`, { cause: lastError });
+}
+
+/** The container's state as `docker inspect` reports it. */
+export function containerState(name: string): { Status: string; Running: boolean; ExitCode: number } {
+  return JSON.parse(dockerOk(["inspect", "--format", "{{json .State}}", name])) as {
+    Status: string;
+    Running: boolean;
+    ExitCode: number;
+  };
+}
+
+/** The effective uid of a running container's first process. */
+export function processUid(name: string): number {
+  const status = dockerOk(["exec", name, "cat", "/proc/1/status"]);
+  const uid = /^Uid:\s+(\d+)/m.exec(status)?.[1];
+  if (uid === undefined) throw new Error(`No Uid line in /proc/1/status of ${name}`);
+  return Number(uid);
+}

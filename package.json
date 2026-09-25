@@ -12,7 +12,8 @@
     "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages actions tools",
     "check:model-sdks": "node tools/repo-checks/src/check-model-sdks.ts",
     "check:workflows": "node tools/repo-checks/src/check-workflows.ts",
-    "scan:secrets": "node tools/repo-checks/src/scan-secrets.ts"
+    "scan:secrets": "node tools/repo-checks/src/scan-secrets.ts",
+    "test:image": "pnpm --filter @tiehall/image-tests test"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -1,0 +1,24 @@
+{
+  "name": "@tiehall/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The image's one entrypoint: `main.mjs <role>` starts web, worker, migrate or all, with configuration read only from environment variables and *_FILE secrets.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "rolldown --config rolldown.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tiehall/commands": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "rolldown": "1.2.9",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

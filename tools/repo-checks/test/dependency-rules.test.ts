@@ -105,6 +105,8 @@ describe("the dependency rules", { timeout: 60_000 }, () => {
     expect(result.exitCode).toBe(0);
     expect(result.modules).toContain("packages/db/src/index.ts");
     expect(result.modules).toContain("packages/catalog/src/public.ts");
+    expect(result.modules).toContain("apps/server/src/main.ts");
     expect(result.modules.filter((path) => /(^|\/)(test\/fixtures|\.next|\.claude|spikes|openspec)\//.test(path))).toEqual([]);
+    expect(result.modules.filter((path) => /^(apps|packages|actions|tools)\/[^/]+\/dist\//.test(path))).toEqual([]);
   });
 });

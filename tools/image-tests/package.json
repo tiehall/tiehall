@@ -1,0 +1,20 @@
+{
+  "name": "@tiehall/image-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Container tests of the Tiehall image. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset. Run with `pnpm test:image`; `pnpm test` leaves them out.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
