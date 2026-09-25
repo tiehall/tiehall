@@ -8,10 +8,12 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint:deps": "depcruise --config .dependency-cruiser.cjs apps packages actions tools"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "dependency-cruiser": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

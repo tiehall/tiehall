@@ -1,0 +1,20 @@
+{
+  "name": "@tiehall/repo-checks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tests for the repository's CI checks, run against committed fixtures and the real tree.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "dependency-cruiser": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

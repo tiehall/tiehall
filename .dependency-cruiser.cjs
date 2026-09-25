@@ -1,0 +1,135 @@
+// Import rules for the monorepo (design.md decision 2; public-api: One
+// definition per operation, the same on every surface). CI runs them with
+// `pnpm lint:deps`; tools/repo-checks tests each rule against fixtures.
+//
+// A module shows up in a rule either by its resolved path (for example
+// packages/db/src/index.ts, or node_modules/.pnpm/pg@8/node_modules/pg/...) or,
+// when it cannot be resolved, by the name it was imported as (for example
+// @tiehall/db or pg). Every pattern below matches both forms.
+
+/** Matches npm packages by name, resolved or not. A name ending in "/" is a scope. */
+function npm(...names) {
+  const alternatives = names
+    .map((name) => (name.endsWith("/") ? `${name}[^/]+` : name))
+    .map((name) => name.replaceAll(".", "\\."))
+    .join("|");
+  return `(^|/)node_modules/(${alternatives})/|^(${alternatives})(/|$)`;
+}
+
+/** Matches Node built-in modules, with or without the node: prefix. */
+function builtin(...names) {
+  return `^(node:)?(${names.join("|")})(/|$)`;
+}
+
+/** Matches a workspace package by its folder or by its package name. */
+function workspace(folder, name) {
+  return `^${folder}/|^${name.replace("/", "\\/")}(/|$)`;
+}
+
+const DB_PACKAGE = workspace("packages/db", "@tiehall/db");
+const COMMANDS_PACKAGE = workspace("packages/commands", "@tiehall/commands");
+const WEB_APP = workspace("apps/web", "@tiehall/web");
+const TEST_HARNESS = workspace("packages/testing", "@tiehall/testing");
+
+const DATABASE_MODULES = npm("pg", "pg-pool", "pg-cursor", "pg-copy-streams", "postgres", "drizzle-orm", "drizzle-kit");
+const QUEUE_MODULES = npm("pg-boss");
+const NETWORK_MODULES = [
+  builtin("net", "http", "https", "http2", "tls", "dgram", "dns"),
+  npm(
+    "undici",
+    "ws",
+    "node-fetch",
+    "axios",
+    "got",
+    "ky",
+    "octokit",
+    "@octokit/",
+    "@modelcontextprotocol/",
+    "better-auth",
+    "@better-auth/",
+    "nodemailer",
+    "@sentry/",
+  ),
+];
+// packages/core holds the pure domain rules, with no I/O at all (D31).
+const OTHER_IO_MODULES = builtin("fs", "child_process", "cluster", "worker_threads");
+
+// The client-side packages, which the mirror copies to the public repositories (D31).
+const CLIENT_SIDE = [
+  "^packages/(cli|client|claude-plugin)/",
+  "^actions/contract/",
+  "^tiehall(/|$)",
+  "^@tiehall/(client|claude-plugin|contract-action)(/|$)",
+];
+const PUBLIC_CATALOG = ["^packages/catalog/src/public\\.ts$", "^@tiehall/catalog/public$"];
+
+/** @type {import('dependency-cruiser').IConfiguration} */
+module.exports = {
+  forbidden: [
+    {
+      name: "db-only-from-commands-and-migrations",
+      comment:
+        "Only packages/commands and the migrations (which live in packages/db) may import packages/db, so every " +
+        "domain command the UI runs passes the same authorization as an agent's (design.md decision 2).",
+      severity: "error",
+      from: { pathNot: ["^packages/db/", "^packages/commands/"] },
+      to: { path: DB_PACKAGE },
+    },
+    {
+      name: "catalog-holds-no-database-code",
+      comment: "packages/catalog holds the command definitions and no database code (design.md decision 2).",
+      severity: "error",
+      from: { path: "^packages/catalog/" },
+      to: { path: [DB_PACKAGE, COMMANDS_PACKAGE, DATABASE_MODULES, QUEUE_MODULES] },
+    },
+    {
+      name: "core-does-no-io",
+      comment:
+        "packages/core imports no database, queue or network module, and no workspace package that does I/O " +
+        "(design.md decision 2, D31).",
+      severity: "error",
+      from: { path: "^packages/core/" },
+      to: {
+        path: [
+          DATABASE_MODULES,
+          QUEUE_MODULES,
+          ...NETWORK_MODULES,
+          OTHER_IO_MODULES,
+          DB_PACKAGE,
+          COMMANDS_PACKAGE,
+          WEB_APP,
+          TEST_HARNESS,
+        ],
+      },
+    },
+    {
+      name: "client-side-imports-only-the-public-catalog",
+      comment:
+        "The client-side packages import no server code: of the other workspace packages they may import only " +
+        "the catalog's public entry point (design.md decision 2, D31).",
+      severity: "error",
+      from: { path: CLIENT_SIDE },
+      to: {
+        path: ["^(apps|packages|actions|tools)/", "^@tiehall/"],
+        pathNot: [...CLIENT_SIDE, ...PUBLIC_CATALOG],
+      },
+    },
+  ],
+  options: {
+    // Record imports of npm packages, but never read inside them.
+    doNotFollow: { path: "(^|/)node_modules/" },
+    // Not code, or not ours: agent state, spikes, the OpenSpec plan, Next.js
+    // build output and the fixtures that break these rules on purpose.
+    exclude: {
+      path: ["^\\.claude/", "^spikes/", "^openspec/", "(^|/)\\.next/", "^tools/repo-checks/test/fixtures/"],
+    },
+    // Type-only imports count too.
+    tsPreCompilationDeps: true,
+    enhancedResolveOptions: {
+      exportsFields: ["exports"],
+      conditionNames: ["import", "require", "node", "default", "types"],
+      extensions: [".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
+      mainFields: ["module", "main", "types"],
+    },
+  },
+};

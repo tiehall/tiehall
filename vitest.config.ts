@@ -6,6 +6,6 @@ import { defineConfig } from "vitest/config";
 // projects, and no project root contains them.
 export default defineConfig({
   test: {
-    projects: ["apps/*", "packages/*", "actions/*"],
+    projects: ["apps/*", "packages/*", "actions/*", "tools/*"],
   },
 });

@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - actions/*
+  - tools/*
   # Never workspace projects: agent state, throwaway spikes and the OpenSpec plan.
   - "!.claude/**"
   - "!spikes/**"
@@ -25,6 +26,7 @@ catalog:
   "@types/node": 24.13.5
   "@types/pg": 8.23.1
   "@testcontainers/postgresql": 12.1.0
+  dependency-cruiser: 18.3.1
   pg: 8.23.0
   typescript: 6.0.3
   vitest: 5.0.1
