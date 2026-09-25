@@ -1,0 +1,94 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates under operations: Build pipeline integrity: nothing is proposed before it is 7 days old, and no update to an action pin or an image digest is ever merged without review.",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/test/**",
+    "**/fixtures/**",
+    ".claude/**",
+    "spikes/**",
+    "openspec/**"
+  ],
+  "minimumReleaseAge": "7 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required",
+  "internalChecksFilter": "strict",
+  "automerge": false,
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "7 days"
+  },
+  "packageRules": [
+    {
+      "description": "GitHub Actions stay pinned to commit SHAs, and a new pin is never merged without review.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true,
+      "automerge": false
+    },
+    {
+      "description": "Image digests (Node, Postgres, Caddy and the CI tools) are bumped weekly, and never merged without review.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "pinDigests": true,
+      "automerge": false,
+      "schedule": [
+        "* 0-5 * * 1"
+      ]
+    },
+    {
+      "description": "The Node base image: every bump, digest or version, opens its own pull request, labelled for review before merge.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "node"
+      ],
+      "automerge": false,
+      "labels": [
+        "node-base-image"
+      ]
+    },
+    {
+      "description": "Node stays on the 24 LTS line and Postgres on 17 (design.md decision 1): no major update of them or of the Node types, because a major upgrade is planned work.",
+      "matchPackageNames": [
+        "node",
+        "@types/node",
+        "postgres"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "TypeScript 7 waits for dependency-cruiser and the Next.js build to support it; open its pull request from the Dependency Dashboard when they do.",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Images that the CI and repository checks run, pinned by digest: gitleaks in the secret scan, Trivy in the image scan and Renovate in pnpm check:renovate.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^tools/[^/]+/src/[^/]+\\.ts$/"
+      ],
+      "matchStrings": [
+        "(?<depName>ghcr\\.io/[a-z0-9._/-]+):(?<currentValue>v?[0-9][A-Za-z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

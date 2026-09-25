@@ -15,7 +15,8 @@
     "scan:secrets": "node tools/repo-checks/src/scan-secrets.ts",
     "test:image": "pnpm --filter @tiehall/image-tests test",
     "check:compose": "node tools/repo-checks/src/check-compose.ts",
-    "test:boot": "node tools/image-tests/src/boot-test.ts"
+    "test:boot": "node tools/image-tests/src/boot-test.ts",
+    "check:renovate": "node tools/repo-checks/src/check-renovate.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
