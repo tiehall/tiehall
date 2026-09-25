@@ -22,3 +22,6 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+
+# Temporary git worktrees created by Claude Code agents
+.claude/worktrees/
