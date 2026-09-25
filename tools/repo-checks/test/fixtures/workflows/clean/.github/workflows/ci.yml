@@ -20,6 +20,8 @@ jobs:
       - run: |
           pnpm install --frozen-lockfile
           pnpm exec vitest run
+      # Mentions of secrets outside an expression are not secrets.
+      - run: node tools/scan-secrets.ts --report secrets.txt
   publish:
     runs-on: ubuntu-24.04
     permissions:

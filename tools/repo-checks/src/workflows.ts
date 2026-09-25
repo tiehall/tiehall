@@ -48,7 +48,9 @@ const POLICY = join(".github", "workflow-policy.json");
 /** owner/repo[/path]@<full commit SHA>. A tag, a branch or an abbreviated SHA can be moved or become ambiguous. */
 const PINNED_ACTION = /^[^@\s]+@[0-9a-f]{40}$/;
 const PINNED_DOCKER_ACTION = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
-/** A secret named in an expression: secrets.NAME or secrets['NAME']. */
+/** An expression, ${{ ... }}: the only place a workflow can read the secrets context. */
+const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
+/** A secret named inside an expression: secrets.NAME or secrets['NAME']. */
 const SECRET_REFERENCE = /\bsecrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_-]*)|\[\s*['"]([^'"]+)['"]\s*\])/g;
 
 export function loadPolicy(root: string): Policy {
@@ -177,9 +179,11 @@ function secretsIn(value: unknown): string[] {
   const names = new Set<string>();
   const visit = (node: unknown): void => {
     if (typeof node === "string") {
-      for (const match of node.matchAll(SECRET_REFERENCE)) {
-        const name = match[1] ?? match[2];
-        if (name !== undefined && name.toUpperCase() !== "GITHUB_TOKEN") names.add(name);
+      for (const [, expression = ""] of node.matchAll(EXPRESSION)) {
+        for (const match of expression.matchAll(SECRET_REFERENCE)) {
+          const name = match[1] ?? match[2];
+          if (name !== undefined && name.toUpperCase() !== "GITHUB_TOKEN") names.add(name);
+        }
       }
     } else if (Array.isArray(node)) {
       node.forEach(visit);

@@ -93,3 +93,24 @@ jobs:
       # Actions pinned by commit SHA, declared permissions, writes and secrets
       # only where the policy lists them, and frozen, script-free installs.
       - run: pnpm check:workflows
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Holds no secrets: the scanner is third-party code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Every commit of every branch and tag, plus the pull request's own commits.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      # gitleaks runs from its image pinned by digest, with no network and the
+      # checkout mounted read-only; the script uses only Node built-ins.
+      - run: node tools/repo-checks/src/scan-secrets.ts
