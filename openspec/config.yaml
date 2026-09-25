@@ -1,55 +1,54 @@
 schema: spec-driven
 
 context: |
-  Language: English. All OpenSpec artifacts are written in English. The founder
-  chats in Turkish (see AGENTS.md), but nothing in the repo is Turkish.
+  Language: English. All OpenSpec artifacts are written in English.
 
-  Product: Tiehall is a vendor-neutral request layer for software teams that use
-  coding agents. A developer's agent opens a typed request to another team; that
-  team claims it; its agent pulls a typed handoff packet over MCP, the CLI or a
-  URL; clarifying questions and status flow back to the requester's own agent;
-  the request closes with a PR. Tiehall sits beside Linear, Jira and GitHub and
-  runs no LLM of its own.
+  Product: Tiehall is an open-source, self-hosted request layer for software
+  teams that use coding agents. A developer's agent opens a typed request to
+  another team; that team claims it; its agent pulls a typed handoff packet over
+  MCP, the CLI or a URL; clarifying questions and status flow back to the
+  requester's own agent; the request closes with a PR. Tiehall sits beside
+  GitHub Issues and Jira, can mirror requests into them, and runs no LLM of its
+  own. One company per install, run with Docker Compose (Tiehall plus Postgres),
+  with GitHub sign-in set up from a first-run setup screen.
 
-  Status: the design was approved section by section on 2026-09-25. There is no
-  product code yet. The first change, add-tiehall-beta, turns the approved
-  design into specs.
+  Status: the current change is add-tiehall-oss-v1 (the open-source v1).
+  Its design.md is the source of truth: it restates every decision the specs
+  rely on, so the repository stands alone.
 
-  Sources of truth, in this order:
-  - docs/HANDOFF.md, decisions D1-D26 and any later ones.
-  - docs/design/2026-09-25-architecture-approaches.md. Section 0 (approach A+)
-    wins where later sections differ; section 8 records the settled decisions.
-  - docs/design/2026-09-25-operations-hetzner.md.
-  - The research scans in docs/research/, only where a design section adopted them.
+  Licenses: the server is AGPL-3.0; the client pieces (the CLI,
+  @tiehall/client, the Claude Code plugin, the contract Action and the packet
+  schema) are Apache-2.0.
 
   Stack (a design matter, not a spec matter): TypeScript full stack, Next.js,
-  Postgres, Docker Compose on Hetzner in Germany.
+  Postgres, one Docker image run with Docker Compose.
 
-  Capabilities use flat kebab-case paths: orgs-and-teams, sign-in, passkeys,
-  agent-access, requests, handoff-packet, agent-surfaces, requester-loop,
-  contract-changes, tracker-mirrors, agent-safety, audit-log, public-api,
-  billing-readiness, operations.
+  Capabilities use flat kebab-case paths: self-host-install, teams-and-roles,
+  sign-in, agent-access, requests, handoff-packet, agent-surfaces,
+  requester-loop, contract-changes, tracker-mirrors, agent-safety, activity-log,
+  public-api.
 
-  Secrets, tokens and customer data never go into specs.
+  Secrets, tokens and customer data never go into specs. Nothing in the
+  repository links to the optional, git-ignored private/ folder.
 
 rules:
   proposal:
-    - "Tie the Why to decision numbers in docs/HANDOFF.md (for example D9 or D14) instead of restating them."
+    - "Tie the Why to the decision numbers that the change's design.md restates, instead of restating them again."
     - "Keep it under 600 words."
   specs:
-    - "Describe observable behavior: what people, agents, admins and external systems can see and rely on. Library and framework names belong in design.md, not in specs. Protocol names, public URLs and HTTP details that clients depend on are fine."
-    - "Every ADDED or MODIFIED requirement carries a `Source:` line before its first scenario. It names the decision(s) and the design document section the rule comes from, for example `Source: D23; architecture draft §0.3.1`. A rule with no approved source is not added; raise it as an open question instead."
+    - "Describe observable behavior: what people, agents, admins and external systems can see and rely on. Library and framework names belong in design.md, not in specs. Protocol names, URLs and HTTP details that clients depend on are fine."
+    - "Every ADDED or MODIFIED requirement carries a `Source:` line before its first scenario. It cites the section of the change's design.md the rule comes from, and may add the decision number that design.md restates, for example `Source: D30; design.md, Design rules: Requests and events`. A rule with no source in design.md is not added; raise it as an open question instead."
     - "Use SHALL or MUST. Every requirement has at least one scenario in WHEN/THEN form, concrete enough to become a test."
   design:
-    - "Point to the approved design documents in docs/design/ for rationale instead of copying them. Record the decisions an implementer needs, including library choices, and where the specs leave room."
+    - "Restate, as public rules, every decision the specs rely on. Record the decisions an implementer needs, including library choices, with their rationale and alternatives, and where the specs leave room."
   tasks:
-    - "Order work by milestone (foundation, the design-partner slice, the full beta), not by week numbers. The founder asked not to plan by weeks."
+    - "Order work by milestone, not by week numbers."
     - "Every task says how it is verified: a test, a command or observable behavior. Tests come first (TDD)."
 
 operations:
   apply:
     guidance:
-      - "No product code before the founder has approved the specs and the tasks of add-tiehall-beta (AGENTS.md)."
+      - "Build only what the approved change and its tasks describe; anything new becomes its own OpenSpec change."
   archive:
     guidance:
       - "`openspec validate --strict` must pass before archiving."

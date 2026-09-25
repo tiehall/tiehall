@@ -31,3 +31,6 @@ __pycache__/
 # Next.js writes this on every typegen, dev and build
 apps/web/next-env.d.ts
 *.tsbuildinfo
+
+# Planning material kept only on the maintainer machine (D38), like a .env
+private/
