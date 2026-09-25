@@ -1,0 +1,10 @@
+{
+  "name": "@fixture/a",
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.0.0",
+    "@google-cloud/storage": "7.0.0",
+    "@modelcontextprotocol/server": "2.1.0",
+    "aws-sdk-lookalike": "npm:@aws-sdk/client-s3@3.0.0"
+  }
+}

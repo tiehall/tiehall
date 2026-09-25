@@ -1,0 +1,7 @@
+{
+  "name": "fixture-with-model-sdks",
+  "private": true,
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.0.0"
+  }
+}

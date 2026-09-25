@@ -1,0 +1,43 @@
+{
+  "description": "LLM and model-vendor SDKs that no workspace package.json may depend on (operations: No model calls and no model vendor; D3). A scope denies every package in it. Add new vendors and SDKs here; tools/repo-checks/src/check-model-sdks.ts enforces the list in CI.",
+  "scopes": {
+    "@ai-sdk": "Vercel AI SDK model providers",
+    "@anthropic-ai": "Anthropic",
+    "@cerebras": "Cerebras",
+    "@fal-ai": "fal.ai",
+    "@google-ai": "Google generative AI",
+    "@huggingface": "Hugging Face",
+    "@langchain": "LangChain",
+    "@llamaindex": "LlamaIndex",
+    "@mistralai": "Mistral AI",
+    "@openai": "OpenAI",
+    "@openrouter": "OpenRouter",
+    "@perplexity-ai": "Perplexity",
+    "@portkey-ai": "Portkey AI gateway",
+    "@xenova": "Transformers.js, local model runtime"
+  },
+  "packages": {
+    "@aws-sdk/client-bedrock": "Amazon Bedrock",
+    "@aws-sdk/client-bedrock-agent": "Amazon Bedrock",
+    "@aws-sdk/client-bedrock-agent-runtime": "Amazon Bedrock",
+    "@aws-sdk/client-bedrock-runtime": "Amazon Bedrock",
+    "@azure-rest/ai-inference": "Azure AI inference",
+    "@azure/openai": "Azure OpenAI",
+    "@google-cloud/aiplatform": "Google Vertex AI",
+    "@google-cloud/vertexai": "Google Vertex AI",
+    "@google/genai": "Google Gemini",
+    "@google/generative-ai": "Google Gemini",
+    "ai": "Vercel AI SDK",
+    "cohere-ai": "Cohere",
+    "groq-sdk": "Groq",
+    "langchain": "LangChain",
+    "llamaindex": "LlamaIndex",
+    "node-llama-cpp": "llama.cpp, local model runtime",
+    "ollama": "Ollama",
+    "openai": "OpenAI",
+    "portkey-ai": "Portkey AI gateway",
+    "replicate": "Replicate",
+    "together-ai": "Together AI",
+    "voyageai": "Voyage AI embeddings"
+  }
+}

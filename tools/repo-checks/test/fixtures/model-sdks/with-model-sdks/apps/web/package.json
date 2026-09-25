@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/web",
+  "private": true,
+  "dependencies": {
+    "next": "16.3.5",
+    "openai": "5.0.0"
+  }
+}

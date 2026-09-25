@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/cli",
+  "private": true,
+  "optionalDependencies": {
+    "chat": "npm:@mistralai/mistralai@1.0.0"
+  }
+}

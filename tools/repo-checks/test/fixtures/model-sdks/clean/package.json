@@ -1,0 +1,8 @@
+{
+  "name": "fixture-clean",
+  "private": true,
+  "devDependencies": {
+    "openapi-typescript": "7.0.0",
+    "vitest": "5.0.1"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/core",
+  "private": true,
+  "peerDependencies": {
+    "@google/genai": "1.0.0"
+  }
+}
