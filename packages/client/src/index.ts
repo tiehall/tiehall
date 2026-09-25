@@ -1,3 +1,3 @@
-// @tiehall/client: The generated REST client. Mirrored to the public client repository.
+// @tiehall/client: The REST client generated from the OpenAPI document.
 // Filled in by later tasks.
 export {};

@@ -2,7 +2,7 @@
   "name": "tiehall",
   "version": "0.0.0",
   "private": true,
-  "description": "The tiehall CLI. Mirrored to the public client repository.",
+  "description": "The tiehall CLI. Takes its request commands from the OpenAPI document through @tiehall/client.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

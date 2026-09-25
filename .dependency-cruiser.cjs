@@ -1,5 +1,6 @@
-// Import rules for the monorepo (design.md decision 2; public-api: One
-// definition per operation, the same on every surface). CI runs them with
+// Import rules for the monorepo (design.md, Technical decisions: T2 and
+// Self-hosting decisions: S16; public-api: One definition per operation, the
+// same on every surface; public-api: The license map). CI runs them with
 // `pnpm lint:deps`; tools/repo-checks tests each rule against fixtures.
 //
 // A module shows up in a rule either by its resolved path (for example
@@ -51,17 +52,23 @@ const NETWORK_MODULES = [
     "@sentry/",
   ),
 ];
-// packages/core holds the pure domain rules, with no I/O at all (D31).
+// packages/core holds the pure domain rules, with no I/O at all (T2).
 const OTHER_IO_MODULES = builtin("fs", "child_process", "cluster", "worker_threads");
 
-// The client-side packages, which the mirror copies to the public repositories (D31).
-const CLIENT_SIDE = [
-  "^packages/(cli|client|claude-plugin)/",
-  "^actions/contract/",
-  "^tiehall(/|$)",
-  "^@tiehall/(client|claude-plugin|contract-action)(/|$)",
+// The Apache-2.0 client pieces of S16, by folder and package name. Every other
+// workspace package is AGPL-3.0 server code, the command catalog included.
+const APACHE_2_0_PACKAGES = [
+  { folder: "packages/cli", name: "tiehall" },
+  { folder: "packages/client", name: "@tiehall/client" },
+  { folder: "packages/claude-plugin", name: "@tiehall/claude-plugin" },
+  { folder: "actions/contract", name: "@tiehall/contract-action" },
+  // The packet schema directory, from which @tiehall/packet is built.
+  { folder: "packages/packet", name: "@tiehall/packet" },
 ];
-const PUBLIC_CATALOG = ["^packages/catalog/src/public\\.ts$", "^@tiehall/catalog/public$"];
+const APACHE_2_0_FOLDERS = APACHE_2_0_PACKAGES.map(({ folder }) => `^${folder}/`);
+const APACHE_2_0_MODULES = APACHE_2_0_PACKAGES.flatMap(({ folder, name }) => [`^${folder}/`, npm(name)]);
+// Every workspace package, by folder or by package name.
+const WORKSPACE_MODULES = ["^(apps|packages|actions|tools)/", npm("@tiehall/", "tiehall")];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -70,14 +77,14 @@ module.exports = {
       name: "db-only-from-commands-and-migrations",
       comment:
         "Only packages/commands and the migrations (which live in packages/db) may import packages/db, so every " +
-        "domain command the UI runs passes the same authorization as an agent's (design.md decision 2).",
+        "domain command the UI runs passes the same authorization as an agent's (design.md, T2).",
       severity: "error",
       from: { pathNot: ["^packages/db/", "^packages/commands/"] },
       to: { path: DB_PACKAGE },
     },
     {
       name: "catalog-holds-no-database-code",
-      comment: "packages/catalog holds the command definitions and no database code (design.md decision 2).",
+      comment: "packages/catalog holds the command definitions and no database code (design.md, T2).",
       severity: "error",
       from: { path: "^packages/catalog/" },
       to: { path: [DB_PACKAGE, COMMANDS_PACKAGE, DATABASE_MODULES, QUEUE_MODULES] },
@@ -86,7 +93,7 @@ module.exports = {
       name: "core-does-no-io",
       comment:
         "packages/core imports no database, queue or network module, and no workspace package that does I/O " +
-        "(design.md decision 2, D31).",
+        "(design.md, T2).",
       severity: "error",
       from: { path: "^packages/core/" },
       to: {
@@ -103,16 +110,14 @@ module.exports = {
       },
     },
     {
-      name: "client-side-imports-only-the-public-catalog",
+      name: "apache-2.0-imports-no-agpl-3.0",
       comment:
-        "The client-side packages import no server code: of the other workspace packages they may import only " +
-        "the catalog's public entry point (design.md decision 2, D31).",
+        "An Apache-2.0 client piece imports no AGPL-3.0 code: of the workspace packages it may import only the " +
+        "other Apache-2.0 pieces, so the CLI takes its commands from the OpenAPI document through @tiehall/client " +
+        "and never imports the catalog (design.md, S16; public-api: The license map).",
       severity: "error",
-      from: { path: CLIENT_SIDE },
-      to: {
-        path: ["^(apps|packages|actions|tools)/", "^@tiehall/"],
-        pathNot: [...CLIENT_SIDE, ...PUBLIC_CATALOG],
-      },
+      from: { path: APACHE_2_0_FOLDERS },
+      to: { path: WORKSPACE_MODULES, pathNot: APACHE_2_0_MODULES },
     },
   ],
   options: {

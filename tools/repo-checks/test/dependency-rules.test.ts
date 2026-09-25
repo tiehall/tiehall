@@ -83,18 +83,22 @@ describe("the dependency rules", { timeout: 60_000 }, () => {
     expect(result.exitCode).not.toBe(0);
   });
 
-  it("refuse a client-side import of anything but the catalog's public entry point", () => {
-    const result = cruise(fixture("client-imports-server"), ["packages", "actions"]);
-    expect(violationsOf(result, "client-side-imports-only-the-public-catalog")).toEqual([
+  it("refuse an import of AGPL-3.0 code from an Apache-2.0 client piece, the catalog included", () => {
+    const result = cruise(fixture("apache-imports-agpl"), ["apps", "packages", "actions"]);
+    expect(violationsOf(result, "apache-2.0-imports-no-agpl-3.0")).toEqual([
       "actions/contract/src/index.ts",
-      "packages/cli/src/index.ts",
+      "packages/claude-plugin/src/index.ts",
+      "packages/cli/src/by-name.ts",
+      "packages/cli/src/by-path.ts",
+      "packages/cli/src/public-entry.ts",
       "packages/client/src/index.ts",
+      "packages/packet/src/index.ts",
     ]);
     expect(result.exitCode).not.toBe(0);
   });
 
-  it("allow commands and the migrations to import packages/db, and the CLI to import the public catalog", () => {
-    const result = cruise(fixture("allowed"), ["apps", "packages"]);
+  it("allow commands and the migrations to import packages/db, and the Apache-2.0 pieces to import each other", () => {
+    const result = cruise(fixture("allowed"), ["apps", "packages", "actions"]);
     expect(result.violations).toEqual([]);
     expect(result.exitCode).toBe(0);
   });
@@ -104,7 +108,9 @@ describe("the dependency rules", { timeout: 60_000 }, () => {
     expect(result.violations).toEqual([]);
     expect(result.exitCode).toBe(0);
     expect(result.modules).toContain("packages/db/src/index.ts");
-    expect(result.modules).toContain("packages/catalog/src/public.ts");
+    expect(result.modules).toContain("packages/catalog/src/index.ts");
+    expect(result.modules).toContain("packages/cli/src/index.ts");
+    expect(result.modules).not.toContain("packages/catalog/src/public.ts");
     expect(result.modules).toContain("apps/server/src/main.ts");
     expect(result.modules.filter((path) => /(^|\/)(test\/fixtures|\.next|\.claude|spikes|openspec)\//.test(path))).toEqual([]);
     expect(result.modules.filter((path) => /^(apps|packages|actions|tools)\/[^/]+\/dist\//.test(path))).toEqual([]);
