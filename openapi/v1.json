@@ -245,7 +245,7 @@
             ]
           }
         ],
-        "summary": "Read the events after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
+        "summary": "Read the events about requests after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
         "x-stability-level": "alpha"
       }
     },

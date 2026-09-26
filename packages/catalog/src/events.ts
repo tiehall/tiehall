@@ -6,8 +6,10 @@ import { defineCommand } from "./command.ts";
 // and events). A reader, one client of a user, reads the events after its own
 // cursor and acknowledges them, which alone moves the cursor. An event names
 // what changed by ids and fixed values, never by a body, so a reader fetches
-// content through the reads. The requester loop's readers, whats_new and the
-// wait, build on these (group 19).
+// content through the reads. Readers get only domain events, the changes to
+// requests, which every member may see; security events reach no reader
+// (requests: Readers get only domain events they may see). The requester
+// loop's readers, whats_new and the wait, build on these (group 19).
 
 /** An event as a reader gets it: its number, its type, when it happened, and the ids and values its type declares. */
 export const eventView = z.object({
@@ -23,7 +25,7 @@ const cursor = z.number().int().min(0).meta({ description: "The number of the la
 export const readEvents = defineCommand({
   id: "events.read",
   summary:
-    "Read the events after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
+    "Read the events about requests after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
   input: z.object({
     limit: z.coerce.number().int().min(1).max(500).optional().meta({ description: "How many events to return, 1 to 500; 100 unless given." }),
   }),

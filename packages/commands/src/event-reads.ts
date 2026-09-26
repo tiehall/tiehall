@@ -17,6 +17,14 @@ import type { OrgContext } from "./with-org.ts";
 // acknowledged. events.acknowledge moves the reader's cursor up to an event
 // that exists, and never back. Neither is a change to a request, so neither
 // records an event.
+//
+// Readers get only domain events they may see (requests: Readers get only
+// domain events they may see; activity-log: Security events are shown to
+// admins only): a domain event is a change to a request, and every member sees
+// every request, so a reader gets every domain event; a security event, such
+// as a role change, reaches no reader, not even an admin's, and a cursor passes
+// over it. Someone who is no longer a member gets 403 and nothing, from the
+// membership re-check that runs before anything is read.
 
 /** Which of a user's clients a caller reads as. */
 export function readerOf(caller: Caller): string {
@@ -58,7 +66,7 @@ export const EVENT_READ_HANDLERS: Handlers = {
     const rows = await context.tx
       .select({ number: events.number, type: events.type, occurredAt: events.occurredAt, data: events.data })
       .from(events)
-      .where(and(eq(events.orgId, context.orgId), gt(events.number, cursor)))
+      .where(and(eq(events.orgId, context.orgId), eq(events.class, "domain"), gt(events.number, cursor)))
       .orderBy(asc(events.number))
       .limit(limit ?? 100);
     return {
