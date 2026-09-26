@@ -2,7 +2,7 @@
   "name": "@tiehall/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Pure domain rules with no I/O: the state machine, the side rules, the confirmation rules, the canonical text and the Merkle module.",
+  "description": "Pure domain rules with no I/O: the state machine, the side rules, the confirmation rules, and the shape of events.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

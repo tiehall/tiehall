@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // The Drizzle schema of the app's tables (design.md, Technical decisions: T4).
 // drizzle-kit generates the migrations in ../migrations from it with
@@ -33,3 +33,60 @@ export const eventSequence = pgTable("event_sequence", {
   /** The number of the last event taken, 0 before the first. */
   lastNumber: bigint("last_number", { mode: "number" }).notNull(),
 });
+
+// The event log (requests: The event log; requests: Events carry ids, not
+// bodies; activity-log: The activity log holds domain events and security
+// events; design.md, Technical decisions: T5). One row per event, numbered by
+// the event sequence in commit order. `data` holds only the fields the event's
+// type declares in packages/core: Tiehall ids, fixed values, whole numbers and
+// booleans, never a body or an identifier from outside Tiehall. Who caused it:
+// a user acting through an agent or a web session, the system or an
+// integration (which may act for a user), or an operator command, which names
+// the command and no user. The actor kind `human` is reserved and never stored.
+// The app role may only insert and read events (activity-log: The activity log
+// is append-only).
+export const events = pgTable(
+  "events",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The event's number in the org's sequence, from 1. */
+    number: bigint("number", { mode: "number" }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    class: text("class").notNull(),
+    type: text("type").notNull(),
+    data: jsonb("data").notNull(),
+    actorKind: text("actor_kind").notNull(),
+    /** The accountable human, by their Tiehall user id. */
+    actorUserId: uuid("actor_user_id"),
+    /** The client: its Client ID Metadata Document URL, the OAuth client, or the CLI version. */
+    client: text("client"),
+    surface: text("surface"),
+    /** The team the user acted for. */
+    teamId: uuid("team_id"),
+    operatorCommand: text("operator_command"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.number] }),
+    check("events_number_positive", sql`${table.number} > 0`),
+    check("events_class_known", sql`${table.class} IN ('domain', 'security')`),
+    check("events_data_is_object", sql`jsonb_typeof(${table.data}) = 'object'`),
+    check(
+      "events_actor_kind_known",
+      sql`${table.actorKind} IN ('agent', 'web_session', 'system', 'integration', 'operator')`,
+    ),
+    check(
+      "events_surface_known",
+      sql`${table.surface} IS NULL OR ${table.surface} IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')`,
+    ),
+    check(
+      "events_actor_names_user",
+      sql`${table.actorKind} NOT IN ('agent', 'web_session') OR (${table.actorUserId} IS NOT NULL AND ${table.surface} IS NOT NULL)`,
+    ),
+    check(
+      "events_operator_names_command",
+      sql`(${table.actorKind} = 'operator') = (${table.operatorCommand} IS NOT NULL) AND (${table.actorKind} <> 'operator' OR (${table.actorUserId} IS NULL AND ${table.client} IS NULL AND ${table.surface} IS NULL AND ${table.teamId} IS NULL))`,
+    ),
+  ],
+);

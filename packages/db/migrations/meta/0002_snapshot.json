@@ -1,0 +1,244 @@
+{
+  "id": "08c91412-0f4e-42fc-b574-529bb0c8a4d9",
+  "prevId": "7bec0ca4-0ec5-4618-bccf-58042ae24034",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.event_sequence": {
+      "name": "event_sequence",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_number": {
+          "name": "last_number",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "event_sequence_org_id_orgs_id_fk": {
+          "name": "event_sequence_org_id_orgs_id_fk",
+          "tableFrom": "event_sequence",
+          "tableTo": "orgs",
+          "columnsFrom": [
+            "org_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.events": {
+      "name": "events",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "class": {
+          "name": "class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client": {
+          "name": "client",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "surface": {
+          "name": "surface",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "team_id": {
+          "name": "team_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operator_command": {
+          "name": "operator_command",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "events_org_id_orgs_id_fk": {
+          "name": "events_org_id_orgs_id_fk",
+          "tableFrom": "events",
+          "tableTo": "orgs",
+          "columnsFrom": [
+            "org_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "events_org_id_number_pk": {
+          "name": "events_org_id_number_pk",
+          "columns": [
+            "org_id",
+            "number"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "events_number_positive": {
+          "name": "events_number_positive",
+          "value": "\"events\".\"number\" > 0"
+        },
+        "events_class_known": {
+          "name": "events_class_known",
+          "value": "\"events\".\"class\" IN ('domain', 'security')"
+        },
+        "events_data_is_object": {
+          "name": "events_data_is_object",
+          "value": "jsonb_typeof(\"events\".\"data\") = 'object'"
+        },
+        "events_actor_kind_known": {
+          "name": "events_actor_kind_known",
+          "value": "\"events\".\"actor_kind\" IN ('agent', 'web_session', 'system', 'integration', 'operator')"
+        },
+        "events_surface_known": {
+          "name": "events_surface_known",
+          "value": "\"events\".\"surface\" IS NULL OR \"events\".\"surface\" IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')"
+        },
+        "events_actor_names_user": {
+          "name": "events_actor_names_user",
+          "value": "\"events\".\"actor_kind\" NOT IN ('agent', 'web_session') OR (\"events\".\"actor_user_id\" IS NOT NULL AND \"events\".\"surface\" IS NOT NULL)"
+        },
+        "events_operator_names_command": {
+          "name": "events_operator_names_command",
+          "value": "(\"events\".\"actor_kind\" = 'operator') = (\"events\".\"operator_command\" IS NOT NULL) AND (\"events\".\"actor_kind\" <> 'operator' OR (\"events\".\"actor_user_id\" IS NULL AND \"events\".\"client\" IS NULL AND \"events\".\"surface\" IS NULL AND \"events\".\"team_id\" IS NULL))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.orgs": {
+      "name": "orgs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "orgs_one_row": {
+          "name": "orgs_one_row",
+          "columns": [
+            {
+              "expression": "(true)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
