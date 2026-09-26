@@ -81,7 +81,15 @@ export function readSources(root: string): Sources {
 export function trackedFiles(root: string): string[] {
   return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
     .split("\0")
-    .filter((file) => file !== "" && !file.startsWith("openspec/") && !file.startsWith(".claude/") && file !== "pnpm-lock.yaml");
+    .filter(
+      (file) =>
+        file !== "" &&
+        !file.startsWith("openspec/") &&
+        !file.startsWith(".claude/") &&
+        file !== "pnpm-lock.yaml" &&
+        // The check's own test holds wrong citations on purpose, as fixtures.
+        file !== "tools/repo-checks/test/source-citations.test.ts",
+    );
 }
 
 function escape(text: string): string {
