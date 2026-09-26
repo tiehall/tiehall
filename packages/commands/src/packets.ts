@@ -1,6 +1,6 @@
-import { getPacket } from "@tiehall/catalog";
+import { getPacket, getPacketRevision } from "@tiehall/catalog";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { currentPacketOf } from "./packet-revisions.ts";
+import { packetRevisionOf } from "./packet-revisions.ts";
 import { resolveRequestKey } from "./request-keys.ts";
 
 // The packet operations (handoff-packet: Immutable, numbered revisions;
@@ -10,6 +10,11 @@ import { resolveRequestKey } from "./request-keys.ts";
 export const PACKET_HANDLERS: Handlers = {
   [getPacket.id]: defineHandler(getPacket, async ({ key }, context) => {
     const { requestId } = await resolveRequestKey(context, key);
-    return currentPacketOf(context, requestId);
+    return packetRevisionOf(context, requestId);
+  }),
+
+  [getPacketRevision.id]: defineHandler(getPacketRevision, async ({ key, revision }, context) => {
+    const { requestId } = await resolveRequestKey(context, key);
+    return packetRevisionOf(context, requestId, revision);
   }),
 };

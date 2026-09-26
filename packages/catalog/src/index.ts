@@ -58,7 +58,7 @@ export {
   type Packet,
   type PacketKind,
 } from "./packet.ts";
-export { getPacket, PACKET_COMMANDS, packetRevision } from "./packets.ts";
+export { getPacket, getPacketRevision, PACKET_COMMANDS, packetRevision } from "./packets.ts";
 export { role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";

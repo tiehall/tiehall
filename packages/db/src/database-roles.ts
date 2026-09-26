@@ -28,10 +28,16 @@ export const EVENT_TABLES: readonly string[] = ["public.events"];
 
 /**
  * Every table the app role may only insert into and read: the event tables,
- * and a request's thread, whose messages and versions are append-only
- * (requests: Messages are append-only).
+ * a request's thread, whose messages and versions are append-only (requests:
+ * Messages are append-only), and a request's packet revisions, which never
+ * change once created (handoff-packet: Immutable, numbered revisions).
  */
-export const APPEND_ONLY_TABLES: readonly string[] = [...EVENT_TABLES, "public.messages", "public.message_versions"];
+export const APPEND_ONLY_TABLES: readonly string[] = [
+  ...EVENT_TABLES,
+  "public.messages",
+  "public.message_versions",
+  "public.packet_revisions",
+];
 
 export interface AppRole {
   /** The role's name, which is the user in the app's database URL. */

@@ -93,6 +93,21 @@ export const messageEdited = defineEventType({
 });
 
 /**
+ * A revision was added to a request's packet (handoff-packet: Immutable,
+ * numbered revisions; requests: Events carry ids, not bodies). It names the
+ * request and the new revision's number, never the packet, which readers
+ * fetch through a read.
+ */
+export const requestPacketRevised = defineEventType({
+  type: "request.packet_revised",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    revision: { kind: "integer" },
+  },
+});
+
+/**
  * A request's state changed as the side effect of another change, such as a
  * blocking question moving it to needs_info or the last answer returning it
  * (requests: Thread messages and blocking questions; requests: The event
@@ -147,6 +162,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestReleased,
   messagePosted,
   messageEdited,
+  requestPacketRevised,
   requestStateChanged,
   memberRoleChanged,
   memberRemoved,

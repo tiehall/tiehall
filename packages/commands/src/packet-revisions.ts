@@ -1,17 +1,23 @@
 import type { Packet, packetRevision } from "@tiehall/catalog";
-import { Refusal } from "@tiehall/core";
+import { Refusal, requestPacketRevised } from "@tiehall/core";
 import { packetRevisions } from "@tiehall/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
-import type { stampOf } from "./request-changes.ts";
+import { lockRequestById, stampOf } from "./request-changes.ts";
 import { requestView } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
+import type { Writer } from "./write.ts";
 
 // A request's packet revisions (handoff-packet: Immutable, numbered
-// revisions; handoff-packet: Open objects, strict server). Each revision is a
-// row that holds the packet as the catalog's definition parsed it, so only the
-// keys the packet schema knows are stored, and the provenance of whoever added
-// it. The packet a request is opened with is revision 1.
+// revisions; handoff-packet: Open objects, strict server; requests: Events
+// carry ids, not bodies). Each revision is a row that holds the packet as the
+// catalog's definition parsed it, so only the keys the packet schema knows are
+// stored, and the provenance of whoever added it. The packet a request is
+// opened with is revision 1, and each change adds the next number: adding
+// locks the request's row first, so revisions added at once take their numbers
+// one after the other, and a number is never taken twice. A revision never
+// changes once it is stored, which the database also refuses (migration 0020),
+// and each stays readable by its number.
 
 /** A packet revision as the packet operations return it. */
 export type PacketRevisionView = z.input<typeof packetRevision>;
@@ -32,13 +38,36 @@ export async function insertPacketRevision(
   await tx.insert(packetRevisions).values({ orgId, requestId, number, packet, ...stamp });
 }
 
-/** The request's packet at its current revision; 404 when the request has none. */
-export async function currentPacketOf(context: OrgContext, requestId: string): Promise<PacketRevisionView> {
+/**
+ * Adds the next revision of the request's packet, with the write's provenance,
+ * and the domain event that names it; returns the new revision's number.
+ */
+export async function addPacketRevision(writer: Writer, requestId: string, packet: Packet): Promise<number> {
+  await lockRequestById(writer, requestId);
+  const [latest] = await writer.tx
+    .select({ number: sql<number>`coalesce(max(${packetRevisions.number}), 0)::int` })
+    .from(packetRevisions)
+    .where(and(eq(packetRevisions.orgId, writer.orgId), eq(packetRevisions.requestId, requestId)));
+  const number = (latest?.number ?? 0) + 1;
+  const { provenance } = writer;
+  await insertPacketRevision(writer, requestId, number, packet, stampOf(provenance, provenance.actorKind === "operator" ? undefined : provenance.teamId));
+  await writer.record(requestPacketRevised, { requestId, revision: number });
+  return number;
+}
+
+/** The request's packet at a revision, the current one unless a number is given; 404 when the request has no such revision. */
+export async function packetRevisionOf(context: OrgContext, requestId: string, revision?: number): Promise<PacketRevisionView> {
   const { tx, orgId } = context;
   const [row] = await tx
     .select({ number: packetRevisions.number, packet: packetRevisions.packet, createdAt: packetRevisions.createdAt })
     .from(packetRevisions)
-    .where(and(eq(packetRevisions.orgId, orgId), eq(packetRevisions.requestId, requestId)))
+    .where(
+      and(
+        eq(packetRevisions.orgId, orgId),
+        eq(packetRevisions.requestId, requestId),
+        ...(revision === undefined ? [] : [eq(packetRevisions.number, revision)]),
+      ),
+    )
     .orderBy(desc(packetRevisions.number))
     .limit(1);
   if (row === undefined) throw noSuchRevision();

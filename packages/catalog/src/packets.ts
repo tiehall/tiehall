@@ -34,4 +34,21 @@ export const getPacket = defineCommand({
   stability: "alpha",
 });
 
-export const PACKET_COMMANDS = [getPacket];
+export const getPacketRevision = defineCommand({
+  id: "packets.get_revision",
+  summary: "Read a revision of a request's packet by its number; a revision never changes once it is added.",
+  input: z.object({
+    key: requestKey,
+    revision: z.coerce.number().int().min(1).meta({ description: "The revision's number, from 1 for the packet the request was opened with." }),
+  }),
+  output: packetRevision,
+  method: "GET",
+  path: "/api/v1/requests/{key}/packet/revisions/{revision}",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const PACKET_COMMANDS = [getPacket, getPacketRevision];

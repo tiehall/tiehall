@@ -23,6 +23,8 @@ export interface Store {
 }
 
 export interface Writer extends OrgContext {
+  /** Who causes this write, as the server stamped it, for the rows that record it, such as a message or a packet revision. */
+  readonly provenance: Provenance;
   /** Records an event of this write, with the caller's provenance. */
   record<T extends EventType>(type: T, data: EventData<T>): Promise<AppendedEvent>;
   /** Starts a job that commits with this write. */
@@ -77,6 +79,7 @@ export async function writeIn<R>(
   let recorded = 0;
   const writer: Writer = {
     ...context,
+    provenance,
     async record(type, data) {
       const event = await appendEvent(context, type, data, provenance);
       recorded++;
