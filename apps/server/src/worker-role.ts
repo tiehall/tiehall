@@ -29,29 +29,24 @@ export interface WorkerRoleOptions {
 
 export async function runWorkerRole(settings: Pick<AppSettings, "database" | "url" | "smtp">, options: WorkerRoleOptions = {}): Promise<void> {
   const logger = options.logger ?? createLogger().child({ role: "worker" });
-  let worker;
-  try {
-    worker = await startWorker({
-      connection: settings.database,
-      jobs: options.jobs ?? WORKER_JOBS,
-      // Email goes out through the install's SMTP settings, or, without them, nowhere.
-      mailer: openMailer(settings.smtp),
-      installUrl: settings.url,
-      ...(options.stopTimeoutMs === undefined ? {} : { stopTimeoutMs: options.stopTimeoutMs }),
-      ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
-      logger,
-    });
-  } catch (error) {
-    // A start fails before any job runs, on the connection or the job queue's schema, so its reason holds no
-    // job's data; the logger still drops credentials from it.
-    logger.error(`tiehall worker: failed to start: ${error instanceof Error ? error.message : String(error)}`, { error });
-    process.exit(1);
-  }
+  const starting = startWorker({
+    connection: settings.database,
+    jobs: options.jobs ?? WORKER_JOBS,
+    // Email goes out through the install's SMTP settings, or, without them, nowhere.
+    mailer: openMailer(settings.smtp),
+    installUrl: settings.url,
+    ...(options.stopTimeoutMs === undefined ? {} : { stopTimeoutMs: options.stopTimeoutMs }),
+    ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
+    logger,
+  });
+  // The signal handlers go on before the start finishes: the worker logs "started" from inside the start, and
+  // a SIGTERM that arrived between that line and the handler's registration would end the process with the
+  // signal's default action, not gracefully. A stop that comes early waits for the start, then stops.
   let stopping = false;
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    worker.stop().then(
+    starting.then((worker) => worker.stop()).then(
       () => process.exit(0),
       (error: unknown) => {
         logger.error("tiehall worker: stop failed", { error });
@@ -61,4 +56,12 @@ export async function runWorkerRole(settings: Pick<AppSettings, "database" | "ur
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
+  try {
+    await starting;
+  } catch (error) {
+    // A start fails before any job runs, on the connection or the job queue's schema, so its reason holds no
+    // job's data; the logger still drops credentials from it.
+    logger.error(`tiehall worker: failed to start: ${error instanceof Error ? error.message : String(error)}`, { error });
+    process.exit(1);
+  }
 }
