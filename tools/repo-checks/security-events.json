@@ -1,0 +1,119 @@
+{
+  "$comment": "The actions Tiehall records a security event for, mirroring the list of activity-log: Which actions are security events, one item per bullet of the spec, in its order. Each action names the task that builds it until that task does; then it names the type of its security event and the test that shows the action appending that event together with its change (a test file of the repository and the exact title of a test in it). pnpm check:security-events checks this file.",
+  "items": [
+    {
+      "item": "a sign-in, and a refused sign-in, naming the GitHub account that was refused; a sign-in that clears an admin removal's block, as the sign-in capability defines, SHALL name the clearing;",
+      "actions": [
+        { "action": "a sign-in", "pending": "7.14" },
+        { "action": "a refused sign-in", "pending": "7.14" },
+        { "action": "a sign-in that clears an admin removal's block", "pending": "9.9" }
+      ]
+    },
+    {
+      "item": "a role change, an invite, the revocation of an invite, and a member's removal, naming whether an admin removed them, with the block that such a removal records, or they were removed because they left the GitHub organization, as the sign-in capability defines;",
+      "actions": [
+        {
+          "action": "a role change",
+          "event": "member.role_changed",
+          "test": {
+            "file": "packages/commands/test/member-roles.test.ts",
+            "case": "makes the member an admin, and the activity log gains a security event naming the admin, the member and the new role"
+          }
+        },
+        { "action": "an invite", "pending": "9.5" },
+        { "action": "the revocation of an invite", "pending": "9.6" },
+        {
+          "action": "a member's removal by an admin, with the block it records",
+          "event": "member.removed",
+          "test": {
+            "file": "packages/commands/test/member-removal.test.ts",
+            "case": "ends the membership of the install and of every team, and records a security event naming the admin and the block"
+          }
+        },
+        { "action": "a member's removal because they left the GitHub organization", "pending": "10.9" }
+      ]
+    },
+    {
+      "item": "a change of the sign-in policy;",
+      "actions": [{ "action": "a change of the sign-in policy", "pending": "9.10" }]
+    },
+    {
+      "item": "an agent client's approval, and the revocation of an agent grant;",
+      "actions": [
+        { "action": "an agent client's approval", "pending": "15.10" },
+        { "action": "the revocation of an agent grant", "pending": "15.17" }
+      ]
+    },
+    {
+      "item": "a personal access token created or revoked;",
+      "actions": [
+        { "action": "a personal access token created", "pending": "15.14" },
+        { "action": "a personal access token revoked", "pending": "15.17" }
+      ]
+    },
+    {
+      "item": "an integration connected, changed or disconnected, and a new private key uploaded for the install's GitHub App;",
+      "actions": [
+        { "action": "a GitHub installation connected", "pending": "10.3" },
+        { "action": "a GitHub installation disconnected", "pending": "10.3" },
+        { "action": "the Jira connection connected", "pending": "25.1" },
+        { "action": "the Jira connection changed", "pending": "25.2" },
+        { "action": "the Jira connection disconnected", "pending": "25.2" },
+        { "action": "a new private key uploaded for the install's GitHub App", "pending": "10.10" }
+      ]
+    },
+    {
+      "item": "an Atlassian account linked or unlinked by its user, and an admin's removal of a link, as the tracker-mirrors capability defines;",
+      "actions": [
+        { "action": "an Atlassian account linked by its user", "pending": "25.12" },
+        { "action": "an Atlassian account unlinked by its user", "pending": "25.12" },
+        { "action": "an admin's removal of an Atlassian link", "pending": "25.12" }
+      ]
+    },
+    {
+      "item": "an API registered for contract reports, and an API unregistered;",
+      "actions": [
+        { "action": "an API registered for contract reports", "pending": "22.1" },
+        { "action": "an API unregistered", "pending": "22.2" }
+      ]
+    },
+    {
+      "item": "a contract-change fan-out confirmed;",
+      "actions": [{ "action": "a contract-change fan-out confirmed", "pending": "23.8" }]
+    },
+    {
+      "item": "a change to the PAT switch, the longest PAT lifetime or the daily write budget;",
+      "actions": [
+        { "action": "a change to the PAT switch", "pending": "15.15" },
+        { "action": "a change to the longest PAT lifetime", "pending": "15.15" },
+        {
+          "action": "a change to the daily write budget",
+          "event": "settings.write_budget_changed",
+          "test": {
+            "file": "packages/commands/test/write-limits.test.ts",
+            "case": "is an admin's action with the confirmation step: a confirmed change to 8,000 applies and is a security event"
+          }
+        }
+      ]
+    },
+    {
+      "item": "an operator command run on the host, `admin grant` or `setup reopen`, as the self-host-install capability defines, naming the command and what it changed, and no user;",
+      "actions": [
+        { "action": "admin grant run on the host", "pending": "21.1" },
+        { "action": "setup reopen run on the host", "pending": "21.2" }
+      ]
+    },
+    {
+      "item": "a `reconciled` event, as the requirement on reconciliation defines;",
+      "actions": [{ "action": "a reconciled event", "pending": "20.2" }]
+    },
+    {
+      "item": "an export of the activity log;",
+      "actions": [{ "action": "an export of the activity log", "pending": "20.6" }]
+    },
+    {
+      "item": "the completion of setup, naming the first admin.",
+      "actions": [{ "action": "the completion of setup", "pending": "7.9" }]
+    }
+  ]
+}

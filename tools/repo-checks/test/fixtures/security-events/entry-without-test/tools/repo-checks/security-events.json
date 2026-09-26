@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "item": "a role change, and a member's removal;",
+      "actions": [{ "action": "a role change", "event": "member.role_changed" }, { "action": "a member's removal", "pending": "9.8" }]
+    },
+    {
+      "item": "an export of the activity log.",
+      "actions": [{ "action": "an export of the activity log", "pending": "20.6" }]
+    }
+  ]
+}

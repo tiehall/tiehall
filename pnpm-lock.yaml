@@ -491,6 +491,9 @@ importers:
       '@tiehall/catalog':
         specifier: workspace:*
         version: link:../../packages/catalog
+      '@tiehall/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@tiehall/packet':
         specifier: workspace:*
         version: link:../../packages/packet

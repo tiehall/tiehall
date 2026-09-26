@@ -216,6 +216,32 @@ jobs:
       # agent-safety: The confirmation step runs only in the web UI).
       - run: pnpm check:confirmations
 
+  security-event-coverage:
+    name: Security-event coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      # The check reads the event types Tiehall defines, so packages/core is installed too.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks --filter "@tiehall/core..."
+      # tools/repo-checks/security-events.json mirrors the spec's list of the
+      # actions Tiehall records a security event for; an action a finished task
+      # built names its security event and the test, run by `pnpm test`, that
+      # shows the action appending that event together with its change; and
+      # every security event type Tiehall defines is named by a listed action
+      # (activity-log: Which actions are security events).
+      - run: pnpm check:security-events
+
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-24.04

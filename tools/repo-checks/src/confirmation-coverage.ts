@@ -1,6 +1,9 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Catalog } from "@tiehall/catalog";
+import { activeChange, requirementListItems, taskStates } from "./plan.ts";
+
+export { taskStates } from "./plan.ts";
 
 // The confirmation coverage check (agent-safety: Actions that need the
 // confirmation step; agent-safety: The confirmation step runs only in the web
@@ -30,7 +33,7 @@ import type { Catalog } from "@tiehall/catalog";
 export const CONFIRMATION_LIST = "tools/repo-checks/confirmation-actions.json";
 /** The requirement the list mirrors. */
 export const REQUIREMENT = "agent-safety: Actions that need the confirmation step";
-const HEADING = "### Requirement: Actions that need the confirmation step";
+const REQUIREMENT_NAME = "Actions that need the confirmation step";
 
 /** An action of the list: built, with its command and an input for its two cases, or pending on the task that builds it. */
 export type ConfirmationAction =
@@ -57,23 +60,7 @@ export interface CoverageInputs {
 
 /** The bullets of the requirement's list, each without its "- ". */
 export function specItems(spec: string): string[] {
-  const lines = spec.split("\n");
-  const start = lines.findIndex((line) => line.trim() === HEADING);
-  if (start === -1) return [];
-  const items: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith("### ")) break;
-    if (line.startsWith("- ")) items.push(line.slice(2).trim());
-    else if (items.length > 0 && line.trim() === "") break;
-  }
-  return items;
-}
-
-/** The plan's tasks by number, each done ("- [x]") or not ("- [ ]"). */
-export function taskStates(tasks: string): Map<string, boolean> {
-  const states = new Map<string, boolean>();
-  for (const [, mark = "", number = ""] of tasks.matchAll(/^- \[([ x])\] (\d+\.\d+) /gm)) states.set(number, mark === "x");
-  return states;
+  return requirementListItems(spec, REQUIREMENT_NAME);
 }
 
 /** The list's built actions: those that name their confirm command. */
@@ -173,20 +160,6 @@ function operationsOf(document: unknown): [string, Record<string, unknown>][] {
 function toolsOf(snapshot: unknown): Record<string, unknown>[] {
   const tools = (snapshot as { tools?: unknown } | null)?.tools;
   return Array.isArray(tools) ? tools.filter((tool): tool is Record<string, unknown> => typeof tool === "object" && tool !== null) : [];
-}
-
-/**
- * The active change's folder under openspec/changes, which holds the plan and
- * the spec the list mirrors while the change is in progress; undefined once it
- * is archived.
- */
-function activeChange(root: string): string | undefined {
-  const changes = join(root, "openspec", "changes");
-  if (!existsSync(changes)) return undefined;
-  const folders = readdirSync(changes, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "archive" && existsSync(join(changes, entry.name, "tasks.md")))
-    .map((entry) => join(changes, entry.name));
-  return folders.length === 1 ? folders[0] : undefined;
 }
 
 /** Reads the check's inputs from a repository's root, with the catalog the checked code builds. */

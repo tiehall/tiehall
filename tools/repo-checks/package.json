@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tiehall/catalog": "workspace:*",
+    "@tiehall/core": "workspace:*",
     "@tiehall/packet": "workspace:*"
   },
   "devDependencies": {
