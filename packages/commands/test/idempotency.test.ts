@@ -22,6 +22,7 @@ import {
   type Handler,
   type RestHandler,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // Idempotency-Key on every POST (public-api: POST operations take an
 // Idempotency-Key; design.md, Decisions this change rests on: D28 #20),
@@ -118,6 +119,8 @@ beforeAll(async () => {
     now: () => now,
   });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: alice.userId });
+  await addUser(owner, { userId: bob.userId });
 });
 
 afterAll(async () => {

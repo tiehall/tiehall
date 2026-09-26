@@ -20,6 +20,7 @@ import {
   type Database,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // What the confirmation step records (agent-safety: Actions that need the
 // confirmation step; requests: Provenance is stamped by the server; design.md,
@@ -74,6 +75,7 @@ beforeAll(async () => {
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: pia.userId, role: "admin" });
   await owner.query("INSERT INTO probe_members VALUES ($1, 'member')", [LEE]);
 });
 

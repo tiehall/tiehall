@@ -21,6 +21,7 @@ import {
   type WebSessionCaller,
   type WebWriteRequest,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The web UI's authorization path (public-api: One definition per operation,
 // the same on every surface; design.md, Technical decisions: T3). Server
@@ -85,6 +86,8 @@ beforeAll(async () => {
     store: { database: db, jobs: { send: async () => {} } },
   });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: TARGET_MEMBER });
+  await addUser(owner, { userId: OTHER_MEMBER });
 });
 
 afterAll(async () => {

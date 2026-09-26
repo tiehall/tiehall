@@ -21,6 +21,7 @@ import {
   type WebSessionCaller,
   type WebWriteRequest,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // Every web UI write passes three checks (agent-safety: One confirmation
 // approves one action; agent-safety: Actions that need the confirmation step;
@@ -116,6 +117,7 @@ beforeAll(async () => {
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: pia.userId, role: "admin" });
   execute = createExecute({ catalog, handlers, store: { database: db, jobs: { send: async () => {} } }, confirmations: nonces });
 });
 

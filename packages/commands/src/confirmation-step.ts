@@ -3,6 +3,7 @@ import { Refusal, type RefusalIssue, type Review } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationNonces } from "./confirmations.ts";
+import { assertRoleAllows } from "./members.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import type { Store } from "./write.ts";
 
@@ -18,7 +19,9 @@ import type { Store } from "./write.ts";
 // - parses the input against the command's schema first, refusing input that
 //   fails it with 400, so the page reviews the input the command will get;
 // - runs inside withOrg() in a read-only transaction, so a review can read
-//   what it needs and can never change anything;
+//   what it needs and can never change anything, and only for a user who is
+//   still a member (403 removed-member otherwise) and whose role allows the
+//   action (403 for a member on an admin action's page);
 // - comes with the confirmation nonce for the page, bound to the user, the
 //   session and the command with that exact input, which stores nothing
 //   (agent-safety: One confirmation approves one action).
@@ -83,7 +86,14 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
       if (!parsed.success) {
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
       }
-      const review = await withOrg(services.store.database, (context) => handler(parsed.data, { ...context, caller }), { readOnly: true });
+      const review = await withOrg(
+        services.store.database,
+        (context) => {
+          assertRoleAllows(definition, context.member);
+          return handler(parsed.data, { ...context, caller });
+        },
+        { readOnly: true, forUser: caller.userId },
+      );
       return { commandId, input: parsed.data, review, nonce: services.confirmations.issue(caller, commandId, parsed.data) };
     },
   };

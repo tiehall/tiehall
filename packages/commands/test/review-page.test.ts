@@ -17,6 +17,7 @@ import {
   type Reviews,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The review page of the confirmation step (agent-safety: The review page of
 // the confirmation step; design.md, Self-hosting decisions: S7). Before an
@@ -129,6 +130,7 @@ beforeAll(async () => {
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: ALICE });
   await owner.query("INSERT INTO probe_users (id, login) VALUES ($1, 'alice-gh')", [ALICE]);
   await owner.query("INSERT INTO probe_proposals VALUES ($1, 'FE-142', 'BE', $2)", [PROPOSAL, OTHER_TEAMS_NEED]);
 });

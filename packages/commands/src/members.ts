@@ -1,4 +1,5 @@
-import type { Role } from "@tiehall/core";
+import type { CommandDefinition } from "@tiehall/catalog";
+import { Refusal, roleAllows, type Role } from "@tiehall/core";
 import { members } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { OrgContext } from "./with-org.ts";
@@ -17,10 +18,21 @@ export interface Member {
 }
 
 /** The user's membership, read in the call's transaction; undefined when they are not a member. */
-export async function memberOf({ tx, orgId }: OrgContext, userId: string): Promise<Member | undefined> {
+export async function memberOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string): Promise<Member | undefined> {
   const [row] = await tx
     .select({ role: members.role })
     .from(members)
     .where(and(eq(members.orgId, orgId), eq(members.userId, userId)));
   return row === undefined ? undefined : { userId, role: row.role as Role };
+}
+
+/**
+ * Refuses an admin action with 403 to a user whose role does not allow it, as
+ * the role matrix says (teams-and-roles: What admins and members may do).
+ */
+export function assertRoleAllows(definition: Pick<CommandDefinition, "admin">, member: Member | undefined): void {
+  if (definition.admin === undefined) return;
+  if (member === undefined || !roleAllows(member.role, definition.admin)) {
+    throw new Refusal("forbidden", "Only an admin of the install may do this.");
+  }
 }

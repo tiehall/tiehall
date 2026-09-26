@@ -17,11 +17,12 @@ import {
   type Database,
   type RestHandler,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The rows of the error model that REST reaches now (public-api: One error
 // model for Tiehall's own refusals; public-api: Errors are RFC 9457 problem
-// details), through the real route and execute(): both 404 rows, 400, 409,
-// 429 with Retry-After and 503 setup-required. The 503 with Retry-After: 0
+// details), through the real route and execute(): both 404 rows, 400, 403 for
+// a removed member, 409, 429 with Retry-After and 503 setup-required. The 503 with Retry-After: 0
 // that a call gets while the app shuts down is the web role's, tested in
 // apps/server. Later tasks add a test for each row they make reachable.
 
@@ -143,6 +144,7 @@ describe("before setup is complete", () => {
 describe("once the install has its org", () => {
   beforeAll(async () => {
     await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+    await addUser(owner, { userId: agent.userId });
   });
 
   it("answers a path that serves no operation with 404 route-not-found", async () => {
@@ -167,6 +169,17 @@ describe("once the install has its org", () => {
     const { status, problem } = await send("POST", "/api/v1/probes/FE-142/claim", {});
     expect(status).toBe(409);
     expect(problem).toMatchObject({ type: `${PROBLEM_TYPE_BASE}conflict`, status: 409 });
+  });
+
+  it("answers a caller who has been removed from the install with 403 removed-member", async () => {
+    await owner.query("DELETE FROM members WHERE user_id = $1", [agent.userId]);
+    try {
+      const { status, problem } = await send("GET", "/api/v1/probes/FE-9999");
+      expect(status).toBe(403);
+      expect(problem).toMatchObject({ type: `${PROBLEM_TYPE_BASE}removed-member`, status: 403 });
+    } finally {
+      await owner.query("INSERT INTO members (org_id, user_id, role) SELECT id, $1, 'member' FROM orgs", [agent.userId]);
+    }
   });
 
   it("answers an exceeded limit with 429 and Retry-After", async () => {

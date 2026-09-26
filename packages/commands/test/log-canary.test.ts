@@ -24,6 +24,7 @@ import {
   type RunningJob,
   type WorkerServices,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The log canary (self-host-install: Logs carry ids, never message text or
 // credentials; design.md, Technical decisions: T17). A background job for a
@@ -38,6 +39,8 @@ import {
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const CANARY_TEXT = `Please rotate the staging keys; canary-${randomBytes(8).toString("hex")}`;
 const CANARY_TOKEN = `th_pat_${randomBytes(20).toString("hex")}`;
+/** The member the canary token acts for. */
+const AGENT_USER = randomUUID();
 const mirrorMessage = defineJobType<{ messageId: string }>("probe.mirror_message", 1, {
   retryLimit: 0,
   retryDelaySeconds: 0,
@@ -68,6 +71,7 @@ beforeAll(async () => {
   db = openDatabase(app);
   queue = await openJobQueue({ connection: app, jobTypes: [mirrorMessage], logger: createLogger({ write: () => {} }) });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: AGENT_USER });
 });
 
 afterAll(async () => {
@@ -187,7 +191,7 @@ describe("a REST request that fails while carrying message text and a token", ()
       execute,
       authenticate: async (request) =>
         request.headers.get("authorization") === `Bearer ${CANARY_TOKEN}`
-          ? { kind: "personal_access_token", userId: randomUUID(), tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" }
+          ? { kind: "personal_access_token", userId: AGENT_USER, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" }
           : undefined,
       logger: createLogger({ write: (line) => lines.push(line) }),
     });

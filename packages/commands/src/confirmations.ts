@@ -73,12 +73,15 @@ export interface GatedRouteClaim {
 /**
  * The route guard's check for a gated route: it consumes the nonce, in its own
  * transaction, and says whether the route may run; a route that may not
- * answers 403 and changes nothing.
+ * answers 403 and changes nothing. A user who is no longer a member is refused
+ * with 403 removed-member before the nonce is looked at.
  */
 export function consumeForGatedRoute(database: Database, confirmations: Confirmations, claim: GatedRouteClaim): Promise<boolean> {
   const { caller, action, input, nonce } = claim;
-  return withOrg(database, (context) =>
-    confirmations.consume(context, { nonce, userId: caller.userId, sessionId: caller.sessionId, commandId: action, input }),
+  return withOrg(
+    database,
+    (context) => confirmations.consume(context, { nonce, userId: caller.userId, sessionId: caller.sessionId, commandId: action, input }),
+    { forUser: caller.userId },
   );
 }
 

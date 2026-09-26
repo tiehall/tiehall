@@ -21,6 +21,7 @@ import {
   type Handlers,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The confirmation nonce (agent-safety: One confirmation approves one action;
 // design.md, Technical decisions: T3 and T8; design.md, Self-hosting
@@ -107,6 +108,8 @@ beforeAll(async () => {
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: pia.userId, role: "admin" });
+  await addUser(owner, { userId: dana.userId });
   await owner.query("INSERT INTO probe_members VALUES ($1, 'member'), ($2, 'member')", [LEE, KIM]);
   execute = createExecute({ catalog, handlers, store: { database: db, jobs: { send: async () => {} } }, confirmations: nonces });
 });

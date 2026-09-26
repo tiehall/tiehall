@@ -22,6 +22,7 @@ import {
   type Reviews,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // The two cases of every action that needs the confirmation step (agent-safety:
 // Actions that need the confirmation step; agent-safety: One confirmation
@@ -70,6 +71,7 @@ beforeAll(async () => {
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: pia.userId, role: "admin" });
 });
 
 afterAll(async () => {

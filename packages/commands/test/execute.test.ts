@@ -17,6 +17,7 @@ import {
   type Execute,
   type Handlers,
 } from "../src/index.ts";
+import { addUser } from "./support/members.ts";
 
 // execute() (public-api: Input and output follow the published schemas;
 // agent-access: Six kinds of caller; design.md, Technical decisions: T3). Every
@@ -177,6 +178,8 @@ beforeAll(async () => {
     },
   });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
+  await addUser(owner, { userId: PIA });
+  await addUser(owner, { userId: BOB });
 });
 
 afterAll(async () => {
