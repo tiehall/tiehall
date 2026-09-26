@@ -18,6 +18,9 @@
 // The one secret a log line shows on purpose is the setup code, which the
 // setup screen's task prints in a message (self-host-install: Logs carry ids,
 // never message text or credentials).
+// What a library prints to the console, such as the Next.js server that the
+// web role loads, can be sent through a logger with routeConsoleTo(), so that
+// it too is JSON on standard output and passes the same redaction.
 
 export type LogLevel = "info" | "warn" | "error";
 export type LogFields = Readonly<Record<string, unknown>>;
@@ -67,6 +70,64 @@ export function createLogger(options: LoggerOptions = {}, bindings: LogFields = 
     error: line("error"),
     child: (fields) => createLogger({ write, now }, { ...bindings, ...fields }),
   };
+}
+
+/** The console methods libraries print with, and the level each one logs at. */
+const CONSOLE_LEVELS = {
+  log: "info",
+  info: "info",
+  debug: "info",
+  dir: "info",
+  warn: "warn",
+  error: "error",
+  trace: "error",
+} as const satisfies Record<string, LogLevel>;
+
+/** Colors and other ANSI escape sequences that libraries print for a terminal. */
+const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
+/**
+ * Sends every call of the console's printing methods through the logger, as
+ * one JSON line at the level of the method, with the field `via: "console"`:
+ * the printed strings, without colors, form the message; a printed error is
+ * logged as an error is, by its name, code and stack frames, never its
+ * message; other printed values go under `values`, redacted as fields are. A
+ * call that prints only blank strings writes no line. Returns a function that
+ * gives the console back as it was.
+ */
+export function routeConsoleTo(logger: Logger, target: Console = console): () => void {
+  const printing = logger.child({ via: "console" });
+  const originals = new Map<keyof typeof CONSOLE_LEVELS, unknown>();
+  for (const [method, level] of Object.entries(CONSOLE_LEVELS) as [keyof typeof CONSOLE_LEVELS, LogLevel][]) {
+    originals.set(method, target[method]);
+    target[method] = (...args: unknown[]) => {
+      const line = consoleLine(args);
+      if (line !== undefined) printing[level](line.msg, line.fields);
+    };
+  }
+  return () => {
+    for (const [method, original] of originals) (target as unknown as Record<string, unknown>)[method] = original;
+  };
+}
+
+function consoleLine(args: readonly unknown[]): { msg: string; fields: Record<string, unknown> } | undefined {
+  const words: string[] = [];
+  const errors: unknown[] = [];
+  const values: unknown[] = [];
+  for (const arg of args) {
+    if (typeof arg === "string") words.push(arg.replace(ANSI, ""));
+    else if (typeof arg === "number" || typeof arg === "boolean" || typeof arg === "bigint") words.push(String(arg));
+    else if (arg instanceof Error || (typeof arg === "object" && arg !== null && isErrorLike(arg))) errors.push(arg);
+    else if (arg !== undefined) values.push(arg);
+  }
+  const text = words.join(" ").replace(/\s+/g, " ").trim();
+  if (text === "" && errors.length === 0 && values.length === 0) return undefined;
+  const fields: Record<string, unknown> = {};
+  if (errors.length === 1) fields["error"] = errors[0];
+  else if (errors.length > 1) fields["errors"] = errors;
+  if (values.length > 0) fields["values"] = values;
+  const msg = text !== "" ? text : errors.length > 0 ? "an error was printed to the console" : "a value was printed to the console";
+  return { msg, fields };
 }
 
 /** Words that, as a whole word of a field's name, say it holds content someone wrote. */

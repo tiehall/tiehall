@@ -18,7 +18,10 @@ const fixture = fileURLToPath(new URL("./support/web-with-fixture-server.ts", im
 interface Running {
   child: ChildProcess;
   port: number;
+  /** Everything the process wrote, standard output and standard error together. */
   output: () => string;
+  /** What it wrote to standard output alone. */
+  stdout: () => string;
   exited: Promise<number | null>;
 }
 
@@ -60,10 +63,14 @@ async function startWebRole(env: Record<string, string> = {}): Promise<Running> 
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+  let stdout = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+    stdout += chunk.toString();
+  });
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   const exited = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
-  running = { child, port, output: () => output, exited };
+  running = { child, port, output: () => output, stdout: () => stdout, exited };
   await until("the server to listen", () => output.includes("fixture: listening"));
   return running;
 }
@@ -101,6 +108,11 @@ describe("the web role on SIGTERM", () => {
     expect(await slow).toEqual({ status: 200, body: "slow call done" });
     expect(await web.exited).toBe(0);
     expect(logEntries(web.output()).map(({ msg }) => msg)).toEqual([
+      "▲ Next.js 16.3.5",
+      `- Local: http://localhost:${web.port}`,
+      "✓ Ready in 0ms",
+      "fixture: listening",
+      "fixture: slow call started",
       "web: stopping; new calls get 503 until the 1 call in flight finishes",
       "web: stopped",
     ]);
@@ -122,5 +134,34 @@ describe("the web role on SIGTERM", () => {
     expect(await web.exited).toBe(0);
     expect(await slow).toBe("cut off");
     expect(logEntries(web.output()).map(({ msg }) => msg)).toContain("web: stopped; cut off 1 call still in flight after 300 ms");
+  });
+});
+
+// self-host-install: Logs carry ids, never message text or credentials. The logs are JSON on standard output,
+// what the server the role loads prints to the console included.
+describe("the web role's log", () => {
+  it("is only JSON lines on standard output, with what the server prints to the console redacted like any line", async () => {
+    const web = await startWebRole();
+    const canary = `canary-${randomBytes(8).toString("hex")}`;
+    const failed = await fetch(`http://127.0.0.1:${web.port}/fail/${canary}?token=th_pat_${canary}`);
+    expect(failed.status).toBe(500);
+    await until("the server to print its error", () => web.output().includes('"msg":"⨯"'));
+    web.child.kill("SIGTERM");
+    expect(await web.exited).toBe(0);
+
+    const lines = web.stdout().split("\n").filter((line) => line !== "");
+    for (const line of lines) expect(() => JSON.parse(line) as unknown, line).not.toThrow();
+    const entries = logEntries(web.stdout());
+    expect(entries.length).toBe(lines.length);
+    expect(entries.slice(0, 4)).toEqual([
+      expect.objectContaining({ level: "info", msg: "▲ Next.js 16.3.5", role: "web", via: "console" }),
+      expect.objectContaining({ level: "info", msg: `- Local: http://localhost:${web.port}`, role: "web", via: "console" }),
+      expect.objectContaining({ level: "info", msg: "✓ Ready in 0ms", role: "web", via: "console" }),
+      expect.objectContaining({ level: "info", msg: "fixture: listening", role: "web", via: "console" }),
+    ]);
+    expect(entries).toContainEqual(
+      expect.objectContaining({ level: "error", msg: "⨯", via: "console", error: expect.objectContaining({ name: "Error" }) }),
+    );
+    expect(web.output()).not.toContain(canary);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLogger, LOGGABLE, type LogEntry } from "../src/index.ts";
+import { createLogger, LOGGABLE, routeConsoleTo, type LogEntry } from "../src/index.ts";
 
 // Logs carry ids, never message text or credentials (self-host-install: Logs
 // carry ids, never message text or credentials; design.md, Self-hosting
@@ -165,5 +165,65 @@ describe("redaction", () => {
     expect(entry?.["loop"]).toEqual({ id: "a", self: "[circular]" });
     expect(JSON.stringify(entry?.["deep"])).toContain("[truncated]");
     expect(entry?.["big"]).toBe("10");
+  });
+});
+
+// What a library prints to the console, such as the Next.js server the web role loads, which prints its version,
+// its addresses and "Ready" at start, goes through the logger too, so every line on standard output is JSON
+// and passes the same redaction.
+describe("console output", () => {
+  /** A console of the methods libraries print with, standing in for the global one. */
+  function fakeConsole(): Console {
+    const unused = () => {
+      throw new Error("the console itself was written to");
+    };
+    return { log: unused, info: unused, debug: unused, warn: unused, error: unused, trace: unused, dir: unused } as unknown as Console;
+  }
+
+  it("becomes one JSON line per call, at the level of the method, without colors or blank lines", () => {
+    const { entries, logger } = capture();
+    const target = fakeConsole();
+    routeConsoleTo(logger, target);
+    target.log("\u001b[1m\u001b[35m▲ Next.js 16.3.5\u001b[39m\u001b[22m");
+    target.log("   - Local:        http://localhost:3000");
+    target.log("");
+    target.info(" ", "✓ Ready in 0ms");
+    target.warn("⚠", "the config has an unknown key", 2);
+    target.debug("debug line");
+    expect(entries()).toEqual([
+      { time: "2026-10-01T12:00:00.000Z", level: "info", msg: "▲ Next.js 16.3.5", via: "console" },
+      { time: "2026-10-01T12:00:00.000Z", level: "info", msg: "- Local: http://localhost:3000", via: "console" },
+      { time: "2026-10-01T12:00:00.000Z", level: "info", msg: "✓ Ready in 0ms", via: "console" },
+      { time: "2026-10-01T12:00:00.000Z", level: "warn", msg: "⚠ the config has an unknown key 2", via: "console" },
+      { time: "2026-10-01T12:00:00.000Z", level: "info", msg: "debug line", via: "console" },
+    ]);
+  });
+
+  it("logs a printed error by its name and stack frames, never its message, and redacts what it prints", () => {
+    const { lines, entries, logger } = capture();
+    const target = fakeConsole();
+    routeConsoleTo(logger, target);
+    target.error("⨯", new TypeError(CANARY_TEXT));
+    target.error(new Error(`${CANARY_TEXT} ${CANARY_PAT}`));
+    target.log(`GET /api/v1/requests?token=${CANARY_PAT}`, { headers: { authorization: `Bearer ${CANARY_PAT}` }, body: CANARY_TEXT });
+    const [prefixed, bare, request] = entries();
+    expect(prefixed).toMatchObject({ level: "error", msg: "⨯", via: "console", error: { name: "TypeError", stack: expect.any(Array) } });
+    expect(bare).toMatchObject({ level: "error", msg: "an error was printed to the console", error: { name: "Error" } });
+    expect(request).toMatchObject({ level: "info", msg: "GET /api/v1/requests", values: [{ headers: { authorization: "[redacted]" }, body: "[redacted]" }] });
+    for (const line of lines) {
+      expect(line).not.toContain("canary");
+      expect(line).not.toContain(CANARY_PAT);
+    }
+  });
+
+  it("gives the console back as it was when asked", () => {
+    const { lines, logger } = capture();
+    const target = fakeConsole();
+    const original = target.log;
+    const restore = routeConsoleTo(logger, target);
+    expect(target.log).not.toBe(original);
+    restore();
+    expect(target.log).toBe(original);
+    expect(lines).toEqual([]);
   });
 });

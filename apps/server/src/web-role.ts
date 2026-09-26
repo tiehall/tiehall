@@ -1,6 +1,6 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { createLogger, type AppSettings, type Logger } from "@tiehall/commands";
+import { createLogger, routeConsoleTo, type AppSettings, type Logger } from "@tiehall/commands";
 import { installRequestGuard } from "./request-guard.ts";
 import { TrustedProxies } from "./trusted-proxies.ts";
 
@@ -13,7 +13,10 @@ import { TrustedProxies } from "./trusted-proxies.ts";
 // gracefully). Next.js is told to leave SIGTERM and SIGINT to it: on either,
 // every new call gets 503 with `Retry-After: 0`, the calls in flight get up to
 // the drain timeout to finish, and then the role closes its connections and
-// exits 0. Its log lines are JSON on standard output.
+// exits 0. Its log lines are JSON on standard output: what Next.js prints to
+// the console, such as its version, its addresses and "Ready" at start, goes
+// through the role's logger too (self-host-install: Logs carry ids, never
+// message text or credentials).
 
 export interface WebRoleOptions {
   /** The standalone server that `next build` writes, which starts listening when it is loaded. */
@@ -37,6 +40,7 @@ export async function runWebRole(settings: AppSettings, options: WebRoleOptions)
   const proxies = new TrustedProxies(settings.trustedProxies);
   await proxies.refresh();
   const guard = installRequestGuard({ proxies });
+  routeConsoleTo(logger);
 
   let stopping = false;
   const stop = () => {

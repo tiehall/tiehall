@@ -325,6 +325,14 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(dockerOk(["logs", name])).toMatch(new RegExp(`tiehall ${role}: starting as uid [1-9]\\d*`));
   });
 
+  // self-host-install: Logs carry ids, never message text or credentials. Next.js prints its version, its
+  // addresses and "Ready" at start; they reach standard output as JSON lines like every other.
+  it("writes only JSON lines on standard output, what Next.js prints at start included", () => {
+    const entries = logLines(docker(["logs", name]).stdout);
+    expect(entries).toContainEqual(expect.objectContaining({ msg: expect.stringMatching(/^▲ Next\.js \d+\.\d+\.\d+$/), via: "console" }));
+    expect(entries).toContainEqual(expect.objectContaining({ msg: expect.stringMatching(/^✓ Ready in /), via: "console" }));
+  });
+
   it("cannot write outside /tmp", () => {
     expectReadOnlyOutsideTmp(name);
   });
