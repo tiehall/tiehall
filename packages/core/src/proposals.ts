@@ -240,3 +240,47 @@ export function cancelledBy(change: ProposalCancellingChange, proposals: readonl
       return [];
   }
 }
+
+// The undo window (requests: The undo window for reversible commitments;
+// design.md, Decisions this change rests on: D28 #34, D30 (4)). A due date, a
+// scope change, a reassignment and a decline can be undone for 15 minutes from
+// when they took effect, and only by a person who confirmed them; for a
+// commitment each side confirmed, either of the two may undo it alone. No
+// other commitment has an undo, and a commitment is undone at most once. An
+// undo after the window, or of one already undone or without an undo, gets
+// 409; anyone else gets 403.
+
+/** The commitments an undo can reverse. */
+export const REVERSIBLE_COMMITMENTS: readonly CommitmentKind[] = ["due_date", "scope", "reassign", "decline"];
+
+/** How long after a commitment took effect it can be undone. */
+export const UNDO_WINDOW_MS = 15 * 60 * 1000;
+
+/** A commitment that took effect, as the undo rules see it. */
+export interface TakenEffect {
+  kind: CommitmentKind;
+  appliedAt: Date;
+  /** Whether it was undone already. */
+  undone: boolean;
+  /** The users who confirmed it. */
+  confirmedBy: readonly string[];
+}
+
+/** Until when a commitment that took effect can be undone; undefined when it has no undo. */
+export function undoUntil(commitment: Pick<TakenEffect, "kind" | "appliedAt" | "undone">): Date | undefined {
+  if (!REVERSIBLE_COMMITMENTS.includes(commitment.kind) || commitment.undone) return undefined;
+  return new Date(commitment.appliedAt.getTime() + UNDO_WINDOW_MS);
+}
+
+/** Whether this person may undo the commitment now. */
+export function undoOf(commitment: TakenEffect, actorId: string, now: Date): { ok: true } | ProposalRefusal {
+  if (!REVERSIBLE_COMMITMENTS.includes(commitment.kind)) {
+    return refuse("conflict", "This commitment has no undo: only a due date, a scope change, a reassignment and a decline can be undone.");
+  }
+  if (commitment.undone) return refuse("conflict", "This commitment was undone already.");
+  if (!commitment.confirmedBy.includes(actorId)) return refuse("forbidden", "Only a person who confirmed a commitment may undo it.");
+  if (now.getTime() > commitment.appliedAt.getTime() + UNDO_WINDOW_MS) {
+    return refuse("conflict", "The 15 minutes in which this commitment could be undone are over.");
+  }
+  return { ok: true };
+}

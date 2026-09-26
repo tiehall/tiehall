@@ -1,4 +1,4 @@
-import { confirmProposal, rejectProposal } from "@tiehall/catalog";
+import { confirmProposal, rejectProposal, undoCommitment } from "@tiehall/catalog";
 import { canonicalJson, httpProblem, internalErrorProblem, quotePreamble, Refusal, type HttpProblem, type Review } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
@@ -43,7 +43,10 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // token and no nonce: a rejection needs no confirmation step, but passes the
 // same write checks, and runs proposals.reject (agent-safety: Actions that need
 // the confirmation step). Who may confirm or reject the proposal, and when, the
-// commands decide: 403 or 409.
+// commands decide: 403 or 409. /confirm/{proposal}/undo is the undo page that
+// the receipt of a commitment that took effect links: the review page of
+// proposals.undo for that proposal (requests: The undo window for reversible
+// commitments).
 
 export interface ConfirmRouteOptions {
   step: ConfirmationStep;
@@ -70,17 +73,17 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   const secret = () => (typeof options.write.secret === "string" ? options.write.secret : options.write.secret());
   return async function confirm(request) {
     const url = new URL(request.url);
-    const proposal = proposalOf(url.pathname);
-    const commandId = proposal === undefined ? commandIdOf(url.pathname) : confirmProposal.id;
+    const { proposal, undo } = proposalPageOf(url.pathname);
+    const commandId = proposal === undefined ? commandIdOf(url.pathname) : undo ? undoCommitment.id : confirmProposal.id;
     try {
-      if (request.method === "POST") return await apply(request, commandId, proposal);
+      if (request.method === "POST") return await apply(request, commandId, proposal, undo);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
       const caller = await signedIn(request);
       const { input, refusal } = proposal === undefined ? parseInput(url.searchParams.get("input")) : { input: { proposal }, refusal: undefined };
       const reviewed = await options.step.review(commandId, caller, input, refusal);
       const csrf = csrfTokenFor(secret(), caller.sessionId);
-      const path = proposal === undefined ? `${CONFIRM_PATH}${commandId}` : `${CONFIRM_PATH}${proposal}`;
-      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined));
+      const path = proposal === undefined ? `${CONFIRM_PATH}${commandId}` : `${CONFIRM_PATH}${proposal}${undo ? "/undo" : ""}`;
+      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo));
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("confirm: the review page failed", { operationId: commandId, error });
@@ -95,11 +98,11 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   }
 
   /** Applies the action the review page's form posted: the action it reviewed, or, on a proposal's page, a rejection. */
-  async function apply(request: Request, commandId: string, proposal: string | undefined): Promise<Response> {
+  async function apply(request: Request, commandId: string, proposal: string | undefined, undo: boolean): Promise<Response> {
     const caller = await signedIn(request);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
     const form = new URLSearchParams(await request.text());
-    const rejecting = proposal !== undefined && form.get("action") === "reject";
+    const rejecting = proposal !== undefined && !undo && form.get("action") === "reject";
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
       { url: options.write.url, secret: secret(), sessionId: caller.sessionId, confirm: !rejecting },
@@ -124,13 +127,17 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   }
 }
 
-const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PROPOSAL_PAGE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/undo)?$/;
 
-/** The proposal a confirm page's path names, /confirm/{proposal}; undefined for any other path. */
-function proposalOf(pathname: string): string | undefined {
-  if (!pathname.startsWith(CONFIRM_PATH)) return undefined;
-  const id = pathname.slice(CONFIRM_PATH.length).toLowerCase();
-  return PROPOSAL_ID.test(id) ? id : undefined;
+/**
+ * The proposal a page's path names: /confirm/{proposal}, its confirm page, or
+ * /confirm/{proposal}/undo, the undo page its receipt links; none for any
+ * other path.
+ */
+function proposalPageOf(pathname: string): { proposal?: string; undo: boolean } {
+  if (!pathname.startsWith(CONFIRM_PATH)) return { undo: false };
+  const match = PROPOSAL_PAGE.exec(pathname.slice(CONFIRM_PATH.length).toLowerCase());
+  return match === null ? { undo: false } : { proposal: match[1] ?? "", undo: match[2] !== undefined };
 }
 
 /** The command a review page's path names; empty, which names none, for any other path. */

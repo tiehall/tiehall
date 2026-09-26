@@ -1068,3 +1068,41 @@ export const receipts = pgTable(
     check("receipts_kind_known", sql`${table.kind} IN ('waits_for_other_side', 'took_effect', 'undone')`),
   ],
 );
+
+// The commitments that took effect and can be undone (requests: The undo
+// window for reversible commitments). One row per proposal whose due date,
+// scope change, reassignment or decline took effect: when, what the request
+// had before (its state, claim and blocking questions' return state, and for a
+// reassignment its team and number), for a packet change the revision it
+// created, and, once it is undone, when and by whom.
+export const appliedCommitments = pgTable(
+  "applied_commitments",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    proposalId: uuid("proposal_id").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
+    /** What the request had before the commitment, which an undo restores. */
+    before: json("before").notNull(),
+    /** For a due date or a scope change, the revision it added. */
+    createdRevision: integer("created_revision"),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    undoneByUserId: uuid("undone_by_user_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.proposalId] }),
+    foreignKey({
+      name: "applied_commitments_proposal_fk",
+      columns: [table.orgId, table.proposalId],
+      foreignColumns: [proposals.orgId, proposals.id],
+    }),
+    foreignKey({
+      name: "applied_commitments_undone_by_fk",
+      columns: [table.orgId, table.undoneByUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("applied_commitments_before_is_object", sql`json_typeof(${table.before}) = 'object'`),
+    check("applied_commitments_undone_by_someone", sql`(${table.undoneAt} IS NULL) = (${table.undoneByUserId} IS NULL)`),
+  ],
+);

@@ -192,12 +192,16 @@ export const setRequestStatus = defineCommand({
 export const proposeCommitment = defineCommand({
   id: "requests.propose",
   summary:
-    "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team.",
+    "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team, or withdraw it, as its requester side.",
   input: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("reassign").meta({ description: "Reassign the request to another team of the install." }),
       key: requestKey,
       team: teamKey.meta({ description: "The key of the team to reassign it to, such as MOB." }),
+    }),
+    z.object({
+      kind: z.literal("withdraw").meta({ description: "Withdraw the request." }),
+      key: requestKey,
     }),
   ]),
   output: request,

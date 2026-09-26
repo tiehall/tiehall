@@ -107,7 +107,9 @@ function teamKeyText(key: string): string {
 
 /** What a receipt is about: the kind of receipt, the commitment, its request, and where its proposal is now. */
 export interface ReceiptFacts {
-  kind: "waits_for_other_side" | "took_effect";
+  kind: "waits_for_other_side" | "took_effect" | "undone";
+  /** For an undo, the login of the person who undid it. */
+  undoneBy?: string | undefined;
   commitment: string;
   /** The request's key now. */
   key: string;
@@ -127,6 +129,24 @@ export interface ReceiptFacts {
 export function receiptSentence(facts: ReceiptFacts): ServerText {
   const key = requestKey(facts.key);
   const dueDate = facts.dueDate === undefined || facts.dueDate === null ? facts.dueDate : calendarDay(facts.dueDate);
+  if (facts.kind === "undone") {
+    const login = facts.undoneBy ?? "";
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(login)) throw new TypeError("A receipt names a user by their GitHub login.");
+    switch (facts.commitment) {
+      case "decline":
+        return `The decline of ${key} was undone by ${login}.` as ServerText;
+      case "reassign":
+        return `The reassignment of ${key} to team ${teamKeyText(facts.team ?? "")} was undone by ${login}.` as ServerText;
+      case "due_date":
+        return (dueDate === null || dueDate === undefined
+          ? `The removal of the due date of ${key} was undone by ${login}.`
+          : `The due date ${dueDate} of ${key} was undone by ${login}.`) as ServerText;
+      case "scope":
+        return `The change of the scope of ${key} was undone by ${login}.` as ServerText;
+      default:
+        throw new TypeError("Only a due date, a scope change, a reassignment and a decline can be undone.");
+    }
+  }
   if (facts.kind === "took_effect") {
     switch (facts.commitment) {
       case "decline":
@@ -174,6 +194,17 @@ export const RECEIPT: EmailTemplate<{ key: ServerText; sentence: ServerText }> =
   id: "email.receipt",
   subject: ({ key }) => `Tiehall: receipt for your confirmation on ${key}`,
   text: ({ sentence }) => [sentence, "", "It is also listed in the standing list of your web inbox.", ""].join("\n"),
+};
+
+/**
+ * The email of a receipt that says a reversible commitment took effect, with
+ * its undo page (requests: The undo window for reversible commitments).
+ */
+export const RECEIPT_WITH_UNDO: EmailTemplate<{ key: ServerText; sentence: ServerText; until: ServerText; page: ServerText }> = {
+  id: "email.receipt_with_undo",
+  subject: RECEIPT.subject,
+  text: ({ sentence, until, page }) =>
+    [sentence, "", `You can undo it until ${until} on its undo page: ${page}`, "It is also listed in the standing list of your web inbox.", ""].join("\n"),
 };
 
 /** The test message an admin sends from the admin page. */

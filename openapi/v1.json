@@ -5681,6 +5681,19 @@
                       "team"
                     ],
                     "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "withdraw",
+                        "description": "Withdraw the request.",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
                   }
                 ],
                 "type": "object"
@@ -6396,7 +6409,7 @@
             ]
           }
         ],
-        "summary": "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team.",
+        "summary": "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team, or withdraw it, as its requester side.",
         "x-stability-level": "alpha"
       }
     },

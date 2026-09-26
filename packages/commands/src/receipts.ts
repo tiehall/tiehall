@@ -1,6 +1,7 @@
-import { receipts, users } from "@tiehall/db";
+import { undoUntil, type CommitmentKind } from "@tiehall/core";
+import { appliedCommitments, receipts, users } from "@tiehall/db";
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
-import { RECEIPT, receiptSentence, requestKey, type ReceiptFacts, type ServerText } from "./email.ts";
+import { installLink, RECEIPT, RECEIPT_WITH_UNDO, receiptSentence, requestKey, serverTime, type ReceiptFacts, type ServerText } from "./email.ts";
 import { defineJobType } from "./jobs.ts";
 import { proposalView, type ProposalView } from "./proposals.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -19,15 +20,27 @@ import type { Writer } from "./write.ts";
 // of the person's web inbox, and, with SMTP set, a worker job emails each once,
 // whatever the person's digest setting, because receipts are transactional.
 
-export type ReceiptKind = "waits_for_other_side" | "took_effect";
+export type ReceiptKind = "waits_for_other_side" | "took_effect" | "undone";
 
-/** A receipt as the standing list shows it: its sentence, and the proposal it is about. */
+/** A receipt as the standing list shows it: its sentence, until when it can be undone, and the proposal it is about. */
 export interface ReceiptView {
   id: string;
   kind: ReceiptKind;
   text: string;
+  /** For the receipt that says a reversible commitment took effect, until when its undo page undoes it; otherwise null. */
+  undoUntil: string | null;
   createdAt: string;
   proposal: ProposalView;
+}
+
+/** What an undo record says about a commitment: when it took effect, and who undid it, if anyone. */
+async function appliedOf({ tx, orgId }: OrgContext, proposalId: string) {
+  const [row] = await tx
+    .select({ appliedAt: appliedCommitments.appliedAt, undoneBy: users.githubLogin })
+    .from(appliedCommitments)
+    .leftJoin(users, and(eq(users.orgId, appliedCommitments.orgId), eq(users.id, appliedCommitments.undoneByUserId)))
+    .where(and(eq(appliedCommitments.orgId, orgId), eq(appliedCommitments.proposalId, proposalId)));
+  return row;
 }
 
 /** Gives the receipts of a confirmation, in its transaction. */
@@ -44,9 +57,10 @@ export async function giveReceipts(
 }
 
 /** A receipt's facts from its proposal as it is now. */
-function factsOf(kind: ReceiptKind, proposal: ProposalView): ReceiptFacts {
+function factsOf(kind: ReceiptKind, proposal: ProposalView, undoneBy?: string | null): ReceiptFacts {
   return {
     kind,
+    ...(undoneBy === undefined || undoneBy === null ? {} : { undoneBy }),
     commitment: proposal.kind,
     key: proposal.request.key,
     dueDate: proposal.change.dueDate,
@@ -66,7 +80,20 @@ export async function receiptViews(context: OrgContext, userId: string): Promise
   for (const row of rows) {
     const proposal = await proposalView(context, row.proposalId);
     const kind = row.kind as ReceiptKind;
-    views.push({ id: row.id, kind, text: receiptSentence(factsOf(kind, proposal)), createdAt: row.createdAt.toISOString(), proposal });
+    const applied = await appliedOf(context, row.proposalId);
+    // The receipt that says a commitment took effect links its undo page while it can be undone.
+    const until =
+      kind === "took_effect" && applied !== undefined
+        ? undoUntil({ kind: proposal.kind as CommitmentKind, appliedAt: applied.appliedAt, undone: applied.undoneBy !== null })
+        : undefined;
+    views.push({
+      id: row.id,
+      kind,
+      text: receiptSentence(factsOf(kind, proposal, applied?.undoneBy)),
+      undoUntil: until === undefined ? null : until.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+      proposal,
+    });
   }
   return views;
 }
@@ -80,9 +107,9 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
     expireInSeconds: 300,
   }),
   schedule: "* * * * *",
-  async handle(_job, { database, now, mailer }) {
-    if (mailer === undefined || !mailer.configured) return;
-    let unsent: { id: string; email: string; key: ServerText; sentence: ServerText }[];
+  async handle(_job, { database, now, mailer, installUrl }) {
+    if (mailer === undefined || !mailer.configured || installUrl === undefined) return;
+    let unsent: { id: string; email: string; proposalId: string; key: ServerText; sentence: ServerText; undoUntil: Date | undefined }[];
     try {
       unsent = await withOrg(
         database,
@@ -96,11 +123,18 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
           const found = [];
           for (const row of rows) {
             const proposal = await proposalView(context, row.proposalId);
+            const applied = await appliedOf(context, row.proposalId);
+            const kind = row.kind as ReceiptKind;
             found.push({
               id: row.id,
               email: row.email ?? "",
+              proposalId: row.proposalId,
+              undoUntil:
+                kind === "took_effect" && applied !== undefined
+                  ? undoUntil({ kind: proposal.kind as CommitmentKind, appliedAt: applied.appliedAt, undone: applied.undoneBy !== null })
+                  : undefined,
               key: requestKey(proposal.request.key),
-              sentence: receiptSentence(factsOf(row.kind as ReceiptKind, proposal)),
+              sentence: receiptSentence(factsOf(row.kind as ReceiptKind, proposal, applied?.undoneBy)),
             });
           }
           return found;
@@ -113,7 +147,17 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
       throw error;
     }
     for (const receipt of unsent) {
-      await mailer.send(receipt.email, RECEIPT, { key: receipt.key, sentence: receipt.sentence });
+      // The receipt that says a reversible commitment took effect links its undo page while it can be undone.
+      if (receipt.undoUntil !== undefined && receipt.undoUntil.getTime() > now().getTime()) {
+        await mailer.send(receipt.email, RECEIPT_WITH_UNDO, {
+          key: receipt.key,
+          sentence: receipt.sentence,
+          until: serverTime(receipt.undoUntil),
+          page: installLink(installUrl, `/confirm/${receipt.proposalId}/undo`),
+        });
+      } else {
+        await mailer.send(receipt.email, RECEIPT, { key: receipt.key, sentence: receipt.sentence });
+      }
       await withOrg(database, ({ tx, orgId }) =>
         tx.update(receipts).set({ emailedAt: now() }).where(and(eq(receipts.orgId, orgId), eq(receipts.id, receipt.id))),
       );

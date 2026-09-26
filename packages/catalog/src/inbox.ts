@@ -20,9 +20,11 @@ export const standingList = defineCommand({
     receipts: z.array(
       z.object({
         id: z.uuid(),
-        kind: z.enum(["waits_for_other_side", "took_effect"]),
+        kind: z.enum(["waits_for_other_side", "took_effect", "undone"]),
         /** What the receipt says, in Tiehall's words. */
         text: z.string(),
+        /** For the receipt that says a due date, a scope change, a reassignment or a decline took effect: until when its undo page, /confirm/{proposal}/undo, undoes it. */
+        undoUntil: z.iso.datetime().nullable(),
         createdAt: z.iso.datetime(),
         proposal,
       }),

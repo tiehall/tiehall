@@ -30,10 +30,11 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // request as it is; marking done a request that is done already, such as by
 // close on merge, answers with the request and proposes nothing
 // (agent-surfaces: Commitment tools return proposals). requests.propose makes
-// the commitments no other operation makes, which is, so far, reassigning a
-// request to another team of the install: a proposal of a member of its target
-// team, for a request that has not ended (requests: Reassignment gives a new
-// key and the old key redirects).
+// the commitments no other operation makes, which are, so far, reassigning a
+// request to another team of the install, a proposal of a member of its target
+// team (requests: Reassignment gives a new key and the old key redirects), and
+// withdrawing it, a proposal of its requester side, each for a request that
+// has not ended.
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -141,6 +142,11 @@ export const REQUEST_HANDLERS: Handlers = {
   [proposeCommitment.id]: defineHandler(proposeCommitment, async (input, context) => {
     const userId = actingUserOf(context);
     const row = await lockRequest(context, input.key);
+    if (input.kind === "withdraw") {
+      await assertSideAllows(context, userId, row, "withdraw");
+      transition(await lifecycleOf(context, row), { kind: "withdraw" });
+      return context.propose(row, { kind: "withdraw", change: {} });
+    }
     await assertSideAllows(context, userId, row, "reassign");
     const team = await teamOfKey(context, input.team);
     if (team === undefined) throw new Refusal("record-not-found", "There is no such team.");

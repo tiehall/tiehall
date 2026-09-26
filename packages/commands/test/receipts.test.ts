@@ -94,6 +94,9 @@ describe("a receipt", () => {
     expect(await receiptsOf(bob, request.key)).toEqual([sentence]);
     await sendReceipts();
     expect(receiptEmails(request.key)).toEqual([{ to: "bob@acme.example", text: sentence }]);
+    // It links the decline's undo page, for the 15 minutes it can be undone.
+    const email = (sink.messages.at(-1)?.data ?? "").replace(/=\r\n/g, "");
+    expect(email).toContain(`You can undo it until 2026-10-01T09:15:00.000Z on its undo page: ${URL_OF_INSTALL}/confirm/${proposal}/undo`);
     await sendReceipts();
     expect(receiptEmails(request.key)).toHaveLength(1);
   });

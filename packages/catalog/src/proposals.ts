@@ -147,4 +147,17 @@ export const withdrawProposal = defineCommand({
   stability: "alpha",
 });
 
-export const PROPOSAL_COMMANDS = [getProposal, confirmProposal, rejectProposal, withdrawProposal];
+export const undoCommitment = defineCommand({
+  id: "proposals.undo",
+  summary:
+    "Undo, in the web UI, a due date, a scope change, a reassignment or a decline you confirmed, within 15 minutes of when it took effect.",
+  input: z.object({ proposal: z.uuid().meta({ description: "The id of the proposal whose commitment took effect." }) }),
+  output: proposal,
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const PROPOSAL_COMMANDS = [getProposal, confirmProposal, rejectProposal, withdrawProposal, undoCommitment];

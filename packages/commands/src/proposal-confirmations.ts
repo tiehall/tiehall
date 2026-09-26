@@ -15,7 +15,7 @@ import {
   type SecondConfirmer,
   type Surface,
 } from "@tiehall/core";
-import { proposalConfirmations, proposals, requestFormerKeys, requests } from "@tiehall/db";
+import { appliedCommitments, proposalConfirmations, proposals, requestFormerKeys, requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { ConfirmationSubjects, ReviewContext, ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -115,6 +115,25 @@ async function assertStillAllowed(context: OrgContext, stored: StoredProposal, r
   return current;
 }
 
+/** What a request had before a commitment, which an undo restores (requests: The undo window for reversible commitments). */
+export interface BeforeCommitment {
+  state: RequestLifecycle["state"];
+  claimantId: string | null;
+  resumeState: RequestLifecycle["resumeState"];
+  /** For a reassignment, the team and the number the request had. */
+  teamId?: string;
+  number?: number;
+  /** For a packet change, the revision it was based on. */
+  revision?: number;
+}
+
+/** Records that a reversible commitment took effect, with what the request had before it. */
+async function recordApplied(writer: Writer, proposalId: string, before: BeforeCommitment, createdRevision?: number): Promise<void> {
+  await writer.tx
+    .insert(appliedCommitments)
+    .values({ orgId: writer.orgId, proposalId, appliedAt: writer.now(), before, createdRevision: createdRevision ?? null });
+}
+
 /** Applies the commitment of the proposal, which its last confirmation made take effect. */
 async function applyCommitment(writer: Writer, stored: StoredProposal, row: RequestRow, current: RequestLifecycle): Promise<void> {
   await writer.tx
@@ -122,6 +141,7 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
     .set({ state: "applied", endedAt: writer.now() })
     .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.id, stored.id)));
   const kind = stored.kind as CommitmentKind;
+  const before: BeforeCommitment = { state: current.state, claimantId: current.claimantId, resumeState: current.resumeState };
   switch (kind) {
     case "decline":
     case "withdraw":
@@ -131,18 +151,20 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
       await saveLifecycle(writer, row.id, result.next);
       await writer.record(requestStateChanged, { requestId: row.id, state: result.next.state, previousState: current.state });
       await cancelProposals(writer, row.id, { kind: "terminal_state" });
+      if (kind === "decline") await recordApplied(writer, stored.id, before);
       return;
     }
     case "due_date":
     case "scope": {
       const { packet } = stored.change as { packet: Packet };
-      await storePacketRevision(writer, row.id, packet, {
+      const revision = await storePacketRevision(writer, row.id, packet, {
         actorKind: stored.actorKind as "agent" | "web_session" | "integration",
         actorUserId: stored.accountableUserId,
         client: stored.client,
         surface: stored.surface as Surface | null,
         teamId: stored.teamId,
       });
+      await recordApplied(writer, stored.id, { ...before, revision: stored.baseRevision ?? revision - 1 }, revision);
       return;
     }
     case "reassign": {
@@ -167,6 +189,7 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
         await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: current.state });
       }
       await cancelProposals(writer, row.id, { kind: "reassigned", proposalId: stored.id });
+      await recordApplied(writer, stored.id, { ...before, teamId: row.targetTeamId, number: row.number });
       return;
     }
   }

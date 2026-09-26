@@ -204,6 +204,21 @@ export const proposalConfirmed = defineEventType({
 });
 
 /**
+ * A person undid, in the web UI, a commitment that had taken effect within its
+ * undo window (requests: The undo window for reversible commitments). It names
+ * the request and the proposal; its provenance names the web session that
+ * undid it.
+ */
+export const proposalUndone = defineEventType({
+  type: "proposal.undone",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    proposalId: { kind: "id", of: "proposal" },
+  },
+});
+
+/**
  * A proposal ended without taking effect (requests: How a proposal ends
  * without taking effect; requests: The event log). It names the request, the
  * proposal and how it ended: rejected, withdrawn, expired or cancelled, and,
@@ -281,6 +296,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestReassigned,
   proposalCreated,
   proposalConfirmed,
+  proposalUndone,
   proposalEnded,
   memberRoleChanged,
   memberRemoved,

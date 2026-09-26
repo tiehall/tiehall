@@ -80,6 +80,7 @@ export {
   proposalAnswer,
   PROPOSAL_COMMANDS,
   rejectProposal,
+  undoCommitment,
   withdrawProposal,
 } from "./proposals.ts";
 export { GITHUB_LOGIN, role, user } from "./schemas.ts";
