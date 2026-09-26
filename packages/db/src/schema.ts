@@ -236,3 +236,25 @@ export const setupSessions = pgTable(
     check("setup_sessions_hash_length", sql`octet_length(${table.tokenHash}) = 32`),
   ],
 );
+
+// Used confirmation nonces (agent-safety: One confirmation approves one action;
+// design.md, Self-hosting decisions: S7). A review page's nonce is signed, not
+// stored, so opening the page changes nothing; once the nonce has approved its
+// action, the SHA-256 of its random bytes is recorded here in the action's own
+// transaction, so it approves no second one. A record is of no use once its
+// nonce has expired, and an hourly job deletes it then.
+export const usedConfirmationNonces = pgTable(
+  "used_confirmation_nonces",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    nonceHash: bytea("nonce_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.nonceHash] }),
+    index("used_confirmation_nonces_expires_at").on(table.orgId, table.expiresAt),
+    check("used_confirmation_nonces_hash_length", sql`octet_length(${table.nonceHash}) = 32`),
+  ],
+);

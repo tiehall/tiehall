@@ -4,7 +4,9 @@
 // will happen, in Tiehall's own words. A review is lines of server text, which
 // Tiehall writes, and quotes of text Tiehall did not write, such as another
 // team's proposed need, each fenced with a preamble that names where it came
-// from, so the page never passes such text off as Tiehall's own.
+// from, so the page never passes such text off as Tiehall's own. An action's
+// input is compared in canonical JSON, so the same input in any key order is
+// the same action.
 
 /** Where text that Tiehall did not write came from (design.md, Decisions this change rests on: D28 #54). */
 export const TEXT_ORIGINS = ["same team", "other team", "external"] as const;
@@ -52,3 +54,4 @@ function sortKeys(value: unknown): unknown {
       .map((key) => [key, sortKeys((value as Record<string, unknown>)[key])]),
   );
 }
+

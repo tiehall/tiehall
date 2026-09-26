@@ -13,7 +13,7 @@ import { createLogger, type Logger } from "./log.ts";
 //   command's review, with every quote of text Tiehall did not write escaped
 //   and fenced under a preamble that names where it came from;
 // - holds a form that posts the action's parsed input, in canonical JSON, back
-//   to the same path;
+//   to the same path, with the page's confirmation nonce;
 // - changes no state: the review runs in a read-only transaction.
 // Every answer, refusals included, sends a Content-Security-Policy with
 // frame-ancestors 'none', so no other site can frame the page and trick a
@@ -45,7 +45,7 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to confirm an action.");
       const input = parseInput(url.searchParams.get("input"));
       const reviewed = await options.step.review(commandId, caller, input);
-      return page(reviewPage(reviewed.commandId, reviewed.review, canonicalJson(reviewed.input)));
+      return page(reviewPage(reviewed.commandId, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce));
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("confirm: the review page failed", { operationId: commandId, error });
@@ -86,7 +86,7 @@ function page(html: string): Response {
 }
 
 /** The review page: what will happen, and the form that applies it. */
-function reviewPage(commandId: string, review: Review, input: string): string {
+function reviewPage(commandId: string, review: Review, input: string, nonce: string): string {
   const lines = review.lines.map((line) =>
     "text" in line
       ? `      <p>${escapeHtml(line.text)}</p>`
@@ -99,6 +99,7 @@ function reviewPage(commandId: string, review: Review, input: string): string {
       ...lines,
       `      <form method="post" action="${escapeHtml(`${CONFIRM_PATH}${commandId}`)}">`,
       `        <input type="hidden" name="input" value="${escapeHtml(input)}">`,
+      `        <input type="hidden" name="nonce" value="${escapeHtml(nonce)}">`,
       `        <button type="submit">Confirm</button>`,
       `      </form>`,
     ].join("\n"),

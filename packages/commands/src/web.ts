@@ -1,5 +1,6 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
+import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
 import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
@@ -9,7 +10,7 @@ import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { REVIEWS } from "./reviews.ts";
-import { readAppDatabase, type Environment } from "./settings.ts";
+import { readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 
 export type { WebResult } from "./web-commands.ts";
@@ -48,9 +49,11 @@ function servicesOf(env: Environment): { execute: Execute; step: ConfirmationSte
       await (await queue).send(tx, name, data);
     },
   };
+  // The confirmation step's nonces, signed with TIEHALL_AUTH_SECRET, which is read when one is first issued or checked.
+  const confirmations = createConfirmationNonces({ secret: () => readAuthSecret(env) });
   services = {
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs } }),
-    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database } }),
+    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations }),
+    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations }),
     logger,
   };
   return services;

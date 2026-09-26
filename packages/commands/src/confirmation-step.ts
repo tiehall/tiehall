@@ -2,6 +2,7 @@ import type { Catalog } from "@tiehall/catalog";
 import { Refusal, type RefusalIssue, type Review } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
+import type { ConfirmationNonces } from "./confirmations.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import type { Store } from "./write.ts";
 
@@ -17,7 +18,10 @@ import type { Store } from "./write.ts";
 // - parses the input against the command's schema first, refusing input that
 //   fails it with 400, so the page reviews the input the command will get;
 // - runs inside withOrg() in a read-only transaction, so a review can read
-//   what it needs and can never change anything.
+//   what it needs and can never change anything;
+// - comes with the confirmation nonce for the page, bound to the user, the
+//   session and the command with that exact input, which stores nothing
+//   (agent-safety: One confirmation approves one action).
 
 /** What a review reads with: the call's read-only transaction, the install's org and the signed-in user. */
 export interface ReviewContext extends OrgContext {
@@ -30,18 +34,21 @@ export type ReviewHandler = (input: unknown, context: ReviewContext) => Promise<
 /** One review per command of the catalog that needs the confirmation step, by the command's id. */
 export type Reviews = Readonly<Record<string, ReviewHandler>>;
 
-/** An action ready for its review page: the command, its parsed input and what it will do. */
+/** An action ready for its review page: the command, its parsed input, what it will do and the page's nonce. */
 export interface ReviewedAction {
   commandId: string;
   /** The input as the command's schema parsed it, which the page's form sends back. */
   input: unknown;
   review: Review;
+  /** The confirmation nonce the page's form sends, valid for this action only. */
+  nonce: string;
 }
 
 export interface ConfirmationStepServices {
   catalog: Catalog;
   reviews: Reviews;
   store: Pick<Store, "database">;
+  confirmations: ConfirmationNonces;
 }
 
 export interface ConfirmationStep {
@@ -74,7 +81,7 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
       }
       const review = await withOrg(services.store.database, (context) => handler(parsed.data, { ...context, caller }), { readOnly: true });
-      return { commandId, input: parsed.data, review };
+      return { commandId, input: parsed.data, review, nonce: services.confirmations.issue(caller, commandId, parsed.data) };
     },
   };
 }

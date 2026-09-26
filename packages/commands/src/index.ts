@@ -90,6 +90,7 @@ export {
   installUrl,
   readAppDatabase,
   readAppSettings,
+  readAuthSecret,
   readMigrateSettings,
   SETTINGS,
   SettingsError,
@@ -134,6 +135,23 @@ export {
   type Reviews,
 } from "./confirmation-step.ts";
 export { CONFIRM_PATH, createConfirmRoute, type ConfirmRoute, type ConfirmRouteOptions } from "./confirm-route.ts";
+export {
+  actionDigest,
+  checkConfirmationNonce,
+  CONFIRMATION_NONCE_BYTES,
+  CONFIRMATION_NONCE_TTL_SECONDS,
+  issueConfirmationNonce,
+  type CheckedNonce,
+  type NonceBinding,
+} from "./confirmation-nonce.ts";
+export {
+  consumeForGatedRoute,
+  createConfirmationNonces,
+  pruneUsedConfirmationNonces,
+  type ConfirmationNonces,
+  type ConfirmationNoncesOptions,
+  type GatedRouteClaim,
+} from "./confirmations.ts";
 export { REVIEWS } from "./reviews.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {

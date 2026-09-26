@@ -21,13 +21,16 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    only contract.report, and a system job or an integration event only
 //    internal commands;
 // 4. asks for the confirmation step for a `confirm` command, refusing one
-//    without a valid confirmation nonce with 403;
+//    without a valid confirmation nonce with 403: only a web session may run
+//    it, and its nonce, bound to that user, that session and this command
+//    with this exact input, is checked and consumed in the call's transaction
+//    (agent-safety: One confirmation approves one action);
 // 5. runs the handler inside withOrg(), so its change, its events and its jobs
 //    commit together or not at all;
 // 6. returns only output that passes the operation's output schema: any
 //    other output rolls the call back and is never returned.
 // Later tasks add the role and side rules (9.1, 15.5), the membership re-check
-// (9.2), commitments that become proposals (14.4) and the nonce check (8.2).
+// (9.2) and commitments that become proposals (14.4).
 
 /** What a handler gets besides its parsed input. */
 export interface HandlerContext extends OrgContext {
@@ -50,7 +53,7 @@ export function defineHandler<D extends CommandDefinition>(
   return handler as Handler;
 }
 
-/** The confirmation step's check of a nonce, which task 8.2 builds. */
+/** The confirmation step's check of a nonce (confirmations.ts). */
 export interface Confirmations {
   /** Checks and consumes the nonce, inside the call's transaction; false when it is not valid for this exact action. */
   consume(context: OrgContext, claim: ConfirmationClaim): Promise<boolean>;

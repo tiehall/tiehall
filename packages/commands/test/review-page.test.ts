@@ -6,6 +6,7 @@ import { z } from "zod";
 import { defineCatalog, defineCommand } from "@tiehall/catalog";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createConfirmationNonces,
   createConfirmationStep,
   createConfirmRoute,
   createLogger,
@@ -114,6 +115,7 @@ let db: Database;
 let logged: LogEntry[] = [];
 const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
 const alice: WebSessionCaller = { kind: "web_session", userId: ALICE, sessionId: randomUUID() };
+const confirmations = createConfirmationNonces({ secret: randomBytes(32).toString("base64url") });
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -140,7 +142,7 @@ afterAll(async () => {
 
 function route(session: WebSessionCaller | undefined) {
   return createConfirmRoute({
-    step: createConfirmationStep({ catalog, reviews, store: { database: db } }),
+    step: createConfirmationStep({ catalog, reviews, store: { database: db }, confirmations }),
     session: async () => session,
     logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
   });
@@ -256,10 +258,12 @@ function escapeAttribute(text: string): string {
 describe("the confirmation step", () => {
   it("refuses to start while a command that needs it has no review, or a review has no such command", () => {
     const { ["probes.accept_need"]: _left, ...missing } = reviews;
-    expect(() => createConfirmationStep({ catalog, reviews: missing, store: { database: db } })).toThrow(
+    expect(() => createConfirmationStep({ catalog, reviews: missing, store: { database: db }, confirmations })).toThrow(
       "probes.accept_need needs the confirmation step and has no review.",
     );
-    expect(() => createConfirmationStep({ catalog, reviews: { ...reviews, "probes.note": reviews["probes.create_token"]! }, store: { database: db } })).toThrow(
+    expect(() =>
+      createConfirmationStep({ catalog, reviews: { ...reviews, "probes.note": reviews["probes.create_token"]! }, store: { database: db }, confirmations }),
+    ).toThrow(
       "probes.note has a review but is not a command of the catalog that needs the confirmation step.",
     );
   });

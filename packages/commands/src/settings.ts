@@ -203,12 +203,7 @@ export function readAppSettings(env: Environment): AppSettings {
   const secretKey = required(env, "TIEHALL_SECRET_KEY");
   const keyProblem = secretKeyProblem(secretKey);
   if (keyProblem !== undefined) throw new SettingsError(keyProblem);
-  const authSecret = required(env, "TIEHALL_AUTH_SECRET");
-  if (authSecret.length < SECRET_KEY_MIN_LENGTH) {
-    throw new SettingsError(
-      `TIEHALL_AUTH_SECRET must hold at least ${SECRET_KEY_MIN_LENGTH} characters, as 32 random bytes in base64url do.`,
-    );
-  }
+  const authSecret = readAuthSecret(env);
   const sourceUrl = optional(env, "TIEHALL_SOURCE_URL");
   if (sourceUrl !== undefined && !/^https?:$/.test(parseUrl(sourceUrl)?.protocol ?? "")) {
     throw new SettingsError("TIEHALL_SOURCE_URL must be an https:// or http:// URL.");
@@ -225,6 +220,17 @@ export function readAppSettings(env: Environment): AppSettings {
     ...(sourceUrl === undefined ? {} : { sourceUrl }),
     ...(smtp === undefined ? {} : { smtp }),
   };
+}
+
+/** TIEHALL_AUTH_SECRET, which signs sessions and tokens, such as the confirmation step's nonces. */
+export function readAuthSecret(env: Environment): string {
+  const authSecret = required(env, "TIEHALL_AUTH_SECRET");
+  if (authSecret.length < SECRET_KEY_MIN_LENGTH) {
+    throw new SettingsError(
+      `TIEHALL_AUTH_SECRET must hold at least ${SECRET_KEY_MIN_LENGTH} characters, as 32 random bytes in base64url do.`,
+    );
+  }
+  return authSecret;
 }
 
 export function readMigrateSettings(env: Environment): MigrateSettings {
