@@ -4,6 +4,7 @@ import { members, signInBlocks, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { cancelProposalsOfRemovedMember } from "./proposals.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // Changes to who is a member of the install and in which role
@@ -22,7 +23,9 @@ import type { OrgContext } from "./with-org.ts";
 //
 // A removal deletes the membership, and with it every membership of a team;
 // the user stays, so the requests, messages and events they took part in keep
-// naming them. An admin removal also blocks their GitHub account from
+// naming them, and their claims stay. Every pending proposal whose accountable
+// human they are is cancelled, each with its event (requests: A removed
+// member's claims stay and their proposals are cancelled). An admin removal also blocks their GitHub account from
 // rejoining through organization membership. Ending the person's stored web
 // sessions joins the removal once the sign-in service stores sessions (task
 // 7.6), and revoking their agent grants and personal access tokens once those
@@ -101,6 +104,7 @@ export const MEMBER_HANDLERS: Handlers = {
       await writer.tx.delete(members).where(and(eq(members.orgId, writer.orgId), eq(members.userId, userId)));
       await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
       await writer.record(memberRemoved, { userId, cause: "admin", blocked: true });
+      await cancelProposalsOfRemovedMember(writer, userId);
       return { userId };
     });
   }),

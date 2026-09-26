@@ -163,6 +163,22 @@ async function usersNamed({ tx, orgId }: OrgContext, ids: readonly string[]) {
   };
 }
 
+/**
+ * Cancels every pending proposal whose accountable human is a member being
+ * removed, in the removal's transaction, each with its event (requests: A
+ * removed member's claims stay and their proposals are cancelled). An admin's
+ * removal calls it, and so will a removal for leaving the GitHub organization.
+ */
+export async function cancelProposalsOfRemovedMember(writer: Writer, userId: string): Promise<void> {
+  const theirs = await writer.tx
+    .selectDistinct({ requestId: proposals.requestId })
+    .from(proposals)
+    .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.accountableUserId, userId), eq(proposals.state, "pending")));
+  for (const { requestId } of theirs.sort((a, b) => a.requestId.localeCompare(b.requestId))) {
+    await cancelProposals(writer, requestId, { kind: "member_removed", userId });
+  }
+}
+
 /** One proposal as the operations return it; 404 when the install has no such proposal. */
 export async function proposalView(context: OrgContext, proposalId: string): Promise<ProposalView> {
   const [row] = await context.tx
