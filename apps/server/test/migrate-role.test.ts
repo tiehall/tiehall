@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { JOB_QUEUE_VERSION } from "@tiehall/commands";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import { migrationsFolderFor, runMigrateRole } from "../src/migrate-role.ts";
 
@@ -45,10 +46,16 @@ describe("the migrate role", () => {
     );
   }
 
-  it("applies the migrations, logs each one and exits 0", async () => {
+  it("applies the migrations, installs the job queue's schema, logs each step and exits 0", async () => {
     expect(await run()).toBe(0);
-    expect(out).toEqual(["tiehall migrate: applied 0000_add_note", "tiehall migrate: done"]);
+    expect(out).toEqual([
+      "tiehall migrate: applied 0000_add_note",
+      `tiehall migrate: installed the job queue's schema, version ${JOB_QUEUE_VERSION}`,
+      "tiehall migrate: done",
+    ]);
     expect(errors).toEqual([]);
+    expect(await run()).toBe(0);
+    expect(out.slice(3)).toEqual(["tiehall migrate: the schema is up to date", "tiehall migrate: done"]);
   });
 
   it("exits non-zero with the reason in its log when a migration is blocked by a held lock", async () => {

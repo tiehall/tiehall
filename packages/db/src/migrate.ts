@@ -1,6 +1,6 @@
 import pg from "pg";
 import { withPassword, type DatabaseConnection } from "./connection.ts";
-import { APP_SCHEMAS, setUpAppRole, type AppRole } from "./database-roles.ts";
+import { setUpAppRole, TIEHALL_SCHEMA, type AppRole } from "./database-roles.ts";
 import { MigrationError, readMigrations, type Migration } from "./migration-files.ts";
 
 export { MigrationError } from "./migration-files.ts";
@@ -16,8 +16,10 @@ export { MigrationError } from "./migration-files.ts";
 // - every statement runs under lock_timeout, so a migration that waits for a
 //   lock the running app holds fails fast, instead of queueing the app's
 //   queries behind it, and says so;
+// - then it runs the steps that install schemas other tools own, such as the
+//   job queue's, still holding the lock;
 // - then it sets up the app role, whose rights follow the tables the
-//   migrations made.
+//   migrations and those steps made.
 // Migrations only move forward; a problem is fixed by a later migration.
 //
 // The schema floor (self-host-install: Migrations expand, then contract): the
@@ -37,6 +39,11 @@ export interface MigrateOptions {
   release: string;
   /** The app role to create or update, with the password from the install's settings. */
   appRole?: AppRole;
+  /**
+   * Steps run as the owner after the migrations and before the app role is set
+   * up, such as installing the job queue's schema, which its library defines.
+   */
+  afterMigrations?: readonly ((owner: pg.ClientBase, log: (line: string) => void) => Promise<void>)[];
   /** How long a migration statement waits for a lock before it fails. */
   lockTimeoutMs?: number;
   /** How long to wait for another migrate step to finish. */
@@ -96,6 +103,7 @@ export async function migrate(connection: DatabaseConnection, options: MigrateOp
       else await applyOutsideTransaction(client, migration, lockTimeoutMs, options.release, log);
       log(`migrate: applied ${migration.id}${migration.transactional ? "" : ", outside a transaction"}`);
     }
+    for (const step of options.afterMigrations ?? []) await step(client, log);
     if (options.appRole !== undefined) await setUpAppRole(client, options.appRole);
   } finally {
     // Ending the session releases the advisory lock.
@@ -185,7 +193,7 @@ async function applyInTransaction(
  * Runs each statement on its own, as CREATE INDEX CONCURRENTLY needs. Such a
  * build that fails leaves an invalid index behind, which IF NOT EXISTS would
  * then skip; only the migrate step creates indexes, so every invalid index in
- * the app's schemas is one of those, and it is dropped first to be built again.
+ * Tiehall's schema is one of those, and it is dropped first to be built again.
  */
 async function applyOutsideTransaction(
   client: pg.Client,
@@ -200,7 +208,7 @@ async function applyOutsideTransaction(
          FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE NOT i.indisvalid AND n.nspname = ANY($1::text[])
         ORDER BY 1`,
-      [APP_SCHEMAS],
+      [[TIEHALL_SCHEMA]],
     );
     for (const { name } of invalid.rows) {
       await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${name}`);

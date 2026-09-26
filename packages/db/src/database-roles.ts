@@ -10,8 +10,18 @@ import pg from "pg";
 // log is append-only); it changes the data of the app's tables, and may only
 // insert into and read the event tables.
 
+/** The schema of Tiehall's own tables, which the migrations make. */
+export const TIEHALL_SCHEMA = "public";
+
+/**
+ * The job queue's schema, which the migrate step installs from pg-boss's own
+ * plans (design.md, Technical decisions: T6). The app role uses its tables and,
+ * like everything else, owns none of them.
+ */
+export const JOB_QUEUE_SCHEMA = "pgboss";
+
 /** The schemas whose tables the app role reads and changes. */
-export const APP_SCHEMAS: readonly string[] = ["public"];
+export const APP_SCHEMAS: readonly string[] = [TIEHALL_SCHEMA, JOB_QUEUE_SCHEMA];
 
 /** The event tables, as schema.table: the app role may only insert into them and read them. */
 export const EVENT_TABLES: readonly string[] = ["public.events"];

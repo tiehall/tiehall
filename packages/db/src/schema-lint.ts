@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { APP_SCHEMAS } from "./database-roles.ts";
+import { TIEHALL_SCHEMA } from "./database-roles.ts";
 
 // The org id lint (teams-and-roles: One org per install; design.md,
 // Self-hosting decisions: S1). v1 has no tenant layer, but every table except
@@ -8,7 +8,7 @@ import { APP_SCHEMAS } from "./database-roles.ts";
 // table, such as (org_id, team_id) to teams (org_id, id). Then a later version
 // can hold several orgs through migrations alone, and a row can never point at
 // another org's row. It reads the catalog, so it sees every table the
-// migrations made.
+// migrations made. The job queue's schema belongs to pg-boss and is left out.
 
 type Queryable = Pick<pg.ClientBase, "query">;
 
@@ -30,7 +30,7 @@ interface Constraint {
 }
 
 /** Each way a table in the app's schemas breaks the rule, as a sentence; none when all keep it. */
-export async function lintOrgIds(client: Queryable, schemas: readonly string[] = APP_SCHEMAS): Promise<string[]> {
+export async function lintOrgIds(client: Queryable, schemas: readonly string[] = [TIEHALL_SCHEMA]): Promise<string[]> {
   const tables = await client.query<Table>(
     `SELECT c.oid, format('%I.%I', n.nspname, c.relname) AS name,
             (SELECT a.attnotnull FROM pg_attribute a

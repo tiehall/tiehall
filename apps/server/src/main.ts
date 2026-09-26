@@ -1,8 +1,9 @@
 // The image's one entrypoint (design.md decision 1): `node main.mjs <role>`.
 // It checks the role and the configuration, then starts the role:
 // - web imports the Next.js standalone server into this process;
-// - worker and migrate run here; migrate applies the migrations from
-//   /app/packages/db/migrations, beside this bundle;
+// - worker and migrate run here: worker works the job queues until SIGTERM,
+//   and migrate applies the migrations from /app/packages/db/migrations,
+//   beside this bundle, and installs the job queue's schema;
 // - all starts web and worker as two child processes, forwards SIGTERM and
 //   SIGINT to them, and stops the other when one of them ends.
 // Exit codes: 2 for an unknown or missing role, 1 for a configuration error or
@@ -11,10 +12,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { startWorker } from "@tiehall/commands";
 import { ConfigError, readConfig, type Config } from "./config.ts";
 import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
+import { runWorkerRole } from "./worker-role.ts";
 
 /** This bundle, which `all` runs again for each of its two roles. */
 const ENTRY = fileURLToPath(import.meta.url);
@@ -48,7 +49,7 @@ async function run(role: Role, config: Config): Promise<void> {
     case "web":
       return startWeb(config);
     case "worker":
-      return runWorker();
+      return runWorkerRole(config);
     case "migrate":
       return runMigrate(config);
     case "all":
@@ -62,24 +63,6 @@ async function startWeb(config: Config): Promise<void> {
   process.env["PORT"] = String(config.port);
   // The Next.js server handles SIGTERM itself: it finishes in-flight requests, then exits.
   await import(pathToFileURL(WEB_SERVER).href);
-}
-
-function runWorker(): void {
-  const worker = startWorker();
-  let stopping = false;
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    worker.stop().then(
-      () => process.exit(0),
-      (error: unknown) => {
-        console.error("tiehall worker: stop failed", error);
-        process.exit(1);
-      },
-    );
-  };
-  process.on("SIGTERM", stop);
-  process.on("SIGINT", stop);
 }
 
 async function runMigrate(config: Config): Promise<void> {

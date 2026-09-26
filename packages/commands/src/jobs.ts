@@ -1,9 +1,14 @@
 import type { Transaction } from "@tiehall/db";
 
-// Jobs a write starts (design.md, Technical decisions: T5 and T6). A job is
-// sent inside the transaction of the write that starts it, so it commits with
-// the change and its event, or not at all: a job never runs for a change that
-// did not commit. Task 4.11 sends them through pg-boss's queues in Postgres.
+// Jobs a write starts, and the kinds of job (design.md, Technical decisions: T5
+// and T6; self-host-install: Migrations expand, then contract). A job is sent
+// inside the transaction of the write that starts it, so it commits with the
+// change and its event, or not at all: a job never runs for a change that did
+// not commit. Each kind of job has its own queue, whose name carries the
+// version of the job's data shape: a release that changes the shape bumps the
+// version, so its jobs go to a new queue, which a worker of the previous
+// release does not work. Each queue has a dead-letter queue, where a job goes
+// once its attempts are used up.
 
 /** Job data holds ids and settings, never message text or credentials, like events and logs. */
 export type JobData = Readonly<Record<string, unknown>>;
@@ -19,4 +24,55 @@ export interface JobType<D extends JobData> {
 export interface JobSender {
   /** Sends a job inside the caller's transaction. */
   send(tx: Transaction, queue: string, data: JobData): Promise<void>;
+}
+
+/** How the queue retries a kind of job. */
+export interface JobSettings {
+  /** How many times a failed job runs again before it moves to the dead-letter queue. */
+  retryLimit: number;
+  /** How long to wait before running a failed job again, in seconds. */
+  retryDelaySeconds: number;
+  /** Whether that wait doubles from one attempt to the next. */
+  retryBackoff: boolean;
+  /** How long one attempt may run before it counts as failed, in seconds. */
+  expireInSeconds: number;
+}
+
+export interface DefinedJobType<D extends JobData> extends JobType<D> {
+  /** The kind of job, a dotted lower-case name such as mirror.create_issue. */
+  name: string;
+  /** The version of its data's shape. */
+  version: number;
+  deadLetterQueue: string;
+  settings: JobSettings;
+}
+
+/** A job type that breaks the naming or settings rules; its message says how. */
+export class JobTypeError extends Error {
+  override name = "JobTypeError";
+}
+
+const JOB_NAME = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
+
+export function defineJobType<D extends JobData>(name: string, version: number, settings: JobSettings): DefinedJobType<D> {
+  if (!JOB_NAME.test(name)) {
+    throw new JobTypeError(`The job type "${name}" is not a dotted lower-case name, such as "mirror.create_issue".`);
+  }
+  if (/\.v\d+$/.test(name)) {
+    throw new JobTypeError(`The job type "${name}" carries a version in its name; give the version apart, as a number.`);
+  }
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new JobTypeError(`The version of ${name} must be a whole number from 1, not ${version}.`);
+  }
+  const whole = (setting: keyof JobSettings, from: number) => {
+    const value = settings[setting];
+    if (!Number.isSafeInteger(value) || (value as number) < from) {
+      throw new JobTypeError(`${name}: ${setting} must be a whole number from ${from}, not ${String(value)}.`);
+    }
+  };
+  whole("retryLimit", 0);
+  whole("retryDelaySeconds", 0);
+  whole("expireInSeconds", 1);
+  const queue = `${name}.v${version}`;
+  return { name, version, queue, deadLetterQueue: `${queue}.dead_letter`, settings: { ...settings } };
 }

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +24,69 @@ const POSTGRES_IMAGE = (() => {
 const confined = ["--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges"];
 /** A database URL for roles that do not connect yet; every role requires one. */
 const unusedDatabase = ["--env", "DATABASE_URL=postgres://tiehall@database.invalid:5432/tiehall"];
+
+/** Starts stock Postgres 17 on a network, with a password, and waits until it accepts connections. */
+async function startPostgres(network: string, name: string, password: string): Promise<void> {
+  dockerOk(["network", "create", network]);
+  dockerOk(
+    [
+      "run",
+      "--detach",
+      "--name",
+      name,
+      "--network",
+      network,
+      "--env",
+      "POSTGRES_USER=tiehall",
+      "--env",
+      "POSTGRES_DB=tiehall",
+      "--env",
+      `POSTGRES_PASSWORD=${password}`,
+      POSTGRES_IMAGE,
+    ],
+    300,
+  );
+  await waitFor(
+    "Postgres to accept connections",
+    () =>
+      docker(["exec", name, "pg_isready", "--host", "127.0.0.1", "--username", "tiehall", "--dbname", "tiehall"]).status === 0
+        ? true
+        : undefined,
+    120,
+  );
+}
+
+function stopPostgres(network: string, name: string): void {
+  docker(["rm", "--force", name]);
+  docker(["network", "rm", network]);
+}
+
+/**
+ * A migrated database for the roles that connect to one: the worker, and all,
+ * which runs it. The migrate role installs the job queue's schema, which the
+ * worker needs before it starts.
+ */
+const rolesNetwork = uniqueName("tiehall-roles");
+const rolesPostgres = uniqueName("postgres-roles");
+const rolesPassword = randomBytes(16).toString("hex");
+const connected = [
+  "--network",
+  rolesNetwork,
+  "--env",
+  `DATABASE_URL=postgres://tiehall@${rolesPostgres}:5432/tiehall`,
+  "--env",
+  `DATABASE_PASSWORD=${rolesPassword}`,
+];
+
+beforeAll(async () => {
+  await startPostgres(rolesNetwork, rolesPostgres, rolesPassword);
+  const migrate = docker(["run", "--rm", ...confined, ...connected, image, "migrate"]);
+  if (migrate.status !== 0) throw new Error(`The migrate role failed: ${migrate.stdout}${migrate.stderr}`);
+}, 300_000);
+
+afterAll(() => {
+  stopPostgres(rolesNetwork, rolesPostgres);
+});
 
 function revision(): string {
   return dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image]);
@@ -123,7 +187,7 @@ describe.each(["web", "all"])("the %s role", (role) => {
   let port: number;
 
   beforeAll(async () => {
-    name = start(role, ...unusedDatabase, "--publish", "127.0.0.1::3000");
+    name = start(role, ...connected, "--publish", "127.0.0.1::3000");
     port = hostPort(name);
     await waitFor(`/healthz of ${role}`, () => healthz(port));
   });
@@ -169,7 +233,7 @@ describe("the worker role", () => {
   let name: string;
 
   beforeAll(async () => {
-    name = start("worker", ...unusedDatabase);
+    name = start("worker", ...connected);
     await waitFor("the worker to start", () => (/worker: started/.test(dockerOk(["logs", name])) ? true : undefined));
   });
 
@@ -189,10 +253,11 @@ describe("the worker role", () => {
     expectReadOnlyOutsideTmp(name);
   });
 
-  it("stops on SIGTERM within the grace period", () => {
+  it("stops on SIGTERM within the grace period, letting go of the job queue", () => {
     const { exitCode, seconds } = stop(name);
     expect(exitCode).toBe(0);
     expect(seconds).toBeLessThan(20);
+    expect(dockerOk(["logs", name])).toMatch(/worker: stopped$/m);
   });
 });
 
@@ -211,32 +276,11 @@ describe("the migrate role", () => {
       writeFileSync(join(secrets, file), value);
       chmodSync(join(secrets, file), 0o644);
     }
-    dockerOk(["network", "create", network]);
-    dockerOk([
-      "run",
-      "--detach",
-      "--name",
-      database,
-      "--network",
-      network,
-      "--env",
-      "POSTGRES_USER=tiehall",
-      "--env",
-      "POSTGRES_DB=tiehall",
-      "--env",
-      "POSTGRES_PASSWORD=correct-horse-battery-staple",
-      POSTGRES_IMAGE,
-    ], 300);
-    await waitFor("Postgres to accept connections", () =>
-      docker(["exec", database, "pg_isready", "--host", "127.0.0.1", "--username", "tiehall", "--dbname", "tiehall"]).status === 0
-        ? true
-        : undefined,
-    120);
+    await startPostgres(network, database, "correct-horse-battery-staple");
   });
 
   afterAll(() => {
-    docker(["rm", "--force", database]);
-    docker(["network", "rm", network]);
+    stopPostgres(network, database);
     rmSync(secrets, { recursive: true, force: true });
   });
 

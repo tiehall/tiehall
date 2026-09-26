@@ -16,6 +16,7 @@
     "@tiehall/commands": "workspace:*"
   },
   "devDependencies": {
+    "@tiehall/core": "workspace:*",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
