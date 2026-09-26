@@ -172,6 +172,46 @@ describe("the OpenAPI document", () => {
     expect(Object.keys(declineBody["properties"] as Json)).toEqual(["reason"]);
   });
 
+  // agent-surfaces: Tool schemas that current clients accept. The document keeps the variants, which REST
+  // takes as they are; only the MCP tool schema lowers them to a kind enum.
+  it("gives an input with variants its path parameters and a body with one schema per variant", () => {
+    const withVariants = openApiDocument(
+      defineCatalog([
+        defineCommand({
+          id: "requests.post_message",
+          summary: "Post a comment or an answer on a request.",
+          input: z.discriminatedUnion("kind", [
+            z.strictObject({ kind: z.literal("comment"), key: z.string(), body: z.string() }),
+            z.strictObject({ kind: z.literal("answer"), key: z.string(), body: z.string(), questionId: z.string() }),
+          ]),
+          output: z.object({ messageId: z.string() }),
+          method: "POST",
+          path: "/api/v1/requests/{key}/messages",
+          scopes: ["requests:write"],
+          commitment: false,
+          confirm: false,
+          surfaces: ["rest", "mcp"],
+          tool: "post_message",
+          stability: "alpha",
+        }),
+      ]),
+    ) as Json & { paths: Record<string, Record<string, Json & { parameters?: Json[] }>> };
+    const post = withVariants.paths["/api/v1/requests/{key}/messages"]?.["post"] ?? {};
+    expect(post.parameters?.filter(({ in: where }) => where !== "header")).toEqual([
+      expect.objectContaining({ in: "path", name: "key", required: true }),
+    ]);
+    const body = (post["requestBody"] as { content: Record<string, { schema: Json }> }).content["application/json"]?.schema ?? {};
+    const variants = (body["oneOf"] ?? body["anyOf"]) as Json[];
+    expect(variants.map((variant) => Object.keys(variant["properties"] as Json).sort())).toEqual([
+      ["body", "kind"],
+      ["body", "kind", "questionId"],
+    ]);
+    expect(variants.map((variant) => (variant["properties"] as Record<string, Json>)["kind"])).toEqual([
+      expect.objectContaining({ const: "comment" }),
+      expect.objectContaining({ const: "answer" }),
+    ]);
+  });
+
   it("offers the optional Idempotency-Key header on every POST, and on no other method", () => {
     for (const path of ["/api/v1/requests", "/api/v1/requests/{key}/decline", "/api/v1/contract/reports"]) {
       const header = operation(path, "post").parameters?.find(({ in: where }) => where === "header");

@@ -8,6 +8,7 @@ import { messagePosted, Refusal } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
   createExecute,
+  createRestHandler,
   migrate,
   OutputSchemaError,
   openDatabase,
@@ -77,10 +78,12 @@ const catalog = defineCatalog([
       z.strictObject({ kind: z.literal("feature"), requestId: z.uuid(), goal: z.string() }),
     ]),
     output: z.object({ kind: z.string() }),
+    method: "POST",
+    path: "/api/v1/probes/{requestId}/reports",
     scopes: ["requests:write"],
     commitment: false,
     confirm: false,
-    surfaces: ["mcp"],
+    surfaces: ["rest", "mcp"],
     tool: "file_probe_report",
     stability: "alpha",
   }),
@@ -239,6 +242,30 @@ describe("execute", () => {
     expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
     await refusalOf(execute("probes.report", oauthToken, { kind: "feature", requestId, steps: ["Open the page"] }));
     await refusalOf(execute("probes.report", oauthToken, { kind: "chore", requestId }));
+    expect(await counts()).toEqual({ messages: 0, events: 0 });
+  });
+
+  // agent-surfaces: Tool schemas that current clients accept: "the same input sent to the tool's /api/v1 operation
+  // gets HTTP 400, and nothing changes".
+  it("refuses the same input that mixes variants with 400 on the tool's /api/v1 operation, and runs a valid one", async () => {
+    const requestId = randomUUID();
+    const rest = createRestHandler({ catalog, document: "{}", execute, authenticate: async () => oauthToken });
+    const post = (body: unknown) =>
+      rest(
+        new Request(`https://tiehall.example.com/api/v1/probes/${requestId}/reports`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+    const valid = await post({ kind: "bug", steps: ["Open the page"] });
+    expect(valid.status).toBe(200);
+    expect(await valid.json()).toEqual({ kind: "bug" });
+    const mixed = await post({ kind: "bug", steps: ["Open the page"], goal: "Faster" });
+    expect(mixed.status).toBe(400);
+    expect(mixed.headers.get("content-type")).toBe("application/problem+json");
+    expect(await mixed.json()).toMatchObject({ status: 400 });
+    expect((await post({ kind: "feature", steps: ["Open the page"] })).status).toBe(400);
     expect(await counts()).toEqual({ messages: 0, events: 0 });
   });
 

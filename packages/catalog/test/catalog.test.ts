@@ -189,6 +189,53 @@ describe("a catalog", () => {
   });
 });
 
+// agent-surfaces: Tool schemas that current clients accept. A tool whose input has variants has its /api/v1
+// operation too, which takes the variants as its JSON body; the path's parameters are fields of every variant.
+describe("an operation whose input has variants", () => {
+  const message = defineCommand({
+    id: "requests.post_message",
+    summary: "Post a comment, a question or an answer on a request.",
+    input: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("comment"), key: z.string(), body: z.string() }),
+      z.strictObject({ kind: z.literal("answer"), key: z.string(), body: z.string(), questionId: z.string() }),
+    ]),
+    output: z.object({ messageId: z.string() }),
+    method: "POST",
+    path: "/api/v1/requests/{key}/messages",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest", "mcp"],
+    tool: "post_message",
+    stability: "alpha",
+  });
+
+  const withoutTool = ({ tool: _tool, ...definition }: CommandDefinition): CommandDefinition => definition;
+
+  it("is offered on REST with a method that carries a body, as on MCP", () => {
+    expect(catalogProblems([message])).toEqual([]);
+    expect(catalogProblems([{ ...message, method: "PATCH" }])).toEqual([]);
+  });
+
+  it("is refused on REST with a method whose input the path and the query carry", () => {
+    expect(catalogProblems([{ ...message, method: "GET" }])).toEqual([
+      "requests.post_message: its input has variants, which only a JSON body carries, so it is offered on REST with POST, PUT or PATCH.",
+    ]);
+  });
+
+  it("is refused when its path names a parameter that a variant lacks", () => {
+    expect(catalogProblems([{ ...message, path: "/api/v1/questions/{questionId}/answers" }])).toEqual([
+      "requests.post_message: its path names {questionId}, which is not a field of its input.",
+    ]);
+  });
+
+  it("is refused on REST when a variant is not an object", () => {
+    expect(
+      catalogProblems([{ ...withoutTool(message), surfaces: ["rest"], input: z.union([z.object({ key: z.string() }), z.string()]) }]),
+    ).toEqual(["requests.post_message: it is offered on REST, so its input is an object, or variants of objects, whose fields the path, query or body carry."]);
+  });
+});
+
 describe("the catalog", () => {
   it("keeps the rules", () => {
     expect(catalogProblems(CATALOG.commands)).toEqual([]);

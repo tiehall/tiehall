@@ -9,7 +9,10 @@ import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 // do: a second definition with the same id, a scope outside the three OAuth
 // scopes, a REST operation without its method and path or with the method and
 // path of another, even with its parameters named differently, and a command that
-// needs the confirmation step but is offered on an agent surface. A tool's
+// needs the confirmation step but is offered on an agent surface. A REST
+// operation's input is an object, or, sent as a JSON body, variants of
+// objects, as a tool whose input has variants takes (agent-surfaces: Tool
+// schemas that current clients accept). A tool's
 // input and output must lower to schemas that current MCP clients accept
 // (agent-surfaces: Tool schemas that current clients accept).
 
@@ -75,9 +78,13 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       } else {
         if (!path.startsWith(API_PREFIX)) problem(`its path ${path} does not start with ${API_PREFIX}, where the API's major version 1 lives.`);
         const fields = inputFields(definition.input);
-        if (fields === undefined) problem("it is offered on REST, so its input is an object whose fields the path, query or body carry.");
+        if (fields === undefined) {
+          problem("it is offered on REST, so its input is an object, or variants of objects, whose fields the path, query or body carry.");
+        } else if (fields.variants && !BODY_METHODS.has(method)) {
+          problem("its input has variants, which only a JSON body carries, so it is offered on REST with POST, PUT or PATCH.");
+        }
         for (const [, parameter = ""] of path.matchAll(/\{([^}]*)\}/g)) {
-          if (fields !== undefined && !fields.includes(parameter)) problem(`its path names {${parameter}}, which is not a field of its input.`);
+          if (fields !== undefined && !fields.names.includes(parameter)) problem(`its path names {${parameter}}, which is not a field of its input.`);
         }
         if (!duplicate) {
           // Paths that differ only in their parameters' names match the same URLs, and OpenAPI counts them as one.
@@ -125,9 +132,28 @@ export function defineCatalog(definitions: readonly CommandDefinition[]): Catalo
   };
 }
 
-/** The fields of an object input schema; undefined for an input that is not an object. */
-function inputFields(input: z.ZodType): string[] | undefined {
-  return input instanceof z.ZodObject ? Object.keys(input.shape) : undefined;
+/** The methods whose input comes in a JSON body, which alone can carry an input with variants. */
+const BODY_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH"]);
+
+/**
+ * The fields an input has whatever its variant: an object's fields, or those
+ * that every variant of a union of objects has; undefined for an input that is
+ * neither.
+ */
+function inputFields(input: z.ZodType): { names: string[]; variants: boolean } | undefined {
+  if (input instanceof z.ZodObject) return { names: Object.keys(input.shape), variants: false };
+  const variants = variantsOf(input);
+  if (variants === undefined) return undefined;
+  const [first = [], ...others] = variants.map((variant) => Object.keys(variant.shape));
+  return { names: first.filter((name) => others.every((names) => names.includes(name))), variants: true };
+}
+
+/** The variants of an input that is a union of objects, such as a union on kind; undefined for any other input. */
+export function variantsOf(input: z.ZodType): z.ZodObject[] | undefined {
+  if (!(input instanceof z.ZodUnion)) return undefined;
+  const options = input.def.options as readonly z.ZodType[];
+  if (options.length === 0 || !options.every((option) => option instanceof z.ZodObject)) return undefined;
+  return options as z.ZodObject[];
 }
 
 /** A real calendar day written as YYYY-MM-DD. */

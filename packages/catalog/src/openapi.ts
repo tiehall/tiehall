@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
-import type { Catalog } from "./catalog.ts";
+import { variantsOf, type Catalog } from "./catalog.ts";
 import type { CommandDefinition } from "./command.ts";
 
 // The OpenAPI 3.1 document of /api/v1, generated from the catalog (public-api:
@@ -18,7 +18,8 @@ import type { CommandDefinition } from "./command.ts";
 //   compatibility check reads;
 // - its parameters and body: the input fields its path names are path
 //   parameters, and the rest are the query of a GET or DELETE and the JSON
-//   body of any other method;
+//   body of any other method; an input with variants keeps them in its body,
+//   one schema per variant;
 // - the optional Idempotency-Key header on a POST;
 // - its answer, 200 with its output, or 202 with the proposal for a
 //   commitment, and its errors as RFC 9457 problems;
@@ -124,11 +125,14 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
 
 function operationOf(definition: CommandDefinition, method: string): ZodOpenApiOperationObject {
   const pathKeys = new Set([...(definition.path ?? "").matchAll(/\{([^}]*)\}/g)].map(([, name]) => name ?? ""));
-  // The catalog checks that a REST operation's input is an object that holds every parameter its path names.
-  const fields = Object.entries((definition.input as z.ZodObject).shape);
+  // The catalog checks that a REST operation's input is an object, or, for a method with a body, variants of
+  // objects, and that each variant holds every parameter its path names.
+  const variants = variantsOf(definition.input);
+  const fields = Object.entries((variants?.[0] ?? (definition.input as z.ZodObject)).shape);
   const inPath = z.object(Object.fromEntries(fields.filter(([key]) => pathKeys.has(key))));
   const rest = z.object(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
   const hasBody = BODY_METHODS.has(method);
+  const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(definition.input, variants, pathKeys);
   const operation: ZodOpenApiOperationObject & Record<`x-${string}`, unknown> = {
     operationId: definition.id,
     summary: definition.summary,
@@ -139,7 +143,7 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
       ...(!hasBody && Object.keys(rest.shape).length > 0 ? { query: rest } : {}),
       ...(method === "POST" ? { header: idempotencyKey } : {}),
     },
-    ...(hasBody && Object.keys(rest.shape).length > 0 ? { requestBody: { content: { "application/json": { schema: rest } } } } : {}),
+    ...(hasBody && body !== undefined ? { requestBody: { content: { "application/json": { schema: body } } } } : {}),
     responses: responsesOf(definition, method),
   };
   if (definition.deprecated !== undefined) {
@@ -148,6 +152,13 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
   }
   if (definition.surfaces.includes("cli")) operation["x-tiehall-cli"] = { command: definition.cliCommand };
   return operation;
+}
+
+/** The body of an input with variants: each variant without the fields the path carries, in the same kind of union. */
+function bodyVariants(input: z.ZodType, variants: readonly z.ZodObject[], pathKeys: ReadonlySet<string>): z.ZodType {
+  const mask: Record<string, true> = Object.fromEntries([...pathKeys].map((key) => [key, true as const]));
+  const options = variants.map((variant) => variant.omit(mask as Parameters<typeof variant.omit>[0])) as [z.ZodObject, ...z.ZodObject[]];
+  return input instanceof z.ZodDiscriminatedUnion ? z.discriminatedUnion(input.def.discriminator, options) : z.union(options);
 }
 
 function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiResponsesObject {
