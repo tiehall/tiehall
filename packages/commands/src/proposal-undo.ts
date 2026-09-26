@@ -28,8 +28,10 @@ import type { Writer } from "./write.ts";
 // internal command that only the web UI runs, with the confirmation step, from
 // the undo page the receipt of a commitment that took effect links,
 // /confirm/{proposal}/undo. Inside withOrg(), with its request's row, the
-// proposal's row and its record of what the commitment replaced locked, in
-// that order:
+// request's pending proposals, the proposal's row and its record of what the
+// commitment replaced locked, in the lock order (event-sequence.ts), so the
+// earlier packet an undo restores as a revision cancels as stale only
+// proposals the undo holds already:
 // - the pure rules decide: only a due date, a scope change, a reassignment
 //   and a decline have an undo, for 15 minutes from when it took effect, once,
 //   by a person who confirmed it (409 or 403 otherwise);

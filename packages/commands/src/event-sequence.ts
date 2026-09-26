@@ -10,6 +10,28 @@ import type { OrgContext } from "./with-org.ts";
 // transaction takes its number back with it, so the sequence has no gaps.
 // A plain sequence or bigserial would hand out numbers without waiting, and a
 // reader could pass an event that commits late.
+//
+// The lock order. Every write holds the counter from its first event until it
+// commits, so a write that locked a row after its first event could wait,
+// holding the counter, for a write that holds that row and waits for the
+// counter: a deadlock, and a 500 for one of them. So a write takes every row
+// lock it needs before its first record(), and every write takes its locks in
+// this one order, so that two at once wait in a line and never on each other:
+// 1. the members' rows a change to who is a member locks (member-changes.ts);
+// 2. the request's row (request-changes.ts), or, for a write on several
+//    requests, such as a removal or the expiry job, their rows in the order
+//    of their ids;
+// 3. the request's proposals: its pending ones, oldest first, then the one
+//    the call names, then the record of what its commitment replaced
+//    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);
+// 4. what a write counts or numbers before its first event: an agent token's
+//    writes (write-limits.ts), the loop limit's re-lock of the request's row
+//    (loop-limit.ts) and a team's next request number (request-numbers.ts);
+// 5. the org's event counter, here, with the first event: the last lock a
+//    write takes. What a write does after its first event, such as cancelling
+//    the proposals its change ends, locks only rows it holds already.
+// packages/commands/test/proposal-locks.test.ts runs the pairs of writes that
+// once waited on each other, in both orders.
 
 /** Takes the next event number of the org, locking its counter row until the transaction ends. */
 export async function takeEventNumber({ tx, orgId }: OrgContext): Promise<number> {

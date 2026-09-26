@@ -22,7 +22,7 @@ import { defineHandler, type Handlers } from "./execute.ts";
 import { recordHumanAction } from "./loop-limit.ts";
 import { teamsOfMember } from "./members.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
-import { cancelProposals, noSuchProposal, proposalView } from "./proposals.ts";
+import { cancelProposals, lockPendingProposals, noSuchProposal, proposalView } from "./proposals.ts";
 import { giveReceipts } from "./receipts.ts";
 import { actingUserOf, lifecycleOf, lockRequestById, partiesOf, saveLifecycle, teamActedFor } from "./request-changes.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
@@ -39,9 +39,10 @@ import type { Writer } from "./write.ts";
 // signed-in user, with the confirmation step, whose nonce is bound to what the
 // proposal proposes and the request it applies to, never to its
 // confirmations, its request's claimant or its expiry. Inside withOrg(), with
-// its request's row and then the proposal's row locked, the order every change
-// to the request takes them in, so confirmations and other changes to the
-// request take turns:
+// its request's row, then the request's pending proposals, then the proposal's
+// row locked, in the lock order (event-sequence.ts) every change to the
+// request keeps to, so confirmations and other changes to the request take
+// turns:
 // - the pure rules decide whether the person may give a confirmation now, and
 //   which: 403 for someone who may not, 409 for the other side before the
 //   accountable human, for the accountable human again, and for a proposal
@@ -50,7 +51,8 @@ import type { Writer } from "./write.ts";
 //   change must still be based on the current revision, or it gets 409;
 // - the confirmation, its proposal.confirmed event and, when it is the last
 //   one the proposal needs, the commitment with its own events commit
-//   together, or none of them does;
+//   together, or none of them does; a reassignment takes the request's number
+//   in its new team before the first event, as the lock order has it;
 // - a confirmation is a human action on the request: it clears the
 //   needs_human flag and restarts the counts of agent writes;
 // - it gives its receipts, in the same transaction (receipts.ts).
@@ -79,10 +81,11 @@ export type StoredProposal = Awaited<ReturnType<typeof lockProposal>>;
 
 /**
  * A proposal and its request, each with its row locked until the call's
- * transaction ends: the request's first, then the proposal's, the order in
- * which a change to the request that cancels its proposals takes them, so the
- * two take turns instead of waiting on each other. 404 when there is no such
- * proposal.
+ * transaction ends, in the lock order (event-sequence.ts): the request's row,
+ * then the request's pending proposals, which a commitment that takes effect
+ * may cancel, then the proposal's own row, so the call and a change to the
+ * request take turns instead of waiting on each other. 404 when there is no
+ * such proposal.
  */
 export async function lockProposalWithRequest(context: OrgContext, proposalId: string): Promise<{ stored: StoredProposal; row: RequestRow }> {
   const [found] = await context.tx
@@ -91,6 +94,7 @@ export async function lockProposalWithRequest(context: OrgContext, proposalId: s
     .where(and(eq(proposals.orgId, context.orgId), eq(proposals.id, proposalId)));
   if (found === undefined) throw noSuchProposal();
   const row = await lockRequestById(context, found.requestId);
+  await lockPendingProposals(context, found.requestId);
   return { stored: await lockProposal(context, proposalId), row };
 }
 
@@ -152,8 +156,12 @@ async function recordApplied(writer: Writer, proposalId: string, before: BeforeC
     .values({ orgId: writer.orgId, proposalId, appliedAt: writer.now(), before, createdRevision: createdRevision ?? null });
 }
 
-/** Applies the commitment of the proposal, which its last confirmation made take effect. */
-async function applyCommitment(writer: Writer, stored: StoredProposal, row: RequestRow, current: RequestLifecycle): Promise<void> {
+/**
+ * Applies the commitment of the proposal, which its last confirmation made
+ * take effect; a reassignment gets the request's number in its new team, taken
+ * before the write's first event.
+ */
+async function applyCommitment(writer: Writer, stored: StoredProposal, row: RequestRow, current: RequestLifecycle, newNumber?: number): Promise<void> {
   await writer.tx
     .update(proposals)
     .set({ state: "applied", endedAt: writer.now() })
@@ -187,7 +195,8 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
     }
     case "reassign": {
       const { teamId } = stored.change as { teamId: string };
-      const number = await takeRequestNumber(writer, teamId);
+      if (newNumber === undefined) throw new Error("A reassignment takes the request's new number before the write's first event.");
+      const number = newNumber;
       // The old key keeps naming the request; its number is never given to another request of its team.
       await writer.tx
         .insert(requestFormerKeys)
@@ -223,10 +232,13 @@ export const PROPOSAL_CONFIRMATION_HANDLERS: Handlers = {
     const current = await assertStillAllowed(context, stored, row);
     const teamId = await teamActedFor(context, userId, row);
     const step = verdict.step === "accountable" ? "accountable_human" : "other_side";
+    // A reassignment that takes effect numbers the request in its new team now, before the first event (the lock order, event-sequence.ts).
+    const reassigned = verdict.takesEffect && stored.kind === "reassign";
+    const newNumber = reassigned ? await takeRequestNumber(context, (stored.change as { teamId: string }).teamId) : undefined;
     return context.write(async (writer) => {
       await writer.tx.insert(proposalConfirmations).values({ orgId: writer.orgId, proposalId, step, userId, confirmedAt: writer.now() });
       await writer.record(proposalConfirmed, { requestId: row.id, proposalId, step, applied: verdict.takesEffect });
-      if (verdict.takesEffect) await applyCommitment(writer, stored, row, current);
+      if (verdict.takesEffect) await applyCommitment(writer, stored, row, current, newNumber);
       await giveReceipts(writer, { proposalId, userId, accountableUserId: stored.accountableUserId, takesEffect: verdict.takesEffect });
       await recordHumanAction(writer, row.id);
       return proposalView(writer, proposalId);

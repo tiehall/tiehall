@@ -104,18 +104,25 @@ export async function createProposal(context: HandlerContext, row: RequestRow, c
   );
 }
 
+/** A pending proposal as the cancellation rules see it. */
+export interface PendingProposal {
+  id: string;
+  kind: CommitmentKind;
+  accountableUserId: string;
+  baseRevision: number | null;
+}
+
 /**
- * Cancels the request's pending proposals that a change to it cancels
- * (requests: How a proposal ends without taking effect; handoff-packet: Packet
- * changes that are commitments), in the change's own transaction, each with
- * its proposal.ended event: a terminal state cancels them all, a confirmed
- * reassignment every other one, a removal those of the removed accountable
- * human, and a new revision the packet changes based on an older one, as
- * stale. The pending proposals are locked first, so a confirmation that
- * arrives meanwhile waits and then finds the proposal ended.
+ * Locks the request's pending proposals, oldest first, until the call's
+ * transaction ends, and returns them. The lock order (event-sequence.ts)
+ * takes them right after the request's row and before the first event of a
+ * write that may cancel some of them after it: a confirmation that takes
+ * effect, a new revision, a removal. The request's row is held by then, so no
+ * proposal joins them meanwhile, and a call that locks them again holds them
+ * already.
  */
-export async function cancelProposals(writer: Writer, requestId: string, change: ProposalCancellingChange): Promise<string[]> {
-  const pending = await writer.tx
+export async function lockPendingProposals({ tx, orgId }: OrgContext, requestId: string): Promise<PendingProposal[]> {
+  const pending = await tx
     .select({
       id: proposals.id,
       kind: proposals.kind,
@@ -123,13 +130,25 @@ export async function cancelProposals(writer: Writer, requestId: string, change:
       baseRevision: proposals.baseRevision,
     })
     .from(proposals)
-    .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.requestId, requestId), eq(proposals.state, "pending")))
+    .where(and(eq(proposals.orgId, orgId), eq(proposals.requestId, requestId), eq(proposals.state, "pending")))
     .orderBy(asc(proposals.createdAt), asc(proposals.id))
     .for("update");
-  const cancelled = cancelledBy(
-    change,
-    pending.map((proposal) => ({ ...proposal, kind: proposal.kind as CommitmentKind })),
-  );
+  return pending.map((proposal) => ({ ...proposal, kind: proposal.kind as CommitmentKind }));
+}
+
+/**
+ * Cancels the request's pending proposals that a change to it cancels
+ * (requests: How a proposal ends without taking effect; handoff-packet: Packet
+ * changes that are commitments), in the change's own transaction, each with
+ * its proposal.ended event: a terminal state cancels them all, a confirmed
+ * reassignment every other one, a removal those of the removed accountable
+ * human, and a new revision the packet changes based on an older one, as
+ * stale. The write holds the request's row and its pending proposals from
+ * before its first event (lockPendingProposals), so a confirmation that
+ * arrives meanwhile waits and then finds the proposal ended.
+ */
+export async function cancelProposals(writer: Writer, requestId: string, change: ProposalCancellingChange): Promise<string[]> {
+  const cancelled = cancelledBy(change, await lockPendingProposals(writer, requestId));
   for (const { id, reason } of cancelled) {
     await writer.tx
       .update(proposals)
@@ -164,19 +183,48 @@ async function usersNamed({ tx, orgId }: OrgContext, ids: readonly string[]) {
 }
 
 /**
- * Cancels every pending proposal whose accountable human is a member being
- * removed, in the removal's transaction, each with its event (requests: A
- * removed member's claims stay and their proposals are cancelled). An admin's
- * removal calls it, and so will a removal for leaving the GitHub organization.
+ * Locks, in the lock order (event-sequence.ts), the requests that have a
+ * pending proposal whose accountable human is this member, by id, and then
+ * each of those requests' pending proposals; returns the requests' ids in
+ * that order. A removal takes them before its first event, and cancels the
+ * proposals after it with cancelProposalsOfRemovedMember().
  */
-export async function cancelProposalsOfRemovedMember(writer: Writer, userId: string): Promise<void> {
-  const theirs = await writer.tx
+export async function lockProposalsOfMember(context: OrgContext, userId: string): Promise<string[]> {
+  const { tx, orgId } = context;
+  const theirs = await tx
     .selectDistinct({ requestId: proposals.requestId })
     .from(proposals)
-    .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.accountableUserId, userId), eq(proposals.state, "pending")));
-  for (const { requestId } of theirs.sort((a, b) => a.requestId.localeCompare(b.requestId))) {
-    await cancelProposals(writer, requestId, { kind: "member_removed", userId });
-  }
+    .where(and(eq(proposals.orgId, orgId), eq(proposals.accountableUserId, userId), eq(proposals.state, "pending")));
+  if (theirs.length === 0) return [];
+  const held = await tx
+    .select({ id: requests.id })
+    .from(requests)
+    .where(
+      and(
+        eq(requests.orgId, orgId),
+        inArray(
+          requests.id,
+          theirs.map(({ requestId }) => requestId),
+        ),
+      ),
+    )
+    .orderBy(asc(requests.id))
+    .for("update");
+  const requestIds = held.map(({ id }) => id);
+  for (const requestId of requestIds) await lockPendingProposals(context, requestId);
+  return requestIds;
+}
+
+/**
+ * Cancels every pending proposal whose accountable human is a member being
+ * removed, in the removal's transaction, each with its event (requests: A
+ * removed member's claims stay and their proposals are cancelled), on the
+ * requests the removal locked with lockProposalsOfMember() before its first
+ * event. An admin's removal calls it, and so will a removal for leaving the
+ * GitHub organization.
+ */
+export async function cancelProposalsOfRemovedMember(writer: Writer, userId: string, requestIds: readonly string[]): Promise<void> {
+  for (const requestId of requestIds) await cancelProposals(writer, requestId, { kind: "member_removed", userId });
 }
 
 /** One proposal as the operations return it; 404 when the install has no such proposal. */

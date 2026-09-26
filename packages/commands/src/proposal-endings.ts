@@ -1,7 +1,7 @@
 import { rejectProposal, withdrawProposal } from "@tiehall/catalog";
 import { proposalEnded, Refusal, rejectionOf, withdrawalOf, type ProposalEnding } from "@tiehall/core";
-import { proposals } from "@tiehall/db";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { proposals, requests } from "@tiehall/db";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { teamsOfMember } from "./members.ts";
@@ -17,8 +17,9 @@ import { writeIn, type Writer } from "./write.ts";
 // page; requests: The event log; design.md, Decisions this change rests on:
 // D28 #16, D30 (4); design.md, Readings to confirm with the founder: R12).
 // proposals.reject and proposals.withdraw are internal commands the web UI
-// runs inside withOrg(), with its request's row and then the proposal's row
-// locked. A rejection comes from the accountable human, or, once that human
+// runs inside withOrg(), with its request's row, the request's pending
+// proposals and then the proposal's row locked, in the lock order
+// (event-sequence.ts). A rejection comes from the accountable human, or, once that human
 // has confirmed, from a person who may give the other side's confirmation
 // (409 before then); a withdrawal from the user who proposed it; anyone else
 // gets 403, and a proposal that has ended already gets 409. Neither needs the
@@ -63,8 +64,13 @@ export const PROPOSAL_ENDING_HANDLERS: Handlers = {
 // its creation, and nothing restarts that time. Each minute a worker job ends
 // every pending proposal whose time is over by the worker's clock as expired,
 // each with its proposal.ended event, recorded as a system action; no email
-// goes out for it. Until the job has run, a confirmation of such a proposal is
-// refused all the same, by the call's own clock.
+// goes out for it. The job keeps to the lock order (event-sequence.ts): it
+// locks the requests of the due proposals first, by id, skipping a request
+// that another write holds at that moment, whose proposals the next run ends,
+// then their due proposals, and only then, with its first event, the org's
+// counter, so it never waits on a write that waits on it. Until the job has
+// run, a confirmation of such a proposal is refused all the same, by the
+// call's own clock.
 
 export const expireProposals: WorkerJob<Record<string, never>> = {
   type: defineJobType<Record<string, never>>("proposals.expire", 1, {
@@ -77,12 +83,39 @@ export const expireProposals: WorkerJob<Record<string, never>> = {
   async handle(_job, { database, now }) {
     try {
       await withOrg(database, async (context) => {
-        const due = await context.tx
+        const { tx, orgId } = context;
+        const isDue = and(eq(proposals.orgId, orgId), eq(proposals.state, "pending"), lte(proposals.expiresAt, now()));
+        const dueRequests = await tx.selectDistinct({ requestId: proposals.requestId }).from(proposals).where(isDue);
+        if (dueRequests.length === 0) return;
+        const held = await tx
+          .select({ id: requests.id })
+          .from(requests)
+          .where(
+            and(
+              eq(requests.orgId, orgId),
+              inArray(
+                requests.id,
+                dueRequests.map(({ requestId }) => requestId),
+              ),
+            ),
+          )
+          .orderBy(asc(requests.id))
+          .for("update", { skipLocked: true });
+        if (held.length === 0) return;
+        const due = await tx
           .select({ id: proposals.id, requestId: proposals.requestId })
           .from(proposals)
-          .where(and(eq(proposals.orgId, context.orgId), eq(proposals.state, "pending"), lte(proposals.expiresAt, now())))
+          .where(
+            and(
+              isDue,
+              inArray(
+                proposals.requestId,
+                held.map(({ id }) => id),
+              ),
+            ),
+          )
           .orderBy(asc(proposals.expiresAt), asc(proposals.id))
-          .for("update", { skipLocked: true });
+          .for("update");
         if (due.length === 0) return;
         const jobs = {
           send: async () => {
