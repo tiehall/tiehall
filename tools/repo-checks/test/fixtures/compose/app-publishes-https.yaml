@@ -1,0 +1,5 @@
+# Breaks the policy: a service other than the caddy profile's publishes 443, on the loopback address.
+services:
+  app:
+    ports:
+      - "127.0.0.1:443:3000"

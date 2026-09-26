@@ -22,9 +22,24 @@ export type ComposeService = Record<string, unknown> & {
   networks?: Record<string, unknown>;
 };
 
-/** Stand-ins for the variables an install sets, so the files can be read anywhere. */
+/**
+ * A stand-in for the database owner's credentials, which the policy check
+ * looks for in every service but migrate and Postgres, whatever name a
+ * service gives them.
+ */
+export const OWNER_SENTINEL = "owner-credential-stand-in";
+
+/**
+ * Stand-ins for the variables an install sets in `.env`, so the files can be
+ * read anywhere: the image, and the database owner's credentials in each of
+ * their forms.
+ */
 export const EXAMPLE_ENVIRONMENT = {
   TIEHALL_IMAGE: `ghcr.io/example/tiehall@sha256:${"0".repeat(64)}`,
+  TIEHALL_DATABASE_OWNER_PASSWORD: OWNER_SENTINEL,
+  TIEHALL_DATABASE_OWNER_PASSWORD_FILE: `/run/secrets/${OWNER_SENTINEL}`,
+  TIEHALL_DATABASE_OWNER_URL: `postgres://tiehall:${OWNER_SENTINEL}@db.example.com:5432/tiehall`,
+  TIEHALL_DATABASE_OWNER_URL_FILE: `/run/secrets/${OWNER_SENTINEL}-url`,
 };
 
 export interface ComposeResult {

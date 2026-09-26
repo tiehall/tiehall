@@ -148,9 +148,11 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      # Only Caddy publishes ports, and the app receives only its own secrets,
-      # in the self-host Compose file. It reads the file through
-      # `docker compose config` and uses only Node built-ins.
+      # In the self-host Compose file: Postgres publishes no port, the app only
+      # one on 127.0.0.1 and only the caddy profile 80 and 443; only migrate
+      # receives the database owner's credentials; migrate and the app run
+      # confined. It reads the file through `docker compose config` and uses
+      # only Node built-ins.
       - run: node tools/repo-checks/src/check-compose.ts
 
   secret-scan:

@@ -1,0 +1,6 @@
+# Breaks the policy: the migrate step runs as root, on a writable root filesystem, and may gain privileges.
+services:
+  migrate:
+    user: root
+    read_only: false
+    security_opt: !reset []

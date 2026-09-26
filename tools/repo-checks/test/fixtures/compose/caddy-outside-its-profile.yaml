@@ -1,0 +1,4 @@
+# Breaks the policy: the reverse proxy runs outside the caddy profile, so every install publishes 80 and 443.
+services:
+  caddy:
+    profiles: !reset []

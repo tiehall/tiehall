@@ -1,0 +1,4 @@
+# Breaks the policy: the app no longer drops every Linux capability.
+services:
+  app:
+    cap_drop: !reset []
