@@ -1,4 +1,4 @@
-import { API_PREFIX, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { API_PREFIX, deprecationHeaders, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { Caller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
@@ -26,7 +26,11 @@ import { createLogger, type Logger } from "./log.ts";
 //   application/problem+json, as the error model gives it for each refusal
 //   (public-api: One error model for Tiehall's own refusals). A failure that is
 //   not one of Tiehall's own refusals answers 500 and says nothing about
-//   itself; the log records it by its name and stack, never its message.
+//   itself; the log records it by its name and stack, never its message;
+// - every answer of a deprecated operation, its errors included, carries the
+//   Deprecation header and, once it has a sunset date, the Sunset header,
+//   from the same metadata as the OpenAPI document (public-api: Deprecated
+//   operations send Deprecation and Sunset headers).
 
 export interface RestOptions {
   catalog: Catalog;
@@ -57,6 +61,12 @@ export function createRestHandler(options: RestOptions): RestHandler {
     const url = new URL(request.url);
     const found = resolve(routes, request.method, url.pathname);
     if (found === undefined) return problem(new Refusal("route-not-found", "There is no such operation here."));
+    const response = await answer(request, url, found);
+    for (const [name, value] of Object.entries(deprecationHeaders(found.definition))) response.headers.set(name, value);
+    return response;
+  };
+
+  async function answer(request: Request, url: URL, found: ResolvedRoute): Promise<Response> {
     const { definition, parameters } = found;
     try {
       const caller = await options.authenticate(request);
@@ -96,7 +106,7 @@ export function createRestHandler(options: RestOptions): RestHandler {
       logger.error("rest: the operation failed", { operationId: definition.id, error });
       return response(internalErrorProblem());
     }
-  };
+  }
 }
 
 function routeOf(definition: CommandDefinition): Route {
@@ -113,12 +123,14 @@ function routeOf(definition: CommandDefinition): Route {
   return { definition, pattern: new RegExp(`^${source}$`), parameters };
 }
 
-/** The operation at this method and path, with the path's parameters, decoded; none when no REST operation is there. */
-function resolve(
-  routes: readonly Route[],
-  method: string,
-  pathname: string,
-): { definition: CommandDefinition; parameters: Record<string, string> } | undefined {
+/** An operation found by method and path, with the path's parameters, decoded. */
+interface ResolvedRoute {
+  definition: CommandDefinition;
+  parameters: Record<string, string>;
+}
+
+/** The operation at this method and path; none when no REST operation is there. */
+function resolve(routes: readonly Route[], method: string, pathname: string): ResolvedRoute | undefined {
   if (!pathname.startsWith(API_PREFIX)) return undefined;
   for (const route of routes) {
     if (route.definition.method !== method) continue;

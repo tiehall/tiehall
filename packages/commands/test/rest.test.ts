@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, catalogProblems, defineCatalog, defineCommand } from "@tiehall/catalog";
+import { openApiDocument } from "@tiehall/catalog/openapi";
 import { Refusal } from "@tiehall/core";
 import { createLogger, createRestHandler, type Caller, type Execute, type LogEntry } from "../src/index.ts";
 
@@ -60,6 +61,34 @@ const catalog = defineCatalog([
     stability: "alpha",
   }),
   defineCommand({
+    id: "probes.list",
+    summary: "List probe requests; deprecated, with a sunset date.",
+    input: z.object({}),
+    output: z.object({ keys: z.array(z.string()) }),
+    method: "GET",
+    path: "/api/v1/probes",
+    scopes: ["requests:read"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "beta",
+    deprecated: { since: "2026-12-01", sunset: "2026-12-15" },
+  }),
+  defineCommand({
+    id: "probes.count",
+    summary: "Count probe requests; deprecated, with no sunset date yet.",
+    input: z.object({}),
+    output: z.object({ count: z.number() }),
+    method: "GET",
+    path: "/api/v1/probe-counts",
+    scopes: ["requests:read"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "beta",
+    deprecated: { since: "2026-12-01" },
+  }),
+  defineCommand({
     id: "probes.internal",
     summary: "An internal command, which the web UI runs.",
     input: z.object({}),
@@ -109,7 +138,8 @@ async function expectProblem(response: Response, status: number): Promise<Record
 beforeEach(() => {
   calls = [];
   logged = [];
-  answer = async (commandId) => (commandId === "probes.get" ? { key: "FE-142" } : { messageId: "m1" });
+  answer = async (commandId) =>
+    ({ "probes.get": { key: "FE-142" }, "probes.list": { keys: ["FE-142"] }, "probes.count": { count: 1 } })[commandId] ?? { messageId: "m1" };
 });
 
 describe("the REST route", () => {
@@ -148,7 +178,7 @@ describe("the REST route", () => {
   it("answers 404 for a path that serves no operation, without running anything", async () => {
     const paths: [string, string][] = [
       ["GET", "/api/v1/nothing-here"],
-      ["GET", "/api/v1/probes"],
+      ["POST", "/api/v1/probes"],
       ["GET", "/api/v1/probes/FE-142/"],
       ["GET", "/api/v1/probes/FE-142/messages"],
       ["DELETE", "/api/v1/probes/FE-142"],
@@ -227,6 +257,54 @@ describe("the REST route", () => {
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ level: "error", operationId: "probes.get", error: { name: "Error" } });
     expect(JSON.stringify(logged)).not.toMatch(/hunter2|Which endpoint/);
+  });
+});
+
+describe("a deprecated operation", () => {
+  // public-api: Deprecated operations send Deprecation and Sunset headers.
+  it("answers with Deprecation (RFC 9745) and Sunset (RFC 8594) from its deprecation metadata", async () => {
+    const response = await handler()(call("GET", "/api/v1/probes"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ keys: ["FE-142"] });
+    // The day it was deprecated as a structured-field date, and the sunset day as an HTTP-date.
+    expect(response.headers.get("deprecation")).toBe("@1796083200");
+    expect(response.headers.get("sunset")).toBe("Tue, 15 Dec 2026 00:00:00 GMT");
+  });
+
+  it("takes both from the same metadata as the OpenAPI document", async () => {
+    const operation = (openApiDocument(catalog) as { paths: Record<string, Record<string, Record<string, unknown>>> }).paths["/api/v1/probes"]?.["get"];
+    expect(operation).toMatchObject({ deprecated: true, "x-sunset": "2026-12-15" });
+    const response = await handler()(call("GET", "/api/v1/probes"));
+    expect(new Date(response.headers.get("sunset") ?? "").toISOString().slice(0, 10)).toBe(operation?.["x-sunset"]);
+  });
+
+  it("sends Deprecation alone while it has no sunset date", async () => {
+    const response = await handler()(call("GET", "/api/v1/probe-counts"));
+    expect(response.headers.get("deprecation")).toBe("@1796083200");
+    expect(response.headers.has("sunset")).toBe(false);
+  });
+
+  it("sends both on its errors too", async () => {
+    answer = async () => {
+      throw new Refusal("forbidden", "Your part in this request does not allow this.");
+    };
+    for (const response of [await handler()(call("GET", "/api/v1/probes")), await handler(null)(call("GET", "/api/v1/probes"))]) {
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.headers.get("deprecation")).toBe("@1796083200");
+      expect(response.headers.get("sunset")).toBe("Tue, 15 Dec 2026 00:00:00 GMT");
+    }
+  });
+
+  it("is the only kind that sends them: an operation that is not deprecated, or a path with none, sends neither", async () => {
+    const responses = [
+      await handler()(call("GET", "/api/v1/probes/FE-142")),
+      await handler()(call("POST", "/api/v1/probes/FE-142/messages", { body: '{"body":"Hi"}', headers: { "content-type": "application/json" } })),
+      await handler()(call("GET", "/api/v1/nothing-here")),
+    ];
+    for (const response of responses) {
+      expect(response.headers.has("deprecation")).toBe(false);
+      expect(response.headers.has("sunset")).toBe(false);
+    }
   });
 });
 
