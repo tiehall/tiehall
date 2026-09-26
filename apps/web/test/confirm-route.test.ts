@@ -1,6 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONFIRM_ROUTE_PATHS } from "@tiehall/commands";
+import { ACTIVITY_LOG_PATH, CONFIRM_ROUTE_PATHS, PACKET_SCHEMA_PATH } from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
 
 // The review pages of the confirmation step (agent-safety: The review page of
@@ -61,6 +61,21 @@ describe("the app", () => {
 
   it("does not mount the confirm route on /confirm itself, which names no page", () => {
     expect(routesOf("/confirm")).toEqual([]);
+  });
+
+  // The other pages the commands package serves at a fixed path: the admin
+  // view of the activity log (activity-log: The admin view) and the packet
+  // schema (handoff-packet: The schema is served by the install). A page that
+  // no route file mounts answers with the app's 404, whatever its handler does.
+  it.each([
+    { name: "the activity log's admin page", path: ACTIVITY_LOG_PATH },
+    { name: "the packet schema", path: PACKET_SCHEMA_PATH },
+  ])("mounts $name on $path, for a GET", async ({ path }) => {
+    const files = routesOf(path);
+    expect(files, `the route files ${path} reaches`).toHaveLength(1);
+    const [file] = files;
+    const module = (await routeFiles[file ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["GET"], `${file} exports GET`).toBeTypeOf("function");
   });
 });
 
