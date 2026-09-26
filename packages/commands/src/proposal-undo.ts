@@ -13,9 +13,9 @@ import { and, eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
-import { lockProposal, type BeforeCommitment } from "./proposal-confirmations.ts";
+import { lockProposalWithRequest, type BeforeCommitment } from "./proposal-confirmations.ts";
 import { proposalView } from "./proposals.ts";
-import { actingUserOf, lifecycleOf, lockRequestById, saveLifecycle, teamActedFor } from "./request-changes.ts";
+import { actingUserOf, lifecycleOf, saveLifecycle, teamActedFor } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
@@ -27,8 +27,9 @@ import type { Writer } from "./write.ts";
 // D30 (4); design.md, Self-hosting decisions: S7). proposals.undo is an
 // internal command that only the web UI runs, with the confirmation step, from
 // the undo page the receipt of a commitment that took effect links,
-// /confirm/{proposal}/undo. Inside withOrg(), with the proposal's row, its
-// record of what the commitment replaced and its request's row locked:
+// /confirm/{proposal}/undo. Inside withOrg(), with its request's row, the
+// proposal's row and its record of what the commitment replaced locked, in
+// that order:
 // - the pure rules decide: only a due date, a scope change, a reassignment
 //   and a decline have an undo, for 15 minutes from when it took effect, once,
 //   by a person who confirmed it (409 or 403 otherwise);
@@ -119,7 +120,7 @@ async function restore(writer: Writer, kind: CommitmentKind, row: RequestRow, be
 export const PROPOSAL_UNDO_HANDLERS: Handlers = {
   [undoCommitment.id]: defineHandler(undoCommitment, async ({ proposal: proposalId }, context) => {
     const userId = actingUserOf(context);
-    const stored = await lockProposal(context, proposalId);
+    const { stored, row } = await lockProposalWithRequest(context, proposalId);
     if (stored.state !== "applied") throw new Refusal("conflict", "This proposal did not take effect, so there is nothing to undo.");
     const applied = await lockApplied(context, proposalId);
     const kind = stored.kind as CommitmentKind;
@@ -131,7 +132,6 @@ export const PROPOSAL_UNDO_HANDLERS: Handlers = {
     );
     if (!verdict.ok) throw new Refusal(verdict.refusal, verdict.reason);
     if (applied === undefined) throw new Error("A reversible commitment that took effect has its record of what it replaced.");
-    const row = await lockRequestById(context, stored.requestId);
     await assertAsLeft(context, kind, row, applied.createdRevision, stored.change as { teamId?: string });
     const current = await lifecycleOf(context, row);
     const teamId = await teamActedFor(context, userId, row);

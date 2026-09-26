@@ -39,8 +39,9 @@ import type { Writer } from "./write.ts";
 // signed-in user, with the confirmation step, whose nonce is bound to what the
 // proposal proposes and the request it applies to, never to its
 // confirmations, its request's claimant or its expiry. Inside withOrg(), with
-// the proposal's row and its request's row locked, so confirmations and other
-// changes to the request take turns:
+// its request's row and then the proposal's row locked, the order every change
+// to the request takes them in, so confirmations and other changes to the
+// request take turns:
 // - the pure rules decide whether the person may give a confirmation now, and
 //   which: 403 for someone who may not, 409 for the other side before the
 //   accountable human, for the accountable human again, and for a proposal
@@ -75,6 +76,23 @@ export async function lockProposal({ tx, orgId }: OrgContext, proposalId: string
 }
 
 export type StoredProposal = Awaited<ReturnType<typeof lockProposal>>;
+
+/**
+ * A proposal and its request, each with its row locked until the call's
+ * transaction ends: the request's first, then the proposal's, the order in
+ * which a change to the request that cancels its proposals takes them, so the
+ * two take turns instead of waiting on each other. 404 when there is no such
+ * proposal.
+ */
+export async function lockProposalWithRequest(context: OrgContext, proposalId: string): Promise<{ stored: StoredProposal; row: RequestRow }> {
+  const [found] = await context.tx
+    .select({ requestId: proposals.requestId })
+    .from(proposals)
+    .where(and(eq(proposals.orgId, context.orgId), eq(proposals.id, proposalId)));
+  if (found === undefined) throw noSuchProposal();
+  const row = await lockRequestById(context, found.requestId);
+  return { stored: await lockProposal(context, proposalId), row };
+}
 
 /** The proposal as the pure rules see it. */
 export async function standingOf({ tx, orgId }: OrgContext, stored: StoredProposal): Promise<ProposalStanding> {
@@ -198,8 +216,7 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
 export const PROPOSAL_CONFIRMATION_HANDLERS: Handlers = {
   [confirmProposal.id]: defineHandler(confirmProposal, async ({ proposal: proposalId }, context) => {
     const userId = actingUserOf(context);
-    const stored = await lockProposal(context, proposalId);
-    const row = await lockRequestById(context, stored.requestId);
+    const { stored, row } = await lockProposalWithRequest(context, proposalId);
     const teamIds = (await teamsOfMember(context, userId)).map(({ id }) => id);
     const verdict = confirmationOf(await standingOf(context, stored), { userId, teamIds }, await partiesOf(context, row), context.now());
     if (!verdict.ok) throw new Refusal(verdict.refusal, verdict.reason);

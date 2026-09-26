@@ -5,9 +5,9 @@ import { and, asc, eq, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { teamsOfMember } from "./members.ts";
-import { lockProposal, standingOf } from "./proposal-confirmations.ts";
+import { lockProposalWithRequest, standingOf } from "./proposal-confirmations.ts";
 import { proposalView, type ProposalView } from "./proposals.ts";
-import { actingUserOf, lockRequestById, partiesOf, teamActedFor } from "./request-changes.ts";
+import { actingUserOf, partiesOf, teamActedFor } from "./request-changes.ts";
 import { SetupRequiredError, withOrg } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
 import { writeIn, type Writer } from "./write.ts";
@@ -17,7 +17,7 @@ import { writeIn, type Writer } from "./write.ts";
 // page; requests: The event log; design.md, Decisions this change rests on:
 // D28 #16, D30 (4); design.md, Readings to confirm with the founder: R12).
 // proposals.reject and proposals.withdraw are internal commands the web UI
-// runs inside withOrg(), with the proposal's row and its request's row
+// runs inside withOrg(), with its request's row and then the proposal's row
 // locked. A rejection comes from the accountable human, or, once that human
 // has confirmed, from a person who may give the other side's confirmation
 // (409 before then); a withdrawal from the user who proposed it; anyone else
@@ -39,8 +39,7 @@ export async function endProposal(writer: Writer, requestId: string, proposalId:
 /** Rejects or withdraws the proposal for the user the call acts for, once the rules allow it. */
 async function end(context: HandlerContext, proposalId: string, how: "rejected" | "withdrawn"): Promise<ProposalView> {
   const userId = actingUserOf(context);
-  const stored = await lockProposal(context, proposalId);
-  const row = await lockRequestById(context, stored.requestId);
+  const { stored, row } = await lockProposalWithRequest(context, proposalId);
   const actor = { userId, teamIds: (await teamsOfMember(context, userId)).map(({ id }) => id) };
   const standing = await standingOf(context, stored);
   const verdict =
