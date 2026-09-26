@@ -15,36 +15,117 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // app reads the client from these two headers only, so a client can never
 // name its own address or scheme, and the app never sees Next.js fill them
 // from an untrusted peer.
+//
+// Shutdown (self-host-install: A restart stops the app gracefully): once the
+// web role starts to stop, the guard answers every new call itself, with 503,
+// `Retry-After: 0` and an RFC 9457 problem (public-api: One error model for
+// Tiehall's own refusals), while the calls already in flight finish.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
 }
 
+export interface ShutdownResult {
+  /** The calls in flight when the shutdown started. */
+  inFlight: number;
+  /** The calls still in flight when the timeout ended the wait, which closing the connections cut off. */
+  cutOff: number;
+}
+
+export interface RequestGuard {
+  /** The calls the guarded servers are answering now. */
+  readonly inFlight: number;
+  /**
+   * Answers every new call with 503 from now on, waits until the calls in
+   * flight have finished or the timeout has passed, and then closes the
+   * servers and every connection they hold.
+   */
+  shutdown(timeoutMs: number): Promise<ShutdownResult>;
+  /** Stops guarding servers created from now on. */
+  uninstall(): void;
+}
+
 /** The headers a client could use to name its own address, host or scheme. */
 const FORWARDED_HEADERS = ["forwarded", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-port", "x-real-ip"];
 
-/** Installs the guard on every HTTP server the process creates from now on, and returns how to remove it. */
-export function installRequestGuard(options: RequestGuardOptions): () => void {
+/** The problem a call gets while the app shuts down: the error model's 503 row, which names no problem type. */
+const SHUTTING_DOWN = JSON.stringify({
+  type: "about:blank",
+  title: "Service Unavailable",
+  status: 503,
+  detail: "Tiehall is shutting down. Retry the call; it is answered once Tiehall is back.",
+});
+
+/** Installs the guard on every HTTP server the process creates from now on. */
+export function installRequestGuard(options: RequestGuardOptions): RequestGuard {
+  const servers = new Set<http.Server>();
+  let inFlight = 0;
+  let stopping = false;
+  let drained: (() => void) | undefined;
+
+  const guard = (listener: RequestListener): RequestListener => (request: IncomingMessage, response: ServerResponse) => {
+    if (stopping) return shuttingDown(request, response);
+    setForwardedHeaders(request, options.proxies);
+    inFlight += 1;
+    response.once("close", () => {
+      inFlight -= 1;
+      if (stopping && inFlight === 0) drained?.();
+    });
+    return listener(request, response);
+  };
+
   const original = http.createServer;
   const guarded = ((...args: unknown[]) => {
     const index = args.findIndex((argument) => typeof argument === "function");
-    if (index !== -1) args[index] = guardListener(args[index] as RequestListener, options);
-    return (original as (...args: unknown[]) => http.Server).apply(http, args);
+    if (index !== -1) args[index] = guard(args[index] as RequestListener);
+    const server = (original as (...args: unknown[]) => http.Server).apply(http, args);
+    servers.add(server);
+    return server;
   }) as typeof http.createServer;
   http.createServer = guarded;
   // Also for code that imported createServer by name.
   syncBuiltinESMExports();
-  return () => {
-    if (http.createServer === guarded) http.createServer = original;
-    syncBuiltinESMExports();
+
+  return {
+    get inFlight() {
+      return inFlight;
+    },
+    async shutdown(timeoutMs) {
+      stopping = true;
+      const atStart = inFlight;
+      if (inFlight > 0) {
+        let timer: NodeJS.Timeout | undefined;
+        await new Promise<void>((resolve) => {
+          drained = resolve;
+          timer = setTimeout(resolve, timeoutMs);
+        });
+        clearTimeout(timer);
+      }
+      const cutOff = inFlight;
+      for (const server of servers) {
+        server.close();
+        server.closeAllConnections();
+      }
+      return { inFlight: atStart, cutOff };
+    },
+    uninstall() {
+      if (http.createServer === guarded) http.createServer = original;
+      syncBuiltinESMExports();
+    },
   };
 }
 
-function guardListener(listener: RequestListener, options: RequestGuardOptions): RequestListener {
-  return (request: IncomingMessage, response: ServerResponse) => {
-    setForwardedHeaders(request, options.proxies);
-    return listener(request, response);
-  };
+function shuttingDown(request: IncomingMessage, response: ServerResponse): void {
+  // The call's body is not read; the connection closes after the answer.
+  request.resume();
+  response.writeHead(503, {
+    "content-type": "application/problem+json",
+    "content-length": Buffer.byteLength(SHUTTING_DOWN),
+    "retry-after": "0",
+    "cache-control": "no-store",
+    connection: "close",
+  });
+  response.end(request.method === "HEAD" ? undefined : SHUTTING_DOWN);
 }
 
 /** Rewrites a request's forwarded headers to the client the install trusts. */

@@ -1,7 +1,7 @@
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { forwardedClient, TrustedProxies } from "../src/trusted-proxies.ts";
-import { installRequestGuard } from "../src/request-guard.ts";
+import { installRequestGuard, type RequestGuard } from "../src/request-guard.ts";
 
 // Forwarded headers are trusted only from the reverse proxies `.env` names
 // (self-host-install: `TIEHALL_URL` and TLS). From any other address, a
@@ -82,16 +82,16 @@ describe("the client of a request", () => {
 });
 
 describe("the request guard on the web server", () => {
-  let uninstall: (() => void) | undefined;
+  let guard: RequestGuard | undefined;
 
   afterEach(() => {
-    uninstall?.();
-    uninstall = undefined;
+    guard?.uninstall();
+    guard = undefined;
   });
 
   /** Starts a server the way the Next.js standalone server does, after the guard, and returns the headers it saw. */
   async function headersSeen(trusted: TrustedProxies, headers: Record<string, string>): Promise<IncomingHttpHeaders> {
-    uninstall = installRequestGuard({ proxies: trusted });
+    guard = installRequestGuard({ proxies: trusted });
     // The Next.js standalone server creates its server through the http module's object, as here.
     const http = (await import("node:http")).default;
     let seen: IncomingHttpHeaders = {};

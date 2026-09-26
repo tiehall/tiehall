@@ -2,7 +2,8 @@
 // It checks the role and the configuration, then starts the role:
 // - web imports the Next.js standalone server into this process, behind the
 //   request guard, which trusts forwarded headers only from the proxies the
-//   settings name;
+//   settings name, and on SIGTERM answers new calls with 503 while the calls
+//   in flight finish;
 // - worker and migrate run here: worker works the job queues until SIGTERM,
 //   and migrate applies the migrations from /app/packages/db/migrations,
 //   beside this bundle, and installs the job queue's schema;
@@ -15,7 +16,7 @@
 // A role whose settings are missing or unusable does not start, and its log
 // says why (self-host-install: `TIEHALL_URL` and TLS).
 // Exit codes: 2 for an unknown or missing role, 1 for a settings error or
-// a failed role, and 0 (or the web server's 143 after SIGTERM) for a clean stop.
+// a failed role, and 0 for a clean stop.
 // Every role logs JSON lines on standard output (self-host-install: Logs carry
 // ids, never message text or credentials), except init, whose standard output
 // is the `.env` file; the usage line for a missing or unknown role, printed
@@ -92,7 +93,7 @@ async function run(settings: RoleSettings): Promise<void> {
   });
   switch (settings.role) {
     case "web":
-      return runWebRole(settings.app, { serverModule: WEB_SERVER });
+      return runWebRole(settings.app, { serverModule: WEB_SERVER, logger });
     case "worker":
       return runWorkerRole(settings.app, { logger });
     case "migrate":

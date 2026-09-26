@@ -395,6 +395,46 @@ describe("/healthz", () => {
     await waitFor("/healthz to answer up", async () => ((await healthz(port))?.status === 200 ? true : undefined), 120);
     expect(await healthz(port)).toEqual({ status: 200, body: { status: "up" } });
   });
+
+  // self-host-install: A restart stops the app gracefully. A /healthz call to a paused database stays in
+  // flight until its timeout, which holds the stopping web role open while a new call arrives.
+  it("answers a call during shutdown with 503 and Retry-After: 0, lets the call in flight finish, and exits 0", async () => {
+    const stopping = start("web", "--network", network, ...install, ...appDatabase, "--publish", "127.0.0.1::3000");
+    const stoppingPort = hostPort(stopping);
+    try {
+      await waitFor("/healthz of the web role to stop", () => healthz(stoppingPort));
+      dockerOk(["pause", database]);
+      try {
+        const inFlight = fetch(`http://127.0.0.1:${stoppingPort}/healthz`).then(async (response) => ({
+          status: response.status,
+          body: await response.text(),
+        }));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        dockerOk(["kill", "--signal", "SIGTERM", stopping]);
+        await waitFor("the web role to start stopping", () => (/web: stopping/.test(dockerOk(["logs", stopping])) ? true : undefined));
+        const during = await fetch(`http://127.0.0.1:${stoppingPort}/`);
+        expect(during.status).toBe(503);
+        expect(during.headers.get("retry-after")).toBe("0");
+        expect(during.headers.get("content-type")).toBe("application/problem+json");
+        expect(await during.json()).toMatchObject({ type: "about:blank", status: 503 });
+        expect(await inFlight).toEqual({ status: 503, body: '{"status":"down"}' });
+      } finally {
+        dockerOk(["unpause", database]);
+      }
+      await waitFor("the web role to exit", () => (containerState(stopping).Running ? undefined : true));
+      expect(containerState(stopping).ExitCode).toBe(0);
+      // Tiehall's own lines; the Next.js server also prints its start banner as plain text.
+      const tiehallLines = dockerOk(["logs", stopping])
+        .split("\n")
+        .filter((line) => line.startsWith("{"))
+        .join("\n");
+      expect(logLines(tiehallLines).map(({ msg }) => msg)).toEqual(
+        expect.arrayContaining(["web: stopping; new calls get 503 until the 1 call in flight finishes", "web: stopped"]),
+      );
+    } finally {
+      docker(["rm", "--force", stopping]);
+    }
+  });
 });
 
 describe("the worker role", () => {
