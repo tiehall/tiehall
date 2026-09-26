@@ -1,6 +1,8 @@
 // The image's one entrypoint (design.md, Technical decisions: T1): `node main.mjs <role>`.
 // It checks the role and the configuration, then starts the role:
-// - web imports the Next.js standalone server into this process;
+// - web imports the Next.js standalone server into this process, behind the
+//   request guard, which trusts forwarded headers only from the proxies the
+//   settings name;
 // - worker and migrate run here: worker works the job queues until SIGTERM,
 //   and migrate applies the migrations from /app/packages/db/migrations,
 //   beside this bundle, and installs the job queue's schema;
@@ -21,7 +23,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   createLogger,
   readAppSettings,
@@ -33,6 +35,7 @@ import {
 import { runInitRole } from "./init-role.ts";
 import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
+import { runWebRole } from "./web-role.ts";
 import { runWorkerRole } from "./worker-role.ts";
 
 /** The image's release, set at build time; a build that names none is a development build. */
@@ -89,7 +92,7 @@ async function run(settings: RoleSettings): Promise<void> {
   });
   switch (settings.role) {
     case "web":
-      return startWeb(settings.app);
+      return runWebRole(settings.app, { serverModule: WEB_SERVER });
     case "worker":
       return runWorkerRole(settings.app, { logger });
     case "migrate":
@@ -97,14 +100,6 @@ async function run(settings: RoleSettings): Promise<void> {
     case "all":
       return superviseAll();
   }
-}
-
-async function startWeb(settings: AppSettings): Promise<void> {
-  // Docker sets HOSTNAME to the container id; the server must listen on every interface.
-  process.env["HOSTNAME"] = "0.0.0.0";
-  process.env["PORT"] = String(settings.port);
-  // The Next.js server handles SIGTERM itself: it finishes in-flight requests, then exits.
-  await import(pathToFileURL(WEB_SERVER).href);
 }
 
 async function runMigrate(settings: MigrateSettings): Promise<void> {

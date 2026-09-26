@@ -1,4 +1,5 @@
 # Breaks the policy: the self-host app joins the host network, which exposes every port it listens on.
 services:
   app:
+    networks: !reset {}
     network_mode: host

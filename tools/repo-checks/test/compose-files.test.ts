@@ -149,6 +149,14 @@ describe("the self-host Compose file", () => {
     expect(readFileSync(join(deploy, "Caddyfile"), "utf8")).toMatch(/^\{\$TIEHALL_URL\} \{\n\treverse_proxy app:3000\n\}$/m);
   });
 
+  it("trusts the caddy profile's proxy by the name .env gives it, which resolves inside the install with or without the profile", () => {
+    expect(env.get("TIEHALL_TRUSTED_PROXIES")).toBe("caddy");
+    for (const profiles of [[], ["caddy"]]) {
+      const { services } = model({ profiles });
+      expect(services["app"]?.networks?.["default"], profiles.join()).toMatchObject({ aliases: ["caddy"] });
+    }
+  });
+
   it("connects to an external Postgres through the two URLs in .env", () => {
     const external = join(folder, "external.env");
     const owner = "postgres://tiehall:owner-secret@db.example.com:5432/tiehall";

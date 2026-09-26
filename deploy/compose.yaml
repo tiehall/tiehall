@@ -101,6 +101,12 @@ services:
       - TIEHALL_SMTP_FROM
     ports:
       - ${TIEHALL_HTTP_BIND:-127.0.0.1:3000}:3000
+    networks:
+      default:
+        # caddy is the name TIEHALL_TRUSTED_PROXIES gives the caddy profile's proxy. The app answers to it
+        # too, so the name resolves inside the install whether or not that profile runs, and looking it up
+        # never sends a DNS query out of the install.
+        aliases: [caddy]
     depends_on:
       postgres:
         condition: service_healthy
