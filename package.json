@@ -22,7 +22,8 @@
     "lint:migrations": "node packages/db/src/check-migrations.ts",
     "openapi:generate": "node packages/catalog/src/write-openapi.ts",
     "check:openapi": "node packages/catalog/src/check-openapi.ts",
-    "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts"
+    "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",
+    "changelog:release": "node tools/repo-checks/src/record-release.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

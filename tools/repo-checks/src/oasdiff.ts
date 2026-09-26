@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -52,4 +52,36 @@ export async function oasdiff(): Promise<string> {
 export function checkArchive(file: string, bytes: Uint8Array, sha256: string): void {
   const digest = createHash("sha256").update(bytes).digest("hex");
   if (digest !== sha256) throw new Error(`${file} has the SHA-256 ${digest}, not the pinned ${sha256}; nothing from it was run.`);
+}
+
+const WORK = fileURLToPath(new URL("../../../node_modules/.cache/tiehall-oasdiff/work/", import.meta.url));
+
+/**
+ * Runs the pinned oasdiff on two documents, given as JSON text, which it reads
+ * as base.json and revision.json in a folder of its own, beside any other
+ * files the run needs; external $refs are off, so it reads nothing else, and
+ * no configuration file of the repository applies.
+ */
+export async function runOnDocuments(
+  args: readonly string[],
+  base: string,
+  revision: string,
+  files: Readonly<Record<string, string>> = {},
+): Promise<SpawnSyncReturns<string>> {
+  const binary = await oasdiff();
+  mkdirSync(WORK, { recursive: true });
+  const folder = mkdtempSync(join(WORK, "run-"));
+  try {
+    writeFileSync(join(folder, "base.json"), base);
+    writeFileSync(join(folder, "revision.json"), revision);
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(folder, name), text);
+    const run = spawnSync(binary, [...args.slice(0, 1), "base.json", "revision.json", ...args.slice(1), "--allow-external-refs=false"], {
+      cwd: folder,
+      encoding: "utf8",
+    });
+    if (run.error) throw run.error;
+    return run;
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 }

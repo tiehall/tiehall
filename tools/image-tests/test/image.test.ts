@@ -365,6 +365,17 @@ describe.each(["web", "all"])("the %s role", (role) => {
     }
   });
 
+  // public-api: The changelog page and the release notes.
+  it("serves the API changelog page without authentication, running no script", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/docs/api/changelog`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(response.headers.get("content-security-policy")).toMatch(/^default-src 'none'; style-src 'sha256-/);
+    const html = await response.text();
+    expect(html).toContain("<h1>API changelog</h1>");
+    expect(html).not.toContain("<script");
+  });
+
   if (role === "all") {
     it("runs the worker beside the web server", () => {
       const logs = dockerOk(["logs", name]);

@@ -1,9 +1,5 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { addedEntries, API_BREAKING_LABEL, parseChangelog, type Changelog } from "@tiehall/catalog/changelog";
-import { oasdiff } from "./oasdiff.ts";
+import { runOnDocuments } from "./oasdiff.ts";
 
 // Notice before a breaking change, enforced in CI (public-api: Notice before a
 // breaking change is enforced in CI; public-api: The API version number while
@@ -48,50 +44,36 @@ export interface CompatResult {
 }
 
 const ERROR = 3;
-const WORK = fileURLToPath(new URL("../../../node_modules/.cache/tiehall-oasdiff/work/", import.meta.url));
 
 /** Compares a revision of the OpenAPI document with its base, both as JSON text. */
 export async function compareDocuments(base: string, revision: string): Promise<CompatResult> {
-  const binary = await oasdiff();
-  mkdirSync(WORK, { recursive: true });
-  const folder = mkdtempSync(join(WORK, "compare-"));
+  const run = await runOnDocuments(
+    [
+      "breaking",
+      "--format=json",
+      "--fail-on=ERR",
+      `--deprecation-days-beta=${DEPRECATION_DAYS.beta}`,
+      `--deprecation-days-stable=${DEPRECATION_DAYS.stable}`,
+      "--severity-levels=severity-levels.txt",
+    ],
+    base,
+    revision,
+    { "severity-levels.txt": "api-version-not-bumped err\n" },
+  );
+  let findings: Finding[];
   try {
-    writeFileSync(join(folder, "base.json"), base);
-    writeFileSync(join(folder, "revision.json"), revision);
-    writeFileSync(join(folder, "severity-levels.txt"), "api-version-not-bumped err\n");
-    const run = spawnSync(
-      binary,
-      [
-        "breaking",
-        "base.json",
-        "revision.json",
-        "--format=json",
-        "--fail-on=ERR",
-        `--deprecation-days-beta=${DEPRECATION_DAYS.beta}`,
-        `--deprecation-days-stable=${DEPRECATION_DAYS.stable}`,
-        "--severity-levels=severity-levels.txt",
-        "--allow-external-refs=false",
-      ],
-      { cwd: folder, encoding: "utf8" },
-    );
-    if (run.error) throw run.error;
-    let findings: Finding[];
-    try {
-      findings = JSON.parse(run.stdout) as Finding[];
-    } catch {
-      throw new Error(`oasdiff could not compare the documents (exit ${run.status}): ${run.stderr.trim()}`);
-    }
-    const errors = findings.filter(({ level }) => level >= ERROR).map(({ id, level, text, operationId, path }) => ({
-      id,
-      level,
-      text,
-      ...(operationId === undefined ? {} : { operationId }),
-      ...(path === undefined ? {} : { path }),
-    }));
-    return { passed: errors.length === 0, errors };
-  } finally {
-    rmSync(folder, { recursive: true, force: true });
+    findings = JSON.parse(run.stdout) as Finding[];
+  } catch {
+    throw new Error(`oasdiff could not compare the documents (exit ${run.status}): ${run.stderr.trim()}`);
   }
+  const errors = findings.filter(({ level }) => level >= ERROR).map(({ id, level, text, operationId, path }) => ({
+    id,
+    level,
+    text,
+    ...(operationId === undefined ? {} : { operationId }),
+    ...(path === undefined ? {} : { path }),
+  }));
+  return { passed: errors.length === 0, errors };
 }
 
 /** A pull request, as the check sees it: the document and the changelog at its merge base and in it, and its labels. */

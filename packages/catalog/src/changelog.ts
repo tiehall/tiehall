@@ -6,9 +6,14 @@ import { fileURLToPath } from "node:url";
 // that must announce something about the API, such as the breaking change of
 // an urgent security fix, adds its entry under `unreleased`, and the entry is
 // shown with the release that carries it. `releases` holds what each release
-// changed. The compatibility check in CI reads the file at a pull request's
-// merge base and in the pull request, so this module imports nothing outside
-// Node and runs in that job without the catalog's own dependencies.
+// changed, newest first: when a release is made, the pinned oasdiff's
+// changelog of openapi/v1.json since the previous release is recorded with
+// the unreleased entries (design.md, Technical decisions: T12). The changelog
+// page at /docs/api/changelog and each release's notes show the same items,
+// which releaseItems() gives. The compatibility check in CI reads the file at
+// a pull request's merge base and in the pull request, so this module imports
+// nothing outside Node and runs in that job without the catalog's own
+// dependencies.
 
 /** The label a pull request carries to make a breaking change without notice, for an urgent security fix. */
 export const API_BREAKING_LABEL = "api-breaking";
@@ -32,11 +37,49 @@ export interface ChangelogEntry {
   operationIds?: string[];
 }
 
+/** One change oasdiff's changelog found between two releases' documents. */
+export interface ApiChange {
+  /** oasdiff's id for the kind of change, such as endpoint-deprecated-with-sunset. */
+  id: string;
+  /** 3 for an error (a breaking change), 2 for a warning, 1 for information. */
+  level: 1 | 2 | 3;
+  method?: string;
+  path?: string;
+  operationId?: string;
+  /** oasdiff's sentence, with names and values in backticks. */
+  text: string;
+}
+
+/** What one release changed in the API. */
+export interface ChangelogRelease {
+  /** Tiehall's release, such as 1.4.0. */
+  version: string;
+  /** The calendar day of the release. */
+  date: string;
+  /** The OpenAPI document's info.version in the release, such as 0.4.0. */
+  apiVersion: string;
+  /** The maintainers' entries that the release carries. */
+  entries: ChangelogEntry[];
+  /** The changes to the document since the previous release. */
+  changes: ApiChange[];
+}
+
 export interface Changelog {
   /** The entries of the changes no release carries yet. */
   unreleased: ChangelogEntry[];
   /** What each release changed, newest first. */
-  releases: unknown[];
+  releases: ChangelogRelease[];
+}
+
+/** One line of a release on the changelog page and in its notes. */
+export interface ChangelogItem {
+  /** A maintainers' entry by its kind, or a change by its level. */
+  kind: ChangelogEntryKind | "error" | "warning" | "info";
+  method?: string;
+  path?: string;
+  operationIds?: string[];
+  /** The text, with names and values in backticks. */
+  text: string;
 }
 
 /** A changelog file that breaks the format; its message names every problem, one per line. */
@@ -48,6 +91,10 @@ export class ChangelogError extends Error {
 export const COMMITTED_CHANGELOG = fileURLToPath(new URL("../../../openapi/changelog.json", import.meta.url));
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const API_VERSION = /^\d+\.\d+\.\d+$/;
+const RELEASE_FIELDS = new Set(["version", "date", "apiVersion", "entries", "changes"]);
+const CHANGE_FIELDS = new Set(["id", "level", "method", "path", "operationId", "text"]);
 const OPERATION_ID = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
 const ENTRY_FIELDS = new Set(["date", "kind", "text", "operationIds"]);
 const TOP_LEVEL_FIELDS = new Set(["$comment", "unreleased", "releases"]);
@@ -67,8 +114,65 @@ export function parseChangelog(text: string): Changelog {
   if (!Array.isArray(unreleased)) problems.push("unreleased is a list of entries.");
   else unreleased.forEach((entry, index) => problems.push(...entryProblems(entry).map((problem) => `unreleased[${index}]: ${problem}`)));
   if (!Array.isArray(releases)) problems.push("releases is a list of releases.");
+  else releases.forEach((release, index) => problems.push(...releaseProblems(release, `releases[${index}]`)));
   if (problems.length > 0) throw new ChangelogError(problems.join("\n"));
-  return { unreleased: unreleased as ChangelogEntry[], releases: releases as unknown[] };
+  return { unreleased: unreleased as ChangelogEntry[], releases: releases as ChangelogRelease[] };
+}
+
+function releaseProblems(release: unknown, at: string): string[] {
+  if (!isObject(release)) return [`${at}: a release is an object with a version, a date, an apiVersion, entries and changes.`];
+  const problems: string[] = [];
+  const { version, date, apiVersion, entries, changes } = release;
+  if (typeof version !== "string" || !RELEASE_VERSION.test(version)) problems.push(`${at}: version is a release version, such as 1.4.0.`);
+  if (typeof date !== "string" || !isDate(date)) problems.push(`${at}: date is a calendar day, such as 2026-12-15.`);
+  if (typeof apiVersion !== "string" || !API_VERSION.test(apiVersion)) {
+    problems.push(`${at}: apiVersion is the document's info.version, such as 0.4.0.`);
+  }
+  for (const key of Object.keys(release)) if (!RELEASE_FIELDS.has(key)) problems.push(`${at}: ${key} is not a field of a release.`);
+  if (!Array.isArray(entries)) problems.push(`${at}: entries is a list of entries.`);
+  else entries.forEach((entry, index) => problems.push(...entryProblems(entry).map((problem) => `${at}.entries[${index}]: ${problem}`)));
+  if (!Array.isArray(changes)) problems.push(`${at}: changes is a list of changes.`);
+  else changes.forEach((change, index) => problems.push(...changeProblems(change).map((problem) => `${at}.changes[${index}]: ${problem}`)));
+  return problems;
+}
+
+function changeProblems(change: unknown): string[] {
+  if (!isObject(change)) return ["a change is an object with an id, a level and a text."];
+  const problems: string[] = [];
+  const { id, level, text } = change;
+  if (typeof id !== "string" || id === "") problems.push("id is the checker's id for the change.");
+  if (level !== 1 && level !== 2 && level !== 3) problems.push("level is 1 (information), 2 (warning) or 3 (error).");
+  if (typeof text !== "string" || text.trim() === "") problems.push("text says what changed.");
+  for (const key of ["method", "path", "operationId"]) {
+    if (change[key] !== undefined && typeof change[key] !== "string") problems.push(`${key} is a string.`);
+  }
+  for (const key of Object.keys(change)) if (!CHANGE_FIELDS.has(key)) problems.push(`${key} is not a field of a change.`);
+  return problems;
+}
+
+const LEVELS = { 3: "error", 2: "warning", 1: "info" } as const;
+
+/**
+ * The lines of a release, as the changelog page and the release notes show
+ * them: the maintainers' entries first, then the changes, most severe first,
+ * each kind in the order the checker gave.
+ */
+export function releaseItems(release: Pick<ChangelogRelease, "entries" | "changes">): ChangelogItem[] {
+  const entries = release.entries.map(({ kind, text, operationIds }): ChangelogItem => ({
+    kind,
+    ...(operationIds === undefined ? {} : { operationIds }),
+    text,
+  }));
+  const changes = [...release.changes]
+    .sort((a, b) => b.level - a.level)
+    .map(({ level, method, path, operationId, text }): ChangelogItem => ({
+      kind: LEVELS[level],
+      ...(method === undefined ? {} : { method }),
+      ...(path === undefined ? {} : { path }),
+      ...(operationId === undefined ? {} : { operationIds: [operationId] }),
+      text,
+    }));
+  return [...entries, ...changes];
 }
 
 function entryProblems(entry: unknown): string[] {

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@scalar/api-reference": "1.69.2",
+    "@tiehall/catalog": "workspace:*",
     "@tiehall/commands": "workspace:*",
     "next": "16.3.5",
     "react": "19.3.0",
