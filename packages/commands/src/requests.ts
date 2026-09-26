@@ -4,7 +4,8 @@ import { requests } from "@tiehall/db";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
-import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, teamActedFor, transition } from "./request-changes.ts";
+import { insertPacketRevision } from "./packet-revisions.ts";
+import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, stampOf, teamActedFor, transition } from "./request-changes.ts";
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import { requestView, requestViews, threadOf } from "./request-views.ts";
@@ -29,8 +30,11 @@ import { requestView, requestViews, threadOf } from "./request-views.ts";
 // it from among their own: their only team is the default; a member of
 // several teams who names none gets 400, which lists the teams to pick from; a
 // member of no team, and one who names a team they are not in, gets 403. The
-// request starts open with the next number of its target team, and the
-// request, its number and its event commit together or not at all.
+// request starts open with the next number of its target team, and with its
+// packet, as the catalog's definition parsed it, as revision 1 (handoff-packet:
+// Immutable, numbered revisions; handoff-packet: Open objects, strict server);
+// the request, its number, its first revision and its event commit together or
+// not at all.
 
 /** "BE", "BE and QA", or "BE, OPS and QA". */
 function listed(keys: readonly string[]): string {
@@ -60,7 +64,7 @@ async function requestingTeamOf(context: HandlerContext, userId: string, named: 
 }
 
 export const REQUEST_HANDLERS: Handlers = {
-  [createRequest.id]: defineHandler(createRequest, async ({ targetTeam, requestingTeam, title }, context) => {
+  [createRequest.id]: defineHandler(createRequest, async ({ targetTeam, requestingTeam, title, packet }, context) => {
     const userId = actingUserOf(context);
     const target = await teamOfKey(context, targetTeam);
     if (target === undefined) throw new Refusal("record-not-found", "There is no such team.");
@@ -72,6 +76,7 @@ export const REQUEST_HANDLERS: Handlers = {
         .values({ orgId: writer.orgId, targetTeamId: target.id, number, title, requestingUserId: userId, requestingTeamId: from.id })
         .returning({ id: requests.id });
       if (row === undefined) throw new Error("The new request was not returned.");
+      await insertPacketRevision(writer, row.id, 1, packet, stampOf(context.provenance, from.id));
       await writer.record(requestOpened, { requestId: row.id, targetTeamId: target.id, requestingTeamId: from.id });
       return requestView(writer, row.id);
     }, { teamId: from.id });

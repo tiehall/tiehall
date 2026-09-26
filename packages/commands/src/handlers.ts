@@ -2,6 +2,7 @@ import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
+import { PACKET_HANDLERS } from "./packets.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
 import { USER_HANDLERS } from "./users.ts";
@@ -15,5 +16,6 @@ export const HANDLERS: Handlers = {
   ...USER_HANDLERS,
   ...REQUEST_HANDLERS,
   ...MESSAGE_HANDLERS,
+  ...PACKET_HANDLERS,
   ...EVENT_READ_HANDLERS,
 };

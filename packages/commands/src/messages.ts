@@ -1,5 +1,5 @@
 import { editMessage, getMessage, postMessage } from "@tiehall/catalog";
-import { messageEdited, messagePosted, Refusal, requestStateChanged, type Provenance, type RequestLifecycle } from "@tiehall/core";
+import { messageEdited, messagePosted, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
 import { messages, messageVersions } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -10,6 +10,7 @@ import {
   lockRequest,
   lockRequestById,
   saveLifecycle,
+  stampOf,
   teamActedFor,
   transition,
 } from "./request-changes.ts";
@@ -36,18 +37,6 @@ import type { OrgContext } from "./with-org.ts";
 // author edits a message, and an edit adds its next version, with an event
 // that names the version; nothing ever changes or removes an earlier version,
 // which the database also refuses (migration 0017).
-
-/** The provenance columns of a message: the caller's, as execute() stamped it, and the team the user acted for. */
-function stampOf(provenance: Provenance, teamId: string | undefined) {
-  if (provenance.actorKind === "operator") throw new Error("An operator command posts no message.");
-  return {
-    actorKind: provenance.actorKind,
-    actorUserId: provenance.userId ?? null,
-    client: provenance.client ?? null,
-    surface: provenance.surface ?? null,
-    teamId: teamId ?? null,
-  };
-}
 
 /** The question an answer names, on the request it is posted on; 404 when there is none. */
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {

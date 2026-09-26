@@ -134,6 +134,13 @@
       "when": 1790405775245,
       "tag": "0018_add_read_cursors",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790407516855,
+      "tag": "0019_add_packet_revisions",
+      "breakpoints": true
     }
   ]
 }

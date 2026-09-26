@@ -9,6 +9,7 @@ import {
   type RequestParties,
   type RequestState,
   type ResumableState,
+  type Provenance,
 } from "@tiehall/core";
 import { requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
@@ -112,4 +113,19 @@ export async function saveLifecycle({ tx, orgId }: OrgContext, requestId: string
     .update(requests)
     .set({ state: next.state, claimantUserId: next.claimantId, resumeState: next.resumeState })
     .where(and(eq(requests.orgId, orgId), eq(requests.id, requestId)));
+}
+
+/**
+ * The provenance columns of a message or a packet revision: the caller's, as
+ * execute() stamped it, never the payload's, and the team the user acted for.
+ */
+export function stampOf(provenance: Provenance, teamId: string | undefined) {
+  if (provenance.actorKind === "operator") throw new Error("An operator command changes no request.");
+  return {
+    actorKind: provenance.actorKind,
+    actorUserId: provenance.userId ?? null,
+    client: provenance.client ?? null,
+    surface: provenance.surface ?? null,
+    teamId: teamId ?? null,
+  };
 }

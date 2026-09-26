@@ -8,6 +8,7 @@ import {
   index,
   inet,
   integer,
+  json,
   jsonb,
   pgTable,
   primaryKey,
@@ -624,6 +625,68 @@ export const messageVersions = pgTable(
     }),
     check("message_versions_version_positive", sql`${table.version} > 0`),
     check("message_versions_body_length", sql`char_length(${table.body}) BETWEEN 1 AND 65536`),
+  ],
+);
+
+// The revisions of each request's packet (handoff-packet: Immutable, numbered
+// revisions; handoff-packet: Open objects, strict server; design.md, Design
+// rules: Handoff packet). One row per revision: the request, its number, from
+// 1 for the packet the request was opened with, and the packet as Tiehall
+// parsed it, with only the keys the packet schema knows, and extensions as
+// sent. The packet is kept as json, not jsonb, so it reads back with its keys
+// in the order they were stored. Its provenance is the server's stamp from the
+// caller, as for a message.
+export const packetRevisions = pgTable(
+  "packet_revisions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    requestId: uuid("request_id").notNull(),
+    /** The revision's number, from 1. */
+    number: integer("number").notNull(),
+    /** The packet: user text under its `untrusted` object, which agents see fenced. */
+    packet: json("packet").notNull(),
+    actorKind: text("actor_kind").notNull(),
+    /** The accountable human, by their Tiehall user id. */
+    actorUserId: uuid("actor_user_id"),
+    /** The client: its Client ID Metadata Document URL, the OAuth client, or the CLI version. */
+    client: text("client"),
+    surface: text("surface"),
+    /** The team the user acted for. */
+    teamId: uuid("team_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("packet_revisions_request_number").on(table.orgId, table.requestId, table.number),
+    foreignKey({
+      name: "packet_revisions_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "packet_revisions_actor_user_fk",
+      columns: [table.orgId, table.actorUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "packet_revisions_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("packet_revisions_number_positive", sql`${table.number} > 0`),
+    check("packet_revisions_packet_is_object", sql`json_typeof(${table.packet}) = 'object'`),
+    check("packet_revisions_actor_kind_known", sql`${table.actorKind} IN ('agent', 'web_session', 'system', 'integration')`),
+    check(
+      "packet_revisions_surface_known",
+      sql`${table.surface} IS NULL OR ${table.surface} IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')`,
+    ),
+    check(
+      "packet_revisions_actor_names_user",
+      sql`${table.actorKind} NOT IN ('agent', 'web_session') OR (${table.actorUserId} IS NOT NULL AND ${table.surface} IS NOT NULL)`,
+    ),
   ],
 );
 

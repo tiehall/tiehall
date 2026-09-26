@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequest, packetOf, sessionOf, tokenOf } from "./support/requests.ts";
 
 // Opening a request (requests: A request is addressed to a team of the
 // install; requests: The requester picks the requesting team; requests:
@@ -34,10 +34,11 @@ afterAll(async () => {
   await install.close();
 });
 
-/** What a refused call must leave as it was: the requests, the teams' counts and the event log. */
+/** What a refused call must leave as it was: the requests, their packet revisions, the teams' counts and the event log. */
 async function everything(): Promise<unknown> {
   const { rows } = await install.owner.query(
     `SELECT (SELECT count(*) FROM requests) AS requests,
+            (SELECT count(*) FROM packet_revisions) AS revisions,
             (SELECT coalesce(json_agg(c ORDER BY c.team_id), '[]') FROM request_counters c) AS counters,
             (SELECT count(*) FROM events) AS events`,
   );
@@ -79,7 +80,7 @@ describe("opening a request", () => {
 
   it("is the same from the web UI, as the signed-in user", async () => {
     const caller = sessionOf(alice);
-    const result = await install.web(caller).write("requests.create", { targetTeam: "OPS", title: "Rotate the keys" }, install.fromThePage(caller));
+    const result = await install.web(caller).write("requests.create", { targetTeam: "OPS", title: "Rotate the keys", packet: packetOf() }, install.fromThePage(caller));
     expect(result).toEqual({ ok: true, output: expect.objectContaining({ key: "OPS-2", state: "open" }) });
   });
 });
@@ -87,14 +88,14 @@ describe("opening a request", () => {
 describe("a request that is refused", () => {
   it("gets 404 when it is addressed to a team the install does not have, and creates nothing", async () => {
     const before = await everything();
-    const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "ZZ", title: "Anything" });
+    const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "ZZ", title: "Anything", packet: packetOf() });
     expect(answer).toEqual({ status: 404, body: expect.objectContaining({ type: "https://tiehall.com/problems/record-not-found", status: 404 }) });
     expect(await everything()).toEqual(before);
   });
 
   it("gets 400 listing the teams to pick from when a member of two teams names none, and creates nothing", async () => {
     const before = await everything();
-    const answer = await callApi(install, tokenOf(sam), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Anything" });
+    const answer = await callApi(install, tokenOf(sam), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Anything", packet: packetOf() });
     expect(answer.status).toBe(400);
     expect(answer.body).toMatchObject({
       type: "https://tiehall.com/problems/invalid-input",
@@ -106,7 +107,7 @@ describe("a request that is refused", () => {
 
   it("gets 403 for a user in no team, and creates nothing", async () => {
     const before = await everything();
-    const answer = await callApi(install, tokenOf(lee), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Anything" });
+    const answer = await callApi(install, tokenOf(lee), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Anything", packet: packetOf() });
     expect(answer).toEqual({ status: 403, body: expect.objectContaining({ type: "https://tiehall.com/problems/forbidden" }) });
     expect(await everything()).toEqual(before);
   });
@@ -114,18 +115,18 @@ describe("a request that is refused", () => {
   it("gets 403 when the user names a requesting team they are not in, and creates nothing", async () => {
     const before = await everything();
     for (const requestingTeam of ["OPS", "ZZ"]) {
-      const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", requestingTeam, title: "Anything" });
+      const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", requestingTeam, title: "Anything", packet: packetOf() });
       expect(answer, requestingTeam).toEqual({ status: 403, body: expect.objectContaining({ type: "https://tiehall.com/problems/forbidden" }) });
     }
     expect(await everything()).toEqual(before);
   });
 
   it.each([
-    ["an empty title", { targetTeam: "FE", title: "   " }],
-    ["a title of 201 characters", { targetTeam: "FE", title: "x".repeat(201) }],
-    ["a title with a line break", { targetTeam: "FE", title: "One\nTwo" }],
-    ["no title", { targetTeam: "FE" }],
-    ["a target that is not a team key", { targetTeam: "fe", title: "Anything" }],
+    ["an empty title", { targetTeam: "FE", title: "   ", packet: packetOf() }],
+    ["a title of 201 characters", { targetTeam: "FE", title: "x".repeat(201), packet: packetOf() }],
+    ["a title with a line break", { targetTeam: "FE", title: "One\nTwo", packet: packetOf() }],
+    ["no title", { targetTeam: "FE", packet: packetOf() }],
+    ["a target that is not a team key", { targetTeam: "fe", title: "Anything", packet: packetOf() }],
   ])("gets 400 for %s, and creates nothing", async (_name, body) => {
     const before = await everything();
     const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", body);

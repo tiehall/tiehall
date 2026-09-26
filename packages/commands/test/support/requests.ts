@@ -53,13 +53,18 @@ export async function callApi<T = any>(install: TestInstall, caller: Caller, met
   return { status: response.status, body: (await response.json()) as T };
 }
 
+/** A request's packet with only its need, as the smallest packet a request can be opened with. */
+export function packetOf(need = "Add a dark mode to the settings page."): Record<string, unknown> {
+  return { schema_version: "1-beta", kind: "request", untrusted: { need } };
+}
+
 /** Opens a request as the caller through /api/v1 and returns it; fails the test on any other answer. */
 export async function openRequest<T = any>(
   install: TestInstall,
   caller: Caller,
-  input: { targetTeam: string; requestingTeam?: string; title?: string },
+  input: { targetTeam: string; requestingTeam?: string; title?: string; packet?: unknown },
 ): Promise<T> {
-  const answer = await callApi<T>(install, caller, "POST", "/api/v1/requests", { title: "Add a dark mode", ...input });
+  const answer = await callApi<T>(install, caller, "POST", "/api/v1/requests", { title: "Add a dark mode", packet: packetOf(), ...input });
   if (answer.status !== 200) throw new Error(`requests.create answered ${answer.status}: ${JSON.stringify(answer.body)}`);
   return answer.body;
 }

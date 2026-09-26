@@ -1,6 +1,7 @@
 import { REQUEST_KEY, REQUEST_STATES, SURFACES } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
+import { packet } from "./packet.ts";
 import { user } from "./schemas.ts";
 import { teamKey } from "./teams.ts";
 
@@ -83,13 +84,14 @@ export const requestWithThread = request.extend({ messages: z.array(message) });
 export const createRequest = defineCommand({
   id: "requests.create",
   summary:
-    "Open a request to a team of the install, from one of the teams you belong to; your only team is the default, and a member of several teams names one.",
+    "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one.",
   input: z.object({
     targetTeam: teamKey.meta({ description: "The key of the team the request is addressed to, such as FE." }),
     requestingTeam: teamKey
       .optional()
       .meta({ description: "The key of the team you open it from, one of yours; needed when you belong to several teams." }),
     title: requestTitle.meta({ description: "The request's title: one line of 1 to 200 characters." }),
+    packet,
   }),
   output: request,
   method: "POST",

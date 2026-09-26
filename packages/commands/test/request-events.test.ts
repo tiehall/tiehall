@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CATALOG } from "@tiehall/catalog";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequest, packetOf, tokenOf } from "./support/requests.ts";
 
 // The event log (requests: The event log; requests: Events carry ids, not
 // bodies; design.md, Design rules: Requests and events; design.md, Technical
@@ -37,6 +37,7 @@ async function everything() {
   const { rows } = await install.owner.query(
     `SELECT (SELECT coalesce(json_agg(e ORDER BY e.number), '[]') FROM events e) AS events,
             (SELECT count(*) FROM requests) AS requests,
+            (SELECT count(*) FROM packet_revisions) AS revisions,
             (SELECT coalesce(json_agg(c ORDER BY c.team_id), '[]') FROM request_counters c) AS counters`,
   );
   return rows[0];
@@ -63,7 +64,7 @@ describe("a failed create", () => {
     const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: `Before the ${when} failure` });
     await refuseTitle(`Fails at the ${when}`, when);
     const before = await everything();
-    const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: `Fails at the ${when}` });
+    const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: `Fails at the ${when}`, packet: packetOf() });
     expect(answer.status).toBe(500);
     expect(await everything()).toEqual(before);
     await install.owner.query("DROP TRIGGER probe_refuse_title ON requests");
@@ -99,7 +100,7 @@ describe("a message event", () => {
 describe("every request change so far", () => {
   // Each operation that changes a request, with a call that changes one; a new one fails this test until it is added.
   const WRITES: Record<string, (key: string) => Promise<{ status: number; body: any }>> = {
-    "requests.create": async () => callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Another one" }),
+    "requests.create": async () => callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Another one", packet: packetOf() }),
     "requests.claim": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`),
     "requests.set_status": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
     "messages.post": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Blocking?", blocking: true }),
