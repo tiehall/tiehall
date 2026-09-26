@@ -31,13 +31,17 @@ export {
 export {
   BUNDLED_APP_DATABASE_URL,
   BUNDLED_OWNER_DATABASE_URL,
+  installUrl,
   readAppDatabase,
   readAppSettings,
   readMigrateSettings,
+  SETTINGS,
   SettingsError,
   type AppSettings,
   type Environment,
   type MigrateSettings,
+  type SettingDefinition,
+  type SettingInit,
   type SmtpSettings,
   type SmtpTls,
 } from "./settings.ts";

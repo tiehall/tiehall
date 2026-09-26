@@ -26,6 +26,127 @@ export class SettingsError extends Error {
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
+/**
+ * How `init` fills a setting (self-host-install: `init` prints a complete
+ * `.env`): the install URL it is given, the image, a fresh random secret, or
+ * the fixed value the setting shows.
+ */
+export type SettingInit = "url" | "image" | "secret" | "fixed";
+
+/** One setting of `.env`, as `init` prints it and `.env.example` names it. */
+export interface SettingDefinition {
+  readonly name: string;
+  /** What the setting does, printed as a comment above it. */
+  readonly description: string;
+  readonly init: SettingInit;
+  /** The value `init` and `.env.example` print for a fixed setting; empty leaves it unset. */
+  readonly value?: string;
+  /** The comment above a group of settings, printed once before the first of them. */
+  readonly group?: string;
+}
+
+/**
+ * Every setting of `.env`, in the order `init` prints them. Compose reads
+ * TIEHALL_IMAGE and TIEHALL_HTTP_BIND; the image reads the others. Each
+ * secret can instead come from a file, as its *_FILE form.
+ */
+export const SETTINGS: readonly SettingDefinition[] = [
+  {
+    name: "TIEHALL_URL",
+    description:
+      "The install's public base URL. It must use https://, except http://localhost, with or without a port, for a trial on one machine.",
+    init: "url",
+  },
+  {
+    name: "TIEHALL_IMAGE",
+    description:
+      "The Tiehall image, pinned by version and digest as the release notes give it. To upgrade, back up, set the new image here and run `docker compose pull && docker compose up -d`.",
+    init: "image",
+  },
+  {
+    name: "TIEHALL_HTTP_BIND",
+    description:
+      "The host address and port where the app's HTTP port is published. The default keeps it on this host, behind the caddy profile or your own reverse proxy.",
+    init: "fixed",
+    value: "127.0.0.1:3000",
+  },
+  {
+    name: "TIEHALL_DATABASE_OWNER_PASSWORD",
+    description:
+      "The password of the database owner, which the bundled Postgres is created with. Of Tiehall's containers, only the migrate step receives it.",
+    init: "secret",
+  },
+  {
+    name: "TIEHALL_DATABASE_APP_PASSWORD",
+    description: "The password of the app's database role, which the migrate step creates and the app connects as.",
+    init: "secret",
+  },
+  {
+    name: "TIEHALL_DATABASE_OWNER_URL",
+    description:
+      "For an external Postgres 17 or later instead of the bundled one: the connection URLs of the database owner and of the app role. Leave both empty to use the bundled Postgres.",
+    init: "fixed",
+    value: "",
+  },
+  { name: "TIEHALL_DATABASE_APP_URL", description: "", init: "fixed", value: "" },
+  {
+    name: "TIEHALL_SECRET_KEY",
+    description:
+      "Encrypts the integration secrets Tiehall stores. The database and its backups do not hold it, so keep a copy of this file apart from them.",
+    init: "secret",
+  },
+  { name: "TIEHALL_AUTH_SECRET", description: "Signs sessions and tokens.", init: "secret" },
+  {
+    name: "TIEHALL_TRUSTED_PROXIES",
+    description:
+      "The reverse proxies whose X-Forwarded-For and X-Forwarded-Proto headers are trusted: IP addresses, CIDR ranges or host names, separated by commas. caddy is the proxy of the caddy profile.",
+    init: "fixed",
+    value: "caddy",
+  },
+  {
+    name: "TIEHALL_CLIENT_METADATA_FETCH",
+    description:
+      "on fetches the Client ID Metadata Documents of the agent clients that connect; off stops it, and clients register with Dynamic Client Registration instead.",
+    init: "fixed",
+    value: "on",
+  },
+  {
+    name: "TIEHALL_SOURCE_URL",
+    description:
+      "Where the web UI links to this server's source. Leave it empty for a Tiehall release; set it when you run a modified server.",
+    init: "fixed",
+    value: "",
+  },
+  {
+    name: "TIEHALL_SMTP_HOST",
+    group:
+      "Optional email through SMTP. Without TIEHALL_SMTP_HOST, Tiehall sends no email, and notices stay in the web inbox and the admin banners.",
+    description: "The SMTP server.",
+    init: "fixed",
+    value: "",
+  },
+  {
+    name: "TIEHALL_SMTP_PORT",
+    description: "Its port: 587 for starttls, 465 for tls and 25 for none unless set.",
+    init: "fixed",
+    value: "",
+  },
+  {
+    name: "TIEHALL_SMTP_TLS",
+    description: "starttls (the default), tls from the first byte, or none for a relay on a trusted network.",
+    init: "fixed",
+    value: "",
+  },
+  { name: "TIEHALL_SMTP_USER", description: "The user and password to log in with, both or neither.", init: "fixed", value: "" },
+  { name: "TIEHALL_SMTP_PASSWORD", description: "", init: "fixed", value: "" },
+  {
+    name: "TIEHALL_SMTP_FROM",
+    description: "The address email is sent from, such as tiehall@example.com or Tiehall <tiehall@example.com>.",
+    init: "fixed",
+    value: "",
+  },
+];
+
 /** The bundled Postgres of the Compose file, as its superuser, which owns the schema. */
 export const BUNDLED_OWNER_DATABASE_URL = "postgres://tiehall@postgres:5432/tiehall";
 /** The bundled Postgres of the Compose file, as the app role, which the migrate step creates. */
@@ -137,13 +258,17 @@ export function readAppDatabase(env: Environment): DatabaseConnection & { passwo
   return { connectionString, password };
 }
 
-/**
- * TIEHALL_URL, as its origin. It must use HTTPS, except http://localhost with
- * or without a port, for a trial on one machine; http://127.0.0.1 is not a
- * trial URL (design.md, Self-hosting decisions: S2).
- */
 function readInstallUrl(env: Environment): string {
-  const value = required(env, "TIEHALL_URL");
+  return installUrl(required(env, "TIEHALL_URL"));
+}
+
+/**
+ * A value for TIEHALL_URL, as its origin. It must use HTTPS, except
+ * http://localhost with or without a port, for a trial on one machine;
+ * http://127.0.0.1 is not a trial URL (design.md, Self-hosting decisions: S2).
+ * It throws SettingsError, naming TIEHALL_URL and not the value, otherwise.
+ */
+export function installUrl(value: string): string {
   const url = parseUrl(value);
   const trial = url?.protocol === "http:" && url.hostname === "localhost";
   if (url === undefined || !(url.protocol === "https:" || trial)) {

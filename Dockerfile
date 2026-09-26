@@ -1,4 +1,4 @@
-# The Tiehall image: one image with four roles, web, worker, migrate and all
+# The Tiehall image: one image with the roles web, worker, migrate, all and init
 # (design.md, Technical decisions: T1; self-host-install: Tiehall's containers
 # are confined). Build it from the repository root:
 #   docker build --build-arg TIEHALL_COMMIT_SHA="$(git rev-parse HEAD)" --tag tiehall .
@@ -38,12 +38,16 @@ ARG TIEHALL_COMMIT_SHA
 # The release this image is, such as 1.4.0; the release workflow sets it from the version tag, and any other
 # build is a development build. The migrate role records it with each migration (the schema floor).
 ARG TIEHALL_VERSION=0.0.0-dev
+# The repository the image is pushed to, which the init role names in the .env it prints, tagged with the
+# release, or with sha-<commit> for a development build, as the build workflow tags it.
+ARG TIEHALL_IMAGE_NAME=tiehall
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA} \
-    TIEHALL_VERSION=${TIEHALL_VERSION}
+    TIEHALL_VERSION=${TIEHALL_VERSION} \
+    TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME}
 LABEL org.opencontainers.image.title="tiehall" \
-      org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate and all" \
+      org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate, all and init" \
       org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}" \
       org.opencontainers.image.version="${TIEHALL_VERSION}"
 WORKDIR /app

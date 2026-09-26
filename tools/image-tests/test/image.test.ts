@@ -209,7 +209,7 @@ describe("the image", () => {
   it("exits non-zero on an unknown role, and names the roles it knows", () => {
     const run = docker(["run", "--rm", ...confined, image, "api"]);
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate or all.');
+    expect(run.stderr).toContain('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate, all or init.');
   });
 
   it("exits non-zero without a role", () => {
@@ -237,6 +237,49 @@ describe("the image", () => {
         msg: "tiehall web: TIEHALL_URL must be an https:// URL, or http://localhost with or without a port for a trial on one machine.",
       }),
     ]);
+  });
+});
+
+/** The NAME=value lines of a .env file. */
+function envValues(text: string): Map<string, string> {
+  return new Map(
+    text
+      .split("\n")
+      .filter((line) => line !== "" && !line.startsWith("#"))
+      .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)] as const),
+  );
+}
+
+// self-host-install: `init` prints a complete `.env`.
+describe("the init role", () => {
+  /** Runs init as `docker run --rm <image> init --url <url>` does, with no network. */
+  function init() {
+    return docker(["run", "--rm", ...confined, "--network", "none", image, "init", "--url", "https://tiehall.example.com"]);
+  }
+
+  it("prints a complete .env with fresh secrets on standard output, and nothing else", () => {
+    const first = init();
+    const second = init();
+    expect(first.stderr).toBe("");
+    expect(first.status).toBe(0);
+    const values = envValues(first.stdout);
+    expect(values.get("TIEHALL_URL")).toBe("https://tiehall.example.com");
+    const name = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image]))
+      .find((entry: string) => entry.startsWith("TIEHALL_IMAGE_NAME="))
+      ?.slice("TIEHALL_IMAGE_NAME=".length);
+    expect(values.get("TIEHALL_IMAGE")).toBe(`${name}:sha-${revision()}`);
+    for (const secret of ["TIEHALL_DATABASE_OWNER_PASSWORD", "TIEHALL_DATABASE_APP_PASSWORD", "TIEHALL_SECRET_KEY", "TIEHALL_AUTH_SECRET"]) {
+      const value = values.get(secret) ?? "";
+      expect(value, secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(second.stdout, secret).not.toContain(value);
+    }
+  });
+
+  it("refuses a URL the install would refuse, printing nothing on standard output", () => {
+    const run = docker(["run", "--rm", ...confined, "--network", "none", image, "init", "--url", "http://tiehall.example.com"]);
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toContain("tiehall init: TIEHALL_URL must be an https:// URL");
   });
 });
 

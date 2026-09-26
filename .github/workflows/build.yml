@@ -45,6 +45,7 @@ jobs:
             --provenance=false \
             --sbom=false \
             --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" \
+            --build-arg TIEHALL_IMAGE_NAME="$repository" \
             --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag "$tag" \
             .

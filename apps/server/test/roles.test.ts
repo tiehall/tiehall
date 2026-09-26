@@ -4,8 +4,8 @@ import { parseRole, ROLES, usage } from "../src/roles.ts";
 // One entrypoint selects the role (design.md, Technical decisions: T1).
 
 describe("parseRole", () => {
-  it("knows exactly the four roles", () => {
-    expect(ROLES).toEqual(["web", "worker", "migrate", "all"]);
+  it("knows exactly the five roles", () => {
+    expect(ROLES).toEqual(["web", "worker", "migrate", "all", "init"]);
     for (const role of ROLES) expect(parseRole(role)).toBe(role);
   });
 
@@ -16,7 +16,7 @@ describe("parseRole", () => {
   });
 
   it("names the roles in its usage line", () => {
-    expect(usage("api")).toBe('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate or all.');
-    expect(usage(undefined)).toBe("No role given. Usage: main.mjs <role>, where role is web, worker, migrate or all.");
+    expect(usage("api")).toBe('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate, all or init.');
+    expect(usage(undefined)).toBe("No role given. Usage: main.mjs <role>, where role is web, worker, migrate, all or init.");
   });
 });
