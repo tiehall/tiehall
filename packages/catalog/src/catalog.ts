@@ -17,7 +17,13 @@ import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 // objects, as a tool whose input has variants takes (agent-surfaces: Tool
 // schemas that current clients accept). A tool's
 // input and output must lower to schemas that current MCP clients accept
-// (agent-surfaces: Tool schemas that current clients accept).
+// (agent-surfaces: Tool schemas that current clients accept). No operation
+// changes or deletes an event of the activity log, on any surface: the web UI
+// runs its operations through this same catalog, so an operation on the
+// event log only reads, gets, lists, waits for, acknowledges or exports
+// events, is never offered with DELETE, PUT or PATCH, and no summary says an
+// operation changes or deletes events (activity-log: The activity log is
+// append-only).
 
 /** A catalog that breaks the rules; its message names every problem, one per line. */
 export class CatalogError extends Error {
@@ -31,6 +37,20 @@ export interface Catalog {
 }
 
 const ID = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
+
+/** The namespaces and the REST paths of the operations on the event log, the activity log. */
+const EVENT_LOG_NAMESPACES: ReadonlySet<string> = new Set(["events", "activity_log"]);
+const EVENT_LOG_PATH = /^\/api\/v1\/(events|activity-log)(\/|$)/;
+/** What an operation on the event log may do: read it, in one form or another, and never change it. */
+const EVENT_LOG_VERBS: ReadonlySet<string> = new Set(["read", "get", "list", "wait", "acknowledge", "export"]);
+const EVENT_LOG_REFUSED_METHODS: ReadonlySet<string> = new Set(["DELETE", "PUT", "PATCH"]);
+/**
+ * A summary that says the operation changes, deletes or rewrites events,
+ * within a few words, such as "delete its events" or "redact one field of an
+ * event"; a noun such as "a change" is not a verb.
+ */
+const CHANGES_EVENTS =
+  /(?<!\b(?:a|an|the|its|their|this|that|of|no|each|every)\s)\b(delete|remove|change|edit|rewrite|update|purge|redact|clear|erase|drop|truncate|alter|modify|overwrite)(?:s|d|ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:(?:a|an|the|its|their|every|all|these|those)\s+)?(?:events?|activity log)\b/i;
 
 /** Where every REST path starts: the API's major version is in the path (public-api: The major version is in the path). */
 export const API_PREFIX = "/api/v1/";
@@ -83,6 +103,21 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       if (offered) problem("it is a system action, which only Tiehall's jobs and verified integration events run, so no agent surface offers it.");
       if (definition.confirm || definition.commitment) problem("it is a system action, which needs no proposal and no confirmation.");
       if (definition.admin !== undefined) problem("it is a system action, which acts for no admin.");
+    }
+    // The activity log is append-only: no operation on any surface changes or deletes an event.
+    const [namespace = "", verb = ""] = definition.id.split(".");
+    if (EVENT_LOG_NAMESPACES.has(namespace) || (definition.path !== undefined && EVENT_LOG_PATH.test(definition.path))) {
+      if (!EVENT_LOG_VERBS.has(verb)) {
+        problem(
+          `it is an operation on the activity log, which is append-only, so it only reads, gets, lists, waits for, acknowledges or exports events; ${verb} is none of these.`,
+        );
+      }
+      if (definition.method !== undefined && EVENT_LOG_REFUSED_METHODS.has(definition.method)) {
+        problem("it is an operation on the activity log, which is append-only, so it is not offered with DELETE, PUT or PATCH.");
+      }
+    }
+    if (CHANGES_EVENTS.test(definition.summary)) {
+      problem("its summary says it changes or deletes events, which the activity log, being append-only, lets no operation do.");
     }
     if (definition.commitment) {
       // A call that makes a commitment answers { proposal } instead of the output, so the output never has that field.

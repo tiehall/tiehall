@@ -203,6 +203,56 @@ describe("a catalog", () => {
     ]);
   });
 
+  // activity-log: The activity log is append-only. No operation on any surface changes or deletes an event, the web
+  // UI included, which runs its operations through this same catalog.
+  it("refuses an operation that changes or deletes an event of the activity log, on any surface, the web UI included", () => {
+    const internal = { input: z.object({ number: z.number() }), output: z.object({}), scopes: [], commitment: false, confirm: false, surfaces: [], stability: "alpha" } as const;
+    const deleteEvent = defineCommand({
+      ...internal,
+      id: "events.delete",
+      summary: "Delete an event.",
+      method: "DELETE",
+      path: "/api/v1/events/{number}",
+      scopes: ["requests:write"],
+      surfaces: ["rest"],
+    });
+    expect(catalogProblems([...fixtureCatalog, deleteEvent])).toEqual([
+      "events.delete: it is an operation on the activity log, which is append-only, so it only reads, gets, lists, waits for, acknowledges or exports events; delete is none of these.",
+      "events.delete: it is an operation on the activity log, which is append-only, so it is not offered with DELETE, PUT or PATCH.",
+      "events.delete: its summary says it changes or deletes events, which the activity log, being append-only, lets no operation do.",
+    ]);
+    // An internal admin command, which only the web UI runs, is held to the same rule.
+    const redact = defineCommand({ ...internal, id: "activity_log.redact", summary: "Redact one field of an event of the activity log.", admin: "activity_log" });
+    expect(catalogProblems([...fixtureCatalog, redact])).toEqual([
+      "activity_log.redact: it is an operation on the activity log, which is append-only, so it only reads, gets, lists, waits for, acknowledges or exports events; redact is none of these.",
+      "activity_log.redact: its summary says it changes or deletes events, which the activity log, being append-only, lets no operation do.",
+    ]);
+    // So is an operation elsewhere whose path or summary reaches the events.
+    const rewrite = defineCommand({ ...internal, id: "requests.rewrite_history", summary: "Rewrite the events of a request.", method: "PUT", path: "/api/v1/events/{number}", scopes: ["requests:write"], surfaces: ["rest"] });
+    expect(catalogProblems([...fixtureCatalog, rewrite])).toEqual([
+      "requests.rewrite_history: it is an operation on the activity log, which is append-only, so it only reads, gets, lists, waits for, acknowledges or exports events; rewrite_history is none of these.",
+      "requests.rewrite_history: it is an operation on the activity log, which is append-only, so it is not offered with DELETE, PUT or PATCH.",
+      "requests.rewrite_history: its summary says it changes or deletes events, which the activity log, being append-only, lets no operation do.",
+    ]);
+    const purge = defineCommand({ ...internal, id: "requests.purge", summary: "Purge a closed request and delete its events." });
+    expect(catalogProblems([...fixtureCatalog, purge])).toEqual([
+      "requests.purge: its summary says it changes or deletes events, which the activity log, being append-only, lets no operation do.",
+    ]);
+    // Reading, listing, acknowledging and exporting events keep the rule, and so does a summary that only mentions events.
+    const read = defineCommand({ ...internal, id: "events.read", summary: "Read the events after your cursor.", method: "GET", path: "/api/v1/events", scopes: ["requests:read"], surfaces: ["rest"] });
+    const acknowledge = defineCommand({ ...internal, id: "events.acknowledge", summary: "Acknowledge the events up to a number.", method: "POST", path: "/api/v1/events/acknowledge", scopes: ["requests:read"], surfaces: ["rest"] });
+    const exportLog = defineCommand({ ...internal, id: "activity_log.export", summary: "Export the activity log as JSONL.", confirm: true, admin: "activity_log" });
+    const propose = defineCommand({ ...internal, id: "requests.propose", summary: "Propose a change to a request; its events reach the requester." });
+    expect(catalogProblems([...fixtureCatalog, read, acknowledge, exportLog, propose])).toEqual([]);
+  });
+
+  it("holds no operation that changes or deletes an event, in the real catalog", () => {
+    expect(catalogProblems(CATALOG.commands)).toEqual([]);
+    expect(CATALOG.commands.filter(({ id }) => /^(events|activity_log)\./.test(id)).map(({ id }) => id)).toEqual(
+      expect.arrayContaining(["events.read", "events.acknowledge", "activity_log.list", "activity_log.export"]),
+    );
+  });
+
   it("names every problem of a catalog at once", () => {
     const definitions = [...withChanged("getRequest", { scopes: ["admin"], path: undefined }), fixture.getRequest];
     expect(() => defineCatalog(definitions)).toThrow(

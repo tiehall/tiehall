@@ -338,7 +338,7 @@ Groups 5 to 21. A company installs Tiehall with Docker Compose, sets it up with 
 - [x] 20.4 Build the admin view of the activity log with domain and security events, filtered by time, actor, request and event type, and showing a security event's IP address and user agent while they are kept, tests first; verified by the tests for each filter, and by the view being offered on no agent surface. [activity-log: The admin view; activity-log: IP addresses and user agents are kept apart for 90 days]
 - [ ] 20.5 Show security events only to admins, tests first; verified by the tests: a member gets 403 on the admin view and the export; no pull reader, wait answer or web inbox ever holds a security event, an admin's included. [activity-log: Security events are shown to admins only]
 - [x] 20.6 Export the activity log as JSONL with the confirmation step, tests first; verified by the tests: each line carries the sequence number, time, class, type, subject ids and actor, and no body, IP address or user agent; an export without a confirmation gets 403 and exports nothing; each export is a security event. [activity-log: Exporting the activity log]
-- [ ] 20.7 Add a catalog check that no operation on any surface, the web UI included, changes or deletes an event; verified by a fixture command that deletes an event failing the check. [activity-log: The activity log is append-only]
+- [x] 20.7 Add a catalog check that no operation on any surface, the web UI included, changes or deletes an event; verified by a fixture command that deletes an event failing the check. [activity-log: The activity log is append-only]
 
 ## 21. Operator commands, backups, upgrades, install docs and the end-to-end runs
 
