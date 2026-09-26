@@ -5,6 +5,7 @@ import { MESSAGE_HANDLERS } from "./messages.ts";
 import { PACKET_HANDLERS } from "./packets.ts";
 import { PROPOSAL_CONFIRMATION_HANDLERS } from "./proposal-confirmations.ts";
 import { PROPOSAL_ENDING_HANDLERS } from "./proposal-endings.ts";
+import { PROPOSAL_WAITING_HANDLERS } from "./proposal-waiting.ts";
 import { PROPOSAL_HANDLERS } from "./proposals.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
@@ -24,6 +25,7 @@ export const HANDLERS: Handlers = {
   ...PROPOSAL_HANDLERS,
   ...PROPOSAL_CONFIRMATION_HANDLERS,
   ...PROPOSAL_ENDING_HANDLERS,
+  ...PROPOSAL_WAITING_HANDLERS,
   ...EVENT_READ_HANDLERS,
   ...WRITE_LIMIT_HANDLERS,
 };

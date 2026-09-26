@@ -1,6 +1,7 @@
 import type { Database, DatabaseConnection } from "@tiehall/db";
 import { openAppDatabase } from "./database.ts";
 import { openJobQueue } from "./job-queue.ts";
+import type { Mailer } from "./email.ts";
 import type { DefinedJobType, JobData } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 
@@ -31,6 +32,10 @@ export interface WorkerServices {
   database: Database;
   /** The worker's clock. */
   now(): Date;
+  /** How email goes out: through the install's SMTP settings, or, without them, nowhere. */
+  mailer?: Mailer;
+  /** The install's URL (TIEHALL_URL), for the links an email holds. */
+  installUrl?: string;
 }
 
 export interface WorkerJob<D extends JobData> {
@@ -53,6 +58,10 @@ export interface WorkerOptions {
   pollingIntervalSeconds?: number;
   /** The clock handlers read; the system clock unless a test controls it. */
   clock?: () => Date;
+  /** How email goes out, which jobs that send email use. */
+  mailer?: Mailer;
+  /** The install's URL (TIEHALL_URL), for the links an email holds. */
+  installUrl?: string;
   logger?: Logger;
 }
 
@@ -76,6 +85,8 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   const services: WorkerServices = {
     database: openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" }),
     now: options.clock ?? (() => new Date()),
+    ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
+    ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
   };
   let stopping = false;
   /** Jobs whose handler is running, by id, with their queue. */

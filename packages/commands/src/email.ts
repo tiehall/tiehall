@@ -50,6 +50,49 @@ export function installLink(installUrl: string, path = "/"): ServerText {
   return url.toString() as ServerText;
 }
 
+/** A time Tiehall recorded, such as when a proposal expires, written in UTC. */
+export function serverTime(time: Date): ServerText {
+  if (Number.isNaN(time.getTime())) throw new TypeError("A server time is a valid time.");
+  return time.toISOString() as ServerText;
+}
+
+/** What each kind of commitment proposes to do to its request, in Tiehall's words. */
+const COMMITMENT_PHRASES: Readonly<Record<string, string>> = {
+  due_date: "change its due date",
+  scope: "change its scope",
+  decline: "decline it",
+  reassign: "reassign it to another team",
+  withdraw: "withdraw it",
+  done: "mark it done",
+};
+
+/** What a kind of commitment proposes, in Tiehall's words. */
+export function commitmentPhrase(kind: string): ServerText {
+  const phrase = Object.hasOwn(COMMITMENT_PHRASES, kind) ? COMMITMENT_PHRASES[kind] : undefined;
+  if (phrase === undefined) throw new TypeError("A commitment is one of the kinds of commitment.");
+  return phrase as ServerText;
+}
+
+/**
+ * The email that a proposal waits for its reader's confirmation (requests:
+ * Where a proposal waits): which request, what it proposes, when it expires,
+ * and the proposal's confirm page, where its reader confirms or rejects it.
+ */
+export const PROPOSAL_NOTICE: EmailTemplate<{ key: ServerText; what: ServerText; expiresAt: ServerText; page: ServerText }> = {
+  id: "email.proposal_notice",
+  subject: ({ key }) => `Tiehall: a proposal on ${key} waits for your confirmation`,
+  text: ({ key, what, expiresAt, page }) =>
+    [
+      `A proposal on ${key} to ${what} waits for your confirmation in Tiehall.`,
+      "",
+      `It expires at ${expiresAt}, unless every confirmation it needs has come by then.`,
+      "",
+      `Review it, then confirm or reject it on its page: ${page}`,
+      "It is also listed in the standing list of your web inbox.",
+      "",
+    ].join("\n"),
+};
+
 /** The test message an admin sends from the admin page. */
 export const TEST_MESSAGE: EmailTemplate<{ install: ServerText }> = {
   id: "email.test_message",

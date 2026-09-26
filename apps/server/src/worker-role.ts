@@ -1,6 +1,7 @@
 import process from "node:process";
 import {
   createLogger,
+  openMailer,
   startWorker,
   WORKER_JOBS,
   type AppSettings,
@@ -26,13 +27,16 @@ export interface WorkerRoleOptions {
   logger?: Logger;
 }
 
-export async function runWorkerRole(settings: Pick<AppSettings, "database">, options: WorkerRoleOptions = {}): Promise<void> {
+export async function runWorkerRole(settings: Pick<AppSettings, "database" | "url" | "smtp">, options: WorkerRoleOptions = {}): Promise<void> {
   const logger = options.logger ?? createLogger().child({ role: "worker" });
   let worker;
   try {
     worker = await startWorker({
       connection: settings.database,
       jobs: options.jobs ?? WORKER_JOBS,
+      // Email goes out through the install's SMTP settings, or, without them, nowhere.
+      mailer: openMailer(settings.smtp),
+      installUrl: settings.url,
       ...(options.stopTimeoutMs === undefined ? {} : { stopTimeoutMs: options.stopTimeoutMs }),
       ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
       logger,

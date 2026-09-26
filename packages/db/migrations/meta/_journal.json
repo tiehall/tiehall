@@ -211,6 +211,13 @@
       "when": 1790420023563,
       "tag": "0029_add_request_former_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790420521859,
+      "tag": "0030_add_proposal_notices",
+      "breakpoints": true
     }
   ]
 }

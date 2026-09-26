@@ -262,6 +262,8 @@ export const users = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** Whether an admin flagged the user as a bot, such as a machine account that holds personal access tokens. */
     bot: boolean("bot").notNull().default(false),
+    /** The primary verified email address of the GitHub account, which sign-in reads; email goes nowhere else. */
+    email: text("email"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -994,5 +996,35 @@ export const requestFormerKeys = pgTable(
       foreignColumns: [requests.orgId, requests.id],
     }),
     check("request_former_keys_number_positive", sql`${table.number} > 0`),
+  ],
+);
+
+// The proposal notices sent by email (requests: Where a proposal waits;
+// design.md, Self-hosting decisions: S10). One row per proposal and person who
+// got the email that it waits for their confirmation, so each person gets it
+// once, when the proposal starts to wait for them, and a person who becomes
+// able to give a waiting confirmation gets theirs then.
+export const proposalNotices = pgTable(
+  "proposal_notices",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    proposalId: uuid("proposal_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.proposalId, table.userId] }),
+    foreignKey({
+      name: "proposal_notices_proposal_fk",
+      columns: [table.orgId, table.proposalId],
+      foreignColumns: [proposals.orgId, proposals.id],
+    }),
+    foreignKey({
+      name: "proposal_notices_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
   ],
 );
