@@ -71,6 +71,17 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   readonly cliCommand?: string;
   readonly stability: StabilityLevel;
   readonly deprecated?: Deprecation;
+  /**
+   * For an operation that adds a packet revision, the optional input field
+   * REST fills from the If-Match header: the revision the caller expects, as
+   * the ETag of the current revision names it (public-api: Packet revisions use
+   * ETag and If-Match). REST never takes that field from the body; a call
+   * without the header reaches the handler without it, which refuses it with
+   * 428, as it refuses any other surface's call that names no revision.
+   */
+  readonly ifMatch?: string;
+  /** The output field whose value is the answer's ETag, which REST sends as the ETag header, such as a packet's revision. */
+  readonly etag?: string;
 }
 
 /** A definition, typed by its schemas; the catalog checks it when it registers it. */

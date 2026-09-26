@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { addPacketRevision, write, type Store } from "../src/index.ts";
+import { storePacketRevision, write, type Store } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, packetOf, tokenOf } from "./support/requests.ts";
@@ -39,7 +39,7 @@ function fixture(name: string): Record<string, unknown> {
 
 /** Adds the next revision of the request's packet, as Alice's agent's change. */
 async function addRevision(requestId: string, packet: unknown): Promise<number> {
-  return write(store, { actorKind: "agent", userId: alice, surface: "api" }, (writer) => addPacketRevision(writer, requestId, packet as never));
+  return write(store, { actorKind: "agent", userId: alice, surface: "api" }, (writer) => storePacketRevision(writer, requestId, packet as never));
 }
 
 const readRevision = (key: string, revision: number | string) => callApi(install, tokenOf(alice), "GET", `/api/v1/requests/${key}/packet/revisions/${revision}`);

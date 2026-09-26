@@ -58,6 +58,24 @@ export function packetOf(need = "Add a dark mode to the settings page."): Record
   return { schema_version: "1-beta", kind: "request", untrusted: { need } };
 }
 
+/** Calls /api/v1 as the caller with these headers, and a JSON body for a write; the answer keeps its headers. */
+export async function sendApi<T = any>(
+  install: TestInstall,
+  caller: Caller,
+  method: string,
+  path: string,
+  options: { body?: unknown; headers?: Record<string, string> } = {},
+): Promise<ApiAnswer<T> & { headers: Headers }> {
+  const response = await install.api(caller)(
+    new Request(`${URL_OF_INSTALL}${path}`, {
+      method,
+      headers: { ...(options.body === undefined ? {} : { "content-type": "application/json" }), ...options.headers },
+      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    }),
+  );
+  return { status: response.status, body: (await response.json()) as T, headers: response.headers };
+}
+
 /** Opens a request as the caller through /api/v1 and returns it; fails the test on any other answer. */
 export async function openRequest<T = any>(
   install: TestInstall,

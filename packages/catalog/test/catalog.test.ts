@@ -343,6 +343,50 @@ describe("an operation whose input has variants", () => {
   });
 });
 
+// public-api: Packet revisions use ETag and If-Match. An operation that adds a
+// packet revision names the input field REST fills from If-Match, and a read
+// names the output field its ETag comes from; both are fields of the schemas.
+describe("an operation with If-Match or an ETag", () => {
+  const addRevision = defineCommand({
+    id: "packets.add_revision",
+    summary: "Add a revision of a request's packet.",
+    input: z.object({ key: z.string(), expectedRevision: z.number().int().min(1).optional(), packet: z.object({ need: z.string() }) }),
+    output: z.object({ revision: z.number().int() }),
+    method: "POST",
+    path: "/api/v1/requests/{key}/packet/revisions",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+    ifMatch: "expectedRevision",
+    etag: "revision",
+  });
+
+  it("is registered when both name fields of its schemas", () => {
+    expect(catalogProblems([addRevision])).toEqual([]);
+  });
+
+  it("is refused when If-Match names no field of its input, or the ETag no field of its output", () => {
+    expect(catalogProblems([{ ...addRevision, ifMatch: "revision" }])).toEqual([
+      "packets.add_revision: its If-Match fills revision, which is not an optional field of its input.",
+    ]);
+    expect(catalogProblems([{ ...addRevision, ifMatch: "packet" }])).toEqual([
+      "packets.add_revision: its If-Match fills packet, which is not an optional field of its input.",
+    ]);
+    expect(catalogProblems([{ ...addRevision, etag: "number" }])).toEqual([
+      "packets.add_revision: its ETag comes from number, which is not a field of its output.",
+    ]);
+  });
+
+  it("is refused with If-Match or an ETag when REST does not offer it", () => {
+    const { method: _method, path: _path, ...internal } = addRevision;
+    expect(catalogProblems([{ ...internal, surfaces: [] }])).toEqual([
+      "packets.add_revision: If-Match and ETag are REST headers, so only an operation offered on REST names them.",
+    ]);
+  });
+});
+
 describe("the catalog", () => {
   it("keeps the rules", () => {
     expect(catalogProblems(CATALOG.commands)).toEqual([]);

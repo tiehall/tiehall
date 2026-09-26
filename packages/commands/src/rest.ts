@@ -33,6 +33,13 @@ import { createLogger, type Logger } from "./log.ts";
 // - GET /api/v1/openapi.json answers anyone, without authentication, with
 //   the OpenAPI document, the same for every reader (public-api: Every
 //   install serves the OpenAPI 3.1 document without authentication);
+// - an operation that adds a packet revision takes the revision the caller
+//   expects from the If-Match header, as the ETag of that revision, such as
+//   "3", and never from the body; a header that is not one such ETag, such as
+//   a weak one, a list or *, matches no revision and answers 412, and a call
+//   without it reaches the operation without a revision, which answers 428;
+//   an answer that states its ETag, such as a packet read, sends it as the
+//   ETag header (public-api: Packet revisions use ETag and If-Match);
 // - every answer of a deprecated operation, its errors included, carries the
 //   Deprecation header and, once it has a sunset date, the Sunset header,
 //   from the same metadata as the OpenAPI document (public-api: Deprecated
@@ -106,6 +113,17 @@ export function createRestHandler(options: RestOptions): RestHandler {
       if (input === undefined) {
         return problem(new Refusal("invalid-input", "The body of this operation is a JSON object, sent as application/json."));
       }
+      if (definition.ifMatch !== undefined) {
+        delete input[definition.ifMatch];
+        const ifMatch = request.headers.get("if-match");
+        if (ifMatch !== null) {
+          const revision = revisionOfEtag(ifMatch);
+          if (revision === undefined) {
+            return problem(new Refusal("precondition-failed", 'If-Match names no current revision: send the ETag of the packet\'s current revision, such as "3".'));
+          }
+          input[definition.ifMatch] = revision;
+        }
+      }
       const status = definition.commitment ? 202 : 200;
       const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
       const userAgent = request.headers.get("user-agent") ?? undefined;
@@ -122,9 +140,12 @@ export function createRestHandler(options: RestOptions): RestHandler {
         executeOptions.around = (context, run) => runOnce(context, claim, run, (output) => ({ status, body: JSON.stringify(output) }));
       }
       const output = await options.execute(definition.id, caller, input, executeOptions);
-      return json(status, JSON.stringify(output));
+      return json(status, JSON.stringify(output), etagOf(definition, output));
     } catch (error) {
-      if (error instanceof IdempotentReplay) return json(error.response.status, error.response.body);
+      if (error instanceof IdempotentReplay) {
+        const replayed = error.response;
+        return json(replayed.status, replayed.body, replayed.status < 300 ? etagOf(definition, JSON.parse(replayed.body)) : undefined);
+      }
       if (error instanceof Refusal) return problem(error);
       logger.error("rest: the operation failed", { operationId: definition.id, error });
       return response(internalErrorProblem());
@@ -208,9 +229,25 @@ function inputOf(request: Request, url: URL, text: string, parameters: Record<st
   return { ...(body as Record<string, unknown>), ...parameters };
 }
 
-/** An operation's JSON answer. */
-function json(status: number, body: string): Response {
-  return new Response(body, { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+/** The revision a strong ETag such as "3" names; undefined for anything else, such as W/"3", "3", "4" or *. */
+function revisionOfEtag(header: string): number | undefined {
+  const digits = /^\s*"([1-9]\d{0,9})"\s*$/.exec(header)?.[1];
+  const revision = digits === undefined ? undefined : Number(digits);
+  return revision !== undefined && Number.isSafeInteger(revision) ? revision : undefined;
+}
+
+/** The ETag of an answer whose operation states one, from the output field it names. */
+function etagOf(definition: CommandDefinition, output: unknown): string | undefined {
+  if (definition.etag === undefined || typeof output !== "object" || output === null) return undefined;
+  const value = (output as Record<string, unknown>)[definition.etag];
+  return typeof value === "number" || typeof value === "string" ? `"${value}"` : undefined;
+}
+
+/** An operation's JSON answer, with its ETag when it states one. */
+function json(status: number, body: string, etag?: string): Response {
+  const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
+  if (etag !== undefined) headers["etag"] = etag;
+  return new Response(body, { status, headers });
 }
 
 /** A refusal as an RFC 9457 problem details response. */

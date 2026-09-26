@@ -122,6 +122,21 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       if (definition.cliCommand === undefined) problem("it is offered on the CLI, so it names its CLI command.");
       else claim(cliCommands, definition.cliCommand, "the CLI command");
     }
+    if (definition.ifMatch !== undefined || definition.etag !== undefined) {
+      if (!surfaces.includes("rest")) {
+        problem("If-Match and ETag are REST headers, so only an operation offered on REST names them.");
+      } else {
+        const field = definition.ifMatch;
+        const inputShape = definition.input instanceof z.ZodObject ? (definition.input.shape as Record<string, z.ZodType>) : {};
+        if (field !== undefined && !(inputShape[field] instanceof z.ZodOptional)) {
+          problem(`its If-Match fills ${field}, which is not an optional field of its input.`);
+        }
+        const outputShape = definition.output instanceof z.ZodObject ? (definition.output.shape as Record<string, z.ZodType>) : {};
+        if (definition.etag !== undefined && outputShape[definition.etag] === undefined) {
+          problem(`its ETag comes from ${definition.etag}, which is not a field of its output.`);
+        }
+      }
+    }
     const { deprecated } = definition;
     if (deprecated !== undefined && (!isDate(deprecated.since) || (deprecated.sunset !== undefined && !isDate(deprecated.sunset)))) {
       problem("its deprecation dates are calendar dates, such as 2026-12-15.");

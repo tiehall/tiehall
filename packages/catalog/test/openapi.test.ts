@@ -274,6 +274,74 @@ describe("the OpenAPI document", () => {
   });
 });
 
+// public-api: Packet revisions use ETag and If-Match; public-api: What the
+// document states for each operation. The operation that adds a packet
+// revision lists If-Match as a required header, which REST turns into the
+// revision the caller expects, and answers 412 and 428; a packet read states
+// the ETag of what it returns.
+describe("ETag and If-Match in the document", () => {
+  const packetDocument = openApiDocument(
+    defineCatalog([
+      defineCommand({
+        id: "packets.get",
+        summary: "Read a request's packet.",
+        input: z.object({ key: z.string() }),
+        output: z.object({ revision: z.number().int(), packet }),
+        method: "GET",
+        path: "/api/v1/requests/{key}/packet",
+        scopes: ["requests:read"],
+        commitment: false,
+        confirm: false,
+        surfaces: ["rest"],
+        stability: "alpha",
+        etag: "revision",
+      }),
+      defineCommand({
+        id: "packets.add_revision",
+        summary: "Add a revision of a request's packet.",
+        input: z.object({ key: z.string(), expectedRevision: z.number().int().min(1).optional(), packet }),
+        output: z.object({ revision: z.number().int(), packet }),
+        method: "POST",
+        path: "/api/v1/requests/{key}/packet/revisions",
+        scopes: ["requests:write"],
+        commitment: false,
+        confirm: false,
+        surfaces: ["rest"],
+        stability: "alpha",
+        ifMatch: "expectedRevision",
+        etag: "revision",
+      }),
+    ]),
+  ) as Json & { paths: Record<string, Record<string, Json & { parameters?: Json[]; responses: Record<string, Json> }>> };
+  const add = packetDocument.paths["/api/v1/requests/{key}/packet/revisions"]?.["post"];
+  const read = packetDocument.paths["/api/v1/requests/{key}/packet"]?.["get"];
+
+  it("lists If-Match as a required header of the operation that adds a revision, and not in its body", () => {
+    const ifMatch = add?.parameters?.find(({ name }) => name === "If-Match");
+    expect(ifMatch).toMatchObject({ in: "header", required: true, schema: { type: "string" } });
+    const body = (add?.["requestBody"] as { content: Record<string, { schema: Json }> }).content["application/json"]?.schema ?? {};
+    expect(Object.keys(body["properties"] as Json)).toEqual(["packet"]);
+    expect(read?.parameters?.some(({ name }) => name === "If-Match")).toBe(false);
+  });
+
+  it("answers 428 without If-Match and 412 when it does not match", () => {
+    expect(add?.responses["428"]).toMatchObject({ content: { "application/problem+json": expect.any(Object) } });
+    expect(add?.responses["412"]).toMatchObject({ content: { "application/problem+json": expect.any(Object) } });
+    expect(Object.keys(read?.responses ?? {})).not.toContain("428");
+  });
+
+  it("states the ETag of a packet read and of the revision added", () => {
+    for (const operation of [read, add]) {
+      expect(operation?.responses["200"]).toMatchObject({ headers: { ETag: { schema: { type: "string" } } } });
+    }
+  });
+
+  it("uses one packet component for adding a revision and reading a packet", () => {
+    expect(Object.keys((packetDocument["components"] as { schemas: Json }).schemas).filter((id) => id.startsWith("Packet"))).toEqual(["Packet"]);
+    expect(new Set(valuesOf([add, read], "$ref").filter((ref) => String(ref).includes("Packet")))).toEqual(new Set(["#/components/schemas/Packet"]));
+  });
+});
+
 describe("the committed form", () => {
   it("sorts every object's keys and ends with a newline, so a change shows as a small diff", () => {
     const text = serializeDocument(document);

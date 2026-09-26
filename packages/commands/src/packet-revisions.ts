@@ -42,7 +42,7 @@ export async function insertPacketRevision(
  * Adds the next revision of the request's packet, with the write's provenance,
  * and the domain event that names it; returns the new revision's number.
  */
-export async function addPacketRevision(writer: Writer, requestId: string, packet: Packet): Promise<number> {
+export async function storePacketRevision(writer: Writer, requestId: string, packet: Packet): Promise<number> {
   await lockRequestById(writer, requestId);
   const [latest] = await writer.tx
     .select({ number: sql<number>`coalesce(max(${packetRevisions.number}), 0)::int` })

@@ -21,7 +21,9 @@ import { packet, PACKET_COMPONENT } from "./packet.ts";
 //   parameters, and the rest are the query of a GET or DELETE and the JSON
 //   body of any other method; an input with variants keeps them in its body,
 //   one schema per variant;
-// - the optional Idempotency-Key header on a POST;
+// - the optional Idempotency-Key header on a POST, and the required If-Match
+//   header on an operation that adds a packet revision, which answers 412 and
+//   428 too, and the ETag header of an answer that states one;
 // - its answer, 200 with its output, or 202 with the proposal for a
 //   commitment, and its errors as RFC 9457 problems;
 // - x-tiehall-cli with the CLI's command, on each operation the CLI offers,
@@ -74,6 +76,25 @@ const idempotencyKey = z.object({
         "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
     }),
 });
+
+/** The If-Match header of an operation that adds a packet revision (public-api: Packet revisions use ETag and If-Match). */
+const ifMatchHeader = z.object({
+  "If-Match": z.string().meta({
+    description:
+      'The ETag of the packet\'s current revision, as the packet read returned it, such as "3". Without it the answer is 428; when it is not the current revision\'s, 412, and nothing is added.',
+  }),
+});
+
+/** The ETag header of an answer that states one. */
+const etagHeader = z.object({
+  ETag: z.string().meta({ description: 'The ETag of the revision the answer holds, such as "3", for If-Match on the next write.' }),
+});
+
+/** The errors of an operation that adds a packet revision. */
+const IF_MATCH_ERRORS: Readonly<Record<string, string>> = {
+  "412": "If-Match is not the ETag of the current revision, which someone else has changed since; nothing is added.",
+  "428": "The call has no If-Match header, which adding a revision needs; nothing is added.",
+};
 
 /** The errors every operation can answer with, and those of writes and of POSTs. */
 const ERRORS: Readonly<Record<string, string>> = {
@@ -137,7 +158,8 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
   // The catalog checks that a REST operation's input is an object, or, for a method with a body, variants of
   // objects, and that each variant holds every parameter its path names.
   const variants = variantsOf(definition.input);
-  const fields = Object.entries((variants?.[0] ?? (definition.input as z.ZodObject)).shape);
+  // The field REST fills from If-Match is a header, never a field of the query or the body.
+  const fields = Object.entries((variants?.[0] ?? (definition.input as z.ZodObject)).shape).filter(([key]) => key !== definition.ifMatch);
   const inPath = z.object(Object.fromEntries(fields.filter(([key]) => pathKeys.has(key))));
   const rest = z.object(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
   const hasBody = BODY_METHODS.has(method);
@@ -150,7 +172,9 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
     requestParams: {
       ...(pathKeys.size > 0 ? { path: inPath } : {}),
       ...(!hasBody && Object.keys(rest.shape).length > 0 ? { query: rest } : {}),
-      ...(method === "POST" ? { header: idempotencyKey } : {}),
+      ...(method === "POST" || definition.ifMatch !== undefined
+        ? { header: definition.ifMatch === undefined ? idempotencyKey : method === "POST" ? idempotencyKey.extend(ifMatchHeader.shape) : ifMatchHeader }
+        : {}),
     },
     ...(hasBody && body !== undefined ? { requestBody: { content: { "application/json": { schema: body } } } } : {}),
     responses: responsesOf(definition, method),
@@ -176,10 +200,16 @@ function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiR
       description: definition.commitment
         ? "The commitment became a proposal, which takes effect once the people it needs have confirmed it in the web UI."
         : "The operation's result.",
+      ...(definition.etag === undefined ? {} : { headers: etagHeader }),
       content: { "application/json": { schema: definition.output } },
     },
   };
-  const errors = { ...ERRORS, ...(method === "GET" ? {} : WRITE_ERRORS), ...(method === "POST" ? POST_ERRORS : {}) };
+  const errors = {
+    ...ERRORS,
+    ...(method === "GET" ? {} : WRITE_ERRORS),
+    ...(method === "POST" ? POST_ERRORS : {}),
+    ...(definition.ifMatch === undefined ? {} : IF_MATCH_ERRORS),
+  };
   for (const [status, description] of Object.entries(errors)) {
     responses[status as "400"] = {
       description,

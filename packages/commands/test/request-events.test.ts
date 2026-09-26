@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CATALOG } from "@tiehall/catalog";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, packetOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, tokenOf } from "./support/requests.ts";
 
 // The event log (requests: The event log; requests: Events carry ids, not
 // bodies; design.md, Design rules: Requests and events; design.md, Technical
@@ -108,10 +108,15 @@ describe("every request change so far", () => {
       const [first] = (await callApi(install, tokenOf(bob), "GET", `/api/v1/requests/${key}`)).body.messages;
       return callApi(install, tokenOf(bob), "POST", `/api/v1/messages/${first.id}/versions`, { body: "Blocking, reworded?" });
     },
+    "packets.add_revision": async (key) => {
+      const etag = (await sendApi(install, tokenOf(alice), "GET", `/api/v1/requests/${key}/packet`)).headers.get("etag") ?? "";
+      const packet = { ...packetOf(), untrusted: { ...(packetOf()["untrusted"] as object), links: [{ url: "https://wiki.example.com/more" }] } };
+      return sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/packet/revisions`, { body: { packet }, headers: { "if-match": etag } });
+    },
   };
 
   it("covers every operation that writes to a request", () => {
-    const writes = CATALOG.commands.filter(({ id, method }) => /^(requests|messages)\./.test(id) && method !== undefined && method !== "GET");
+    const writes = CATALOG.commands.filter(({ id, method }) => /^(requests|messages|packets)\./.test(id) && method !== undefined && method !== "GET");
     expect(writes.map(({ id }) => id).sort()).toEqual(Object.keys(WRITES).sort());
   });
 
