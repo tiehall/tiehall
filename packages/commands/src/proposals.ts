@@ -1,5 +1,6 @@
-import type { proposal } from "@tiehall/catalog";
+import { getProposal, type Packet, type proposal } from "@tiehall/catalog";
 import {
+  Refusal,
   accountableSideOf,
   cancelledBy,
   proposalCreated,
@@ -7,14 +8,15 @@ import {
   proposalExpiresAt,
   secondConfirmation,
   type CommitmentKind,
+  type CancelReason,
   type ProposalCancellingChange,
   type ProposalState,
   type SecondConfirmer,
 } from "@tiehall/core";
-import { proposals, requests, teams, users } from "@tiehall/db";
-import { and, asc, eq } from "drizzle-orm";
+import { proposalConfirmations, proposals, requests, teams, users } from "@tiehall/db";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
-import type { HandlerContext } from "./execute.ts";
+import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
 import { actingUserOf, partiesOf, stampOf, teamActedFor } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
@@ -138,39 +140,93 @@ export async function cancelProposals(writer: Writer, requestId: string, change:
   return cancelled.map(({ id }) => id);
 }
 
-/** One proposal as the operations return it. */
+/** Refused as a record that does not exist. */
+export function noSuchProposal(): Refusal {
+  return new Refusal("record-not-found", "There is no such proposal.");
+}
+
+/** Users by id, as a proposal names them. */
+async function usersNamed({ tx, orgId }: OrgContext, ids: readonly string[]) {
+  const wanted = [...new Set(ids)];
+  const rows =
+    wanted.length === 0
+      ? []
+      : await tx
+          .select({ id: users.id, login: users.githubLogin, bot: users.bot })
+          .from(users)
+          .where(and(eq(users.orgId, orgId), inArray(users.id, wanted)));
+  const byId = new Map(rows.map(({ id, login, bot }) => [id, { id, login, kind: "human" as const, bot }]));
+  return (id: string) => {
+    const found = byId.get(id);
+    if (found === undefined) throw new Error("A proposal names a user the install does not have.");
+    return found;
+  };
+}
+
+/** One proposal as the operations return it; 404 when the install has no such proposal. */
 export async function proposalView(context: OrgContext, proposalId: string): Promise<ProposalView> {
   const [row] = await context.tx
-    .select({ proposal: proposals, login: users.githubLogin, bot: users.bot, request: requests })
+    .select({ proposal: proposals, request: requests })
     .from(proposals)
-    .innerJoin(users, and(eq(users.orgId, proposals.orgId), eq(users.id, proposals.accountableUserId)))
     .innerJoin(requests, and(eq(requests.orgId, proposals.orgId), eq(requests.id, proposals.requestId)))
     .where(and(eq(proposals.orgId, context.orgId), eq(proposals.id, proposalId)));
-  if (row === undefined) throw new Error("A proposal the install does not have was named.");
+  if (row === undefined) throw noSuchProposal();
   const { proposal: stored, request } = row;
   const { id, key } = await requestView(context, stored.requestId);
-  const accountableHuman = { id: stored.accountableUserId, login: row.login, kind: "human" as const, bot: row.bot };
+  const received = await context.tx
+    .select()
+    .from(proposalConfirmations)
+    .where(and(eq(proposalConfirmations.orgId, context.orgId), eq(proposalConfirmations.proposalId, stored.id)))
+    .orderBy(asc(proposalConfirmations.confirmedAt));
+  const userOf = await usersNamed(context, [stored.accountableUserId, ...received.map(({ userId }) => userId)]);
+  const accountableHuman = userOf(stored.accountableUserId);
   const rules = stored.secondConfirmation as SecondConfirmer[];
+  const change = stored.change as { packet?: Packet; teamId?: string };
   // The requester side's rule names the requesting team; the target team's and the claimant's, the target team.
-  const teamId = rules.includes("requester_side") ? request.requestingTeamId : request.targetTeamId;
-  const [team] = await context.tx
+  const teamIds = [rules.includes("requester_side") ? request.requestingTeamId : request.targetTeamId, ...(change.teamId === undefined ? [] : [change.teamId])];
+  const teamRows = await context.tx
     .select({ id: teams.id, key: teams.key })
     .from(teams)
-    .where(and(eq(teams.orgId, context.orgId), eq(teams.id, teamId)));
+    .where(and(eq(teams.orgId, context.orgId), inArray(teams.id, teamIds)));
+  const teamOf = (teamId: string) => teamRows.find((team) => team.id === teamId) ?? null;
+  const reassignedTo = change.teamId === undefined ? null : teamOf(change.teamId);
   return {
     id: stored.id,
     request: { id, key },
     kind: stored.kind as CommitmentKind,
     state: stored.state as ProposalState,
     accountableHuman,
+    proposedBy: {
+      user: accountableHuman,
+      actorKind: stored.actorKind as ProposalView["proposedBy"]["actorKind"],
+      surface: stored.surface as ProposalView["proposedBy"]["surface"],
+    },
+    change: {
+      // A due-date commitment is the one whose second confirmation comes from the other side of the accountable human's.
+      ...(change.packet !== undefined && (rules.includes("target_team") || rules.includes("requester_side"))
+        ? { dueDate: change.packet.due_date ?? null }
+        : {}),
+      ...(reassignedTo === null ? {} : { team: reassignedTo }),
+    },
     confirmations: {
       needed: [
         { step: "accountable_human", user: accountableHuman, rules: [], team: null },
-        ...(rules.length === 0 ? [] : [{ step: "other_side" as const, user: null, rules, team: team ?? null }]),
+        ...(rules.length === 0 ? [] : [{ step: "other_side" as const, user: null, rules, team: teamOf(teamIds[0] ?? "") }]),
       ],
-      received: [],
+      received: received.map((confirmation) => ({
+        step: confirmation.step as "accountable_human" | "other_side",
+        user: userOf(confirmation.userId),
+        confirmedAt: confirmation.confirmedAt.toISOString(),
+      })),
     },
     createdAt: stored.createdAt.toISOString(),
     expiresAt: stored.expiresAt.toISOString(),
+    endedAt: stored.endedAt === null ? null : stored.endedAt.toISOString(),
+    cancelReason: stored.cancelReason as CancelReason | null,
+    untrusted: { client: stored.client, packet: change.packet ?? null },
   };
 }
+
+export const PROPOSAL_HANDLERS: Handlers = {
+  [getProposal.id]: defineHandler(getProposal, async ({ proposal }, context) => proposalView(context, proposal)),
+};

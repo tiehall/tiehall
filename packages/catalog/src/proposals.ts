@@ -1,5 +1,7 @@
-import { COMMITMENT_KINDS, PROPOSAL_STATES, SECOND_CONFIRMERS } from "@tiehall/core";
+import { CANCEL_REASONS, COMMITMENT_KINDS, PROPOSAL_STATES, SECOND_CONFIRMERS, SURFACES } from "@tiehall/core";
 import { z } from "zod";
+import { defineCommand } from "./command.ts";
+import { packet } from "./packet.ts";
 import { requestRef, teamRef } from "./requests.ts";
 import { user } from "./schemas.ts";
 
@@ -11,9 +13,13 @@ import { user } from "./schemas.ts";
 // with the proposal it created instead, as `{ proposal }`: over REST with 202.
 // So a commitment operation's own output never has a field named proposal,
 // which the catalog checks. A proposal names its request, the kind of
-// commitment, where it is, its accountable human, the confirmations it needs
-// and those it has received, and when it was created and expires. It holds no
-// confirm URL: agents read it.
+// commitment and what it changes, where it is, its accountable human, who
+// proposed it (the user, the actor kind and the surface, with the client under
+// untrusted, since the client named itself), the confirmations it needs and
+// those it has received, each with its user and time, when it was created and
+// expires, and, once it ended, when and why it was cancelled. A proposed
+// packet sits under untrusted, as every packet does. It holds no confirm URL:
+// agents read it (requests: What a proposal records and shows).
 
 /** The two steps of a proposal's confirmations: its accountable human's, then, where it needs one, the other side's. */
 export const CONFIRMATION_STEPS = ["accountable_human", "other_side"] as const;
@@ -52,11 +58,32 @@ export const proposal = z.object({
   }),
   /** The user who proposed it, whose confirmation it needs first. */
   accountableHuman: user,
+  /** Who proposed it, as the server stamped it: the user, whether an agent or the web UI, and the surface. */
+  proposedBy: z.object({
+    user,
+    actorKind: z.enum(["agent", "web_session", "integration"]),
+    surface: z.enum(SURFACES).nullable(),
+  }),
+  /** What it changes: for a due date, the date it proposes, null to remove it; for a reassignment, the team. */
+  change: z.object({
+    dueDate: z.iso.date().nullable().optional(),
+    team: teamRef.optional(),
+  }),
   /** The confirmations it needs, in order, and those it has received. */
   confirmations: z.object({ needed: z.array(neededConfirmation), received: z.array(receivedConfirmation) }),
   createdAt: z.iso.datetime(),
   /** 7 days after it was created: every confirmation it needs comes before then, or it expires. */
   expiresAt: z.iso.datetime(),
+  /** When it took effect or ended without taking effect; null while it is pending. */
+  endedAt: z.iso.datetime().nullable(),
+  /** Why it was cancelled: its request reached a terminal state or was reassigned, its accountable human was removed, or its base revision was overtaken. */
+  cancelReason: z.enum(CANCEL_REASONS).nullable(),
+  untrusted: z.object({
+    /** The agent client that proposed it, as it named itself; null for the web UI and a personal access token. */
+    client: z.string().nullable(),
+    /** For a packet change, the packet it proposes, as its requester side wrote it. */
+    packet: packet.nullable(),
+  }),
 });
 
 /** What a commitment operation answers a call that makes a commitment with: the proposal it created. */
@@ -66,3 +93,20 @@ export const proposalAnswer = z.object({ proposal });
 export function isProposalAnswer(output: unknown): output is z.input<typeof proposalAnswer> {
   return typeof output === "object" && output !== null && !Array.isArray(output) && Object.hasOwn(output, "proposal");
 }
+
+export const getProposal = defineCommand({
+  id: "proposals.get",
+  summary:
+    "Read a proposal: what it proposes, who proposed it, the confirmations it needs and those it has received, when it expires, and how it ended. Every member can read every proposal.",
+  input: z.object({ proposal: z.uuid().meta({ description: "The proposal's id." }) }),
+  output: proposal,
+  method: "GET",
+  path: "/api/v1/proposals/{proposal}",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const PROPOSAL_COMMANDS = [getProposal];

@@ -932,3 +932,36 @@ export const proposals = pgTable(
     ),
   ],
 );
+
+// The confirmations proposals have received (requests: What a proposal records
+// and shows; requests: Cross-team commitments need a confirmation from each
+// side). One row per confirmation: the proposal, its step (the accountable
+// human's, or the other side's), the user who gave it in the web UI and when.
+// A confirmation never changes once it is given, which the database also
+// refuses, so it stays valid while the proposal waits for the other side.
+export const proposalConfirmations = pgTable(
+  "proposal_confirmations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    proposalId: uuid("proposal_id").notNull(),
+    step: text("step").notNull(),
+    userId: uuid("user_id").notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.proposalId, table.step] }),
+    foreignKey({
+      name: "proposal_confirmations_proposal_fk",
+      columns: [table.orgId, table.proposalId],
+      foreignColumns: [proposals.orgId, proposals.id],
+    }),
+    foreignKey({
+      name: "proposal_confirmations_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("proposal_confirmations_step_known", sql`${table.step} IN ('accountable_human', 'other_side')`),
+  ],
+);
