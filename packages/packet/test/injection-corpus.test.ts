@@ -82,7 +82,7 @@ describe.each(corpus)("$name", ({ text }) => {
 });
 
 describe("the stripped characters", () => {
-  it.fails("are gone from every entry as markdown, and nothing else is", () => {
+  it("are gone from every entry as markdown, and nothing else is", () => {
     for (const { name, text } of corpus) {
       const { markdown, content } = asMarkdown(text);
       expect(invisibleIn(markdown), name).toEqual([]);
@@ -92,7 +92,7 @@ describe("the stripped characters", () => {
     }
   });
 
-  it.fails("are gone from every entry as JSON, and nothing else is", () => {
+  it("are gone from every entry as JSON, and nothing else is", () => {
     for (const { name, text } of corpus) {
       const body = (asJson(text)["untrusted"] as Record<string, unknown>)["body"];
       expect(body, name).toBe(visible(text));

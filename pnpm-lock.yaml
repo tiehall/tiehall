@@ -343,6 +343,9 @@ importers:
       '@tiehall/db':
         specifier: workspace:*
         version: link:../db
+      '@tiehall/packet':
+        specifier: workspace:*
+        version: link:../packet
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.0)
@@ -356,9 +359,6 @@ importers:
         specifier: 'catalog:'
         version: 4.6.5
     devDependencies:
-      '@tiehall/packet':
-        specifier: workspace:*
-        version: link:../packet
       '@tiehall/testing':
         specifier: workspace:*
         version: link:../testing

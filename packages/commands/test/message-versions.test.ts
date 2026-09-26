@@ -5,9 +5,11 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 
 // Messages are append-only (requests: Messages are append-only; design.md,
 // Design rules: Requests and events). Editing a message adds its next version
-// and never overwrites or removes an earlier one, so every version reads back
-// exactly as it was written, byte for byte. Only the message's author edits
-// it. The database holds to it too: the app role may only insert and read
+// and never overwrites or removes an earlier one, so every version is stored,
+// and reads back in the web UI, exactly as it was written, byte for byte;
+// agents read it on /api/v1 without the invisible characters the agent view
+// strips (agent-safety: Invisible characters are stripped from the agent
+// view). Only the message's author edits it. The database holds to it too: the app role may only insert and read
 // messages and their versions, and a trigger refuses every update and delete,
 // whoever tries.
 
@@ -20,7 +22,7 @@ let key: string;
 let messageId: string;
 
 /** A body that a normalizing, trimming or re-encoding store would change. */
-const ORIGINAL = "  Café, café and ﬁ: \u{1F600}​ tab\there,\r\nCRLF and a trailing space \n";
+const ORIGINAL = "  Café, café and ﬁ: \u{1F600}\u200B tab\there,\r\nCRLF and a trailing space \n";
 const EDITED = "Café, with the question answered below.";
 
 beforeAll(async () => {
@@ -44,6 +46,14 @@ afterAll(async () => {
 
 const edit = (user: string, body: string, id = messageId) => callApi(install, tokenOf(user), "POST", `/api/v1/messages/${id}/versions`, { body });
 const readMessage = async (id = messageId) => (await callApi(install, tokenOf(carol), "GET", `/api/v1/messages/${id}`)).body;
+/** The message as a person reads it in the web UI, which leaves nothing out. */
+const readInTheWebUi = async (id = messageId) => {
+  const result = await install.web(sessionOf(carol)).read<{ versions: { untrusted: { body: string } }[] }>("messages.get", { messageId: id });
+  if (!result.ok) throw new Error(`messages.get answered ${result.problem.status}`);
+  return result.output;
+};
+/** The original body as agents read it: without its zero-width space. */
+const ORIGINAL_FOR_AGENTS = ORIGINAL.replace("\u200B", "");
 
 /** Every stored version's bytes, as the database holds them. */
 async function storedVersions(): Promise<{ version: number; bytes: Buffer }[]> {
@@ -61,10 +71,11 @@ describe("editing a message", () => {
     expect(answer.body).toMatchObject({ id: messageId, version: 2, untrusted: { body: EDITED } });
     const read = await readMessage();
     expect(read.versions).toEqual([
-      { version: 1, createdAt: expect.any(String), untrusted: { body: ORIGINAL } },
+      { version: 1, createdAt: expect.any(String), untrusted: { body: ORIGINAL_FOR_AGENTS } },
       { version: 2, createdAt: expect.any(String), untrusted: { body: EDITED } },
     ]);
-    expect(Buffer.from(read.versions[0].untrusted.body, "utf8").equals(Buffer.from(ORIGINAL, "utf8"))).toBe(true);
+    const shown = await readInTheWebUi();
+    expect(Buffer.from(shown.versions[0]?.untrusted.body ?? "", "utf8").equals(Buffer.from(ORIGINAL, "utf8"))).toBe(true);
     expect(await storedVersions()).toEqual([
       { version: 1, bytes: Buffer.from(ORIGINAL, "utf8") },
       { version: 2, bytes: Buffer.from(EDITED, "utf8") },
@@ -80,11 +91,7 @@ describe("editing a message", () => {
     const caller = sessionOf(bob);
     const result = await install.web(caller).write("messages.edit", { messageId, body: "Third wording." }, install.fromThePage(caller));
     expect(result).toMatchObject({ ok: true, output: { version: 3 } });
-    expect((await readMessage()).versions.map(({ untrusted }: { untrusted: { body: string } }) => untrusted.body)).toEqual([
-      ORIGINAL,
-      EDITED,
-      "Third wording.",
-    ]);
+    expect((await readInTheWebUi()).versions.map(({ untrusted }) => untrusted.body)).toEqual([ORIGINAL, EDITED, "Third wording."]);
   });
 
   it("records an event that names the message and its version, and not its text", async () => {

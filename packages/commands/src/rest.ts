@@ -1,5 +1,6 @@
 import { API_PREFIX, deprecationHeaders, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
+import { agentJson } from "@tiehall/packet/render";
 import type { Caller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
 import { idempotencyCallerOf, IdempotentReplay, parseIdempotencyKey, requestDigest, runOnce } from "./idempotency.ts";
@@ -21,7 +22,12 @@ import { createLogger, type Logger } from "./log.ts";
 //   the query string, or, for the other methods, the JSON object in the body,
 //   where a path parameter wins over a body field of the same name;
 // - it runs the operation through execute() and answers with its output as
-//   JSON, or 202 for a commitment, which becomes a proposal;
+//   JSON, or 202 for a commitment, which becomes a proposal. Its callers are
+//   agents and their tools, and the JSON variant of a request URL is the same
+//   read, so the output is JSON as agents read it: without the invisible
+//   characters the renderer strips, while what people wrote stays stored as
+//   they wrote it (agent-safety: Invisible characters are stripped from the
+//   agent view);
 // - a POST with an Idempotency-Key runs once per key, caller and body for 24
 //   hours, and a repeat gets the first response (public-api: POST operations
 //   take an Idempotency-Key);
@@ -140,11 +146,12 @@ export function createRestHandler(options: RestOptions): RestHandler {
         executeOptions.around = (context, run) => runOnce(context, claim, run, (output) => ({ status, body: JSON.stringify(output) }));
       }
       const output = await options.execute(definition.id, caller, input, executeOptions);
-      return json(status, JSON.stringify(output), etagOf(definition, output));
+      return json(status, JSON.stringify(agentJson(output)), etagOf(definition, output));
     } catch (error) {
       if (error instanceof IdempotentReplay) {
         const replayed = error.response;
-        return json(replayed.status, replayed.body, replayed.status < 300 ? etagOf(definition, JSON.parse(replayed.body)) : undefined);
+        const output: unknown = JSON.parse(replayed.body);
+        return json(replayed.status, JSON.stringify(agentJson(output)), replayed.status < 300 ? etagOf(definition, output) : undefined);
       }
       if (error instanceof Refusal) return problem(error);
       logger.error("rest: the operation failed", { operationId: definition.id, error });
