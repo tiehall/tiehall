@@ -1,13 +1,16 @@
 import { rejectProposal, withdrawProposal } from "@tiehall/catalog";
 import { proposalEnded, Refusal, rejectionOf, withdrawalOf, type ProposalEnding } from "@tiehall/core";
 import { proposals } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
+import { defineJobType } from "./jobs.ts";
 import { teamsOfMember } from "./members.ts";
 import { lockProposal, standingOf } from "./proposal-confirmations.ts";
 import { proposalView, type ProposalView } from "./proposals.ts";
 import { actingUserOf, lockRequestById, partiesOf, teamActedFor } from "./request-changes.ts";
-import type { Writer } from "./write.ts";
+import { SetupRequiredError, withOrg } from "./with-org.ts";
+import type { WorkerJob } from "./worker.ts";
+import { writeIn, type Writer } from "./write.ts";
 
 // How a proposal ends without taking effect, by a person's choice (requests:
 // How a proposal ends without taking effect; requests: The proposal's confirm
@@ -53,4 +56,53 @@ async function end(context: HandlerContext, proposalId: string, how: "rejected" 
 export const PROPOSAL_ENDING_HANDLERS: Handlers = {
   [rejectProposal.id]: defineHandler(rejectProposal, async ({ proposal }, context) => end(context, proposal, "rejected")),
   [withdrawProposal.id]: defineHandler(withdrawProposal, async ({ proposal }, context) => end(context, proposal, "withdrawn")),
+};
+
+// Expiry (requests: How a proposal ends without taking effect; design.md,
+// Decisions this change rests on: D28 #16, D30 (4); design.md, Technical
+// decisions: T6). Every confirmation a proposal needs comes within 7 days of
+// its creation, and nothing restarts that time. Each minute a worker job ends
+// every pending proposal whose time is over by the worker's clock as expired,
+// each with its proposal.ended event, recorded as a system action; no email
+// goes out for it. Until the job has run, a confirmation of such a proposal is
+// refused all the same, by the call's own clock.
+
+export const expireProposals: WorkerJob<Record<string, never>> = {
+  type: defineJobType<Record<string, never>>("proposals.expire", 1, {
+    retryLimit: 3,
+    retryDelaySeconds: 60,
+    retryBackoff: false,
+    expireInSeconds: 300,
+  }),
+  schedule: "* * * * *",
+  async handle(_job, { database, now }) {
+    try {
+      await withOrg(database, async (context) => {
+        const due = await context.tx
+          .select({ id: proposals.id, requestId: proposals.requestId })
+          .from(proposals)
+          .where(and(eq(proposals.orgId, context.orgId), eq(proposals.state, "pending"), lte(proposals.expiresAt, now())))
+          .orderBy(asc(proposals.expiresAt), asc(proposals.id))
+          .for("update", { skipLocked: true });
+        if (due.length === 0) return;
+        const jobs = {
+          send: async () => {
+            throw new Error("Expiring a proposal starts no job.");
+          },
+        };
+        await writeIn(
+          context,
+          jobs,
+          { actorKind: "system" },
+          async (writer) => {
+            for (const { id, requestId } of due) await endProposal(writer, requestId, id, "expired");
+          },
+          { now },
+        );
+      });
+    } catch (error) {
+      // Before setup there is no org, and so no proposal.
+      if (!(error instanceof SetupRequiredError)) throw error;
+    }
+  },
 };
