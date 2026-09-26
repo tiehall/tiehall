@@ -13,6 +13,8 @@
 // while the request is claimed, meaning it has a claimant at that moment. Any
 // other change, a scope change while the request is unclaimed included, is not.
 
+import { sameJson } from "./json-patch.ts";
+
 /** A packet as the rules see it: its top-level values and the fields under untrusted. */
 export interface PacketContent {
   schema_version?: unknown;
@@ -38,7 +40,7 @@ export function changedPacketFields(before: PacketContent, after: PacketContent)
   const others = [...new Set([...Object.keys(before.untrusted), ...Object.keys(after.untrusted)])]
     .filter((field) => !(PACKET_FIELDS as readonly string[]).includes(field))
     .sort();
-  return [...PACKET_FIELDS, ...others].filter((field) => canonical(valueOf(before, field)) !== canonical(valueOf(after, field)));
+  return [...PACKET_FIELDS, ...others].filter((field) => !sameJson(valueOf(before, field), valueOf(after, field)));
 }
 
 /** The commitments a change from one packet to the next makes, for a request that is claimed or not. */
@@ -48,20 +50,4 @@ export function packetCommitments(before: PacketContent, after: PacketContent, c
   if (fields.includes("due_date")) commitments.push("due_date");
   if (claimed && fields.some((field) => (SCOPE_FIELDS as readonly string[]).includes(field))) commitments.push("scope");
   return commitments;
-}
-
-/** A JSON value as text with every object's keys sorted; undefined, for a field that is absent, as nothing. */
-function canonical(value: unknown): string {
-  return JSON.stringify(sorted(value)) ?? "";
-}
-
-function sorted(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sorted);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-      .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
-  );
 }

@@ -1,5 +1,5 @@
-import { addPacketRevision, getPacket, getPacketRevision } from "@tiehall/catalog";
-import { packetCommitments, Refusal } from "@tiehall/core";
+import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision } from "@tiehall/catalog";
+import { changedPacketFields, jsonPatch, packetCommitments, Refusal } from "@tiehall/core";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { actingUserOf, assertSideAllows, lockRequest, teamActedFor } from "./request-changes.ts";
@@ -23,6 +23,12 @@ import { resolveRequestKey } from "./request-keys.ts";
 // task 14.4; until then they get 409 and add nothing, so no commitment takes
 // effect without the people who confirm it. The revision and its event commit
 // together, with the requester side's team as the team the user acted for.
+//
+// What changed since revision N (handoff-packet: What changed since revision
+// N): the fields that differ between revision N and the current revision, and
+// the RFC 6902 JSON Patch that turns the one into the other, under untrusted,
+// because it carries what people wrote. A revision the request does not have
+// gets 404.
 
 export const PACKET_HANDLERS: Handlers = {
   [getPacket.id]: defineHandler(getPacket, async ({ key }, context) => {
@@ -33,6 +39,19 @@ export const PACKET_HANDLERS: Handlers = {
   [getPacketRevision.id]: defineHandler(getPacketRevision, async ({ key, revision }, context) => {
     const { requestId } = await resolveRequestKey(context, key);
     return packetRevisionOf(context, requestId, revision);
+  }),
+
+  [getPacketChanges.id]: defineHandler(getPacketChanges, async ({ key, since }, context) => {
+    const { requestId } = await resolveRequestKey(context, key);
+    const from = await packetRevisionOf(context, requestId, since);
+    const current = await packetRevisionOf(context, requestId);
+    return {
+      request: current.request,
+      since,
+      revision: current.revision,
+      changedFields: changedPacketFields(from.packet, current.packet),
+      untrusted: { patch: jsonPatch(from.packet, current.packet) },
+    };
   }),
 
   [addPacketRevision.id]: defineHandler(addPacketRevision, async ({ key, expectedRevision, packet }, context) => {

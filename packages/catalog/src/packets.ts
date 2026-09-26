@@ -13,6 +13,9 @@ import { requestKey } from "./requests.ts";
 // revision it expects: on REST in If-Match, as that revision's ETag. Each
 // operation takes and returns the packet as the one component Packet; a packet
 // reads back as Tiehall parsed it, without the keys the schema does not know.
+// What changed since a revision is the list of the fields that changed and an
+// RFC 6902 JSON Patch from that revision to the current one (handoff-packet:
+// What changed since revision N).
 
 /** A revision of a request's packet, as the packet operations return it. */
 export const packetRevision = z.object({
@@ -82,4 +85,38 @@ export const addPacketRevision = defineCommand({
   etag: "revision",
 });
 
-export const PACKET_COMMANDS = [getPacket, getPacketRevision, addPacketRevision];
+/** One operation of an RFC 6902 JSON Patch, of the three kinds Tiehall's patches use. */
+const jsonPatchOperation = z.object({
+  op: z.enum(["add", "remove", "replace"]),
+  path: z.string().meta({ description: "An RFC 6901 JSON Pointer into the packet." }),
+  value: z.unknown().optional().meta({ description: "For add and replace, the value." }),
+});
+
+export const getPacketChanges = defineCommand({
+  id: "packets.changes",
+  summary:
+    "Say what changed in a request's packet since a revision: the fields that changed, and an RFC 6902 JSON Patch that turns that revision's packet into the current one. Both are empty since the current revision.",
+  input: z.object({
+    key: requestKey,
+    since: z.coerce.number().int().min(1).meta({ description: "The revision to compare the current one with." }),
+  }),
+  output: z.object({
+    request: z.object({ id: z.uuid(), key: z.string() }),
+    since: z.number().int().min(1),
+    /** The current revision. */
+    revision: z.number().int().min(1),
+    /** The packet's fields that changed, such as acceptance_criteria and links. */
+    changedFields: z.array(z.string()),
+    /** The patch holds what people wrote, so it sits under untrusted. */
+    untrusted: z.object({ patch: z.array(jsonPatchOperation) }),
+  }),
+  method: "GET",
+  path: "/api/v1/requests/{key}/packet/changes",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const PACKET_COMMANDS = [getPacket, getPacketRevision, addPacketRevision, getPacketChanges];

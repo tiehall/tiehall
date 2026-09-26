@@ -33,6 +33,7 @@
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "fast-check": "4.10.1",
+    "fast-json-patch": "3.1.1",
     "pg": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

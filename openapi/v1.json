@@ -3983,6 +3983,214 @@
         "x-stability-level": "alpha"
       }
     },
+    "/api/v1/requests/{key}/packet/changes": {
+      "get": {
+        "operationId": "packets.changes",
+        "parameters": [
+          {
+            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The revision to compare the current one with.",
+            "in": "query",
+            "name": "since",
+            "required": true,
+            "schema": {
+              "description": "The revision to compare the current one with.",
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changedFields": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "request": {
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "revision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "since": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "untrusted": {
+                      "properties": {
+                        "patch": {
+                          "items": {
+                            "properties": {
+                              "op": {
+                                "enum": [
+                                  "add",
+                                  "remove",
+                                  "replace"
+                                ],
+                                "type": "string"
+                              },
+                              "path": {
+                                "description": "An RFC 6901 JSON Pointer into the packet.",
+                                "type": "string"
+                              },
+                              "value": {
+                                "description": "For add and replace, the value."
+                              }
+                            },
+                            "required": [
+                              "op",
+                              "path"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "patch"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "request",
+                    "since",
+                    "revision",
+                    "changedFields",
+                    "untrusted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:read"
+            ]
+          }
+        ],
+        "summary": "Say what changed in a request's packet since a revision: the fields that changed, and an RFC 6902 JSON Patch that turns that revision's packet into the current one. Both are empty since the current revision.",
+        "x-stability-level": "alpha"
+      }
+    },
     "/api/v1/requests/{key}/packet/revisions": {
       "post": {
         "operationId": "packets.add_revision",

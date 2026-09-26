@@ -4,6 +4,7 @@ export * from "./confirmation.ts";
 export * from "./error-model.ts";
 export * from "./events.ts";
 export * from "./event-types.ts";
+export * from "./json-patch.ts";
 export * from "./packet-changes.ts";
 export * from "./provenance.ts";
 export * from "./request-keys.ts";

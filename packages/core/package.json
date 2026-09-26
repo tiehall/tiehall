@@ -15,6 +15,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "fast-check": "4.10.1",
+    "fast-json-patch": "3.1.1",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
