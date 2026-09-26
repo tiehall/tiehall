@@ -27,6 +27,10 @@ allowBuilds:
   protobufjs: false
   # Builds an optional native crypto binding; ssh2 falls back to pure JS.
   ssh2: false
+  # Rewrites its entry files for Vue 2 or 3 (a dependency of Scalar's sources);
+  # the files it ships are Vue 3's, and the web app serves Scalar's prebuilt
+  # browser bundle, never these sources.
+  vue-demi: false
 
 # One version for tools that several workspace packages use.
 catalog:

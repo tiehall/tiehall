@@ -350,6 +350,21 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(await response.text()).toBe(readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8"));
   });
 
+  // public-api: The API reference page at `/docs/api`.
+  it("serves the API reference page and its scripts itself, with a strict Content-Security-Policy", async () => {
+    const page = await fetch(`http://127.0.0.1:${port}/docs/api`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-security-policy")).toMatch(/^default-src 'none'; script-src 'nonce-[^']+';/);
+    const sources = [...(await page.text()).matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map(([, source]) => source);
+    expect(sources).toEqual(["/docs/api/reference.js", "/docs/api/scalar.js"]);
+    for (const source of sources) {
+      const script = await fetch(`http://127.0.0.1:${port}${source}`);
+      expect(script.status, source).toBe(200);
+      expect(script.headers.get("content-type"), source).toBe("text/javascript; charset=utf-8");
+      expect((await script.text()).length, source).toBeGreaterThan(0);
+    }
+  });
+
   if (role === "all") {
     it("runs the worker beside the web server", () => {
       const logs = dockerOk(["logs", name]);
