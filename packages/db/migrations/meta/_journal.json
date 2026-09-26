@@ -218,6 +218,13 @@
       "when": 1790420521859,
       "tag": "0030_add_proposal_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790420724476,
+      "tag": "0031_add_receipts",
+      "breakpoints": true
     }
   ]
 }

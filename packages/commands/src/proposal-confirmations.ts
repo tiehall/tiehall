@@ -23,6 +23,7 @@ import { recordHumanAction } from "./loop-limit.ts";
 import { teamsOfMember } from "./members.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { cancelProposals, noSuchProposal, proposalView } from "./proposals.ts";
+import { giveReceipts } from "./receipts.ts";
 import { actingUserOf, lifecycleOf, lockRequestById, partiesOf, saveLifecycle, teamActedFor } from "./request-changes.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import { requestView, type RequestRow } from "./request-views.ts";
@@ -50,7 +51,8 @@ import type { Writer } from "./write.ts";
 //   one the proposal needs, the commitment with its own events commit
 //   together, or none of them does;
 // - a confirmation is a human action on the request: it clears the
-//   needs_human flag and restarts the counts of agent writes.
+//   needs_human flag and restarts the counts of agent writes;
+// - it gives its receipts, in the same transaction (receipts.ts).
 // Applying a commitment marks the proposal applied first, then changes the
 // request: a decline, a withdrawal or a done moves it to that state, which
 // cancels every other pending proposal on it; a due date or a scope change
@@ -185,6 +187,7 @@ export const PROPOSAL_CONFIRMATION_HANDLERS: Handlers = {
       await writer.tx.insert(proposalConfirmations).values({ orgId: writer.orgId, proposalId, step, userId, confirmedAt: writer.now() });
       await writer.record(proposalConfirmed, { requestId: row.id, proposalId, step, applied: verdict.takesEffect });
       if (verdict.takesEffect) await applyCommitment(writer, stored, row, current);
+      await giveReceipts(writer, { proposalId, userId, accountableUserId: stored.accountableUserId, takesEffect: verdict.takesEffect });
       await recordHumanAction(writer, row.id);
       return proposalView(writer, proposalId);
     }, { teamId });

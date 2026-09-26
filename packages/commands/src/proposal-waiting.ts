@@ -6,6 +6,7 @@ import { commitmentPhrase, installLink, PROPOSAL_NOTICE, requestKey, serverTime 
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { proposalView } from "./proposals.ts";
+import { receiptViews } from "./receipts.ts";
 import { actingUserOf } from "./request-changes.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -21,7 +22,7 @@ import type { WorkerJob } from "./worker.ts";
 // removals and team changes at once, and an expired or ended proposal waits
 // for nobody.
 // - inbox.standing_list, which only the web UI reads, lists the proposals
-//   that wait for the signed-in user, oldest first.
+//   that wait for the signed-in user, oldest first, and their receipts.
 // - A worker job, each minute, emails each person a proposal has started to
 //   wait for, once, when email is set up: the email says which request, what
 //   the proposal proposes and when it expires, and links its confirm page; it
@@ -100,7 +101,7 @@ export const PROPOSAL_WAITING_HANDLERS: Handlers = {
     const mine = [...waiting].filter(([, userIds]) => userIds.includes(userId)).map(([proposalId]) => proposalId);
     const views = [];
     for (const proposalId of mine) views.push(await proposalView(context, proposalId));
-    return { waiting: views };
+    return { waiting: views, receipts: await receiptViews(context, userId) };
   }),
 };
 

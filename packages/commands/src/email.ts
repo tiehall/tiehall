@@ -93,6 +93,89 @@ export const PROPOSAL_NOTICE: EmailTemplate<{ key: ServerText; what: ServerText;
     ].join("\n"),
 };
 
+/** A calendar day, such as a due date, written as YYYY-MM-DD. */
+function calendarDay(day: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new TypeError("A calendar day is written as YYYY-MM-DD.");
+  return day;
+}
+
+/** A team's key, such as FE. */
+function teamKeyText(key: string): string {
+  if (!/^[A-Z][A-Z0-9]{1,9}$/.test(key)) throw new TypeError("A team key is 2 to 10 capital letters and digits, such as FE.");
+  return key;
+}
+
+/** What a receipt is about: the kind of receipt, the commitment, its request, and where its proposal is now. */
+export interface ReceiptFacts {
+  kind: "waits_for_other_side" | "took_effect";
+  commitment: string;
+  /** The request's key now. */
+  key: string;
+  /** For a due-date commitment, the due date it sets, or null when it removes it. */
+  dueDate?: string | null | undefined;
+  /** For a reassignment, the key of the team it moves the request to. */
+  team?: string | undefined;
+  /** Where the proposal is now: pending, applied, or how it ended. */
+  state: string;
+}
+
+/**
+ * A receipt's sentence, in Tiehall's words (requests: Receipts): what the
+ * person confirmed, and, for a receipt that says the commitment waits for the
+ * other side, how that ended once it has.
+ */
+export function receiptSentence(facts: ReceiptFacts): ServerText {
+  const key = requestKey(facts.key);
+  const dueDate = facts.dueDate === undefined || facts.dueDate === null ? facts.dueDate : calendarDay(facts.dueDate);
+  if (facts.kind === "took_effect") {
+    switch (facts.commitment) {
+      case "decline":
+        return `${key} was declined, with your confirmation.` as ServerText;
+      case "withdraw":
+        return `${key} was withdrawn, with your confirmation.` as ServerText;
+      case "done":
+        return `${key} was marked done, with your confirmation.` as ServerText;
+      case "reassign":
+        return `${key} was reassigned to team ${teamKeyText(facts.team ?? "")}, with your confirmation.` as ServerText;
+      case "due_date":
+        return (dueDate === null || dueDate === undefined
+          ? `The due date of ${key} was removed, with your confirmation.`
+          : `The due date of ${key} was set to ${dueDate}, with your confirmation.`) as ServerText;
+      case "scope":
+        return `A change of the scope of ${key} took effect as the next revision of its packet, with your confirmation.` as ServerText;
+      default:
+        throw new TypeError("A receipt's commitment is one of the kinds of commitment.");
+    }
+  }
+  const confirmed =
+    facts.commitment === "due_date"
+      ? dueDate === null || dueDate === undefined
+        ? `removing the due date of ${key}`
+        : `setting the due date of ${key} to ${dueDate}`
+      : facts.commitment === "scope"
+        ? `changing the scope of ${key}`
+        : undefined;
+  if (confirmed === undefined) throw new TypeError("Only a due date or a scope change waits for the other side.");
+  const ending: Readonly<Record<string, string>> = {
+    pending: "",
+    applied: " The other side confirmed it too.",
+    expired: " It expired before the other side confirmed it, so it did not take effect.",
+    rejected: " It was rejected, so it did not take effect.",
+    withdrawn: " It was withdrawn, so it did not take effect.",
+    cancelled: " It was cancelled, so it did not take effect.",
+  };
+  const how = Object.hasOwn(ending, facts.state) ? ending[facts.state] : undefined;
+  if (how === undefined) throw new TypeError("A receipt's proposal is pending, applied or ended.");
+  return `You confirmed ${confirmed}; it waits for a confirmation from the other side of the request.${how}` as ServerText;
+}
+
+/** The email of a receipt (requests: Receipts): its sentence, in Tiehall's words. */
+export const RECEIPT: EmailTemplate<{ key: ServerText; sentence: ServerText }> = {
+  id: "email.receipt",
+  subject: ({ key }) => `Tiehall: receipt for your confirmation on ${key}`,
+  text: ({ sentence }) => [sentence, "", "It is also listed in the standing list of your web inbox.", ""].join("\n"),
+};
+
 /** The test message an admin sends from the admin page. */
 export const TEST_MESSAGE: EmailTemplate<{ install: ServerText }> = {
   id: "email.test_message",

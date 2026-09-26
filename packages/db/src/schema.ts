@@ -264,6 +264,8 @@ export const users = pgTable(
     bot: boolean("bot").notNull().default(false),
     /** The primary verified email address of the GitHub account, which sign-in reads; email goes nowhere else. */
     email: text("email"),
+    /** Whether the user gets the daily digest email; transactional email, such as proposal notices and receipts, ignores it. */
+    digestEnabled: boolean("digest_enabled").notNull().default(true),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -1026,5 +1028,43 @@ export const proposalNotices = pgTable(
       columns: [table.orgId, table.userId],
       foreignColumns: [users.orgId, users.id],
     }),
+  ],
+);
+
+// Receipts (requests: Receipts; requester-loop: The web inbox). One row per
+// receipt a person gets for a confirmation: that they confirmed a commitment
+// that now waits for the other side, or that it took effect with their
+// confirmation. Its words come from the proposal as it is when it is read, so a
+// receipt that says a proposal waits shows how it ended once it ends. It is
+// listed in the standing list of the person's web inbox and, with SMTP set,
+// emailed once.
+export const receipts = pgTable(
+  "receipts",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    proposalId: uuid("proposal_id").notNull(),
+    kind: text("kind").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    /** When it was emailed; none until it is, and never without SMTP. */
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("receipts_user_id").on(table.orgId, table.userId, table.createdAt),
+    foreignKey({
+      name: "receipts_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "receipts_proposal_fk",
+      columns: [table.orgId, table.proposalId],
+      foreignColumns: [proposals.orgId, proposals.id],
+    }),
+    check("receipts_kind_known", sql`${table.kind} IN ('waits_for_other_side', 'took_effect', 'undone')`),
   ],
 );

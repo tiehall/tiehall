@@ -179,6 +179,7 @@ export {
 export { CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 export { expireProposals } from "./proposal-endings.ts";
 export { notifyWaitingProposals, waitingByProposal } from "./proposal-waiting.ts";
+export { emailReceipts } from "./receipts.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,
