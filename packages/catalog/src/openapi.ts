@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
 import { variantsOf, type Catalog } from "./catalog.ts";
 import type { CommandDefinition } from "./command.ts";
+import { packet, PACKET_COMPONENT } from "./packet.ts";
 
 // The OpenAPI 3.1 document of /api/v1, generated from the catalog (public-api:
 // What the document states for each operation; public-api: Responses can gain
@@ -28,8 +29,11 @@ import type { CommandDefinition } from "./command.ts";
 //   decisions: S16).
 // Response schemas never set `additionalProperties: false`, so a response can
 // gain a field without breaking a strictly generated client, and a schema used
-// in requests and responses, such as the packet, keeps one component id. The
-// document holds no data of any install and is the same for every reader.
+// in requests and responses, such as the packet, keeps one component id: the
+// packet is the component Packet, which the document holds even before an
+// operation takes or returns one (handoff-packet: One definition for the
+// schema and the API). The document holds no data of any install and is the
+// same for every reader.
 
 /** The API's version while it is beta: 0.N.0, bumped with every breaking change (D28 #27). */
 export const API_VERSION = "0.1.0";
@@ -104,6 +108,7 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
       },
       paths,
       components: {
+        schemas: { [PACKET_COMPONENT]: packet },
         securitySchemes: {
           bearer: {
             type: "http",

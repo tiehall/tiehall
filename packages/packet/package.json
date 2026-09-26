@@ -10,7 +10,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./conformance": "./src/conformance.ts"
+    "./conformance": "./src/conformance.ts",
+    "./schema/v1-beta.json": "./schema/v1-beta.json"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
@@ -19,5 +20,8 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
   }
 }

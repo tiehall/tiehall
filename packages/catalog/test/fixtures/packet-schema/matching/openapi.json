@@ -1,0 +1,54 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Fixture", "version": "0.1.0" },
+  "paths": {
+    "/api/v1/requests/{key}/packet": {
+      "get": {
+        "operationId": "packets.get",
+        "responses": {
+          "200": {
+            "description": "The current revision.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "packet": { "$ref": "#/components/schemas/Packet" } }, "required": ["packet"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{key}/packet/revisions": {
+      "post": {
+        "operationId": "packets.add_revision",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": { "packet": { "$ref": "#/components/schemas/Packet" } }, "required": ["packet"] }
+            }
+          }
+        },
+        "responses": { "200": { "description": "The new revision." } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Packet": {
+        "type": "object",
+        "properties": {
+          "schema_version": { "type": "string", "const": "1-beta" },
+          "untrusted": {
+            "type": "object",
+            "properties": {
+              "need": { "type": "string", "minLength": 1, "x-tiehall-untrusted": true },
+              "links": { "type": "array", "items": { "type": "object", "properties": { "url": { "type": "string" } }, "required": ["url"] } }
+            },
+            "required": ["need"],
+            "x-tiehall-untrusted": true
+          }
+        },
+        "required": ["schema_version", "untrusted"]
+      }
+    }
+  }
+}

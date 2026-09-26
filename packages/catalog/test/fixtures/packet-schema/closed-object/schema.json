@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiehall.com/schemas/packet/v1-beta.json",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1-beta"
+    },
+    "untrusted": {
+      "type": "object",
+      "properties": {
+        "need": {
+          "type": "string",
+          "minLength": 1,
+          "x-tiehall-untrusted": true
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "need"
+      ],
+      "x-tiehall-untrusted": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "untrusted"
+  ]
+}

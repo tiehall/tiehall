@@ -24,6 +24,8 @@
     "check:openapi": "node packages/catalog/src/check-openapi.ts",
     "mcp:generate": "node packages/catalog/src/write-tool-snapshot.ts",
     "check:mcp-tools": "node packages/catalog/src/check-tool-snapshot.ts",
+    "packet:generate": "node packages/catalog/src/write-packet-schema.ts",
+    "check:packet-schema": "node packages/catalog/src/check-packet-schema.ts",
     "check:confirmations": "node tools/repo-checks/src/check-confirmations.ts",
     "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts"

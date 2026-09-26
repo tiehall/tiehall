@@ -30,6 +30,9 @@ export const PACKET_SCHEMA_VERSION = "1-beta";
 /** The schema's $id before publication, which no install fetches and which need not resolve. */
 export const PACKET_SCHEMA_ID = "https://tiehall.com/schemas/packet/v1-beta.json";
 
+/** The component the OpenAPI document gives the packet, in requests and responses alike. */
+export const PACKET_COMPONENT = "Packet";
+
 /** A request's packet, or a contract change's, which must carry its contract section. */
 export const PACKET_KINDS = ["request", "contract_change"] as const;
 export type PacketKind = (typeof PACKET_KINDS)[number];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { defineCatalog, defineCommand, SCOPES } from "../src/index.ts";
+import { defineCatalog, defineCommand, packet, SCOPES } from "../src/index.ts";
 import { API_VERSION, openApiDocument, serializeDocument } from "../src/openapi.ts";
 
 // The OpenAPI 3.1 document, generated from the catalog (public-api: What the
@@ -12,7 +12,6 @@ import { API_VERSION, openApiDocument, serializeDocument } from "../src/openapi.
 // stability level, its errors as RFC 9457 problems, the optional
 // Idempotency-Key on POST and, where the CLI offers it, the CLI's command.
 
-const packet = z.object({ need: z.string(), acceptance: z.array(z.string()) }).meta({ id: "Packet" });
 const request = z.object({ key: z.string(), title: z.string(), packet });
 
 const catalog = defineCatalog([
