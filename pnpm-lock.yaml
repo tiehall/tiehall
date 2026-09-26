@@ -377,6 +377,9 @@ importers:
       pg:
         specifier: 'catalog:'
         version: 8.23.0
+      playwright-core:
+        specifier: 1.63.0
+        version: 1.63.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

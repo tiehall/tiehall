@@ -47,6 +47,12 @@ export interface TestInstall {
   fromThePage(caller: WebSessionCaller): WebWriteRequest;
   /** The review pages of the confirmation step, for the given signed-in session. */
   confirmRoute(caller: WebSessionCaller): ConfirmRoute;
+  /**
+   * The review pages of the confirmation step, for whoever the request's
+   * session names, or nobody, on the install at this URL unless another is
+   * given, such as a local server's for a browser.
+   */
+  confirmRouteFor(session: (request: Request) => Promise<WebSessionCaller | undefined>, url?: string): ConfirmRoute;
   /** Opens the action's review page and posts its form, as a person confirming it does; returns the answer. */
   confirm(caller: WebSessionCaller, commandId: string, input: unknown): Promise<Response>;
   close(): Promise<void>;
@@ -74,8 +80,9 @@ export async function startTestInstall(
   const store = { database: db, jobs: { send: async () => {} } };
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, ...(options.now === undefined ? {} : { now: options.now }) });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations });
-  const confirmRoute = (caller: WebSessionCaller) =>
-    createConfirmRoute({ step, session: async () => caller, write: { execute, url: URL_OF_INSTALL, secret }, logger });
+  const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
+    createConfirmRoute({ step, session, write: { execute, url, secret }, logger });
+  const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
 
   return {
     owner,
@@ -85,6 +92,7 @@ export async function startTestInstall(
     web: (caller) => createWebCommands({ execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => secret, logger }),
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,
+    confirmRouteFor,
     async confirm(caller, commandId, input) {
       const route = confirmRoute(caller);
       const page = await route(new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`));

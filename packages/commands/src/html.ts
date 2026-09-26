@@ -7,12 +7,18 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
-/** The headers of a page that runs no script, loads nothing, posts its forms only to the install and cannot be framed. */
+/**
+ * The headers of a page that runs no script, loads nothing, posts its forms
+ * only to the install and cannot be framed. Its referrer policy keeps its URL
+ * from every other site but still lets the browser name the page's origin in
+ * the Origin header of the forms it posts to the install, which the web UI's
+ * write checks require; with no-referrer, Chrome sends `Origin: null`.
+ */
 export const PAGE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
   "content-security-policy": "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 } as const;
 
