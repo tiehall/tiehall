@@ -18,7 +18,7 @@ export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog 
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
 export { changeMemberRole, listedMember, listMembers, MEMBER_COMMANDS, removeMember, setBotFlag } from "./members.ts";
-export { createRequest, request, REQUEST_COMMANDS, requestTitle, teamRef } from "./requests.ts";
+export { createRequest, getRequest, listRequests, request, REQUEST_COMMANDS, requestKey, requestTitle, teamRef } from "./requests.ts";
 export { role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";

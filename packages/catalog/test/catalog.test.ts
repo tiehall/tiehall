@@ -261,6 +261,31 @@ describe("the real catalog", () => {
   });
 });
 
+// requests: Requests only, with questions in the request's thread. v1 ships tracked requests and no free-form
+// rooms, so no surface offers an operation that creates, lists or reads a room: no operation, tool or CLI
+// command names one, and a thread is always a request's own, reached through the request.
+describe("the real catalog, which offers requests and no rooms", () => {
+  const ROOM = /(^|[^a-z])(rooms?|channels?|chats?|conversations?|dms?|direct_messages?)([^a-z]|$)/i;
+
+  it("has no operation, tool or CLI command that creates, lists or reads a free-form room", () => {
+    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cliCommand }) =>
+      [id, summary, path, tool, cliCommand].filter((name): name is string => name !== undefined),
+    );
+    expect(names.filter((name) => ROOM.test(name))).toEqual([]);
+    expect(CATALOG.get("requests.get")).toBeDefined();
+    expect(CATALOG.get("requests.list")).toBeDefined();
+  });
+
+  it("would be caught naming a room", () => {
+    for (const name of ["rooms.create", "rooms.list", "/api/v1/rooms/{roomId}/messages", "read_room", "room join", "channels.post", "start_conversation"]) {
+      expect(ROOM.test(name), name).toBe(true);
+    }
+    for (const name of ["requests.create", "requests.list", "/api/v1/requests/{key}", "get_request", "whats_new", "teams.add_member"]) {
+      expect(ROOM.test(name), name).toBe(false);
+    }
+  });
+});
+
 // teams-and-roles: Two roles, admin and member. An invite or a role change names one of the two roles, and input
 // that names any other, such as owner, fails its schema, which the error model answers with 400.
 describe("the role an input names", () => {

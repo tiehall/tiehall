@@ -1,4 +1,4 @@
-import { REQUEST_STATES } from "@tiehall/core";
+import { REQUEST_KEY, REQUEST_STATES } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { user } from "./schemas.ts";
@@ -17,6 +17,12 @@ import { teamKey } from "./teams.ts";
 
 /** A team as a request names it: its id and its current key. */
 export const teamRef = z.object({ id: z.uuid(), key: z.string() });
+
+/** A request's key, such as FE-142: a team key, current or from before a rename, a hyphen and a number. */
+export const requestKey = z
+  .string()
+  .regex(REQUEST_KEY, "A request key is a team key, a hyphen and a number, such as FE-142.")
+  .meta({ description: "The request's key, such as FE-142; a key written with a team's earlier key names the same request." });
 
 /** A request's title, as its requester writes it: one line of 1 to 200 characters. */
 export const requestTitle = z
@@ -62,4 +68,38 @@ export const createRequest = defineCommand({
   stability: "alpha",
 });
 
-export const REQUEST_COMMANDS = [createRequest];
+export const getRequest = defineCommand({
+  id: "requests.get",
+  summary: "Read a request by its key. Every member of the install can read every request.",
+  input: z.object({ key: requestKey }),
+  output: request,
+  method: "GET",
+  path: "/api/v1/requests/{key}",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const listRequests = defineCommand({
+  id: "requests.list",
+  summary: "List the install's requests, newest first, optionally only those to one team or in one state.",
+  input: z.object({
+    targetTeam: teamKey.optional().meta({ description: "Only the requests addressed to the team with this key." }),
+    state: z.enum(REQUEST_STATES).optional().meta({ description: "Only the requests in this state." }),
+    limit: z.coerce.number().int().min(1).max(200).optional().meta({ description: "How many requests to return, 1 to 200; 50 unless given." }),
+    offset: z.coerce.number().int().min(0).optional().meta({ description: "How many of the newest requests to skip; 0 unless given." }),
+  }),
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  output: z.object({ "requests": z.array(request) }),
+  method: "GET",
+  path: "/api/v1/requests",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests];

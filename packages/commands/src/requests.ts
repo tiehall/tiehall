@@ -1,11 +1,11 @@
-import { createRequest, type request } from "@tiehall/catalog";
+import { createRequest, getRequest, listRequests, type request } from "@tiehall/catalog";
 import { formatRequestKey, Refusal, requestOpened, type RequestState } from "@tiehall/core";
 import { requests, teams, users } from "@tiehall/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
-import { noSuchRequest, teamOfKey } from "./request-keys.ts";
+import { noSuchRequest, resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -14,6 +14,10 @@ import type { OrgContext } from "./with-org.ts";
 // Request states; requests: Per-team request keys; requests: The event log;
 // design.md, Decisions this change rests on: D25, D28 #11; design.md,
 // Readings to confirm with the founder: R14).
+//
+// Reading: every member sees every request, whichever teams they belong to, so
+// the reads check no side. A key written with a team's earlier key names the
+// same request, which comes back under its current key.
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -127,5 +131,28 @@ export const REQUEST_HANDLERS: Handlers = {
       await writer.record(requestOpened, { requestId: row.id, targetTeamId: target.id, requestingTeamId: from.id });
       return requestView(writer, row.id);
     });
+  }),
+
+  [getRequest.id]: defineHandler(getRequest, async ({ key }, context) => {
+    const { requestId } = await resolveRequestKey(context, key);
+    return requestView(context, requestId);
+  }),
+
+  [listRequests.id]: defineHandler(listRequests, async ({ targetTeam, state, limit, offset }, context) => {
+    const where: SQL[] = [eq(requests.orgId, context.orgId)];
+    if (targetTeam !== undefined) {
+      const team = await teamOfKey(context, targetTeam);
+      if (team === undefined) throw new Refusal("record-not-found", "There is no such team.");
+      where.push(eq(requests.targetTeamId, team.id));
+    }
+    if (state !== undefined) where.push(eq(requests.state, state));
+    const rows = await context.tx
+      .select()
+      .from(requests)
+      .where(and(...where))
+      .orderBy(desc(requests.createdAt), desc(requests.id))
+      .limit(limit ?? 50)
+      .offset(offset ?? 0);
+    return { "requests": await requestViews(context, rows) };
   }),
 };
