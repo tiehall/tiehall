@@ -27,10 +27,15 @@
 // `tiehall-data` in any case, is written `&lt;`, so a fence holds exactly one
 // opening and one closing marker, whatever it holds.
 //
+// Tiehall's own text is escaped the same way, so nothing in a response but its
+// fences begins a marker. Texts are joined by a blank line.
+//
 // JSON that agents read carries no fences: there, the text people and other
 // systems wrote sits under objects named `untrusted`, as the output schemas
 // place it (agent-safety: User text in JSON sits under untrusted objects), and
 // agentJson() gives the value as agents read it.
+
+import { randomBytes } from "node:crypto";
 
 /** Where a string an agent reads comes from (design.md, Decisions this change rests on: D28 #54). */
 export const ORIGINS = ["tiehall", "same team", "other team", "external"] as const;
@@ -73,12 +78,42 @@ export interface AgentView {
   json<T>(value: T): T;
 }
 
-/** A JSON value as agents read it, such as the output of an operation. */
-export function agentJson<T>(_value: T): T {
-  throw new Error("The renderer is built in task 13.3.");
+/** Where a marker would begin: a `<`, then optional white space and a `/`, then the fence's name, in any case. */
+const MARKER_START = new RegExp(`<(?=\\s*\\/?\\s*${FENCE_NAME})`, "gi");
+
+/** A text with every `<` that would begin a marker written `&lt;`, so that it can neither open nor close a fence. */
+export function escapeMarkers(text: string): string {
+  return text.replace(MARKER_START, "&lt;");
 }
+
+/** One text of a response as markdown: Tiehall's own as it is, any other in a fence after its preamble. */
+function renderText({ origin, text }: AgentText, nonce: string): string {
+  const escaped = escapeMarkers(text);
+  if (origin === "tiehall") return escaped;
+  return [fencePreamble(origin), openingMarker(nonce, origin), escaped, closingMarker(nonce)].join("\n");
+}
+
+/** A JSON value as agents read it, such as the output of an operation: a copy of its arrays, objects and strings. */
+export function agentJson<T>(value: T): T {
+  return copyJson(value) as T;
+}
+
+function copyJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(copyJson);
+  if (value === null || typeof value !== "object") return value;
+  // fromEntries defines each key as the object's own, so a key such as __proto__ in extensions stays a key.
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copyJson(item)]));
+}
+
+/** How many random bytes a nonce holds: 128 bits, which no text can guess. */
+const NONCE_BYTES = 16;
 
 /** A view for one response, with a nonce of its own. */
 export function createAgentView(): AgentView {
-  throw new Error("The renderer is built in task 13.3.");
+  const nonce = randomBytes(NONCE_BYTES).toString("hex");
+  return {
+    nonce,
+    markdown: (texts) => texts.map((text) => renderText(text, nonce)).join("\n\n"),
+    json: agentJson,
+  };
 }

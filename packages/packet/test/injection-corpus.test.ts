@@ -61,7 +61,7 @@ describe("the injection corpus", () => {
 });
 
 describe.each(corpus)("$name", ({ text }) => {
-  it.fails("stays in one fence as markdown, with every marker it holds escaped", () => {
+  it("stays in one fence as markdown, with every marker it holds escaped", () => {
     const { view, markdown, head, tail, content } = asMarkdown(text);
     expect(markdown.startsWith(head) && markdown.endsWith(tail)).toBe(true);
     expect(markdown.split(openingMarker(view.nonce, "other team")).length - 1).toBe(1);
@@ -71,7 +71,7 @@ describe.each(corpus)("$name", ({ text }) => {
     expect(visible(unescape(content))).toBe(visible(unescape(text)));
   });
 
-  it.fails("stays under its untrusted object as JSON", () => {
+  it("stays under its untrusted object as JSON", () => {
     const json = asJson(text);
     expect(Object.keys(json)).toEqual(["key", "state", "untrusted"]);
     expect(json).toMatchObject({ key: "FE-142", state: "open" });

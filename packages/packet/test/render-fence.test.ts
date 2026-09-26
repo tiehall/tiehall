@@ -73,7 +73,7 @@ function fenceOf(markdown: string, nonce: string, from: FencedOrigin) {
 }
 
 describe("a text Tiehall did not write", () => {
-  it.fails("is fenced once, after a preamble that says it is data and names its origin", () => {
+  it("is fenced once, after a preamble that says it is data and names its origin", () => {
     fc.assert(
       fc.property(origin, anyText, (from, text) => {
         const view = createAgentView();
@@ -85,7 +85,7 @@ describe("a text Tiehall did not write", () => {
     );
   });
 
-  it.fails("cannot close its fence, even with the exact closing marker of its response", () => {
+  it("cannot close its fence, even with the exact closing marker of its response", () => {
     fc.assert(
       fc.property(origin, anyText, anyText, (from, before, after) => {
         const view = createAgentView();
@@ -98,7 +98,7 @@ describe("a text Tiehall did not write", () => {
     );
   });
 
-  it.fails("keeps all of its content inside its fence", () => {
+  it("keeps all of its content inside its fence", () => {
     fc.assert(
       fc.property(origin, textWithoutAmpersand, (from, text) => {
         const view = createAgentView();
@@ -115,7 +115,7 @@ describe("a text Tiehall did not write", () => {
 describe("a response with several texts", () => {
   const text = fc.record({ origin: fc.constantFrom("tiehall" as const, ...FENCED_ORIGINS), text: textWithoutAmpersand });
 
-  it.fails("gives each fenced text a fence of its own, in order, and leaves Tiehall's own text outside them", () => {
+  it("gives each fenced text a fence of its own, in order, and leaves Tiehall's own text outside them", () => {
     fc.assert(
       fc.property(fc.array(text, { maxLength: 8 }), (texts: AgentText[]) => {
         const view = createAgentView();
@@ -143,7 +143,7 @@ describe("a response with several texts", () => {
     );
   });
 
-  it.fails("holds no marker when every text is Tiehall's own", () => {
+  it("holds no marker when every text is Tiehall's own", () => {
     fc.assert(
       fc.property(fc.array(anyText, { maxLength: 8 }), (texts) => {
         const view = createAgentView();
