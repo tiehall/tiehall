@@ -29,20 +29,24 @@ import type { OrgContext } from "./with-org.ts";
 // exist (task 15.19); until then, and after, the membership re-check refuses
 // every call through them.
 
-/** A member as a review or a change sees them: their GitHub account, its login and their role. */
+/**
+ * A member as a review or a change sees them: their GitHub account, the name a
+ * review shows them by, which is their login, marked when they are a bot
+ * (teams-and-roles: Bot users), and their role.
+ */
 async function memberRecord(
   { tx, orgId }: OrgContext,
   userId: string,
   lock: boolean,
-): Promise<{ login: string; githubAccountId: number; role: Role }> {
+): Promise<{ name: string; githubAccountId: number; role: Role }> {
   const query = tx
-    .select({ login: users.githubLogin, githubAccountId: users.githubAccountId, role: members.role })
+    .select({ login: users.githubLogin, bot: users.bot, githubAccountId: users.githubAccountId, role: members.role })
     .from(members)
     .innerJoin(users, and(eq(users.orgId, members.orgId), eq(users.id, members.userId)))
     .where(and(eq(members.orgId, orgId), eq(members.userId, userId)));
   const [row] = lock ? await query.for("update", { of: members }) : await query;
   if (row === undefined) throw new Refusal("record-not-found", "That person is not a member of the install.");
-  return { login: row.login, githubAccountId: row.githubAccountId, role: row.role as Role };
+  return { name: row.bot ? `${row.login} (a bot user)` : row.login, githubAccountId: row.githubAccountId, role: row.role as Role };
 }
 
 /** The keys of the teams a member belongs to, in order. */
@@ -108,9 +112,9 @@ export const MEMBER_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
     const member = await memberRecord(context, userId, false);
     const lines =
       member.role === role
-        ? [{ text: `${member.login} already has the role ${role}, so confirming changes nothing.` }]
+        ? [{ text: `${member.name} already has the role ${role}, so confirming changes nothing.` }]
         : [
-            { text: `Change the role of ${member.login}, the member with that GitHub login, from ${member.role} to ${role}.` },
+            { text: `Change the role of the member ${member.name} from ${member.role} to ${role}.` },
             {
               text:
                 role === "admin"
@@ -132,8 +136,8 @@ export const MEMBER_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
       lines: [
         {
           text: yourself
-            ? `Remove yourself, ${member.login}, from the install. You lose access at once.`
-            : `Remove ${member.login}, the member with that GitHub login and the role ${member.role}, from the install.`,
+            ? `Remove yourself, ${member.name}, from the install. You lose access at once.`
+            : `Remove the member ${member.name}, whose role is ${member.role}, from the install.`,
         },
         {
           text:

@@ -1,0 +1,115 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Caller, WebSessionCaller } from "../src/index.ts";
+import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { addUser } from "./support/members.ts";
+
+// Bot users (teams-and-roles: Bot users; teams-and-roles: What admins and
+// members may do; design.md, Decisions this change rests on: D28 #94). An
+// admin sets and clears a bot flag on a user of the install, in the web UI. A
+// flagged user stays an identity of kind human that carries the flag, and
+// holds a role and teams like anyone else; v1 counts no seats, so the flag's
+// only effect is that it is shown wherever a user is listed or named. A
+// member's attempt to set or clear it gets 403 and changes nothing.
+
+let install: TestInstall;
+let ada: WebSessionCaller;
+let dana: WebSessionCaller;
+let bot: string;
+
+beforeAll(async () => {
+  install = await startTestInstall();
+  ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
+  dana = { kind: "web_session", userId: await addUser(install.owner, { role: "member", login: "dana" }), sessionId: randomUUID() };
+  bot = await addUser(install.owner, { role: "member", login: "acme-ci-bot" });
+  await install.owner.query("INSERT INTO teams (org_id, key, name) SELECT id, 'OPS', 'Operations' FROM orgs");
+  await install.owner.query(
+    "INSERT INTO team_members (org_id, team_id, user_id) SELECT org_id, id, $1 FROM teams WHERE key = 'OPS'",
+    [bot],
+  );
+});
+
+afterAll(async () => {
+  await install.close();
+});
+
+function setFlag(caller: WebSessionCaller, userId: string, flag: boolean) {
+  return install.web(caller).write("users.set_bot_flag", { userId, bot: flag }, install.fromThePage(caller));
+}
+
+interface ListedMember {
+  id: string;
+  login: string;
+  kind: string;
+  bot: boolean;
+  role: string;
+  teams: string[];
+}
+
+/** The members list of the web UI, as the given session reads it. */
+async function listed(caller: WebSessionCaller, userId: string): Promise<ListedMember | undefined> {
+  const result = await install.web(caller).read<{ members: ListedMember[] }>("members.list", {});
+  if (!result.ok) throw new Error(`members.list failed: ${JSON.stringify(result.problem)}`);
+  return result.output.members.find(({ id }) => id === userId);
+}
+
+describe("an admin", () => {
+  it("sets the bot flag: the user carries it, stays of kind human, and keeps their role and teams", async () => {
+    expect(await listed(ada, bot)).toEqual({ id: bot, login: "acme-ci-bot", kind: "human", bot: false, role: "member", teams: ["OPS"] });
+    expect(await setFlag(ada, bot, true)).toEqual({ ok: true, output: { userId: bot, bot: true } });
+    expect(await listed(ada, bot)).toEqual({ id: bot, login: "acme-ci-bot", kind: "human", bot: true, role: "member", teams: ["OPS"] });
+  });
+
+  it("finds the user marked as a bot in the members list, as every member does", async () => {
+    expect(await listed(dana, bot)).toMatchObject({ login: "acme-ci-bot", bot: true });
+    expect(await listed(dana, ada.userId)).toMatchObject({ login: "ada", bot: false });
+  });
+
+  it("finds the user marked as a bot where a review page names them", async () => {
+    for (const [commandId, input] of [
+      ["members.change_role", { userId: bot, role: "admin" }],
+      ["members.remove", { userId: bot }],
+    ] as const) {
+      const page = await install.confirmRoute(ada)(
+        new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`),
+      );
+      expect(page.status, commandId).toBe(200);
+      expect(await page.text(), commandId).toContain("acme-ci-bot (a bot user)");
+    }
+  });
+
+  it("clears the flag: the user no longer carries it, and their role and teams are unchanged", async () => {
+    expect(await setFlag(ada, bot, false)).toEqual({ ok: true, output: { userId: bot, bot: false } });
+    expect(await listed(ada, bot)).toEqual({ id: bot, login: "acme-ci-bot", kind: "human", bot: false, role: "member", teams: ["OPS"] });
+  });
+
+  it("gets 404 for a user who is not a member of the install", async () => {
+    const outsider = await addUser(install.owner, { role: null });
+    expect(await setFlag(ada, outsider, true)).toMatchObject({ ok: false, problem: { status: 404 } });
+  });
+
+  // whoami is built by task 16.5, which names the bot flag among what it returns.
+  it.todo("sees whoami, called with the user's personal access token, say that its user is a bot");
+  // Personal access tokens come with task 15.14, and task 15.18 tests a bot user's token acting for it.
+  it.todo("sees a flagged user hold personal access tokens, which keep acting for them when the flag changes");
+});
+
+describe("a member", () => {
+  it("who submits the form that sets the bot flag on their own user gets 403, and carries no flag", async () => {
+    expect(await setFlag(dana, dana.userId, true)).toMatchObject({ ok: false, problem: { status: 403, type: "https://tiehall.com/problems/forbidden" } });
+    expect(await listed(dana, dana.userId)).toMatchObject({ bot: false });
+  });
+
+  it("gets 403 clearing another user's flag too, and nothing changes", async () => {
+    await setFlag(ada, bot, true);
+    expect(await setFlag(dana, bot, false)).toMatchObject({ ok: false, problem: { status: 403 } });
+    expect(await listed(dana, bot)).toMatchObject({ bot: true });
+  });
+});
+
+describe("the bot flag", () => {
+  it("is set on no agent surface: a token gets 404, even an admin's", async () => {
+    const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
+    await expect(install.execute("users.set_bot_flag", token, { userId: dana.userId, bot: true })).rejects.toMatchObject({ status: 404 });
+  });
+});

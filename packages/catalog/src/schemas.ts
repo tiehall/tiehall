@@ -10,3 +10,16 @@ import { z } from "zod";
  * roles, admin and member).
  */
 export const role = z.enum(ROLES);
+
+/**
+ * A user as every output that names one shows them: their id, their GitHub
+ * login, their kind, which is human for every user in v1, and whether an admin
+ * flagged them as a bot, so a bot is marked wherever a user is listed or named
+ * (teams-and-roles: Bot users).
+ */
+export const user = z.object({
+  id: z.uuid(),
+  login: z.string(),
+  kind: z.literal("human"),
+  bot: z.boolean(),
+});

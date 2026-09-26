@@ -237,6 +237,22 @@ describe("the real catalog", () => {
     expect(names.filter((name) => ORG.test(name))).toEqual([]);
   });
 
+  // teams-and-roles: Bot users. The web UI marks a user as a bot wherever it lists or names them, so every
+  // operation's output that names a user by their login also says their kind and whether they are a bot.
+  it("names a user nowhere without their kind and their bot flag", () => {
+    const unmarked: string[] = [];
+    const visit = (schema: unknown, where: string): void => {
+      if (Array.isArray(schema)) return schema.forEach((item, index) => visit(item, `${where}[${index}]`));
+      if (typeof schema !== "object" || schema === null) return;
+      const properties = (schema as { properties?: Record<string, unknown> }).properties;
+      if (properties !== undefined && "login" in properties && !("kind" in properties && "bot" in properties)) unmarked.push(where);
+      for (const [key, value] of Object.entries(schema)) visit(value, `${where}.${key}`);
+    };
+    for (const { id, output } of CATALOG.commands) visit(z.toJSONSchema(output, { io: "output" }), id);
+    expect(unmarked).toEqual([]);
+    expect(CATALOG.get("members.list")).toBeDefined();
+  });
+
   it("would be caught naming an org", () => {
     for (const name of ["orgs.create", "orgs.list", "/api/v1/orgs/{orgId}", "switch_org", "org switch", "organizations.select"]) {
       expect(ORG.test(name), name).toBe(true);

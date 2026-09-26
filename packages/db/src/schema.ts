@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   customType,
   foreignKey,
@@ -238,11 +239,13 @@ export const setupSessions = pgTable(
 );
 
 // Users (sign-in: One Tiehall user per GitHub account; teams-and-roles: One org
-// per install). One row per person the install knows, identified by their
-// GitHub account's numeric id, never by the login or an email address; the
-// login is kept to show them by, and follows a rename. A user row stays when
-// the person leaves the install, so the requests, messages and events that name
-// them keep naming them.
+// per install; teams-and-roles: Bot users). One row per person the install
+// knows, identified by their GitHub account's numeric id, never by the login
+// or an email address; the login is kept to show them by, and follows a
+// rename. A user row stays when the person leaves the install, so the
+// requests, messages and events that name them keep naming them. Every user is
+// an identity of kind human; an admin may flag one as a bot, which is only
+// shown.
 export const users = pgTable(
   "users",
   {
@@ -255,6 +258,8 @@ export const users = pgTable(
     /** The GitHub account's login when Tiehall last saw it, which a rename changes. */
     githubLogin: text("github_login").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Whether an admin flagged the user as a bot, such as a machine account that holds personal access tokens. */
+    bot: boolean("bot").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

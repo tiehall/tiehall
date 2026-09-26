@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
-import { role } from "./schemas.ts";
+import { role, user } from "./schemas.ts";
 
 // The operations on the install's members (teams-and-roles: Changing a
 // member's role; teams-and-roles: Removing a member; teams-and-roles: What
@@ -35,4 +35,32 @@ export const removeMember = defineCommand({
   stability: "beta",
 });
 
-export const MEMBER_COMMANDS = [changeMemberRole, removeMember];
+export const setBotFlag = defineCommand({
+  id: "users.set_bot_flag",
+  summary: "Set or clear the flag that marks a user as a bot.",
+  input: z.object({ userId: z.uuid(), bot: z.boolean() }),
+  output: z.object({ userId: z.uuid(), bot: z.boolean() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "bot_flag",
+  surfaces: [],
+  stability: "beta",
+});
+
+/** A member of the install, as the members list shows them: the user, their role and the keys of their teams. */
+export const listedMember = user.extend({ role, teams: z.array(z.string()) });
+
+export const listMembers = defineCommand({
+  id: "members.list",
+  summary: "List the install's members, with their roles, their teams and whether they are bots.",
+  input: z.object({}),
+  output: z.object({ members: z.array(listedMember) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const MEMBER_COMMANDS = [changeMemberRole, removeMember, setBotFlag, listMembers];
