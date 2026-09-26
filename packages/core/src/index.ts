@@ -8,6 +8,7 @@ export * from "./flip-limit.ts";
 export * from "./json-patch.ts";
 export * from "./loop-limit.ts";
 export * from "./packet-changes.ts";
+export * from "./proposals.ts";
 export * from "./provenance.ts";
 export * from "./request-keys.ts";
 export * from "./request-sides.ts";
