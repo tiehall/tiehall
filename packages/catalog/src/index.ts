@@ -17,6 +17,7 @@ export {
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
+export { acknowledgeEvents, EVENT_COMMANDS, eventView, readEvents } from "./events.ts";
 export { changeMemberRole, listedMember, listMembers, MEMBER_COMMANDS, removeMember, setBotFlag } from "./members.ts";
 export {
   claimRequest,

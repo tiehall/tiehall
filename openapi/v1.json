@@ -78,6 +78,345 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/events": {
+      "get": {
+        "operationId": "events.read",
+        "parameters": [
+          {
+            "description": "How many events to return, 1 to 500; 100 unless given.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "How many events to return, 1 to 500; 100 unless given.",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "cursor": {
+                      "description": "The number of the last event this reader acknowledged; 0 before the first.",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "events": {
+                      "items": {
+                        "properties": {
+                          "data": {
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            },
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "occurredAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "type",
+                          "occurredAt",
+                          "data"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:read"
+            ]
+          }
+        ],
+        "summary": "Read the events after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
+        "x-stability-level": "alpha"
+      }
+    },
+    "/api/v1/events/acknowledge": {
+      "post": {
+        "operationId": "events.acknowledge",
+        "parameters": [
+          {
+            "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "upTo": {
+                    "description": "The number of the last event you have handled.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "upTo"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "cursor": {
+                      "description": "The number of the last event this reader acknowledged; 0 before the first.",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request's state does not allow this action."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The Idempotency-Key was sent with a different body in the last 24 hours."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:read"
+            ]
+          }
+        ],
+        "summary": "Acknowledge the events up to a number, so that your next read starts after it. A cursor never moves back.",
+        "x-stability-level": "alpha"
+      }
+    },
     "/api/v1/messages/{messageId}": {
       "get": {
         "operationId": "messages.get",

@@ -79,6 +79,7 @@ export { openDatabase, type Database } from "./database.ts";
 export { HANDLERS } from "./handlers.ts";
 export { createRestHandler, type RestHandler, type RestOptions } from "./rest.ts";
 export { takeEventNumber } from "./event-sequence.ts";
+export { readerOf } from "./event-reads.ts";
 export { takeRequestNumber } from "./request-numbers.ts";
 export { noSuchRequest, resolveRequestKey, teamOfKey, type ResolvedRequestKey } from "./request-keys.ts";
 export {

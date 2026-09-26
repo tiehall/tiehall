@@ -626,3 +626,34 @@ export const messageVersions = pgTable(
     check("message_versions_body_length", sql`char_length(${table.body}) BETWEEN 1 AND 65536`),
   ],
 );
+
+// Read cursors (requests: Read cursors move only on acknowledgement; design.md,
+// Design rules: Requests and events). One row per user and reader, where a
+// reader is one client of theirs: an OAuth client, such as the CLI or an MCP
+// client, a personal access token, or the web UI. It holds the number of the
+// last event the reader acknowledged; reading moves nothing, and only the
+// reader's own acknowledgement moves it, never back.
+export const readCursors = pgTable(
+  "read_cursors",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    /** Which of the user's clients reads, such as oauth:<client id>, pat:<token id> or web. */
+    reader: text("reader").notNull(),
+    /** The number of the last event the reader acknowledged; 0 before the first. */
+    acknowledged: bigint("acknowledged", { mode: "number" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.reader] }),
+    foreignKey({
+      name: "read_cursors_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("read_cursors_acknowledged_not_negative", sql`${table.acknowledged} >= 0`),
+    check("read_cursors_reader_length", sql`char_length(${table.reader}) BETWEEN 1 AND 2048`),
+  ],
+);
