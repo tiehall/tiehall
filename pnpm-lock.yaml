@@ -301,6 +301,9 @@ importers:
         specifier: 6.0.2
         version: 6.0.2(zod@4.6.5)
     devDependencies:
+      '@tiehall/packet':
+        specifier: workspace:*
+        version: link:../packet
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.5
@@ -414,9 +417,15 @@ importers:
 
   packages/packet:
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.5
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.0)(@types/node@24.13.5)(vite@8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.1))
 
   packages/testing:
     dependencies:

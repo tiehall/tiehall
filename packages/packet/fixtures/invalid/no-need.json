@@ -1,0 +1,7 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "acceptance_criteria": ["The settings page follows the operating system's light or dark setting."]
+  }
+}

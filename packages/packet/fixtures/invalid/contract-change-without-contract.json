@@ -1,0 +1,7 @@
+{
+  "schema_version": "1-beta",
+  "kind": "contract_change",
+  "untrusted": {
+    "need": "payments-api removes two response fields that FE reads."
+  }
+}

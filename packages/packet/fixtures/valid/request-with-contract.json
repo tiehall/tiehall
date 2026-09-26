@@ -1,0 +1,16 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Review the attached change to billing-api before it ships.",
+    "contract": {
+      "api": "billing-api",
+      "base": { "ref": "main", "sha": "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c" },
+      "head": { "ref": "invoice-v2", "sha": "c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0" },
+      "engine": { "name": "oasdiff", "version": "1.32.0" },
+      "changes": [{ "id": "request-parameter-became-required", "level": "WARN", "operation": "POST /invoices" }],
+      "provider_pr": { "repository": "acme/billing", "number": 77 },
+      "provider_status": "merged"
+    }
+  }
+}

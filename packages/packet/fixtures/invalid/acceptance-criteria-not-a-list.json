@@ -1,0 +1,8 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Add a dark mode.",
+    "acceptance_criteria": "It follows the operating system's setting."
+  }
+}

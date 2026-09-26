@@ -1,0 +1,11 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Charge the new plan from the first of next month.",
+    "extensions": {
+      "com.acme.billing": { "cost_center": "CC-12", "flags": ["urgent"] },
+      "io.example.tracker": { "ticket": 4821, "labels": { "area": "billing", "risk": null } }
+    }
+  }
+}

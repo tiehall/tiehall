@@ -9,12 +9,15 @@
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./conformance": "./src/conformance.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

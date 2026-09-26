@@ -1,0 +1,10 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "priority": "high",
+  "untrusted": {
+    "need": "Add an export button to the reports page.",
+    "estimate": "2 days",
+    "links": [{ "url": "https://wiki.example.com/reports", "title": "Reports", "rel": "background" }]
+  }
+}

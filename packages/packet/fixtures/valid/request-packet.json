@@ -1,0 +1,18 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "due_date": "2026-10-15",
+  "untrusted": {
+    "need": "The settings page needs a dark mode that follows the operating system's setting.",
+    "acceptance_criteria": [
+      "The settings page follows the operating system's light or dark setting.",
+      "A person can override the setting, and the override is kept across sessions."
+    ],
+    "code_refs": [
+      { "repository": "acme/web", "path": "src/settings/theme.ts", "ref": "main" }
+    ],
+    "links": [
+      { "url": "https://design.example.com/specs/dark-mode", "title": "Dark mode design" }
+    ]
+  }
+}

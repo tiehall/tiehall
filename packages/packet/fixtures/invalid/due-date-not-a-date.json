@@ -1,0 +1,8 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "due_date": "next Friday",
+  "untrusted": {
+    "need": "Add a dark mode."
+  }
+}
