@@ -330,6 +330,73 @@ describe.each(["web", "all"])("the %s role", (role) => {
   });
 });
 
+// self-host-install: `/healthz` answers only up or down.
+describe("/healthz", () => {
+  const network = uniqueName("tiehall-healthz");
+  const database = uniqueName("postgres-healthz");
+  const ownerPassword = randomBytes(16).toString("hex");
+  const appPassword = randomBytes(16).toString("hex");
+  const appDatabase = [
+    "--env",
+    `TIEHALL_DATABASE_APP_URL=postgres://tiehall_app@${database}:5432/tiehall`,
+    "--env",
+    `TIEHALL_DATABASE_APP_PASSWORD=${appPassword}`,
+  ];
+  let name: string;
+  let port: number;
+
+  beforeAll(async () => {
+    await startPostgres(network, database, ownerPassword);
+    const migrate = docker([
+      "run",
+      "--rm",
+      ...confined,
+      "--network",
+      network,
+      "--env",
+      `TIEHALL_DATABASE_OWNER_URL=postgres://tiehall@${database}:5432/tiehall`,
+      "--env",
+      `TIEHALL_DATABASE_OWNER_PASSWORD=${ownerPassword}`,
+      ...appDatabase,
+      image,
+      "migrate",
+    ]);
+    if (migrate.status !== 0) throw new Error(`The migrate role failed: ${migrate.stdout}${migrate.stderr}`);
+    name = start("web", "--network", network, ...install, ...appDatabase, "--publish", "127.0.0.1::3000");
+    port = hostPort(name);
+    await waitFor("/healthz of web", () => healthz(port));
+  }, 300_000);
+
+  afterAll(() => {
+    docker(["rm", "--force", name]);
+    stopPostgres(network, database);
+  });
+
+  it("answers up without authentication while the database is reachable, and shows nothing else", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('{"status":"up"}');
+    const headers = [...response.headers].map(([header, value]) => `${header}: ${value}`).join("\n");
+    expect(headers).not.toMatch(/x-powered-by|next\.js/i);
+    expect(headers).not.toContain(revision());
+  });
+
+  it("answers down while the database is stopped, and up once it is back", async () => {
+    dockerOk(["stop", database], 60);
+    try {
+      const down = await waitFor("/healthz to answer down", async () => {
+        const response = await fetch(`http://127.0.0.1:${port}/healthz`);
+        return response.status === 503 ? { status: response.status, body: await response.text() } : undefined;
+      });
+      expect(down).toEqual({ status: 503, body: '{"status":"down"}' });
+    } finally {
+      dockerOk(["start", database], 60);
+    }
+    await waitFor("/healthz to answer up", async () => ((await healthz(port))?.status === 200 ? true : undefined), 120);
+    expect(await healthz(port)).toEqual({ status: 200, body: { status: "up" } });
+  });
+});
+
 describe("the worker role", () => {
   let name: string;
 

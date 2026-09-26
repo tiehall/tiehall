@@ -6,6 +6,7 @@ export {
   storeSecret,
   type IntegrationSecret,
 } from "./integration-secrets.ts";
+export { HEALTH_TIMEOUT_MS, openDatabaseHealth, type DatabaseHealth, type DatabaseHealthOptions, type Health } from "./health.ts";
 export { installJobQueue, JOB_QUEUE_VERSION, openJobQueue, type JobQueue, type JobQueueOptions } from "./job-queue.ts";
 export {
   defineJobType,
