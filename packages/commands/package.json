@@ -20,6 +20,7 @@
     "@tiehall/core": "workspace:*",
     "@tiehall/db": "workspace:*",
     "drizzle-orm": "catalog:",
+    "nodemailer": "10.0.10",
     "pg-boss": "12.33.2"
   },
   "devDependencies": {
