@@ -81,7 +81,7 @@ describe("a message", () => {
       version: 1,
       postedAt: expect.any(String),
       editedAt: null,
-      provenance: { actorKind: "agent", surface: "api", user: { id: bob, login: "bob", kind: "human", bot: false }, team: null },
+      provenance: { actorKind: "agent", surface: "api", user: { id: bob, login: "bob", kind: "human", bot: false }, team: { id: team["FE"], key: "FE" } },
       untrusted: { body: "Which browsers must the dark mode support?", client: null },
     });
     expect(answer.body.request).toMatchObject({ key, state: "open" });

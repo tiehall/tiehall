@@ -69,6 +69,26 @@ export async function assertSideAllows(context: OrgContext, userId: string, row:
   if (!sideAllows({ userId, teamIds }, await partiesOf(context, row), action)) throw new Refusal("forbidden", whoMay(action));
 }
 
+/**
+ * The team a user acts for on a request, which provenance records: the
+ * requesting team for the user who opened it, otherwise the target team or the
+ * requesting team they belong to; none for someone on neither side now, such as
+ * a claimant who has left the target team. An action of the target team's,
+ * such as a claim, names the target team when the user belongs to it.
+ */
+export async function teamActedFor(
+  context: OrgContext,
+  userId: string,
+  row: RequestRow,
+  side: "either" | "target" = "either",
+): Promise<string | undefined> {
+  const teamIds = (await teamsOfMember(context, userId)).map(({ id }) => id);
+  if (side === "either" && row.requestingUserId === userId) return row.requestingTeamId;
+  if (teamIds.includes(row.targetTeamId)) return row.targetTeamId;
+  if (side === "either" && teamIds.includes(row.requestingTeamId)) return row.requestingTeamId;
+  return undefined;
+}
+
 /** Where the request is in its lifecycle, as the state machine sees it, with its unanswered blocking questions. */
 export async function lifecycleOf(context: OrgContext, row: RequestRow): Promise<RequestLifecycle> {
   return {

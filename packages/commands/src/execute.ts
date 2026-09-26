@@ -1,5 +1,5 @@
 import type { Catalog, CommandDefinition } from "@tiehall/catalog";
-import { Refusal, type RefusalIssue } from "@tiehall/core";
+import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
@@ -27,8 +27,10 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    with this exact input, is checked and consumed in the call's transaction
 //    (agent-safety: One confirmation approves one action);
 // 5. runs the handler inside withOrg(), so its change, its events and its jobs
-//    commit together or not at all; for a caller that acts for a user,
-//    withOrg() first re-checks that the user is still a member, refusing a
+//    commit together or not at all, with the provenance it stamps from the
+//    caller, never from the payload, whose keys for it the schema drops
+//    (requests: Provenance is stamped by the server); for a caller that acts
+//    for a user, withOrg() first re-checks that the user is still a member, refusing a
 //    removed one with 403 before anything is looked up (teams-and-roles:
 //    Membership is re-checked on every call), and execute() consults the
 //    role matrix with the role that re-check read, refusing an admin action
@@ -46,8 +48,19 @@ export interface HandlerContext extends OrgContext {
   readonly caller: Caller;
   /** The membership of the user the caller acts for, as this call read it; none for a caller that acts for no user. */
   readonly member: Member | undefined;
-  /** Runs a change in the call's transaction, with the event that records it and the caller's provenance. */
-  write<R>(change: (writer: Writer) => Promise<R>): Promise<R>;
+  /** Who causes what this call changes, stamped from the caller alone, never from the payload. */
+  readonly provenance: Provenance;
+  /**
+   * Runs a change in the call's transaction, with the event that records it
+   * and the caller's provenance, to which the handler adds the team the user
+   * acted for, which it decides from the record, never from the payload.
+   */
+  write<R>(change: (writer: Writer) => Promise<R>, options?: { teamId?: string | undefined }): Promise<R>;
+}
+
+/** The provenance of a change made for a team the user acted for. */
+export function actingFor(provenance: Provenance, teamId: string | undefined): Provenance {
+  return teamId === undefined || provenance.actorKind === "operator" ? provenance : { ...provenance, teamId };
 }
 
 /** Runs one operation: it gets the parsed input and returns the output its schema describes. */
@@ -180,7 +193,8 @@ export function createExecute(services: ExecuteServices): Execute {
           ...context,
           caller,
           member,
-          write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
+          provenance,
+          write: (change, { teamId } = {}) => writeIn(context, store.jobs, actingFor(provenance, teamId), change, writeOptions),
         };
         const run = async () => {
           const output = definition.output.safeParse(await handler(parsed.data, handlerContext));

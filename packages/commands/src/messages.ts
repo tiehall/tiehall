@@ -1,10 +1,18 @@
 import { editMessage, getMessage, postMessage } from "@tiehall/catalog";
-import { messageEdited, messagePosted, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
+import { messageEdited, messagePosted, Refusal, requestStateChanged, type Provenance, type RequestLifecycle } from "@tiehall/core";
 import { messages, messageVersions } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
-import { provenanceOf } from "./caller.ts";
-import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
-import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, lockRequestById, saveLifecycle, transition } from "./request-changes.ts";
+import { defineHandler, type Handlers } from "./execute.ts";
+import {
+  actingUserOf,
+  assertSideAllows,
+  lifecycleOf,
+  lockRequest,
+  lockRequestById,
+  saveLifecycle,
+  teamActedFor,
+  transition,
+} from "./request-changes.ts";
 import { messageRowOf, messageView, requestView, versionsOf } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -29,16 +37,15 @@ import type { OrgContext } from "./with-org.ts";
 // that names the version; nothing ever changes or removes an earlier version,
 // which the database also refuses (migration 0017).
 
-/** The provenance columns of a message, stamped from the caller. */
-function stampOf(caller: HandlerContext["caller"]) {
-  const provenance = provenanceOf(caller);
+/** The provenance columns of a message: the caller's, as execute() stamped it, and the team the user acted for. */
+function stampOf(provenance: Provenance, teamId: string | undefined) {
   if (provenance.actorKind === "operator") throw new Error("An operator command posts no message.");
   return {
     actorKind: provenance.actorKind,
     actorUserId: provenance.userId ?? null,
     client: provenance.client ?? null,
     surface: provenance.surface ?? null,
-    teamId: provenance.teamId ?? null,
+    teamId: teamId ?? null,
   };
 }
 
@@ -71,7 +78,8 @@ export const MESSAGE_HANDLERS: Handlers = {
       const question = await questionOf(context, row.id, questionId);
       if (question.blocking && !question.answered) next = transition(current, { kind: "answer_blocking" });
     }
-    const stamp = stampOf(context.caller);
+    const teamId = await teamActedFor(context, userId, row);
+    const stamp = stampOf(context.provenance, teamId);
     return context.write(async (writer) => {
       const { tx, orgId } = writer;
       const [placed] = await tx
@@ -104,7 +112,7 @@ export const MESSAGE_HANDLERS: Handlers = {
       }
       if (next !== current) await saveLifecycle(writer, row.id, next);
       return { message: await messageView(writer, posted.id), request: await requestView(writer, row.id) };
-    });
+    }, { teamId });
   }),
 
   [getMessage.id]: defineHandler(getMessage, async ({ messageId }, context) => {
@@ -119,7 +127,8 @@ export const MESSAGE_HANDLERS: Handlers = {
     const row = await messageRowOf(context, messageId);
     if (row.actorUserId !== userId) throw new Refusal("forbidden", "Only the author of a message may edit it.");
     // Edits of the thread's messages run one after the other, so each takes the next version.
-    await lockRequestById(context, row.requestId);
+    const request = await lockRequestById(context, row.requestId);
+    const teamId = await teamActedFor(context, userId, request);
     return context.write(async (writer) => {
       const [latest] = await writer.tx
         .select({ version: sql<number>`max(${messageVersions.version})::int` })
@@ -129,6 +138,6 @@ export const MESSAGE_HANDLERS: Handlers = {
       await writer.tx.insert(messageVersions).values({ orgId: writer.orgId, messageId, version, body });
       await writer.record(messageEdited, { requestId: row.requestId, messageId, version });
       return messageView(writer, messageId);
-    });
+    }, { teamId });
   }),
 };

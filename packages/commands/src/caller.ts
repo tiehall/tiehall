@@ -99,16 +99,25 @@ export function catalogSurfaceOf(caller: Caller): CommandSurface | undefined {
 
 /**
  * Who caused what a call changes (requests: Provenance is stamped by the
- * server). An agent's call is recorded with the actor kind `agent` and the
- * surface it came through, a web action as `web_session`, a CI report as a
- * system action from GitHub (D30 (3)), a job as `system` and a tracker change
- * as `integration`. Task 11.11 adds the client and the team.
+ * server), from the caller alone, never from the payload. An agent's call, one
+ * made with an OAuth token or a personal access token, is recorded with the
+ * actor kind `agent`, the user the token acts for as the accountable human,
+ * and the surface it came through: `mcp`, `cli` for the CLI, and `api` for
+ * any other call to /api/v1. An OAuth token also names its client: the
+ * Client ID Metadata Document URL or the registered client's id, which for
+ * the CLI is the CLI's own; a personal access token names none. A web action is
+ * recorded as `web_session` on `web`, because the server cannot tell a person
+ * from an agent that drives a browser, and nothing is ever recorded as
+ * `human`. A CI report is a system action from GitHub (D30 (3)), a job is
+ * `system` and a tracker change `integration`. The team the user acted for
+ * depends on their side of the request, so the handler adds it when it writes.
  */
 export function provenanceOf(caller: Caller): Provenance {
   switch (caller.kind) {
     case "web_session":
       return { actorKind: "web_session", userId: caller.userId, surface: "web" };
     case "oauth_token":
+      return { actorKind: "agent", userId: caller.userId, surface: caller.surface, client: caller.clientId };
     case "personal_access_token":
       return { actorKind: "agent", userId: caller.userId, surface: caller.surface };
     case "ci":

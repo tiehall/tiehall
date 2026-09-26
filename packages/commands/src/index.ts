@@ -16,6 +16,7 @@ export {
   type WebSessionCaller,
 } from "./caller.ts";
 export {
+  actingFor,
   createExecute,
   defineHandler,
   OutputSchemaError,

@@ -4,7 +4,7 @@ import { requests } from "@tiehall/db";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
-import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, transition } from "./request-changes.ts";
+import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, teamActedFor, transition } from "./request-changes.ts";
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import { requestView, requestViews, threadOf } from "./request-views.ts";
@@ -74,7 +74,7 @@ export const REQUEST_HANDLERS: Handlers = {
       if (row === undefined) throw new Error("The new request was not returned.");
       await writer.record(requestOpened, { requestId: row.id, targetTeamId: target.id, requestingTeamId: from.id });
       return requestView(writer, row.id);
-    });
+    }, { teamId: from.id });
   }),
 
   [getRequest.id]: defineHandler(getRequest, async ({ key }, context) => {
@@ -105,11 +105,12 @@ export const REQUEST_HANDLERS: Handlers = {
     const row = await lockRequest(context, key);
     await assertSideAllows(context, userId, row, "claim");
     const next = transition(await lifecycleOf(context, row), { kind: "claim", userId });
+    const teamId = await teamActedFor(context, userId, row, "target");
     return context.write(async (writer) => {
       await saveLifecycle(writer, row.id, next);
       await writer.record(requestClaimed, { requestId: row.id, userId });
       return requestView(writer, row.id);
-    });
+    }, { teamId });
   }),
 
   [setRequestStatus.id]: defineHandler(setRequestStatus, async ({ key, state }, context) => {
@@ -119,6 +120,7 @@ export const REQUEST_HANDLERS: Handlers = {
     await assertSideAllows(context, userId, row, action);
     const current = await lifecycleOf(context, row);
     const next = transition(current, { kind: action });
+    const teamId = await teamActedFor(context, userId, row, "target");
     return context.write(async (writer) => {
       await saveLifecycle(writer, row.id, next);
       if (action === "release" && current.claimantId !== null) {
@@ -127,6 +129,6 @@ export const REQUEST_HANDLERS: Handlers = {
         await writer.record(requestStarted, { requestId: row.id });
       }
       return requestView(writer, row.id);
-    });
+    }, { teamId });
   }),
 };
