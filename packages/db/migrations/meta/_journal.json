@@ -120,6 +120,13 @@
       "when": 1790405115471,
       "tag": "0016_add_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790405388148,
+      "tag": "0017_make_messages_append_only",
+      "breakpoints": true
     }
   ]
 }

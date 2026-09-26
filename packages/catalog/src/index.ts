@@ -34,7 +34,15 @@ export {
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
-export { MESSAGE_COMMANDS, messageBody, postMessage } from "./messages.ts";
+export {
+  editMessage,
+  getMessage,
+  MESSAGE_COMMANDS,
+  messageBody,
+  messageVersion,
+  messageWithVersions,
+  postMessage,
+} from "./messages.ts";
 export { role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";

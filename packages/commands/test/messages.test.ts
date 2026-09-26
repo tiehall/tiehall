@@ -80,6 +80,7 @@ describe("a message", () => {
       answered: false,
       version: 1,
       postedAt: expect.any(String),
+      editedAt: null,
       provenance: { actorKind: "agent", surface: "api", user: { id: bob, login: "bob", kind: "human", bot: false }, team: null },
       untrusted: { body: "Which browsers must the dark mode support?", client: null },
     });

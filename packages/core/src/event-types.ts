@@ -78,6 +78,21 @@ export const messagePosted = defineEventType({
 });
 
 /**
+ * A message was edited: its author added its next version (requests:
+ * Messages are append-only; requests: Events carry ids, not bodies). It names
+ * the message and the version, never the text.
+ */
+export const messageEdited = defineEventType({
+  type: "request.message_edited",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    messageId: { kind: "id", of: "message" },
+    version: { kind: "integer" },
+  },
+});
+
+/**
  * A request's state changed as the side effect of another change, such as a
  * blocking question moving it to needs_info or the last answer returning it
  * (requests: Thread messages and blocking questions; requests: The event
@@ -131,6 +146,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestStarted,
   requestReleased,
   messagePosted,
+  messageEdited,
   requestStateChanged,
   memberRoleChanged,
   memberRemoved,

@@ -65,6 +65,8 @@ export const message = z.object({
   /** The number of its latest version: 1 until it is edited. */
   version: z.number().int().min(1),
   postedAt: z.iso.datetime(),
+  /** When its latest version was added; null until it is edited. */
+  editedAt: z.iso.datetime().nullable(),
   /** Who posted it, as the server stamped it: the actor kind, the surface, the accountable human and the team. */
   provenance: z.object({
     actorKind: z.enum(RECORDED_ACTOR_KINDS),

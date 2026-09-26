@@ -1,5 +1,5 @@
 import type { message, request } from "@tiehall/catalog";
-import { formatRequestKey, type RequestState } from "@tiehall/core";
+import { formatRequestKey, Refusal, type RequestState } from "@tiehall/core";
 import { messages, messageVersions, requests, teams, users } from "@tiehall/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
@@ -91,7 +91,12 @@ export async function messageViews(context: OrgContext, rows: readonly MessageRo
     ids.length === 0
       ? []
       : await tx
-          .selectDistinctOn([messageVersions.messageId], { messageId: messageVersions.messageId, version: messageVersions.version, body: messageVersions.body })
+          .selectDistinctOn([messageVersions.messageId], {
+            messageId: messageVersions.messageId,
+            version: messageVersions.version,
+            body: messageVersions.body,
+            createdAt: messageVersions.createdAt,
+          })
           .from(messageVersions)
           .where(and(eq(messageVersions.orgId, orgId), inArray(messageVersions.messageId, ids)))
           .orderBy(messageVersions.messageId, desc(messageVersions.version));
@@ -117,6 +122,7 @@ export async function messageViews(context: OrgContext, rows: readonly MessageRo
       answered: row.kind === "question" ? answered.has(row.id) : null,
       version: version.version,
       postedAt: row.postedAt.toISOString(),
+      editedAt: version.version > 1 ? version.createdAt.toISOString() : null,
       provenance: {
         actorKind: row.actorKind as MessageView["provenance"]["actorKind"],
         surface: row.surface as MessageView["provenance"]["surface"],
@@ -128,15 +134,36 @@ export async function messageViews(context: OrgContext, rows: readonly MessageRo
   });
 }
 
-/** One message as the operations return it. */
-export async function messageView(context: OrgContext, messageId: string): Promise<MessageView> {
-  const rows = await context.tx
+/** Refused as a record that does not exist. */
+export function noSuchMessage(): Refusal {
+  return new Refusal("record-not-found", "There is no such message.");
+}
+
+/** A message's row; 404 when the install has no such message. */
+export async function messageRowOf({ tx, orgId }: OrgContext, messageId: string): Promise<MessageRow> {
+  const [row] = await tx
     .select()
     .from(messages)
-    .where(and(eq(messages.orgId, context.orgId), eq(messages.id, messageId)));
-  const [view] = await messageViews(context, rows);
-  if (view === undefined) throw new Error("The message was not found.");
+    .where(and(eq(messages.orgId, orgId), eq(messages.id, messageId)));
+  if (row === undefined) throw noSuchMessage();
+  return row;
+}
+
+/** One message as the operations return it; 404 when the install has no such message. */
+export async function messageView(context: OrgContext, messageId: string): Promise<MessageView> {
+  const [view] = await messageViews(context, [await messageRowOf(context, messageId)]);
+  if (view === undefined) throw noSuchMessage();
   return view;
+}
+
+/** Every version of a message's text, oldest first. */
+export async function versionsOf({ tx, orgId }: OrgContext, messageId: string) {
+  const rows = await tx
+    .select({ version: messageVersions.version, createdAt: messageVersions.createdAt, body: messageVersions.body })
+    .from(messageVersions)
+    .where(and(eq(messageVersions.orgId, orgId), eq(messageVersions.messageId, messageId)))
+    .orderBy(asc(messageVersions.version));
+  return rows.map(({ version, createdAt, body }) => ({ version, createdAt: createdAt.toISOString(), untrusted: { body } }));
 }
 
 /** A request's thread, oldest message first. */

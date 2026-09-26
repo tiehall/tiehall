@@ -37,6 +37,11 @@ export function actingUserOf(context: HandlerContext): string {
 /** The request a key names, with its row locked until the call's transaction ends; 404 when the key names none. */
 export async function lockRequest(context: OrgContext, key: string): Promise<RequestRow> {
   const { requestId } = await resolveRequestKey(context, key);
+  return lockRequestById(context, requestId);
+}
+
+/** The request, with its row locked until the call's transaction ends; 404 when the install has no such request. */
+export async function lockRequestById(context: OrgContext, requestId: string): Promise<RequestRow> {
   const [row] = await context.tx
     .select()
     .from(requests)

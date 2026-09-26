@@ -1,11 +1,11 @@
-import { postMessage } from "@tiehall/catalog";
-import { messagePosted, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
+import { editMessage, getMessage, postMessage } from "@tiehall/catalog";
+import { messageEdited, messagePosted, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
 import { messages, messageVersions } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import { provenanceOf } from "./caller.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
-import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, transition } from "./request-changes.ts";
-import { messageView, requestView } from "./request-views.ts";
+import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, lockRequestById, saveLifecycle, transition } from "./request-changes.ts";
+import { messageRowOf, messageView, requestView, versionsOf } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // A request's thread (requests: Thread messages and blocking questions;
@@ -23,6 +23,11 @@ import type { OrgContext } from "./with-org.ts";
 // the state it had, once every blocking question has one. The message, its
 // first version, the state it changes and their events commit together; the
 // events name the message, never its text.
+//
+// Messages are append-only (requests: Messages are append-only): only its
+// author edits a message, and an edit adds its next version, with an event
+// that names the version; nothing ever changes or removes an earlier version,
+// which the database also refuses (migration 0017).
 
 /** The provenance columns of a message, stamped from the caller. */
 function stampOf(caller: HandlerContext["caller"]) {
@@ -99,6 +104,31 @@ export const MESSAGE_HANDLERS: Handlers = {
       }
       if (next !== current) await saveLifecycle(writer, row.id, next);
       return { message: await messageView(writer, posted.id), request: await requestView(writer, row.id) };
+    });
+  }),
+
+  [getMessage.id]: defineHandler(getMessage, async ({ messageId }, context) => {
+    const view = await messageView(context, messageId);
+    const row = await messageRowOf(context, messageId);
+    const { id, key, targetTeam } = await requestView(context, row.requestId);
+    return { ...view, request: { id, key, targetTeam }, versions: await versionsOf(context, messageId) };
+  }),
+
+  [editMessage.id]: defineHandler(editMessage, async ({ messageId, body }, context) => {
+    const userId = actingUserOf(context);
+    const row = await messageRowOf(context, messageId);
+    if (row.actorUserId !== userId) throw new Refusal("forbidden", "Only the author of a message may edit it.");
+    // Edits of the thread's messages run one after the other, so each takes the next version.
+    await lockRequestById(context, row.requestId);
+    return context.write(async (writer) => {
+      const [latest] = await writer.tx
+        .select({ version: sql<number>`max(${messageVersions.version})::int` })
+        .from(messageVersions)
+        .where(and(eq(messageVersions.orgId, writer.orgId), eq(messageVersions.messageId, messageId)));
+      const version = (latest?.version ?? 0) + 1;
+      await writer.tx.insert(messageVersions).values({ orgId: writer.orgId, messageId, version, body });
+      await writer.record(messageEdited, { requestId: row.requestId, messageId, version });
+      return messageView(writer, messageId);
     });
   }),
 };

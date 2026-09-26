@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
-import { message, request, requestKey } from "./requests.ts";
+import { message, request, requestKey, teamRef } from "./requests.ts";
 
 // The operations on a request's thread (requests: Thread messages and blocking
 // questions; requests: Requests only, with questions in the request's thread;
@@ -13,6 +13,10 @@ import { message, request, requestKey } from "./requests.ts";
 // know. Text a user wrote sits under `untrusted`, and so does the client the
 // caller names itself by (agent-safety: User text in JSON sits under untrusted
 // objects).
+//
+// Messages are append-only (requests: Messages are append-only): its author
+// edits a message by adding its next version, and every earlier version stays
+// readable exactly as it was written.
 
 /** A message's text, exactly as its author writes it: 1 to 65,536 characters, not all blank, with no NUL character. */
 export const messageBody = z
@@ -54,4 +58,47 @@ export const postMessage = defineCommand({
   stability: "alpha",
 });
 
-export const MESSAGE_COMMANDS = [postMessage];
+/** One version of a message's text. */
+export const messageVersion = z.object({
+  version: z.number().int().min(1),
+  createdAt: z.iso.datetime(),
+  untrusted: z.object({ body: z.string() }),
+});
+
+/** A message with every version of its text, oldest first, and the request whose thread holds it. */
+export const messageWithVersions = message.extend({
+  request: z.object({ id: z.uuid(), key: z.string(), targetTeam: teamRef }),
+  versions: z.array(messageVersion),
+});
+
+const messageId = z.uuid().meta({ description: "The message's id." });
+
+export const getMessage = defineCommand({
+  id: "messages.get",
+  summary: "Read a message of a request's thread, with every version of its text.",
+  input: z.object({ messageId }),
+  output: messageWithVersions,
+  method: "GET",
+  path: "/api/v1/messages/{messageId}",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const editMessage = defineCommand({
+  id: "messages.edit",
+  summary: "Edit a message you posted: its new text becomes its next version, and every earlier version stays as it was.",
+  input: z.object({ messageId, body: messageBody }),
+  output: message,
+  method: "POST",
+  path: "/api/v1/messages/{messageId}/versions",
+  scopes: ["requests:write"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const MESSAGE_COMMANDS = [postMessage, getMessage, editMessage];

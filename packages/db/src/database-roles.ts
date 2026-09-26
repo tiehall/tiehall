@@ -26,6 +26,13 @@ export const APP_SCHEMAS: readonly string[] = [TIEHALL_SCHEMA, JOB_QUEUE_SCHEMA]
 /** The event tables, as schema.table: the app role may only insert into them and read them. */
 export const EVENT_TABLES: readonly string[] = ["public.events"];
 
+/**
+ * Every table the app role may only insert into and read: the event tables,
+ * and a request's thread, whose messages and versions are append-only
+ * (requests: Messages are append-only).
+ */
+export const APPEND_ONLY_TABLES: readonly string[] = [...EVENT_TABLES, "public.messages", "public.message_versions"];
+
 export interface AppRole {
   /** The role's name, which is the user in the app's database URL. */
   name: string;
@@ -65,7 +72,7 @@ type RoleAttributes = Record<(typeof FORBIDDEN_ATTRIBUTES)[number][0], boolean>;
 export async function setUpAppRole(
   owner: Queryable,
   role: AppRole,
-  grants: AppRoleGrants = { schemas: APP_SCHEMAS, appendOnlyTables: EVENT_TABLES },
+  grants: AppRoleGrants = { schemas: APP_SCHEMAS, appendOnlyTables: APPEND_ONLY_TABLES },
 ): Promise<void> {
   if (role.password === "") throw new DatabaseRoleError("The app role's password is empty.");
   await owner.query("BEGIN");
