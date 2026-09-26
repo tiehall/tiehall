@@ -53,7 +53,7 @@ export async function lockRequestById(context: OrgContext, requestId: string): P
 }
 
 /** Who the request's parties are, as the side rules see them, with whether its claimant is still a member. */
-async function partiesOf(context: OrgContext, row: RequestRow): Promise<RequestParties> {
+export async function partiesOf(context: OrgContext, row: RequestRow): Promise<RequestParties> {
   const claimantIsMember = row.claimantUserId !== null && (await memberOf(context, row.claimantUserId)) !== undefined;
   return {
     targetTeamId: row.targetTeamId,

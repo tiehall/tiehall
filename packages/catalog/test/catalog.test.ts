@@ -161,6 +161,20 @@ describe("a catalog", () => {
     ]);
   });
 
+  // requests: Commitments become proposals; public-api: Commitments over the API answer 202 with a proposal. A
+  // commitment answers a call that makes one with { proposal } instead of its output, so REST can tell the two apart.
+  it("refuses a commitment whose output has a proposal field, that needs the confirmation step, or that is a GET", () => {
+    expect(catalogProblems(withChanged("declineRequest", { output: z.object({ proposal: z.string() }) }))).toEqual([
+      "requests.decline: it is a commitment, which answers a call that makes one with { proposal }, so its own output has no field named proposal.",
+    ]);
+    expect(catalogProblems(withChanged("changeRole", { commitment: true }))).toEqual([
+      "members.change_role: it is a commitment, which becomes a proposal people confirm, so it does not need the confirmation step itself.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { commitment: true }))).toEqual([
+      "requests.get: it is a commitment, which changes something, so it is not offered with GET.",
+    ]);
+  });
+
   it("names every problem of a catalog at once", () => {
     const definitions = [...withChanged("getRequest", { scopes: ["admin"], path: undefined }), fixture.getRequest];
     expect(() => defineCatalog(definitions)).toThrow(

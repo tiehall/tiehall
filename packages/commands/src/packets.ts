@@ -19,10 +19,12 @@ import { resolveRequestKey } from "./request-keys.ts";
 // only the first adds one. A revision keeps the packet's kind, so a
 // contract-change request's packet keeps its contract section; a change of
 // kind gets 400. Setting, moving or removing the due date, and changing the
-// scope of a claimed request, are commitments, which become proposals with
-// task 14.4; until then they get 409 and add nothing, so no commitment takes
-// effect without the people who confirm it. The revision and its event commit
-// together, with the requester side's team as the team the user acted for.
+// scope of a claimed request, are commitments: the change becomes a proposal,
+// based on the revision the caller expects, and adds no revision, so no
+// commitment takes effect without the people who confirm it. A change that is
+// both is one proposal, whose second confirmation meets both rules. Any other
+// change is added at once: the revision and its event commit together, with
+// the requester side's team as the team the user acted for.
 //
 // What changed since revision N (handoff-packet: What changed since revision
 // N): the fields that differ between revision N and the current revision, and
@@ -76,17 +78,13 @@ export const PACKET_HANDLERS: Handlers = {
       throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
     }
     const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
-    if (commitments.includes("due_date")) {
-      throw new Refusal(
-        "conflict",
-        "Setting or moving the due date after the request was opened is a commitment that people confirm in the web UI; this operation does not take it yet.",
-      );
-    }
-    if (commitments.includes("scope")) {
-      throw new Refusal(
-        "conflict",
-        "Changing the need, the acceptance criteria or the contract section of a claimed request is a commitment that people confirm in the web UI; this operation does not take it yet.",
-      );
+    if (commitments.length > 0) {
+      return context.propose(row, {
+        kind: commitments.includes("scope") ? "scope" : "due_date",
+        commitments,
+        change: { packet },
+        baseRevision: current.revision,
+      });
     }
     const teamId = await teamActedFor(context, userId, row);
     return context.write(async (writer) => packetRevisionOf(writer, row.id, await storePacketRevision(writer, row.id, packet)), { teamId });

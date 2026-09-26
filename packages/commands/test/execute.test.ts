@@ -89,6 +89,32 @@ const catalog = defineCatalog([
     stability: "alpha",
   }),
   defineCommand({
+    id: "probes.sneak_proposal",
+    summary: "An operation not flagged as a commitment whose handler tries to create a proposal.",
+    input: z.object({ requestId: z.uuid() }),
+    output: z.object({ messageId: z.uuid() }),
+    method: "POST",
+    path: "/api/v1/probes/{requestId}/sneak",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+  }),
+  defineCommand({
+    id: "probes.propose",
+    summary: "A commitment whose handler answers with a proposal its schema refuses.",
+    input: z.object({ requestId: z.uuid() }),
+    output: z.object({ messageId: z.uuid() }),
+    method: "POST",
+    path: "/api/v1/probes/{requestId}/propose",
+    scopes: ["requests:write"],
+    commitment: true,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+  }),
+  defineCommand({
     id: "probes.change_role",
     summary: "A command that needs the confirmation step.",
     input: z.object({ requestId: z.uuid(), body: z.string() }),
@@ -130,6 +156,8 @@ const handlers: Handlers = {
   "probes.note": postProbe,
   "probes.change_role": postProbe,
   "probes.report": async (input) => ({ kind: (input as { kind: string }).kind }),
+  "probes.sneak_proposal": async (_input, context) => context.propose({} as never, { kind: "decline", change: {} }),
+  "probes.propose": async () => ({ proposal: { id: "not a proposal" } }),
 };
 
 const webSession: Caller = { kind: "web_session", userId: PIA, sessionId: randomUUID() };
@@ -330,6 +358,15 @@ describe("execute", () => {
     // Until the confirmation step checks nonces (task 8.2), no nonce is accepted.
     const withNonce = await refusalOf(execute("probes.change_role", webSession, input, { confirmation: { nonce: "a".repeat(43) } }));
     expect(withNonce).toMatchObject({ status: 403, reason: "confirmation-required" });
+    expect(await counts()).toEqual({ messages: 0, events: 0 });
+  });
+
+  it("lets only an operation flagged as a commitment create a proposal, and returns only a proposal its schema takes", async () => {
+    const requestId = randomUUID();
+    await expect(execute("probes.sneak_proposal", personalAccessToken, { requestId })).rejects.toThrow(
+      "probes.sneak_proposal is not flagged as a commitment, so it creates no proposal.",
+    );
+    await expect(execute("probes.propose", personalAccessToken, { requestId })).rejects.toBeInstanceOf(OutputSchemaError);
     expect(await counts()).toEqual({ messages: 0, events: 0 });
   });
 

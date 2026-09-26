@@ -62,7 +62,7 @@ export const getPacketRevision = defineCommand({
 export const addPacketRevision = defineCommand({
   id: "packets.add_revision",
   summary:
-    "Add the next revision of a request's packet, as its requester side, naming the revision you expect in If-Match; a revision keeps the packet's kind. Setting or moving the due date, and changing the scope of a claimed request, are commitments this operation does not take yet.",
+    "Add the next revision of a request's packet, as its requester side, naming the revision you expect in If-Match; a revision keeps the packet's kind. Setting or moving the due date, and changing the need, the acceptance criteria or the contract section of a claimed request, are commitments: they create a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
   input: z.object({
     key: requestKey,
     expectedRevision: z
@@ -77,7 +77,7 @@ export const addPacketRevision = defineCommand({
   method: "POST",
   path: "/api/v1/requests/{key}/packet/revisions",
   scopes: ["requests:write"],
-  commitment: false,
+  commitment: true,
   confirm: false,
   surfaces: ["rest"],
   stability: "alpha",

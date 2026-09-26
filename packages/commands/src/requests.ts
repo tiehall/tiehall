@@ -24,7 +24,12 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // Changing a request goes through request-changes.ts: the request's row is
 // locked, the side rules answer 403 and the state machine 409. Claiming,
 // starting work and releasing a claim need no proposal: the change and its
-// event commit together.
+// event commit together. Declining and marking done through set_status are
+// commitments (requests: Commitments become proposals): once the side rules
+// and the state machine allow them, they create a proposal and leave the
+// request as it is; marking done a request that is done already, such as by
+// close on merge, answers with the request and proposes nothing
+// (agent-surfaces: Commitment tools return proposals).
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -38,6 +43,9 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // not at all. A request an agent opens counts toward the caps on agent-opened
 // requests, and one beyond them is not opened (agent-safety: Agent-opened
 // requests are capped).
+
+/** What each state set_status names does: start work, release the claim, or propose to decline or to mark done. */
+const STATUS_ACTIONS = { in_progress: "start", open: "release", declined: "decline", done: "mark_done" } as const;
 
 /** "BE", "BE and QA", or "BE, OPS and QA". */
 function listed(keys: readonly string[]): string {
@@ -129,9 +137,15 @@ export const REQUEST_HANDLERS: Handlers = {
   [setRequestStatus.id]: defineHandler(setRequestStatus, async ({ key, state }, context) => {
     const userId = actingUserOf(context);
     const row = await lockRequest(context, key);
-    const action = state === "open" ? "release" : "start";
+    const action = STATUS_ACTIONS[state];
     await assertSideAllows(context, userId, row, action);
     const current = await lifecycleOf(context, row);
+    // Declining and marking done are commitments: a proposal, once the request's state allows the change.
+    if (action === "decline" || action === "mark_done") {
+      if (action === "mark_done" && current.state === "done") return requestView(context, row.id);
+      transition(current, { kind: action === "decline" ? "decline" : "done" });
+      return context.propose(row, { kind: action === "decline" ? "decline" : "done", change: {} });
+    }
     const next = transition(current, { kind: action });
     const teamId = await teamActedFor(context, userId, row, "target");
     return context.write(async (writer) => {

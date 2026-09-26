@@ -176,6 +176,13 @@
       "when": 1790411987664,
       "tag": "0024_add_agent_opened_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790418427452,
+      "tag": "0025_add_proposals",
+      "breakpoints": true
     }
   ]
 }

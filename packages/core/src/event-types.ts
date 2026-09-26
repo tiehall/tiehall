@@ -1,4 +1,5 @@
 import { defineEventType, type EventType } from "./events.ts";
+import { COMMITMENT_KINDS } from "./proposals.ts";
 import { REQUEST_STATES } from "./request-states.ts";
 import { ROLES } from "./roles.ts";
 
@@ -151,6 +152,23 @@ export const requestNeedsHumanCleared = defineEventType({
 });
 
 /**
+ * A commitment became a proposal, which takes effect once the people it needs
+ * have confirmed it in the web UI (requests: Commitments become proposals;
+ * requests: A confirmed commitment applies only if the request still allows
+ * it). It names the request, the proposal and the kind of commitment; its
+ * provenance names who proposed it, the proposal's accountable human.
+ */
+export const proposalCreated = defineEventType({
+  type: "proposal.created",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    proposalId: { kind: "id", of: "proposal" },
+    kind: { kind: "enum", values: COMMITMENT_KINDS },
+  },
+});
+
+/**
  * An admin changed a member's role (teams-and-roles: Changing a member's role;
  * activity-log: Which actions are security events). It names the member and
  * the role they had and now have; its provenance names the admin.
@@ -208,6 +226,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestStateChanged,
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,
+  proposalCreated,
   memberRoleChanged,
   memberRemoved,
   writeBudgetChanged,

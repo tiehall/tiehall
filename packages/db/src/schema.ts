@@ -842,3 +842,84 @@ export const agentOpenedRequests = pgTable(
     }),
   ],
 );
+
+// Proposals (requests: Commitments become proposals; requests: Cross-team
+// commitments need a confirmation from each side; requests: What a proposal
+// records and shows; handoff-packet: Packet changes that are commitments;
+// design.md, Design rules: Requests and events). A commitment started for a
+// user becomes a proposal instead of taking effect: one row per proposal, with
+// its request, the kind of commitment, the rules its second confirmation must
+// meet (none when its accountable human's confirmation is enough), its
+// accountable human and the side of the request they were on when they
+// proposed it, who proposed it as the server stamped it, what it changes (for a
+// packet change, the proposed packet, and the revision it was based on), where
+// it is (pending until it takes effect or ends), when it was created and when
+// it expires, 7 days later. What it proposes never changes once it is stored:
+// a different commitment is a new proposal.
+export const proposals = pgTable(
+  "proposals",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    requestId: uuid("request_id").notNull(),
+    kind: text("kind").notNull(),
+    /** The rules the second confirmation must all meet: target_team, requester_side or claimant; none for one confirmation. */
+    secondConfirmation: text("second_confirmation").array().notNull().default(sql`'{}'`),
+    /** The user who proposed it, whose confirmation it needs first. */
+    accountableUserId: uuid("accountable_user_id").notNull(),
+    /** The side of the request the accountable human was on when they proposed it. */
+    accountableSide: text("accountable_side").notNull(),
+    actorKind: text("actor_kind").notNull(),
+    /** The client: its Client ID Metadata Document URL, the OAuth client, or the CLI version. */
+    client: text("client"),
+    surface: text("surface"),
+    /** The team the user acted for. */
+    teamId: uuid("team_id"),
+    /** What it changes: for a packet change, { packet }; for a reassignment, { teamId }; otherwise {}. */
+    change: json("change").notNull(),
+    /** For a packet change, the revision it was based on. */
+    baseRevision: integer("base_revision"),
+    state: text("state").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("proposals_request_id").on(table.orgId, table.requestId),
+    foreignKey({
+      name: "proposals_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "proposals_accountable_user_fk",
+      columns: [table.orgId, table.accountableUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "proposals_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("proposals_kind_known", sql`${table.kind} IN ('due_date', 'scope', 'decline', 'reassign', 'withdraw', 'done')`),
+    check(
+      "proposals_second_confirmation_known",
+      sql`${table.secondConfirmation} <@ ARRAY['target_team', 'requester_side', 'claimant']::text[]`,
+    ),
+    check("proposals_accountable_side_known", sql`${table.accountableSide} IN ('requester_side', 'target_team')`),
+    check("proposals_actor_kind_known", sql`${table.actorKind} IN ('agent', 'web_session', 'integration')`),
+    check(
+      "proposals_surface_known",
+      sql`${table.surface} IS NULL OR ${table.surface} IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')`,
+    ),
+    check("proposals_change_is_object", sql`json_typeof(${table.change}) = 'object'`),
+    check("proposals_packet_changes_have_a_base", sql`(${table.kind} IN ('due_date', 'scope')) = (${table.baseRevision} IS NOT NULL)`),
+    check(
+      "proposals_state_known",
+      sql`${table.state} IN ('pending', 'applied', 'rejected', 'withdrawn', 'expired', 'cancelled')`,
+    ),
+    check("proposals_expire_after_7_days", sql`${table.expiresAt} = ${table.createdAt} + interval '7 days'`),
+  ],
+);

@@ -4363,7 +4363,7 @@
                 }
               }
             },
-            "description": "The operation's result.",
+            "description": "The operation's result, for a call that makes no commitment.",
             "headers": {
               "ETag": {
                 "description": "The ETag of the revision the answer holds, such as \"3\", for If-Match on the next write.",
@@ -4374,6 +4374,119 @@
                 }
               }
             }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "proposal": {
+                      "properties": {
+                        "accountableHuman": {
+                          "properties": {
+                            "bot": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "human",
+                              "type": "string"
+                            },
+                            "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "login",
+                            "kind",
+                            "bot"
+                          ],
+                          "type": "object"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "The kind of commitment it proposes.",
+                          "enum": [
+                            "due_date",
+                            "scope",
+                            "decline",
+                            "reassign",
+                            "withdraw",
+                            "done"
+                          ],
+                          "type": "string"
+                        },
+                        "request": {
+                          "properties": {
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "key": {
+                              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "key"
+                          ],
+                          "type": "object"
+                        },
+                        "state": {
+                          "description": "pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "rejected",
+                            "withdrawn",
+                            "expired",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "request",
+                        "kind",
+                        "state",
+                        "accountableHuman",
+                        "createdAt",
+                        "expiresAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "proposal"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The call makes a commitment, which became this proposal instead: it takes effect once the people it needs have confirmed it in the web UI. The answer holds no confirm URL."
           },
           "400": {
             "content": {
@@ -4503,7 +4616,7 @@
             ]
           }
         ],
-        "summary": "Add the next revision of a request's packet, as its requester side, naming the revision you expect in If-Match; a revision keeps the packet's kind. Setting or moving the due date, and changing the scope of a claimed request, are commitments this operation does not take yet.",
+        "summary": "Add the next revision of a request's packet, as its requester side, naming the revision you expect in If-Match; a revision keeps the packet's kind. Setting or moving the due date, and changing the need, the acceptance criteria or the contract section of a claimed request, are commitments: they create a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
         "x-stability-level": "alpha"
       }
     },
@@ -4718,10 +4831,12 @@
               "schema": {
                 "properties": {
                   "state": {
-                    "description": "in_progress to start work on the claimed request, or open to release its claim.",
+                    "description": "in_progress to start work on the claimed request, open to release its claim, or declined or done to propose declining it or marking it done.",
                     "enum": [
                       "in_progress",
-                      "open"
+                      "open",
+                      "declined",
+                      "done"
                     ],
                     "type": "string"
                   }
@@ -4910,7 +5025,120 @@
                 }
               }
             },
-            "description": "The operation's result."
+            "description": "The operation's result, for a call that makes no commitment."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "proposal": {
+                      "properties": {
+                        "accountableHuman": {
+                          "properties": {
+                            "bot": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "human",
+                              "type": "string"
+                            },
+                            "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "login",
+                            "kind",
+                            "bot"
+                          ],
+                          "type": "object"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "The kind of commitment it proposes.",
+                          "enum": [
+                            "due_date",
+                            "scope",
+                            "decline",
+                            "reassign",
+                            "withdraw",
+                            "done"
+                          ],
+                          "type": "string"
+                        },
+                        "request": {
+                          "properties": {
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "key": {
+                              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "key"
+                          ],
+                          "type": "object"
+                        },
+                        "state": {
+                          "description": "pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "rejected",
+                            "withdrawn",
+                            "expired",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "request",
+                        "kind",
+                        "state",
+                        "accountableHuman",
+                        "createdAt",
+                        "expiresAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "proposal"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The call makes a commitment, which became this proposal instead: it takes effect once the people it needs have confirmed it in the web UI. The answer holds no confirm URL."
           },
           "400": {
             "content": {
@@ -5020,7 +5248,7 @@
             ]
           }
         ],
-        "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member.",
+        "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
         "x-stability-level": "alpha"
       }
     }

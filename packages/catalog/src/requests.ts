@@ -166,19 +166,24 @@ export const claimRequest = defineCommand({
 /** The states set_status moves a request to directly: in_progress starts work, and open releases the claim. */
 export const DIRECT_STATES = ["in_progress", "open"] as const;
 
+/** The states set_status proposes, as commitments a person confirms: declined and done. */
+export const PROPOSED_STATES = ["declined", "done"] as const;
+
 export const setRequestStatus = defineCommand({
   id: "requests.set_status",
   summary:
-    "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member.",
+    "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
   input: z.object({
     key: requestKey,
-    state: z.enum(DIRECT_STATES).meta({ description: "in_progress to start work on the claimed request, or open to release its claim." }),
+    state: z.enum([...DIRECT_STATES, ...PROPOSED_STATES]).meta({
+      description: "in_progress to start work on the claimed request, open to release its claim, or declined or done to propose declining it or marking it done.",
+    }),
   }),
   output: request,
   method: "POST",
   path: "/api/v1/requests/{key}/status",
   scopes: ["requests:write"],
-  commitment: false,
+  commitment: true,
   confirm: false,
   surfaces: ["rest"],
   stability: "alpha",

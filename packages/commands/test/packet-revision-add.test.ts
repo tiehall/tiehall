@@ -18,10 +18,9 @@ import { addTeam, callApi, joinTeams, openRequestInTheWebUi, packetOf, sendApi, 
 // included, gets 403. A revision keeps the packet's kind, and validating and
 // storing it makes no outbound connection.
 //
-// Until proposals come with task 14.4, a change that is a commitment, moving
-// the due date or changing the scope of a claimed request, is refused with
-// 409 and adds nothing, so no commitment takes effect without the people who
-// confirm it.
+// A change that is a commitment, moving the due date or changing the scope of
+// a claimed request, adds no revision: it becomes a proposal, answered with
+// 202, so no commitment takes effect without the people who confirm it.
 
 let install: TestInstall;
 let alice: string;
@@ -208,25 +207,24 @@ describe("what a revision may change", () => {
     ["the need", { need: "A different need." }],
     ["the acceptance criteria", { acceptance_criteria: ["Changed after the claim."] }],
     ["the contract section", { contract: (fixture("valid/contract-packet.json")["untrusted"] as Record<string, unknown>)["contract"] }],
-  ])("refuses with 409 a change to %s while the request is claimed, until proposals come, and adds nothing", async (_what, change) => {
+  ])("adds no revision for a change to %s while the request is claimed, which becomes a proposal", async (_what, change) => {
     const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
-    const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith(change), '"1"');
-    expect(answer.status).toBe(409);
-    expect(answer.body).toMatchObject({ type: "https://tiehall.com/problems/conflict", detail: expect.stringMatching(/commitment/) });
-    expect(await stateOf(opened.id)).toEqual(before);
+    expect(answer.status).toBe(202);
+    expect(answer.body).toMatchObject({ proposal: { kind: "scope", state: "pending" } });
+    expect(answer.headers.get("etag")).toBeNull();
+    expect(await stateOf(opened.id)).toEqual({ revisions: "1", events: "3" });
   });
 
-  it("refuses with 409 setting or moving the due date after the request was opened, until proposals come, and adds nothing", async () => {
+  it("adds no revision for setting, moving or removing the due date after the request was opened, which becomes a proposal", async () => {
     const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({}, { due_date: "2026-10-15" }) });
-    const before = await stateOf(opened.id);
     for (const packet of [packetWith({}, { due_date: "2026-10-22" }), packetWith({})]) {
       const answer = await addRevision(alice, opened.key, packet, '"1"');
-      expect(answer.status).toBe(409);
-      expect(answer.body).toMatchObject({ detail: expect.stringMatching(/due date/) });
+      expect(answer.status).toBe(202);
+      expect(answer.body).toMatchObject({ proposal: { kind: "due_date" } });
     }
-    expect(await stateOf(opened.id)).toEqual(before);
+    expect(await stateOf(opened.id)).toEqual({ revisions: "1", events: "3" });
     expect((await addRevision(alice, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/d" }] }, { due_date: "2026-10-15" }), '"1"')).status).toBe(200);
   });
 

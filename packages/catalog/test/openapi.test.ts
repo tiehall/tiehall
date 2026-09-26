@@ -49,7 +49,7 @@ const catalog = defineCatalog([
     id: "requests.decline",
     summary: "Propose to decline a request.",
     input: z.object({ key: z.string(), reason: z.string() }),
-    output: z.object({ proposalId: z.string(), confirmations: z.array(z.string()) }),
+    output: request,
     method: "POST",
     path: "/api/v1/requests/{key}/decline",
     scopes: ["requests:write"],
@@ -233,11 +233,16 @@ describe("the OpenAPI document", () => {
     expect(operation("/api/v1/requests", "post")).not.toHaveProperty("x-sunset");
   });
 
-  it("answers 200 with the output, and 202 for a commitment", () => {
-    expect(Object.keys(operation("/api/v1/requests", "post").responses)).toContain("200");
+  it("answers 200 with the output, and a commitment also 202 with the proposal it created", () => {
+    const create = operation("/api/v1/requests", "post").responses;
+    expect(Object.keys(create)).toContain("200");
+    expect(Object.keys(create)).not.toContain("202");
     const decline = operation("/api/v1/requests/{key}/decline", "post").responses;
-    expect(Object.keys(decline)).toContain("202");
-    expect(Object.keys(decline)).not.toContain("200");
+    expect(Object.keys(decline)).toEqual(expect.arrayContaining(["200", "202"]));
+    const proposed = resolved((decline["202"]?.["content"] as Record<string, { schema: Json }>)["application/json"]?.schema ?? {});
+    expect(proposed).toMatchObject({ type: "object", required: ["proposal"], properties: { proposal: { type: "object" } } });
+    const properties = Object.keys((proposed["properties"] as { proposal: { properties: Json } }).proposal.properties);
+    expect(properties).toEqual(expect.arrayContaining(["id", "request", "kind", "state", "accountableHuman", "createdAt", "expiresAt"]));
   });
 
   it("describes errors as RFC 9457 problems", () => {

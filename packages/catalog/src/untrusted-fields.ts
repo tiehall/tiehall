@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Catalog } from "./catalog.ts";
+import { proposalAnswer } from "./proposals.ts";
 
 // Where text people and other systems wrote sits in the JSON agents read
 // (agent-safety: User text in JSON sits under untrusted objects; design.md,
@@ -22,7 +23,9 @@ import type { Catalog } from "./catalog.ts";
 // - a property named `key` or `state` inside an `untrusted` object.
 // A field it cannot tell is written by Tiehall counts as written by people, so
 // a new output field that holds free text fails until it moves under
-// `untrusted` or its schema closes it.
+// `untrusted` or its schema closes it. A commitment's operation also answers
+// with the proposal it created, which agents read too, so that is walked as
+// well.
 
 /** A place in an output schema that breaks the rule, with the operation and the path to it. */
 export interface UntrustedFieldProblem {
@@ -39,12 +42,22 @@ const CLOSED_FORMATS: ReadonlySet<string> = new Set(["uuid", "date-time", "date"
 /** Properties that name what Tiehall states about a request, which never sit under `untrusted`. */
 const TIEHALL_PROPERTIES: ReadonlySet<string> = new Set(["key", "state"]);
 
-/** The problems of every operation that an agent surface offers; none when each keeps the rule. */
-export function untrustedFieldProblems(catalog: Catalog, identifiers: readonly RegExp[]): UntrustedFieldProblem[] {
-  const patterns = new Set(identifiers.map(({ source }) => source));
+/** The output schemas agents read: each operation an agent surface offers, and the proposal a commitment's answers with. */
+export function agentOutputSchemas(catalog: Catalog): { operation: string; schema: z.ZodType }[] {
   return catalog.commands
     .filter(({ surfaces }) => surfaces.length > 0)
-    .flatMap(({ id, output }) => outputSchemaProblems(output, patterns).map((problem) => ({ operation: id, ...problem })));
+    .flatMap(({ id, output, commitment }) => [
+      { operation: id, schema: output },
+      ...(commitment ? [{ operation: `${id} (202)`, schema: proposalAnswer as z.ZodType }] : []),
+    ]);
+}
+
+/** The problems of every output schema agents read; none when each keeps the rule. */
+export function untrustedFieldProblems(catalog: Catalog, identifiers: readonly RegExp[]): UntrustedFieldProblem[] {
+  const patterns = new Set(identifiers.map(({ source }) => source));
+  return agentOutputSchemas(catalog).flatMap(({ operation, schema }) =>
+    outputSchemaProblems(schema, patterns).map((problem) => ({ operation, ...problem })),
+  );
 }
 
 /** The problems of one output schema, by path; exported for the check's own tests. */

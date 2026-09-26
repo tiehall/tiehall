@@ -1,4 +1,4 @@
-import { API_PREFIX, deprecationHeaders, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { API_PREFIX, deprecationHeaders, isProposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson } from "@tiehall/packet/render";
 import type { Caller } from "./caller.ts";
@@ -26,7 +26,9 @@ import { createLogger, type Logger } from "./log.ts";
 //   re-check, so a removed member gets 403 whatever they send
 //   (teams-and-roles: Membership is re-checked on every call);
 // - it runs the operation through execute() and answers with its output as
-//   JSON, or 202 for a commitment, which becomes a proposal. Its callers are
+//   JSON, with 200, or, for a call that makes a commitment, with 202 and the
+//   proposal it became (public-api: Commitments over the API answer 202 with
+//   a proposal). Its callers are
 //   agents and their tools, and the JSON variant of a request URL is the same
 //   read, so the output is JSON as agents read it: without the invisible
 //   characters the renderer strips, while what people wrote stays stored as
@@ -138,7 +140,7 @@ export function createRestHandler(options: RestOptions): RestHandler {
           }
         }
       }
-      const status = definition.commitment ? 202 : 200;
+      const statusOf = (output: unknown) => (definition.commitment && isProposalAnswer(output) ? 202 : 200);
       const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
       const userAgent = request.headers.get("user-agent") ?? undefined;
       const executeOptions: ExecuteOptions = {
@@ -152,10 +154,11 @@ export function createRestHandler(options: RestOptions): RestHandler {
           digest: requestDigest(request.method, url.pathname, body),
           now: now(),
         };
-        executeOptions.around = (context, run) => runOnce(context, claim, run, (output) => ({ status, body: JSON.stringify(output) }));
+        executeOptions.around = (context, run) => runOnce(context, claim, run, (output) => ({ status: statusOf(output), body: JSON.stringify(output) }));
       }
       const output = await options.execute(definition.id, caller, input, executeOptions);
-      return json(status, JSON.stringify(agentJson(output)), etagOf(definition, output));
+      const status = statusOf(output);
+      return json(status, JSON.stringify(agentJson(output)), status === 200 ? etagOf(definition, output) : undefined);
     } catch (error) {
       if (error instanceof IdempotentReplay) {
         const replayed = error.response;

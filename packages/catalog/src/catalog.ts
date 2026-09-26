@@ -78,6 +78,14 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
         problem("it is an admin action, which runs only in the web UI, so no agent surface offers it.");
       }
     }
+    if (definition.commitment) {
+      // A call that makes a commitment answers { proposal } instead of the output, so the output never has that field.
+      if (definition.output instanceof z.ZodObject && Object.hasOwn(definition.output.shape, "proposal")) {
+        problem("it is a commitment, which answers a call that makes one with { proposal }, so its own output has no field named proposal.");
+      }
+      if (definition.confirm) problem("it is a commitment, which becomes a proposal people confirm, so it does not need the confirmation step itself.");
+      if (definition.method === "GET") problem("it is a commitment, which changes something, so it is not offered with GET.");
+    }
     if (offered && !definition.confirm && definition.scopes.length === 0) {
       problem("it is offered on an agent surface, so it names the scopes a token needs to run it.");
     }

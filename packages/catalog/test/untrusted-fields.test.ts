@@ -1,11 +1,14 @@
 import { EVENT_FIELD_NAME, EVENT_STRING_VALUE, EVENT_TYPE_NAME, REQUEST_KEY, TEAM_KEY } from "@tiehall/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { defineCatalog } from "../src/catalog.ts";
+import { defineCommand } from "../src/command.ts";
 import { CATALOG } from "../src/commands.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
+import { proposalAnswer } from "../src/proposals.ts";
 import { getRequest } from "../src/requests.ts";
 import { GITHUB_LOGIN } from "../src/schemas.ts";
-import { outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
+import { agentOutputSchemas, outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
 
 // User text in JSON sits under untrusted objects (agent-safety: User text in
 // JSON sits under untrusted objects). The check walks the output schema of
@@ -86,6 +89,27 @@ describe("the operations agents read", () => {
 
   it("keep every user-written field under an untrusted object, and the key and the state outside", () => {
     expect(untrustedFieldProblems(CATALOG, IDENTIFIERS)).toEqual([]);
+  });
+
+  it("include the proposal a commitment answers with, which agents read as well", () => {
+    const commitment = defineCatalog([
+      defineCommand({
+        id: "requests.decline",
+        summary: "Propose to decline a request.",
+        input: z.object({ key: z.string() }),
+        output: z.object({ key: z.string().regex(REQUEST_KEY) }),
+        method: "POST",
+        path: "/api/v1/requests/{key}/decline",
+        scopes: ["requests:write"],
+        commitment: true,
+        confirm: false,
+        surfaces: ["rest"],
+        stability: "alpha",
+      }),
+    ]);
+    const walked = agentOutputSchemas(commitment);
+    expect(walked.map(({ operation }) => operation)).toEqual(["requests.decline", "requests.decline (202)"]);
+    expect(walked[1]?.schema).toBe(proposalAnswer);
   });
 
   it("put each message body of a request under untrusted, and its key and state outside", () => {

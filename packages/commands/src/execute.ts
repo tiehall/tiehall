@@ -1,8 +1,10 @@
-import type { Catalog, CommandDefinition } from "@tiehall/catalog";
+import { isProposalAnswer, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
+import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
+import type { RequestRow } from "./request-views.ts";
 import { countTokenWrite, tokenKeyOf } from "./write-limits.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
@@ -37,21 +39,25 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // 6. runs the handler in that transaction, so its change, its events and its
 //    jobs commit together or not at all, with the provenance it stamps from
 //    the caller, never from the payload, whose keys for it the schema drops
-//    (requests: Provenance is stamped by the server); execute() consults the
+//    (requests: Provenance is stamped by the server); the handler of an
+//    operation flagged as a commitment turns a call that makes one into a
+//    proposal instead, through propose(), for the user the call acts for,
+//    from any surface and from the web UI alike (requests: Commitments become
+//    proposals); execute() consults the
 //    role matrix with the role the membership re-check read, refusing an
 //    admin action to anyone whose role does not allow it with 403 before the
 //    nonce is consumed or the handler runs (teams-and-roles: The role bounds
 //    every caller acting for a user); a job or an integration event acts for
 //    no admin, so it runs no admin action either;
-// 7. returns only output that passes the operation's output schema: any
-//    other output rolls the call back and is never returned.
+// 7. returns only output that passes the operation's output schema, or, for a
+//    call that made a commitment, the proposal schema: any other output rolls
+//    the call back and is never returned.
 // A call made with an OAuth token or a personal access token that writes is
 // counted, in its transaction and before its change, against the token's
 // limit and the install's daily budget, and gets 429 beyond either
 // (write-limits.ts); the write path counts it against the loop limit of the
 // request it writes on (loop-limit.ts).
-// Later tasks add the token's side of the rules (15.5) and commitments that
-// become proposals (14.4).
+// Later tasks add the token's side of the rules (15.5).
 
 /** What a handler gets besides its parsed input. */
 export interface HandlerContext extends OrgContext {
@@ -68,6 +74,12 @@ export interface HandlerContext extends OrgContext {
    * acted for, which it decides from the record, never from the payload.
    */
   write<R>(change: (writer: Writer) => Promise<R>, options?: { teamId?: string | undefined }): Promise<R>;
+  /**
+   * Creates the proposal for a commitment the call makes on a request whose
+   * row it has locked, instead of applying it; only an operation flagged as a
+   * commitment may. The handler answers with what it returns.
+   */
+  propose(request: RequestRow, commitment: Commitment): Promise<ProposalAnswer>;
 }
 
 /** The provenance of a change made for a team the user acted for. */
@@ -81,10 +93,14 @@ export type Handler = (input: unknown, context: HandlerContext) => Promise<unkno
 /** One handler per operation of the catalog, by the operation's id. */
 export type Handlers = Readonly<Record<string, Handler>>;
 
-/** A handler typed by its definition's schemas. */
+/**
+ * A handler typed by its definition's schemas. A commitment's handler may
+ * answer with the proposal propose() created instead of the output; execute()
+ * takes that answer from an operation flagged as a commitment only.
+ */
 export function defineHandler<D extends CommandDefinition>(
   _definition: D,
-  handler: (input: z.output<D["input"]>, context: HandlerContext) => Promise<z.input<D["output"]>>,
+  handler: (input: z.output<D["input"]>, context: HandlerContext) => Promise<z.input<D["output"]> | ProposalAnswer>,
 ): Handler {
   return handler as Handler;
 }
@@ -199,10 +215,6 @@ export function createExecute(services: ExecuteServices): Execute {
           throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
         }
 
-        if (definition.commitment) {
-          throw new Error(`${commandId} is a commitment, which becomes a proposal; proposals are not built yet.`);
-        }
-
         // 6. and 7. The handler, in the install's org, and only output that passes its schema.
         // An admin action runs only for an admin: never for a job or an integration event, which act for no admin.
         const member = context.member;
@@ -236,9 +248,16 @@ export function createExecute(services: ExecuteServices): Execute {
               },
               writeOptions,
             ),
+          propose: (request, commitment) => {
+            if (!definition.commitment) throw new Error(`${commandId} is not flagged as a commitment, so it creates no proposal.`);
+            return createProposal(handlerContext, request, commitment);
+          },
         };
         const run = async () => {
-          const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
+          const result = await handler(parsed.data, handlerContext);
+          // A commitment's call that made one answers with its proposal instead of the operation's output.
+          const schema = definition.commitment && isProposalAnswer(result) ? proposalAnswer : definition.output;
+          const output = schema.safeParse(result);
           if (!output.success) throw new OutputSchemaError(commandId);
           return output.data;
         };

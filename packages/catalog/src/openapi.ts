@@ -3,6 +3,7 @@ import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObj
 import { variantsOf, type Catalog } from "./catalog.ts";
 import type { CommandDefinition } from "./command.ts";
 import { packet, PACKET_COMPONENT } from "./packet.ts";
+import { proposalAnswer } from "./proposals.ts";
 
 // The OpenAPI 3.1 document of /api/v1, generated from the catalog (public-api:
 // What the document states for each operation; public-api: Responses can gain
@@ -24,8 +25,9 @@ import { packet, PACKET_COMPONENT } from "./packet.ts";
 // - the optional Idempotency-Key header on a POST, and the required If-Match
 //   header on an operation that adds a packet revision, which answers 412 and
 //   428 too, and the ETag header of an answer that states one;
-// - its answer, 200 with its output, or 202 with the proposal for a
-//   commitment, and its errors as RFC 9457 problems;
+// - its answer, 200 with its output, and for a commitment also 202 with the
+//   proposal a call that makes one creates instead, and its errors as RFC
+//   9457 problems;
 // - x-tiehall-cli with the CLI's command, on each operation the CLI offers,
 //   from which the CLI builds its request commands (design.md, Self-hosting
 //   decisions: S16).
@@ -196,14 +198,19 @@ function bodyVariants(input: z.ZodType, variants: readonly z.ZodObject[], pathKe
 
 function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiResponsesObject {
   const responses: ZodOpenApiResponsesObject = {
-    [definition.commitment ? "202" : "200"]: {
-      description: definition.commitment
-        ? "The commitment became a proposal, which takes effect once the people it needs have confirmed it in the web UI."
-        : "The operation's result.",
+    "200": {
+      description: definition.commitment ? "The operation's result, for a call that makes no commitment." : "The operation's result.",
       ...(definition.etag === undefined ? {} : { headers: etagHeader }),
       content: { "application/json": { schema: definition.output } },
     },
   };
+  if (definition.commitment) {
+    responses["202"] = {
+      description:
+        "The call makes a commitment, which became this proposal instead: it takes effect once the people it needs have confirmed it in the web UI. The answer holds no confirm URL.",
+      content: { "application/json": { schema: proposalAnswer } },
+    };
+  }
   const errors = {
     ...ERRORS,
     ...(method === "GET" ? {} : WRITE_ERRORS),
