@@ -52,6 +52,17 @@ export function containerState(name: string): { Status: string; Running: boolean
   };
 }
 
+/** The volumes mounted into a container, anonymous ones included; none when the container does not exist. */
+export function volumesOf(name: string): string[] {
+  const run = docker(["inspect", "--format", '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}', name]);
+  return run.status === 0 ? run.stdout.split("\n").filter((line) => line !== "") : [];
+}
+
+/** The volumes among these that still exist. */
+export function existingVolumes(volumes: string[]): string[] {
+  return volumes.filter((volume) => docker(["volume", "inspect", volume]).status === 0);
+}
+
 /** The effective uid of a running container's first process. */
 export function processUid(name: string): number {
   const status = dockerOk(["exec", name, "cat", "/proc/1/status"]);

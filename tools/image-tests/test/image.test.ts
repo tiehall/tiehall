@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-import { containerState, docker, dockerOk, processUid, uniqueName, waitFor } from "../src/docker.ts";
+import { containerState, docker, dockerOk, existingVolumes, processUid, uniqueName, volumesOf, waitFor } from "../src/docker.ts";
 
 // Container tests for the image (task 2.7; operations: Production runs the
 // self-host Compose file and image). Every role starts the way production runs
@@ -72,9 +72,15 @@ async function startPostgres(network: string, name: string, password: string): P
   );
 }
 
+/**
+ * Removes Postgres and its network, and checks that nothing of it is left: the
+ * image declares its data directory a volume, so each run gets an anonymous one.
+ */
 function stopPostgres(network: string, name: string): void {
-  docker(["rm", "--force", name]);
+  const volumes = volumesOf(name);
+  docker(["rm", "--force", "--volumes", name]);
   docker(["network", "rm", network]);
+  expect(existingVolumes(volumes), `volumes that ${name} left behind`).toEqual([]);
 }
 
 /**
