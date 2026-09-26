@@ -6,6 +6,7 @@ import { PACKET_HANDLERS } from "./packets.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
 import { USER_HANDLERS } from "./users.ts";
+import { WRITE_LIMIT_HANDLERS } from "./write-limits.ts";
 
 // One handler per operation of the catalog, by the operation's id (design.md,
 // Technical decisions: T3). Each task that adds an operation to the catalog
@@ -18,4 +19,5 @@ export const HANDLERS: Handlers = {
   ...MESSAGE_HANDLERS,
   ...PACKET_HANDLERS,
   ...EVENT_READ_HANDLERS,
+  ...WRITE_LIMIT_HANDLERS,
 };

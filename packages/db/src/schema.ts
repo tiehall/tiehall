@@ -741,3 +741,61 @@ export const readCursors = pgTable(
     check("read_cursors_reader_length", sql`char_length(${table.reader}) BETWEEN 1 AND 2048`),
   ],
 );
+
+// The writes of each agent token in the last minute (agent-safety: Agent
+// writes are limited per token and budgeted per install; design.md, Technical
+// decisions: T14). One row per write made with an OAuth grant or a personal
+// access token, by the token's key, such as pat:<id> or oauth:<client>:<user>,
+// and its time; the write that counts one first takes a transaction lock on
+// the token, so two writes at once count one after the other. Rows older than
+// a minute say nothing and are deleted by the token's next write.
+export const agentTokenWrites = pgTable(
+  "agent_token_writes",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** Which token wrote: pat:<token id> or oauth:<client id>:<user id>. */
+    token: text("token").notNull(),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("agent_token_writes_token_time").on(table.orgId, table.token, table.writtenAt),
+    check("agent_token_writes_token_length", sql`char_length(${table.token}) BETWEEN 1 AND 2200`),
+  ],
+);
+
+// The install's agent writes per UTC day (agent-safety: Agent writes are
+// limited per token and budgeted per install). One row per day on which agents
+// wrote, which each agent write updates in its transaction, holding the row's
+// lock, and only while the day's writes are under the budget.
+export const agentWriteDays = pgTable(
+  "agent_write_days",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The UTC day. */
+    day: date("day").notNull(),
+    writes: integer("writes").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.day] }), check("agent_write_days_writes_not_negative", sql`${table.writes} >= 0`)],
+);
+
+// The install's settings that an admin changes in the web UI with the
+// confirmation step (design.md, Self-hosting decisions: S2 and S7). One row
+// for the install's org, made by the first change; until then every setting
+// has its default. The daily write budget is 5,000 agent writes by default
+// (agent-safety: Agent writes are limited per token and budgeted per install).
+export const installSettings = pgTable(
+  "install_settings",
+  {
+    orgId: uuid("org_id")
+      .primaryKey()
+      .references(() => orgs.id),
+    dailyWriteBudget: integer("daily_write_budget").notNull().default(5000),
+  },
+  (table) => [check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`)],
+);

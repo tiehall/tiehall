@@ -3,6 +3,7 @@ import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
+import { countTokenWrite, tokenKeyOf } from "./write-limits.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 
@@ -40,6 +41,11 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    admin, so it runs no admin action either;
 // 6. returns only output that passes the operation's output schema: any
 //    other output rolls the call back and is never returned.
+// A call made with an OAuth token or a personal access token that writes is
+// counted, in its transaction and before its change, against the token's
+// limit and the install's daily budget, and gets 429 beyond either
+// (write-limits.ts); the write path counts it against the loop limit of the
+// request it writes on (loop-limit.ts).
 // Later tasks add the token's side of the rules (15.5) and commitments that
 // become proposals (14.4).
 
@@ -194,13 +200,29 @@ export function createExecute(services: ExecuteServices): Execute {
             throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
           }
         }
+        // An agent token's call that writes is counted once, before its change, against the token's limit and the install's budget.
+        const token = tokenKeyOf(caller);
+        let counted = false;
         const handlerContext: HandlerContext = {
           ...context,
           caller,
           member,
           provenance,
           now,
-          write: (change, { teamId } = {}) => writeIn(context, store.jobs, actingFor(provenance, teamId), change, writeOptions),
+          write: (change, { teamId } = {}) =>
+            writeIn(
+              context,
+              store.jobs,
+              actingFor(provenance, teamId),
+              async (writer) => {
+                if (token !== undefined && !counted) {
+                  counted = true;
+                  await countTokenWrite(writer, token, now());
+                }
+                return change(writer);
+              },
+              writeOptions,
+            ),
         };
         const run = async () => {
           const output = definition.output.safeParse(await handler(parsed.data, handlerContext));

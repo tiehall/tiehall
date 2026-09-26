@@ -46,7 +46,11 @@
       "actions": [
         { "action": "turning personal access tokens on or off", "pending": "15.15" },
         { "action": "setting the longest lifetime a personal access token may have", "pending": "15.15" },
-        { "action": "setting the daily write budget", "pending": "13.12" }
+        {
+          "action": "setting the daily write budget",
+          "command": "settings.set_write_budget",
+          "input": { "dailyWriteBudget": 8000 }
+        }
       ]
     },
     {

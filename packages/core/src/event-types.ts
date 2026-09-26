@@ -182,6 +182,21 @@ export const memberRemoved = defineEventType({
   },
 });
 
+/**
+ * An admin changed the install's daily budget of agent writes (agent-safety:
+ * Agent writes are limited per token and budgeted per install; activity-log:
+ * Which actions are security events). It names the budget before and after;
+ * its provenance names the admin.
+ */
+export const writeBudgetChanged = defineEventType({
+  type: "settings.write_budget_changed",
+  class: "security",
+  fields: {
+    budget: { kind: "integer" },
+    previousBudget: { kind: "integer" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -195,4 +210,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestNeedsHumanCleared,
   memberRoleChanged,
   memberRemoved,
+  writeBudgetChanged,
 ];
