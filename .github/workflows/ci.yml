@@ -118,6 +118,28 @@ jobs:
       # and AGPL-3.0 in the root and every other workspace package.
       - run: pnpm check:licenses
 
+  openapi-document:
+    name: OpenAPI document
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/catalog
+      # Regenerates openapi/v1.json from the catalog and fails when it differs
+      # from the committed file, so every API change is reviewed as a diff of
+      # that file (public-api: Every API change is reviewed as a document diff).
+      - run: pnpm check:openapi
+
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-24.04
