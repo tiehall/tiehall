@@ -334,6 +334,14 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(html).toContain(`data-dpl-id="${revision()}"`);
   });
 
+  // public-api: Operations not offered on REST answer 404; public-api: Errors are RFC 9457 problem details.
+  it("answers a path under /api/v1 that serves no operation with 404 as an RFC 9457 problem", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/no-such-operation`, { method: "POST", body: "{}" });
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    expect(await response.json()).toMatchObject({ status: 404, title: expect.any(String), type: expect.any(String) });
+  });
+
   if (role === "all") {
     it("runs the worker beside the web server", () => {
       const logs = dockerOk(["logs", name]);

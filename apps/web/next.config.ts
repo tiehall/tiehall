@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   // The image runs the self-contained server that `next build` writes to .next/standalone.
   output: "standalone",
   // The workspace packages the app imports are TypeScript sources, which Next.js compiles with the app.
-  transpilePackages: ["@tiehall/commands", "@tiehall/core", "@tiehall/db"],
+  transpilePackages: ["@tiehall/catalog", "@tiehall/commands", "@tiehall/core", "@tiehall/db"],
   // No X-Powered-By header: a response names nothing about the server it runs on
   // (self-host-install: `/healthz` answers only up or down).
   poweredByHeader: false,

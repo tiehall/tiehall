@@ -14,5 +14,5 @@ export {
   type Scope,
   type StabilityLevel,
 } from "./command.ts";
-export { CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
+export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
 export { CATALOG } from "./commands.ts";

@@ -11,7 +11,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./health": "./src/health.ts",
-    "./settings": "./src/settings.ts"
+    "./settings": "./src/settings.ts",
+    "./web": "./src/web.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CommandDefinition } from "./command.ts";
 
 // Registering definitions (public-api: One definition per operation, the same
@@ -20,6 +21,9 @@ export interface Catalog {
 }
 
 const ID = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
+
+/** Where every REST path starts: the API's major version is in the path (public-api: The major version is in the path). */
+export const API_PREFIX = "/api/v1/";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Every rule the definitions break, as a sentence; none when they keep them. */
@@ -61,13 +65,22 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       problem("it is offered on an agent surface, so it names the scopes a token needs to run it.");
     }
     if (surfaces.includes("rest")) {
-      if (definition.method === undefined || definition.path === undefined) {
+      const { method, path } = definition;
+      if (method === undefined || path === undefined) {
         problem("it is offered on REST, so it names its method and its path.");
-      } else if (!duplicate) {
-        const route = `${definition.method} ${definition.path}`;
-        const other = routes.get(route);
-        if (other === undefined) routes.set(route, definition.id);
-        else problem(`${route} is also the path of ${other}.`);
+      } else {
+        if (!path.startsWith(API_PREFIX)) problem(`its path ${path} does not start with ${API_PREFIX}, where the API's major version 1 lives.`);
+        const fields = inputFields(definition.input);
+        if (fields === undefined) problem("it is offered on REST, so its input is an object whose fields the path, query or body carry.");
+        for (const [, parameter = ""] of path.matchAll(/\{([^}]*)\}/g)) {
+          if (fields !== undefined && !fields.includes(parameter)) problem(`its path names {${parameter}}, which is not a field of its input.`);
+        }
+        if (!duplicate) {
+          const route = `${method} ${path}`;
+          const other = routes.get(route);
+          if (other === undefined) routes.set(route, definition.id);
+          else problem(`${route} is also the path of ${other}.`);
+        }
       }
     }
     if (surfaces.includes("mcp")) {
@@ -97,6 +110,11 @@ export function defineCatalog(definitions: readonly CommandDefinition[]): Catalo
     commands: [...definitions],
     get: (id) => byId.get(id),
   };
+}
+
+/** The fields of an object input schema; undefined for an input that is not an object. */
+function inputFields(input: z.ZodType): string[] | undefined {
+  return input instanceof z.ZodObject ? Object.keys(input.shape) : undefined;
 }
 
 /** A real calendar day written as YYYY-MM-DD. */
