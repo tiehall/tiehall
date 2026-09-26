@@ -52,7 +52,9 @@ export interface TestInstall {
   close(): Promise<void>;
 }
 
-export async function startTestInstall(options: { setUp?: (owner: pg.Client) => Promise<void> } = {}): Promise<TestInstall> {
+export async function startTestInstall(
+  options: { setUp?: (owner: pg.Client) => Promise<void>; now?: () => Date } = {},
+): Promise<TestInstall> {
   const migrationsFolder = fileURLToPath(new URL("../../../db/migrations/", import.meta.url));
   const database: TestDatabase = await createTestDatabase();
   const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
@@ -70,7 +72,7 @@ export async function startTestInstall(options: { setUp?: (owner: pg.Client) => 
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
   const store = { database: db, jobs: { send: async () => {} } };
-  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations });
+  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, ...(options.now === undefined ? {} : { now: options.now }) });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations });
   const confirmRoute = (caller: WebSessionCaller) =>
     createConfirmRoute({ step, session: async () => caller, write: { execute, url: URL_OF_INSTALL, secret }, logger });

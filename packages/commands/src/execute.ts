@@ -97,6 +97,8 @@ export interface ExecuteServices {
   handlers: Handlers;
   store: Store;
   confirmations?: Confirmations;
+  /** The clock the limits on agent writes are counted by; the system clock unless a test controls it. */
+  now?: () => Date;
 }
 
 export interface ExecuteOptions {
