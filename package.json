@@ -19,7 +19,8 @@
     "test:boot": "node tools/image-tests/src/boot-test.ts",
     "check:renovate": "node tools/repo-checks/src/check-renovate.ts",
     "check:licenses": "node tools/repo-checks/src/check-licenses.ts",
-    "lint:migrations": "node packages/db/src/check-migrations.ts"
+    "lint:migrations": "node packages/db/src/check-migrations.ts",
+    "openapi:generate": "node packages/catalog/src/write-openapi.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
