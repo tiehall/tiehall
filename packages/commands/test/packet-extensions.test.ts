@@ -80,12 +80,27 @@ describe("extensions", () => {
     expect(JSON.stringify({ ...body, packet: { ...body.packet, untrusted: undefined } })).not.toContain("CC-12");
   });
 
-  it.each([["billing"], ["com"], ["com..acme"], [".com.acme"], ["com.acme."], ["com.acme billing"], ["COM.ACME"]])(
+  it.each([["billing"], ["com"], ["com..acme"], [".com.acme"], ["com.acme."], ["com.acme billing"], ["COM.ACME"], ["__proto__"], ["constructor"]])(
     "get 400 for the key %s, which is not a reverse-DNS namespace, and store nothing",
     async (key) => {
       await refused(withExtensions({ [key]: { cost_center: "CC-12" } }));
     },
   );
+
+  // A computed key makes `__proto__` an own key, as JSON.parse does on the server, not the object's prototype.
+  it("get 400 for a __proto__ key next to a namespace, rather than dropping it, and store nothing", async () => {
+    await refused(withExtensions({ "com.acme.billing": { cost_center: "CC-12" }, ["__proto__"]: { cost_center: "CC-13" } }));
+  });
+
+  it("keep a __proto__ key inside a namespace's value as sent", async () => {
+    const extensions = { "com.acme.billing": { ["__proto__"]: { polluted: true }, cost_center: "CC-12" } };
+    expect(Object.keys(extensions["com.acme.billing"])).toEqual(["__proto__", "cost_center"]);
+    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: withExtensions(extensions) });
+    const read = await callApi(install, tokenOf(alice), "GET", `/api/v1/requests/${opened.key}/packet`);
+    expect(read.status).toBe(200);
+    expect(JSON.stringify(read.body.packet.untrusted.extensions)).toBe(JSON.stringify(extensions));
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
 
   it("pass at 16 KB of JSON", async () => {
     const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: withExtensions(extensionsOfSize(16 * 1024)) });
@@ -101,6 +116,7 @@ describe("extensions", () => {
   it("are refused by the packet schema when a key is not a namespace, and accepted under namespaces", () => {
     const validate = packetValidator();
     expect(validate(withExtensions({ billing: {} }))).toBe(false);
+    expect(validate(withExtensions({ ["__proto__"]: {} }))).toBe(false);
     expect(validate(withExtensions({ "com.acme.billing": { anything: [1, { goes: true }] } }))).toBe(true);
   });
 });

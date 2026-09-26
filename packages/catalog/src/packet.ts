@@ -58,6 +58,22 @@ export const EXTENSION_NAMESPACE = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
 /** The cap on `extensions`: 16 KB of JSON, counted as the UTF-8 bytes of its compact JSON. */
 export const EXTENSIONS_MAX_BYTES = 16 * 1024;
 
+const EXTENSION_KEY_MESSAGE = "An extensions key is a reverse-DNS namespace in lower case, such as com.acme.billing.";
+
+/**
+ * Refuses the key `__proto__` of `extensions` before the record parses it,
+ * and passes the value on unchanged. zod's record skips that key, so it would
+ * escape the namespace check and be dropped, while a key that is not a
+ * namespace is refused and no key is dropped (handoff-packet: The
+ * `extensions` field). A value of JSON sent to Tiehall holds it as an own key.
+ */
+function refuseProtoKey(value: unknown, context: z.RefinementCtx): unknown {
+  if (typeof value === "object" && value !== null && Object.hasOwn(value, "__proto__")) {
+    context.addIssue({ code: "custom", message: EXTENSION_KEY_MESSAGE, path: ["__proto__"], input: value });
+  }
+  return value;
+}
+
 /** The size of a value as compact JSON, in UTF-8 bytes. */
 function jsonBytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).length;
@@ -153,11 +169,12 @@ const untrustedFields = {
     .optional()
     .meta(untrusted("Pages that give context.")),
   extensions: z
-    .record(
-      z.string().max(255).regex(EXTENSION_NAMESPACE, "An extensions key is a reverse-DNS namespace in lower case, such as com.acme.billing."),
-      z.unknown(),
+    .preprocess(
+      refuseProtoKey,
+      z
+        .record(z.string().max(255).regex(EXTENSION_NAMESPACE, EXTENSION_KEY_MESSAGE), z.unknown())
+        .refine((value) => jsonBytes(value) <= EXTENSIONS_MAX_BYTES, `Extensions take at most ${EXTENSIONS_MAX_BYTES} bytes as JSON.`),
     )
-    .refine((value) => jsonBytes(value) <= EXTENSIONS_MAX_BYTES, `Extensions take at most ${EXTENSIONS_MAX_BYTES} bytes as JSON.`)
     .optional()
     .meta(
       untrusted(
