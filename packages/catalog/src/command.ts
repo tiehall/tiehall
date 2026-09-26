@@ -63,6 +63,14 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
    * the web UI, so no agent surface offers it.
    */
   readonly admin?: AdminAction;
+  /**
+   * A system action (requests: System actions need no proposal or
+   * confirmation): an internal command that only a system job or a verified
+   * integration event runs, never a person or an agent, and that takes effect
+   * without a proposal or a confirmation, such as a revision a contract
+   * report adds.
+   */
+  readonly system?: boolean;
   /** The agent surfaces that offer it; none makes it an internal command. */
   readonly surfaces: readonly CommandSurface[];
   /** The MCP tool's name, for a command offered on MCP, such as get_request. */

@@ -78,6 +78,12 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
         problem("it is an admin action, which runs only in the web UI, so no agent surface offers it.");
       }
     }
+    if (definition.system === true) {
+      // A system action runs only in the worker, for a job or an integration event, and needs nobody to confirm it.
+      if (offered) problem("it is a system action, which only Tiehall's jobs and verified integration events run, so no agent surface offers it.");
+      if (definition.confirm || definition.commitment) problem("it is a system action, which needs no proposal and no confirmation.");
+      if (definition.admin !== undefined) problem("it is a system action, which acts for no admin.");
+    }
     if (definition.commitment) {
       // A call that makes a commitment answers { proposal } instead of the output, so the output never has that field.
       if (definition.output instanceof z.ZodObject && Object.hasOwn(definition.output.shape, "proposal")) {

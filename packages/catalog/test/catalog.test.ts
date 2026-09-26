@@ -175,6 +175,34 @@ describe("a catalog", () => {
     ]);
   });
 
+  // requests: System actions need no proposal or confirmation. A system action runs only in the worker.
+  it("refuses a system action offered on a surface, needing a proposal or a confirmation, or taken as an admin", () => {
+    const system = {
+      id: "requests.close_on_merge",
+      summary: "Close a request whose linked pull request merged.",
+      input: z.object({ requestId: z.string() }),
+      output: z.object({}),
+      scopes: [],
+      commitment: false,
+      confirm: false,
+      system: true,
+      surfaces: [],
+      stability: "alpha",
+    } as CommandDefinition;
+    expect(catalogProblems([...fixtureCatalog, system])).toEqual([]);
+    expect(catalogProblems([...fixtureCatalog, { ...system, surfaces: ["mcp"], tool: "close", scopes: ["requests:write"] } as CommandDefinition])).toEqual([
+      "requests.close_on_merge: it is a system action, which only Tiehall's jobs and verified integration events run, so no agent surface offers it.",
+    ]);
+    for (const flag of [{ commitment: true }, { confirm: true }]) {
+      expect(catalogProblems([...fixtureCatalog, { ...system, ...flag } as CommandDefinition])).toContain(
+        "requests.close_on_merge: it is a system action, which needs no proposal and no confirmation.",
+      );
+    }
+    expect(catalogProblems([...fixtureCatalog, { ...system, admin: "teams" } as CommandDefinition])).toEqual([
+      "requests.close_on_merge: it is a system action, which acts for no admin.",
+    ]);
+  });
+
   it("names every problem of a catalog at once", () => {
     const definitions = [...withChanged("getRequest", { scopes: ["admin"], path: undefined }), fixture.getRequest];
     expect(() => defineCatalog(definitions)).toThrow(

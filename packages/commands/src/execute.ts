@@ -30,8 +30,10 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    that fails it with 400 before anything runs, and drops keys it does not
 //    know;
 // 4. lets each kind of caller run only what its kind may run: a CI caller
-//    only contract.report, and a system job or an integration event only
-//    internal commands;
+//    only contract.report, a system job or an integration event only
+//    internal commands, and a system action, which takes effect with no
+//    proposal and no confirmation, only a system job or an integration event
+//    (requests: System actions need no proposal or confirmation);
 // 5. asks for the confirmation step for a `confirm` command, refusing one
 //    without a valid confirmation nonce with 403: only a web session may run
 //    it, and its nonce, bound to that user, that session and this command
@@ -209,8 +211,13 @@ export function createExecute(services: ExecuteServices): Execute {
         if (caller.kind === "ci" && commandId !== "contract.report") {
           throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
         }
-        if ((caller.kind === "system_job" || caller.kind === "integration_event") && definition.surfaces.length > 0) {
+        const worker = caller.kind === "system_job" || caller.kind === "integration_event";
+        if (worker && definition.surfaces.length > 0) {
           throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
+        }
+        // A system action takes effect with no proposal or confirmation, so only Tiehall's own jobs and verified events run it.
+        if (definition.system === true && !worker) {
+          throw new Refusal("forbidden", "Only Tiehall's own jobs and verified integration events run a system action.");
         }
 
         // 5. The confirmation step, for a user signed in to the web UI only.
