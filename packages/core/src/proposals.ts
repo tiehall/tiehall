@@ -118,3 +118,125 @@ export function confirmationVerdict(proposal: PendingConfirmations, actor: Reque
   }
   return { ok: true, step: "second", takesEffect: true };
 }
+
+// How a proposal ends without taking effect (requests: How a proposal ends
+// without taking effect; design.md, Decisions this change rests on: D28 #16,
+// D30 (4)). A pending proposal takes effect once its last confirmation is
+// given, or ends without taking effect: rejected by its accountable human, or,
+// once that human has confirmed, by a person who may give the other side's
+// confirmation; withdrawn by the user who proposed it, who is its accountable
+// human; expired 7 days after it was created, a time no confirmation
+// restarts; or cancelled, when its request reaches a terminal state, when a
+// reassignment of the request is confirmed, when its accountable human is
+// removed from the install, or, for a proposed packet change, when the
+// request's current revision moves past the revision it was based on. An
+// ended proposal never becomes pending again, so undoing the decline or the
+// reassignment that cancelled it leaves it cancelled, and it takes no
+// confirmation, rejection or withdrawal: 409.
+
+export const PROPOSAL_STATES = ["pending", "applied", "rejected", "withdrawn", "expired", "cancelled"] as const;
+export type ProposalState = (typeof PROPOSAL_STATES)[number];
+
+/** How a proposal ends without taking effect. */
+export const PROPOSAL_ENDINGS = ["rejected", "withdrawn", "expired", "cancelled"] as const;
+export type ProposalEnding = (typeof PROPOSAL_ENDINGS)[number];
+
+/** Why a proposal was cancelled. */
+export const CANCEL_REASONS = ["terminal_state", "reassigned", "accountable_removed", "stale"] as const;
+export type CancelReason = (typeof CANCEL_REASONS)[number];
+
+/** How long a proposal waits for its confirmations. */
+export const PROPOSAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** When a proposal created at this time expires. */
+export function proposalExpiresAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + PROPOSAL_LIFETIME_MS);
+}
+
+/** A proposal as the rules see it: where it is in its confirmations, whether it ended, and when it was created. */
+export interface ProposalStanding extends PendingConfirmations {
+  state: ProposalState;
+  createdAt: Date;
+}
+
+/** Why an ended proposal refuses an action, in Tiehall's own words; undefined for a pending one. */
+function endedReason(proposal: ProposalStanding, now: Date): string | undefined {
+  if (proposal.state === "pending") {
+    return now.getTime() >= proposalExpiresAt(proposal.createdAt).getTime()
+      ? "The proposal has expired: it waited 7 days for its confirmations."
+      : undefined;
+  }
+  return proposal.state === "applied" ? "The proposal has taken effect already." : `The proposal was ${proposal.state}, so it has ended.`;
+}
+
+/** Whether a proposal takes this person's confirmation now, and what it does; an ended one takes none (409). */
+export function confirmationOf(proposal: ProposalStanding, actor: RequestActor, request: RequestParties, now: Date): ConfirmationVerdict {
+  const ended = endedReason(proposal, now);
+  return ended === undefined ? confirmationVerdict(proposal, actor, request) : refuse("conflict", ended);
+}
+
+/**
+ * Whether this person may reject a pending proposal now: its accountable
+ * human, or, once that human has confirmed, a person who may give the other
+ * side's confirmation (409 before that); anyone else gets 403.
+ */
+export function rejectionOf(proposal: ProposalStanding, actor: RequestActor, request: RequestParties, now: Date): { ok: true } | ProposalRefusal {
+  const ended = endedReason(proposal, now);
+  if (ended !== undefined) return refuse("conflict", ended);
+  if (actor.userId === proposal.accountableUserId) return { ok: true };
+  if (!mayGiveSecondConfirmation(proposal, actor, request)) {
+    return refuse("forbidden", "You may not reject this proposal: only its accountable human, or the other side once that human has confirmed it, may.");
+  }
+  if (!proposal.accountableConfirmed) {
+    return refuse("conflict", "The proposal waits for its accountable human to confirm it first; the other side may reject it after that.");
+  }
+  return { ok: true };
+}
+
+/** Whether this person may withdraw a pending proposal now: only the user who proposed it (403 for anyone else). */
+export function withdrawalOf(proposal: ProposalStanding, actor: RequestActor, now: Date): { ok: true } | ProposalRefusal {
+  const ended = endedReason(proposal, now);
+  if (ended !== undefined) return refuse("conflict", ended);
+  if (actor.userId !== proposal.accountableUserId) return refuse("forbidden", "Only the user who proposed it may withdraw a proposal.");
+  return { ok: true };
+}
+
+/** A change to a request that may cancel its pending proposals. */
+export type ProposalCancellingChange =
+  /** The request reached done, declined or withdrawn. */
+  | { kind: "terminal_state" }
+  /** The proposal that reassigns the request took effect. */
+  | { kind: "reassigned"; proposalId: string }
+  /** A member was removed from the install. */
+  | { kind: "member_removed"; userId: string }
+  /** The request's packet got this revision. */
+  | { kind: "revision_added"; revision: number }
+  /** A commitment was undone, which cancels nothing and brings back nothing. */
+  | { kind: "commitment_undone" };
+
+/** A pending proposal as a change to its request sees it. */
+export interface CancellableProposal {
+  id: string;
+  kind: CommitmentKind;
+  accountableUserId: string;
+  /** For a proposed packet change, the revision it was based on. */
+  baseRevision: number | null;
+}
+
+/** The pending proposals of a request that a change to it cancels, and why. */
+export function cancelledBy(change: ProposalCancellingChange, proposals: readonly CancellableProposal[]): { id: string; reason: CancelReason }[] {
+  const cancel = (reason: CancelReason, which: (proposal: CancellableProposal) => boolean) =>
+    proposals.filter(which).map(({ id }) => ({ id, reason }));
+  switch (change.kind) {
+    case "terminal_state":
+      return cancel("terminal_state", () => true);
+    case "reassigned":
+      return cancel("reassigned", ({ id }) => id !== change.proposalId);
+    case "member_removed":
+      return cancel("accountable_removed", ({ accountableUserId }) => accountableUserId === change.userId);
+    case "revision_added":
+      return cancel("stale", ({ baseRevision }) => baseRevision !== null && baseRevision < change.revision);
+    case "commitment_undone":
+      return [];
+  }
+}
