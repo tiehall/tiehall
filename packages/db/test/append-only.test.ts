@@ -128,9 +128,9 @@ describe("the app role", () => {
       "add its own trigger": "CREATE TRIGGER events_let_through BEFORE UPDATE ON events FOR EACH ROW EXECUTE FUNCTION suppress_redundant_updates_trigger()",
       "skip triggers as a replica": "SET session_replication_role = replica",
     };
-    const results = Object.fromEntries(
-      await Promise.all(Object.entries(attempts).map(async ([what, sql]) => [what, await failureOf(app, sql)] as const)),
-    );
+    // One at a time: a client runs one query at a time.
+    const results: Record<string, string | undefined> = {};
+    for (const [what, sql] of Object.entries(attempts)) results[what] = await failureOf(app, sql);
     expect(results).toEqual({
       "drop the trigger": expect.stringMatching(/must be owner of (table|relation) events/),
       "disable the trigger": expect.stringMatching(/must be owner of (table|relation) events/),
