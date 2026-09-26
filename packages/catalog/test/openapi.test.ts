@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { defineCatalog, defineCommand, packet, SCOPES } from "../src/index.ts";
+import { CATALOG, defineCatalog, defineCommand, packet, SCOPES } from "../src/index.ts";
 import { API_VERSION, openApiDocument, serializeDocument } from "../src/openapi.ts";
 
 // The OpenAPI 3.1 document, generated from the catalog (public-api: What the
@@ -344,6 +344,30 @@ describe("ETag and If-Match in the document", () => {
   it("uses one packet component for adding a revision and reading a packet", () => {
     expect(Object.keys((packetDocument["components"] as { schemas: Json }).schemas).filter((id) => id.startsWith("Packet"))).toEqual(["Packet"]);
     expect(new Set(valuesOf([add, read], "$ref").filter((ref) => String(ref).includes("Packet")))).toEqual(new Set(["#/components/schemas/Packet"]));
+  });
+});
+
+// public-api: Commitments over the API answer 202 with a proposal; agent-safety: The confirm URL never reaches the model.
+describe("the commitments of the real catalog", () => {
+  const real = openApiDocument(CATALOG) as Json & { paths: Record<string, Record<string, Json & { responses: Record<string, Json> }>> };
+  const commitments = CATALOG.commands.filter(({ commitment, surfaces }) => commitment && surfaces.includes("rest"));
+
+  it("are documented with a 202 that carries the proposal, and a 200 for a call that makes none", () => {
+    expect(commitments.map(({ id }) => id)).toEqual(expect.arrayContaining(["requests.set_status", "packets.add_revision"]));
+    for (const { id, method, path } of commitments) {
+      const responses = real.paths[path ?? ""]?.[(method ?? "").toLowerCase()]?.responses ?? {};
+      expect(Object.keys(responses), id).toEqual(expect.arrayContaining(["200", "202"]));
+      const schema = (responses["202"]?.["content"] as Record<string, { schema: Json }>)["application/json"]?.schema ?? {};
+      expect(schema, id).toMatchObject({ required: ["proposal"], properties: { proposal: { required: expect.arrayContaining(["id", "confirmations", "expiresAt"]) } } });
+    }
+  });
+
+  it("answer with a proposal that has no place for a URL", () => {
+    for (const { method, path } of commitments) {
+      const answer = real.paths[path ?? ""]?.[(method ?? "").toLowerCase()]?.responses["202"];
+      expect(valuesOf(answer, "format")).not.toContain("uri");
+      expect(JSON.stringify(answer)).not.toMatch(/"(url|href|link|confirmUrl)"/i);
+    }
   });
 });
 

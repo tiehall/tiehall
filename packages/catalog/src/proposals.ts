@@ -1,6 +1,6 @@
-import { COMMITMENT_KINDS, PROPOSAL_STATES } from "@tiehall/core";
+import { COMMITMENT_KINDS, PROPOSAL_STATES, SECOND_CONFIRMERS } from "@tiehall/core";
 import { z } from "zod";
-import { requestRef } from "./requests.ts";
+import { requestRef, teamRef } from "./requests.ts";
 import { user } from "./schemas.ts";
 
 // Proposals as the operations return them (requests: Commitments become
@@ -11,8 +11,36 @@ import { user } from "./schemas.ts";
 // with the proposal it created instead, as `{ proposal }`: over REST with 202.
 // So a commitment operation's own output never has a field named proposal,
 // which the catalog checks. A proposal names its request, the kind of
-// commitment, where it is, its accountable human, and when it was created and
-// expires. It holds no confirm URL: agents read it.
+// commitment, where it is, its accountable human, the confirmations it needs
+// and those it has received, and when it was created and expires. It holds no
+// confirm URL: agents read it.
+
+/** The two steps of a proposal's confirmations: its accountable human's, then, where it needs one, the other side's. */
+export const CONFIRMATION_STEPS = ["accountable_human", "other_side"] as const;
+
+/** A confirmation a proposal needs. */
+const neededConfirmation = z.object({
+  step: z.enum(CONFIRMATION_STEPS),
+  /** For the accountable human's step, that human; null for the other side's, whose person is decided when they confirm. */
+  user: user.nullable(),
+  /**
+   * For the other side's step, the rules its person meets, all of them: a
+   * member of the target team, the requesting user or a member of the
+   * requesting team, or the claimant (a member of the target team once the
+   * claimant is no longer a member of the install); none for the accountable
+   * human's.
+   */
+  rules: z.array(z.enum(SECOND_CONFIRMERS)),
+  /** For the other side's step, the team whose members may give it: the target team, or the requesting team. */
+  team: teamRef.nullable(),
+});
+
+/** A confirmation a proposal has received: its step, who gave it and when. */
+const receivedConfirmation = z.object({
+  step: z.enum(CONFIRMATION_STEPS),
+  user,
+  confirmedAt: z.iso.datetime(),
+});
 
 /** A proposal as the operations return it. */
 export const proposal = z.object({
@@ -24,6 +52,8 @@ export const proposal = z.object({
   }),
   /** The user who proposed it, whose confirmation it needs first. */
   accountableHuman: user,
+  /** The confirmations it needs, in order, and those it has received. */
+  confirmations: z.object({ needed: z.array(neededConfirmation), received: z.array(receivedConfirmation) }),
   createdAt: z.iso.datetime(),
   /** 7 days after it was created: every confirmation it needs comes before then, or it expires. */
   expiresAt: z.iso.datetime(),

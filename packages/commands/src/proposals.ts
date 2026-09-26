@@ -6,8 +6,9 @@ import {
   secondConfirmation,
   type CommitmentKind,
   type ProposalState,
+  type SecondConfirmer,
 } from "@tiehall/core";
-import { proposals, users } from "@tiehall/db";
+import { proposals, requests, teams, users } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { HandlerContext } from "./execute.ts";
@@ -100,19 +101,35 @@ export async function createProposal(context: HandlerContext, row: RequestRow, c
 /** One proposal as the operations return it. */
 export async function proposalView(context: OrgContext, proposalId: string): Promise<ProposalView> {
   const [row] = await context.tx
-    .select({ proposal: proposals, login: users.githubLogin, bot: users.bot })
+    .select({ proposal: proposals, login: users.githubLogin, bot: users.bot, request: requests })
     .from(proposals)
     .innerJoin(users, and(eq(users.orgId, proposals.orgId), eq(users.id, proposals.accountableUserId)))
+    .innerJoin(requests, and(eq(requests.orgId, proposals.orgId), eq(requests.id, proposals.requestId)))
     .where(and(eq(proposals.orgId, context.orgId), eq(proposals.id, proposalId)));
   if (row === undefined) throw new Error("A proposal the install does not have was named.");
-  const { proposal: stored } = row;
+  const { proposal: stored, request } = row;
   const { id, key } = await requestView(context, stored.requestId);
+  const accountableHuman = { id: stored.accountableUserId, login: row.login, kind: "human" as const, bot: row.bot };
+  const rules = stored.secondConfirmation as SecondConfirmer[];
+  // The requester side's rule names the requesting team; the target team's and the claimant's, the target team.
+  const teamId = rules.includes("requester_side") ? request.requestingTeamId : request.targetTeamId;
+  const [team] = await context.tx
+    .select({ id: teams.id, key: teams.key })
+    .from(teams)
+    .where(and(eq(teams.orgId, context.orgId), eq(teams.id, teamId)));
   return {
     id: stored.id,
     request: { id, key },
     kind: stored.kind as CommitmentKind,
     state: stored.state as ProposalState,
-    accountableHuman: { id: stored.accountableUserId, login: row.login, kind: "human", bot: row.bot },
+    accountableHuman,
+    confirmations: {
+      needed: [
+        { step: "accountable_human", user: accountableHuman, rules: [], team: null },
+        ...(rules.length === 0 ? [] : [{ step: "other_side" as const, user: null, rules, team: team ?? null }]),
+      ],
+      received: [],
+    },
     createdAt: stored.createdAt.toISOString(),
     expiresAt: stored.expiresAt.toISOString(),
   };

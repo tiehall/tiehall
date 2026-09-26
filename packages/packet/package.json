@@ -2,7 +2,7 @@
   "name": "@tiehall/packet",
   "version": "0.0.0",
   "private": true,
-  "description": "The handoff packet schema tiehall.packet/v1 with its conformance fixtures, from which @tiehall/packet is built, and the renderer and notice templates of what agents read, which that package leaves out.",
+  "description": "The handoff packet schema tiehall.packet/v1 with its conformance fixtures, from which @tiehall/packet is built, and the renderer, notice templates and proposal text of what agents read, which that package leaves out.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -13,7 +13,8 @@
     "./conformance": "./src/conformance.ts",
     "./notices": "./src/notices.ts",
     "./render": "./src/render.ts",
-    "./schema/v1-beta.json": "./schema/v1-beta.json"
+    "./schema/v1-beta.json": "./schema/v1-beta.json",
+    "./proposals": "./src/proposals.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
