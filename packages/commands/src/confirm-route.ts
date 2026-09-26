@@ -83,6 +83,13 @@ export type ConfirmRoute = (request: Request) => Promise<Response>;
 /** Where the review pages live; a page's path names its command, such as /confirm/tokens.create. */
 export const CONFIRM_PATH = "/confirm/";
 
+/**
+ * The paths the route serves, each of which the app mounts it on: a review
+ * page's, a proposal's confirm page's and its undo page's, which is two
+ * segments under /confirm. A braced part stands for one segment.
+ */
+export const CONFIRM_ROUTE_PATHS: readonly string[] = [`${CONFIRM_PATH}{command}`, `${CONFIRM_PATH}{proposal}`, `${CONFIRM_PATH}{proposal}/undo`];
+
 export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   const logger = options.logger ?? createLogger();
   const secret = () => (typeof options.write.secret === "string" ? options.write.secret : options.write.secret());

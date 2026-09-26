@@ -1,14 +1,67 @@
+/// <reference types="vitest/importMeta" />
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GET } from "../app/confirm/[command]/route.ts";
+import { CONFIRM_ROUTE_PATHS } from "@tiehall/commands";
+import { GET } from "../app/confirm/[...command]/route.ts";
 
 // The review pages of the confirmation step (agent-safety: The review page of
-// the confirmation step). Until sign-in exists (group 7), nobody is signed in,
-// so a review page answers as /api/v1 answers a call without credentials, and
-// even that answer cannot be framed. packages/commands/test/review-page.test.ts
-// tests the pages themselves against a database.
+// the confirmation step; requests: The proposal's confirm page; requests: The
+// undo window for reversible commitments). The app mounts the one confirm route
+// on every path it serves, the undo page's two segments under /confirm
+// included, so the link a receipt emails reaches the page and not the app's
+// 404. Until sign-in exists (group 7), nobody is signed in, so a review page
+// answers as /api/v1 answers a call without credentials, and even that answer
+// cannot be framed. packages/commands/test/review-page.test.ts tests the pages
+// themselves against a database.
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+/** Every route handler under app/, by its path from app/, with a loader for its module. */
+const routeFiles = import.meta.glob("../app/**/route.ts");
+
+/**
+ * Whether Next.js routes a URL with these segments to the route file whose
+ * folders these are: a folder [x] takes one segment, [...x] one or more,
+ * [[...x]] any number, and any other folder its own name.
+ */
+function mounts(folders: readonly string[], segments: readonly string[]): boolean {
+  const [folder, ...rest] = folders;
+  if (folder === undefined) return segments.length === 0;
+  if (folder.startsWith("[[...")) return rest.length === 0;
+  if (folder.startsWith("[...")) return rest.length === 0 && segments.length > 0;
+  if (folder.startsWith("[")) return segments.length > 0 && mounts(rest, segments.slice(1));
+  return segments[0] === folder && mounts(rest, segments.slice(1));
+}
+
+/** The route files a URL path reaches. */
+function routesOf(path: string): string[] {
+  const segments = path.split("/").filter((segment) => segment !== "");
+  return Object.keys(routeFiles).filter((file) => {
+    const folders = file.replace(/^\.\.\/app\//, "").replace(/\/route\.ts$/, "").split("/");
+    return mounts(folders, segments);
+  });
+}
+
+describe("the app", () => {
+  it("has route files under app/", () => {
+    expect(Object.keys(routeFiles)).toContain("../app/healthz/route.ts");
+  });
+
+  it.each(CONFIRM_ROUTE_PATHS)("mounts the confirm route on %s, for a GET and a POST", async (pattern) => {
+    // A braced part stands for one segment, such as a command id or a proposal id.
+    const path = pattern.replaceAll(/\{[a-z]+\}/g, "x");
+    const files = routesOf(path);
+    expect(files, `the route files ${path} reaches`).toHaveLength(1);
+    const [file] = files;
+    const module = (await routeFiles[file ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["GET"], `${file} exports GET`).toBeTypeOf("function");
+    expect(module?.["POST"], `${file} exports POST`).toBeTypeOf("function");
+  });
+
+  it("does not mount the confirm route on /confirm itself, which names no page", () => {
+    expect(routesOf("/confirm")).toEqual([]);
+  });
 });
 
 describe("a review page", () => {
