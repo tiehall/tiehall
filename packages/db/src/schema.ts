@@ -288,10 +288,11 @@ export const members = pgTable(
   ],
 );
 
-// Teams (teams-and-roles: Teams). The install's teams, kept in Tiehall's own
-// records, each with its key and a name. Only admins change them, through the
-// team operations; nothing is taken from GitHub teams or any other outside
-// source. v1 offers no way to delete a team.
+// Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's
+// teams, kept in Tiehall's own records, each with its current key and a name.
+// Only admins change them, through the team operations; nothing is taken from
+// GitHub teams or any other outside source. v1 offers no way to delete a team.
+// A key has 2 to 10 uppercase letters and digits and starts with a letter.
 export const teams = pgTable(
   "teams",
   {
@@ -307,7 +308,36 @@ export const teams = pgTable(
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
     uniqueIndex("teams_key").on(table.orgId, table.key),
+    check("teams_key_format", sql`${table.key} ~ '^[A-Z][A-Z0-9]{1,9}$'`),
     check("teams_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 100`),
+  ],
+);
+
+// The keys teams had before a rename (teams-and-roles: Team keys; design.md,
+// Design rules: Teams and roles). When a team's key changes, its old key stays
+// an alias of that team and counts as in use by it, so no other team can take
+// it; request keys and URLs that use it keep resolving to the team. A key is
+// either a team's current key or an alias, never both: a team that takes back
+// one of its old keys turns its current key into an alias instead.
+export const teamKeyAliases = pgTable(
+  "team_key_aliases",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    key: text("key").notNull(),
+    teamId: uuid("team_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.key] }),
+    foreignKey({
+      name: "team_key_aliases_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    index("team_key_aliases_team_id").on(table.orgId, table.teamId),
+    check("team_key_aliases_key_format", sql`${table.key} ~ '^[A-Z][A-Z0-9]{1,9}$'`),
   ],
 );
 
