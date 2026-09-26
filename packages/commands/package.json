@@ -12,6 +12,7 @@
     ".": "./src/index.ts",
     "./health": "./src/health.ts",
     "./settings": "./src/settings.ts",
+    "./setup": "./src/setup.ts",
     "./web": "./src/web.ts"
   },
   "scripts": {

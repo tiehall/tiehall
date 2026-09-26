@@ -54,7 +54,7 @@ beforeAll(async () => {
   await owner.connect();
   await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
   db = appDatabase(database.url);
-  await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
+  await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
   const box = openSecretBox(SECRET_KEY);
   await withOrg(db, async (context) => {
     await storeSecret(context, box, "jira.api_token", JIRA_TOKEN);

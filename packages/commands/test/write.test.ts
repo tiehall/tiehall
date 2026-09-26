@@ -90,7 +90,9 @@ beforeAll(async () => {
       },
     },
   };
-  const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id;
+  const orgId = (
+    await owner.query<{ id: string }>("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now()) RETURNING id")
+  ).rows[0]?.id;
   await owner.query("INSERT INTO probe_members (org_id, user_id, role) VALUES ($1, $2, 'member')", [orgId, LEE]);
 });
 

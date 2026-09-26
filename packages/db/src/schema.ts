@@ -33,6 +33,12 @@ export const orgs = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When the first admin's sign-in completed setup; until then, pages lead
+     * to /setup and API calls answer 503 setup-required (self-host-install:
+     * The setup code guards the setup screen).
+     */
+    setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
   },
   // A unique index on a constant: a second row would repeat it.
   () => [uniqueIndex("orgs_one_row").on(sql`(true)`)],

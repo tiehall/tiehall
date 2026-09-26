@@ -126,11 +126,19 @@ beforeAll(async () => {
     "migrate",
   ]);
   if (migrate.status !== 0) throw new Error(`The migrate role failed: ${migrate.stdout}${migrate.stderr}`);
+  // The roles serve their pages and API only once setup is complete (self-host-install: The setup code guards
+  // the setup screen), as the first admin's sign-in on the setup screen leaves the install.
+  ownerQuery(rolesPostgres, "INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 }, 300_000);
 
 afterAll(() => {
   stopPostgres(rolesNetwork, rolesPostgres);
 });
+
+/** Runs a query as the database owner inside a Postgres container, and returns its rows as text. */
+function ownerQuery(postgres: string, query: string): string {
+  return dockerOk(["exec", postgres, "psql", "--username", "tiehall", "--dbname", "tiehall", "--tuples-only", "--no-align", "--command", query]);
+}
 
 function revision(): string {
   return dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image]);
@@ -501,6 +509,27 @@ describe("/healthz", () => {
     const headers = [...response.headers].map(([header, value]) => `${header}: ${value}`).join("\n");
     expect(headers).not.toMatch(/x-powered-by|next\.js/i);
     expect(headers).not.toContain(revision());
+  });
+
+  // self-host-install: The setup code guards the setup screen. This database has no org yet, as a new install.
+  it("before setup, leads pages to /setup and answers API calls with 503 setup-required, the OpenAPI document included", async () => {
+    for (const path of ["/", "/FE-142", "/docs/api"]) {
+      const page = await fetch(`http://127.0.0.1:${port}${path}`, { redirect: "manual" });
+      expect(page.status, path).toBe(307);
+      expect(page.headers.get("location"), path).toBe("http://localhost:3000/setup");
+    }
+    for (const [method, path] of [
+      ["GET", "/api/v1/openapi.json"],
+      ["POST", "/api/v1/requests"],
+      ["POST", "/webhooks/github"],
+    ] as const) {
+      const call = await fetch(`http://127.0.0.1:${port}${path}`, { method, ...(method === "POST" ? { body: "{}" } : {}) });
+      expect(call.status, path).toBe(503);
+      expect(call.headers.get("content-type"), path).toBe("application/problem+json");
+      expect(await call.json(), path).toMatchObject({ type: "https://tiehall.com/problems/setup-required", status: 503 });
+    }
+    expect(await healthz(port)).toEqual({ status: 200, body: { status: "up" } });
+    expect(ownerQuery(database, "SELECT count(*) FROM orgs WHERE setup_completed_at IS NOT NULL")).toBe("0");
   });
 
   it("answers down while the database is stopped, and up once it is back", async () => {

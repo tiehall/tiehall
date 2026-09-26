@@ -51,7 +51,7 @@ beforeAll(async () => {
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
   queue = await openJobQueue({ connection: app, jobTypes: [quick, slow], logger: silent });
-  await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
+  await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 });
 
 afterAll(async () => {

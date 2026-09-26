@@ -46,7 +46,9 @@ beforeAll(async () => {
   url.password = encodeURIComponent(appRole.password);
   app = new pg.Client({ connectionString: url.toString() });
   await app.connect();
-  const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id;
+  const orgId = (
+    await owner.query<{ id: string }>("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now()) RETURNING id")
+  ).rows[0]?.id;
   // The app role appends, as the write path does.
   await app.query(
     `INSERT INTO events (org_id, number, class, type, data, actor_kind) VALUES ($1, 1, 'domain', 'request.opened', '{}', 'system')`,

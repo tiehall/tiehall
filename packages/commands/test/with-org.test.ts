@@ -9,8 +9,9 @@ import { migrate, openDatabase, SetupRequiredError, withOrg, type Database } fro
 // decisions: T3 and Self-hosting decisions: S1): the only way a handler in
 // packages/commands reaches the database. It opens the transaction the handler
 // runs in, for the install's one org, and hands the handler that org's id.
-// There is no tenant layer, so it sets no row-level-security setting. It
-// connects as the app role, as the app does.
+// There is no tenant layer, so it sets no row-level-security setting. Until
+// setup is complete it runs nothing (self-host-install: The setup code guards
+// the setup screen). It connects as the app role, as the app does.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 
@@ -59,11 +60,30 @@ describe("withOrg", () => {
     });
   });
 
-  describe("once the install has its org", () => {
+  describe("while the org exists and setup is not complete", () => {
+    afterEach(async () => {
+      await owner.query("DELETE FROM orgs");
+    });
+
+    it("refuses to run the handler, because setup is not complete", async () => {
+      await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
+      let ran = false;
+      await expect(
+        withOrg(db, async () => {
+          ran = true;
+        }),
+      ).rejects.toThrow(new SetupRequiredError());
+      expect(ran).toBe(false);
+    });
+  });
+
+  describe("once setup is complete", () => {
     let orgId: string;
 
     beforeEach(async () => {
-      orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id ?? "";
+      orgId = (
+        await owner.query<{ id: string }>("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now()) RETURNING id")
+      ).rows[0]?.id ?? "";
     });
 
     afterEach(async () => {

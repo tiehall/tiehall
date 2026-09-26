@@ -142,7 +142,7 @@ describe("before setup is complete", () => {
 
 describe("once the install has its org", () => {
   beforeAll(async () => {
-    await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
+    await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
   });
 
   it("answers a path that serves no operation with 404 route-not-found", async () => {

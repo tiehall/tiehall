@@ -82,7 +82,7 @@ beforeAll(async () => {
     },
     store: { database: db, jobs: { send: async () => {} } },
   });
-  await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
+  await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 });
 
 afterAll(async () => {

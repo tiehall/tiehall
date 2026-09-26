@@ -6,7 +6,10 @@ import { orgs, type Database, type Transaction } from "@tiehall/db";
 // reaches the database: execute() runs each handler inside it. It opens one
 // transaction for the install's one org and hands the handler that org's id, so
 // every row the handler writes carries it. v1 has no tenant layer, so it sets
-// no row-level-security setting. Task 9.2 adds the membership re-check.
+// no row-level-security setting. Until setup is complete it runs nothing, so
+// no operation runs before the install has its first admin (self-host-install:
+// The setup code guards the setup screen). Task 9.2 adds the membership
+// re-check.
 
 export interface OrgContext {
   /** The transaction the handler runs in: it commits when the handler returns and rolls back when it throws. */
@@ -16,21 +19,21 @@ export interface OrgContext {
 }
 
 /**
- * The install has no org yet, because setup has not named it: the error
- * model's refusal 503 `setup-required` (public-api: One error model for
- * Tiehall's own refusals).
+ * Setup is not complete: the install has no org yet, or its first admin has
+ * not completed setup. The error model's refusal 503 `setup-required`
+ * (public-api: One error model for Tiehall's own refusals).
  */
 export class SetupRequiredError extends Refusal {
   override name = "SetupRequiredError";
   constructor() {
-    super("setup-required", "Setup is not complete: the install has no org yet.");
+    super("setup-required", "Setup is not complete.");
   }
 }
 
 export async function withOrg<T>(database: Database, handler: (context: OrgContext) => Promise<T>): Promise<T> {
   return database.transaction(async (tx) => {
-    const [org] = await tx.select({ id: orgs.id }).from(orgs).limit(1);
-    if (org === undefined) throw new SetupRequiredError();
+    const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
+    if (org === undefined || org.setupCompletedAt === null) throw new SetupRequiredError();
     return handler({ tx, orgId: org.id });
   });
 }

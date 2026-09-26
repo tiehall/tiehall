@@ -1,0 +1,1 @@
+ALTER TABLE "orgs" ADD COLUMN "setup_completed_at" timestamp with time zone;

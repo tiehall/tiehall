@@ -41,7 +41,9 @@ beforeAll(async () => {
   url.username = appRole.name;
   url.password = "";
   db = openDatabase({ connectionString: url.toString(), password: appRole.password });
-  orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id ?? "";
+  orgId = (
+    await owner.query<{ id: string }>("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now()) RETURNING id")
+  ).rows[0]?.id ?? "";
 });
 
 afterAll(async () => {

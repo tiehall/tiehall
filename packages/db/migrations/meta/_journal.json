@@ -50,6 +50,13 @@
       "when": 1790391127007,
       "tag": "0006_add_idempotency_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790399136487,
+      "tag": "0007_add_setup_completed_at",
+      "breakpoints": true
     }
   ]
 }

@@ -102,6 +102,17 @@ export {
   type SmtpTls,
 } from "./settings.ts";
 export { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
+export {
+  createSetupGate,
+  readSetupState,
+  SETUP_PATH,
+  setupGateAnswer,
+  WEBHOOKS_GITHUB_PATH,
+  type SetupGate,
+  type SetupGateAnswer,
+  type SetupGateOptions,
+  type SetupState,
+} from "./setup-gate.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,
