@@ -11,9 +11,8 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // becomes a proposal, and people confirm it on its confirm page,
 // /confirm/{proposal}, each in their own browser signed in with their own web
 // session: the page's form posts the confirmation with its nonce, from the
-// install's own origin. They are committed as expected failures until task
-// 14.10 builds the confirm page; review-page-browser.test.ts checks the
-// harness with another action's review page.
+// install's own origin. review-page-browser.test.ts checks the harness with
+// another action's review page.
 
 let install: TestInstall;
 let browser: BrowserHarness;
@@ -53,7 +52,7 @@ async function stateAndDueDate(key: string): Promise<{ state: string; dueDate: u
 }
 
 describe("the confirm flow", { timeout: 60_000 }, () => {
-  it.fails("confirms a decline an agent proposed on the proposal's confirm page", async () => {
+  it("confirms a decline an agent proposed on the proposal's confirm page", async () => {
     const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
     const proposed = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
     expect(proposed.status).toBe(202);
@@ -65,7 +64,7 @@ describe("the confirm flow", { timeout: 60_000 }, () => {
     await page.context().close();
   });
 
-  it.fails("confirms a due date the requester side proposed, first by its accountable human, then by a member of the target team", async () => {
+  it("confirms a due date the requester side proposed, first by its accountable human, then by a member of the target team", async () => {
     const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
     const proposed = await sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${request.key}/packet/revisions`, {
       body: { packet: { ...packetOf(), due_date: "2026-10-15" } },

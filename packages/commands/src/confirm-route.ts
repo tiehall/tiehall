@@ -1,3 +1,4 @@
+import { confirmProposal, rejectProposal } from "@tiehall/catalog";
 import { canonicalJson, httpProblem, internalErrorProblem, quotePreamble, Refusal, type HttpProblem, type Review } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
@@ -33,6 +34,16 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // removed-member for a user who is no longer a member, whatever they send, 400
 // for input that fails its schema or is not JSON, 403 for a failed check or a
 // missing or invalid nonce.
+//
+// A proposal's confirm page is /confirm/{proposal} (requests: The proposal's
+// confirm page; design.md, Self-hosting decisions: S15): the review page of
+// proposals.confirm for that proposal, whose nonce is bound to what the
+// proposal proposes and the request it applies to. Besides its Confirm form, it
+// holds a Reject form, which posts `action=reject` with the session's CSRF
+// token and no nonce: a rejection needs no confirmation step, but passes the
+// same write checks, and runs proposals.reject (agent-safety: Actions that need
+// the confirmation step). Who may confirm or reject the proposal, and when, the
+// commands decide: 403 or 409.
 
 export interface ConfirmRouteOptions {
   step: ConfirmationStep;
@@ -59,15 +70,17 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   const secret = () => (typeof options.write.secret === "string" ? options.write.secret : options.write.secret());
   return async function confirm(request) {
     const url = new URL(request.url);
-    const commandId = commandIdOf(url.pathname);
+    const proposal = proposalOf(url.pathname);
+    const commandId = proposal === undefined ? commandIdOf(url.pathname) : confirmProposal.id;
     try {
-      if (request.method === "POST") return await apply(request, commandId);
+      if (request.method === "POST") return await apply(request, commandId, proposal);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
       const caller = await signedIn(request);
-      const { input, refusal } = parseInput(url.searchParams.get("input"));
+      const { input, refusal } = proposal === undefined ? parseInput(url.searchParams.get("input")) : { input: { proposal }, refusal: undefined };
       const reviewed = await options.step.review(commandId, caller, input, refusal);
       const csrf = csrfTokenFor(secret(), caller.sessionId);
-      return page(reviewPage(reviewed.commandId, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf));
+      const path = proposal === undefined ? `${CONFIRM_PATH}${commandId}` : `${CONFIRM_PATH}${proposal}`;
+      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined));
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("confirm: the review page failed", { operationId: commandId, error });
@@ -81,26 +94,43 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     return caller;
   }
 
-  /** Applies the action the review page's form posted. */
-  async function apply(request: Request, commandId: string): Promise<Response> {
+  /** Applies the action the review page's form posted: the action it reviewed, or, on a proposal's page, a rejection. */
+  async function apply(request: Request, commandId: string, proposal: string | undefined): Promise<Response> {
     const caller = await signedIn(request);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
     const form = new URLSearchParams(await request.text());
+    const rejecting = proposal !== undefined && form.get("action") === "reject";
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
-      { url: options.write.url, secret: secret(), sessionId: caller.sessionId, confirm: true },
+      { url: options.write.url, secret: secret(), sessionId: caller.sessionId, confirm: !rejecting },
     );
-    const { input, refusal } = parseInput(form.get("input"));
-    const nonce = form.get("nonce");
     const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
     const userAgent = request.headers.get("user-agent") ?? undefined;
+    const origin = { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) };
+    if (rejecting) {
+      // A rejection ends the proposal without any effect, so it needs no nonce.
+      await options.write.execute(rejectProposal.id, caller, { proposal }, { origin });
+      return page(htmlPage("Rejected", "      <h1>Rejected</h1>\n      <p>The proposal you reviewed is rejected; it will not take effect.</p>"));
+    }
+    // A proposal's page confirms the proposal its path names, whatever else the form sends.
+    const { input, refusal } = proposal === undefined ? parseInput(form.get("input")) : { input: { proposal }, refusal: undefined };
+    const nonce = form.get("nonce");
     await options.write.execute(commandId, caller, input, {
       ...(refusal === undefined ? {} : { refusal }),
       ...(nonce === null || nonce === "" ? {} : { confirmation: { nonce } }),
-      origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) },
+      origin,
     });
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
+}
+
+const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The proposal a confirm page's path names, /confirm/{proposal}; undefined for any other path. */
+function proposalOf(pathname: string): string | undefined {
+  if (!pathname.startsWith(CONFIRM_PATH)) return undefined;
+  const id = pathname.slice(CONFIRM_PATH.length).toLowerCase();
+  return PROPOSAL_ID.test(id) ? id : undefined;
 }
 
 /** The command a review page's path names; empty, which names none, for any other path. */
@@ -137,8 +167,8 @@ function page(html: string): Response {
   return new Response(html, { headers: PAGE_HEADERS });
 }
 
-/** The review page: what will happen, and the form that applies it. */
-function reviewPage(commandId: string, review: Review, input: string, nonce: string, csrf: string): string {
+/** The review page: what will happen, and the form that applies it, with a form that rejects it on a proposal's page. */
+function reviewPage(path: string, review: Review, input: string, nonce: string, csrf: string, rejectable: boolean): string {
   const lines = review.lines.map((line) =>
     "text" in line
       ? `      <p>${escapeHtml(line.text)}</p>`
@@ -149,12 +179,21 @@ function reviewPage(commandId: string, review: Review, input: string, nonce: str
     [
       `      <h1>${escapeHtml(review.title)}</h1>`,
       ...lines,
-      `      <form method="post" action="${escapeHtml(`${CONFIRM_PATH}${commandId}`)}">`,
+      `      <form method="post" action="${escapeHtml(path)}">`,
       `        <input type="hidden" name="input" value="${escapeHtml(input)}">`,
       `        <input type="hidden" name="nonce" value="${escapeHtml(nonce)}">`,
       `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
       `        <button type="submit">Confirm</button>`,
       `      </form>`,
+      ...(rejectable
+        ? [
+            `      <form method="post" action="${escapeHtml(path)}">`,
+            `        <input type="hidden" name="action" value="reject">`,
+            `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+            `        <button type="submit">Reject</button>`,
+            `      </form>`,
+          ]
+        : []),
     ].join("\n"),
   );
 }
