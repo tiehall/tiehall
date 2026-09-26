@@ -1,0 +1,7 @@
+# The database's schema needs a later release than the image under test: a contract step of release 99.0.0,
+# which the image does not carry, has run on it. The migrate step refuses to start, so the app does not start.
+# Paths in an override are relative to the base file, deploy/compose.yaml.
+services:
+  postgres:
+    volumes:
+      - ../tools/image-tests/fixtures/schema-floor-above-image.sql:/docker-entrypoint-initdb.d/schema-floor-above-image.sql:ro

@@ -34,12 +34,17 @@ FROM base
 RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ARG TIEHALL_COMMIT_SHA
+# The release this image is, such as 1.4.0; the release workflow sets it from the version tag, and any other
+# build is a development build. The migrate role records it with each migration (the schema floor).
+ARG TIEHALL_VERSION=0.0.0-dev
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA}
+    TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA} \
+    TIEHALL_VERSION=${TIEHALL_VERSION}
 LABEL org.opencontainers.image.title="tiehall" \
       org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate and all" \
-      org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}"
+      org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}" \
+      org.opencontainers.image.version="${TIEHALL_VERSION}"
 WORKDIR /app
 # The files stay owned by root, so the app cannot change its own code even
 # where the root filesystem is writable.

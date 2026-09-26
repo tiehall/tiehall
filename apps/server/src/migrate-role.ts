@@ -19,6 +19,8 @@ export function migrationsFolderFor(entry: string): string {
 
 export interface MigrateRoleOptions {
   migrationsFolder: string;
+  /** The image's release, which the migrations record and the schema floor names. */
+  release: string;
   lockTimeoutMs?: number;
   log?: (line: string) => void;
   logError?: (line: string) => void;
@@ -37,14 +39,15 @@ export async function runMigrateRole(config: Config, options: MigrateRoleOptions
       },
       {
         migrationsFolder: options.migrationsFolder,
+        release: options.release,
         ...(config.appRole === undefined ? {} : { appRole: config.appRole }),
         ...(options.lockTimeoutMs === undefined ? {} : { lockTimeoutMs: options.lockTimeoutMs }),
         log: (line) => log(`tiehall ${line}`),
       },
     );
   } catch (error) {
-    // The message names the failure (a refused password, a migration and why it failed, or an app role with
-    // too many rights), never a password.
+    // The message names the failure (a refused password, a migration and why it failed, an image older than
+    // the schema, or an app role with too many rights), never a password.
     logError(`tiehall migrate: failed: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }

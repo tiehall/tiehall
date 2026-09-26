@@ -37,6 +37,8 @@ try {
 }
 
 const commit = process.env["TIEHALL_COMMIT_SHA"] ?? "unknown";
+/** The image's release, set at build time; a build that names none is a development build. */
+const release = process.env["TIEHALL_VERSION"] ?? "0.0.0-dev";
 console.log(`tiehall ${role}: starting as uid ${process.getuid?.() ?? "unknown"} (node ${process.version}, commit ${commit})`);
 
 await run(role, config);
@@ -81,7 +83,7 @@ function runWorker(): void {
 }
 
 async function runMigrate(config: Config): Promise<void> {
-  process.exitCode = await runMigrateRole(config, { migrationsFolder: migrationsFolderFor(ENTRY) });
+  process.exitCode = await runMigrateRole(config, { migrationsFolder: migrationsFolderFor(ENTRY), release });
 }
 
 function superviseAll(): void {

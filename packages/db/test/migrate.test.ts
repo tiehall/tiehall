@@ -11,7 +11,7 @@ import { migrate } from "../src/migrate.ts";
 // tested against fixtures in migration-runner.test.ts.
 
 const migrationsFolder = fileURLToPath(new URL("../migrations/", import.meta.url));
-const quiet = { migrationsFolder, log: () => {} };
+const quiet = { migrationsFolder, release: "0.0.0-dev", log: () => {} };
 
 describe("migrate", () => {
   let database: TestDatabase;

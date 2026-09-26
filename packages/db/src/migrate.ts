@@ -18,6 +18,16 @@ export { MigrationError } from "./migration-files.ts";
 // - then it sets up the app role, whose rights follow the tables the
 //   migrations made.
 // Migrations only move forward; a problem is fixed by a later migration.
+//
+// The schema floor (self-host-install: Migrations expand, then contract): the
+// runner records the release that ran each migration, and for a contract step
+// the expand release it follows. Until a contract step has run, the previous
+// release's image runs on the newer schema. An image that lacks a contract
+// step the database has run is from before the release that shipped it, so its
+// migrate step refuses to start, naming its own release and the release that
+// ran the step, and the app does not start. The decision rests on the
+// migrations each image carries rather than on comparing version numbers, so
+// it also holds for a development build.
 
 export interface DatabaseConnection {
   connectionString: string;
@@ -28,6 +38,8 @@ export interface DatabaseConnection {
 export interface MigrateOptions {
   /** The folder drizzle-kit writes: meta/_journal.json and one .sql file per migration. */
   migrationsFolder: string;
+  /** The release of the image that runs the migrations, such as 1.4.0, or 0.0.0-dev for a development build. */
+  release: string;
   /** The app role to create or update, with the password from the install's settings. */
   appRole?: AppRole;
   /** How long a migration statement waits for a lock before it fails. */
@@ -70,14 +82,23 @@ export async function migrate(connection: DatabaseConnection, options: MigrateOp
       `CREATE TABLE IF NOT EXISTS ${JOURNAL} (
          id text PRIMARY KEY,
          hash text NOT NULL,
+         release text NOT NULL,
+         contract_after text,
          applied_at timestamptz NOT NULL DEFAULT now()
        )`,
     );
-    const pending = await pendingMigrations(client, migrations);
-    if (pending.length === 0) log("migrate: the schema is up to date");
+    const { pending, later } = await pendingMigrations(client, migrations, options.release);
+    if (pending.length === 0) {
+      log(
+        later === 0
+          ? "migrate: the schema is up to date"
+          : `migrate: the schema is up to date; it also has ${later} migration${later === 1 ? "" : "s"} from a ` +
+              "later release, which this release runs on",
+      );
+    }
     for (const migration of pending) {
-      if (migration.transactional) await applyInTransaction(client, migration, lockTimeoutMs);
-      else await applyOutsideTransaction(client, migration, lockTimeoutMs, log);
+      if (migration.transactional) await applyInTransaction(client, migration, lockTimeoutMs, options.release);
+      else await applyOutsideTransaction(client, migration, lockTimeoutMs, options.release, log);
       log(`migrate: applied ${migration.id}${migration.transactional ? "" : ", outside a transaction"}`);
     }
     if (options.appRole !== undefined) await setUpAppRole(client, options.appRole);
@@ -103,9 +124,36 @@ async function takeMigrationLock(client: pg.Client, lockWaitMs: number, log: (li
   }
 }
 
-/** The migrations not yet applied, after checking that none of the applied ones changed. */
-async function pendingMigrations(client: pg.Client, migrations: Migration[]): Promise<Migration[]> {
-  const { rows } = await client.query<{ id: string; hash: string }>(`SELECT id, hash FROM ${JOURNAL}`);
+interface AppliedMigration {
+  id: string;
+  hash: string;
+  release: string;
+  contract_after: string | null;
+}
+
+/**
+ * The migrations not yet applied, and how many applied ones this image does
+ * not have, after checking that none of the applied ones changed and that no
+ * contract step this image lacks has run.
+ */
+async function pendingMigrations(
+  client: pg.Client,
+  migrations: Migration[],
+  release: string,
+): Promise<{ pending: Migration[]; later: number }> {
+  const { rows } = await client.query<AppliedMigration>(
+    `SELECT id, hash, release, contract_after FROM ${JOURNAL} ORDER BY applied_at, id`,
+  );
+  const known = new Set(migrations.map(({ id }) => id));
+  const later = rows.filter(({ id }) => !known.has(id));
+  const floor = later.filter(({ contract_after }) => contract_after !== null).at(-1);
+  if (floor !== undefined) {
+    throw new MigrationError(
+      `This image is release ${release}, which is older than this database's schema: its contract step ` +
+        `${floor.id} ran with release ${floor.release}, so the schema needs release ${floor.release} or later. ` +
+        "To go back past a contract step, restore the backup taken before the upgrade.",
+    );
+  }
   const applied = new Map(rows.map(({ id, hash }) => [id, hash]));
   const pending: Migration[] = [];
   for (const migration of migrations) {
@@ -118,14 +166,19 @@ async function pendingMigrations(client: pg.Client, migrations: Migration[]): Pr
       );
     }
   }
-  return pending;
+  return { pending, later: later.length };
 }
 
-async function applyInTransaction(client: pg.Client, migration: Migration, lockTimeoutMs: number): Promise<void> {
+async function applyInTransaction(
+  client: pg.Client,
+  migration: Migration,
+  lockTimeoutMs: number,
+  release: string,
+): Promise<void> {
   await client.query("BEGIN");
   try {
     for (const statement of migration.statements) await client.query(statement);
-    await record(client, migration);
+    await record(client, migration, release);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
@@ -143,6 +196,7 @@ async function applyOutsideTransaction(
   client: pg.Client,
   migration: Migration,
   lockTimeoutMs: number,
+  release: string,
   log: (line: string) => void,
 ): Promise<void> {
   try {
@@ -158,14 +212,19 @@ async function applyOutsideTransaction(
       log(`migrate: dropped the invalid index ${name} that an earlier run left, to build it again`);
     }
     for (const statement of migration.statements) await client.query(statement);
-    await record(client, migration);
+    await record(client, migration, release);
   } catch (error) {
     throw failure(migration, error, lockTimeoutMs);
   }
 }
 
-async function record(client: pg.Client, migration: Migration): Promise<void> {
-  await client.query(`INSERT INTO ${JOURNAL} (id, hash) VALUES ($1, $2)`, [migration.id, migration.hash]);
+async function record(client: pg.Client, migration: Migration, release: string): Promise<void> {
+  await client.query(`INSERT INTO ${JOURNAL} (id, hash, release, contract_after) VALUES ($1, $2, $3, $4)`, [
+    migration.id,
+    migration.hash,
+    release,
+    migration.contractAfter ?? null,
+  ]);
 }
 
 /**

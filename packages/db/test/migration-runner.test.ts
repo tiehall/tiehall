@@ -28,11 +28,11 @@ afterEach(async () => {
   await database.drop();
 });
 
-function run(folder: string, options: Omit<MigrateOptions, "migrationsFolder"> = {}) {
+function run(folder: string, options: Omit<MigrateOptions, "migrationsFolder" | "release"> = {}) {
   const lines: string[] = [];
   const done = migrate(
     { connectionString: database.url },
-    { migrationsFolder: fixture(folder), log: (line) => lines.push(line), ...options },
+    { migrationsFolder: fixture(folder), release: "1.0.0", log: (line) => lines.push(line), ...options },
   );
   return { lines, done };
 }

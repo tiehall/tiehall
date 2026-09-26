@@ -70,6 +70,13 @@ describe("the image", () => {
     expect(revision()).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it("carries its release, which the migrate role records with each migration", () => {
+    const label = dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.version"}}', image]);
+    expect(label).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
+    const env = dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image]);
+    expect(JSON.parse(env)).toContain(`TIEHALL_VERSION=${label}`);
+  });
+
   it("carries node but no package manager, so nothing at run time can install code", () => {
     const run = docker([
       "run",

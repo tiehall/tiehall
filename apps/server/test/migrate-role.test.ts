@@ -37,6 +37,7 @@ describe("the migrate role", () => {
       { databaseUrl: database.url, port: 3000 },
       {
         migrationsFolder: fixture,
+        release: "1.0.0",
         ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }),
         log: (line) => out.push(line),
         logError: (line) => errors.push(line),

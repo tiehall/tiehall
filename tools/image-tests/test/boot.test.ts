@@ -10,6 +10,7 @@ import { describe, expect, inject, it } from "vitest";
 const image = inject("image");
 const script = fileURLToPath(new URL("../src/boot-test.ts", import.meta.url));
 const cannotStart = fileURLToPath(new URL("../fixtures/app-cannot-start.yaml", import.meta.url));
+const floorAboveImage = fileURLToPath(new URL("../fixtures/schema-floor-above-image.yaml", import.meta.url));
 
 function boot(...overrides: string[]) {
   const run = spawnSync(process.execPath, [script, ...overrides], {
@@ -32,6 +33,17 @@ describe("the self-host boot test", () => {
     const run = boot(cannotStart);
     expect(run.status).toBe(1);
     expect(run.output).toContain("DATABASE_PASSWORD_FILE names /run/secrets/missing_database_password, which cannot be read");
+    expect(run.output).toContain("The self-host stack did not come up healthy.");
+  }, 600_000);
+
+  // self-host-install: Migrations expand, then contract.
+  it("keeps the app from starting when the image is older than the database's schema", () => {
+    const run = boot(floorAboveImage);
+    expect(run.status).toBe(1);
+    expect(run.output).toMatch(
+      /tiehall migrate: failed: This image is release \S+, which is older than this database's schema: its contract step 9999_drop_what_98_replaced ran with release 99\.0\.0, so the schema needs release 99\.0\.0 or later\./,
+    );
+    expect(run.output).not.toMatch(/tiehall (all|web|worker): starting/);
     expect(run.output).toContain("The self-host stack did not come up healthy.");
   }, 600_000);
 });
