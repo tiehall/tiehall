@@ -342,6 +342,21 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(await response.json()).toMatchObject({ status: 404, title: expect.any(String), type: expect.any(String) });
   });
 
+  // self-host-install: Logs carry ids, never message text or credentials.
+  it("logs neither the body nor the token of a failing REST request, nor its query string", async () => {
+    const text = `Please rotate the staging keys; canary-${randomBytes(8).toString("hex")}`;
+    const token = `th_pat_${randomBytes(20).toString("hex")}`;
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/probes/FE-142/messages?token=${token}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ body: text }),
+    });
+    expect(response.status).toBe(404);
+    const logs = docker(["logs", name]);
+    const all = `${logs.stdout}${logs.stderr}`;
+    for (const canary of [text, "canary-", token, token.slice("th_pat_".length), "token="]) expect(all).not.toContain(canary);
+  });
+
   // public-api: Every install serves the OpenAPI 3.1 document without authentication.
   it("serves /api/v1/openapi.json without authentication, as the committed document", async () => {
     const response = await fetch(`http://127.0.0.1:${port}/api/v1/openapi.json`);

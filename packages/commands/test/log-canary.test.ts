@@ -2,11 +2,15 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { defineCatalog, defineCommand } from "@tiehall/catalog";
 import { messagePosted } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createExecute,
   createLogger,
+  createRestHandler,
   defineJobType,
   migrate,
   openDatabase,
@@ -25,7 +29,11 @@ import {
 // credentials; design.md, Technical decisions: T17). A background job for a
 // message fails while it holds the message's text and a token, and says both
 // in its error. The worker's log names the job and the message by their ids,
-// and neither the text nor the token appears anywhere in it.
+// and neither the text nor the token appears anywhere in it. A REST request
+// that fails carries the same canary text in its body and a canary token in
+// its Authorization header and its query string, and its handler says all of
+// them in its error; neither appears in the log, or anywhere else the process
+// writes while it answers.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const CANARY_TEXT = `Please rotate the staging keys; canary-${randomBytes(8).toString("hex")}`;
@@ -138,5 +146,92 @@ describe("a background job that fails while holding message text and a token", (
         error: expect.objectContaining({ name: "Error", cause: expect.objectContaining({ name: "Error" }) }),
       }),
     );
+  });
+});
+
+describe("a REST request that fails while carrying message text and a token", () => {
+  const catalog = defineCatalog([
+    defineCommand({
+      id: "probes.post",
+      summary: "Post a message on a request.",
+      input: z.object({ key: z.string(), body: z.string() }),
+      output: z.object({ messageId: z.string() }),
+      method: "POST",
+      path: "/api/v1/probes/{key}/messages",
+      scopes: ["requests:write"],
+      commitment: false,
+      confirm: false,
+      surfaces: ["rest"],
+      stability: "alpha",
+    }),
+  ]);
+
+  it("leaves neither the text nor the token in the log, nor anywhere the process writes", async () => {
+    const lines: string[] = [];
+    const url = `https://tiehall.example.com/api/v1/probes/FE-142/messages?token=${CANARY_TOKEN}`;
+    const execute = createExecute({
+      catalog,
+      handlers: {
+        // Fails the way a tracker call does, echoing everything it was sent.
+        "probes.post": async (input) => {
+          const { body } = input as { body: string };
+          const request = { url, headers: { authorization: `Bearer ${CANARY_TOKEN}` }, body: JSON.stringify({ body }) };
+          throw Object.assign(new Error(`Could not post "${body}" to ${url} with Bearer ${CANARY_TOKEN}`, { cause: new Error(body) }), { request });
+        },
+      },
+      store: { database: db, jobs: queue },
+    });
+    const rest = createRestHandler({
+      catalog,
+      document: "{}\n",
+      execute,
+      authenticate: async (request) =>
+        request.headers.get("authorization") === `Bearer ${CANARY_TOKEN}`
+          ? { kind: "personal_access_token", userId: randomUUID(), tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" }
+          : undefined,
+      logger: createLogger({ write: (line) => lines.push(line) }),
+    });
+
+    // Everything the process writes while it answers, besides the logger's own lines.
+    const written: string[] = [];
+    const capture = (chunk: unknown) => {
+      written.push(String(chunk));
+      return true;
+    };
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(capture);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(capture);
+    let response: Response;
+    try {
+      response = await rest(
+        new Request(url, {
+          method: "POST",
+          headers: { authorization: `Bearer ${CANARY_TOKEN}`, "content-type": "application/json" },
+          body: JSON.stringify({ body: CANARY_TEXT }),
+        }),
+      );
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
+
+    expect(response.status).toBe(500);
+    const answer = await response.text();
+    const log = [...lines, ...written].join("\n");
+    for (const text of [log, answer]) {
+      expect(text).not.toContain(CANARY_TEXT);
+      expect(text).not.toContain("canary-");
+      expect(text).not.toContain(CANARY_TOKEN);
+      expect(text).not.toContain(CANARY_TOKEN.slice("th_pat_".length));
+      expect(text).not.toContain("token=");
+    }
+    // The log names the operation that failed and how, by its ids and the error's name.
+    expect(lines.map((line) => JSON.parse(line) as LogEntry)).toEqual([
+      expect.objectContaining({
+        level: "error",
+        msg: "rest: the operation failed",
+        operationId: "probes.post",
+        error: expect.objectContaining({ name: "Error", cause: expect.objectContaining({ name: "Error" }) }),
+      }),
+    ]);
   });
 });
