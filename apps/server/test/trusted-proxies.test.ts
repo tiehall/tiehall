@@ -72,6 +72,25 @@ describe("the client of a request", () => {
     expect(trusted.isTrusted("172.18.0.9")).toBe(true);
   });
 
+  // The Compose file gives the app the name caddy too, so that the name resolves inside the install without
+  // the caddy profile; with the profile, caddy then resolves to the proxy and to the app itself.
+  it("never trusts the app's own network addresses for a name that also resolves to them, but does for an address listed as such", async () => {
+    const own = ["172.18.0.2", "fd00::2"];
+    const named = new TrustedProxies(["caddy"], { resolve: async () => ["172.18.0.3", "172.18.0.2", "fd00::2"], ownAddresses: () => own });
+    await named.refresh();
+    expect(named.isTrusted("172.18.0.3")).toBe(true);
+    expect(named.isTrusted("172.18.0.2")).toBe(false);
+    expect(named.isTrusted("::ffff:172.18.0.2")).toBe(false);
+    expect(named.isTrusted("fd00::2")).toBe(false);
+
+    const alone = new TrustedProxies(["caddy"], { resolve: async () => ["172.18.0.2"], ownAddresses: () => own });
+    await alone.refresh();
+    expect(alone.isTrusted("172.18.0.2")).toBe(false);
+
+    const listed = new TrustedProxies(["172.18.0.0/16"], { ownAddresses: () => own });
+    expect(listed.isTrusted("172.18.0.2")).toBe(true);
+  });
+
   it("trusts nothing from a name that does not resolve", async () => {
     const trusted = proxies(["caddy"], async () => {
       throw Object.assign(new Error("getaddrinfo ENOTFOUND caddy"), { code: "ENOTFOUND" });

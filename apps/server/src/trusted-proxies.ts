@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
+import { networkInterfaces } from "node:os";
 
 // The reverse proxies whose forwarded headers the install trusts
 // (self-host-install: `TIEHALL_URL` and TLS; design.md, Self-hosting
@@ -10,12 +11,20 @@ import { BlockList, isIP } from "node:net";
 // when the web role starts, and again when a request that carries forwarded
 // headers arrives from an address that is not trusted, at most once every
 // few seconds, so a proxy that restarts with a new address is trusted again.
+// A name never stands for the app's own network addresses: the Compose file
+// gives the app the name `caddy` too, so the name resolves inside the install
+// without the caddy profile, and with the profile it then resolves to the app
+// as well as the proxy. Loopback stays, so a name such as localhost still
+// stands for a proxy that reaches the app over it, and an address or range
+// listed as such is trusted as listed.
 
 export interface TrustedProxiesOptions {
   /** Resolves a host name to its addresses; the system resolver unless a test replaces it. */
   resolve?: (name: string) => Promise<string[]>;
   /** How long after one lookup of the names another may run. */
   refreshIntervalMs?: number;
+  /** The addresses of this host's own network interfaces, loopback aside; the system's unless a test replaces them. */
+  ownAddresses?: () => string[];
 }
 
 export class TrustedProxies {
@@ -23,6 +32,7 @@ export class TrustedProxies {
   readonly #names: readonly string[];
   readonly #resolve: (name: string) => Promise<string[]>;
   readonly #refreshIntervalMs: number;
+  readonly #ownAddresses: () => string[];
   #resolved = new BlockList();
   #lastRefresh = 0;
   #refreshing: Promise<void> | undefined;
@@ -39,6 +49,7 @@ export class TrustedProxies {
     this.#names = names;
     this.#resolve = options.resolve ?? resolveName;
     this.#refreshIntervalMs = options.refreshIntervalMs ?? 5_000;
+    this.#ownAddresses = options.ownAddresses ?? interfaceAddresses;
   }
 
   /** Whether an address is one of the trusted proxies, as the names last resolved. */
@@ -56,11 +67,12 @@ export class TrustedProxies {
     this.#refreshing ??= (async () => {
       this.#lastRefresh = Date.now();
       const resolved = new BlockList();
+      const own = new Set(this.#ownAddresses().map((address) => unmapped(address).toLowerCase()));
       for (const name of this.#names) {
         const addresses = await this.#resolve(name).catch(() => []);
         for (const address of addresses) {
           const plain = unmapped(address);
-          if (isIP(plain) !== 0) resolved.addAddress(plain, isIP(plain) === 6 ? "ipv6" : "ipv4");
+          if (isIP(plain) !== 0 && !own.has(plain.toLowerCase())) resolved.addAddress(plain, isIP(plain) === 6 ? "ipv6" : "ipv4");
         }
       }
       this.#resolved = resolved;
@@ -75,6 +87,12 @@ export class TrustedProxies {
     if (this.#names.length === 0 || Date.now() - this.#lastRefresh < this.#refreshIntervalMs) return;
     void this.refresh();
   }
+}
+
+function interfaceAddresses(): string[] {
+  return Object.values(networkInterfaces()).flatMap((addresses) =>
+    (addresses ?? []).filter(({ internal }) => !internal).map(({ address }) => address.split("%")[0] ?? address),
+  );
 }
 
 async function resolveName(name: string): Promise<string[]> {

@@ -105,7 +105,7 @@ services:
       default:
         # caddy is the name TIEHALL_TRUSTED_PROXIES gives the caddy profile's proxy. The app answers to it
         # too, so the name resolves inside the install whether or not that profile runs, and looking it up
-        # never sends a DNS query out of the install.
+        # never sends a DNS query out of the install; the app never counts its own address as a proxy.
         aliases: [caddy]
     depends_on:
       postgres:

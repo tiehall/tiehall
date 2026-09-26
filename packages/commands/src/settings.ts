@@ -99,7 +99,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
   {
     name: "TIEHALL_TRUSTED_PROXIES",
     description:
-      "The reverse proxies whose X-Forwarded-For and X-Forwarded-Proto headers are trusted: IP addresses, CIDR ranges or host names, separated by commas. caddy is the proxy of the caddy profile.",
+      "The reverse proxies whose X-Forwarded-For and X-Forwarded-Proto headers are trusted: IP addresses, CIDR ranges or host names, separated by commas. caddy is the proxy of the caddy profile. With your own reverse proxy instead, name the address the app sees its connections come from; for a proxy on the host that reaches the published port, that is usually the gateway of the install's Compose network, which `docker network inspect tiehall_default` shows.",
     init: "fixed",
     value: "caddy",
   },
