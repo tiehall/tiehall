@@ -1,5 +1,5 @@
 import { API_PREFIX, type Catalog, type CommandDefinition } from "@tiehall/catalog";
-import { Refusal } from "@tiehall/core";
+import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { Caller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -19,9 +19,10 @@ import { createLogger, type Logger } from "./log.ts";
 // - it runs the operation through execute() and answers with its output as
 //   JSON, or 202 for a commitment, which becomes a proposal;
 // - it answers every error as an RFC 9457 problem, with the media type
-//   application/problem+json. A failure that is not one of Tiehall's own
-//   refusals answers 500 and says nothing about itself; the log records it by
-//   its name and stack, never its message.
+//   application/problem+json, as the error model gives it for each refusal
+//   (public-api: One error model for Tiehall's own refusals). A failure that is
+//   not one of Tiehall's own refusals answers 500 and says nothing about
+//   itself; the log records it by its name and stack, never its message.
 
 export interface RestOptions {
   catalog: Catalog;
@@ -41,16 +42,6 @@ interface Route {
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
-/** The reason phrase of each status Tiehall answers with, for a problem's title. */
-const TITLES: Readonly<Record<number, string>> = {
-  400: "Bad Request",
-  401: "Unauthorized",
-  403: "Forbidden",
-  404: "Not Found",
-  409: "Conflict",
-  500: "Internal Server Error",
-};
-
 export function createRestHandler(options: RestOptions): RestHandler {
   const logger = options.logger ?? createLogger();
   const routes = options.catalog.commands.filter(({ surfaces }) => surfaces.includes("rest")).map(routeOf);
@@ -58,15 +49,17 @@ export function createRestHandler(options: RestOptions): RestHandler {
   return async function handle(request) {
     const url = new URL(request.url);
     const found = resolve(routes, request.method, url.pathname);
-    if (found === undefined) return problem(404, "There is no such operation here.");
+    if (found === undefined) return problem(new Refusal("route-not-found", "There is no such operation here."));
     const { definition, parameters } = found;
     try {
       const caller = await options.authenticate(request);
       if (caller === undefined) {
-        return problem(401, "This operation needs a token in the Authorization header.", {}, { "www-authenticate": "Bearer" });
+        return problem(new Refusal("unauthenticated", "This operation needs a token in the Authorization header."));
       }
       const input = await inputOf(request, url, parameters);
-      if (input === undefined) return problem(400, "The body of this operation is a JSON object, sent as application/json.");
+      if (input === undefined) {
+        return problem(new Refusal("invalid-input", "The body of this operation is a JSON object, sent as application/json."));
+      }
       const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
       const userAgent = request.headers.get("user-agent") ?? undefined;
       const output = await options.execute(definition.id, caller, input, {
@@ -77,11 +70,9 @@ export function createRestHandler(options: RestOptions): RestHandler {
         headers: { "content-type": "application/json", "cache-control": "no-store" },
       });
     } catch (error) {
-      if (error instanceof Refusal) {
-        return problem(error.status, error.message, error.issues.length > 0 ? { errors: error.issues } : {});
-      }
+      if (error instanceof Refusal) return problem(error);
       logger.error("rest: the operation failed", { operationId: definition.id, error });
-      return problem(500, "Tiehall could not complete this call.");
+      return response(internalErrorProblem());
     }
   };
 }
@@ -149,11 +140,11 @@ async function inputOf(request: Request, url: URL, parameters: Record<string, st
   return { ...(body as Record<string, unknown>), ...parameters };
 }
 
-/** An RFC 9457 problem details response. Task 6.4 gives each of the error model's rows its problem type. */
-function problem(status: number, detail: string, extensions: Record<string, unknown> = {}, headers: Record<string, string> = {}): Response {
-  const body = { type: "about:blank", title: TITLES[status] ?? "Error", status, detail, ...extensions };
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/problem+json", "cache-control": "no-store", ...headers },
-  });
+/** A refusal as an RFC 9457 problem details response. */
+function problem(refusal: Refusal): Response {
+  return response(httpProblem(refusal));
+}
+
+function response({ status, headers, body }: HttpProblem): Response {
+  return new Response(JSON.stringify(body), { status, headers });
 }

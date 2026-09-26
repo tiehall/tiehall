@@ -13,10 +13,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tiehall/commands": "workspace:*"
+    "@tiehall/commands": "workspace:*",
+    "@tiehall/core": "workspace:*"
   },
   "devDependencies": {
-    "@tiehall/core": "workspace:*",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",

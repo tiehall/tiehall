@@ -91,10 +91,11 @@ describe("the web role on SIGTERM", () => {
     expect(during.headers.get("retry-after")).toBe("0");
     expect(during.headers.get("content-type")).toBe("application/problem+json");
     expect(await during.json()).toEqual({
-      type: "about:blank",
-      title: "Service Unavailable",
+      type: "https://tiehall.com/problems/shutting-down",
+      title: "Tiehall is shutting down",
       status: 503,
       detail: "Tiehall is shutting down. Retry the call; it is answered once Tiehall is back.",
+      retryAfter: 0,
     });
 
     expect(await slow).toEqual({ status: 200, body: "slow call done" });

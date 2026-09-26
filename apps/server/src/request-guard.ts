@@ -1,6 +1,7 @@
 import http, { type IncomingMessage, type RequestListener, type ServerResponse } from "node:http";
 import { syncBuiltinESMExports } from "node:module";
 import type { TLSSocket } from "node:tls";
+import { httpProblem, Refusal } from "@tiehall/core";
 import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
 // The request guard of the web role. The web role runs the Next.js
@@ -48,13 +49,11 @@ export interface RequestGuard {
 /** The headers a client could use to name its own address, host or scheme. */
 const FORWARDED_HEADERS = ["forwarded", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-port", "x-real-ip"];
 
-/** The problem a call gets while the app shuts down: the error model's 503 row, which names no problem type. */
-const SHUTTING_DOWN = JSON.stringify({
-  type: "about:blank",
-  title: "Service Unavailable",
-  status: 503,
-  detail: "Tiehall is shutting down. Retry the call; it is answered once Tiehall is back.",
-});
+/** The answer a call gets while the app shuts down: the error model's 503 with `Retry-After: 0`. */
+const SHUTTING_DOWN = httpProblem(
+  new Refusal("shutting-down", "Tiehall is shutting down. Retry the call; it is answered once Tiehall is back."),
+);
+const SHUTTING_DOWN_BODY = JSON.stringify(SHUTTING_DOWN.body);
 
 /** Installs the guard on every HTTP server the process creates from now on. */
 export function installRequestGuard(options: RequestGuardOptions): RequestGuard {
@@ -118,14 +117,12 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
 function shuttingDown(request: IncomingMessage, response: ServerResponse): void {
   // The call's body is not read; the connection closes after the answer.
   request.resume();
-  response.writeHead(503, {
-    "content-type": "application/problem+json",
-    "content-length": Buffer.byteLength(SHUTTING_DOWN),
-    "retry-after": "0",
-    "cache-control": "no-store",
+  response.writeHead(SHUTTING_DOWN.status, {
+    ...SHUTTING_DOWN.headers,
+    "content-length": Buffer.byteLength(SHUTTING_DOWN_BODY),
     connection: "close",
   });
-  response.end(request.method === "HEAD" ? undefined : SHUTTING_DOWN);
+  response.end(request.method === "HEAD" ? undefined : SHUTTING_DOWN_BODY);
 }
 
 /** Rewrites a request's forwarded headers to the client the install trusts. */

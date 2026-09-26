@@ -1,3 +1,4 @@
+import { Refusal } from "@tiehall/core";
 import { orgs, type Database, type Transaction } from "@tiehall/db";
 
 // withOrg() (teams-and-roles: One org per install; design.md, Technical
@@ -14,11 +15,15 @@ export interface OrgContext {
   orgId: string;
 }
 
-/** The install has no org yet, because setup has not named it; callers answer 503 `setup-required`. */
-export class SetupRequiredError extends Error {
+/**
+ * The install has no org yet, because setup has not named it: the error
+ * model's refusal 503 `setup-required` (public-api: One error model for
+ * Tiehall's own refusals).
+ */
+export class SetupRequiredError extends Refusal {
   override name = "SetupRequiredError";
   constructor() {
-    super("Setup is not complete: the install has no org yet.");
+    super("setup-required", "Setup is not complete: the install has no org yet.");
   }
 }
 

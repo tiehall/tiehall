@@ -443,7 +443,7 @@ describe("/healthz", () => {
         expect(during.status).toBe(503);
         expect(during.headers.get("retry-after")).toBe("0");
         expect(during.headers.get("content-type")).toBe("application/problem+json");
-        expect(await during.json()).toMatchObject({ type: "about:blank", status: 503 });
+        expect(await during.json()).toMatchObject({ type: "https://tiehall.com/problems/shutting-down", status: 503 });
         expect(await inFlight).toEqual({ status: 503, body: '{"status":"down"}' });
       } finally {
         dockerOk(["unpause", database]);

@@ -223,10 +223,10 @@ importers:
       '@tiehall/commands':
         specifier: workspace:*
         version: link:../../packages/commands
-    devDependencies:
       '@tiehall/core':
         specifier: workspace:*
         version: link:../../packages/core
+    devDependencies:
       '@tiehall/testing':
         specifier: workspace:*
         version: link:../../packages/testing
