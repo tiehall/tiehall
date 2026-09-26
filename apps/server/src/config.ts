@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { secretKeyProblem } from "@tiehall/commands";
 
 // Configuration comes only from environment variables and from secret files
 // named by *_FILE variables (design.md decision 1). Any setting can come from a
@@ -23,6 +24,13 @@ export interface Config {
   appRole?: { name: string; password: string };
   /** The port the web server listens on. */
   port: number;
+  /**
+   * TIEHALL_SECRET_KEY, which encrypts the integration secrets Tiehall stores
+   * (self-host-install: Stored integration secrets are encrypted). It lives
+   * only in the install's settings, never in the database. Task 5.1 makes it
+   * required.
+   */
+  secretKey?: string;
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -36,11 +44,15 @@ export function readConfig(env: Environment): Config {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new ConfigError("PORT must be a whole number from 1 to 65535.");
   }
+  const secretKey = optional(env, "TIEHALL_SECRET_KEY");
+  const problem = secretKey === undefined ? undefined : secretKeyProblem(secretKey);
+  if (problem !== undefined) throw new ConfigError(problem);
   return {
     databaseUrl,
     ...(databasePassword === undefined ? {} : { databasePassword }),
     ...(appRole === undefined ? {} : { appRole }),
     port,
+    ...(secretKey === undefined ? {} : { secretKey }),
   };
 }
 

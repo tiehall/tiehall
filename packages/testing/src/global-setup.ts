@@ -9,5 +9,6 @@ import { startPostgres } from "./postgres.ts";
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const postgres = await startPostgres();
   project.provide("postgresUrl", postgres.url);
+  project.provide("postgresContainer", postgres.containerId);
   return () => postgres.stop();
 }

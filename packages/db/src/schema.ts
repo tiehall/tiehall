@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, customType, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // The Drizzle schema of the app's tables (design.md, Technical decisions: T4).
 // drizzle-kit generates the migrations in ../migrations from it with
@@ -88,5 +88,34 @@ export const events = pgTable(
       "events_operator_names_command",
       sql`(${table.actorKind} = 'operator') = (${table.operatorCommand} IS NOT NULL) AND (${table.actorKind} <> 'operator' OR (${table.actorUserId} IS NULL AND ${table.client} IS NULL AND ${table.surface} IS NULL AND ${table.teamId} IS NULL))`,
     ),
+  ],
+);
+
+/** Raw bytes, which drizzle-orm has no column type for. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// Stored integration secrets (self-host-install: Stored integration secrets are
+// encrypted; design.md, Technical decisions: T4). One row per secret, such as
+// the GitHub App's private key or the Jira bot's API token: its AES-256-GCM
+// ciphertext with the tag, the nonce, and the id of the key that encrypted it,
+// which is derived from TIEHALL_SECRET_KEY. The key itself is never stored.
+export const integrationSecrets = pgTable(
+  "integration_secrets",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** Which secret, such as jira.api_token. */
+    name: text("name").notNull(),
+    keyId: text("key_id").notNull(),
+    nonce: bytea("nonce").notNull(),
+    /** The ciphertext followed by its 16-byte authentication tag. */
+    ciphertext: bytea("ciphertext").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.name] }),
+    check("integration_secrets_key_id_format", sql`${table.keyId} ~ '^[0-9a-f]{16}$'`),
+    check("integration_secrets_nonce_length", sql`octet_length(${table.nonce}) = 12`),
   ],
 );

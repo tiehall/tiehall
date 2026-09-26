@@ -93,6 +93,22 @@ describe("readConfig", () => {
     );
   });
 
+  it("reads TIEHALL_SECRET_KEY, which encrypts stored integration secrets, from the environment or its _FILE form", () => {
+    const key = "k".repeat(20) + "-secret-key-for-integration-secrets";
+    writeFileSync(join(secrets, "secret_key"), `${key}\n`);
+    const inline = readConfig({ DATABASE_URL: url, TIEHALL_SECRET_KEY: key });
+    const fromFile = readConfig({ DATABASE_URL: url, TIEHALL_SECRET_KEY_FILE: join(secrets, "secret_key") });
+    expect(inline.secretKey).toBe(key);
+    expect(fromFile.secretKey).toBe(inline.secretKey);
+    expect(readConfig({ DATABASE_URL: url }).secretKey).toBeUndefined();
+  });
+
+  it("refuses a TIEHALL_SECRET_KEY too short to hold 256 bits, without echoing it", () => {
+    expect(() => readConfig({ DATABASE_URL: url, TIEHALL_SECRET_KEY: "hunter2" })).toThrow(
+      new ConfigError("TIEHALL_SECRET_KEY must hold at least 43 characters, as 32 random bytes in base64url do."),
+    );
+  });
+
   it("reads the web port, and refuses one that is not a TCP port", () => {
     expect(readConfig({ DATABASE_URL: url, PORT: "8080" }).port).toBe(8080);
     expect(() => readConfig({ DATABASE_URL: url, PORT: "http" })).toThrow(
