@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -25,9 +25,11 @@ describe("the Drizzle schema", () => {
 
   it("needs no migration beyond the committed ones", () => {
     const before = readdirSync(out, { recursive: true }).sort();
+    // drizzle-kit reads --out relative to the working directory, even an absolute one, and exits 0 on an error,
+    // so the folder is given relative to the package and the output is checked.
     const run = spawnSync(
       join(packageRoot, "node_modules", ".bin", "drizzle-kit"),
-      ["generate", "--dialect", "postgresql", "--schema", "./src/schema.ts", "--out", out],
+      ["generate", "--dialect", "postgresql", "--schema", "./src/schema.ts", "--out", relative(packageRoot, out)],
       { cwd: packageRoot, encoding: "utf8", timeout: 60_000 },
     );
     expect(run.status, run.stderr).toBe(0);
