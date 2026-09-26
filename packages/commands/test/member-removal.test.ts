@@ -192,6 +192,13 @@ describe("a confirmed removal", () => {
   });
 });
 
+describe("the removed person's web sessions", () => {
+  // The sign-in service stores web sessions from task 7.6 on, which waits for the GitHub stub of task 7.3. The
+  // removal then deletes them in its own transaction, so none of them works again if the person rejoins; until
+  // then no web session is stored, and the membership re-check refuses every call through one with 403.
+  it.todo("are deleted by the removal, so none of them works again after the person rejoins through an invite");
+});
+
 describe("an admin removing themselves", () => {
   it("is removed while another admin remains, who stays an admin", async () => {
     await install.owner.query("UPDATE members SET role = 'admin' WHERE user_id = $1", [omar.userId]);
