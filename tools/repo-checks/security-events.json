@@ -105,7 +105,16 @@
     },
     {
       "item": "a `reconciled` event, as the requirement on reconciliation defines;",
-      "actions": [{ "action": "a reconciled event", "pending": "20.2" }]
+      "actions": [
+        {
+          "action": "a reconciled event",
+          "event": "activity_log.reconciled",
+          "test": {
+            "file": "packages/commands/test/trust-state-reconciliation.test.ts",
+            "case": "a role change stored while its event was dropped gains a reconciled event naming the member and the role they hold now"
+          }
+        }
+      ]
     },
     {
       "item": "an export of the activity log;",

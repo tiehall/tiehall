@@ -282,6 +282,27 @@ export const writeBudgetChanged = defineEventType({
   },
 });
 
+/**
+ * The nightly comparison found a member, a role or an agent-client grant that
+ * the security events did not record, and recorded it (activity-log:
+ * Trust-state changes are reconciled every night; activity-log: Which actions
+ * are security events). It names what differs: a member, by their user, who
+ * is present in the role they hold now or is no longer a member, or a grant,
+ * by its id and its user, that is present or gone; its provenance is the
+ * system's. A later comparison takes it as the recorded state.
+ */
+export const trustStateReconciled = defineEventType({
+  type: "activity_log.reconciled",
+  class: "security",
+  fields: {
+    subject: { kind: "enum", values: ["member", "grant"] },
+    userId: { kind: "id", of: "user" },
+    present: { kind: "boolean" },
+    role: { kind: "enum", values: ROLES, optional: true },
+    grantId: { kind: "id", of: "grant", optional: true },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -301,4 +322,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   memberRoleChanged,
   memberRemoved,
   writeBudgetChanged,
+  trustStateReconciled,
 ];

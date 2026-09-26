@@ -181,6 +181,7 @@ export { expireProposals } from "./proposal-endings.ts";
 export { notifyWaitingProposals, waitingByProposal } from "./proposal-waiting.ts";
 export { emailReceipts } from "./receipts.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
+export { currentTrustState, reconcileTrustState } from "./trust-state-reconciliation.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,
   startWorker,
