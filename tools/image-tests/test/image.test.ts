@@ -366,6 +366,14 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(dockerOk(["logs", name])).not.toContain("setup code");
   });
 
+  // agent-safety: The review page of the confirmation step. Nobody is signed in until sign-in exists.
+  it("serves the review pages of the confirmation step, which answer 401 without a session and cannot be framed", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/confirm/tokens.create?input=%7B%7D`);
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  });
+
   it("tags its pages with the commit as the deployment id", async () => {
     const html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
     expect(html).toContain(`data-dpl-id="${revision()}"`);

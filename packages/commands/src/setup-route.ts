@@ -1,5 +1,6 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { Database } from "@tiehall/db";
+import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { isSetupSession, openSetupSession } from "./setup-code.ts";
 import { readSetupState, SETUP_PATH } from "./setup-gate.ts";
@@ -35,14 +36,6 @@ export type SetupRoute = (request: Request) => Promise<Response>;
 export function setupCookieName(url: string): string {
   return url.startsWith("https:") ? "__Host-tiehall-setup" : "tiehall-setup";
 }
-
-const PAGE_HEADERS = {
-  "content-type": "text/html; charset=utf-8",
-  "cache-control": "no-store",
-  "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
-  "content-security-policy": "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-};
 
 const CLOSED = httpProblem(new Refusal("route-not-found", "Setup is complete, so there is no setup screen."));
 const WRONG_ORIGIN = httpProblem(
@@ -123,27 +116,8 @@ function page(html: string): Response {
   return new Response(html, { headers: PAGE_HEADERS });
 }
 
-/** Text for HTML, with every character that could start markup escaped. */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
-}
-
 function layout(body: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Set up Tiehall</title>
-  </head>
-  <body>
-    <main>
-      <h1>Set up Tiehall</h1>
-${body}
-    </main>
-  </body>
-</html>
-`;
+  return htmlPage("Set up Tiehall", `      <h1>Set up Tiehall</h1>\n${body}`);
 }
 
 function codePage(): string {

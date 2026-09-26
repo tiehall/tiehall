@@ -30,10 +30,22 @@ export class SetupRequiredError extends Refusal {
   }
 }
 
-export async function withOrg<T>(database: Database, handler: (context: OrgContext) => Promise<T>): Promise<T> {
-  return database.transaction(async (tx) => {
-    const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
-    if (org === undefined || org.setupCompletedAt === null) throw new SetupRequiredError();
-    return handler({ tx, orgId: org.id });
-  });
+export interface WithOrgOptions {
+  /** Opens a read-only transaction, in which any write fails, such as a review page's. */
+  readOnly?: boolean;
+}
+
+export async function withOrg<T>(
+  database: Database,
+  handler: (context: OrgContext) => Promise<T>,
+  options: WithOrgOptions = {},
+): Promise<T> {
+  return database.transaction(
+    async (tx) => {
+      const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
+      if (org === undefined || org.setupCompletedAt === null) throw new SetupRequiredError();
+      return handler({ tx, orgId: org.id });
+    },
+    options.readOnly === true ? { accessMode: "read only" } : undefined,
+  );
 }

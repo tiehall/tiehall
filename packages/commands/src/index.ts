@@ -101,7 +101,7 @@ export {
   type SmtpSettings,
   type SmtpTls,
 } from "./settings.ts";
-export { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
+export { SetupRequiredError, withOrg, type OrgContext, type WithOrgOptions } from "./with-org.ts";
 export {
   createSetupGate,
   readSetupState,
@@ -124,6 +124,17 @@ export {
   type StartSetupOptions,
 } from "./setup-code.ts";
 export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
+export {
+  createConfirmationStep,
+  type ConfirmationStep,
+  type ConfirmationStepServices,
+  type ReviewContext,
+  type ReviewedAction,
+  type ReviewHandler,
+  type Reviews,
+} from "./confirmation-step.ts";
+export { CONFIRM_PATH, createConfirmRoute, type ConfirmRoute, type ConfirmRouteOptions } from "./confirm-route.ts";
+export { REVIEWS } from "./reviews.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,
