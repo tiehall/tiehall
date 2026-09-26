@@ -95,7 +95,7 @@ async function flag(): Promise<void> {
 const NEEDS_HUMAN = "https://tiehall.com/problems/needs-human";
 
 describe("counting agent writes", () => {
-  it.fails("lets an ordinary exchange over an hour through, never more than 4 within 10 minutes", async () => {
+  it("lets an ordinary exchange over an hour through, never more than 4 within 10 minutes", async () => {
     for (const time of times("09:00:00", 10, 360)) {
       at(time);
       const asked = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Which browsers?" });
@@ -112,7 +112,7 @@ describe("counting agent writes", () => {
     expect(await flagged()).toBe(false);
   });
 
-  it.fails("accepts the seventh write within 10 minutes and flags the request with it; the next agent write gets 409 needs-human", async () => {
+  it("accepts the seventh write within 10 minutes and flags the request with it; the next agent write gets 409 needs-human", async () => {
     await flag();
     at("09:04:30");
     const refused = await comment(alice);
@@ -120,12 +120,12 @@ describe("counting agent writes", () => {
     expect(await messages()).toBe(7);
   });
 
-  it.fails("does not flag six writes within 10 minutes and a seventh at 09:12", async () => {
+  it("does not flag six writes within 10 minutes and a seventh at 09:12", async () => {
     expect(await agentWrites([...times("09:00:00", 6, 60), "09:12:00"])).toEqual([200, 200, 200, 200, 200, 200, 200]);
     expect(await flagged()).toBe(false);
   });
 
-  it.fails("counts a write exactly 10 minutes after the first within its window, and one a second later outside it", async () => {
+  it("counts a write exactly 10 minutes after the first within its window, and one a second later outside it", async () => {
     expect(await agentWrites(["09:00:00", ...times("09:05:00", 5, 0), "09:10:00"])).toEqual([200, 200, 200, 200, 200, 200, 200]);
     expect(await flagged()).toBe(true);
     const other = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
@@ -133,7 +133,7 @@ describe("counting agent writes", () => {
     expect(await flagged(other.id)).toBe(false);
   });
 
-  it.fails("accepts the thirtieth write in total and flags the request with it; the thirty-first gets 409", async () => {
+  it("accepts the thirtieth write in total and flags the request with it; the thirty-first gets 409", async () => {
     const statuses = await agentWrites(times("09:00:00", 29, 600));
     expect(statuses.every((status) => status === 200)).toBe(true);
     expect(await flagged()).toBe(false);
@@ -143,7 +143,7 @@ describe("counting agent writes", () => {
     expect((await comment(bob)).body.type).toBe(NEEDS_HUMAN);
   });
 
-  it.fails("lets exactly one of two writes at the same moment through when they would pass the limit", async () => {
+  it("lets exactly one of two writes at the same moment through when they would pass the limit", async () => {
     expect(await agentWrites(times("09:00:00", 6, 30))).toEqual([200, 200, 200, 200, 200, 200]);
     at("09:03:00");
     const answers = await Promise.all([comment(alice), comment(bob)]);
@@ -153,7 +153,7 @@ describe("counting agent writes", () => {
     expect(await flagged()).toBe(true);
   });
 
-  it.fails("counts only the writes on the same request", async () => {
+  it("counts only the writes on the same request", async () => {
     const other = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
     for (const time of times("09:00:00", 6, 40)) {
       expect(await agentWrites([time])).toEqual([200]);
@@ -162,7 +162,7 @@ describe("counting agent writes", () => {
     expect([await flagged(), await flagged(other.id)]).toEqual([false, false]);
   });
 
-  it.fails("counts no refused write", async () => {
+  it("counts no refused write", async () => {
     at("09:00:00");
     for (let attempt = 0; attempt < 10; attempt++) expect((await comment(carol)).status).toBe(403);
     expect((await callApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/claim`)).status).toBe(403);
@@ -173,31 +173,39 @@ describe("counting agent writes", () => {
 });
 
 describe("a flagged request", () => {
-  it.fails("refuses every agent write on it with 409 needs-human, and changes nothing", async () => {
+  it("refuses every agent write on it with 409 needs-human, and changes nothing", async () => {
     at("09:00:00");
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`)).status).toBe(200);
     at("09:00:10");
     const bobs = await comment(bob);
     expect(await agentWrites(times("09:00:20", 5, 30))).toEqual([200, 200, 200, 200, 200]);
     expect(await flagged()).toBe(true);
+    // An unclaimed request, flagged too, for the claim, which a claimed one refuses as a state conflict first.
+    const unclaimed = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    expect(await agentWrites(times("09:00:00", 7, 30), unclaimed.key)).toEqual([200, 200, 200, 200, 200, 200, 200]);
     at("09:05:00");
     const writes = {
       "messages.post": () => comment(alice),
       "messages.edit": () => callApi(install, tokenOf(bob), "POST", `/api/v1/messages/${bobs.body.message.id}/versions`, { body: "Edited." }),
-      "requests.claim": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`),
+      "requests.claim": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${unclaimed.key}/claim`),
       "requests.set_status": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
       "packets.add_revision": () =>
         sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/packet/revisions`, {
-          body: { packet: packetOf("Add a dark mode, and a light one.") },
+          // A new link only, which changes no scope, so it would be no commitment on the claimed request.
+          body: { packet: { ...packetOf(), untrusted: { ...(packetOf()["untrusted"] as object), links: [{ url: "https://design.example.com/dark" }] } } },
           headers: { "if-match": '"1"' },
         }),
     };
-    // Every operation that writes on an existing request is here.
-    const onARequest = CATALOG.commands
-      .filter(({ method, path }) => method === "POST" && path !== undefined && /\{(key|messageId)\}/.test(path))
+    // Every write an agent surface offers is here, or is one that writes on no existing request.
+    const writesOnNoRequest = {
+      "requests.create": "opens a request, which the caps on opened requests limit instead",
+      "events.acknowledge": "moves a read cursor, which is no write on a request",
+    };
+    const agentWrites_ = CATALOG.commands
+      .filter(({ surfaces, method }) => surfaces.length > 0 && method !== "GET")
       .map(({ id }) => id)
       .sort();
-    expect(Object.keys(writes).sort()).toEqual(onARequest);
+    expect([...Object.keys(writes), ...Object.keys(writesOnNoRequest)].sort()).toEqual(agentWrites_);
     for (const [operation, send] of Object.entries(writes)) {
       const answer = await send();
       expect({ operation, status: answer.status, type: answer.body.type }).toEqual({ operation, status: 409, type: NEEDS_HUMAN });
@@ -209,9 +217,10 @@ describe("a flagged request", () => {
     );
     expect(rows[0]).toEqual({ state: "claimed", revisions: "1", versions: "1" });
     expect(await messages()).toBe(6);
+    expect((await callApi(install, tokenOf(carol), "GET", `/api/v1/requests/${unclaimed.key}`)).body).toMatchObject({ state: "open", claimant: null });
   });
 
-  it.fails("is cleared by a message a member posts in the web UI, which restarts both counts", async () => {
+  it("is cleared by a message a member posts in the web UI, which restarts both counts", async () => {
     expect((await agentWrites(times("09:00:00", 30, 600))).every((status) => status === 200)).toBe(true);
     expect(await flagged()).toBe(true);
     at("14:00:00");
@@ -225,7 +234,7 @@ describe("a flagged request", () => {
     expect(await flagged()).toBe(true);
   });
 
-  it.fails("stays flagged when a claim and a state change made in the web UI are applied", async () => {
+  it("stays flagged when a claim and a state change made in the web UI are applied", async () => {
     await flag();
     at("09:05:00");
     const session = sessionOf(bob);
@@ -235,7 +244,7 @@ describe("a flagged request", () => {
     expect(await flagged()).toBe(true);
   });
 
-  it.fails("takes system and integration writes, which are neither counted nor refused", async () => {
+  it("takes system and integration writes, which are neither counted nor refused", async () => {
     await flag();
     const packet = packetOf("A revision from a contract report.") as never;
     await write(store, { actorKind: "system", surface: "github" }, (writer) => storePacketRevision(writer, requestId, packet));
@@ -251,7 +260,7 @@ describe("a flagged request", () => {
     expect(await flagged(other.id)).toBe(true);
   });
 
-  it.fails("still lets agents read it and acknowledge its events", async () => {
+  it("still lets agents read it and acknowledge its events", async () => {
     await flag();
     at("09:05:00");
     for (const path of [`/api/v1/requests/${key}`, `/api/v1/requests/${key}/packet`, "/api/v1/requests", "/api/v1/events"]) {

@@ -112,6 +112,7 @@ export const REQUEST_HANDLERS: Handlers = {
     const next = transition(await lifecycleOf(context, row), { kind: "claim", userId });
     const teamId = await teamActedFor(context, userId, row, "target");
     return context.write(async (writer) => {
+      await writer.changesRequest(row.id);
       await saveLifecycle(writer, row.id, next);
       await writer.record(requestClaimed, { requestId: row.id, userId });
       return requestView(writer, row.id);
@@ -127,6 +128,7 @@ export const REQUEST_HANDLERS: Handlers = {
     const next = transition(current, { kind: action });
     const teamId = await teamActedFor(context, userId, row, "target");
     return context.write(async (writer) => {
+      await writer.changesRequest(row.id);
       await saveLifecycle(writer, row.id, next);
       if (action === "release" && current.claimantId !== null) {
         await writer.record(requestReleased, { requestId: row.id, userId: current.claimantId });

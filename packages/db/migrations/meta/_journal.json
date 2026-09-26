@@ -148,6 +148,13 @@
       "when": 1790407848667,
       "tag": "0020_make_packet_revisions_immutable",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790411118765,
+      "tag": "0021_add_loop_limit",
+      "breakpoints": true
     }
   ]
 }

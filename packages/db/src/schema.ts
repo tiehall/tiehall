@@ -435,7 +435,11 @@ export const usedConfirmationNonces = pgTable(
 // questions the state it returns to); and its requester, a user and the team
 // they picked. A request is never deleted, and its number is never given to
 // another request of the team. The users it names stay when they leave the
-// install, so a removed member's claim stays theirs.
+// install, so a removed member's claim stays theirs. For the loop limit
+// (agent-safety: Runaway agent loops flag the request needs_human), it also
+// keeps whether it waits for a person, and the times of the agent writes on it
+// since the last human action, at most 30, which the write that changes it
+// updates while it holds the row's lock.
 export const requests = pgTable(
   "requests",
   {
@@ -457,6 +461,13 @@ export const requests = pgTable(
     requestingUserId: uuid("requesting_user_id"),
     requestingTeamId: uuid("requesting_team_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Whether agents made so many writes on it since the last human action that it waits for a person. */
+    needsHuman: boolean("needs_human").notNull().default(false),
+    /** When agents wrote on it since the last human action, oldest first. */
+    agentWriteTimes: timestamp("agent_write_times", { withTimezone: true })
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -493,6 +504,7 @@ export const requests = pgTable(
     check("requests_resume_state_only_when_waiting", sql`${table.resumeState} IS NULL OR ${table.state} IN ('needs_info', 'done', 'declined', 'withdrawn')`),
     check("requests_open_unclaimed", sql`${table.state} <> 'open' OR ${table.claimantUserId} IS NULL`),
     check("requests_claimed_has_claimant", sql`${table.state} NOT IN ('claimed', 'in_progress') OR ${table.claimantUserId} IS NOT NULL`),
+    check("requests_agent_write_times_bounded", sql`cardinality(${table.agentWriteTimes}) <= 30`),
   ],
 );
 

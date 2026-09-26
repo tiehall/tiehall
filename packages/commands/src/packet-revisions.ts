@@ -44,6 +44,7 @@ export async function insertPacketRevision(
  */
 export async function storePacketRevision(writer: Writer, requestId: string, packet: Packet): Promise<number> {
   await lockRequestById(writer, requestId);
+  await writer.changesRequest(requestId);
   const [latest] = await writer.tx
     .select({ number: sql<number>`coalesce(max(${packetRevisions.number}), 0)::int` })
     .from(packetRevisions)

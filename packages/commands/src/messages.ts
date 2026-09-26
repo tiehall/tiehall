@@ -3,6 +3,7 @@ import { messageEdited, messagePosted, Refusal, requestStateChanged, type Reques
 import { messages, messageVersions } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { recordHumanAction } from "./loop-limit.ts";
 import {
   actingUserOf,
   assertSideAllows,
@@ -37,6 +38,11 @@ import type { OrgContext } from "./with-org.ts";
 // author edits a message, and an edit adds its next version, with an event
 // that names the version; nothing ever changes or removes an earlier version,
 // which the database also refuses (migration 0017).
+//
+// Posting and editing are writes on the request, which the loop limit counts
+// for an agent (agent-safety: Runaway agent loops flag the request
+// needs_human); a message posted from a web session is a human action, which
+// clears the request's flag and both of its counts.
 
 /** The question an answer names, on the request it is posted on; 404 when there is none. */
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {
@@ -70,6 +76,7 @@ export const MESSAGE_HANDLERS: Handlers = {
     const teamId = await teamActedFor(context, userId, row);
     const stamp = stampOf(context.provenance, teamId);
     return context.write(async (writer) => {
+      await writer.changesRequest(row.id);
       const { tx, orgId } = writer;
       const [placed] = await tx
         .select({ number: sql<number>`coalesce(max(${messages.number}), 0)::int + 1` })
@@ -100,6 +107,7 @@ export const MESSAGE_HANDLERS: Handlers = {
         await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: current.state });
       }
       if (next !== current) await saveLifecycle(writer, row.id, next);
+      if (writer.provenance.actorKind === "web_session") await recordHumanAction(writer, row.id);
       return { message: await messageView(writer, posted.id), request: await requestView(writer, row.id) };
     }, { teamId });
   }),
@@ -119,6 +127,7 @@ export const MESSAGE_HANDLERS: Handlers = {
     const request = await lockRequestById(context, row.requestId);
     const teamId = await teamActedFor(context, userId, request);
     return context.write(async (writer) => {
+      await writer.changesRequest(row.requestId);
       const [latest] = await writer.tx
         .select({ version: sql<number>`max(${messageVersions.version})::int` })
         .from(messageVersions)

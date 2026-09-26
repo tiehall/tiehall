@@ -136,6 +136,7 @@ function notOffered(): Refusal {
 
 export function createExecute(services: ExecuteServices): Execute {
   const { catalog, handlers, store } = services;
+  const now = services.now ?? (() => new Date());
   const missing = catalog.commands.filter(({ id }) => typeof handlers[id] !== "function").map(({ id }) => `${id} has no handler.`);
   const extra = Object.keys(handlers)
     .filter((id) => catalog.get(id) === undefined)
@@ -178,7 +179,7 @@ export function createExecute(services: ExecuteServices): Execute {
 
     // 5. and 6. The handler, in the install's org, and only output that passes its schema.
     const provenance = provenanceOf(caller);
-    const writeOptions = options.origin === undefined ? {} : { origin: options.origin };
+    const writeOptions = { ...(options.origin === undefined ? {} : { origin: options.origin }), now };
     return withOrg(
       store.database,
       async (context) => {

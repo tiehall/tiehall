@@ -2,6 +2,7 @@ import type { EventData, EventType, Provenance } from "@tiehall/core";
 import { securityEventOrigins, type Database } from "@tiehall/db";
 import { appendEvent, type AppendedEvent } from "./append-event.ts";
 import type { JobData, JobSender, JobType } from "./jobs.ts";
+import { countAgentWrite } from "./loop-limit.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 
 // The single write path (requests: The event log; activity-log: Which actions
@@ -15,6 +16,11 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // security event, the caller's IP address and user agent go into a side table
 // in the same transaction, never into the event (activity-log: IP addresses and
 // user agents are kept apart for 90 days).
+//
+// A write that changes an existing request declares it first, with
+// changesRequest(), which counts an agent's write against the loop limit or
+// refuses it while the request waits for a person (loop-limit.ts); a test of
+// every operation that writes on a request holds each to it.
 
 /** Where writes go: the app's database and the queue that jobs are sent to. */
 export interface Store {
@@ -25,6 +31,10 @@ export interface Store {
 export interface Writer extends OrgContext {
   /** Who causes this write, as the server stamped it, for the rows that record it, such as a message or a packet revision. */
   readonly provenance: Provenance;
+  /** The clock of this write, which the limits on agent writes count by. */
+  now(): Date;
+  /** Declares that this write changes an existing request, before it does: the loop limit counts it, or refuses it. */
+  changesRequest(requestId: string): Promise<void>;
   /** Records an event of this write, with the caller's provenance. */
   record<T extends EventType>(type: T, data: EventData<T>): Promise<AppendedEvent>;
   /** Starts a job that commits with this write. */
@@ -40,6 +50,8 @@ export interface Origin {
 export interface WriteOptions {
   /** Kept for the write's security events, apart from them, for 90 days. */
   origin?: Origin;
+  /** The clock of the write; the system clock unless a caller or a test controls it. */
+  now?: () => Date;
 }
 
 /** A longer user agent is cut to this length; it is shown to admins, not parsed. */
@@ -76,10 +88,13 @@ export async function writeIn<R>(
 ): Promise<R> {
   const ipAddress = options.origin?.ipAddress;
   const userAgent = options.origin?.userAgent?.slice(0, USER_AGENT_MAX_LENGTH);
+  const now = options.now ?? (() => new Date());
   let recorded = 0;
   const writer: Writer = {
     ...context,
     provenance,
+    now,
+    changesRequest: (requestId) => countAgentWrite(writer, requestId),
     async record(type, data) {
       const event = await appendEvent(context, type, data, provenance);
       recorded++;
