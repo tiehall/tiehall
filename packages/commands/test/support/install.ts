@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { CATALOG } from "@tiehall/catalog";
+import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
   createConfirmationNonces,
@@ -9,15 +9,18 @@ import {
   createConfirmRoute,
   createExecute,
   createLogger,
+  createRestHandler,
   createWebCommands,
   csrfTokenFor,
   HANDLERS,
   migrate,
   openDatabase,
   REVIEWS,
+  type Caller,
   type ConfirmRoute,
   type Database,
   type Execute,
+  type RestHandler,
   type WebCommands,
   type WebSessionCaller,
   type WebWriteRequest,
@@ -36,6 +39,8 @@ export interface TestInstall {
   /** The app's database, as the app role. */
   db: Database;
   execute: Execute;
+  /** The REST route under /api/v1, for calls whose credentials stand for the given caller; none answers 401. */
+  api(caller: Caller | undefined): RestHandler;
   /** The web UI's commands, for the given signed-in session. */
   web(caller: WebSessionCaller | undefined): WebCommands;
   /** A form posted from a page of the install, with the session's CSRF token. */
@@ -74,6 +79,7 @@ export async function startTestInstall(options: { setUp?: (owner: pg.Client) => 
     owner,
     db,
     execute,
+    api: (caller) => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger }),
     web: (caller) => createWebCommands({ execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => secret, logger }),
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,

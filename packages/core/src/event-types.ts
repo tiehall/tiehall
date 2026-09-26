@@ -5,6 +5,22 @@ import { ROLES } from "./roles.ts";
 // actions are security events). Each task that adds a change adds the type of
 // its event here, and a test runs checkEventTypes() over the list.
 
+/**
+ * A request was opened (requests: A request is addressed to a team of the
+ * install; requests: The event log). It names the request, the team it is
+ * addressed to and the team it was opened from; its provenance names the
+ * user who opened it.
+ */
+export const requestOpened = defineEventType({
+  type: "request.opened",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    targetTeamId: { kind: "id", of: "team" },
+    requestingTeamId: { kind: "id", of: "team" },
+  },
+});
+
 /** A message posted in a request's thread. It names the message; readers fetch its text through a read. */
 export const messagePosted = defineEventType({
   type: "request.message_posted",
@@ -47,4 +63,4 @@ export const memberRemoved = defineEventType({
   },
 });
 
-export const EVENT_TYPES: readonly EventType[] = [messagePosted, memberRoleChanged, memberRemoved];
+export const EVENT_TYPES: readonly EventType[] = [requestOpened, messagePosted, memberRoleChanged, memberRemoved];
