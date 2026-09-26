@@ -5,6 +5,7 @@ import { CATALOG, defineCatalog, defineCommand } from "@tiehall/catalog";
 import { createExecute, HANDLERS, type Caller, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
+import { callApi, openRequest, tokenOf } from "./support/requests.ts";
 
 // Removing a member (teams-and-roles: Removing a member; sign-in: An admin
 // removal blocks rejoining through the organization; activity-log: Which
@@ -169,25 +170,38 @@ describe("a confirmed removal", () => {
     });
   });
 
-  it("keeps what the person took part in, with the provenance that names them", async () => {
+  it("keeps what the person took part in, their messages among it, with the provenance that names them", async () => {
     const dana = await newMember("dana-3");
-    // An event the person caused before the removal, as a message they posted will be.
-    await install.owner.query(
-      `INSERT INTO event_sequence (org_id, last_number) SELECT id, 0 FROM orgs ON CONFLICT DO NOTHING;
-       UPDATE event_sequence SET last_number = last_number + 1`,
-    );
-    await install.owner.query(
-      `INSERT INTO events (org_id, number, class, type, data, actor_kind, actor_user_id, surface)
-       SELECT org_id, last_number, 'domain', 'request.message_posted', jsonb_build_object('requestId', $2::text, 'messageId', $3::text), 'agent', $1, 'mcp'
-         FROM event_sequence`,
-      [dana.userId, randomUUID(), randomUUID()],
-    );
-    const before = await install.owner.query("SELECT number, actor_user_id, data FROM events WHERE actor_user_id = $1", [dana.userId]);
-    expect(before.rows).toHaveLength(1);
+    // Dana's agent opens a request from BE to FE and posts a question in its thread, as any member's agent does.
+    const opened = await openRequest<{ key: string }>(install, tokenOf(dana.userId), { targetTeam: "FE", requestingTeam: "BE" });
+    const posted = await callApi(install, tokenOf(dana.userId), "POST", `/api/v1/requests/${opened.key}/messages`, {
+      kind: "question",
+      body: "Which endpoint should the dark mode toggle call?",
+    });
+    expect(posted.status).toBe(200);
+    const thread = async () => {
+      const read = await callApi(install, tokenOf(ada.userId), "GET", `/api/v1/requests/${opened.key}`);
+      expect(read.status).toBe(200);
+      return read.body;
+    };
+    const events = async () =>
+      (await install.owner.query("SELECT number, type, actor_kind, actor_user_id, data FROM events WHERE actor_user_id = $1 ORDER BY number", [dana.userId]))
+        .rows;
+    const before = await thread();
+    expect(before.messages).toHaveLength(1);
+    expect(before.messages[0]).toMatchObject({
+      id: posted.body.message.id,
+      kind: "question",
+      provenance: { actorKind: "agent", user: { id: dana.userId, login: "dana-3" }, team: { key: "BE" } },
+      untrusted: { body: "Which endpoint should the dark mode toggle call?" },
+    });
+    const eventsBefore = await events();
+    expect(eventsBefore.map(({ type }) => type)).toEqual(expect.arrayContaining(["request.opened", "request.message_posted"]));
+
     expect((await install.confirm(ada, "members.remove", { userId: dana.userId })).status).toBe(200);
-    expect((await install.owner.query("SELECT number, actor_user_id, data FROM events WHERE actor_user_id = $1", [dana.userId])).rows).toEqual(
-      before.rows,
-    );
+
+    expect(await thread()).toEqual(before);
+    expect(await events()).toEqual(eventsBefore);
     expect((await install.owner.query("SELECT github_login FROM users WHERE id = $1", [dana.userId])).rows).toEqual([{ github_login: "dana-3" }]);
   });
 });
