@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CommandDefinition } from "./command.ts";
+import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 
 // Registering definitions (public-api: One definition per operation, the same
 // on every surface; agent-safety: The confirmation step runs only in the web
@@ -7,7 +8,9 @@ import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CommandDefinition } fr
 // would make the surfaces disagree or offer to an agent what only a person may
 // do: a second definition with the same id, a scope outside the three OAuth
 // scopes, a REST operation without its method and path, and a command that
-// needs the confirmation step but is offered on an agent surface.
+// needs the confirmation step but is offered on an agent surface. A tool's
+// input and output must lower to schemas that current MCP clients accept
+// (agent-surfaces: Tool schemas that current clients accept).
 
 /** A catalog that breaks the rules; its message names every problem, one per line. */
 export class CatalogError extends Error {
@@ -86,6 +89,14 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
     if (surfaces.includes("mcp")) {
       if (definition.tool === undefined) problem("it is offered on MCP, so it names its tool.");
       else claim(tools, definition.tool, "the tool");
+      for (const [io, schema] of [["input", definition.input], ["output", definition.output]] as const) {
+        try {
+          lowerToolSchema(schema, io);
+        } catch (error) {
+          if (!(error instanceof ToolSchemaError)) throw error;
+          problem(`its tool's ${io} schema cannot be lowered: ${error.message}`);
+        }
+      }
     }
     if (surfaces.includes("cli")) {
       if (!surfaces.includes("rest")) problem("it is offered on the CLI, which calls REST, so it is offered on REST too.");

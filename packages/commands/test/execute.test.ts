@@ -70,6 +70,21 @@ const catalog = defineCatalog([
     stability: "alpha",
   }),
   defineCommand({
+    id: "probes.report",
+    summary: "File a report in one of two kinds, whose tool schema lowers the union to a kind enum.",
+    input: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("bug"), requestId: z.uuid(), steps: z.array(z.string()) }),
+      z.strictObject({ kind: z.literal("feature"), requestId: z.uuid(), goal: z.string() }),
+    ]),
+    output: z.object({ kind: z.string() }),
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["mcp"],
+    tool: "file_probe_report",
+    stability: "alpha",
+  }),
+  defineCommand({
     id: "probes.change_role",
     summary: "A command that needs the confirmation step.",
     input: z.object({ requestId: z.uuid(), body: z.string() }),
@@ -110,6 +125,7 @@ const handlers: Handlers = {
   },
   "probes.note": postProbe,
   "probes.change_role": postProbe,
+  "probes.report": async (input) => ({ kind: (input as { kind: string }).kind }),
 };
 
 const webSession: Caller = { kind: "web_session", userId: PIA, sessionId: randomUUID() };
@@ -211,6 +227,18 @@ describe("execute", () => {
     }
     await refusalOf(execute("probes.post", webSession, undefined));
     await refusalOf(execute("probes.post", webSession, { requestId: randomUUID(), body: "" }));
+    expect(await counts()).toEqual({ messages: 0, events: 0 });
+  });
+
+  // agent-surfaces: Tool schemas that current clients accept. The tool's schema is a kind enum plus optional
+  // fields, but execute() still validates with the zod union, whose variants are strict.
+  it("refuses an input that mixes variants with 400, though the lowered tool schema would let it through", async () => {
+    const requestId = randomUUID();
+    expect(await execute("probes.report", oauthToken, { kind: "bug", requestId, steps: ["Open the page"] })).toEqual({ kind: "bug" });
+    const refusal = await refusalOf(execute("probes.report", oauthToken, { kind: "bug", requestId, steps: ["Open the page"], goal: "Faster" }));
+    expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
+    await refusalOf(execute("probes.report", oauthToken, { kind: "feature", requestId, steps: ["Open the page"] }));
+    await refusalOf(execute("probes.report", oauthToken, { kind: "chore", requestId }));
     expect(await counts()).toEqual({ messages: 0, events: 0 });
   });
 
