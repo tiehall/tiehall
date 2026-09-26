@@ -2,9 +2,10 @@ name: API compatibility
 
 # Notice before a breaking change, enforced on every pull request
 # (public-api: Notice before a breaking change is enforced in CI; public-api:
-# The `api-breaking` label for urgent security fixes). It lives apart from
-# ci.yml because it also runs when a label is added or removed, so adding the
-# api-breaking label runs the check again without a new push.
+# The `api-breaking` label for urgent security fixes; handoff-packet: Breaking
+# packet changes before publication). It lives apart from ci.yml because it
+# also runs when a label is added or removed, so adding the api-breaking label
+# runs the checks again without a new push.
 
 on:
   pull_request:
@@ -51,6 +52,38 @@ jobs:
       # breaking to openapi/changelog.json and bumps info.version. The labels
       # come from the event, through the environment, never into the script.
       - run: node tools/repo-checks/src/check-api-compat.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+
+  packet-compatibility:
+    name: Packet fixture compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base branch's history, for the merge base and every earlier
+          # version of the packet fixtures.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      # Every version of every valid packet fixture up to the merge base that
+      # validates against the packet schema there must still validate against
+      # the pull request's, and a valid fixture changes or goes only with the
+      # api-breaking label and a changelog entry of kind breaking about the
+      # packet, dated no earlier than today; no release contains the change
+      # until 14 days after that date. The labels come from the event, through
+      # the environment, never into the script.
+      - run: node tools/repo-checks/src/check-packet-compat.ts
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

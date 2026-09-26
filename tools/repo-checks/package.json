@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tiehall/catalog": "workspace:*"
+    "@tiehall/catalog": "workspace:*",
+    "@tiehall/packet": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

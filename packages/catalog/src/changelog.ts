@@ -26,6 +26,15 @@ export const API_BREAKING_LABEL = "api-breaking";
 export const CHANGELOG_ENTRY_KINDS = ["breaking", "note"] as const;
 export type ChangelogEntryKind = (typeof CHANGELOG_ENTRY_KINDS)[number];
 
+/**
+ * The schemas an entry can be about, next to the operations it names: the
+ * packet, whose breaking changes before publication are announced here, with the
+ * api-breaking label, at least 14 days before a release contains them
+ * (handoff-packet: Breaking packet changes before publication).
+ */
+export const CHANGELOG_SCHEMAS = ["packet"] as const;
+export type ChangelogSchema = (typeof CHANGELOG_SCHEMAS)[number];
+
 /** One entry the maintainers wrote. */
 export interface ChangelogEntry {
   /** The calendar day the entry was written, such as 2026-11-02; a notice counts from it. */
@@ -35,6 +44,8 @@ export interface ChangelogEntry {
   text: string;
   /** The ids of the operations it is about, such as requests.get. */
   operationIds?: string[];
+  /** The schemas it is about, such as packet. */
+  schemas?: ChangelogSchema[];
 }
 
 /** One change oasdiff's changelog found between two releases' documents. */
@@ -96,7 +107,7 @@ const API_VERSION = /^\d+\.\d+\.\d+$/;
 const RELEASE_FIELDS = new Set(["version", "date", "apiVersion", "entries", "changes"]);
 const CHANGE_FIELDS = new Set(["id", "level", "method", "path", "operationId", "text"]);
 const OPERATION_ID = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
-const ENTRY_FIELDS = new Set(["date", "kind", "text", "operationIds"]);
+const ENTRY_FIELDS = new Set(["date", "kind", "text", "operationIds", "schemas"]);
 const TOP_LEVEL_FIELDS = new Set(["$comment", "unreleased", "releases"]);
 
 /** The changelog in this JSON text; throws ChangelogError naming every problem when it breaks the format. */
@@ -178,12 +189,15 @@ export function releaseItems(release: Pick<ChangelogRelease, "entries" | "change
 function entryProblems(entry: unknown): string[] {
   if (!isObject(entry)) return ["an entry is an object with a date, a kind and a text."];
   const problems: string[] = [];
-  const { date, kind, text, operationIds } = entry;
+  const { date, kind, text, operationIds, schemas } = entry;
   if (typeof date !== "string" || !isDate(date)) problems.push("date is a calendar day, such as 2026-12-15.");
   if (!(CHANGELOG_ENTRY_KINDS as readonly unknown[]).includes(kind)) problems.push(`kind is one of ${CHANGELOG_ENTRY_KINDS.join(", ")}.`);
   if (typeof text !== "string" || text.trim() === "") problems.push("text says what changed.");
   if (operationIds !== undefined && (!Array.isArray(operationIds) || !operationIds.every((id) => typeof id === "string" && OPERATION_ID.test(id)))) {
     problems.push("operationIds lists operation ids, such as requests.get.");
+  }
+  if (schemas !== undefined && (!Array.isArray(schemas) || !schemas.every((name) => (CHANGELOG_SCHEMAS as readonly unknown[]).includes(name)))) {
+    problems.push(`schemas lists schemas, of ${CHANGELOG_SCHEMAS.join(", ")}.`);
   }
   for (const key of Object.keys(entry)) if (!ENTRY_FIELDS.has(key)) problems.push(`${key} is not a field of an entry.`);
   return problems;
@@ -200,7 +214,7 @@ export function addedEntries(base: Changelog | undefined, revision: Changelog): 
 }
 
 function canonical(entry: ChangelogEntry): string {
-  return JSON.stringify([entry.date, entry.kind, entry.text, entry.operationIds ?? []]);
+  return JSON.stringify([entry.date, entry.kind, entry.text, entry.operationIds ?? [], entry.schemas ?? []]);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -33,6 +33,20 @@ describe("recording a release", () => {
     expect(changelog).toBe(fixture("changelog-after.json"));
   });
 
+  // handoff-packet: Breaking packet changes before publication. No release contains a breaking packet change
+  // until 14 days after its changelog notice.
+  it("refuses a release that would contain a breaking packet change before 14 days of notice have passed", async () => {
+    const withNotice = (date: string) =>
+      `${JSON.stringify({ unreleased: [{ date, kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }], releases: [] }, null, 2)}\n`;
+    const release = (changelog: string) =>
+      recordRelease({ changelog, version: "1.4.0", date: "2026-12-01", previousDocument: fixture("base.json"), document: fixture("revision.json") });
+    await expect(release(withNotice("2026-11-20"))).rejects.toThrow(
+      "The breaking packet change announced on 2026-11-20 may be released from 2026-12-04 on, not on 2026-12-01.",
+    );
+    const { release: recorded } = await release(withNotice("2026-11-17"));
+    expect(recorded.entries).toEqual([{ date: "2026-11-17", kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }]);
+  });
+
   it("compares the first release with an empty document, so every operation it has is listed as added", async () => {
     const changes = await apiChanges(EMPTY_DOCUMENT, fixture("base.json"));
     expect(changes.filter(({ operationId }) => operationId !== undefined).map(({ id, operationId }) => `${id} ${operationId}`).sort()).toEqual([

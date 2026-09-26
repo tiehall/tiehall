@@ -485,6 +485,9 @@ importers:
       '@tiehall/catalog':
         specifier: workspace:*
         version: link:../../packages/catalog
+      '@tiehall/packet':
+        specifier: workspace:*
+        version: link:../../packages/packet
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

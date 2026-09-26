@@ -1,5 +1,6 @@
 import { parseChangelog, releaseItems, type ApiChange, type ChangelogItem, type ChangelogRelease } from "@tiehall/catalog/changelog";
 import { runOnDocuments } from "./oasdiff.ts";
+import { packetNoticeProblems } from "./packet-compat.ts";
 
 // The API changelog of each release (public-api: The changelog page and the
 // release notes; design.md, Technical decisions: T12). When a release is
@@ -52,6 +53,9 @@ export async function recordRelease(options: ReleaseToRecord): Promise<{ changel
   const raw = JSON.parse(options.changelog) as Record<string, unknown>;
   const changelog = parseChangelog(options.changelog);
   if (changelog.releases.some(({ version }) => version === options.version)) throw new Error(`Release ${options.version} is already recorded.`);
+  // No release contains a breaking packet change until 14 days after its notice (handoff-packet: Breaking packet changes before publication).
+  const early = packetNoticeProblems(changelog, options.date);
+  if (early.length > 0) throw new Error(early.join("\n"));
   const apiVersion = (JSON.parse(options.document) as { info?: { version?: string } }).info?.version ?? "";
   const release: ChangelogRelease = {
     version: options.version,
@@ -77,7 +81,13 @@ function orderRelease({ version, date, apiVersion, entries, changes }: Changelog
     version,
     date,
     apiVersion,
-    entries: entries.map(({ date: day, kind, text, operationIds }) => ({ date: day, kind, text, ...(operationIds === undefined ? {} : { operationIds }) })),
+    entries: entries.map(({ date: day, kind, text, operationIds, schemas }) => ({
+      date: day,
+      kind,
+      text,
+      ...(operationIds === undefined ? {} : { operationIds }),
+      ...(schemas === undefined ? {} : { schemas }),
+    })),
     changes: changes.map(({ id, level, method, path, operationId, text }) => ({
       id,
       level,
