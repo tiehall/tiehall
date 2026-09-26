@@ -74,8 +74,7 @@ describe("the admin view", () => {
 });
 
 describe("the export", () => {
-  // An expected failure until task 20.6 builds the export, which turns it into a plain test.
-  it.fails("refuses a member with 403 and an RFC 9457 problem, and exports nothing", async () => {
+  it("refuses a member with 403 and an RFC 9457 problem, and exports nothing", async () => {
     const answer = await install.confirm(sessionOf(bob), "activity_log.export", {});
     expect(answer.status).toBe(403);
     const body = await answer.text();

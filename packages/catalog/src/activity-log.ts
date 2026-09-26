@@ -67,4 +67,34 @@ export const listActivityLog = defineCommand({
   stability: "beta",
 });
 
-export const ACTIVITY_LOG_COMMANDS = [listActivityLog];
+// Exporting the activity log (activity-log: Exporting the activity log;
+// agent-safety: Actions that need the confirmation step). An admin exports
+// the whole log as JSONL from the web UI, with the confirmation step, so no
+// agent surface offers it. Each line is an event with its number, time, class,
+// type, the ids it concerns and who caused it, by ids alone: no body, and no
+// IP address or user agent. The export is itself a security event.
+
+/** Who caused an exported event, by ids: the actor kind, and the user, client, surface, team or operator command it names. */
+export const exportedActor = activityActor.omit({ user: true }).extend({ userId: z.uuid().optional() });
+
+/** An event as a line of the export carries it. */
+export const exportedEvent = activityEvent.omit({ request: true, origin: true, actor: true }).extend({ actor: exportedActor });
+
+export const exportActivityLog = defineCommand({
+  id: "activity_log.export",
+  summary: "Export the whole activity log as JSONL, one event per line, with the ids each event concerns and who caused it, and no body, IP address or user agent.",
+  input: z.object({}),
+  output: z.object({
+    events: z.array(exportedEvent),
+    /** The number of the last event the export holds; 0 for an empty log. */
+    lastNumber: z.number().int().min(0),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "activity_log",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const ACTIVITY_LOG_COMMANDS = [listActivityLog, exportActivityLog];

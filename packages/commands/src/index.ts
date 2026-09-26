@@ -158,7 +158,7 @@ export {
   type ReviewHandler,
   type Reviews,
 } from "./confirmation-step.ts";
-export { CONFIRM_PATH, createConfirmRoute, type ConfirmRoute, type ConfirmRouteOptions } from "./confirm-route.ts";
+export { CONFIRM_PATH, createConfirmRoute, type ConfirmDownloads, type ConfirmRoute, type ConfirmRouteOptions, type Download } from "./confirm-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export {
   actionDigest,
@@ -177,7 +177,7 @@ export {
   type ConfirmationNoncesOptions,
   type GatedRouteClaim,
 } from "./confirmations.ts";
-export { CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+export { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 export { expireProposals } from "./proposal-endings.ts";
 export { notifyWaitingProposals, waitingByProposal } from "./proposal-waiting.ts";
 export { emailReceipts } from "./receipts.ts";

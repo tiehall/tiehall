@@ -118,7 +118,16 @@
     },
     {
       "item": "an export of the activity log;",
-      "actions": [{ "action": "an export of the activity log", "pending": "20.6" }]
+      "actions": [
+        {
+          "action": "an export of the activity log",
+          "event": "activity_log.exported",
+          "test": {
+            "file": "packages/commands/test/activity-log-export.test.ts",
+            "case": "gives Pia a JSONL file with one event per line, including the role change and the claim, and the activity log then holds a security event for the export that names Pia"
+          }
+        }
+      ]
     },
     {
       "item": "the completion of setup, naming the first admin.",

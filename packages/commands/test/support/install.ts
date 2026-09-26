@@ -16,6 +16,7 @@ import {
   migrate,
   openDatabase,
   REVIEWS,
+  CONFIRM_DOWNLOADS,
   CONFIRMATION_SUBJECTS,
   type Caller,
   type ConfirmRoute,
@@ -87,7 +88,7 @@ export async function startTestInstall(
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects, ...(options.now === undefined ? {} : { now: options.now }) });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
-    createConfirmRoute({ step, session, write: { execute, url, secret }, logger });
+    createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
 
   return {

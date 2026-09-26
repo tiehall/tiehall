@@ -1,8 +1,9 @@
-import { listActivityLog, type activityEvent } from "@tiehall/catalog";
+import { exportActivityLog, listActivityLog, type activityEvent } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
+import { CONFIRM_PATH } from "./confirm-route.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 
@@ -11,7 +12,8 @@ import { createLogger, type Logger } from "./log.ts";
 // admins only; design.md, Self-hosting decisions: S14 and S15). A GET shows a
 // signed-in admin the events activity_log.list returns for the filters in
 // the query (from, to, actor, request, type, before), newest first, with a
-// form to change the filters and a link to the older events. Every event
+// form to change the filters, a link to the older events and a link to the
+// export's review page (activity-log: Exporting the activity log). Every event
 // shows its number, time, class, type, the ids it carries, who caused it and
 // the request it concerns, and a security event its IP address and user
 // agent while they are kept. The page runs no script, loads nothing and
@@ -103,6 +105,7 @@ function page(query: URLSearchParams, events: ActivityEvent[]): string {
     [
       "      <h1>Activity log</h1>",
       "      <p>Every change to a request, and every security-relevant action, newest first. Security events show their IP address and user agent for 90 days.</p>",
+      `      <p><a href="${escapeHtml(`${CONFIRM_PATH}${exportActivityLog.id}?input=${encodeURIComponent("{}")}`)}">Export the whole log as JSONL</a>, with a confirmation.</p>`,
       `      <form method="get" action="${ACTIVITY_LOG_PATH}">`,
       field("from", "From", "2026-10-01T00:00:00Z"),
       field("to", "To", "2026-10-01T23:59:59Z"),

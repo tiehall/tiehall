@@ -78,7 +78,7 @@
     },
     {
       "item": "exporting the activity log.",
-      "actions": [{ "action": "exporting the activity log", "pending": "20.6" }]
+      "actions": [{ "action": "exporting the activity log", "command": "activity_log.export", "input": {} }]
     }
   ]
 }

@@ -25,7 +25,10 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // TIEHALL_URL and Sec-Fetch-Site: same-origin), and only through execute(),
 // which checks and consumes the nonce in the action's own transaction. A
 // request that fails a check, or carries no valid nonce, gets 403 and changes
-// nothing, so the session and the CSRF token alone never apply an action.
+// nothing, so the session and the CSRF token alone never apply an action. An
+// applied action answers with a "Confirmed" page, or, for a command listed
+// under downloads, such as the activity log's export, with the file made from
+// its output (activity-log: Exporting the activity log).
 // Every answer, refusals included, sends a Content-Security-Policy with
 // frame-ancestors 'none', so no other site can frame the page and trick a
 // click; the pages run no script and load nothing. A refusal is an RFC 9457
@@ -48,8 +51,20 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // proposals.undo for that proposal (requests: The undo window for reversible
 // commitments).
 
+/** A file a confirmed action answers with, such as the activity log's export. */
+export interface Download {
+  filename: string;
+  contentType: string;
+  body: string;
+}
+
+/** The commands whose confirmation answers with a file made from the command's output, by the command's id. */
+export type ConfirmDownloads = Readonly<Record<string, (output: unknown) => Download>>;
+
 export interface ConfirmRouteOptions {
   step: ConfirmationStep;
+  /** The commands whose confirmation answers with a file instead of the "Confirmed" page. */
+  downloads?: ConfirmDownloads;
   /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
   session(request: Request): Promise<WebSessionCaller | undefined>;
   /** How a confirmation is applied and checked. */
@@ -118,11 +133,13 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     // A proposal's page confirms the proposal its path names, whatever else the form sends.
     const { input, refusal } = proposal === undefined ? parseInput(form.get("input")) : { input: { proposal }, refusal: undefined };
     const nonce = form.get("nonce");
-    await options.write.execute(commandId, caller, input, {
+    const output = await options.write.execute(commandId, caller, input, {
       ...(refusal === undefined ? {} : { refusal }),
       ...(nonce === null || nonce === "" ? {} : { confirmation: { nonce } }),
       origin,
     });
+    const download = options.downloads?.[commandId];
+    if (download !== undefined) return file(download(output));
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
 }
@@ -172,6 +189,17 @@ function problem({ status, headers, body }: HttpProblem): Response {
 
 function page(html: string): Response {
   return new Response(html, { headers: PAGE_HEADERS });
+}
+
+/** The file a confirmed action answers with: sent as an attachment, never cached, and, like a page, not framed. */
+function file({ filename, contentType, body }: Download): Response {
+  return new Response(body, {
+    headers: {
+      ...PAGE_HEADERS,
+      "content-type": contentType,
+      "content-disposition": `attachment; filename="${filename.replace(/["\\\r\n]/g, "")}"`,
+    },
+  });
 }
 
 /** The review page: what will happen, and the form that applies it, with a form that rejects it on a proposal's page. */

@@ -303,6 +303,20 @@ export const trustStateReconciled = defineEventType({
   },
 });
 
+/**
+ * An admin exported the activity log (activity-log: Exporting the activity
+ * log; activity-log: Which actions are security events). It names the number
+ * of the last event the export holds; its provenance names the admin's web
+ * session, since the export takes the confirmation step.
+ */
+export const activityLogExported = defineEventType({
+  type: "activity_log.exported",
+  class: "security",
+  fields: {
+    lastNumber: { kind: "integer" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -323,4 +337,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   memberRemoved,
   writeBudgetChanged,
   trustStateReconciled,
+  activityLogExported,
 ];

@@ -25,7 +25,8 @@ interface CruiseResult {
 }
 
 function run(cwd: string, args: string[]) {
-  const result = spawnSync(depcruise, ["--config", config, ...args], { cwd, encoding: "utf8" });
+  // The JSON report of the real tree is several megabytes; the default buffer would cut it off (ENOBUFS).
+  const result = spawnSync(depcruise, ["--config", config, ...args], { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   if (result.error) throw result.error;
   return result;
 }

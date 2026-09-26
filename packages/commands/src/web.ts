@@ -10,7 +10,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
-import { CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+import { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { installUrl, readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 
@@ -105,6 +105,7 @@ export function confirmRoute(env: Environment): ConfirmRoute {
   // Sessions come with sign-in (group 7); until then nobody is signed in.
   confirm = createConfirmRoute({
     step,
+    downloads: CONFIRM_DOWNLOADS,
     session: async () => undefined,
     write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
     logger,

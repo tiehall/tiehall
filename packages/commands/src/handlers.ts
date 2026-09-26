@@ -1,3 +1,4 @@
+import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
@@ -32,4 +33,5 @@ export const HANDLERS: Handlers = {
   ...EVENT_READ_HANDLERS,
   ...WRITE_LIMIT_HANDLERS,
   ...ACTIVITY_LOG_HANDLERS,
+  ...ACTIVITY_LOG_EXPORT_HANDLERS,
 };
