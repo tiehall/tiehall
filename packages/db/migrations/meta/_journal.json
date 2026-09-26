@@ -22,6 +22,13 @@
       "when": 1790382568309,
       "tag": "0002_add_events",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790382679835,
+      "tag": "0003_make_events_append_only",
+      "breakpoints": true
     }
   ]
 }

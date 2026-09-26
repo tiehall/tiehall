@@ -50,8 +50,12 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  // As the owner, which the app role never is; the append-only trigger comes in 4.9.
-  await owner.query("DELETE FROM probe_messages; DELETE FROM events; DELETE FROM event_sequence");
+  // Events are append-only, whoever tries (activity-log: The activity log is append-only). The test container's
+  // superuser clears them by switching triggers off for its own transaction, which only the host's holder can do.
+  await owner.query(
+    `BEGIN; SET LOCAL session_replication_role = replica;
+     DELETE FROM probe_messages; DELETE FROM events; DELETE FROM event_sequence; COMMIT`,
+  );
 });
 
 /** Posts a message and appends its event in one transaction, as the handler of post_message will. */
