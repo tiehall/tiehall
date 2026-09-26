@@ -206,7 +206,8 @@ jobs:
           package-manager-cache: false
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      # The check reads the command catalog, so the catalog and its dependencies are installed too.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks --filter "@tiehall/catalog..."
       # tools/repo-checks/confirmation-actions.json mirrors the spec's list of
       # actions that need the confirmation step; an action a finished task built
       # names its confirm command and an input for its two cases, which the
