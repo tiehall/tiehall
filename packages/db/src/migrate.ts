@@ -1,4 +1,5 @@
 import pg from "pg";
+import { withPassword, type DatabaseConnection } from "./connection.ts";
 import { APP_SCHEMAS, setUpAppRole, type AppRole } from "./database-roles.ts";
 import { MigrationError, readMigrations, type Migration } from "./migration-files.ts";
 
@@ -28,12 +29,6 @@ export { MigrationError } from "./migration-files.ts";
 // ran the step, and the app does not start. The decision rests on the
 // migrations each image carries rather than on comparing version numbers, so
 // it also holds for a development build.
-
-export interface DatabaseConnection {
-  connectionString: string;
-  /** Given apart from the URL, so a secret file can hold it. */
-  password?: string;
-}
 
 export interface MigrateOptions {
   /** The folder drizzle-kit writes: meta/_journal.json and one .sql file per migration. */
@@ -250,16 +245,4 @@ function codeOf(error: unknown): string | undefined {
 function milliseconds(value: number): number {
   if (!Number.isInteger(value) || value <= 0) throw new RangeError(`A timeout must be a positive whole number of ms, not ${value}.`);
   return value;
-}
-
-/**
- * The connection string with the password set in it. pg lets the parts of a
- * connection string override its other options, so a separate password option
- * would lose to the URL's (possibly empty) one.
- */
-function withPassword({ connectionString, password }: DatabaseConnection): string {
-  if (password === undefined) return connectionString;
-  const url = new URL(connectionString);
-  url.password = encodeURIComponent(password);
-  return url.toString();
 }

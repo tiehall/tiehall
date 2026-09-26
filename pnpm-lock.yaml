@@ -298,9 +298,18 @@ importers:
         specifier: workspace:*
         version: link:../db
     devDependencies:
+      '@tiehall/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.5
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

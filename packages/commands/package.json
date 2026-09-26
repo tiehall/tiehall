@@ -18,7 +18,10 @@
     "@tiehall/db": "workspace:*"
   },
   "devDependencies": {
+    "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "pg": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
