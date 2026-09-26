@@ -1,0 +1,1 @@
+ALTER TABLE "things" ALTER COLUMN "id" SET DATA TYPE bigint;

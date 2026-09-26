@@ -1,0 +1,8 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    { "idx": 0, "version": "7", "when": 1790000000000, "tag": "0000_require_name", "breakpoints": true },
+    { "idx": 1, "version": "7", "when": 1790000000001, "tag": "0001_add_required_kind", "breakpoints": true }
+  ]
+}

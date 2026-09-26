@@ -18,7 +18,8 @@
     "check:compose": "node tools/repo-checks/src/check-compose.ts",
     "test:boot": "node tools/image-tests/src/boot-test.ts",
     "check:renovate": "node tools/repo-checks/src/check-renovate.ts",
-    "check:licenses": "node tools/repo-checks/src/check-licenses.ts"
+    "check:licenses": "node tools/repo-checks/src/check-licenses.ts",
+    "lint:migrations": "node packages/db/src/check-migrations.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
