@@ -384,7 +384,7 @@ These carry over from the hosted design. Each says what changes for self-hosting
 #### T10. zod schemas and the OpenAPI 3.1 document
 
 - **Choice.** zod 4.6 in the catalog is the single source. A build script walks the `rest` definitions and calls `createDocument()` from `zod-openapi` 6.0.x with `openapi: "3.1.0"`. Responses are emitted without `additionalProperties: false`. The output is committed as `openapi/v1.json` with sorted keys, and CI regenerates it and fails on a difference.
-- **Serving.** Every install serves `/api/v1/openapi.json` without authentication, and `/docs/api` with `@scalar/api-reference` 1.72.x from a bundle served by the install itself, with web fonts off, a strict CSP and the test-request panel hidden; the page loads nothing from other hosts (S13). The catch-all route sends `Deprecation` and `Sunset` from the same metadata.
+- **Serving.** Every install serves `/api/v1/openapi.json` without authentication, and `/docs/api` with `@scalar/api-reference` 1.69.x from a bundle served by the install itself, with web fonts off, a strict CSP and the test-request panel hidden; the page loads nothing from other hosts (S13). 1.69.x is the newest release that was at least 7 days old when it was pinned (T13); later ones come through Renovate after the same age. The CSP is `default-src 'none'`, with scripts only by a nonce fresh on each answer, `connect-src 'self'`, `img-src 'self' data:`, no fonts, and `base-uri`, `form-action` and `frame-ancestors` set to `'none'`; styles are allowed only inline (`style-src 'unsafe-inline'`, no host), because the bundle adds its styles at run time. The catch-all route sends `Deprecation` and `Sunset` from the same metadata.
 - **The client.** `@tiehall/client`, generated with openapi-typescript 7 and openapi-fetch, together with the command table the CLI builds its request subcommands from, read from each operation's `x-tiehall-cli` extension; the CLI bundles it (S16).
 - **Why.** One source keeps REST, MCP, the CLI, the reference page and the compatibility check in step.
 - **Alternatives and fallback.** A hand-written OpenAPI document, which drifts from the code. If `zod-openapi` stalls: `z.toJSONSchema()` plus our own path assembly, or `@asteasolutions/zod-to-openapi`.
@@ -443,6 +443,7 @@ These carry over from the hosted design. Each says what changes for self-hosting
 #### T17. Testing
 
 - **Kept.** Vitest; Testcontainers Postgres 17; the MCP SDK client for tool contract tests; a few Playwright flows; fence property tests; a canary test that proves message text and credentials never reach the logs; the recurring client matrix on Claude Code, Cursor, Codex and Copilot, which the maintainers run by hand because it needs real client accounts.
+- **Browsers.** The Playwright flows use `playwright-core` with the installed Google Chrome (Playwright's `chrome` channel), which GitHub's runners carry, so no test downloads a browser; on a machine without Chrome, `TIEHALL_TEST_CHROME` names another Chromium-based executable.
 - **New for self-hosting.**
   - A fresh-install test: the release `compose.yaml` with a `.env` from `init`, through the setup screen, against stubs of GitHub's manifest conversion, user authorization and API.
   - An upgrade test from the previous release's image with seeded data.
