@@ -7,7 +7,8 @@ import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 // UI). A catalog holds each operation once and refuses a definition that
 // would make the surfaces disagree or offer to an agent what only a person may
 // do: a second definition with the same id, a scope outside the three OAuth
-// scopes, a REST operation without its method and path, and a command that
+// scopes, a REST operation without its method and path or with the method and
+// path of another, even with its parameters named differently, and a command that
 // needs the confirmation step but is offered on an agent surface. A tool's
 // input and output must lower to schemas that current MCP clients accept
 // (agent-surfaces: Tool schemas that current clients accept).
@@ -79,10 +80,11 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
           if (fields !== undefined && !fields.includes(parameter)) problem(`its path names {${parameter}}, which is not a field of its input.`);
         }
         if (!duplicate) {
-          const route = `${method} ${path}`;
+          // Paths that differ only in their parameters' names match the same URLs, and OpenAPI counts them as one.
+          const route = `${method} ${path.replace(/\{[^}]*\}/g, "{}")}`;
           const other = routes.get(route);
           if (other === undefined) routes.set(route, definition.id);
-          else problem(`${route} is also the path of ${other}.`);
+          else problem(`${method} ${path} is also the path of ${other}.`);
         }
       }
     }

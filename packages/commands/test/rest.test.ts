@@ -345,6 +345,44 @@ describe("/api/v1/openapi.json", () => {
   });
 });
 
+// OpenAPI matches a literal path before a templated one; so does the route, whatever order the catalog lists them in.
+describe("paths that overlap", () => {
+  const define = (id: string, method: "GET" | "POST", path: string, input: z.ZodObject) =>
+    defineCommand({
+      id,
+      summary: "A probe.",
+      input,
+      output: z.object({}),
+      method,
+      path,
+      scopes: ["requests:read"],
+      commitment: false,
+      confirm: false,
+      surfaces: ["rest"],
+      stability: "alpha",
+    });
+  const overlapping = defineCatalog([
+    define("probes.get", "GET", "/api/v1/probes/{key}", z.object({ key: z.string() })),
+    define("probes.messages", "GET", "/api/v1/probes/{key}/messages", z.object({ key: z.string() })),
+    define("probes.search", "GET", "/api/v1/probes/search", z.object({ q: z.string().optional() })),
+    define("probes.search_messages", "GET", "/api/v1/probes/search/{scope}", z.object({ scope: z.string() })),
+  ]);
+  const route = createRestHandler({ catalog: overlapping, document: OPENAPI_JSON, execute, authenticate: async () => agent });
+
+  it("finds the operation whose path has a literal segment where the others have a parameter, from the left", async () => {
+    const cases: [string, string, unknown][] = [
+      ["/api/v1/probes/search?q=export", "probes.search", { q: "export" }],
+      ["/api/v1/probes/FE-142", "probes.get", { key: "FE-142" }],
+      ["/api/v1/probes/search/messages", "probes.search_messages", { scope: "messages" }],
+      ["/api/v1/probes/FE-142/messages", "probes.messages", { key: "FE-142" }],
+    ];
+    for (const [path, commandId, input] of cases) {
+      expect((await route(call("GET", path))).status, path).toBe(200);
+      expect(calls.at(-1), path).toMatchObject({ commandId, input });
+    }
+  });
+});
+
 describe("the catalog's REST paths", () => {
   it("start with /api/v1/, which a definition that breaks the rule fails", () => {
     for (const definition of CATALOG.commands.filter(({ surfaces }) => surfaces.includes("rest"))) {

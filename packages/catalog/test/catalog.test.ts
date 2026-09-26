@@ -166,6 +166,20 @@ describe("a catalog", () => {
     expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", tool: "read_request", cliCommand: "read" }])).toEqual([
       "requests.read: GET /api/v1/requests/{key} is also the path of requests.get.",
     ]);
+    // The same path with its parameter named differently matches the same URLs, and OpenAPI treats the two as one path.
+    expect(
+      catalogProblems([
+        ...fixtureCatalog,
+        { ...fixture.getRequest, id: "requests.read", input: z.object({ id: z.string() }), path: "/api/v1/requests/{id}", tool: "read_request", cliCommand: "read" },
+      ]),
+    ).toEqual(["requests.read: GET /api/v1/requests/{id} is also the path of requests.get."]);
+    // A literal segment where another path has a parameter is not the same path: the literal one wins on REST.
+    expect(
+      catalogProblems([
+        ...fixtureCatalog,
+        { ...fixture.getRequest, id: "requests.search", input: z.object({}), path: "/api/v1/requests/search", tool: "search_requests", cliCommand: "search" },
+      ]),
+    ).toEqual([]);
     expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", path: "/api/v1/read/{key}", cliCommand: "read" }])).toEqual([
       "requests.read: the tool get_request is also the tool of requests.get.",
     ]);

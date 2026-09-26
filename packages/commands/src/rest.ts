@@ -12,7 +12,10 @@ import { createLogger, type Logger } from "./log.ts";
 // cannot drift from the other surfaces:
 // - it finds the operation by method and path among the catalog's REST
 //   operations; any other path, including one whose operation is not offered
-//   on REST, answers 404 and runs nothing, whoever calls it;
+//   on REST, answers 404 and runs nothing, whoever calls it. Where two paths
+//   match, as /api/v1/requests/search and /api/v1/requests/{key} do, the one
+//   with a literal segment where the other has a parameter, from the left,
+//   wins, as OpenAPI matches concrete paths before templated ones;
 // - it asks who is calling, and answers a call without credentials with 401;
 // - it builds the input from the path's parameters and, for GET and DELETE,
 //   the query string, or, for the other methods, the JSON object in the body,
@@ -53,6 +56,8 @@ interface Route {
   definition: CommandDefinition;
   pattern: RegExp;
   parameters: string[];
+  /** Per path segment, 0 for a literal and 1 for a parameter, by which literal paths sort first. */
+  shape: number[];
 }
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
@@ -63,7 +68,10 @@ export const DOCUMENT_PATH = `${API_PREFIX}openapi.json`;
 export function createRestHandler(options: RestOptions): RestHandler {
   const logger = options.logger ?? createLogger();
   const now = options.now ?? (() => new Date());
-  const routes = options.catalog.commands.filter(({ surfaces }) => surfaces.includes("rest")).map(routeOf);
+  const routes = options.catalog.commands
+    .filter(({ surfaces }) => surfaces.includes("rest"))
+    .map(routeOf)
+    .sort((a, b) => literalFirst(a.shape, b.shape));
 
   return async function handle(request) {
     const url = new URL(request.url);
@@ -126,16 +134,28 @@ export function createRestHandler(options: RestOptions): RestHandler {
 
 function routeOf(definition: CommandDefinition): Route {
   const parameters: string[] = [];
+  const shape: number[] = [];
   const source = (definition.path ?? "")
     .split("/")
     .map((segment) => {
       const parameter = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(segment)?.[1];
+      shape.push(parameter === undefined ? 0 : 1);
       if (parameter === undefined) return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       parameters.push(parameter);
       return "([^/]+)";
     })
     .join("/");
-  return { definition, pattern: new RegExp(`^${source}$`), parameters };
+  return { definition, pattern: new RegExp(`^${source}$`), parameters, shape };
+}
+
+/** Orders two paths so that, at the first segment where one has a literal and the other a parameter, the literal comes first. */
+function literalFirst(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  // Paths of different lengths never match the same URL; ordering them by length keeps the order total.
+  return a.length - b.length;
 }
 
 /** An operation found by method and path, with the path's parameters, decoded. */
