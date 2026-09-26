@@ -71,6 +71,7 @@ export {
 } from "./packets.ts";
 export { GITHUB_LOGIN, role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
+export { JIRA_SITE_URL, jiraSiteUrl } from "./integrations.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
