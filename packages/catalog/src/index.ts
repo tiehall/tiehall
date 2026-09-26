@@ -70,7 +70,17 @@ export {
   PACKET_FIELD_NAME,
   packetRevision,
 } from "./packets.ts";
-export { CONFIRMATION_STEPS, confirmProposal, getProposal, isProposalAnswer, proposal, proposalAnswer, PROPOSAL_COMMANDS } from "./proposals.ts";
+export {
+  CONFIRMATION_STEPS,
+  confirmProposal,
+  getProposal,
+  isProposalAnswer,
+  proposal,
+  proposalAnswer,
+  PROPOSAL_COMMANDS,
+  rejectProposal,
+  withdrawProposal,
+} from "./proposals.ts";
 export { GITHUB_LOGIN, role, user } from "./schemas.ts";
 export { setWriteBudget, SETTINGS_COMMANDS } from "./settings.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";

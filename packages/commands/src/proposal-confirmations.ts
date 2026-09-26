@@ -56,7 +56,7 @@ import type { Writer } from "./write.ts";
 // provenance, which cancels the packet changes based on an older revision.
 
 /** A proposal as stored, with its row locked until the call's transaction ends; 404 when there is none. */
-async function lockProposal({ tx, orgId }: OrgContext, proposalId: string) {
+export async function lockProposal({ tx, orgId }: OrgContext, proposalId: string) {
   const [row] = await tx
     .select()
     .from(proposals)
@@ -66,10 +66,10 @@ async function lockProposal({ tx, orgId }: OrgContext, proposalId: string) {
   return row;
 }
 
-type StoredProposal = Awaited<ReturnType<typeof lockProposal>>;
+export type StoredProposal = Awaited<ReturnType<typeof lockProposal>>;
 
 /** The proposal as the pure rules see it. */
-async function standingOf({ tx, orgId }: OrgContext, stored: StoredProposal): Promise<ProposalStanding> {
+export async function standingOf({ tx, orgId }: OrgContext, stored: StoredProposal): Promise<ProposalStanding> {
   const received = await tx
     .select({ step: proposalConfirmations.step })
     .from(proposalConfirmations)

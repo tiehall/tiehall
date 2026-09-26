@@ -122,4 +122,29 @@ export const confirmProposal = defineCommand({
   stability: "alpha",
 });
 
-export const PROPOSAL_COMMANDS = [getProposal, confirmProposal];
+export const rejectProposal = defineCommand({
+  id: "proposals.reject",
+  summary:
+    "Reject a pending proposal in the web UI, as its accountable human or, once that human has confirmed, as a person who may give the other side's confirmation; it ends without taking effect.",
+  input: z.object({ proposal: z.uuid().meta({ description: "The proposal's id." }) }),
+  output: proposal,
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const withdrawProposal = defineCommand({
+  id: "proposals.withdraw",
+  summary: "Withdraw a pending proposal you proposed, in the web UI; it ends without taking effect.",
+  input: z.object({ proposal: z.uuid().meta({ description: "The proposal's id." }) }),
+  output: proposal,
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const PROPOSAL_COMMANDS = [getProposal, confirmProposal, rejectProposal, withdrawProposal];
