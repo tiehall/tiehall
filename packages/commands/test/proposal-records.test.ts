@@ -143,8 +143,7 @@ describe("what a proposal proposes", () => {
     await expect(install.db.$client.query("DELETE FROM proposal_confirmations WHERE proposal_id = $1", [proposal])).rejects.toThrow();
   });
 
-  // Committed as an expected failure until task 14.8 builds the confirmation of a proposal.
-  it.fails("keeps a received confirmation valid while the claim moves", async () => {
+  it("keeps a received confirmation valid while the claim moves", async () => {
     const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
     await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/claim`);
     const proposal = (await addRevision(alice, request.key, packetWith({ acceptance_criteria: ["Changed after the claim."] }))).body.proposal.id;

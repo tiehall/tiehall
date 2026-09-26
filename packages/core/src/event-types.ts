@@ -169,6 +169,25 @@ export const proposalCreated = defineEventType({
 });
 
 /**
+ * A person confirmed a proposal in the web UI (requests: A confirmed commitment
+ * applies only if the request still allows it; requests: Cross-team
+ * commitments need a confirmation from each side). It names the request, the
+ * proposal, the step the confirmation gave, its accountable human's or the
+ * other side's, and whether it made the commitment take effect; its
+ * provenance names the web session that confirmed it.
+ */
+export const proposalConfirmed = defineEventType({
+  type: "proposal.confirmed",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    proposalId: { kind: "id", of: "proposal" },
+    step: { kind: "enum", values: ["accountable_human", "other_side"] },
+    applied: { kind: "boolean" },
+  },
+});
+
+/**
  * A proposal ended without taking effect (requests: How a proposal ends
  * without taking effect; requests: The event log). It names the request, the
  * proposal and how it ended: rejected, withdrawn, expired or cancelled, and,
@@ -244,6 +263,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,
   proposalCreated,
+  proposalConfirmed,
   proposalEnded,
   memberRoleChanged,
   memberRemoved,

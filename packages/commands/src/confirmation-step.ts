@@ -25,8 +25,9 @@ import type { Store } from "./write.ts";
 //   the command will get, and runs only for a user whose role allows the
 //   action (403 for a member on an admin action's page);
 // - comes with the confirmation nonce for the page, bound to the user, the
-//   session and the command with that exact input, which stores nothing
-//   (agent-safety: One confirmation approves one action).
+//   session and the command with that exact input, or, for a proposal's
+//   confirmation, what the proposal proposes and the request it applies to,
+//   which stores nothing (agent-safety: One confirmation approves one action).
 
 /** What a review reads with: the call's read-only transaction, the install's org and the signed-in user. */
 export interface ReviewContext extends OrgContext {
@@ -38,6 +39,25 @@ export type ReviewHandler = (input: unknown, context: ReviewContext) => Promise<
 
 /** One review per command of the catalog that needs the confirmation step, by the command's id. */
 export type Reviews = Readonly<Record<string, ReviewHandler>>;
+
+/**
+ * What a command's confirmation nonce is bound to, when it is not the
+ * command's input: a function of the parsed input, read in the call's
+ * transaction. A proposal's confirm page binds its nonce to what the proposal
+ * proposes and the request it applies to (design.md, Technical decisions: T3).
+ */
+export type ConfirmationSubjects = Readonly<Record<string, (input: unknown, context: OrgContext) => Promise<unknown>>>;
+
+/** What a command's nonce is bound to: its subject, or its parsed input for a command with none. */
+export async function confirmationSubjectOf(
+  subjects: ConfirmationSubjects | undefined,
+  commandId: string,
+  input: unknown,
+  context: OrgContext,
+): Promise<unknown> {
+  const subject = subjects?.[commandId];
+  return subject === undefined ? input : subject(input, context);
+}
 
 /** An action ready for its review page: the command, its parsed input, what it will do and the page's nonce. */
 export interface ReviewedAction {
@@ -52,6 +72,8 @@ export interface ReviewedAction {
 export interface ConfirmationStepServices {
   catalog: Catalog;
   reviews: Reviews;
+  /** What each command's nonce is bound to, where it is not the command's input. */
+  subjects?: ConfirmationSubjects;
   store: Pick<Store, "database">;
   confirmations: ConfirmationNonces;
 }
@@ -97,11 +119,17 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
             throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
           }
           assertRoleAllows(definition, context.member);
-          return { input: parsed.data as unknown, review: await handler(parsed.data, { ...context, caller }) };
+          const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
+          return { input: parsed.data as unknown, subject, review: await handler(parsed.data, { ...context, caller }) };
         },
         { readOnly: true, forUser: caller.userId },
       );
-      return { commandId, ...reviewed, nonce: services.confirmations.issue(caller, commandId, reviewed.input) };
+      return {
+        commandId,
+        input: reviewed.input,
+        review: reviewed.review,
+        nonce: services.confirmations.issue(caller, commandId, reviewed.subject),
+      };
     },
   };
 }

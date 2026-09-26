@@ -43,9 +43,15 @@ export async function insertPacketRevision(
 
 /**
  * Adds the next revision of the request's packet, with the write's provenance,
- * and the domain event that names it; returns the new revision's number.
+ * or, for a confirmed packet change, its proposer's, and the domain event that
+ * names it; returns the new revision's number.
  */
-export async function storePacketRevision(writer: Writer, requestId: string, packet: Packet): Promise<number> {
+export async function storePacketRevision(
+  writer: Writer,
+  requestId: string,
+  packet: Packet,
+  stamp?: ReturnType<typeof stampOf>,
+): Promise<number> {
   await lockRequestById(writer, requestId);
   await writer.changesRequest(requestId);
   const [latest] = await writer.tx
@@ -54,7 +60,8 @@ export async function storePacketRevision(writer: Writer, requestId: string, pac
     .where(and(eq(packetRevisions.orgId, writer.orgId), eq(packetRevisions.requestId, requestId)));
   const number = (latest?.number ?? 0) + 1;
   const { provenance } = writer;
-  await insertPacketRevision(writer, requestId, number, packet, stampOf(provenance, provenance.actorKind === "operator" ? undefined : provenance.teamId));
+  const stamped = stamp ?? stampOf(provenance, provenance.actorKind === "operator" ? undefined : provenance.teamId);
+  await insertPacketRevision(writer, requestId, number, packet, stamped);
   await writer.record(requestPacketRevised, { requestId, revision: number });
   await cancelProposals(writer, requestId, { kind: "revision_added", revision: number });
   return number;

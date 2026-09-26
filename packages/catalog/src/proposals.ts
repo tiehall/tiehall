@@ -109,4 +109,17 @@ export const getProposal = defineCommand({
   stability: "alpha",
 });
 
-export const PROPOSAL_COMMANDS = [getProposal];
+export const confirmProposal = defineCommand({
+  id: "proposals.confirm",
+  summary:
+    "Confirm a proposal in the web UI, as its accountable human or, once that human has confirmed, as a person who may give the other side's confirmation; the last confirmation it needs applies the commitment.",
+  input: z.object({ proposal: z.uuid().meta({ description: "The proposal's id." }) }),
+  output: proposal,
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const PROPOSAL_COMMANDS = [getProposal, confirmProposal];

@@ -152,6 +152,7 @@ export {
   createConfirmationStep,
   type ConfirmationStep,
   type ConfirmationStepServices,
+  type ConfirmationSubjects,
   type ReviewContext,
   type ReviewedAction,
   type ReviewHandler,
@@ -175,7 +176,7 @@ export {
   type ConfirmationNoncesOptions,
   type GatedRouteClaim,
 } from "./confirmations.ts";
-export { REVIEWS } from "./reviews.ts";
+export { CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,

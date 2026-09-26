@@ -113,8 +113,7 @@ describe("a proposed packet change", () => {
     expect(proposals).toMatchObject([{ kind: "scope", state: "pending", baseRevision: 2 }]);
   });
 
-  // Committed as an expected failure until task 14.8 builds the confirmation of a proposal.
-  it.fails("is cancelled when another proposal on its base takes effect first, and confirming it then gets 409 and adds no revision", async () => {
+  it("is cancelled when another proposal on its base takes effect first, and confirming it then gets 409 and adds no revision", async () => {
     const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
     for (const [revision, link] of [[1, "a"], [2, "b"]] as const) {
       await addRevision(alice, request.key, packetWith({ links: [{ url: `https://wiki.example.com/${link}` }] }), revision);

@@ -2,6 +2,7 @@ import { isProposalAnswer, proposalAnswer, type Catalog, type CommandDefinition 
 import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
+import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
 import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
 import type { RequestRow } from "./request-views.ts";
@@ -34,8 +35,10 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // 5. asks for the confirmation step for a `confirm` command, refusing one
 //    without a valid confirmation nonce with 403: only a web session may run
 //    it, and its nonce, bound to that user, that session and this command
-//    with this exact input, is checked and consumed in the call's transaction
-//    (agent-safety: One confirmation approves one action);
+//    with this exact input, or, for a proposal's confirmation, what the
+//    proposal proposes and the request it applies to, is checked and consumed
+//    in the call's transaction (agent-safety: One confirmation approves one
+//    action);
 // 6. runs the handler in that transaction, so its change, its events and its
 //    jobs commit together or not at all, with the provenance it stamps from
 //    the caller, never from the payload, whose keys for it the schema drops
@@ -125,6 +128,8 @@ export interface ExecuteServices {
   handlers: Handlers;
   store: Store;
   confirmations?: Confirmations;
+  /** What each command's confirmation nonce is bound to, where it is not the command's input. */
+  subjects?: ConfirmationSubjects;
   /** The clock the limits on agent writes are counted by; the system clock unless a test controls it. */
   now?: () => Date;
 }
@@ -220,7 +225,8 @@ export function createExecute(services: ExecuteServices): Execute {
         const member = context.member;
         assertRoleAllows(definition, member);
         if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
-          const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
+          const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
+          const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: subject };
           if (!(await confirmations.consume(context, claim))) {
             throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
           }

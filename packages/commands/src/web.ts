@@ -9,7 +9,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
-import { REVIEWS } from "./reviews.ts";
+import { CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { installUrl, readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 
@@ -53,8 +53,8 @@ function servicesOf(env: Environment): { execute: Execute; step: ConfirmationSte
   // The confirmation step's nonces, signed with TIEHALL_AUTH_SECRET, which is read when one is first issued or checked.
   const confirmations = createConfirmationNonces({ secret: () => readAuthSecret(env) });
   services = {
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations }),
-    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations }),
+    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
+    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     logger,
   };
   return services;

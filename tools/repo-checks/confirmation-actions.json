@@ -4,7 +4,11 @@
     {
       "item": "confirming a proposal, which is how a commitment takes effect, and undoing a commitment within its undo window, as the requests capability defines who may do each and when;",
       "actions": [
-        { "action": "confirming a proposal", "pending": "14.10" },
+        {
+          "action": "confirming a proposal",
+          "command": "proposals.confirm",
+          "input": { "proposal": "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" }
+        },
         { "action": "undoing a commitment within its undo window", "pending": "14.16" }
       ]
     },
