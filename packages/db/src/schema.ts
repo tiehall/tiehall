@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  date,
   foreignKey,
   index,
   inet,
@@ -570,6 +571,13 @@ export const messages = pgTable(
     /** The team the user acted for. */
     teamId: uuid("team_id"),
     postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * For an agent's blocking question that moved its request from in_progress
+     * to needs_info, the UTC day of the flip it started, which the flip limit
+     * counts (agent-safety: A request flips between needs_info and in_progress
+     * at most 3 times a day).
+     */
+    countedFlipOn: date("counted_flip_on"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -598,6 +606,7 @@ export const messages = pgTable(
     check("messages_number_positive", sql`${table.number} > 0`),
     check("messages_kind_known", sql`${table.kind} IN ('comment', 'question', 'answer')`),
     check("messages_blocking_questions_only", sql`NOT ${table.blocking} OR ${table.kind} = 'question'`),
+    check("messages_flips_blocking_questions_only", sql`${table.countedFlipOn} IS NULL OR ${table.blocking}`),
     check("messages_answers_name_questions", sql`(${table.kind} = 'answer') = (${table.questionId} IS NOT NULL)`),
     check("messages_actor_kind_known", sql`${table.actorKind} IN ('agent', 'web_session', 'system', 'integration')`),
     check(

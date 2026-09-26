@@ -50,6 +50,8 @@ export interface HandlerContext extends OrgContext {
   readonly member: Member | undefined;
   /** Who causes what this call changes, stamped from the caller alone, never from the payload. */
   readonly provenance: Provenance;
+  /** The clock of this call, which the limits on agent writes count by. */
+  now(): Date;
   /**
    * Runs a change in the call's transaction, with the event that records it
    * and the caller's provenance, to which the handler adds the team the user
@@ -197,6 +199,7 @@ export function createExecute(services: ExecuteServices): Execute {
           caller,
           member,
           provenance,
+          now,
           write: (change, { teamId } = {}) => writeIn(context, store.jobs, actingFor(provenance, teamId), change, writeOptions),
         };
         const run = async () => {

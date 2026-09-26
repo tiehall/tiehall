@@ -4,6 +4,7 @@ export * from "./confirmation.ts";
 export * from "./error-model.ts";
 export * from "./events.ts";
 export * from "./event-types.ts";
+export * from "./flip-limit.ts";
 export * from "./json-patch.ts";
 export * from "./loop-limit.ts";
 export * from "./packet-changes.ts";

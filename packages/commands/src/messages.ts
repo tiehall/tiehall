@@ -1,7 +1,18 @@
 import { editMessage, getMessage, postMessage } from "@tiehall/catalog";
-import { messageEdited, messagePosted, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
-import { messages, messageVersions } from "@tiehall/db";
+import {
+  FLIPS_PER_DAY,
+  formatRequestKey,
+  messageEdited,
+  messagePosted,
+  Refusal,
+  requestStateChanged,
+  startsCountedFlip,
+  utcDay,
+  type RequestLifecycle,
+} from "@tiehall/core";
+import { messages, messageVersions, teams } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
+import { appendEvent } from "./append-event.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { recordHumanAction } from "./loop-limit.ts";
 import {
@@ -17,6 +28,7 @@ import {
 } from "./request-changes.ts";
 import { messageRowOf, messageView, requestView, versionsOf } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
+import type { Writer } from "./write.ts";
 
 // A request's thread (requests: Thread messages and blocking questions;
 // requests: Requests only, with questions in the request's thread; requests:
@@ -43,8 +55,51 @@ import type { OrgContext } from "./with-org.ts";
 // for an agent (agent-safety: Runaway agent loops flag the request
 // needs_human); a message posted from a web session is a human action, which
 // clears the request's flag and both of its counts.
+//
+// The flip limit (agent-safety: A request flips between needs_info and
+// in_progress at most 3 times a day): an agent's blocking question on a
+// request that is in_progress starts a counted flip on the UTC day it is
+// posted, which the question records. When the request has made 3 counted
+// flips that day, the question is posted as non-blocking instead, the request
+// stays in_progress, and Tiehall adds a notice to the thread in its own words,
+// recorded with the actor kind system.
 
 /** The question an answer names, on the request it is posted on; 404 when there is none. */
+/** How many counted flips the request started on a UTC day. */
+async function countedFlipsOn({ tx, orgId }: OrgContext, requestId: string, day: string): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(messages)
+    .where(and(eq(messages.orgId, orgId), eq(messages.requestId, requestId), eq(messages.countedFlipOn, day)));
+  return row?.count ?? 0;
+}
+
+/** The next number in the request's thread. */
+async function nextMessageNumber({ tx, orgId }: OrgContext, requestId: string): Promise<number> {
+  const [placed] = await tx
+    .select({ number: sql<number>`coalesce(max(${messages.number}), 0)::int + 1` })
+    .from(messages)
+    .where(and(eq(messages.orgId, orgId), eq(messages.requestId, requestId)));
+  return placed?.number ?? 1;
+}
+
+/** Adds Tiehall's notice that an agent's blocking question was posted as non-blocking, with its own event. */
+async function addFlipNotice(writer: Writer, requestId: string, targetTeamId: string, number: number): Promise<void> {
+  const { tx, orgId } = writer;
+  const [team] = await tx.select({ key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, targetTeamId)));
+  const key = formatRequestKey(team?.key ?? "", number);
+  const body =
+    `Tiehall posted the question above as non-blocking: agents have already moved ${key} from in_progress to needs_info and back ` +
+    `${FLIPS_PER_DAY} times today (UTC). A blocking question posted from the web UI still moves it to needs_info.`;
+  const [notice] = await tx
+    .insert(messages)
+    .values({ orgId, requestId, number: await nextMessageNumber(writer, requestId), kind: "comment", blocking: false, actorKind: "system" })
+    .returning({ id: messages.id });
+  if (notice === undefined) throw new Error("The notice was not returned.");
+  await tx.insert(messageVersions).values({ orgId, messageId: notice.id, version: 1, body });
+  await appendEvent(writer, messagePosted, { requestId, messageId: notice.id, kind: "comment", blocking: false }, { actorKind: "system" });
+}
+
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {
   const [question] = await tx
     .select({ id: messages.id, blocking: messages.blocking })
@@ -65,8 +120,12 @@ export const MESSAGE_HANDLERS: Handlers = {
     const row = await lockRequest(context, input.key);
     await assertSideAllows(context, userId, row, "post_message");
     const current = await lifecycleOf(context, row);
-    const blocking = input.kind === "question" && input.blocking === true;
+    let blocking = input.kind === "question" && input.blocking === true;
     const questionId = input.kind === "answer" ? input.questionId : undefined;
+    const day = utcDay(context.now());
+    const startsFlip = startsCountedFlip({ actorKind: context.provenance.actorKind, blocking, state: current.state });
+    const overFlipLimit = startsFlip && (await countedFlipsOn(context, row.id, day)) >= FLIPS_PER_DAY;
+    if (overFlipLimit) blocking = false;
     let next: RequestLifecycle = current;
     if (blocking) next = transition(current, { kind: "ask_blocking" });
     if (questionId !== undefined) {
@@ -78,19 +137,16 @@ export const MESSAGE_HANDLERS: Handlers = {
     return context.write(async (writer) => {
       await writer.changesRequest(row.id);
       const { tx, orgId } = writer;
-      const [placed] = await tx
-        .select({ number: sql<number>`coalesce(max(${messages.number}), 0)::int + 1` })
-        .from(messages)
-        .where(and(eq(messages.orgId, orgId), eq(messages.requestId, row.id)));
       const [posted] = await tx
         .insert(messages)
         .values({
           orgId,
           requestId: row.id,
-          number: placed?.number ?? 1,
+          number: await nextMessageNumber(writer, row.id),
           kind: input.kind,
           blocking,
           questionId: questionId ?? null,
+          countedFlipOn: startsFlip && !overFlipLimit ? day : null,
           ...stamp,
         })
         .returning({ id: messages.id });
@@ -103,6 +159,7 @@ export const MESSAGE_HANDLERS: Handlers = {
         blocking,
         ...(questionId === undefined ? {} : { questionId }),
       });
+      if (overFlipLimit) await addFlipNotice(writer, row.id, row.targetTeamId, row.number);
       if (next.state !== current.state) {
         await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: current.state });
       }

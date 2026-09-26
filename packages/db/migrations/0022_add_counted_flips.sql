@@ -1,0 +1,2 @@
+ALTER TABLE "messages" ADD COLUMN "counted_flip_on" date;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_flips_blocking_questions_only" CHECK ("messages"."counted_flip_on" IS NULL OR "messages"."blocking");
