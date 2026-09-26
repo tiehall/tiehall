@@ -60,12 +60,13 @@ async function teamKeysOf({ tx, orgId }: OrgContext, userId: string): Promise<st
   return rows.map(({ key }) => key);
 }
 
-/** The install's admins, with their rows locked until the call's transaction ends. */
+/** The install's admins, with their rows locked, in the order of their ids, until the call's transaction ends. */
 async function lockAdmins({ tx, orgId }: OrgContext): Promise<string[]> {
   const rows = await tx
     .select({ userId: members.userId })
     .from(members)
     .where(and(eq(members.orgId, orgId), eq(members.role, "admin")))
+    .orderBy(asc(members.userId))
     .for("update");
   return rows.map(({ userId }) => userId);
 }

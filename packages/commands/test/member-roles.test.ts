@@ -175,6 +175,18 @@ describe("keeping an admin", () => {
   });
 });
 
+describe("two admins stepping down at the same moment", () => {
+  it("keep an admin: one change applies, and the other gets 409", async () => {
+    await install.owner.query("UPDATE members SET role = 'admin' WHERE user_id = $1", [dana.userId]);
+    const answers = await Promise.all([
+      install.confirm(ada, "members.change_role", { userId: ada.userId, role: "member" }),
+      install.confirm(dana, "members.change_role", { userId: dana.userId, role: "member" }),
+    ]);
+    expect(answers.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect((await install.owner.query("SELECT count(*)::int AS admins FROM members WHERE role = 'admin'")).rows).toEqual([{ admins: 1 }]);
+  });
+});
+
 describe("a role change that is not allowed", () => {
   it("naming a role other than admin or member, such as owner, gets 400 and changes nothing", async () => {
     expect(await problemOf(await install.confirm(ada, "members.change_role", { userId: dana.userId, role: "owner" }))).toEqual({
