@@ -85,6 +85,8 @@ export interface ExecuteOptions {
    * such as the REST route's Idempotency-Key, which claims its key there.
    */
   around?: (context: OrgContext, run: () => Promise<unknown>) => Promise<unknown>;
+  /** Runs the call in a read-only transaction, in which any write fails, as a web page's read does. */
+  readOnly?: boolean;
 }
 
 export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
@@ -151,25 +153,29 @@ export function createExecute(services: ExecuteServices): Execute {
     // 5. and 6. The handler, in the install's org, and only output that passes its schema.
     const provenance = provenanceOf(caller);
     const writeOptions = options.origin === undefined ? {} : { origin: options.origin };
-    return withOrg(store.database, async (context) => {
-      if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
-        const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
-        if (!(await confirmations.consume(context, claim))) {
-          throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+    return withOrg(
+      store.database,
+      async (context) => {
+        if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
+          const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
+          if (!(await confirmations.consume(context, claim))) {
+            throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+          }
         }
-      }
-      const handlerContext: HandlerContext = {
-        ...context,
-        caller,
-        write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
-      };
-      const run = async () => {
-        const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
-        if (!output.success) throw new OutputSchemaError(commandId);
-        return output.data;
-      };
-      return options.around === undefined ? run() : options.around(context, run);
-    });
+        const handlerContext: HandlerContext = {
+          ...context,
+          caller,
+          write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
+        };
+        const run = async () => {
+          const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
+          if (!output.success) throw new OutputSchemaError(commandId);
+          return output.data;
+        };
+        return options.around === undefined ? run() : options.around(context, run);
+      },
+      { readOnly: options.readOnly === true },
+    );
   };
 }
 

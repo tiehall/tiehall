@@ -372,6 +372,12 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(response.status).toBe(401);
     expect(response.headers.get("content-type")).toBe("application/problem+json");
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    const confirmation = await fetch(`http://127.0.0.1:${port}/confirm/tokens.create`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://localhost:3000", "sec-fetch-site": "same-origin" },
+      body: "input=%7B%7D&nonce=x&csrf=y",
+    });
+    expect(confirmation.status).toBe(401);
   });
 
   it("tags its pages with the commit as the deployment id", async () => {

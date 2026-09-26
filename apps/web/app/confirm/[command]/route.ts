@@ -1,12 +1,17 @@
 import { confirmRoute } from "@tiehall/commands/web";
 
 // The review pages of the confirmation step (agent-safety: The review page of
-// the confirmation step): /confirm/<command id>?input=<JSON> shows exactly what
-// the action will do, in Tiehall's own words, and changes nothing.
+// the confirmation step; agent-safety: One confirmation approves one action):
+// GET /confirm/<command id>?input=<JSON> shows exactly what the action will
+// do, in Tiehall's own words, and changes nothing; its form's POST applies the
+// action with the page's nonce, from the install's own origin, with the
+// session's CSRF token.
 
 // Answered on every call, never prerendered or cached.
 export const dynamic = "force-dynamic";
 
-export function GET(request: Request): Promise<Response> {
+function handle(request: Request): Promise<Response> {
   return confirmRoute(process.env)(request);
 }
+
+export { handle as GET, handle as POST };

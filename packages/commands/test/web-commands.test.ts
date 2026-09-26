@@ -11,6 +11,7 @@ import {
   createLogger,
   createRestHandler,
   createWebCommands,
+  csrfTokenFor,
   migrate,
   openDatabase,
   type Caller,
@@ -18,6 +19,7 @@ import {
   type Execute,
   type LogEntry,
   type WebSessionCaller,
+  type WebWriteRequest,
 } from "../src/index.ts";
 
 // The web UI's authorization path (public-api: One definition per operation,
@@ -94,8 +96,27 @@ afterAll(async () => {
 
 const session = (userId: string): WebSessionCaller => ({ kind: "web_session", userId, sessionId: randomUUID() });
 
+const URL_OF_INSTALL = "https://tiehall.example.com";
+const SECRET = randomBytes(32).toString("base64url");
+
 function web(caller: WebSessionCaller | undefined) {
-  return createWebCommands({ execute, session: async () => caller, logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }) });
+  return createWebCommands({
+    execute,
+    session: async () => caller,
+    url: URL_OF_INSTALL,
+    secret: () => SECRET,
+    logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
+  });
+}
+
+/** A form posted from a page of the install, with the session's CSRF token, as every web UI write is. */
+function fromThePage(caller: WebSessionCaller | undefined): WebWriteRequest {
+  return { origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(SECRET, caller?.sessionId ?? "") };
+}
+
+/** Runs the decline from a server action, as the signed-in user's web session. */
+function decline(caller: WebSessionCaller | undefined, input: unknown) {
+  return web(caller).write("probes.decline", input, fromThePage(caller));
 }
 
 /** The same user over /api/v1, with a personal access token. */
@@ -118,7 +139,7 @@ describe("a web session", () => {
     expect(rest.headers.get("content-type")).toBe("application/problem+json");
     const restProblem = await rest.json();
 
-    const result = await web(session(OTHER_MEMBER)).run("probes.decline", { key: "FE-142", reason: "Not ours" });
+    const result = await decline(session(OTHER_MEMBER), { key: "FE-142", reason: "Not ours" });
     expect(result).toEqual({ ok: false, problem: restProblem });
     expect(result).toMatchObject({ problem: { status: 403, type: "https://tiehall.com/problems/forbidden" } });
   });
@@ -126,30 +147,33 @@ describe("a web session", () => {
   it("runs an operation its user may run, as the same user does over /api/v1", async () => {
     const rest = await overRest(TARGET_MEMBER, { reason: "We cannot take it this quarter" });
     expect(rest.status).toBe(200);
-    const result = await web(session(TARGET_MEMBER)).run("probes.decline", { key: "FE-142", reason: "We cannot take it this quarter" });
+    const result = await decline(session(TARGET_MEMBER), { key: "FE-142", reason: "We cannot take it this quarter" });
     expect(result).toEqual({ ok: true, output: await rest.json() });
   });
 
   it("refuses input that fails the schema with the same 400 problem as /api/v1", async () => {
     const restProblem = await (await overRest(TARGET_MEMBER, { reason: "" })).json();
-    expect(await web(session(TARGET_MEMBER)).run("probes.decline", { key: "FE-142", reason: "" })).toEqual({ ok: false, problem: restProblem });
+    expect(await decline(session(TARGET_MEMBER), { key: "FE-142", reason: "" })).toEqual({ ok: false, problem: restProblem });
   });
 
   it("runs nothing without a signed-in user, answering as /api/v1 does without credentials", async () => {
-    const result = await web(undefined).run("probes.decline", { key: "FE-142", reason: "Not ours" });
+    const result = await decline(undefined, { key: "FE-142", reason: "Not ours" });
     expect(result).toMatchObject({ ok: false, problem: { status: 401, type: "https://tiehall.com/problems/unauthenticated" } });
   });
 
   it("answers a failure that is not a refusal with a 500 problem that says nothing about it, and logs it without its message", async () => {
     logged = [];
+    const caller = session(TARGET_MEMBER);
     const failing = createWebCommands({
       execute: async () => {
         throw new Error("connection to postgres://tiehall_app:hunter2@db failed");
       },
-      session: async () => session(TARGET_MEMBER),
+      session: async () => caller,
+      url: URL_OF_INSTALL,
+      secret: () => SECRET,
       logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
     });
-    const result = await failing.run("probes.decline", { key: "FE-142", reason: "x" });
+    const result = await failing.write("probes.decline", { key: "FE-142", reason: "x" }, fromThePage(caller));
     expect(result).toMatchObject({ ok: false, problem: { status: 500 } });
     expect(JSON.stringify(result)).not.toContain("hunter2");
     expect(logged).toEqual([expect.objectContaining({ level: "error", operationId: "probes.decline" })]);

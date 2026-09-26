@@ -232,7 +232,7 @@ describe("the review page's nonce", () => {
       store: { database: db },
       confirmations: nonces,
     });
-    const route = createConfirmRoute({ step, session: async () => pia });
+    const route = createConfirmRoute({ step, session: async () => pia, write: { execute, url: "https://tiehall.example.com", secret: SECRET } });
     const input = JSON.stringify({ role: "admin", userId: LEE, ignored: "dropped by the schema" });
     const html = await (await route(new Request(`https://tiehall.example.com/confirm/probes.change_role?input=${encodeURIComponent(input)}`))).text();
     const nonce = /<input type="hidden" name="nonce" value="([^"]+)">/.exec(html)?.[1] ?? "";

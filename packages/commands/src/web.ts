@@ -10,7 +10,7 @@ import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { REVIEWS } from "./reviews.ts";
-import { readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
+import { installUrl, readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 
 export type { WebResult } from "./web-commands.ts";
@@ -85,6 +85,8 @@ export function webCommands(env: Environment): WebCommands {
     execute,
     // Sessions come with sign-in (group 7); until then nobody is signed in.
     session: async () => undefined,
+    url: installUrl(env["TIEHALL_URL"] ?? ""),
+    secret: () => readAuthSecret(env),
     logger,
   });
   return web;
@@ -96,8 +98,13 @@ export function webCommands(env: Environment): WebCommands {
  */
 export function confirmRoute(env: Environment): ConfirmRoute {
   if (confirm !== undefined) return confirm;
-  const { step, logger } = servicesOf(env);
+  const { execute, step, logger } = servicesOf(env);
   // Sessions come with sign-in (group 7); until then nobody is signed in.
-  confirm = createConfirmRoute({ step, session: async () => undefined, logger });
+  confirm = createConfirmRoute({
+    step,
+    session: async () => undefined,
+    write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
+    logger,
+  });
   return confirm;
 }

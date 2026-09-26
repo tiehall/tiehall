@@ -144,6 +144,13 @@ function route(session: WebSessionCaller | undefined) {
   return createConfirmRoute({
     step: createConfirmationStep({ catalog, reviews, store: { database: db }, confirmations }),
     session: async () => session,
+    write: {
+      execute: async () => {
+        throw new Error("a review page applies nothing");
+      },
+      url: URL_OF_INSTALL,
+      secret: randomBytes(32).toString("base64url"),
+    },
     logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
   });
 }

@@ -54,6 +54,8 @@ export interface ConfirmationStepServices {
 export interface ConfirmationStep {
   /** The review of an action, for its review page; it changes nothing. */
   review(commandId: string, caller: WebSessionCaller, input: unknown): Promise<ReviewedAction>;
+  /** Whether a command needs the confirmation step, and so has a review page to be confirmed from. */
+  needsConfirmation(commandId: string): boolean;
 }
 
 /** A command with no review page: an unknown one, or one that needs no confirmation step. */
@@ -71,6 +73,7 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
   if (missing.length > 0 || extra.length > 0) throw new Error([...missing, ...extra].join("\n"));
 
   return {
+    needsConfirmation: (commandId) => confirmIds.includes(commandId),
     async review(commandId, caller, input) {
       const definition = catalog.get(commandId);
       const handler = reviews[commandId];

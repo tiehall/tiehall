@@ -14,6 +14,7 @@ afterEach(() => {
 describe("a review page", () => {
   it("answers 401 without a signed-in user, with a Content-Security-Policy that forbids framing", async () => {
     // Settings that name an app role and a password, never used: nothing reaches the database.
+    vi.stubEnv("TIEHALL_URL", "https://tiehall.example.com");
     vi.stubEnv("TIEHALL_DATABASE_APP_URL", "postgres://tiehall_app@127.0.0.1:1/tiehall");
     vi.stubEnv("TIEHALL_DATABASE_APP_PASSWORD", "unused");
     const input = encodeURIComponent(JSON.stringify({ scope: "requests:read" }));
