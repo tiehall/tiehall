@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { migrate } from "@tiehall/commands";
+import { createLogger, migrate } from "@tiehall/commands";
 import type { Config } from "./config.ts";
 
 // The migrate role (self-host-install: Upgrades apply migrations before the app
@@ -28,8 +28,9 @@ export interface MigrateRoleOptions {
 
 /** Runs the migrate role and returns its exit code. */
 export async function runMigrateRole(config: Config, options: MigrateRoleOptions): Promise<number> {
-  const log = options.log ?? console.log;
-  const logError = options.logError ?? console.error;
+  const logger = createLogger().child({ role: "migrate" });
+  const log = options.log ?? ((line: string) => logger.info(line));
+  const logError = options.logError ?? ((line: string) => logger.error(line));
   try {
     // Task 5.1 makes the app role a required setting, and 5.3 gives it to the migrate service.
     await migrate(

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { messagePosted } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createLogger,
   defineJobType,
   migrate,
   openDatabase,
@@ -15,6 +16,7 @@ import {
   type Database,
   type DatabaseConnection,
   type JobQueue,
+  type LogEntry,
   type RunningJob,
 } from "../src/index.ts";
 
@@ -25,6 +27,7 @@ import {
 // starts after the restart: no job is lost.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
+const silent = createLogger({ write: () => {} });
 const settings = { retryLimit: 2, retryDelaySeconds: 0, retryBackoff: false, expireInSeconds: 60 };
 const quick = defineJobType<{ requestId: string }>("probe.quick", 1, settings);
 const slow = defineJobType<{ requestId: string }>("probe.slow", 1, settings);
@@ -46,7 +49,7 @@ beforeAll(async () => {
   url.password = "";
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
-  queue = await openJobQueue({ connection: app, jobTypes: [quick, slow], log: () => {} });
+  queue = await openJobQueue({ connection: app, jobTypes: [quick, slow], logger: silent });
   await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
 });
 
@@ -73,6 +76,12 @@ async function stateOf(queueName: string): Promise<{ id: string; state: string }
   return rows;
 }
 
+/** A logger that keeps its lines, parsed. */
+function capturing(): { logger: ReturnType<typeof createLogger>; entries: LogEntry[] } {
+  const entries: LogEntry[] = [];
+  return { logger: createLogger({ write: (line) => entries.push(JSON.parse(line) as LogEntry) }), entries };
+}
+
 async function until<T>(what: string, check: () => Promise<T | undefined> | T | undefined, seconds = 20): Promise<T> {
   const deadline = Date.now() + seconds * 1000;
   while (Date.now() < deadline) {
@@ -86,7 +95,7 @@ async function until<T>(what: string, check: () => Promise<T | undefined> | T | 
 describe("stopping the worker", () => {
   it("finishes the active jobs it can, releases the rest, and a released job runs again after a restart", async () => {
     const started: string[] = [];
-    const lines: string[] = [];
+    const { logger, entries } = capturing();
     const worker = await startWorker({
       connection: app,
       jobs: [
@@ -108,9 +117,10 @@ describe("stopping the worker", () => {
       ],
       pollingIntervalSeconds: 0.5,
       stopTimeoutMs: 1500,
-      log: (line) => lines.push(line),
+      logger,
     });
-    expect(lines).toEqual(["worker: started, working 2 queues"]);
+    expect(entries.map(({ msg }) => msg)).toEqual(["worker: started, working 2 queues"]);
+    expect(entries[0]).toMatchObject({ level: "info", queues: [quick.queue, slow.queue] });
 
     await send(slow, randomUUID());
     await until("the slow job to start", () => (started.some((each) => each.startsWith("slow")) ? true : undefined));
@@ -125,7 +135,11 @@ describe("stopping the worker", () => {
     expect(finished?.state).toBe("completed");
     const [released] = await stateOf(slow.queue);
     expect(released?.state).toBe("retry");
-    expect(lines.at(-1)).toBe(`worker: stopped; released 1 active job, which runs again after the restart: ${slow.queue} ${released?.id}`);
+    expect(entries.at(-1)).toMatchObject({
+      level: "info",
+      msg: "worker: stopped; released 1 active job, which runs again after the restart",
+      released: [{ queue: slow.queue, jobId: released?.id }],
+    });
 
     // After the restart, a worker takes the released job again, and this time it finishes.
     const rerun: string[] = [];
@@ -133,7 +147,7 @@ describe("stopping the worker", () => {
       connection: app,
       jobs: [{ type: slow, handle: async (job: RunningJob<{ requestId: string }>) => void rerun.push(job.id) }],
       pollingIntervalSeconds: 0.5,
-      log: () => {},
+      logger: silent,
     });
     try {
       await until("the released job to run again", () => (rerun.length > 0 ? true : undefined));
@@ -147,16 +161,16 @@ describe("stopping the worker", () => {
   });
 
   it("stops at once when no job is active", async () => {
-    const lines: string[] = [];
+    const { logger, entries } = capturing();
     const worker = await startWorker({
       connection: app,
       jobs: [{ type: quick, handle: async () => {} }],
       pollingIntervalSeconds: 0.5,
-      log: (line) => lines.push(line),
+      logger,
     });
     const stopping = Date.now();
     await worker.stop();
     expect(Date.now() - stopping).toBeLessThan(3000);
-    expect(lines).toEqual(["worker: started, working 1 queue", "worker: stopped"]);
+    expect(entries.map(({ msg }) => msg)).toEqual(["worker: started, working 1 queue", "worker: stopped"]);
   });
 });

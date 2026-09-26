@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { messagePosted, type Provenance } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createLogger,
   defineJobType,
   installJobQueue,
   JOB_QUEUE_VERSION,
@@ -31,6 +32,7 @@ import {
 // the queues it knows, never receives a job of the next shape.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
+const silent = createLogger({ write: () => {} });
 const fast = { retryLimit: 1, retryDelaySeconds: 0, retryBackoff: false, expireInSeconds: 60 };
 const mirrorV1 = defineJobType<{ requestId: string }>("probe.mirror_request", 1, fast);
 const mirrorV2 = defineJobType<{ requestId: string; teamId: string }>("probe.mirror_request", 2, fast);
@@ -55,7 +57,7 @@ beforeAll(async () => {
   url.password = "";
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
-  queue = await openJobQueue({ connection: app, jobTypes: [mirrorV1, mirrorV2, alwaysFails], log: () => {} });
+  queue = await openJobQueue({ connection: app, jobTypes: [mirrorV1, mirrorV2, alwaysFails], logger: silent });
   await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
 });
 
@@ -104,7 +106,7 @@ async function recordingWorker(types: (typeof mirrorV1 | typeof mirrorV2)[]): Pr
     connection: app,
     jobs: types.map((type) => ({ type, handle: async (job: RunningJob<{ requestId: string }>) => void received.push(job) })),
     pollingIntervalSeconds: 0.5,
-    log: () => {},
+    logger: silent,
   });
   workers.push(worker);
   return received;
@@ -224,7 +226,7 @@ describe("dead-letter queues", () => {
           },
         ],
         pollingIntervalSeconds: 0.5,
-        log: () => {},
+        logger: silent,
       }),
     );
     const requestId = randomUUID();

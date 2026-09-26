@@ -4,6 +4,7 @@ import { fromDrizzle, getConstructionPlans, getMigrationPlans, PgBoss } from "pg
 import pgBoss from "pg-boss/package.json" with { type: "json" };
 import { JOB_QUEUE_SCHEMA, MigrationError, withPassword, type DatabaseConnection } from "@tiehall/db";
 import type { DefinedJobType, JobData, JobSender, JobSettings } from "./jobs.ts";
+import type { Logger } from "./log.ts";
 
 // The job queue (design.md, Technical decisions: T5 and T6): pg-boss, with its
 // queues in Postgres, so an install runs no other service and a job commits
@@ -75,7 +76,7 @@ export interface JobQueueOptions {
   /** The worker supervises the queues and runs the schedules; a process that only sends does neither. */
   supervise?: boolean;
   applicationName?: string;
-  log: (line: string) => void;
+  logger: Logger;
 }
 
 export interface JobQueue extends JobSender {
@@ -107,9 +108,12 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
     // Rebuilding an index needs its owner, which the app role never is.
     reindex: false,
   });
-  // An EventEmitter without an error listener throws; pg-boss reports its own failures this way.
-  boss.on("error", (error: unknown) => options.log(`job queue: error (${kindOf(error)})`));
-  boss.on("warning", (warning: { message?: string }) => options.log(`job queue: ${warning.message ?? "warning"}`));
+  // An EventEmitter without an error listener throws; pg-boss reports its own failures this way. The error is
+  // logged by its name, code and stack; its message and pg-boss's warning data can quote a job's data.
+  boss.on("error", (error: unknown) => options.logger.error("job queue: error", { error }));
+  boss.on("warning", (warning: { message?: unknown }) =>
+    options.logger.warn("job queue: warning", { warning: typeof warning.message === "string" ? warning.message : "unknown" }),
+  );
   await boss.start();
   try {
     for (const type of options.jobTypes) await ensureQueue(boss, type);
@@ -143,11 +147,4 @@ function queueSettings(settings: JobSettings) {
     retryBackoff: settings.retryBackoff,
     expireInSeconds: settings.expireInSeconds,
   };
-}
-
-/** An error's kind, never its message, which can quote data. */
-function kindOf(error: unknown): string {
-  if (!(error instanceof Error)) return typeof error;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? `${error.name} ${code}` : error.name;
 }

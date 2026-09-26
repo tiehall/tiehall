@@ -25,6 +25,22 @@ const confined = ["--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--secu
 /** A database URL for roles that do not connect yet; every role requires one. */
 const unusedDatabase = ["--env", "DATABASE_URL=postgres://tiehall@database.invalid:5432/tiehall"];
 
+/**
+ * The lines a role wrote to standard output, each of which must be one JSON
+ * object with a time, a level and a message (self-host-install: Logs carry ids,
+ * never message text or credentials).
+ */
+function logLines(stdout: string): { time: string; level: string; msg: string; [field: string]: unknown }[] {
+  return stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => {
+      const entry = JSON.parse(line) as { time: string; level: string; msg: string };
+      expect(entry).toMatchObject({ time: expect.any(String), level: expect.any(String), msg: expect.any(String) });
+      return entry;
+    });
+}
+
 /** Starts stock Postgres 17 on a network, with a password, and waits until it accepts connections. */
 async function startPostgres(network: string, name: string, password: string): Promise<void> {
   dockerOk(["network", "create", network]);
@@ -178,7 +194,9 @@ describe("the image", () => {
   it("refuses to start a role without its configuration", () => {
     const run = docker(["run", "--rm", ...confined, image, "web"]);
     expect(run.status).toBe(1);
-    expect(run.stderr).toContain("DATABASE_URL is not set. Set DATABASE_URL or DATABASE_URL_FILE.");
+    expect(logLines(run.stdout)).toContainEqual(
+      expect.objectContaining({ level: "error", role: "web", msg: "tiehall web: DATABASE_URL is not set. Set DATABASE_URL or DATABASE_URL_FILE." }),
+    );
   });
 });
 
@@ -257,7 +275,12 @@ describe("the worker role", () => {
     const { exitCode, seconds } = stop(name);
     expect(exitCode).toBe(0);
     expect(seconds).toBeLessThan(20);
-    expect(dockerOk(["logs", name])).toMatch(/worker: stopped$/m);
+    const logs = docker(["logs", name]);
+    expect(logLines(logs.stdout).map(({ msg }) => msg)).toEqual([
+      expect.stringMatching(/^tiehall worker: starting as uid [1-9]\d*/),
+      "worker: started, working 1 queue",
+      "worker: stopped",
+    ]);
   });
 });
 
@@ -330,8 +353,10 @@ describe("the migrate role", () => {
 
   it("connects to Postgres 17 with the password from its secret file, as a non-root uid, and exits 0", () => {
     const run = migrate("database_password");
-    expect(run.stderr).not.toContain("tiehall migrate: failed");
+    expect(run.stdout).not.toContain("tiehall migrate: failed");
     expect(run.stdout).toMatch(/tiehall migrate: starting as uid [1-9]\d*/);
+    // self-host-install: Logs carry ids, never message text or credentials. Every line is JSON on standard output.
+    expect(logLines(run.stdout).map(({ msg }) => msg)).toContain("tiehall migrate: done");
     expect(run.status).toBe(0);
   });
 
@@ -357,7 +382,7 @@ describe("the migrate role", () => {
       "--volume",
       `${join(secrets, "app_database_password")}:/run/secrets/app_database_password:ro`,
     );
-    expect(run.stderr).not.toContain("tiehall migrate: failed");
+    expect(run.stdout).not.toContain("tiehall migrate: failed");
     expect(run.status).toBe(0);
     expect(run.stderr + run.stdout).not.toContain("app-role-password");
 
@@ -369,7 +394,9 @@ describe("the migrate role", () => {
   it("exits non-zero when the database refuses it", () => {
     const run = migrate("wrong_password");
     expect(run.status).toBe(1);
-    expect(run.stderr).toContain("password authentication failed");
+    expect(logLines(run.stdout)).toContainEqual(
+      expect.objectContaining({ level: "error", msg: expect.stringContaining("password authentication failed") }),
+    );
     expect(run.stderr + run.stdout).not.toContain("not-the-password");
   });
 });

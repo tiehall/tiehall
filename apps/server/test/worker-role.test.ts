@@ -6,6 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { messagePosted } from "@tiehall/core";
 import {
+  createLogger,
   migrate,
   openDatabase,
   openJobQueue,
@@ -15,13 +16,15 @@ import {
   type JobQueue,
 } from "@tiehall/commands";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
-import { probeSlow } from "./support/worker-with-probe-job.ts";
+import { probeFailing, probeSlow } from "./support/worker-with-probe-job.ts";
 
 // The worker role stops gracefully on SIGTERM (self-host-install: A restart
 // stops the app gracefully). Docker sends SIGTERM when Compose stops or
 // replaces the app container. The worker then takes no new job, lets active
 // jobs finish within its stop timeout, releases the rest and exits 0; a job it
-// released runs again once the worker is back.
+// released runs again once the worker is back. Everything it logs is JSON on
+// standard output, with ids and never message text or credentials
+// (self-host-install: Logs carry ids, never message text or credentials).
 
 const fixture = fileURLToPath(new URL("./support/worker-with-probe-job.ts", import.meta.url));
 const migrationsFolder = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
@@ -35,7 +38,9 @@ const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, passwor
 
 interface Running {
   child: ChildProcess;
+  /** Standard output and standard error together. */
   output: () => string;
+  stdout: () => string;
   exited: Promise<number | null>;
 }
 
@@ -51,10 +56,14 @@ function startWorkerRole(env: Record<string, string> = {}): Running {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+  let stdout = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+    stdout += chunk.toString();
+  });
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   const exited = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
-  return { child, output: () => output, exited };
+  return { child, output: () => output, stdout: () => stdout, exited };
 }
 
 async function until<T>(what: string, check: () => Promise<T | undefined> | T | undefined, seconds = 30): Promise<T> {
@@ -67,25 +76,38 @@ async function until<T>(what: string, check: () => Promise<T | undefined> | T | 
   throw new Error(`Timed out waiting for ${what}`);
 }
 
-async function jobs(): Promise<{ id: string; state: string }[]> {
+async function jobs(queue = probeSlow.queue): Promise<{ id: string; state: string }[]> {
   return (
     await owner.query<{ id: string; state: string }>("SELECT id, state::text AS state FROM pgboss.job WHERE name = $1", [
-      probeSlow.queue,
+      queue,
     ])
   ).rows;
+}
+
+/** The JSON log lines among a process's output, parsed. */
+function logEntries(output: string): Record<string, unknown>[] {
+  return output
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 beforeAll(async () => {
   database = await createTestDatabase();
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
+  // The thread messages a later task adds, reduced to what the failing probe job reads.
+  await owner.query(
+    `CREATE TABLE probe_messages (org_id uuid NOT NULL, id uuid NOT NULL DEFAULT gen_random_uuid(), body text NOT NULL,
+       PRIMARY KEY (org_id, id))`,
+  );
   await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
-  queue = await openJobQueue({ connection: app, jobTypes: [probeSlow], log: () => {} });
+  queue = await openJobQueue({ connection: app, jobTypes: [probeSlow, probeFailing], logger: createLogger({ write: () => {} }) });
   await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
 });
 
@@ -110,8 +132,13 @@ describe("the worker role on SIGTERM", () => {
 
       first.child.kill("SIGTERM");
       expect(await first.exited).toBe(0);
-      expect(first.output()).toContain(
-        `worker: stopped; released 1 active job, which runs again after the restart: ${probeSlow.queue} ${id}`,
+      expect(logEntries(first.output())).toContainEqual(
+        expect.objectContaining({
+          level: "info",
+          role: "worker",
+          msg: "worker: stopped; released 1 active job, which runs again after the restart",
+          released: [{ queue: probeSlow.queue, jobId: id }],
+        }),
       );
       expect(await jobs()).toEqual([{ id, state: "retry" }]);
 
@@ -126,6 +153,51 @@ describe("the worker role on SIGTERM", () => {
       expect(restarted.output()).toContain("worker: stopped");
     } finally {
       first.child.kill("SIGKILL");
+    }
+  });
+
+  it("logs a failing job by its ids, and never the message text or the token it held", async () => {
+    const text = `Please rotate the staging keys; canary-${randomBytes(8).toString("hex")}`;
+    const token = `th_pat_${randomBytes(20).toString("hex")}`;
+    const worker = startWorkerRole({ PROBE_TOKEN: token });
+    let messageId = "";
+    try {
+      await until("the worker to start", () => (/worker: started/.test(worker.output()) ? true : undefined));
+      await write({ database: db, jobs: queue }, { actorKind: "system" }, async (writer) => {
+        const { rows } = await writer.tx.execute<{ id: string }>(
+          `INSERT INTO probe_messages (org_id, body) VALUES ('${writer.orgId}', ${pg.escapeLiteral(text)}) RETURNING id`,
+        );
+        messageId = rows[0]?.id ?? "";
+        await writer.record(messagePosted, { requestId: randomUUID(), messageId });
+        await writer.enqueue(probeFailing, { messageId });
+      });
+      await until("the job to fail", async () => ((await jobs(probeFailing.queue))[0]?.state === "failed" ? true : undefined));
+      await until("the failure to be logged", () => (/worker: job failed/.test(worker.output()) ? true : undefined));
+    } finally {
+      worker.child.kill("SIGTERM");
+      await worker.exited;
+    }
+    const output = worker.output();
+    expect(output).not.toContain(text);
+    expect(output).not.toContain("canary-");
+    expect(output).not.toContain(token);
+    expect(output).not.toContain(token.slice("th_pat_".length));
+    const [job] = await jobs(probeFailing.queue);
+    expect(logEntries(output)).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        role: "worker",
+        msg: "worker: job failed",
+        queue: probeFailing.queue,
+        jobId: job?.id,
+        ids: { messageId },
+      }),
+    );
+    // Every line the worker wrote to standard output is one JSON object with a time, a level and a message.
+    const lines = worker.stdout().split("\n").filter((line) => line !== "");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(JSON.parse(line)).toMatchObject({ time: expect.any(String), level: expect.any(String), msg: expect.any(String) });
     }
   });
 

@@ -8,10 +8,15 @@
 //   SIGINT to them, and stops the other when one of them ends.
 // Exit codes: 2 for an unknown or missing role, 1 for a configuration error or
 // a failed role, and 0 (or the web server's 143 after SIGTERM) for a clean stop.
+// Every role logs JSON lines on standard output (self-host-install: Logs carry
+// ids, never message text or credentials); only the usage line for a missing
+// or unknown role, printed before any role runs, is plain text on standard
+// error.
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createLogger } from "@tiehall/commands";
 import { ConfigError, readConfig, type Config } from "./config.ts";
 import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
@@ -28,19 +33,28 @@ if (role === undefined) {
   process.exit(2);
 }
 
+const logger = createLogger().child({ role });
+
 let config: Config;
 try {
   config = readConfig(process.env);
 } catch (error) {
   if (!(error instanceof ConfigError)) throw error;
-  console.error(`tiehall ${role}: ${error.message}`);
+  // A ConfigError names settings and files, never their values.
+  logger.error(`tiehall ${role}: ${error.message}`);
   process.exit(1);
 }
 
 const commit = process.env["TIEHALL_COMMIT_SHA"] ?? "unknown";
 /** The image's release, set at build time; a build that names none is a development build. */
 const release = process.env["TIEHALL_VERSION"] ?? "0.0.0-dev";
-console.log(`tiehall ${role}: starting as uid ${process.getuid?.() ?? "unknown"} (node ${process.version}, commit ${commit})`);
+const uid = process.getuid?.() ?? "unknown";
+logger.info(`tiehall ${role}: starting as uid ${uid} (node ${process.version}, commit ${commit})`, {
+  uid,
+  node: process.version,
+  commit,
+  release,
+});
 
 await run(role, config);
 
@@ -49,7 +63,7 @@ async function run(role: Role, config: Config): Promise<void> {
     case "web":
       return startWeb(config);
     case "worker":
-      return runWorkerRole(config);
+      return runWorkerRole(config, { logger });
     case "migrate":
       return runMigrate(config);
     case "all":
@@ -66,7 +80,12 @@ async function startWeb(config: Config): Promise<void> {
 }
 
 async function runMigrate(config: Config): Promise<void> {
-  process.exitCode = await runMigrateRole(config, { migrationsFolder: migrationsFolderFor(ENTRY), release });
+  process.exitCode = await runMigrateRole(config, {
+    migrationsFolder: migrationsFolderFor(ENTRY),
+    release,
+    log: (line) => logger.info(line),
+    logError: (line) => logger.error(line),
+  });
 }
 
 function superviseAll(): void {
@@ -87,7 +106,7 @@ function superviseAll(): void {
       const clean = code === 0 || code === 143 || code === 130;
       if (!stopping) {
         // One half ended on its own: stop the other, so the container restarts as a whole.
-        console.error(`tiehall all: ${child} exited (${signal ?? code}); stopping`);
+        logger.error(`tiehall all: ${child} exited (${signal ?? code}); stopping`);
         exitCode = 1;
         stopAll("SIGTERM");
       } else if (!clean) {

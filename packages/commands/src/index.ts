@@ -16,6 +16,7 @@ export {
   type JobSettings,
   type JobType,
 } from "./jobs.ts";
+export { createLogger, LOGGABLE, REDACTED, scrub, type LogEntry, type LogFields, type Logger, type LoggerOptions, type LogLevel } from "./log.ts";
 export { migrate, type AppRole, type DatabaseConnection, type MigrateOptions } from "./migrations.ts";
 export { openDatabase, type Database } from "./database.ts";
 export { takeEventNumber } from "./event-sequence.ts";

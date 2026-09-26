@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { defineEventType, messagePosted, type Provenance } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createLogger,
   migrate,
   openDatabase,
   openJobQueue,
@@ -26,6 +27,7 @@ import {
 // the time from the worker's clock, which the tests control.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
+const silent = createLogger({ write: () => {} });
 const DAY = 24 * 60 * 60 * 1000;
 const ALICE = randomUUID();
 const USER_AGENT = `Mozilla/5.0 (canary ${randomBytes(6).toString("hex")})`;
@@ -55,7 +57,7 @@ beforeAll(async () => {
   url.password = "";
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
-  queue = await openJobQueue({ connection: app, jobTypes: [pruneSecurityEventOrigins.type], log: () => {} });
+  queue = await openJobQueue({ connection: app, jobTypes: [pruneSecurityEventOrigins.type], logger: silent });
   await owner.query("INSERT INTO orgs (name) VALUES ('Acme')");
 });
 
@@ -102,7 +104,7 @@ async function runPruningAt(now: Date): Promise<void> {
     jobs: [pruneSecurityEventOrigins],
     clock: () => now,
     pollingIntervalSeconds: 0.5,
-    log: () => {},
+    logger: silent,
   });
   try {
     const id = await queue.boss.send(pruneSecurityEventOrigins.type.queue, {});
@@ -198,7 +200,7 @@ describe("the daily pruning job", () => {
 
   it("is scheduled every day by the worker role", async () => {
     expect(WORKER_JOBS).toContain(pruneSecurityEventOrigins);
-    const worker = await startWorker({ connection: app, jobs: WORKER_JOBS, log: () => {} });
+    const worker = await startWorker({ connection: app, jobs: WORKER_JOBS, logger: silent });
     try {
       const { rows } = await owner.query("SELECT name, cron, timezone FROM pgboss.schedule");
       expect(rows).toEqual([{ name: pruneSecurityEventOrigins.type.queue, cron: "30 3 * * *", timezone: "UTC" }]);

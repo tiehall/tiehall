@@ -1,6 +1,7 @@
 import { openDatabase, type Database, type DatabaseConnection } from "@tiehall/db";
 import { openJobQueue } from "./job-queue.ts";
 import type { DefinedJobType, JobData } from "./jobs.ts";
+import { createLogger, type Logger } from "./log.ts";
 
 // The worker role (design.md, Technical decisions: T6; self-host-install: A
 // restart stops the app gracefully). It works the queues of the job types it
@@ -8,7 +9,11 @@ import type { DefinedJobType, JobData } from "./jobs.ts";
 // triggers, it takes no new job and gives its active jobs up to the stop
 // timeout to finish; the job queue releases the ones still running, so they
 // run again once a worker starts after the restart, and no job is lost. A
-// released job counts as one of its attempts.
+// released job counts as one of its attempts. Its log lines are JSON and name
+// jobs and the records they concern by id only: a job that fails is logged by
+// its queue, its id, the ids in its data and its error's name, code and stack,
+// never by its data or its error's message (self-host-install: Logs carry ids,
+// never message text or credentials).
 
 /** A job as its handler receives it. */
 export interface RunningJob<D extends JobData> {
@@ -47,7 +52,7 @@ export interface WorkerOptions {
   pollingIntervalSeconds?: number;
   /** The clock handlers read; the system clock unless a test controls it. */
   clock?: () => Date;
-  log?: (line: string) => void;
+  logger?: Logger;
 }
 
 export interface Worker {
@@ -59,13 +64,13 @@ export interface Worker {
 export const DEFAULT_STOP_TIMEOUT_MS = 10_000;
 
 export async function startWorker(options: WorkerOptions): Promise<Worker> {
-  const log = options.log ?? console.log;
+  const logger = options.logger ?? createLogger();
   const queue = await openJobQueue({
     connection: options.connection,
     jobTypes: options.jobs.map(({ type }) => type),
     supervise: true,
     applicationName: "tiehall worker",
-    log,
+    logger,
   });
   const services: WorkerServices = {
     database: openDatabase(options.connection, { applicationName: "tiehall worker" }),
@@ -92,7 +97,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           try {
             await job.handle({ id: running.id, queue: name, data: running.data, signal: running.signal }, services);
           } catch (error) {
-            log(`worker: job ${running.id} on ${name} failed (${error instanceof Error ? error.name : typeof error})`);
+            logger.error("worker: job failed", { queue: name, jobId: running.id, ids: idsOf(running.data), error });
             throw error;
           } finally {
             active.delete(running.id);
@@ -112,7 +117,9 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     throw error;
   }
   const count = options.jobs.length;
-  log(`worker: started, working ${count} queue${count === 1 ? "" : "s"}`);
+  logger.info(`worker: started, working ${count} queue${count === 1 ? "" : "s"}`, {
+    queues: options.jobs.map(({ type }) => type.queue),
+  });
   return {
     async stop() {
       if (stopping) return;
@@ -121,15 +128,26 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       await services.database.$client.end();
       for (const [id, name] of active) released.set(id, name);
       if (released.size === 0) {
-        log("worker: stopped");
+        logger.info("worker: stopped");
         return;
       }
-      const jobs = [...released].map(([id, name]) => `${name} ${id}`).join(", ");
-      log(
+      logger.info(
         released.size === 1
-          ? `worker: stopped; released 1 active job, which runs again after the restart: ${jobs}`
-          : `worker: stopped; released ${released.size} active jobs, which run again after the restart: ${jobs}`,
+          ? "worker: stopped; released 1 active job, which runs again after the restart"
+          : `worker: stopped; released ${released.size} active jobs, which run again after the restart`,
+        { released: [...released].map(([jobId, queue]) => ({ queue, jobId })) },
       );
     },
   };
+}
+
+/** The ids in a job's data: its fields named ...Id or ...Ids, and nothing else of it. */
+function idsOf(data: JobData): Record<string, unknown> {
+  const ids: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data ?? {})) {
+    if (!/(Id|Ids)$/.test(key)) continue;
+    const isId = (item: unknown) => typeof item === "number" || (typeof item === "string" && /^[A-Za-z0-9._:-]{1,100}$/.test(item));
+    if (isId(value) || (Array.isArray(value) && value.every(isId))) ids[key] = value;
+  }
+  return ids;
 }
