@@ -111,6 +111,8 @@ let answer: (commandId: string) => Promise<unknown>;
 let logged: LogEntry[];
 
 const execute: Execute = async (commandId, caller, input, options) => {
+  // As execute() does once it has re-checked the caller's membership, a refusal REST found in the call is given and nothing runs.
+  if (options?.refusal !== undefined) throw options.refusal;
   calls.push({ commandId, caller, input, origin: options?.origin });
   return answer(commandId);
 };

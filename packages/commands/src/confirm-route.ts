@@ -29,8 +29,9 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // frame-ancestors 'none', so no other site can frame the page and trick a
 // click; the pages run no script and load nothing. A refusal is an RFC 9457
 // problem (public-api: One error model for Tiehall's own refusals): 401
-// without a signed-in user, 404 for an action with no review page, 400 for
-// input that fails its schema or is not JSON, 403 for a failed check or a
+// without a signed-in user, 404 for an action with no review page, 403
+// removed-member for a user who is no longer a member, whatever they send, 400
+// for input that fails its schema or is not JSON, 403 for a failed check or a
 // missing or invalid nonce.
 
 export interface ConfirmRouteOptions {
@@ -63,8 +64,8 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       if (request.method === "POST") return await apply(request, commandId);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
       const caller = await signedIn(request);
-      const input = parseInput(url.searchParams.get("input"));
-      const reviewed = await options.step.review(commandId, caller, input);
+      const { input, refusal } = parseInput(url.searchParams.get("input"));
+      const reviewed = await options.step.review(commandId, caller, input, refusal);
       const csrf = csrfTokenFor(secret(), caller.sessionId);
       return page(reviewPage(reviewed.commandId, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf));
     } catch (error) {
@@ -89,11 +90,12 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
       { url: options.write.url, secret: secret(), sessionId: caller.sessionId, confirm: true },
     );
-    const input = parseInput(form.get("input"));
+    const { input, refusal } = parseInput(form.get("input"));
     const nonce = form.get("nonce");
     const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
     const userAgent = request.headers.get("user-agent") ?? undefined;
     await options.write.execute(commandId, caller, input, {
+      ...(refusal === undefined ? {} : { refusal }),
       ...(nonce === null || nonce === "" ? {} : { confirmation: { nonce } }),
       origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) },
     });
@@ -111,12 +113,15 @@ function commandIdOf(pathname: string): string {
   }
 }
 
-/** The action's input from its JSON text. */
-function parseInput(text: string | null): unknown {
+/**
+ * The action's input from its JSON text, or the refusal of text that is not
+ * JSON, which the review and execute() give after the membership re-check.
+ */
+function parseInput(text: string | null): { input: unknown; refusal?: Refusal } {
   try {
-    return JSON.parse(text ?? "{}");
+    return { input: JSON.parse(text ?? "{}") };
   } catch {
-    throw new Refusal("invalid-input", "The input of an action to confirm is JSON.");
+    return { input: {}, refusal: new Refusal("invalid-input", "The input of an action to confirm is JSON.") };
   }
 }
 

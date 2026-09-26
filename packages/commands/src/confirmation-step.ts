@@ -16,11 +16,13 @@ import type { Store } from "./write.ts";
 // - exists only for a command that needs the confirmation step; any other
 //   command, and an unknown one, has no review page (404);
 // - is only for a user signed in to the web UI;
-// - parses the input against the command's schema first, refusing input that
-//   fails it with 400, so the page reviews the input the command will get;
 // - runs inside withOrg() in a read-only transaction, so a review can read
 //   what it needs and can never change anything, and only for a user who is
-//   still a member (403 removed-member otherwise) and whose role allows the
+//   still a member (403 removed-member otherwise, before anything else about
+//   the page is judged, its input included);
+// - then parses the input against the command's schema, refusing input that
+//   is not JSON or fails the schema with 400, so the page reviews the input
+//   the command will get, and runs only for a user whose role allows the
 //   action (403 for a member on an admin action's page);
 // - comes with the confirmation nonce for the page, bound to the user, the
 //   session and the command with that exact input, which stores nothing
@@ -55,8 +57,12 @@ export interface ConfirmationStepServices {
 }
 
 export interface ConfirmationStep {
-  /** The review of an action, for its review page; it changes nothing. */
-  review(commandId: string, caller: WebSessionCaller, input: unknown): Promise<ReviewedAction>;
+  /**
+   * The review of an action, for its review page; it changes nothing. A
+   * refusal the page found in the input it was sent, such as input that is
+   * not JSON, is given after the membership re-check.
+   */
+  review(commandId: string, caller: WebSessionCaller, input: unknown, refusal?: Refusal): Promise<ReviewedAction>;
   /** Whether a command needs the confirmation step, and so has a review page to be confirmed from. */
   needsConfirmation(commandId: string): boolean;
 }
@@ -77,24 +83,25 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
 
   return {
     needsConfirmation: (commandId) => confirmIds.includes(commandId),
-    async review(commandId, caller, input) {
+    async review(commandId, caller, input, refusal) {
       const definition = catalog.get(commandId);
       const handler = reviews[commandId];
       if (definition === undefined || !definition.confirm || handler === undefined) throw noReviewPage();
       if (caller.kind !== "web_session") throw noReviewPage();
-      const parsed = definition.input.safeParse(input);
-      if (!parsed.success) {
-        throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
-      }
-      const review = await withOrg(
+      const reviewed = await withOrg(
         services.store.database,
-        (context) => {
+        async (context) => {
+          if (refusal !== undefined) throw refusal;
+          const parsed = definition.input.safeParse(input);
+          if (!parsed.success) {
+            throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+          }
           assertRoleAllows(definition, context.member);
-          return handler(parsed.data, { ...context, caller });
+          return { input: parsed.data as unknown, review: await handler(parsed.data, { ...context, caller }) };
         },
         { readOnly: true, forUser: caller.userId },
       );
-      return { commandId, input: parsed.data, review, nonce: services.confirmations.issue(caller, commandId, parsed.data) };
+      return { commandId, ...reviewed, nonce: services.confirmations.issue(caller, commandId, reviewed.input) };
     },
   };
 }

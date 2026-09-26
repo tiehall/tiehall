@@ -14,6 +14,7 @@ import {
   createExecute,
   createLogger,
   createRestHandler,
+  csrfTokenFor,
   migrate,
   openDatabase,
   withOrg,
@@ -50,6 +51,20 @@ const catalog = defineCatalog([
     confirm: false,
     surfaces: ["rest", "mcp"],
     tool: "get_note",
+    stability: "alpha",
+  }),
+  defineCommand({
+    id: "probes.revise_note",
+    summary: "Revise a note, at the revision the writer read.",
+    input: z.object({ noteId: z.uuid(), body: z.string(), expectedRevision: z.number().int().min(1).optional() }),
+    output: z.object({ body: z.string() }),
+    method: "POST",
+    path: "/api/v1/notes/{noteId}/revisions",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    ifMatch: "expectedRevision",
     stability: "alpha",
   }),
   defineCommand({
@@ -101,6 +116,10 @@ beforeAll(async () => {
         const note = rows[0];
         if (note === undefined) throw new Refusal("record-not-found", "There is no such note.");
         return { body: note.body };
+      },
+      "probes.revise_note": async (input) => {
+        lookups += 1;
+        return { body: (input as { body: string }).body };
       },
       "probes.change_role": async () => ({}),
     },
@@ -193,6 +212,73 @@ describe("a removed member's next call", () => {
     expect(answers[0]?.body).not.toContain("launch plan");
   });
 
+  it("gets 403, not 400, for input that fails the operation's schema, through every caller, before anything is looked up", async () => {
+    const dana = await addUser(owner, { role: "member" });
+    const callers = callersFor(dana);
+    for (const caller of callers) {
+      await expect(execute("probes.get_note", caller, { noteId: "not-an-id" }), caller.kind).rejects.toMatchObject({
+        status: 400,
+        type: "https://tiehall.com/problems/invalid-input",
+      });
+    }
+
+    await removeMember(dana);
+    lookups = 0;
+    for (const caller of callers) {
+      await expect(execute("probes.get_note", caller, { noteId: "not-an-id" }), caller.kind).rejects.toMatchObject({
+        status: 403,
+        type: "https://tiehall.com/problems/removed-member",
+      });
+    }
+    expect(lookups).toBe(0);
+  });
+
+  it("gets 403, not the confirmation step's refusal, for an action that needs a confirmation it does not carry", async () => {
+    const ada: WebSessionCaller = { kind: "web_session", userId: await addUser(owner, { role: "admin" }), sessionId: randomUUID() };
+    await expect(execute("probes.change_role", ada, { userId: ada.userId })).rejects.toMatchObject({
+      status: 403,
+      type: "https://tiehall.com/problems/confirmation-required",
+    });
+    await removeMember(ada.userId);
+    await expect(execute("probes.change_role", ada, { userId: ada.userId })).rejects.toMatchObject({
+      status: 403,
+      type: "https://tiehall.com/problems/removed-member",
+    });
+  });
+
+  it("gets 403 on /api/v1 for a call whose input, body, Idempotency-Key or If-Match a member gets refused for", async () => {
+    const dana = await addUser(owner, { role: "member" });
+    const caller: Caller = { kind: "personal_access_token", userId: dana, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
+    const rest = createRestHandler({ catalog, document: "{}\n", execute, authenticate: async () => caller, logger: createLogger({ write: () => {} }) });
+    const revise = (headers: Record<string, string>, body: string) =>
+      new Request(`${INSTALL}/api/v1/notes/${noteId}/revisions`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+    const calls = [
+      () => new Request(`${INSTALL}/api/v1/notes/not-an-id`),
+      () => revise({}, "not JSON"),
+      () => revise({ "idempotency-key": "k".repeat(256) }, JSON.stringify({ body: "The launch plan, v2" })),
+      () => revise({ "if-match": 'W/"3"' }, JSON.stringify({ body: "The launch plan, v2" })),
+    ];
+    const answers = async () => {
+      const found: [number, string][] = [];
+      for (const call of calls) {
+        const response = await rest(call());
+        found.push([response.status, ((await response.json()) as { type: string }).type]);
+      }
+      return found;
+    };
+    expect(await answers()).toEqual([
+      [400, "https://tiehall.com/problems/invalid-input"],
+      [400, "https://tiehall.com/problems/invalid-input"],
+      [400, "https://tiehall.com/problems/invalid-input"],
+      [412, "https://tiehall.com/problems/precondition-failed"],
+    ]);
+
+    await removeMember(dana);
+    lookups = 0;
+    expect(await answers()).toEqual(calls.map(() => [403, "https://tiehall.com/problems/removed-member"]));
+    expect(lookups).toBe(0);
+  });
+
   it("gets the 403 for a user the install never had as a member, too", async () => {
     const stranger = randomUUID();
     await expect(
@@ -237,6 +323,40 @@ describe("the confirmation step for a user who is not a member, or whose role do
     const { status, body } = await open(ada);
     expect(status).toBe(403);
     expect(JSON.parse(body)).toMatchObject({ type: "https://tiehall.com/problems/removed-member" });
+    expect(lookups).toBe(0);
+  });
+
+  it("refuses the review page and the confirmation to a removed member with 403 removed-member, whatever input they send", async () => {
+    const ada: WebSessionCaller = { kind: "web_session", userId: await addUser(owner, { role: "admin" }), sessionId: randomUUID() };
+    const inputs = ["not JSON", JSON.stringify({ userId: "not-an-id" })];
+    const answers = async () => {
+      const found: [number, string][] = [];
+      for (const input of inputs) {
+        const page = await reviewPage(ada)(new Request(`${INSTALL}/confirm/probes.change_role?input=${encodeURIComponent(input)}`));
+        found.push([page.status, ((await page.json()) as { type: string }).type]);
+        const form = new URLSearchParams({ csrf: csrfTokenFor(SECRET, ada.sessionId), input, nonce: "" });
+        const confirmed = await reviewPage(ada)(
+          new Request(`${INSTALL}/confirm/probes.change_role`, {
+            method: "POST",
+            headers: { origin: INSTALL, "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" },
+            body: form.toString(),
+          }),
+        );
+        found.push([confirmed.status, ((await confirmed.json()) as { type: string }).type]);
+      }
+      return found;
+    };
+    expect(await answers()).toEqual(inputs.flatMap(() => [
+      [400, "https://tiehall.com/problems/invalid-input"],
+      [400, "https://tiehall.com/problems/invalid-input"],
+    ]));
+
+    await removeMember(ada.userId);
+    lookups = 0;
+    expect(await answers()).toEqual(inputs.flatMap(() => [
+      [403, "https://tiehall.com/problems/removed-member"],
+      [403, "https://tiehall.com/problems/removed-member"],
+    ]));
     expect(lookups).toBe(0);
   });
 

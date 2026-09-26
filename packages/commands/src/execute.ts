@@ -16,30 +16,34 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // 1. refuses, as a path that is not there (404), an operation that the
 //    surface the call came through does not offer, which is every internal
 //    command for a token or CI caller;
-// 2. parses the input against the operation's input schema, refusing input
+// 2. opens the call's transaction in withOrg(), which, for a caller that acts
+//    for a user, first re-checks that the user is still a member, refusing a
+//    removed one with 403 before anything else about the call is judged or
+//    looked up, its input included (teams-and-roles: Membership is re-checked
+//    on every call; public-api: One error model for Tiehall's own refusals);
+//    a refusal the surface already found in the call itself, such as a REST
+//    body that is not JSON, is given next;
+// 3. parses the input against the operation's input schema, refusing input
 //    that fails it with 400 before anything runs, and drops keys it does not
 //    know;
-// 3. lets each kind of caller run only what its kind may run: a CI caller
+// 4. lets each kind of caller run only what its kind may run: a CI caller
 //    only contract.report, and a system job or an integration event only
 //    internal commands;
-// 4. asks for the confirmation step for a `confirm` command, refusing one
+// 5. asks for the confirmation step for a `confirm` command, refusing one
 //    without a valid confirmation nonce with 403: only a web session may run
 //    it, and its nonce, bound to that user, that session and this command
 //    with this exact input, is checked and consumed in the call's transaction
 //    (agent-safety: One confirmation approves one action);
-// 5. runs the handler inside withOrg(), so its change, its events and its jobs
-//    commit together or not at all, with the provenance it stamps from the
-//    caller, never from the payload, whose keys for it the schema drops
-//    (requests: Provenance is stamped by the server); for a caller that acts
-//    for a user, withOrg() first re-checks that the user is still a member, refusing a
-//    removed one with 403 before anything is looked up (teams-and-roles:
-//    Membership is re-checked on every call), and execute() consults the
-//    role matrix with the role that re-check read, refusing an admin action
-//    to anyone whose role does not allow it with 403 before the nonce is
-//    consumed or the handler runs (teams-and-roles: The role bounds every
-//    caller acting for a user); a job or an integration event acts for no
-//    admin, so it runs no admin action either;
-// 6. returns only output that passes the operation's output schema: any
+// 6. runs the handler in that transaction, so its change, its events and its
+//    jobs commit together or not at all, with the provenance it stamps from
+//    the caller, never from the payload, whose keys for it the schema drops
+//    (requests: Provenance is stamped by the server); execute() consults the
+//    role matrix with the role the membership re-check read, refusing an
+//    admin action to anyone whose role does not allow it with 403 before the
+//    nonce is consumed or the handler runs (teams-and-roles: The role bounds
+//    every caller acting for a user); a job or an integration event acts for
+//    no admin, so it runs no admin action either;
+// 7. returns only output that passes the operation's output schema: any
 //    other output rolls the call back and is never returned.
 // A call made with an OAuth token or a personal access token that writes is
 // counted, in its transaction and before its change, against the token's
@@ -121,6 +125,12 @@ export interface ExecuteOptions {
   around?: (context: OrgContext, run: () => Promise<unknown>) => Promise<unknown>;
   /** Runs the call in a read-only transaction, in which any write fails, as a web page's read does. */
   readOnly?: boolean;
+  /**
+   * A refusal the surface found in the call itself before execute() ran, such
+   * as a REST body that is not JSON: it is given after the membership
+   * re-check, so a removed member's call gets 403 whatever it sends.
+   */
+  refusal?: Refusal;
 }
 
 export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
@@ -160,37 +170,40 @@ export function createExecute(services: ExecuteServices): Execute {
     const surface = catalogSurfaceOf(caller);
     if (surface !== undefined && !definition.surfaces.includes(surface)) throw notOffered();
 
-    // 2. Nothing runs on input that fails the schema.
-    const parsed = definition.input.safeParse(input);
-    if (!parsed.success) {
-      throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
-    }
-
-    // 3. What each kind of caller may run.
-    if (caller.kind === "ci" && commandId !== "contract.report") {
-      throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
-    }
-    if ((caller.kind === "system_job" || caller.kind === "integration_event") && definition.surfaces.length > 0) {
-      throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
-    }
-
-    // 4. The confirmation step, for a user signed in to the web UI only.
-    const confirmation = options.confirmation;
-    const confirmations = services.confirmations;
-    if (definition.confirm && (caller.kind !== "web_session" || confirmation === undefined || confirmations === undefined)) {
-      throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
-    }
-
-    if (definition.commitment) {
-      throw new Error(`${commandId} is a commitment, which becomes a proposal; proposals are not built yet.`);
-    }
-
-    // 5. and 6. The handler, in the install's org, and only output that passes its schema.
+    // 2. withOrg() has refused a removed member already; then what the surface found wrong with the call.
     const provenance = provenanceOf(caller);
     const writeOptions = { ...(options.origin === undefined ? {} : { origin: options.origin }), now };
     return withOrg(
       store.database,
       async (context) => {
+        if (options.refusal !== undefined) throw options.refusal;
+
+        // 3. Nothing runs on input that fails the schema.
+        const parsed = definition.input.safeParse(input);
+        if (!parsed.success) {
+          throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+        }
+
+        // 4. What each kind of caller may run.
+        if (caller.kind === "ci" && commandId !== "contract.report") {
+          throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
+        }
+        if ((caller.kind === "system_job" || caller.kind === "integration_event") && definition.surfaces.length > 0) {
+          throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
+        }
+
+        // 5. The confirmation step, for a user signed in to the web UI only.
+        const confirmation = options.confirmation;
+        const confirmations = services.confirmations;
+        if (definition.confirm && (caller.kind !== "web_session" || confirmation === undefined || confirmations === undefined)) {
+          throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+        }
+
+        if (definition.commitment) {
+          throw new Error(`${commandId} is a commitment, which becomes a proposal; proposals are not built yet.`);
+        }
+
+        // 6. and 7. The handler, in the install's org, and only output that passes its schema.
         // An admin action runs only for an admin: never for a job or an integration event, which act for no admin.
         const member = context.member;
         assertRoleAllows(definition, member);

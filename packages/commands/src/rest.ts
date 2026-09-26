@@ -20,7 +20,11 @@ import { createLogger, type Logger } from "./log.ts";
 // - it asks who is calling, and answers a call without credentials with 401;
 // - it builds the input from the path's parameters and, for GET and DELETE,
 //   the query string, or, for the other methods, the JSON object in the body,
-//   where a path parameter wins over a body field of the same name;
+//   where a path parameter wins over a body field of the same name; a call
+//   whose body is not a JSON object, or whose Idempotency-Key or If-Match
+//   header it cannot take, is refused through execute(), after the membership
+//   re-check, so a removed member gets 403 whatever they send
+//   (teams-and-roles: Membership is re-checked on every call);
 // - it runs the operation through execute() and answers with its output as
 //   JSON, or 202 for a commitment, which becomes a proposal. Its callers are
 //   agents and their tools, and the JSON variant of a request URL is the same
@@ -109,25 +113,29 @@ export function createRestHandler(options: RestOptions): RestHandler {
       if (caller === undefined) {
         return problem(new Refusal("unauthenticated", "This operation needs a token in the Authorization header."));
       }
+      // What is wrong with the call itself is refused by execute(), once it has re-checked the caller's membership.
+      let refusal: Refusal | undefined;
       const idempotencyHeader = request.method === "POST" ? request.headers.get("idempotency-key") : null;
       const idempotencyKey = idempotencyHeader === null ? undefined : parseIdempotencyKey(idempotencyHeader);
       if (idempotencyHeader !== null && idempotencyKey === undefined) {
-        return problem(new Refusal("invalid-input", "The Idempotency-Key header is a string of 1 to 255 visible characters."));
+        refusal = new Refusal("invalid-input", "The Idempotency-Key header is a string of 1 to 255 visible characters.");
       }
       const body = BODY_METHODS.has(request.method) ? await request.text() : "";
-      const input = inputOf(request, url, body, parameters);
-      if (input === undefined) {
-        return problem(new Refusal("invalid-input", "The body of this operation is a JSON object, sent as application/json."));
+      const built = inputOf(request, url, body, parameters);
+      if (built === undefined) {
+        refusal ??= new Refusal("invalid-input", "The body of this operation is a JSON object, sent as application/json.");
       }
+      const input = built ?? {};
       if (definition.ifMatch !== undefined) {
         delete input[definition.ifMatch];
         const ifMatch = request.headers.get("if-match");
         if (ifMatch !== null) {
           const revision = revisionOfEtag(ifMatch);
           if (revision === undefined) {
-            return problem(new Refusal("precondition-failed", 'If-Match names no current revision: send the ETag of the packet\'s current revision, such as "3".'));
+            refusal ??= new Refusal("precondition-failed", 'If-Match names no current revision: send the ETag of the packet\'s current revision, such as "3".');
+          } else {
+            input[definition.ifMatch] = revision;
           }
-          input[definition.ifMatch] = revision;
         }
       }
       const status = definition.commitment ? 202 : 200;
@@ -135,8 +143,9 @@ export function createRestHandler(options: RestOptions): RestHandler {
       const userAgent = request.headers.get("user-agent") ?? undefined;
       const executeOptions: ExecuteOptions = {
         origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) },
+        ...(refusal === undefined ? {} : { refusal }),
       };
-      if (idempotencyKey !== undefined) {
+      if (idempotencyKey !== undefined && refusal === undefined) {
         const claim = {
           caller: idempotencyCallerOf(caller),
           key: idempotencyKey,
