@@ -1,4 +1,4 @@
-import { REQUEST_KEY, REQUEST_STATES } from "@tiehall/core";
+import { REQUEST_KEY, REQUEST_STATES, SURFACES } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { user } from "./schemas.ts";
@@ -47,6 +47,37 @@ export const request = z.object({
   untrusted: z.object({ title: z.string() }),
 });
 
+export const MESSAGE_KINDS = ["comment", "question", "answer"] as const;
+
+/** The actor kinds a message's provenance records; human stays reserved and is never recorded in v1. */
+const RECORDED_ACTOR_KINDS = ["agent", "web_session", "system", "integration"] as const;
+
+/** A message of a request's thread, as the operations return it, with its latest version's text. */
+export const message = z.object({
+  id: z.uuid(),
+  kind: z.enum(MESSAGE_KINDS),
+  /** Whether a question blocks its request until it is answered; false for every other kind. */
+  blocking: z.boolean(),
+  /** For an answer, the question it answers. */
+  questionId: z.uuid().nullable(),
+  /** For a question, whether it has an answer; null for every other kind. */
+  answered: z.boolean().nullable(),
+  /** The number of its latest version: 1 until it is edited. */
+  version: z.number().int().min(1),
+  postedAt: z.iso.datetime(),
+  /** Who posted it, as the server stamped it: the actor kind, the surface, the accountable human and the team. */
+  provenance: z.object({
+    actorKind: z.enum(RECORDED_ACTOR_KINDS),
+    surface: z.enum(SURFACES).nullable(),
+    user: user.nullable(),
+    team: teamRef.nullable(),
+  }),
+  untrusted: z.object({ body: z.string(), client: z.string().nullable() }),
+});
+
+/** A request with its thread, oldest message first. */
+export const requestWithThread = request.extend({ messages: z.array(message) });
+
 export const createRequest = defineCommand({
   id: "requests.create",
   summary:
@@ -70,9 +101,9 @@ export const createRequest = defineCommand({
 
 export const getRequest = defineCommand({
   id: "requests.get",
-  summary: "Read a request by its key. Every member of the install can read every request.",
+  summary: "Read a request by its key, with its thread. Every member of the install can read every request.",
   input: z.object({ key: requestKey }),
-  output: request,
+  output: requestWithThread,
   method: "GET",
   path: "/api/v1/requests/{key}",
   scopes: ["requests:read"],

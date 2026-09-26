@@ -523,3 +523,106 @@ export const requestCounters = pgTable(
     check("request_counters_last_number_positive", sql`${table.lastNumber} > 0`),
   ],
 );
+
+// The messages of a request's thread (requests: Thread messages and blocking
+// questions; requests: Provenance is stamped by the server; requests: Messages
+// are append-only; design.md, Design rules: Requests and events). One row per
+// message: the request it belongs to and its place in the thread; its kind, a
+// comment, a question, which may be blocking, or an answer, which names the
+// question it answers; and its provenance as the server stamped it from the
+// caller, never from the payload: the actor kind, never human in v1, the
+// accountable human, the client, the surface and the team. Its text lives in
+// message_versions, one row per version.
+export const messages = pgTable(
+  "messages",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    requestId: uuid("request_id").notNull(),
+    /** The message's place in its request's thread, from 1. */
+    number: integer("number").notNull(),
+    kind: text("kind").notNull(),
+    /** Whether a question blocks the request until it is answered; false for every other kind. */
+    blocking: boolean("blocking").notNull().default(false),
+    /** For an answer, the question it answers. */
+    questionId: uuid("question_id"),
+    actorKind: text("actor_kind").notNull(),
+    /** The accountable human, by their Tiehall user id. */
+    actorUserId: uuid("actor_user_id"),
+    /** The client: its Client ID Metadata Document URL, the OAuth client, or the CLI version. */
+    client: text("client"),
+    surface: text("surface"),
+    /** The team the user acted for. */
+    teamId: uuid("team_id"),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("messages_request_number").on(table.orgId, table.requestId, table.number),
+    index("messages_question_id").on(table.orgId, table.questionId),
+    foreignKey({
+      name: "messages_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "messages_question_fk",
+      columns: [table.orgId, table.questionId],
+      foreignColumns: [table.orgId, table.id],
+    }),
+    foreignKey({
+      name: "messages_actor_user_fk",
+      columns: [table.orgId, table.actorUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "messages_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("messages_number_positive", sql`${table.number} > 0`),
+    check("messages_kind_known", sql`${table.kind} IN ('comment', 'question', 'answer')`),
+    check("messages_blocking_questions_only", sql`NOT ${table.blocking} OR ${table.kind} = 'question'`),
+    check("messages_answers_name_questions", sql`(${table.kind} = 'answer') = (${table.questionId} IS NOT NULL)`),
+    check("messages_actor_kind_known", sql`${table.actorKind} IN ('agent', 'web_session', 'system', 'integration')`),
+    check(
+      "messages_surface_known",
+      sql`${table.surface} IS NULL OR ${table.surface} IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')`,
+    ),
+    check(
+      "messages_actor_names_user",
+      sql`${table.actorKind} NOT IN ('agent', 'web_session') OR (${table.actorUserId} IS NOT NULL AND ${table.surface} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// The versions of each message's text (requests: Messages are append-only;
+// design.md, Design rules: Requests and events). A message is posted with
+// version 1, and an edit adds the next version and never changes an earlier
+// one, so every version reads back exactly as it was written.
+export const messageVersions = pgTable(
+  "message_versions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    messageId: uuid("message_id").notNull(),
+    /** The version's number, from 1. */
+    version: integer("version").notNull(),
+    /** The text of this version, as its author wrote it: user text, which agents see fenced. */
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.messageId, table.version] }),
+    foreignKey({
+      name: "message_versions_message_fk",
+      columns: [table.orgId, table.messageId],
+      foreignColumns: [messages.orgId, messages.id],
+    }),
+    check("message_versions_version_positive", sql`${table.version} > 0`),
+    check("message_versions_body_length", sql`char_length(${table.body}) BETWEEN 1 AND 65536`),
+  ],
+);

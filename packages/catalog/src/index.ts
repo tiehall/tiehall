@@ -24,13 +24,17 @@ export {
   DIRECT_STATES,
   getRequest,
   listRequests,
+  message,
+  MESSAGE_KINDS,
   request,
   REQUEST_COMMANDS,
   requestKey,
   requestTitle,
+  requestWithThread,
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
+export { MESSAGE_COMMANDS, messageBody, postMessage } from "./messages.ts";
 export { role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";

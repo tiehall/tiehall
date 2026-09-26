@@ -7,8 +7,8 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // Request keys that use a renamed team key keep resolving; design.md,
 // Decisions this change rests on: D28 #3). Every member of the install sees
 // every request, whether or not they belong to its requesting team or its
-// target team: requests.get reads one by its key, and requests.list lists the
-// install's requests, newest first. A key that names no request gets 404, and
+// target team: requests.get reads one by its key, with its thread, and
+// requests.list lists the install's requests, newest first. A key that names no request gets 404, and
 // someone who is no longer a member gets 403 and nothing.
 
 let install: TestInstall;
@@ -56,6 +56,7 @@ describe("reading one request", () => {
         claimant: null,
         createdAt: expect.any(String),
         untrusted: { title: "Add a dark mode" },
+        messages: [],
       },
     });
   });
@@ -83,7 +84,10 @@ describe("listing requests", () => {
     const answer = await callApi(install, tokenOf(carol), "GET", "/api/v1/requests");
     expect(answer.status).toBe(200);
     expect(answer.body.requests.map(({ key }: { key: string }) => key)).toEqual(["FE-143", "OPS-1", "FE-142"]);
-    expect(answer.body.requests[2]).toEqual((await callApi(install, tokenOf(carol), "GET", "/api/v1/requests/FE-142")).body);
+    // Each listed request is what a read of it returns, without its thread.
+    const { messages, ...read } = (await callApi(install, tokenOf(carol), "GET", "/api/v1/requests/FE-142")).body;
+    expect(messages).toEqual([]);
+    expect(answer.body.requests[2]).toEqual(read);
   });
 
   it("narrows the list to a target team and a state, and pages through it", async () => {

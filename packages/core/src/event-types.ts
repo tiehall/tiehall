@@ -1,4 +1,5 @@
 import { defineEventType, type EventType } from "./events.ts";
+import { REQUEST_STATES } from "./request-states.ts";
 import { ROLES } from "./roles.ts";
 
 // The event types Tiehall writes (requests: The event log; activity-log: Which
@@ -57,13 +58,38 @@ export const requestReleased = defineEventType({
   },
 });
 
-/** A message posted in a request's thread. It names the message; readers fetch its text through a read. */
+/**
+ * A message posted in a request's thread (requests: Thread messages and
+ * blocking questions; requests: Events carry ids, not bodies). It names the
+ * request and the message, never its text, which readers fetch through a
+ * read; the thread's own messages also say their kind, whether a question
+ * blocks, and for an answer the question it answers.
+ */
 export const messagePosted = defineEventType({
   type: "request.message_posted",
   class: "domain",
   fields: {
     requestId: { kind: "id", of: "request" },
     messageId: { kind: "id", of: "message" },
+    kind: { kind: "enum", values: ["comment", "question", "answer"], optional: true },
+    blocking: { kind: "boolean", optional: true },
+    questionId: { kind: "id", of: "message", optional: true },
+  },
+});
+
+/**
+ * A request's state changed as the side effect of another change, such as a
+ * blocking question moving it to needs_info or the last answer returning it
+ * (requests: Thread messages and blocking questions; requests: The event
+ * log). It names the state the request left and the one it is in now.
+ */
+export const requestStateChanged = defineEventType({
+  type: "request.state_changed",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    state: { kind: "enum", values: REQUEST_STATES },
+    previousState: { kind: "enum", values: REQUEST_STATES },
   },
 });
 
@@ -105,6 +131,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestStarted,
   requestReleased,
   messagePosted,
+  requestStateChanged,
   memberRoleChanged,
   memberRemoved,
 ];
