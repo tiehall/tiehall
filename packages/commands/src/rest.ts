@@ -27,6 +27,9 @@ import { createLogger, type Logger } from "./log.ts";
 //   (public-api: One error model for Tiehall's own refusals). A failure that is
 //   not one of Tiehall's own refusals answers 500 and says nothing about
 //   itself; the log records it by its name and stack, never its message;
+// - GET /api/v1/openapi.json answers anyone, without authentication, with
+//   the OpenAPI document, the same for every reader (public-api: Every
+//   install serves the OpenAPI 3.1 document without authentication);
 // - every answer of a deprecated operation, its errors included, carries the
 //   Deprecation header and, once it has a sunset date, the Sunset header,
 //   from the same metadata as the OpenAPI document (public-api: Deprecated
@@ -34,6 +37,8 @@ import { createLogger, type Logger } from "./log.ts";
 
 export interface RestOptions {
   catalog: Catalog;
+  /** The OpenAPI document served at /api/v1/openapi.json, as JSON text. */
+  document: string;
   execute: Execute;
   /** Who is calling, from the call's credentials; undefined when it carries none that are valid. */
   authenticate(request: Request): Promise<Caller | undefined>;
@@ -52,6 +57,9 @@ interface Route {
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
+/** Where the OpenAPI document is served. */
+export const DOCUMENT_PATH = `${API_PREFIX}openapi.json`;
+
 export function createRestHandler(options: RestOptions): RestHandler {
   const logger = options.logger ?? createLogger();
   const now = options.now ?? (() => new Date());
@@ -59,6 +67,13 @@ export function createRestHandler(options: RestOptions): RestHandler {
 
   return async function handle(request) {
     const url = new URL(request.url);
+    if (url.pathname === DOCUMENT_PATH && (request.method === "GET" || request.method === "HEAD")) {
+      // Needs no authentication and holds nothing of the install, so it is the same for every reader.
+      return new Response(request.method === "HEAD" ? null : options.document, {
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "no-cache" },
+      });
+    }
     const found = resolve(routes, request.method, url.pathname);
     if (found === undefined) return problem(new Refusal("route-not-found", "There is no such operation here."));
     const response = await answer(request, url, found);

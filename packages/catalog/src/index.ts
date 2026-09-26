@@ -17,3 +17,4 @@ export {
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
+export { OPENAPI_JSON } from "./openapi-json.ts";

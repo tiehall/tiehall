@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, catalogProblems, defineCatalog, defineCommand } from "@tiehall/catalog";
+import { OPENAPI_JSON } from "@tiehall/catalog";
 import { openApiDocument } from "@tiehall/catalog/openapi";
 import { Refusal } from "@tiehall/core";
 import { createLogger, createRestHandler, type Caller, type Execute, type LogEntry } from "../src/index.ts";
@@ -117,6 +119,7 @@ const execute: Execute = async (commandId, caller, input, options) => {
 function handler(authenticated: Caller | null = agent) {
   return createRestHandler({
     catalog,
+    document: OPENAPI_JSON,
     execute,
     authenticate: async () => authenticated ?? undefined,
     logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
@@ -305,6 +308,40 @@ describe("a deprecated operation", () => {
       expect(response.headers.has("deprecation")).toBe(false);
       expect(response.headers.has("sunset")).toBe(false);
     }
+  });
+});
+
+describe("/api/v1/openapi.json", () => {
+  // public-api: Every install serves the OpenAPI 3.1 document without authentication.
+  const committed = readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8");
+
+  it("is the committed document, which the catalog package carries", () => {
+    expect(OPENAPI_JSON).toBe(committed);
+  });
+
+  it("answers an anonymous reader with 200 and the committed document, holding no data of the install", async () => {
+    const response = await handler(null)(call("GET", "/api/v1/openapi.json"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    const body = await response.text();
+    expect(body).toBe(committed);
+    expect(JSON.parse(body)).toMatchObject({ openapi: "3.1.0" });
+    // Nothing of the install: not its URL, and no servers entry that would name it.
+    expect(body).not.toContain("tiehall.example.com");
+    expect(JSON.parse(body)).not.toHaveProperty("servers");
+    expect(calls).toEqual([]);
+  });
+
+  it("gives every reader the same body, with or without a token", async () => {
+    const anonymous = await (await handler(null)(call("GET", "/api/v1/openapi.json"))).text();
+    const withToken = await (
+      await handler(agent)(call("GET", "/api/v1/openapi.json", { headers: { authorization: "Bearer th_pat_reader", "user-agent": "curl/8" } }))
+    ).text();
+    expect(withToken).toBe(anonymous);
+  });
+
+  it("is read only: any other method answers 404 as there is no operation there", async () => {
+    await expectProblem(await handler()(call("POST", "/api/v1/openapi.json", { body: "{}" })), 404);
   });
 });
 

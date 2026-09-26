@@ -109,7 +109,7 @@ beforeAll(async () => {
     },
     store: { database: db, jobs: { send: async () => {} } },
   });
-  rest = createRestHandler({ catalog, execute, authenticate: async () => agent, logger: createLogger({ write: () => {} }) });
+  rest = createRestHandler({ catalog, document: "{}\n", execute, authenticate: async () => agent, logger: createLogger({ write: () => {} }) });
 });
 
 afterAll(async () => {

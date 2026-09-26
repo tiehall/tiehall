@@ -110,6 +110,7 @@ beforeAll(async () => {
   });
   rest = createRestHandler({
     catalog,
+    document: "{}\n",
     execute,
     // The test names its caller in a header of its own.
     authenticate: async (request) => (request.headers.get("x-test-caller") === "bob" ? bob : alice),

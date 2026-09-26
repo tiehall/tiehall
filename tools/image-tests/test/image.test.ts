@@ -342,6 +342,14 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(await response.json()).toMatchObject({ status: 404, title: expect.any(String), type: expect.any(String) });
   });
 
+  // public-api: Every install serves the OpenAPI 3.1 document without authentication.
+  it("serves /api/v1/openapi.json without authentication, as the committed document", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/openapi.json`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(await response.text()).toBe(readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8"));
+  });
+
   if (role === "all") {
     it("runs the worker beside the web server", () => {
       const logs = dockerOk(["logs", name]);

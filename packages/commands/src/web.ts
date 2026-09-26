@@ -1,4 +1,4 @@
-import { CATALOG } from "@tiehall/catalog";
+import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { openDatabase } from "@tiehall/db";
 import { createExecute } from "./execute.ts";
 import { HANDLERS } from "./handlers.ts";
@@ -41,6 +41,7 @@ export function restRoute(env: Environment): RestHandler {
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs } });
   rest = createRestHandler({
     catalog: CATALOG,
+    document: OPENAPI_JSON,
     execute,
     // Tokens are checked from group 15 on (agent-access); until then no call carries valid credentials.
     authenticate: async () => undefined,
