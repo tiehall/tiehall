@@ -26,6 +26,11 @@
 // marker, meaning `<`, then optional white space and a `/`, then
 // `tiehall-data` in any case, is written `&lt;`, so a fence holds exactly one
 // opening and one closing marker, whatever it holds.
+//
+// JSON that agents read carries no fences: there, the text people and other
+// systems wrote sits under objects named `untrusted`, as the output schemas
+// place it (agent-safety: User text in JSON sits under untrusted objects), and
+// agentJson() gives the value as agents read it.
 
 /** Where a string an agent reads comes from (design.md, Decisions this change rests on: D28 #54). */
 export const ORIGINS = ["tiehall", "same team", "other team", "external"] as const;
@@ -64,6 +69,13 @@ export interface AgentView {
   readonly nonce: string;
   /** The texts as markdown, in order: Tiehall's own text as it is, and every other text fenced after its preamble. */
   markdown(texts: readonly AgentText[]): string;
+  /** A JSON value as agents read it, as agentJson() gives it. */
+  json<T>(value: T): T;
+}
+
+/** A JSON value as agents read it, such as the output of an operation. */
+export function agentJson<T>(_value: T): T {
+  throw new Error("The renderer is built in task 13.3.");
 }
 
 /** A view for one response, with a nonce of its own. */
