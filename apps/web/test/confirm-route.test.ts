@@ -65,7 +65,7 @@ describe("the app", () => {
 
   // The other pages the commands package serves at a fixed path: the admin
   // view of the activity log (activity-log: The admin view) and the packet
-  // schema (handoff-packet: The schema is served by the install). A page that
+  // schema (handoff-packet: The beta label). A page that
   // no route file mounts answers with the app's 404, whatever its handler does.
   it.each([
     { name: "the activity log's admin page", path: ACTIVITY_LOG_PATH },
