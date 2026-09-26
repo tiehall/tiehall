@@ -269,8 +269,10 @@
                   },
                   "extensions": {
                     "additionalProperties": {},
-                    "description": "Data of other tools, kept exactly as sent.",
+                    "description": "Data of other tools, each under a reverse-DNS namespace such as com.acme.billing, kept exactly as sent; at most 16 KB (16,384 bytes) as JSON.",
                     "propertyNames": {
+                      "maxLength": 255,
+                      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
                       "type": "string"
                     },
                     "type": "object",
@@ -591,8 +593,10 @@
                   },
                   "extensions": {
                     "additionalProperties": {},
-                    "description": "Data of other tools, kept exactly as sent.",
+                    "description": "Data of other tools, each under a reverse-DNS namespace such as com.acme.billing, kept exactly as sent; at most 16 KB (16,384 bytes) as JSON.",
                     "propertyNames": {
+                      "maxLength": 255,
+                      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
                       "type": "string"
                     },
                     "type": "object",

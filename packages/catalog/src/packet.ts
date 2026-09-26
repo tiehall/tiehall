@@ -17,7 +17,9 @@ import { z } from "zod";
 // objects): the need, which every packet has; the acceptance criteria; code
 // refs; links; the contract section, which a contract-change packet must have
 // and any other packet may carry, such as a diff attached by hand; and
-// `extensions`. The schema marks `untrusted` and each field in it with the
+// `extensions`, whose keys are reverse-DNS namespaces and whose contents are
+// kept exactly as sent, up to 16 KB of JSON (handoff-packet: The `extensions`
+// field). The schema marks `untrusted` and each field in it with the
 // annotation x-tiehall-untrusted. A packet's own objects are open: the schema
 // forbids no additional property, while Tiehall's parse drops the keys it does
 // not know (handoff-packet: Open objects, strict server). Nothing here
@@ -45,6 +47,21 @@ export const CHANGE_LEVELS = ["ERR", "WARN", "INFO"] as const;
 
 /** The state of the provider's pull request: open, merged, which ships the change, or closed without merging. */
 export const PROVIDER_STATUSES = ["open", "merged", "closed"] as const;
+
+/**
+ * A key of `extensions`: a reverse-DNS namespace, such as com.acme.billing, of
+ * two or more lower-case labels of letters, digits and hyphens (handoff-packet:
+ * The `extensions` field).
+ */
+export const EXTENSION_NAMESPACE = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
+
+/** The cap on `extensions`: 16 KB of JSON, counted as the UTF-8 bytes of its compact JSON. */
+export const EXTENSIONS_MAX_BYTES = 16 * 1024;
+
+/** The size of a value as compact JSON, in UTF-8 bytes. */
+function jsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
 
 /** Metadata that marks a field as untrusted, with its description. */
 function untrusted(description: string) {
@@ -136,9 +153,17 @@ const untrustedFields = {
     .optional()
     .meta(untrusted("Pages that give context.")),
   extensions: z
-    .record(z.string(), z.unknown())
+    .record(
+      z.string().max(255).regex(EXTENSION_NAMESPACE, "An extensions key is a reverse-DNS namespace in lower case, such as com.acme.billing."),
+      z.unknown(),
+    )
+    .refine((value) => jsonBytes(value) <= EXTENSIONS_MAX_BYTES, `Extensions take at most ${EXTENSIONS_MAX_BYTES} bytes as JSON.`)
     .optional()
-    .meta(untrusted("Data of other tools, kept exactly as sent.")),
+    .meta(
+      untrusted(
+        "Data of other tools, each under a reverse-DNS namespace such as com.acme.billing, kept exactly as sent; at most 16 KB (16,384 bytes) as JSON.",
+      ),
+    ),
 };
 
 const UNTRUSTED_OBJECT = untrusted(

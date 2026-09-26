@@ -1,0 +1,10 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Charge the new plan from the first of next month.",
+    "extensions": {
+      "billing": { "cost_center": "CC-12" }
+    }
+  }
+}

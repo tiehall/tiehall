@@ -46,6 +46,8 @@ export {
 } from "./messages.ts";
 export {
   CHANGE_LEVELS,
+  EXTENSION_NAMESPACE,
+  EXTENSIONS_MAX_BYTES,
   packet,
   PACKET_COMPONENT,
   PACKET_KINDS,

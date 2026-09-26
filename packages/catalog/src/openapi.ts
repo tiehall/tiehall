@@ -30,10 +30,9 @@ import { packet, PACKET_COMPONENT } from "./packet.ts";
 // Response schemas never set `additionalProperties: false`, so a response can
 // gain a field without breaking a strictly generated client, and a schema used
 // in requests and responses, such as the packet, keeps one component id: the
-// packet is the component Packet, which the document holds even before an
-// operation takes or returns one (handoff-packet: One definition for the
-// schema and the API). The document holds no data of any install and is the
-// same for every reader.
+// packet is the component Packet wherever an operation takes or returns one
+// (handoff-packet: One definition for the schema and the API). The document
+// holds no data of any install and is the same for every reader.
 
 /** The API's version while it is beta: 0.N.0, bumped with every breaking change (D28 #27). */
 export const API_VERSION = "0.1.0";
@@ -97,7 +96,7 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
     const item = (paths[definition.path] ??= {});
     item[definition.method.toLowerCase() as "get"] = operationOf(definition, definition.method);
   }
-  return createDocument(
+  const document = createDocument(
     {
       openapi: "3.1.0",
       info: {
@@ -125,7 +124,12 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
         if (io === "output" && jsonSchema.additionalProperties === false) delete jsonSchema.additionalProperties;
       },
     },
-  ) as unknown as OpenApiDocument;
+  ) as unknown as OpenApiDocument & { components: { schemas: Record<string, unknown> } };
+  // The packet component stays only where an operation refers to it.
+  if (!JSON.stringify(document["paths"]).includes(`"#/components/schemas/${PACKET_COMPONENT}"`)) {
+    delete document.components.schemas[PACKET_COMPONENT];
+  }
+  return document;
 }
 
 function operationOf(definition: CommandDefinition, method: string): ZodOpenApiOperationObject {
