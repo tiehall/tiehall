@@ -21,6 +21,42 @@ export const requestOpened = defineEventType({
   },
 });
 
+/**
+ * A request was claimed (requests: Claiming and starting work need no
+ * proposal). It names the claimant, whom the claim was made for.
+ */
+export const requestClaimed = defineEventType({
+  type: "request.claimed",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    userId: { kind: "id", of: "user" },
+  },
+});
+
+/** Work on a claimed request started: it moved to in_progress (requests: Claiming and starting work need no proposal). */
+export const requestStarted = defineEventType({
+  type: "request.started",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+  },
+});
+
+/**
+ * A claim was released (requests: Allowed state changes). It names the user
+ * whose claim it was; its provenance names who released it, the claimant or a
+ * member of the target team once the claimant was no longer a member.
+ */
+export const requestReleased = defineEventType({
+  type: "request.released",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    userId: { kind: "id", of: "user" },
+  },
+});
+
 /** A message posted in a request's thread. It names the message; readers fetch its text through a read. */
 export const messagePosted = defineEventType({
   type: "request.message_posted",
@@ -63,4 +99,12 @@ export const memberRemoved = defineEventType({
   },
 });
 
-export const EVENT_TYPES: readonly EventType[] = [requestOpened, messagePosted, memberRoleChanged, memberRemoved];
+export const EVENT_TYPES: readonly EventType[] = [
+  requestOpened,
+  requestClaimed,
+  requestStarted,
+  requestReleased,
+  messagePosted,
+  memberRoleChanged,
+  memberRemoved,
+];

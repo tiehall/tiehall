@@ -102,4 +102,39 @@ export const listRequests = defineCommand({
   stability: "alpha",
 });
 
-export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests];
+export const claimRequest = defineCommand({
+  id: "requests.claim",
+  summary: "Claim an open request of one of your teams for yourself; it needs no confirmation.",
+  input: z.object({ key: requestKey }),
+  output: request,
+  method: "POST",
+  path: "/api/v1/requests/{key}/claim",
+  scopes: ["requests:write"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+/** The states set_status moves a request to directly: in_progress starts work, and open releases the claim. */
+export const DIRECT_STATES = ["in_progress", "open"] as const;
+
+export const setRequestStatus = defineCommand({
+  id: "requests.set_status",
+  summary:
+    "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member.",
+  input: z.object({
+    key: requestKey,
+    state: z.enum(DIRECT_STATES).meta({ description: "in_progress to start work on the claimed request, or open to release its claim." }),
+  }),
+  output: request,
+  method: "POST",
+  path: "/api/v1/requests/{key}/status",
+  scopes: ["requests:write"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, claimRequest, setRequestStatus];

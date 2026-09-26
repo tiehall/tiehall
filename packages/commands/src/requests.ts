@@ -1,10 +1,26 @@
-import { createRequest, getRequest, listRequests, type request } from "@tiehall/catalog";
-import { formatRequestKey, Refusal, requestOpened, type RequestState } from "@tiehall/core";
+import { claimRequest, createRequest, getRequest, listRequests, setRequestStatus, type request } from "@tiehall/catalog";
+import {
+  changeRequest,
+  formatRequestKey,
+  Refusal,
+  requestClaimed,
+  requestOpened,
+  requestReleased,
+  requestStarted,
+  sideAllows,
+  whoMay,
+  type RequestAction,
+  type RequestChange,
+  type RequestLifecycle,
+  type RequestParties,
+  type RequestState,
+  type ResumableState,
+} from "@tiehall/core";
 import { requests, teams, users } from "@tiehall/db";
 import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
-import { teamsOfMember, type MemberTeam } from "./members.ts";
+import { memberOf, teamsOfMember, type MemberTeam } from "./members.ts";
 import { noSuchRequest, resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -18,6 +34,14 @@ import type { OrgContext } from "./with-org.ts";
 // Reading: every member sees every request, whichever teams they belong to, so
 // the reads check no side. A key written with a team's earlier key names the
 // same request, which comes back under its current key.
+//
+// Changing a request: each change locks the request's row first, so changes
+// to one request run one after the other. The caller's side must allow the
+// action, or it gets 403 (the side rules in packages/core), and then the
+// request's state must allow the change, or it gets 409 (the state machine in
+// packages/core); either refusal changes nothing. Claiming, starting work and
+// releasing a claim need no proposal: the change and its event commit
+// together.
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -115,6 +139,61 @@ export async function requestView(context: OrgContext, requestId: string): Promi
   return view;
 }
 
+/** The request a key names, with its row locked until the call's transaction ends; 404 when the key names none. */
+async function lockRequest(context: OrgContext, key: string): Promise<RequestRow> {
+  const { requestId } = await resolveRequestKey(context, key);
+  const [row] = await context.tx
+    .select()
+    .from(requests)
+    .where(and(eq(requests.orgId, context.orgId), eq(requests.id, requestId)))
+    .for("update");
+  if (row === undefined) throw noSuchRequest();
+  return row;
+}
+
+/** Who the request's parties are, as the side rules see them, with whether its claimant is still a member. */
+async function partiesOf(context: OrgContext, row: RequestRow): Promise<RequestParties> {
+  const claimantIsMember = row.claimantUserId !== null && (await memberOf(context, row.claimantUserId)) !== undefined;
+  return {
+    targetTeamId: row.targetTeamId,
+    requestingTeamId: row.requestingTeamId,
+    requestingUserId: row.requestingUserId,
+    claimantId: row.claimantUserId,
+    claimantIsMember,
+  };
+}
+
+/** Refuses, with 403, an action the user's side of the request does not allow. */
+async function assertSideAllows(context: OrgContext, userId: string, row: RequestRow, action: RequestAction): Promise<void> {
+  const teamIds = (await teamsOfMember(context, userId)).map(({ id }) => id);
+  if (!sideAllows({ userId, teamIds }, await partiesOf(context, row), action)) throw new Refusal("forbidden", whoMay(action));
+}
+
+/** Where the request is in its lifecycle, as the state machine sees it. */
+function lifecycleOf(row: RequestRow, openBlockingQuestions: number): RequestLifecycle {
+  return {
+    state: row.state as RequestState,
+    claimantId: row.claimantUserId,
+    resumeState: row.resumeState as ResumableState | null,
+    openBlockingQuestions,
+  };
+}
+
+/** Where the change takes the request; 409 when its state does not allow it. */
+function transition(current: RequestLifecycle, change: RequestChange): RequestLifecycle {
+  const result = changeRequest(current, change);
+  if (!result.ok) throw new Refusal("conflict", result.conflict);
+  return result.next;
+}
+
+/** Stores where the request is now in its lifecycle. */
+async function saveLifecycle({ tx, orgId }: OrgContext, requestId: string, next: RequestLifecycle): Promise<void> {
+  await tx
+    .update(requests)
+    .set({ state: next.state, claimantUserId: next.claimantId, resumeState: next.resumeState })
+    .where(and(eq(requests.orgId, orgId), eq(requests.id, requestId)));
+}
+
 export const REQUEST_HANDLERS: Handlers = {
   [createRequest.id]: defineHandler(createRequest, async ({ targetTeam, requestingTeam, title }, context) => {
     const userId = actingUserOf(context);
@@ -154,5 +233,36 @@ export const REQUEST_HANDLERS: Handlers = {
       .limit(limit ?? 50)
       .offset(offset ?? 0);
     return { "requests": await requestViews(context, rows) };
+  }),
+
+  [claimRequest.id]: defineHandler(claimRequest, async ({ key }, context) => {
+    const userId = actingUserOf(context);
+    const row = await lockRequest(context, key);
+    await assertSideAllows(context, userId, row, "claim");
+    // Blocking questions come with the thread; until then no request waits on one.
+    const next = transition(lifecycleOf(row, 0), { kind: "claim", userId });
+    return context.write(async (writer) => {
+      await saveLifecycle(writer, row.id, next);
+      await writer.record(requestClaimed, { requestId: row.id, userId });
+      return requestView(writer, row.id);
+    });
+  }),
+
+  [setRequestStatus.id]: defineHandler(setRequestStatus, async ({ key, state }, context) => {
+    const userId = actingUserOf(context);
+    const row = await lockRequest(context, key);
+    const action = state === "open" ? "release" : "start";
+    await assertSideAllows(context, userId, row, action);
+    const current = lifecycleOf(row, 0);
+    const next = transition(current, { kind: action });
+    return context.write(async (writer) => {
+      await saveLifecycle(writer, row.id, next);
+      if (action === "release" && current.claimantId !== null) {
+        await writer.record(requestReleased, { requestId: row.id, userId: current.claimantId });
+      } else {
+        await writer.record(requestStarted, { requestId: row.id });
+      }
+      return requestView(writer, row.id);
+    });
   }),
 };

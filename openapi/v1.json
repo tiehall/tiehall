@@ -1003,6 +1003,638 @@
         "summary": "Read a request by its key. Every member of the install can read every request.",
         "x-stability-level": "alpha"
       }
+    },
+    "/api/v1/requests/{key}/claim": {
+      "post": {
+        "operationId": "requests.claim",
+        "parameters": [
+          {
+            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "claimant": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "bot": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "human",
+                              "type": "string"
+                            },
+                            "login": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "login",
+                            "kind",
+                            "bot"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "requester": {
+                      "properties": {
+                        "team": {
+                          "properties": {
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "key": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "key"
+                          ],
+                          "type": "object"
+                        },
+                        "user": {
+                          "anyOf": [
+                            {
+                              "properties": {
+                                "bot": {
+                                  "type": "boolean"
+                                },
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "human",
+                                  "type": "string"
+                                },
+                                "login": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "login",
+                                "kind",
+                                "bot"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "team"
+                      ],
+                      "type": "object"
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "claimed",
+                        "in_progress",
+                        "needs_info",
+                        "done",
+                        "declined",
+                        "withdrawn"
+                      ],
+                      "type": "string"
+                    },
+                    "targetTeam": {
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "untrusted": {
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key",
+                    "state",
+                    "targetTeam",
+                    "requester",
+                    "claimant",
+                    "createdAt",
+                    "untrusted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request's state does not allow this action."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The Idempotency-Key was sent with a different body in the last 24 hours."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:write"
+            ]
+          }
+        ],
+        "summary": "Claim an open request of one of your teams for yourself; it needs no confirmation.",
+        "x-stability-level": "alpha"
+      }
+    },
+    "/api/v1/requests/{key}/status": {
+      "post": {
+        "operationId": "requests.set_status",
+        "parameters": [
+          {
+            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header).",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "state": {
+                    "description": "in_progress to start work on the claimed request, or open to release its claim.",
+                    "enum": [
+                      "in_progress",
+                      "open"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "claimant": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "bot": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "human",
+                              "type": "string"
+                            },
+                            "login": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "login",
+                            "kind",
+                            "bot"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "requester": {
+                      "properties": {
+                        "team": {
+                          "properties": {
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "key": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "key"
+                          ],
+                          "type": "object"
+                        },
+                        "user": {
+                          "anyOf": [
+                            {
+                              "properties": {
+                                "bot": {
+                                  "type": "boolean"
+                                },
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "human",
+                                  "type": "string"
+                                },
+                                "login": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "login",
+                                "kind",
+                                "bot"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "team"
+                      ],
+                      "type": "object"
+                    },
+                    "state": {
+                      "enum": [
+                        "open",
+                        "claimed",
+                        "in_progress",
+                        "needs_info",
+                        "done",
+                        "declined",
+                        "withdrawn"
+                      ],
+                      "type": "string"
+                    },
+                    "targetTeam": {
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "untrusted": {
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key",
+                    "state",
+                    "targetTeam",
+                    "requester",
+                    "claimant",
+                    "createdAt",
+                    "untrusted"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request's state does not allow this action."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The Idempotency-Key was sent with a different body in the last 24 hours."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:write"
+            ]
+          }
+        ],
+        "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member.",
+        "x-stability-level": "alpha"
+      }
     }
   }
 }
