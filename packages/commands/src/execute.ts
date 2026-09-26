@@ -34,7 +34,8 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    role matrix with the role that re-check read, refusing an admin action
 //    to anyone whose role does not allow it with 403 before the nonce is
 //    consumed or the handler runs (teams-and-roles: The role bounds every
-//    caller acting for a user);
+//    caller acting for a user); a job or an integration event acts for no
+//    admin, so it runs no admin action either;
 // 6. returns only output that passes the operation's output schema: any
 //    other output rolls the call back and is never returned.
 // Later tasks add the token's side of the rules (15.5) and commitments that
@@ -166,8 +167,9 @@ export function createExecute(services: ExecuteServices): Execute {
     return withOrg(
       store.database,
       async (context) => {
+        // An admin action runs only for an admin: never for a job or an integration event, which act for no admin.
         const member = context.member;
-        if (actsForUser(caller)) assertRoleAllows(definition, member);
+        assertRoleAllows(definition, member);
         if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
           const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
           if (!(await confirmations.consume(context, claim))) {

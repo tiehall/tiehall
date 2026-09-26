@@ -288,6 +288,59 @@ export const members = pgTable(
   ],
 );
 
+// Teams (teams-and-roles: Teams). The install's teams, kept in Tiehall's own
+// records, each with its key and a name. Only admins change them, through the
+// team operations; nothing is taken from GitHub teams or any other outside
+// source. v1 offers no way to delete a team.
+export const teams = pgTable(
+  "teams",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** The team's key, such as FE, which its requests' keys and its intake page's URL start with. */
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("teams_key").on(table.orgId, table.key),
+    check("teams_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 100`),
+  ],
+);
+
+// Who belongs to which team (teams-and-roles: Teams). A member of the install
+// can belong to several teams, and a team to nobody. Each row names a
+// membership of the install, so removing a member from the install removes
+// them from every team with it.
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId, table.userId] }),
+    foreignKey({
+      name: "team_members_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "team_members_member_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [members.orgId, members.userId],
+    }).onDelete("cascade"),
+    index("team_members_user_id").on(table.orgId, table.userId),
+  ],
+);
+
 // Used confirmation nonces (agent-safety: One confirmation approves one action;
 // design.md, Self-hosting decisions: S7). A review page's nonce is signed, not
 // stored, so opening the page changes nothing; once the nonce has approved its

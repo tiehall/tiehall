@@ -225,6 +225,26 @@ describe("a catalog", () => {
   });
 });
 
+// teams-and-roles: One org per install. The install holds one org, the company that runs it, so no surface offers
+// an operation that creates, lists, picks or switches orgs: no operation, tool or CLI command names one.
+describe("the real catalog", () => {
+  const ORG = /(^|[^a-z])(org|orgs|organi[sz]ations?)([^a-z]|$)/i;
+
+  it("has no operation, tool or CLI command that creates, lists, picks or switches an org", () => {
+    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cliCommand }) =>
+      [id, summary, path, tool, cliCommand].filter((name): name is string => name !== undefined),
+    );
+    expect(names.filter((name) => ORG.test(name))).toEqual([]);
+  });
+
+  it("would be caught naming an org", () => {
+    for (const name of ["orgs.create", "orgs.list", "/api/v1/orgs/{orgId}", "switch_org", "org switch", "organizations.select"]) {
+      expect(ORG.test(name), name).toBe(true);
+    }
+    for (const name of ["teams.create", "sign_in.set_policy", "/api/v1/requests/{key}", "whats_new"]) expect(ORG.test(name), name).toBe(false);
+  });
+});
+
 // teams-and-roles: Two roles, admin and member. An invite or a role change names one of the two roles, and input
 // that names any other, such as owner, fails its schema, which the error model answers with 400.
 describe("the role an input names", () => {
