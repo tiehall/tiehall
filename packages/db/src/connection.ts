@@ -18,11 +18,24 @@ export type Database = NodePgDatabase<typeof schema> & { $client: pg.Pool };
 /** The transaction a handler runs in. */
 export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-export function openDatabase(connection: DatabaseConnection, options: { applicationName?: string } = {}): Database {
+export interface OpenDatabaseOptions {
+  /** The name the connections show in pg_stat_activity. */
+  applicationName?: string;
+  /**
+   * Hears of a connection the database ended while it sat idle in the pool,
+   * such as on a database restart. The pool has dropped it already and opens a
+   * new one for the next query, so the caller only logs it.
+   */
+  onIdleError?: (error: Error) => void;
+}
+
+export function openDatabase(connection: DatabaseConnection, options: OpenDatabaseOptions = {}): Database {
   const pool = new pg.Pool({
     connectionString: withPassword(connection),
     application_name: options.applicationName ?? "tiehall",
   });
+  // An error event that nothing listens to would crash the process, and a database restart ends every idle connection.
+  pool.on("error", (error) => options.onIdleError?.(error));
   return drizzle({ client: pool, schema });
 }
 

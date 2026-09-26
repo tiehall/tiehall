@@ -1,5 +1,5 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
-import { openDatabase } from "@tiehall/db";
+import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { HANDLERS } from "./handlers.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
@@ -28,7 +28,7 @@ function servicesOf(env: Environment): { execute: Execute; logger: Logger } {
   if (services !== undefined) return services;
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
-  const database = openDatabase(connection, { applicationName: "tiehall web" });
+  const database = openAppDatabase(connection, { applicationName: "tiehall web", logger, role: "web" });
   let queue: Promise<JobQueue> | undefined;
   const jobs: JobSender = {
     async send(tx, name, data) {

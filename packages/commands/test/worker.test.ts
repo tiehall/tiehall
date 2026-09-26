@@ -12,6 +12,7 @@ import {
   openDatabase,
   openJobQueue,
   startWorker,
+  withOrg,
   write,
   type Database,
   type DatabaseConnection,
@@ -173,4 +174,52 @@ describe("stopping the worker", () => {
     expect(Date.now() - stopping).toBeLessThan(3000);
     expect(entries.map(({ msg }) => msg)).toEqual(["worker: started, working 1 queue", "worker: stopped"]);
   });
+});
+
+// self-host-install: A restart stops the app gracefully. A database restart ends the connections idling in the
+// worker's pool; the worker logs the loss, keeps running, and the next job gets a new connection.
+describe("when the database ends the worker's connections", () => {
+  it("logs the loss by its code, keeps running, and runs the next job on a new connection", async () => {
+    const ran: string[] = [];
+    const { logger, entries } = capturing();
+    const worker = await startWorker({
+      connection: app,
+      jobs: [
+        {
+          type: quick,
+          handle: async (job: RunningJob<{ requestId: string }>, services) => {
+            ran.push(await withOrg(services.database, async ({ orgId }) => `${job.data.requestId} in ${orgId}`));
+          },
+        },
+      ],
+      pollingIntervalSeconds: 0.5,
+      logger,
+    });
+    try {
+      const first = randomUUID();
+      await send(quick, first);
+      await until("the first job to run", () => (ran.some((each) => each.startsWith(first)) ? true : undefined));
+      await until("the first job to complete", async () =>
+        (await stateOf(quick.queue)).every(({ state }) => state === "completed") ? true : undefined,
+      );
+
+      // As a database restart does: every session of the worker ends, the idle ones in its pool included.
+      const { rows } = await owner.query<{ ended: boolean }>(
+        "SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE application_name = 'tiehall worker' AND usename = $1",
+        [appRole.name],
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      const lost = await until("the worker to log the lost connection", () =>
+        entries.find(({ msg }) => msg === "worker: the database ended an idle connection; the next query opens a new one"),
+      );
+      expect(lost).toMatchObject({ level: "warn", error: { code: "57P01" } });
+      expect(lost).not.toHaveProperty("error.message");
+
+      const second = randomUUID();
+      await send(quick, second);
+      await until("the next job to run", () => (ran.some((each) => each.startsWith(second)) ? true : undefined));
+    } finally {
+      await worker.stop();
+    }
+  }, 30_000);
 });

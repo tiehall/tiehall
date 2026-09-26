@@ -1,4 +1,5 @@
-import { openDatabase, type Database, type DatabaseConnection } from "@tiehall/db";
+import type { Database, DatabaseConnection } from "@tiehall/db";
+import { openAppDatabase } from "./database.ts";
 import { openJobQueue } from "./job-queue.ts";
 import type { DefinedJobType, JobData } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -73,7 +74,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     logger,
   });
   const services: WorkerServices = {
-    database: openDatabase(options.connection, { applicationName: "tiehall worker" }),
+    database: openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" }),
     now: options.clock ?? (() => new Date()),
   };
   let stopping = false;
