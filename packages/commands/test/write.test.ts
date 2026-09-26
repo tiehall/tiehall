@@ -5,13 +5,16 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { defineEventType, EventShapeError, messagePosted, type Provenance } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  createLogger,
+  defineJobType,
   migrate,
   openDatabase,
+  openJobQueue,
   write,
   WriteWithoutEventError,
   type Database,
-  type JobSender,
-  type JobType,
+  type DatabaseConnection,
+  type JobQueue,
   type Store,
 } from "../src/index.ts";
 
@@ -21,6 +24,7 @@ import {
 // one transaction, or none of them does: an event exists if and only if its
 // change committed, and a job never runs for a change that did not. The event
 // takes the caller's provenance, which the server stamped, never the handler's.
+// Jobs go through the real job queue, pg-boss, which the migrate step installs.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const BOB = randomUUID();
@@ -34,23 +38,22 @@ const roleChanged = defineEventType({
   fields: { userId: { kind: "id", of: "user" }, role: { kind: "enum", values: ["admin", "member"] } },
 });
 
-/** A job of the kind the mirrors start, sent through the probe queue below. */
-const mirrorRequest: JobType<{ requestId: string }> = { queue: "probe.mirror_request.v1" };
+/** A job of the kind the mirrors start. */
+const mirrorRequest = defineJobType<{ requestId: string }>("probe.mirror_request", 1, {
+  retryLimit: 1,
+  retryDelaySeconds: 0,
+  retryBackoff: false,
+  expireInSeconds: 60,
+});
 
 let database: TestDatabase;
 let owner: pg.Client;
 let db: Database;
+let queue: JobQueue;
 let store: Store;
+/** The queues of the jobs the writes sent, whether or not the writes committed. */
 const sent: string[] = [];
 const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
-
-/** A queue that keeps its jobs in a table, inside the caller's transaction, as pg-boss's send() will in 4.11. */
-const probeQueue: JobSender = {
-  async send(tx, queue, data) {
-    sent.push(queue);
-    await tx.execute(`INSERT INTO probe_jobs (queue, data) VALUES (${pg.escapeLiteral(queue)}, ${pg.escapeLiteral(JSON.stringify(data))})`);
-  },
-};
 
 const agent: Provenance = { actorKind: "agent", userId: BOB, surface: "cli", client: "tiehall/0.1.0" };
 const webSession: Provenance = { actorKind: "web_session", userId: PIA, surface: "web" };
@@ -59,7 +62,7 @@ beforeAll(async () => {
   database = await createTestDatabase();
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
-  // The changes and the queue that later tasks add, reduced to what this test needs. A message may not be
+  // The changes that later tasks add, reduced to what this test needs. A message may not be
   // "commit-time failure", which a deferred check only finds when the transaction commits.
   await owner.query(
     `CREATE TABLE probe_messages (
@@ -69,20 +72,30 @@ beforeAll(async () => {
        BEGIN IF NEW.body = 'commit-time failure' THEN RAISE EXCEPTION 'refused at commit'; END IF; RETURN NULL; END $$;
      CREATE CONSTRAINT TRIGGER probe_messages_checked_at_commit AFTER INSERT ON probe_messages
        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION probe_refuse_marked();
-     CREATE TABLE probe_members (org_id uuid NOT NULL, user_id uuid NOT NULL, role text NOT NULL, PRIMARY KEY (org_id, user_id));
-     CREATE TABLE probe_jobs (id bigserial PRIMARY KEY, queue text NOT NULL, data jsonb NOT NULL);`,
+     CREATE TABLE probe_members (org_id uuid NOT NULL, user_id uuid NOT NULL, role text NOT NULL, PRIMARY KEY (org_id, user_id));`,
   );
   await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";
-  db = openDatabase({ connectionString: url.toString(), password: appRole.password });
-  store = { database: db, jobs: probeQueue };
+  const app: DatabaseConnection = { connectionString: url.toString(), password: appRole.password };
+  db = openDatabase(app);
+  queue = await openJobQueue({ connection: app, jobTypes: [mirrorRequest], logger: createLogger({ write: () => {} }) });
+  store = {
+    database: db,
+    jobs: {
+      async send(tx, name, data) {
+        sent.push(name);
+        await queue.send(tx, name, data);
+      },
+    },
+  };
   const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id;
   await owner.query("INSERT INTO probe_members (org_id, user_id, role) VALUES ($1, $2, 'member')", [orgId, LEE]);
 });
 
 afterAll(async () => {
+  await queue.stop();
   await db.$client.end();
   await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
   await owner.end();
@@ -94,7 +107,7 @@ afterEach(async () => {
   // Events are append-only; the test container's superuser clears them with triggers off for its own transaction.
   await owner.query(
     `BEGIN; SET LOCAL session_replication_role = replica;
-     DELETE FROM probe_messages; DELETE FROM probe_jobs; DELETE FROM events; DELETE FROM event_sequence;
+     DELETE FROM probe_messages; DELETE FROM pgboss.job; DELETE FROM events; DELETE FROM event_sequence;
      UPDATE probe_members SET role = 'member'; COMMIT`,
   );
 });
@@ -126,7 +139,8 @@ function changeLeesRole(role: "admin" | "member", after: () => Promise<void> = a
 async function counts(): Promise<{ messages: number; events: number; jobs: number }> {
   const { rows } = await owner.query<{ messages: number; events: number; jobs: number }>(
     `SELECT (SELECT count(*)::int FROM probe_messages) AS messages, (SELECT count(*)::int FROM events) AS events,
-            (SELECT count(*)::int FROM probe_jobs) AS jobs`,
+            (SELECT count(*)::int FROM pgboss.job WHERE name = $1) AS jobs`,
+    [mirrorRequest.queue],
   );
   return rows[0] ?? { messages: -1, events: -1, jobs: -1 };
 }
@@ -160,7 +174,7 @@ describe("a write", () => {
         client: "tiehall/0.1.0",
       },
     ]);
-    expect((await owner.query("SELECT queue, data FROM probe_jobs")).rows).toEqual([
+    expect((await owner.query("SELECT name AS queue, data FROM pgboss.job WHERE name LIKE 'probe.%'")).rows).toEqual([
       { queue: "probe.mirror_request.v1", data: { requestId } },
     ]);
   });
