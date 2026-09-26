@@ -439,6 +439,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.5
+      playwright-core:
+        specifier: 1.63.0
+        version: 1.63.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

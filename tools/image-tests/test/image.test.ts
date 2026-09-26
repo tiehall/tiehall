@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { containerState, docker, dockerOk, existingVolumes, processUid, uniqueName, volumesOf, waitFor } from "../src/docker.ts";
 
@@ -385,6 +386,43 @@ describe.each(["web", "all"])("the %s role", (role) => {
       expect(script.status, source).toBe(200);
       expect(script.headers.get("content-type"), source).toBe("text/javascript; charset=utf-8");
       expect((await script.text()).length, source).toBeGreaterThan(0);
+    }
+  });
+
+  // public-api: The API reference page at `/docs/api`. The browser tests in apps/web serve the page's handlers
+  // from a local server; this one reads the page from the image, through the real Next.js route, in the
+  // installed Google Chrome (TIEHALL_TEST_CHROME names another Chromium-based executable).
+  it("renders the API reference page for an anonymous browser, loading nothing from another host", async () => {
+    const executablePath = process.env["TIEHALL_TEST_CHROME"];
+    const browser = await chromium.launch(executablePath === undefined ? { channel: "chrome" } : { executablePath });
+    try {
+      const page = await (await browser.newContext()).newPage();
+      const origin = `http://127.0.0.1:${port}`;
+      const loaded: string[] = [];
+      page.on("request", (request) => loaded.push(`${request.method()} ${request.url()}`));
+      await page.addInitScript(() => {
+        const seen: string[] = [];
+        (window as unknown as { cspViolations: string[] }).cspViolations = seen;
+        document.addEventListener("securitypolicyviolation", (event) => seen.push(`${event.violatedDirective} ${event.blockedURI}`));
+      });
+      const response = await page.goto(`${origin}/docs/api`);
+      expect(response?.status()).toBe(200);
+      expect(response?.headers()["content-security-policy"]).toMatch(/^default-src 'none'; script-src 'nonce-[^']+';/);
+      await page.getByText("Tiehall API").first().waitFor({ timeout: 30_000 });
+      await page.waitForLoadState("networkidle");
+      // Not sent to sign in: still on the page, which may add a fragment for the section in view.
+      expect(new URL(page.url()).pathname).toBe("/docs/api");
+      expect(loaded.filter((request) => !request.startsWith(`GET ${origin}/`) && !request.startsWith("GET data:"))).toEqual([]);
+      expect(loaded).toContain(`GET ${origin}/api/v1/openapi.json`);
+      expect(await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations)).toEqual([]);
+      const controls = await page.evaluate(() =>
+        [...document.querySelectorAll("button, a, [role=button], input, textarea")]
+          .filter((element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+          .map((element) => `${(element.textContent ?? "").trim()} ${element.getAttribute("aria-label") ?? ""}`),
+      );
+      expect(controls.filter((control) => /test request|send|try it|api client|run request/i.test(control))).toEqual([]);
+    } finally {
+      await browser.close();
     }
   });
 
