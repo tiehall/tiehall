@@ -5,6 +5,7 @@ import {
   isTerminalState,
   proposalConfirmed,
   Refusal,
+  requestReassigned,
   requestStateChanged,
   type CommitmentKind,
   type ProposalStanding,
@@ -14,7 +15,7 @@ import {
   type SecondConfirmer,
   type Surface,
 } from "@tiehall/core";
-import { proposalConfirmations, proposals } from "@tiehall/db";
+import { proposalConfirmations, proposals, requestFormerKeys, requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { ConfirmationSubjects, ReviewContext, ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -23,6 +24,7 @@ import { teamsOfMember } from "./members.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { cancelProposals, noSuchProposal, proposalView } from "./proposals.ts";
 import { actingUserOf, lifecycleOf, lockRequestById, partiesOf, saveLifecycle, teamActedFor } from "./request-changes.ts";
+import { takeRequestNumber } from "./request-numbers.ts";
 import { requestView, type RequestRow } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
@@ -53,7 +55,11 @@ import type { Writer } from "./write.ts";
 // request: a decline, a withdrawal or a done moves it to that state, which
 // cancels every other pending proposal on it; a due date or a scope change
 // adds the proposed packet as the next revision, recorded with the proposer's
-// provenance, which cancels the packet changes based on an older revision.
+// provenance, which cancels the packet changes based on an older revision; a
+// reassignment makes the new team the target team, gives the request the next
+// number of that team while its old key keeps naming it, returns it to open
+// with no claimant, and cancels every other pending proposal on it (requests:
+// Reassignment gives a new key and the old key redirects).
 
 /** A proposal as stored, with its row locked until the call's transaction ends; 404 when there is none. */
 export async function lockProposal({ tx, orgId }: OrgContext, proposalId: string) {
@@ -137,8 +143,30 @@ async function applyCommitment(writer: Writer, stored: StoredProposal, row: Requ
       });
       return;
     }
-    case "reassign":
-      throw new Error("A reassignment is applied once task 14.11 builds it; no operation proposes one before then.");
+    case "reassign": {
+      const { teamId } = stored.change as { teamId: string };
+      const number = await takeRequestNumber(writer, teamId);
+      // The old key keeps naming the request; its number is never given to another request of its team.
+      await writer.tx
+        .insert(requestFormerKeys)
+        .values({ orgId: writer.orgId, teamId: row.targetTeamId, number: row.number, requestId: row.id })
+        .onConflictDoUpdate({ target: [requestFormerKeys.orgId, requestFormerKeys.teamId, requestFormerKeys.number], set: { requestId: row.id } });
+      // It returns to open with no claimant; a blocking question still unanswered keeps it waiting, to return to open.
+      const waiting = current.openBlockingQuestions > 0;
+      const next: RequestLifecycle = waiting
+        ? { state: "needs_info", claimantId: null, resumeState: "open", openBlockingQuestions: current.openBlockingQuestions }
+        : { state: "open", claimantId: null, resumeState: null, openBlockingQuestions: 0 };
+      await writer.tx
+        .update(requests)
+        .set({ targetTeamId: teamId, number, state: next.state, claimantUserId: null, resumeState: next.resumeState })
+        .where(and(eq(requests.orgId, writer.orgId), eq(requests.id, row.id)));
+      await writer.record(requestReassigned, { requestId: row.id, teamId, previousTeamId: row.targetTeamId });
+      if (next.state !== current.state) {
+        await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: current.state });
+      }
+      await cancelProposals(writer, row.id, { kind: "reassigned", proposalId: stored.id });
+      return;
+    }
   }
 }
 

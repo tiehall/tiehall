@@ -204,6 +204,13 @@
       "when": 1790419176493,
       "tag": "0028_make_proposals_immutable",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790420023563,
+      "tag": "0029_add_request_former_keys",
+      "breakpoints": true
     }
   ]
 }

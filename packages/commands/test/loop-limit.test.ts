@@ -189,6 +189,7 @@ describe("a flagged request", () => {
       "messages.edit": () => callApi(install, tokenOf(bob), "POST", `/api/v1/messages/${bobs.body.message.id}/versions`, { body: "Edited." }),
       "requests.claim": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${unclaimed.key}/claim`),
       "requests.set_status": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
+      "requests.propose": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/proposals`, { kind: "reassign", team: "BE" }),
       "packets.add_revision": () =>
         sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/packet/revisions`, {
           // A new link only, which changes no scope, so it would be no commitment on the claimed request.

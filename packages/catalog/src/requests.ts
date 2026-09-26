@@ -189,4 +189,25 @@ export const setRequestStatus = defineCommand({
   stability: "alpha",
 });
 
-export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, claimRequest, setRequestStatus];
+export const proposeCommitment = defineCommand({
+  id: "requests.propose",
+  summary:
+    "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team.",
+  input: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("reassign").meta({ description: "Reassign the request to another team of the install." }),
+      key: requestKey,
+      team: teamKey.meta({ description: "The key of the team to reassign it to, such as MOB." }),
+    }),
+  ]),
+  output: request,
+  method: "POST",
+  path: "/api/v1/requests/{key}/proposals",
+  scopes: ["requests:write"],
+  commitment: true,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, claimRequest, setRequestStatus, proposeCommitment];

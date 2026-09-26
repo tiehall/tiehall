@@ -25,6 +25,7 @@ export {
   DIRECT_STATES,
   getRequest,
   PROPOSED_STATES,
+  proposeCommitment,
   listRequests,
   message,
   MESSAGE_KINDS,

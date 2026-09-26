@@ -1,5 +1,5 @@
-import { claimRequest, createRequest, getRequest, listRequests, setRequestStatus } from "@tiehall/catalog";
-import { Refusal, requestClaimed, requestOpened, requestReleased, requestStarted } from "@tiehall/core";
+import { claimRequest, createRequest, getRequest, listRequests, proposeCommitment, setRequestStatus } from "@tiehall/catalog";
+import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted } from "@tiehall/core";
 import { requests } from "@tiehall/db";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
@@ -29,7 +29,11 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // and the state machine allow them, they create a proposal and leave the
 // request as it is; marking done a request that is done already, such as by
 // close on merge, answers with the request and proposes nothing
-// (agent-surfaces: Commitment tools return proposals).
+// (agent-surfaces: Commitment tools return proposals). requests.propose makes
+// the commitments no other operation makes, which is, so far, reassigning a
+// request to another team of the install: a proposal of a member of its target
+// team, for a request that has not ended (requests: Reassignment gives a new
+// key and the old key redirects).
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -132,6 +136,23 @@ export const REQUEST_HANDLERS: Handlers = {
       await writer.record(requestClaimed, { requestId: row.id, userId });
       return requestView(writer, row.id);
     }, { teamId });
+  }),
+
+  [proposeCommitment.id]: defineHandler(proposeCommitment, async (input, context) => {
+    const userId = actingUserOf(context);
+    const row = await lockRequest(context, input.key);
+    await assertSideAllows(context, userId, row, "reassign");
+    const team = await teamOfKey(context, input.team);
+    if (team === undefined) throw new Refusal("record-not-found", "There is no such team.");
+    if (team.id === row.targetTeamId) {
+      const message = "A request is reassigned to another team than the one it is addressed to.";
+      throw new Refusal("invalid-input", message, { issues: [{ path: ["team"], message }] });
+    }
+    const current = await lifecycleOf(context, row);
+    if (isTerminalState(current.state)) {
+      throw new Refusal("conflict", `The request is ${current.state}, which is final, so it is no longer reassigned.`);
+    }
+    return context.propose(row, { kind: "reassign", change: { teamId: team.id } });
   }),
 
   [setRequestStatus.id]: defineHandler(setRequestStatus, async ({ key, state }, context) => {

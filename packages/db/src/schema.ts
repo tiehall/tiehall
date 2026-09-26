@@ -965,3 +965,34 @@ export const proposalConfirmations = pgTable(
     check("proposal_confirmations_step_known", sql`${table.step} IN ('accountable_human', 'other_side')`),
   ],
 );
+
+// The keys a request had before a reassignment (requests: Reassignment gives a
+// new key and the old key redirects). A confirmed reassignment gives the
+// request the next number of its new team; its old team and number stay here,
+// naming the request, so its old key keeps resolving to it under its current
+// key. A number is never given to another request of its team.
+export const requestFormerKeys = pgTable(
+  "request_former_keys",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    number: integer("number").notNull(),
+    requestId: uuid("request_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId, table.number] }),
+    foreignKey({
+      name: "request_former_keys_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "request_former_keys_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    check("request_former_keys_number_positive", sql`${table.number} > 0`),
+  ],
+);

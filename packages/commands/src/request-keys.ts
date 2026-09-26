@@ -1,5 +1,5 @@
 import { formatRequestKey, parseRequestKey, Refusal } from "@tiehall/core";
-import { requests, teamKeyAliases, teams } from "@tiehall/db";
+import { requestFormerKeys, requests, teamKeyAliases, teams } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { OrgContext } from "./with-org.ts";
 
@@ -10,8 +10,11 @@ import type { OrgContext } from "./with-org.ts";
 // rename, since an old key stays its team's alias and no other team can take
 // it. The request's own key is written with its team's current key, so a key
 // read through an alias names the same request under its current key, such as
-// WEB-142. A key that names no request of the install, whatever the reason, is
-// a record that does not exist: 404, with nothing about why.
+// WEB-142. A key a request had before a confirmed reassignment names it too,
+// under its current key, such as MOB-37 for FE-142 (requests: Reassignment
+// gives a new key and the old key redirects). A key that names no request of
+// the install, whatever the reason, is a record that does not exist: 404, with
+// nothing about why.
 
 /** A request that a key names, and its own key, with its team's current key. */
 export interface ResolvedRequestKey {
@@ -49,6 +52,13 @@ export async function resolveRequestKey(context: OrgContext, key: string): Promi
     .select({ id: requests.id })
     .from(requests)
     .where(and(eq(requests.orgId, context.orgId), eq(requests.targetTeamId, team.id), eq(requests.number, parsed.number)));
-  if (request === undefined) throw noSuchRequest();
-  return { requestId: request.id, key: formatRequestKey(team.key, parsed.number) };
+  if (request !== undefined) return { requestId: request.id, key: formatRequestKey(team.key, parsed.number) };
+  const [moved] = await context.tx
+    .select({ id: requests.id, number: requests.number, teamKey: teams.key })
+    .from(requestFormerKeys)
+    .innerJoin(requests, and(eq(requests.orgId, requestFormerKeys.orgId), eq(requests.id, requestFormerKeys.requestId)))
+    .innerJoin(teams, and(eq(teams.orgId, requests.orgId), eq(teams.id, requests.targetTeamId)))
+    .where(and(eq(requestFormerKeys.orgId, context.orgId), eq(requestFormerKeys.teamId, team.id), eq(requestFormerKeys.number, parsed.number)));
+  if (moved === undefined) throw noSuchRequest();
+  return { requestId: moved.id, key: formatRequestKey(moved.teamKey, moved.number) };
 }

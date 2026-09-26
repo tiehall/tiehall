@@ -152,6 +152,22 @@ export const requestNeedsHumanCleared = defineEventType({
 });
 
 /**
+ * A confirmed reassignment moved a request to another team of the install
+ * (requests: Reassignment gives a new key and the old key redirects). It names
+ * the request, the team it moved to, which gave it its next key, and the team
+ * it left; its provenance names the web session whose confirmation applied it.
+ */
+export const requestReassigned = defineEventType({
+  type: "request.reassigned",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    teamId: { kind: "id", of: "team" },
+    previousTeamId: { kind: "id", of: "team" },
+  },
+});
+
+/**
  * A commitment became a proposal, which takes effect once the people it needs
  * have confirmed it in the web UI (requests: Commitments become proposals;
  * requests: A confirmed commitment applies only if the request still allows
@@ -262,6 +278,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestStateChanged,
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,
+  requestReassigned,
   proposalCreated,
   proposalConfirmed,
   proposalEnded,

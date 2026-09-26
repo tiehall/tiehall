@@ -103,6 +103,7 @@ describe("every request change so far", () => {
     "requests.create": async () => callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: "Another one", packet: packetOf() }),
     "requests.claim": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`),
     "requests.set_status": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
+    "requests.propose": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/proposals`, { kind: "reassign", team: "BE" }),
     "messages.post": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Blocking?", blocking: true }),
     "messages.edit": async (key) => {
       const [first] = (await callApi(install, tokenOf(bob), "GET", `/api/v1/requests/${key}`)).body.messages;
@@ -125,7 +126,8 @@ describe("every request change so far", () => {
     for (const [operation, change] of Object.entries(WRITES)) {
       const before = Number((await install.owner.query<{ last: string }>("SELECT coalesce(max(number), 0) AS last FROM events")).rows[0]?.last);
       const answer = await change(key);
-      expect(answer.status, operation).toBe(200);
+      // A commitment answers 202 with the proposal it became, whose creation is the change.
+      expect(answer.status, operation).toBe(operation === "requests.propose" ? 202 : 200);
       const { rows } = await install.owner.query<{ class: string; request: string }>(
         "SELECT class, data->>'requestId' AS request FROM events WHERE number > $1 ORDER BY number",
         [before],
