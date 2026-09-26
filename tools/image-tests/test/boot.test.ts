@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, inject, it } from "vitest";
 
-// The self-host boot test (task 2.12; operations: Production runs the self-host
-// Compose file and image). It runs the same script as the CI job: boot
+// The self-host boot test (task 2.11; self-host-install: Compose runs Tiehall
+// and Postgres). It runs the same script as the CI job: boot
 // deploy/compose.yaml in the all-in-one role against stock Postgres 17 and wait
 // for /healthz to report healthy.
 

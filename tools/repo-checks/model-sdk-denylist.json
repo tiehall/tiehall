@@ -1,5 +1,5 @@
 {
-  "description": "LLM and model-vendor SDKs that no workspace package.json may depend on (operations: No model calls and no model vendor; D3). A scope denies every package in it. Add new vendors and SDKs here; tools/repo-checks/src/check-model-sdks.ts enforces the list in CI.",
+  "description": "LLM and model-vendor SDKs that no workspace package.json may depend on (self-host-install: No model calls; D3). A scope denies every package in it. Add new vendors and SDKs here; tools/repo-checks/src/check-model-sdks.ts enforces the list in CI.",
   "scopes": {
     "@ai-sdk": "Vercel AI SDK model providers",
     "@anthropic-ai": "Anthropic",

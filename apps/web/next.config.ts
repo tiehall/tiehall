@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
 // The commit SHA, so browsers still on an older release reload instead of mixing
-// versions during a rolling release (design.md decision 23). The Dockerfile sets it.
+// versions after an upgrade. The Dockerfile sets it.
 const commitSha = process.env["TIEHALL_COMMIT_SHA"];
 
 const nextConfig: NextConfig = {

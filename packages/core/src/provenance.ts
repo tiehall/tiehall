@@ -18,7 +18,7 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
 export const SURFACES = ["web", "mcp", "cli", "api", "github", "jira"] as const;
 export type Surface = (typeof SURFACES)[number];
 
-/** The operator commands the image's admin role runs on the host (self-host-install: setup code and recovery). */
+/** The operator commands the image's admin role runs on the host (self-host-install: Operator commands on the host). */
 export const OPERATOR_COMMANDS = ["admin grant", "setup reopen"] as const;
 export type OperatorCommand = (typeof OPERATOR_COMMANDS)[number];
 

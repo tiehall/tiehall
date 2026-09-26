@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ConfigError, readConfig } from "../src/config.ts";
 
 // Configuration comes only from environment variables and *_FILE secrets
-// (design.md decision 1; operations: Production runs the self-host Compose file and image).
+// (design.md, Technical decisions: T1; self-host-install: One `.env` holds the install settings).
 
 describe("readConfig", () => {
   let secrets: string;

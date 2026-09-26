@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { secretKeyProblem } from "@tiehall/commands";
 
 // Configuration comes only from environment variables and from secret files
-// named by *_FILE variables (design.md decision 1). Any setting can come from a
-// file, and a secret should: then it never appears in the environment, in
-// `docker inspect` or in a Compose file. Error messages name settings and
-// files, never values.
+// named by *_FILE variables (design.md, Technical decisions: T1;
+// self-host-install: One `.env` holds the install settings). Any setting can
+// come from a file, and a secret should: then it never appears in the
+// environment, in `docker inspect` or in a Compose file. Error messages name
+// settings and files, never values.
 
 export class ConfigError extends Error {
   override name = "ConfigError";

@@ -1,4 +1,4 @@
-// The image has one entrypoint and four roles (design.md decision 1):
+// The image has one entrypoint and four roles (design.md, Technical decisions: T1):
 // - web serves the UI, /api/v1, /mcp, the OAuth server and webhooks;
 // - worker runs the job handlers and crons;
 // - migrate runs the migrations once and exits, before each roll;

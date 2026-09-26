@@ -1,4 +1,4 @@
-// The image's one entrypoint (design.md decision 1): `node main.mjs <role>`.
+// The image's one entrypoint (design.md, Technical decisions: T1): `node main.mjs <role>`.
 // It checks the role and the configuration, then starts the role:
 // - web imports the Next.js standalone server into this process;
 // - worker and migrate run here: worker works the job queues until SIGTERM,

@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { containerState, docker, dockerOk, existingVolumes, processUid, uniqueName, volumesOf, waitFor } from "../src/docker.ts";
 
-// Container tests for the image (task 2.7; operations: Production runs the
-// self-host Compose file and image). Every role starts the way production runs
-// it: a read-only root filesystem, a tmpfs /tmp, no capabilities and
+// Container tests for the image (task 2.6; self-host-install: Tiehall's
+// containers are confined). Every role starts the way an install runs it: a
+// read-only root filesystem, a tmpfs /tmp, no capabilities and
 // no-new-privileges.
 
 const image = inject("image");

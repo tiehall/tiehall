@@ -1,5 +1,5 @@
-// CI secret scan for operations: Build pipeline integrity. It runs gitleaks
-// over every commit of a repository (all refs the checkout holds, so the whole
+// CI secret scan for self-host-install: Release pipeline integrity. It runs
+// gitleaks over every commit of a repository (all refs the checkout holds, so the whole
 // pushed history and the commits of a pull request). gitleaks runs from its
 // image pinned by digest, with no network, no capabilities, as nobody, and with
 // the repository mounted read-only, so the scanner can neither change the

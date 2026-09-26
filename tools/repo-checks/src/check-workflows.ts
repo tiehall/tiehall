@@ -1,5 +1,5 @@
-// CI check for operations: Build pipeline integrity. It fails when a workflow
-// references an action by tag or branch, when a workflow or job does not
+// CI check for self-host-install: Release pipeline integrity. It fails when a
+// workflow references an action by tag or branch, when a workflow or job does not
 // declare its token permissions, when a job holds a write permission or a
 // secret that .github/workflow-policy.json does not list, when CI installs
 // without the frozen lockfile or with npm install scripts, or when pnpm would
@@ -24,7 +24,7 @@ if (violations.length === 0) {
     console.error(`${file}${job === undefined ? "" : `#${job}`}: [${rule}] ${detail}`);
   }
   console.error(
-    "\nSee operations: Build pipeline integrity. Write permissions and secrets are allowed only for the jobs " +
+    "\nSee self-host-install: Release pipeline integrity. Write permissions and secrets are allowed only for the jobs " +
       "listed in .github/workflow-policy.json.",
   );
   process.exitCode = 1;

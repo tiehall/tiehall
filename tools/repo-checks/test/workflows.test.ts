@@ -3,8 +3,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { checkWorkflows, jobPermissions, type Violation } from "../src/workflows.ts";
 
-// The CI check for operations: Build pipeline integrity. It runs the same
-// script as the CI job against committed fixture repositories and the real tree.
+// The CI check for self-host-install: Release pipeline integrity. It runs the
+// same script as the CI job against committed fixture repositories and the
+// real tree.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/check-workflows.ts", import.meta.url));

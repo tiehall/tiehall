@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { summarizeDryRun } from "../src/renovate-dry-run.ts";
 
-// The Renovate dry-run check for operations: Build pipeline integrity: no
-// update is proposed before it is 7 days old. `pnpm check:renovate` runs
+// The Renovate dry-run check for self-host-install: Release pipeline
+// integrity: no update is proposed before it is 7 days old. `pnpm check:renovate` runs
 // Renovate's lookup against the real tree; these tests run the same script on
 // committed Renovate JSON logs.
 

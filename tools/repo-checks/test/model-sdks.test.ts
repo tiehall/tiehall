@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { findModelSdkDependencies, loadDenylist } from "../src/model-sdks.ts";
 
-// The CI check for operations: No model calls and no model vendor. It runs the
-// same script as the CI job against committed fixtures and the real tree.
+// The CI check for self-host-install: No model calls. It runs the same script
+// as the CI job against committed fixtures and the real tree.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/check-model-sdks.ts", import.meta.url));

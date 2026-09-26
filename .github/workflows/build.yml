@@ -1,12 +1,11 @@
 name: Build
 
-# On every push to main: build the release image once, push it to GHCR by
-# digest, then scan it and test it by that digest (operations: Releases are
-# built once in CI and pulled by the servers; operations: Build pipeline
-# integrity). The build job is the only job that can write packages
-# (.github/workflow-policy.json) and runs only first-party steps; the scanner
-# is third-party code and runs in its own job, with read-only package access
-# and no secrets.
+# On every push to main: build the image once, push it to GHCR by digest, then
+# scan it and test it by that digest (self-host-install: Release pipeline
+# integrity; design.md, Technical decisions: T13). The build job is the only
+# job that can write packages (.github/workflow-policy.json) and runs only
+# first-party steps; the scanner is third-party code and runs in its own job,
+# with read-only package access and no secrets.
 
 on:
   push:
@@ -36,8 +35,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
         run: |
           # The owner comes from the repository, lowercased as GHCR requires, so
-          # the image name follows the repository when it moves to the tiehall
-          # organization (D32).
+          # the image name follows the repository if it moves to another owner.
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           repository="ghcr.io/$owner/tiehall"
           tag="$repository:sha-$GITHUB_SHA"

@@ -1,10 +1,11 @@
 name: CI
 
 # The checks every pull request and every push to main must pass. Workflows are
-# split by the permissions their jobs need (operations: Build pipeline
-# integrity): every job here reads the repository and nothing more. A job that
-# needs a write permission or a secret lives in its own workflow and is listed
-# in .github/workflow-policy.json, which the "Workflow rules" job enforces.
+# split by the permissions their jobs need (self-host-install: Release
+# pipeline integrity): every job here reads the repository and nothing more.
+# A job that needs a write permission or a secret lives in its own workflow
+# and is listed in .github/workflow-policy.json, which the "Workflow rules"
+# job enforces.
 
 on:
   pull_request:

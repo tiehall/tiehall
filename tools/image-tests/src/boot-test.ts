@@ -1,7 +1,7 @@
-// The self-host boot test (operations: Production runs the self-host Compose
-// file and image). It boots deploy/compose.yaml, the file a self-hosting
-// customer runs, with the image in the all-in-one role against stock Postgres
-// 17, waits until every service is up and healthy, and then asks /healthz
+// The self-host boot test (self-host-install: Compose runs Tiehall and
+// Postgres). It boots deploy/compose.yaml, the file a self-hosting company
+// runs, with the image in the all-in-one role against stock Postgres 17,
+// waits until every service is up and healthy, and then asks /healthz
 // itself. It exits 0 when the stack came up healthy and 1 when it did not,
 // printing the stack's state and logs. It always tears the stack down.
 // Usage: TIEHALL_IMAGE=<image> node tools/image-tests/src/boot-test.ts [override.yaml]...

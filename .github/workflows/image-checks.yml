@@ -3,7 +3,8 @@ name: Image checks
 # The image's container tests and the self-host boot test, as one reusable
 # workflow: CI calls it on pull requests to test a build of the pull request,
 # and the Build workflow calls it on main to test, by digest, the image it
-# pushed (operations: Production runs the self-host Compose file and image).
+# pushed (self-host-install: Tiehall's containers are confined;
+# self-host-install: Compose runs Tiehall and Postgres).
 
 on:
   workflow_call:

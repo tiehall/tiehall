@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Dependency updates under operations: Build pipeline integrity: nothing is proposed before it is 7 days old, and no update to an action pin or an image digest is ever merged without review.",
+  "description": "Dependency updates under self-host-install: Release pipeline integrity: nothing is proposed before it is 7 days old, and no update to an action pin or an image digest is ever merged without review.",
   "extends": [
     "config:recommended",
     "helpers:pinGitHubActionDigests",
@@ -55,7 +55,7 @@
       ]
     },
     {
-      "description": "Node stays on the 24 LTS line and Postgres on 17 (design.md decision 1): no major update of them or of the Node types, because a major upgrade is planned work.",
+      "description": "Node stays on the 24 LTS line and Postgres on 17 (design.md, Technical decisions: T1): no major update of them or of the Node types, because a major upgrade is planned work.",
       "matchPackageNames": [
         "node",
         "@types/node",

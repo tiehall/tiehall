@@ -16,7 +16,8 @@
 //   code, its stack frames and its cause. An error spread into a plain object,
 //   with a message and a stack, is treated the same way.
 // The one secret a log line shows on purpose is the setup code, which the
-// setup screen's task prints in a message (self-host-install: setup code).
+// setup screen's task prints in a message (self-host-install: Logs carry ids,
+// never message text or credentials).
 
 export type LogLevel = "info" | "warn" | "error";
 export type LogFields = Readonly<Record<string, unknown>>;

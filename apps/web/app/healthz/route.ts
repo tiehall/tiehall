@@ -1,5 +1,5 @@
-// The public health check answers only "up" (operations draft §4, TLS). Task 5.4
-// adds the database, drain and schema detail for requests with the monitoring token.
+// The public health check (self-host-install: `/healthz` answers only up or
+// down). Task 5.6 makes it answer "down" when the database is unreachable.
 export function GET(): Response {
   return Response.json({ status: "up" }, { headers: { "cache-control": "no-store" } });
 }

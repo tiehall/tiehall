@@ -1,6 +1,6 @@
 // CI check: fails when any package.json in the repository depends on an LLM or
-// model-vendor SDK from model-sdk-denylist.json (operations: No model calls and
-// no model vendor). Usage: node tools/repo-checks/src/check-model-sdks.ts [root]
+// model-vendor SDK from model-sdk-denylist.json (self-host-install: No model
+// calls). Usage: node tools/repo-checks/src/check-model-sdks.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";
 import { findModelSdkDependencies, loadDenylist } from "./model-sdks.ts";

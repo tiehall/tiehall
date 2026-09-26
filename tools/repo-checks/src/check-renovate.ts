@@ -1,4 +1,5 @@
-// Checks the Renovate configuration for operations: Build pipeline integrity.
+// Checks the Renovate configuration for self-host-install: Release pipeline
+// integrity.
 // It validates renovate.json with Renovate's own validator, then runs a lookup
 // dry run on the local checkout and fails when Renovate would propose an update
 // younger than 7 days, or one whose age it cannot tell. Renovate runs from its
@@ -103,7 +104,7 @@ function main(): number {
   for (const update of summary.tooYoung) console.error(`too young     ${describeUpdate(update)}`);
   console.error(
     `\nRenovate would propose ${summary.tooYoung.length} update(s) younger than ${MINIMUM_RELEASE_AGE_DAYS} days, ` +
-      "or of unknown age. See operations: Build pipeline integrity and minimumReleaseAge in renovate.json.",
+      "or of unknown age. See self-host-install: Release pipeline integrity and minimumReleaseAge in renovate.json.",
   );
   return 1;
 }

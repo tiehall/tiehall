@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseRole, ROLES, usage } from "../src/roles.ts";
 
-// One entrypoint selects the role (design.md decision 1).
+// One entrypoint selects the role (design.md, Technical decisions: T1).
 
 describe("parseRole", () => {
   it("knows exactly the four roles", () => {

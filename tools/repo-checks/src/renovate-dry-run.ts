@@ -1,6 +1,6 @@
 // Reads the JSON log of a Renovate lookup dry run and sorts every update it
-// found into proposed and held back, for operations: Build pipeline integrity:
-// no update is proposed before it is 7 days old.
+// found into proposed and held back, for self-host-install: Release pipeline
+// integrity: no update is proposed before it is 7 days old.
 
 export const MINIMUM_RELEASE_AGE_DAYS = 7;
 

@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 
-// operations: Build pipeline integrity: install scripts run only for an
-// allowlist of packages. This installs a dependency with a postinstall script
+// self-host-install: Release pipeline integrity: install scripts run only for
+// an allowlist of packages. This installs a dependency with a postinstall script
 // under the repository's own pnpm settings, in a scratch workspace.
 
 const workspaceFile = fileURLToPath(new URL("../../../pnpm-workspace.yaml", import.meta.url));

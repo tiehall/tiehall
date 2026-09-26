@@ -1,6 +1,6 @@
 # The Tiehall image: one image with four roles, web, worker, migrate and all
-# (design.md decision 1; operations: Production runs the self-host Compose file
-# and image). Build it from the repository root:
+# (design.md, Technical decisions: T1; self-host-install: Tiehall's containers
+# are confined). Build it from the repository root:
 #   docker build --build-arg TIEHALL_COMMIT_SHA="$(git rev-parse HEAD)" --tag tiehall .
 # and run a role on a read-only root filesystem:
 #   docker run --read-only --tmpfs /tmp --env DATABASE_URL=postgres://... tiehall web

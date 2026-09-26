@@ -2,10 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 
-// The rules of operations: Build pipeline integrity that can be read from the
-// repository: how workflows reference actions, which token permissions and
-// secrets each job holds, how CI installs dependencies, and which packages may
-// run install scripts.
+// The rules of self-host-install: Release pipeline integrity that can be read
+// from the repository: how workflows reference actions, which token
+// permissions and secrets each job holds, how CI installs dependencies, and
+// which packages may run install scripts.
 
 export type Rule =
   | "action-not-pinned"

@@ -6,9 +6,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-// The CI secret scan for operations: Build pipeline integrity. It runs the same
-// script as the CI job over scratch repositories whose history is built here,
-// so no key, not even a fake one, is ever committed to this repository.
+// The CI secret scan for self-host-install: Release pipeline integrity. It
+// runs the same script as the CI job over scratch repositories whose history
+// is built here, so no key, not even a fake one, is ever committed to this
+// repository.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/scan-secrets.ts", import.meta.url));
