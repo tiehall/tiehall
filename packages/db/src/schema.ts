@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // The Drizzle schema of the app's tables (design.md, Technical decisions: T4).
 // drizzle-kit generates the migrations in ../migrations from it with
@@ -22,3 +22,14 @@ export const orgs = pgTable(
   // A unique index on a constant: a second row would repeat it.
   () => [uniqueIndex("orgs_one_row").on(sql`(true)`)],
 );
+
+// The event sequence (requests: The event log; design.md, Technical decisions:
+// T5): one counter row per org, which the writing transaction locks to take the
+// next event number. Numbers follow commit order and have no gaps.
+export const eventSequence = pgTable("event_sequence", {
+  orgId: uuid("org_id")
+    .primaryKey()
+    .references(() => orgs.id),
+  /** The number of the last event taken, 0 before the first. */
+  lastNumber: bigint("last_number", { mode: "number" }).notNull(),
+});

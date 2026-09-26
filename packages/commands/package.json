@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tiehall/db": "workspace:*"
+    "@tiehall/db": "workspace:*",
+    "drizzle-orm": "catalog:"
   },
   "devDependencies": {
     "@tiehall/testing": "workspace:*",
