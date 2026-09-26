@@ -77,10 +77,13 @@ jobs:
           docker logout ghcr.io
           docker save "$IMAGE" --output "$RUNNER_TEMP/image.tar"
       # The scanner gets only the saved image: no token, no Docker socket, no
-      # checkout, a read-only root filesystem and no capabilities.
+      # checkout, a read-only root filesystem and no capabilities. It runs as the
+      # runner's user, who owns the saved image: without capabilities, root in the
+      # container cannot read a file that only another user may read.
       - name: Scan for fixable high and critical vulnerabilities
         run: |
           docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" \
             --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" \
             "$TRIVY_IMAGE" image --input /image.tar --cache-dir /tmp/trivy \
             --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
