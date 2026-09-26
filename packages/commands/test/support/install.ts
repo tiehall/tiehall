@@ -61,6 +61,12 @@ export interface TestInstall {
    * X-Forwarded-For and User-Agent; returns the answer.
    */
   confirm(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<Response>;
+  /**
+   * Opens the action's review page now and returns a function that posts its
+   * form, so a test can post it at a moment of its choosing, such as beside
+   * another call; a page that is refused is answered as it was.
+   */
+  prepareConfirmation(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<() => Promise<Response>>;
   close(): Promise<void>;
 }
 
@@ -90,6 +96,24 @@ export async function startTestInstall(
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
     createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
+  const prepareConfirmation: TestInstall["prepareConfirmation"] = async (caller, commandId, input, headers = {}) => {
+    const route = confirmRoute(caller);
+    const page = await route(new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`));
+    const html = await page.text();
+    if (page.status !== 200) return async () => new Response(html, { status: page.status, headers: page.headers });
+    const field = (name: string) =>
+      (new RegExp(`<input type="hidden" name="${name}" value="([^"]*)">`).exec(html)?.[1] ?? "").replace(/&#(\d+);/g, (_, code: string) =>
+        String.fromCharCode(Number(code)),
+      );
+    return () =>
+      route(
+        new Request(`${URL_OF_INSTALL}/confirm/${commandId}`, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+          body: new URLSearchParams({ input: field("input"), nonce: field("nonce"), csrf: field("csrf") }).toString(),
+        }),
+      );
+  };
 
   return {
     owner,
@@ -100,23 +124,8 @@ export async function startTestInstall(
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,
     confirmRouteFor,
-    async confirm(caller, commandId, input, headers = {}) {
-      const route = confirmRoute(caller);
-      const page = await route(new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`));
-      const html = await page.text();
-      if (page.status !== 200) return new Response(html, { status: page.status, headers: page.headers });
-      const field = (name: string) =>
-        (new RegExp(`<input type="hidden" name="${name}" value="([^"]*)">`).exec(html)?.[1] ?? "").replace(/&#(\d+);/g, (_, code: string) =>
-          String.fromCharCode(Number(code)),
-        );
-      return route(
-        new Request(`${URL_OF_INSTALL}/confirm/${commandId}`, {
-          method: "POST",
-          headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
-          body: new URLSearchParams({ input: field("input"), nonce: field("nonce"), csrf: field("csrf") }).toString(),
-        }),
-      );
-    },
+    confirm: async (caller, commandId, input, headers) => (await prepareConfirmation(caller, commandId, input, headers))(),
+    prepareConfirmation,
     async close() {
       await db.$client.end();
       await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
