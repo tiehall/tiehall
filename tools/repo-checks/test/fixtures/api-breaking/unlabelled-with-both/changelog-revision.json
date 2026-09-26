@@ -1,0 +1,11 @@
+{
+  "unreleased": [
+    {
+      "date": "2026-09-26",
+      "kind": "breaking",
+      "text": "requests.get may leave out key: an urgent security fix, released without the usual notice.",
+      "operationIds": ["requests.get"]
+    }
+  ],
+  "releases": []
+}

@@ -1,0 +1,56 @@
+name: API compatibility
+
+# Notice before a breaking change, enforced on every pull request
+# (public-api: Notice before a breaking change is enforced in CI; public-api:
+# The `api-breaking` label for urgent security fixes). It lives apart from
+# ci.yml because it also runs when a label is added or removed, so adding the
+# api-breaking label runs the check again without a new push.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Jobs get no token permissions unless they declare them.
+permissions: {}
+
+# A newer run for the same pull request replaces one still running.
+concurrency:
+  group: api-compatibility-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  api-compatibility:
+    name: API compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Holds no secrets: oasdiff is third-party code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base branch's history, for the merge base.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      # The check reads openapi/changelog.json through @tiehall/catalog/changelog,
+      # which imports only Node built-ins.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      # The pinned oasdiff release, downloaded from GitHub and run only once
+      # its archive matches the SHA-256 in tools/repo-checks/oasdiff.json.
+      - run: node tools/repo-checks/src/install-oasdiff.ts
+      # Compares openapi/v1.json at the merge base with the pull request's and
+      # fails on a breaking change that skips the notice steps or leaves
+      # info.version as it was. With the api-breaking label, a breaking change
+      # passes only when the pull request also adds a changelog entry of kind
+      # breaking to openapi/changelog.json and bumps info.version. The labels
+      # come from the event, through the environment, never into the script.
+      - run: node tools/repo-checks/src/check-api-compat.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

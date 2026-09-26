@@ -11,6 +11,9 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@tiehall/catalog": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "dependency-cruiser": "catalog:",

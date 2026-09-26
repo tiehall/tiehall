@@ -1,0 +1,10 @@
+{
+  "unreleased": [
+    {
+      "date": "2026-09-26",
+      "kind": "note",
+      "text": "The API reference page is at /docs/api."
+    }
+  ],
+  "releases": []
+}

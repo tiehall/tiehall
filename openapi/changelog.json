@@ -1,0 +1,5 @@
+{
+  "$comment": "The API changelog (public-api: The changelog page and the release notes). A pull request that announces something about the API adds a dated entry under unreleased: a breaking change released without notice, allowed only for an urgent security fix, needs the api-breaking label, an entry of kind breaking and a bump of info.version in openapi/v1.json (public-api: The `api-breaking` label for urgent security fixes). Entries are shown with the release that carries them, on /docs/api/changelog and in the release notes.",
+  "unreleased": [],
+  "releases": []
+}

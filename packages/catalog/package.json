@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./changelog": "./src/changelog.ts",
     "./openapi": "./src/openapi.ts"
   },
   "scripts": {

@@ -6,7 +6,11 @@
 // A module shows up in a rule either by its resolved path (for example
 // packages/db/src/index.ts, or node_modules/.pnpm/pg@8/node_modules/pg/...) or,
 // when it cannot be resolved, by the name it was imported as (for example
-// @tiehall/db or pg). Every pattern below matches both forms.
+// @tiehall/db or pg). Every pattern below matches both forms. A workspace
+// package that resolves above the folder being checked, as it does from a
+// fixture tree inside a package that depends on it, shows as a path up to the
+// repository's root (../../packages/catalog/src/index.ts); the patterns for
+// workspace packages match that form too.
 
 /** Matches npm packages by name, resolved or not. A name ending in "/" is a scope. */
 function npm(...names) {
@@ -22,9 +26,12 @@ function builtin(...names) {
   return `^(node:)?(${names.join("|")})(/|$)`;
 }
 
+/** A resolved path up from the folder being checked, as a fixture tree sees the repository's own packages. */
+const UP = "(\\.\\./)*";
+
 /** Matches a workspace package by its folder or by its package name. */
 function workspace(folder, name) {
-  return `^${folder}/|^${name.replace("/", "\\/")}(/|$)`;
+  return `^${UP}${folder}/|^${name.replace("/", "\\/")}(/|$)`;
 }
 
 const DB_PACKAGE = workspace("packages/db", "@tiehall/db");
@@ -62,9 +69,9 @@ const APACHE_2_0_PACKAGES = Object.entries(require("./tools/repo-checks/license-
   ([folder, name]) => ({ folder, name }),
 );
 const APACHE_2_0_FOLDERS = APACHE_2_0_PACKAGES.map(({ folder }) => `^${folder}/`);
-const APACHE_2_0_MODULES = APACHE_2_0_PACKAGES.flatMap(({ folder, name }) => [`^${folder}/`, npm(name)]);
+const APACHE_2_0_MODULES = APACHE_2_0_PACKAGES.flatMap(({ folder, name }) => [`^${UP}${folder}/`, npm(name)]);
 // Every workspace package, by folder or by package name.
-const WORKSPACE_MODULES = ["^(apps|packages|actions|tools)/", npm("@tiehall/", "tiehall")];
+const WORKSPACE_MODULES = [`^${UP}(apps|packages|actions|tools)/`, npm("@tiehall/", "tiehall")];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
