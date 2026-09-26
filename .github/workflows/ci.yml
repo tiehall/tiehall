@@ -140,6 +140,35 @@ jobs:
       # that file (public-api: Every API change is reviewed as a document diff).
       - run: pnpm check:openapi
 
+  api-compatibility:
+    name: API compatibility
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Holds no secrets: oasdiff is third-party code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base branch's history, for the merge base.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      # The pinned oasdiff release, downloaded from GitHub and run only once
+      # its archive matches the SHA-256 in tools/repo-checks/oasdiff.json.
+      - run: node tools/repo-checks/src/install-oasdiff.ts
+      # Compares openapi/v1.json at the merge base with the pull request's and
+      # fails on a breaking change that skips the notice steps or leaves
+      # info.version as it was (public-api: Notice before a breaking change is
+      # enforced in CI). Both scripts use only Node built-ins.
+      - run: node tools/repo-checks/src/check-api-compat.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-24.04
