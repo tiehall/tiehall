@@ -1,0 +1,64 @@
+{
+  "$comment": "The actions that need the confirmation step, mirroring the list of agent-safety: Actions that need the confirmation step, one item per bullet of the spec, in its order. Each action names the task that builds it until that task does; then it names its confirm command and an input its two cases run with (a session and a CSRF token alone get 403; a nonce for another action gets 403). pnpm check:confirmations checks this file.",
+  "items": [
+    {
+      "item": "confirming a proposal, which is how a commitment takes effect, and undoing a commitment within its undo window, as the requests capability defines who may do each and when;",
+      "actions": [
+        { "action": "confirming a proposal", "pending": "14.10" },
+        { "action": "undoing a commitment within its undo window", "pending": "14.16" }
+      ]
+    },
+    {
+      "item": "changing a member's role, removing a member, and creating an invite;",
+      "actions": [
+        { "action": "changing a member's role", "pending": "9.7" },
+        { "action": "removing a member", "pending": "9.8" },
+        { "action": "creating an invite", "pending": "9.5" }
+      ]
+    },
+    {
+      "item": "changing the sign-in policy;",
+      "actions": [{ "action": "changing the sign-in policy", "pending": "9.10" }]
+    },
+    {
+      "item": "connecting a GitHub installation, uploading a new private key for the install's GitHub App, and connecting or changing the Jira connection;",
+      "actions": [
+        { "action": "connecting a GitHub installation", "pending": "10.3" },
+        { "action": "uploading a new private key for the install's GitHub App", "pending": "10.10" },
+        { "action": "connecting Jira", "pending": "25.1" },
+        { "action": "changing the Jira connection", "pending": "25.2" }
+      ]
+    },
+    {
+      "item": "registering an API for contract reports;",
+      "actions": [{ "action": "registering an API for contract reports", "pending": "22.1" }]
+    },
+    {
+      "item": "turning personal access tokens on or off, setting the longest lifetime a personal access token may have, and setting the daily write budget;",
+      "actions": [
+        { "action": "turning personal access tokens on or off", "pending": "15.15" },
+        { "action": "setting the longest lifetime a personal access token may have", "pending": "15.15" },
+        { "action": "setting the daily write budget", "pending": "13.12" }
+      ]
+    },
+    {
+      "item": "creating a personal access token;",
+      "actions": [{ "action": "creating a personal access token", "pending": "15.14" }]
+    },
+    {
+      "item": "approving an agent client on the consent screen or on the device approval page;",
+      "actions": [
+        { "action": "approving an agent client on the consent screen", "pending": "15.10" },
+        { "action": "approving an agent client on the device approval page", "pending": "15.13" }
+      ]
+    },
+    {
+      "item": "confirming a contract-change fan-out to more than 10 consumer teams;",
+      "actions": [{ "action": "confirming a contract-change fan-out to more than 10 consumer teams", "pending": "23.8" }]
+    },
+    {
+      "item": "exporting the activity log.",
+      "actions": [{ "action": "exporting the activity log", "pending": "20.6" }]
+    }
+  ]
+}
