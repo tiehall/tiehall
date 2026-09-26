@@ -59,3 +59,4 @@ export {
 export { role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
+export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";

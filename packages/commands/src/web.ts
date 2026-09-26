@@ -14,6 +14,7 @@ import { installUrl, readAppDatabase, readAuthSecret, type Environment } from ".
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 
 export type { WebResult } from "./web-commands.ts";
+export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 import { WORKER_JOBS } from "./worker-jobs.ts";
 
 // What the web role's routes, server actions and server components run

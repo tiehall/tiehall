@@ -19,11 +19,11 @@
   },
   "dependencies": {
     "@tiehall/core": "workspace:*",
+    "@tiehall/packet": "workspace:*",
     "zod": "catalog:",
     "zod-openapi": "6.0.2"
   },
   "devDependencies": {
-    "@tiehall/packet": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

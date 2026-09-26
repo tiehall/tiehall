@@ -78,6 +78,7 @@ export { migrate, type AppRole, type DatabaseConnection, type MigrateOptions } f
 export { openDatabase, type Database } from "./database.ts";
 export { HANDLERS } from "./handlers.ts";
 export { createRestHandler, type RestHandler, type RestOptions } from "./rest.ts";
+export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 export { takeEventNumber } from "./event-sequence.ts";
 export { readerOf } from "./event-reads.ts";
 export { takeRequestNumber } from "./request-numbers.ts";
