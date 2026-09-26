@@ -43,6 +43,13 @@
       "when": 1790384017994,
       "tag": "0005_add_security_event_origins",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790391127007,
+      "tag": "0006_add_idempotency_keys",
+      "breakpoints": true
     }
   ]
 }

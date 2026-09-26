@@ -48,6 +48,17 @@ export {
   type ServerText,
   type TemplateValues,
 } from "./email.ts";
+export {
+  IDEMPOTENCY_KEY_HOURS,
+  idempotencyCallerOf,
+  IdempotentReplay,
+  parseIdempotencyKey,
+  pruneIdempotencyKeys,
+  requestDigest,
+  runOnce,
+  type IdempotencyClaim,
+  type StoredResponse,
+} from "./idempotency.ts";
 export { HEALTH_TIMEOUT_MS, openDatabaseHealth, type DatabaseHealth, type DatabaseHealthOptions, type Health } from "./health.ts";
 export { installJobQueue, JOB_QUEUE_VERSION, openJobQueue, type JobQueue, type JobQueueOptions } from "./job-queue.ts";
 export {

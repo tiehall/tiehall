@@ -77,6 +77,11 @@ export interface ExecuteOptions {
   confirmation?: { nonce: string };
   /** Where the call came from, kept for the security events it appends. */
   origin?: Origin;
+  /**
+   * Runs around the handler and its output check, in the call's transaction,
+   * such as the REST route's Idempotency-Key, which claims its key there.
+   */
+  around?: (context: OrgContext, run: () => Promise<unknown>) => Promise<unknown>;
 }
 
 export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
@@ -155,9 +160,12 @@ export function createExecute(services: ExecuteServices): Execute {
         caller,
         write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
       };
-      const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
-      if (!output.success) throw new OutputSchemaError(commandId);
-      return output.data;
+      const run = async () => {
+        const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
+        if (!output.success) throw new OutputSchemaError(commandId);
+        return output.data;
+      };
+      return options.around === undefined ? run() : options.around(context, run);
     });
   };
 }

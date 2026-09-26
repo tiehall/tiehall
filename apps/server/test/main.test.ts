@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { migrate } from "@tiehall/commands";
+import { migrate, WORKER_JOBS } from "@tiehall/commands";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 
 // The entrypoint reads the install settings before it starts a role
@@ -139,7 +139,7 @@ describe("a role with a trial URL and secrets in files", () => {
     expect(run.code).toBe(0);
     expect(logLines(run.stdout).map(({ msg }) => msg)).toEqual([
       expect.stringMatching(/^tiehall worker: starting as uid/),
-      "worker: started, working 1 queue",
+      `worker: started, working ${WORKER_JOBS.length} queues`,
       "worker: stopped",
     ]);
     expect(run.stdout).not.toContain(appRole.password);

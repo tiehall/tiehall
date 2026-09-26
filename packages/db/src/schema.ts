@@ -4,7 +4,9 @@ import {
   check,
   customType,
   foreignKey,
+  index,
   inet,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -156,5 +158,36 @@ export const securityEventOrigins = pgTable(
       columns: [table.orgId, table.eventNumber],
       foreignColumns: [events.orgId, events.number],
     }),
+  ],
+);
+
+// Idempotency keys (public-api: POST operations take an Idempotency-Key;
+// design.md, Decisions this change rests on: D28 #20). One row per key a
+// caller sent on a POST that succeeded, kept for 24 hours per caller, with a
+// digest of the first call's method, path and body and the response it got:
+// a repeat with the same body gets that response without running again, and a
+// different body gets 422. The row commits with the call's change, so a call
+// that fails keeps no key. An hourly job deletes the rows older than 24 hours.
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** Who sent the key, such as pat:<token id>: keys are kept per caller. */
+    caller: text("caller").notNull(),
+    /** The Idempotency-Key header's value. */
+    key: text("key").notNull(),
+    /** A SHA-256 digest of the first call's method, path and body. */
+    requestDigest: bytea("request_digest").notNull(),
+    /** The first call's status and body, set in the call's transaction once it has its response. */
+    status: integer("status"),
+    body: text("body"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.caller, table.key] }),
+    index("idempotency_keys_created_at").on(table.orgId, table.createdAt),
+    check("idempotency_keys_digest_length", sql`octet_length(${table.requestDigest}) = 32`),
   ],
 );

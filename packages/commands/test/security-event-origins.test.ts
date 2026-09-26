@@ -202,7 +202,9 @@ describe("the daily pruning job", () => {
     expect(WORKER_JOBS).toContain(pruneSecurityEventOrigins);
     const worker = await startWorker({ connection: app, jobs: WORKER_JOBS, logger: silent });
     try {
-      const { rows } = await owner.query("SELECT name, cron, timezone FROM pgboss.schedule");
+      const { rows } = await owner.query("SELECT name, cron, timezone FROM pgboss.schedule WHERE name = $1", [
+        pruneSecurityEventOrigins.type.queue,
+      ]);
       expect(rows).toEqual([{ name: pruneSecurityEventOrigins.type.queue, cron: "30 3 * * *", timezone: "UTC" }]);
     } finally {
       await worker.stop();

@@ -495,7 +495,7 @@ describe("the worker role", () => {
     const logs = docker(["logs", name]);
     expect(logLines(logs.stdout).map(({ msg }) => msg)).toEqual([
       expect.stringMatching(/^tiehall worker: starting as uid [1-9]\d*/),
-      "worker: started, working 1 queue",
+      expect.stringMatching(/^worker: started, working \d+ queues?$/),
       "worker: stopped",
     ]);
   });
