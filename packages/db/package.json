@@ -12,15 +12,18 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "generate": "drizzle-kit generate",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "drizzle-orm": "catalog:",
     "pg": "catalog:"
   },
   "devDependencies": {
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "drizzle-kit": "0.31.10",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

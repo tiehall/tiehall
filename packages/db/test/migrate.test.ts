@@ -1,12 +1,17 @@
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import { migrate } from "../src/migrate.ts";
 
-// The migrate role's entry point: it connects as the database owner and sets
-// up the app role (self-host-install: Only the migrate step holds the database
-// owner's credentials). Task 4.2 adds the migration runner.
+// The migrate role's entry point: it connects as the database owner, applies
+// the real migrations, and sets up the app role (self-host-install: Only the
+// migrate step holds the database owner's credentials). The runner itself is
+// tested against fixtures in migration-runner.test.ts.
+
+const migrationsFolder = fileURLToPath(new URL("../migrations/", import.meta.url));
+const quiet = { migrationsFolder, log: () => {} };
 
 describe("migrate", () => {
   let database: TestDatabase;
@@ -23,7 +28,7 @@ describe("migrate", () => {
     const url = new URL(database.url);
     const password = decodeURIComponent(url.password);
     url.password = "";
-    await expect(migrate({ connectionString: url.toString(), password })).resolves.toBeUndefined();
+    await expect(migrate({ connectionString: url.toString(), password }, quiet)).resolves.toBeUndefined();
   });
 
   it("keeps a password with URL delimiters and percent signs intact", async () => {
@@ -36,16 +41,22 @@ describe("migrate", () => {
     } finally {
       await admin.end();
     }
-    const url = new URL(database.url);
-    url.username = "migrate_test_role";
-    url.password = "";
-    await expect(migrate({ connectionString: url.toString(), password })).resolves.toBeUndefined();
+    // A database of its own that the role owns, as the owner the migrate step connects as.
+    const owned = await createTestDatabase({ owner: "migrate_test_role" });
+    try {
+      const url = new URL(owned.url);
+      url.username = "migrate_test_role";
+      url.password = "";
+      await expect(migrate({ connectionString: url.toString(), password }, quiet)).resolves.toBeUndefined();
+    } finally {
+      await owned.drop();
+    }
   });
 
   it("creates the app role it is given, which then logs in with its own password", async () => {
     const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
     try {
-      await migrate({ connectionString: database.url }, { appRole });
+      await migrate({ connectionString: database.url }, { ...quiet, appRole });
       const url = new URL(database.url);
       url.username = appRole.name;
       url.password = appRole.password;
@@ -66,7 +77,7 @@ describe("migrate", () => {
   });
 
   it("fails when the database refuses the password", async () => {
-    await expect(migrate({ connectionString: database.url, password: "not-the-password" })).rejects.toThrow(
+    await expect(migrate({ connectionString: database.url, password: "not-the-password" }, quiet)).rejects.toThrow(
       /password authentication failed/,
     );
   });

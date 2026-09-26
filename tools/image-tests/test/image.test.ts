@@ -284,6 +284,18 @@ describe("the migrate role", () => {
     expect(run.status).toBe(0);
   });
 
+  it("applies the repository's migrations, which the image carries", () => {
+    const journal = JSON.parse(
+      readFileSync(fileURLToPath(new URL("../../../packages/db/migrations/meta/_journal.json", import.meta.url)), "utf8"),
+    ) as { entries: { tag: string }[] };
+    const applied = psql("tiehall", "correct-horse-battery-staple", "SELECT id FROM tiehall_migrate.applied_migrations ORDER BY id");
+    expect(applied.stderr).toBe("");
+    expect(applied.stdout.split("\n").filter((line) => line !== "")).toEqual(journal.entries.map(({ tag }) => tag).sort());
+    const again = migrate("database_password");
+    expect(again.stdout).toContain("tiehall migrate: the schema is up to date");
+    expect(again.status).toBe(0);
+  });
+
   it("creates the app role that APP_DATABASE_URL names, with the password from its secret file", () => {
     const run = migrate(
       "database_password",

@@ -19,6 +19,9 @@ strictDepBuilds: true
 allowBuilds:
   # Optional native helper of ssh2 (Testcontainers); a pure-JS path is used without it.
   cpu-features: false
+  # Checks its platform binary (drizzle-kit, a dev tool); esbuild finds the binary
+  # in its optional @esbuild/<platform> package without it.
+  esbuild: false
   # A version-check postinstall only.
   protobufjs: false
   # Builds an optional native crypto binding; ssh2 falls back to pure JS.
@@ -30,6 +33,7 @@ catalog:
   "@types/pg": 8.23.1
   "@testcontainers/postgresql": 12.1.0
   dependency-cruiser: 18.3.1
+  drizzle-orm: 0.45.2
   pg: 8.23.0
   typescript: 6.0.3
   vitest: 5.0.1

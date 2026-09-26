@@ -1,7 +1,8 @@
 // The image's one entrypoint (design.md decision 1): `node main.mjs <role>`.
 // It checks the role and the configuration, then starts the role:
 // - web imports the Next.js standalone server into this process;
-// - worker and migrate run here;
+// - worker and migrate run here; migrate applies the migrations from
+//   /app/packages/db/migrations, beside this bundle;
 // - all starts web and worker as two child processes, forwards SIGTERM and
 //   SIGINT to them, and stops the other when one of them ends.
 // Exit codes: 2 for an unknown or missing role, 1 for a configuration error or
@@ -10,8 +11,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { migrate, startWorker } from "@tiehall/commands";
+import { startWorker } from "@tiehall/commands";
 import { ConfigError, readConfig, type Config } from "./config.ts";
+import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
 
 /** This bundle, which `all` runs again for each of its two roles. */
@@ -79,23 +81,7 @@ function runWorker(): void {
 }
 
 async function runMigrate(config: Config): Promise<void> {
-  try {
-    // The migrate role connects as the database owner and sets up the app role.
-    // Task 5.1 makes the app role a required setting, and 5.3 gives it to the migrate service.
-    await migrate(
-      {
-        connectionString: config.databaseUrl,
-        ...(config.databasePassword === undefined ? {} : { password: config.databasePassword }),
-      },
-      config.appRole === undefined ? {} : { appRole: config.appRole },
-    );
-  } catch (error) {
-    // The message names the failure (for example a refused password or an app role with too many
-    // rights), never a password.
-    console.error(`tiehall migrate: failed: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
-  console.log("tiehall migrate: done");
+  process.exitCode = await runMigrateRole(config, { migrationsFolder: migrationsFolderFor(ENTRY) });
 }
 
 function superviseAll(): void {
