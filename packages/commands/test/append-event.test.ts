@@ -4,14 +4,16 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { EventShapeError, messagePosted } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
-import { appendEvent, migrate, openDatabase, withOrg, type Database } from "../src/index.ts";
+import { appendEvent } from "../src/append-event.ts";
+import { migrate, openDatabase, withOrg, type Database } from "../src/index.ts";
 
 // The event shape in the database (requests: Events carry ids, not bodies;
 // activity-log: The activity log holds domain events and security events).
 // appendEvent() writes one event inside the handler's transaction, as the app
-// role: the next sequence number, the time, the class and type, the ids its
-// type declares, and who caused it. An event for a message holds the message's
-// id; its text stays in the message.
+// role, for write(), the one write path that commands use: the next sequence
+// number, the time, the class and type, the ids its type declares, and who
+// caused it. An event for a message holds the message's id; its text stays in
+// the message.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const QUESTION = `Which endpoint does the export use? canary-${randomBytes(8).toString("hex")}`;
