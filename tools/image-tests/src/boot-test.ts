@@ -23,12 +23,21 @@ if (image === undefined || image === "") {
 const overrides = process.argv.slice(2).map((file) => resolve(file));
 const project = `tiehall-boot-${randomBytes(4).toString("hex")}`;
 const secrets = mkdtempSync(join(tmpdir(), "tiehall-boot-"));
-// A fresh password for this run only; the containers read it as a file.
-writeFileSync(join(secrets, "app_database_password"), `${randomBytes(24).toString("hex")}\n`);
-chmodSync(join(secrets, "app_database_password"), 0o644);
+// Fresh passwords for this run only; the containers read them as files.
+for (const name of ["owner_database_password", "app_database_password"]) {
+  writeFileSync(join(secrets, name), `${randomBytes(24).toString("hex")}\n`);
+  chmodSync(join(secrets, name), 0o644);
+}
 chmodSync(secrets, 0o755);
 
-const env = { ...process.env, TIEHALL_IMAGE: image, TIEHALL_SECRETS_DIR: secrets };
+const env = {
+  ...process.env,
+  TIEHALL_IMAGE: image,
+  TIEHALL_SECRETS_DIR: secrets,
+  TIEHALL_URL: "http://localhost:3000",
+  TIEHALL_SECRET_KEY: randomBytes(32).toString("base64url"),
+  TIEHALL_AUTH_SECRET: randomBytes(32).toString("base64url"),
+};
 const files = [composeFile, ...overrides].flatMap((file) => ["--file", file]);
 
 function compose(args: string[], options: { quiet?: boolean; timeoutSeconds?: number } = {}) {

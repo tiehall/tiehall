@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,8 @@ import { migrationsFolderFor, runMigrateRole } from "../src/migrate-role.ts";
 // the reason in its log, so the app does not start on the new image.
 
 const fixture = fileURLToPath(new URL("./fixtures/migrations/add-note/", import.meta.url));
+/** Roles belong to the whole Postgres container, so each run names its own. */
+const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
 
 describe("the migrate role", () => {
   let database: TestDatabase;
@@ -29,13 +32,15 @@ describe("the migrate role", () => {
   });
 
   afterEach(async () => {
+    const role = pg.escapeIdentifier(appRole.name);
+    await owner.query(`DROP OWNED BY ${role}; DROP ROLE ${role}`).catch(() => {});
     await owner.end();
     await database.drop();
   });
 
   function run(lockTimeoutMs?: number): Promise<number> {
     return runMigrateRole(
-      { databaseUrl: database.url, port: 3000 },
+      { owner: { connectionString: database.url }, appRole },
       {
         migrationsFolder: fixture,
         release: "1.0.0",
@@ -46,7 +51,7 @@ describe("the migrate role", () => {
     );
   }
 
-  it("applies the migrations, installs the job queue's schema, logs each step and exits 0", async () => {
+  it("applies the migrations, installs the job queue's schema, sets up the app role, logs each step and exits 0", async () => {
     expect(await run()).toBe(0);
     expect(out).toEqual([
       "tiehall migrate: applied 0000_add_note",
@@ -54,6 +59,8 @@ describe("the migrate role", () => {
       "tiehall migrate: done",
     ]);
     expect(errors).toEqual([]);
+    const login = await owner.query<{ rolcanlogin: boolean }>("SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", [appRole.name]);
+    expect(login.rows).toEqual([{ rolcanlogin: true }]);
     expect(await run()).toBe(0);
     expect(out.slice(3)).toEqual(["tiehall migrate: the schema is up to date", "tiehall migrate: done"]);
   });

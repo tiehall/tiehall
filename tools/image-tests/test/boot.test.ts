@@ -32,7 +32,7 @@ describe("the self-host boot test", () => {
   it("goes red when the app cannot start", () => {
     const run = boot(cannotStart);
     expect(run.status).toBe(1);
-    expect(run.output).toContain("DATABASE_PASSWORD_FILE names /run/secrets/missing_database_password, which cannot be read");
+    expect(run.output).toContain("TIEHALL_DATABASE_APP_PASSWORD_FILE names /run/secrets/missing_database_password, which cannot be read");
     expect(run.output).toContain("The self-host stack did not come up healthy.");
   }, 600_000);
 

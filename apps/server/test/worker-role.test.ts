@@ -44,13 +44,21 @@ interface Running {
   exited: Promise<number | null>;
 }
 
+/** The install settings an app role reads, apart from its database connection. */
+const INSTALL = {
+  TIEHALL_URL: "http://localhost:3000",
+  TIEHALL_SECRET_KEY: randomBytes(32).toString("base64url"),
+  TIEHALL_AUTH_SECRET: randomBytes(32).toString("base64url"),
+};
+
 /** Starts the fixture worker as the app role, the way the image starts `main.mjs worker`. */
 function startWorkerRole(env: Record<string, string> = {}): Running {
   const child = spawn(process.execPath, [fixture], {
     env: {
       PATH: process.env["PATH"] ?? "",
-      DATABASE_URL: app.connectionString,
-      DATABASE_PASSWORD: app.password ?? "",
+      ...INSTALL,
+      TIEHALL_DATABASE_APP_URL: app.connectionString,
+      TIEHALL_DATABASE_APP_PASSWORD: app.password ?? "",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -205,7 +213,7 @@ describe("the worker role on SIGTERM", () => {
     const empty = await createTestDatabase();
     try {
       const worker = spawn(process.execPath, [fixture], {
-        env: { PATH: process.env["PATH"] ?? "", DATABASE_URL: empty.url },
+        env: { PATH: process.env["PATH"] ?? "", ...INSTALL, TIEHALL_DATABASE_APP_URL: empty.url },
         stdio: ["ignore", "pipe", "pipe"],
       });
       let output = "";

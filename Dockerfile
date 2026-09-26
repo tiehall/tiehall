@@ -3,8 +3,9 @@
 # are confined). Build it from the repository root:
 #   docker build --build-arg TIEHALL_COMMIT_SHA="$(git rev-parse HEAD)" --tag tiehall .
 # and run a role on a read-only root filesystem:
-#   docker run --read-only --tmpfs /tmp --env DATABASE_URL=postgres://... tiehall web
-# Configuration comes only from environment variables and *_FILE secrets.
+#   docker run --read-only --tmpfs /tmp --env TIEHALL_URL=https://... --env TIEHALL_DATABASE_APP_URL=postgres://... ... tiehall web
+# Its settings come only from environment variables and *_FILE secrets
+# (self-host-install: One `.env` holds the install settings).
 
 # Node 24 LTS, pinned by digest. Renovate proposes a new digest only after the
 # 7-day release age, through a reviewed pull request.

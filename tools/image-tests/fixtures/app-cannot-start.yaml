@@ -2,4 +2,4 @@
 services:
   app:
     environment:
-      DATABASE_PASSWORD_FILE: /run/secrets/missing_database_password
+      TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/missing_database_password

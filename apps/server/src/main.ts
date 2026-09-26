@@ -6,7 +6,12 @@
 //   beside this bundle, and installs the job queue's schema;
 // - all starts web and worker as two child processes, forwards SIGTERM and
 //   SIGINT to them, and stops the other when one of them ends.
-// Exit codes: 2 for an unknown or missing role, 1 for a configuration error or
+// Each role reads its settings from the environment (self-host-install: One
+// `.env` holds the install settings): migrate the database owner's and the app
+// role's, the others the install URL, the app role's connection and the keys.
+// A role whose settings are missing or unusable does not start, and its log
+// says why (self-host-install: `TIEHALL_URL` and TLS).
+// Exit codes: 2 for an unknown or missing role, 1 for a settings error or
 // a failed role, and 0 (or the web server's 143 after SIGTERM) for a clean stop.
 // Every role logs JSON lines on standard output (self-host-install: Logs carry
 // ids, never message text or credentials); only the usage line for a missing
@@ -16,8 +21,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createLogger } from "@tiehall/commands";
-import { ConfigError, readConfig, type Config } from "./config.ts";
+import {
+  createLogger,
+  readAppSettings,
+  readMigrateSettings,
+  SettingsError,
+  type AppSettings,
+  type MigrateSettings,
+} from "@tiehall/commands";
 import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
 import { runWorkerRole } from "./worker-role.ts";
@@ -35,12 +46,15 @@ if (role === undefined) {
 
 const logger = createLogger().child({ role });
 
-let config: Config;
+/** A role with the settings it reads: migrate reads the owner's, and the others the app's. */
+type RoleSettings = { role: "migrate"; migrate: MigrateSettings } | { role: Exclude<Role, "migrate">; app: AppSettings };
+
+let settings: RoleSettings;
 try {
-  config = readConfig(process.env);
+  settings = role === "migrate" ? { role, migrate: readMigrateSettings(process.env) } : { role, app: readAppSettings(process.env) };
 } catch (error) {
-  if (!(error instanceof ConfigError)) throw error;
-  // A ConfigError names settings and files, never their values.
+  if (!(error instanceof SettingsError)) throw error;
+  // A SettingsError names settings and files, never their values.
   logger.error(`tiehall ${role}: ${error.message}`);
   process.exit(1);
 }
@@ -56,31 +70,31 @@ logger.info(`tiehall ${role}: starting as uid ${uid} (node ${process.version}, c
   release,
 });
 
-await run(role, config);
+await run(settings);
 
-async function run(role: Role, config: Config): Promise<void> {
-  switch (role) {
+async function run(settings: RoleSettings): Promise<void> {
+  switch (settings.role) {
     case "web":
-      return startWeb(config);
+      return startWeb(settings.app);
     case "worker":
-      return runWorkerRole(config, { logger });
+      return runWorkerRole(settings.app, { logger });
     case "migrate":
-      return runMigrate(config);
+      return runMigrate(settings.migrate);
     case "all":
       return superviseAll();
   }
 }
 
-async function startWeb(config: Config): Promise<void> {
+async function startWeb(settings: AppSettings): Promise<void> {
   // Docker sets HOSTNAME to the container id; the server must listen on every interface.
   process.env["HOSTNAME"] = "0.0.0.0";
-  process.env["PORT"] = String(config.port);
+  process.env["PORT"] = String(settings.port);
   // The Next.js server handles SIGTERM itself: it finishes in-flight requests, then exits.
   await import(pathToFileURL(WEB_SERVER).href);
 }
 
-async function runMigrate(config: Config): Promise<void> {
-  process.exitCode = await runMigrateRole(config, {
+async function runMigrate(settings: MigrateSettings): Promise<void> {
+  process.exitCode = await runMigrateRole(settings, {
     migrationsFolder: migrationsFolderFor(ENTRY),
     release,
     log: (line) => logger.info(line),

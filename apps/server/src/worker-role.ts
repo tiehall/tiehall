@@ -1,6 +1,13 @@
 import process from "node:process";
-import { createLogger, startWorker, WORKER_JOBS, type JobData, type Logger, type WorkerJob } from "@tiehall/commands";
-import type { Config } from "./config.ts";
+import {
+  createLogger,
+  startWorker,
+  WORKER_JOBS,
+  type AppSettings,
+  type JobData,
+  type Logger,
+  type WorkerJob,
+} from "@tiehall/commands";
 
 // The worker role (design.md, Technical decisions: T6; self-host-install: A
 // restart stops the app gracefully): it works the job queues as the app's
@@ -19,15 +26,12 @@ export interface WorkerRoleOptions {
   logger?: Logger;
 }
 
-export async function runWorkerRole(config: Config, options: WorkerRoleOptions = {}): Promise<void> {
+export async function runWorkerRole(settings: Pick<AppSettings, "database">, options: WorkerRoleOptions = {}): Promise<void> {
   const logger = options.logger ?? createLogger().child({ role: "worker" });
   let worker;
   try {
     worker = await startWorker({
-      connection: {
-        connectionString: config.databaseUrl,
-        ...(config.databasePassword === undefined ? {} : { password: config.databasePassword }),
-      },
+      connection: settings.database,
       jobs: options.jobs ?? WORKER_JOBS,
       ...(options.stopTimeoutMs === undefined ? {} : { stopTimeoutMs: options.stopTimeoutMs }),
       ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds }),

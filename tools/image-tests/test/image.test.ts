@@ -22,8 +22,16 @@ const POSTGRES_IMAGE = (() => {
 })();
 
 const confined = ["--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges"];
-/** A database URL for roles that do not connect yet; every role requires one. */
-const unusedDatabase = ["--env", "DATABASE_URL=postgres://tiehall@database.invalid:5432/tiehall"];
+
+/** The install settings every app role reads, apart from its database connection (self-host-install: One `.env` holds the install settings). */
+const install = [
+  "--env",
+  "TIEHALL_URL=http://localhost:3000",
+  "--env",
+  `TIEHALL_SECRET_KEY=${randomBytes(32).toString("base64url")}`,
+  "--env",
+  `TIEHALL_AUTH_SECRET=${randomBytes(32).toString("base64url")}`,
+];
 
 /**
  * The lines a role wrote to standard output, each of which must be one JSON
@@ -86,23 +94,36 @@ function stopPostgres(network: string, name: string): void {
 /**
  * A migrated database for the roles that connect to one: the worker, and all,
  * which runs it. The migrate role installs the job queue's schema, which the
- * worker needs before it starts.
+ * worker needs before it starts, and creates the app role they connect as.
  */
 const rolesNetwork = uniqueName("tiehall-roles");
 const rolesPostgres = uniqueName("postgres-roles");
 const rolesPassword = randomBytes(16).toString("hex");
-const connected = [
-  "--network",
-  rolesNetwork,
+const rolesAppPassword = randomBytes(16).toString("hex");
+const appDatabase = [
   "--env",
-  `DATABASE_URL=postgres://tiehall@${rolesPostgres}:5432/tiehall`,
+  `TIEHALL_DATABASE_APP_URL=postgres://tiehall_app@${rolesPostgres}:5432/tiehall`,
   "--env",
-  `DATABASE_PASSWORD=${rolesPassword}`,
+  `TIEHALL_DATABASE_APP_PASSWORD=${rolesAppPassword}`,
 ];
+const connected = ["--network", rolesNetwork, ...install, ...appDatabase];
 
 beforeAll(async () => {
   await startPostgres(rolesNetwork, rolesPostgres, rolesPassword);
-  const migrate = docker(["run", "--rm", ...confined, ...connected, image, "migrate"]);
+  const migrate = docker([
+    "run",
+    "--rm",
+    ...confined,
+    "--network",
+    rolesNetwork,
+    "--env",
+    `TIEHALL_DATABASE_OWNER_URL=postgres://tiehall@${rolesPostgres}:5432/tiehall`,
+    "--env",
+    `TIEHALL_DATABASE_OWNER_PASSWORD=${rolesPassword}`,
+    ...appDatabase,
+    image,
+    "migrate",
+  ]);
   if (migrate.status !== 0) throw new Error(`The migrate role failed: ${migrate.stdout}${migrate.stderr}`);
 }, 300_000);
 
@@ -186,23 +207,36 @@ describe("the image", () => {
   });
 
   it("exits non-zero on an unknown role, and names the roles it knows", () => {
-    const run = docker(["run", "--rm", ...confined, ...unusedDatabase, image, "api"]);
+    const run = docker(["run", "--rm", ...confined, image, "api"]);
     expect(run.status).toBe(2);
     expect(run.stderr).toContain('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate or all.');
   });
 
   it("exits non-zero without a role", () => {
-    const run = docker(["run", "--rm", ...confined, ...unusedDatabase, image]);
+    const run = docker(["run", "--rm", ...confined, image]);
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("No role given.");
   });
 
-  it("refuses to start a role without its configuration", () => {
+  it("refuses to start a role without its settings", () => {
     const run = docker(["run", "--rm", ...confined, image, "web"]);
     expect(run.status).toBe(1);
     expect(logLines(run.stdout)).toContainEqual(
-      expect.objectContaining({ level: "error", role: "web", msg: "tiehall web: DATABASE_URL is not set. Set DATABASE_URL or DATABASE_URL_FILE." }),
+      expect.objectContaining({ level: "error", role: "web", msg: "tiehall web: TIEHALL_URL is not set. Set TIEHALL_URL or TIEHALL_URL_FILE." }),
     );
+  });
+
+  // self-host-install: `TIEHALL_URL` and TLS.
+  it.each(["http://tiehall.example.com", "http://127.0.0.1:3000"])("refuses to start with TIEHALL_URL=%s, and logs why", (url) => {
+    const run = docker(["run", "--rm", ...confined, ...install, ...appDatabase, "--env", `TIEHALL_URL=${url}`, image, "web"]);
+    expect(run.status).toBe(1);
+    expect(logLines(run.stdout)).toEqual([
+      expect.objectContaining({
+        level: "error",
+        role: "web",
+        msg: "tiehall web: TIEHALL_URL must be an https:// URL, or http://localhost with or without a port for a trial on one machine.",
+      }),
+    ]);
   });
 });
 
@@ -313,8 +347,11 @@ describe("the migrate role", () => {
     rmSync(secrets, { recursive: true, force: true });
   });
 
-  /** Runs the migrate role to completion with a password file and returns the result. */
-  function migrate(passwordFile: string, ...options: string[]) {
+  /**
+   * Runs the migrate role to completion with the owner's password and the app
+   * role's password in files, and returns the result.
+   */
+  function migrate(passwordFile: string) {
     return docker([
       "run",
       "--rm",
@@ -322,12 +359,17 @@ describe("the migrate role", () => {
       "--network",
       network,
       "--env",
-      `DATABASE_URL=postgres://tiehall@${database}:5432/tiehall`,
+      `TIEHALL_DATABASE_OWNER_URL=postgres://tiehall@${database}:5432/tiehall`,
       "--env",
-      "DATABASE_PASSWORD_FILE=/run/secrets/database_password",
+      "TIEHALL_DATABASE_OWNER_PASSWORD_FILE=/run/secrets/database_password",
       "--volume",
       `${join(secrets, passwordFile)}:/run/secrets/database_password:ro`,
-      ...options,
+      "--env",
+      `TIEHALL_DATABASE_APP_URL=postgres://tiehall_app@${database}:5432/tiehall`,
+      "--env",
+      "TIEHALL_DATABASE_APP_PASSWORD_FILE=/run/secrets/app_database_password",
+      "--volume",
+      `${join(secrets, "app_database_password")}:/run/secrets/app_database_password:ro`,
       image,
       "migrate",
     ]);
@@ -378,16 +420,8 @@ describe("the migrate role", () => {
     expect(again.status).toBe(0);
   });
 
-  it("creates the app role that APP_DATABASE_URL names, with the password from its secret file", () => {
-    const run = migrate(
-      "database_password",
-      "--env",
-      `APP_DATABASE_URL=postgres://tiehall_app@${database}:5432/tiehall`,
-      "--env",
-      "APP_DATABASE_PASSWORD_FILE=/run/secrets/app_database_password",
-      "--volume",
-      `${join(secrets, "app_database_password")}:/run/secrets/app_database_password:ro`,
-    );
+  it("creates the app role that TIEHALL_DATABASE_APP_URL names, with the password from its secret file", () => {
+    const run = migrate("database_password");
     expect(run.stdout).not.toContain("tiehall migrate: failed");
     expect(run.status).toBe(0);
     expect(run.stderr + run.stdout).not.toContain("app-role-password");

@@ -2,9 +2,13 @@
 # and, optionally, Caddy in front (self-host-install: Compose runs Tiehall and
 # Postgres). CI boots this file on every pull request and every build of main.
 #
-# Start it with the image pinned by digest and the database password in a file:
+# Start it with the image pinned by digest, the database passwords in files and
+# the keys in the environment:
 #   export TIEHALL_IMAGE=ghcr.io/<owner>/tiehall@sha256:<digest>
-#   mkdir -p secrets && openssl rand -hex 32 > secrets/app_database_password
+#   mkdir -p secrets && for name in owner_database_password app_database_password; do
+#     openssl rand -hex 32 > "secrets/$name"; done
+#   export TIEHALL_URL=https://tiehall.example.com
+#   export TIEHALL_SECRET_KEY="$(openssl rand -base64 32)" TIEHALL_AUTH_SECRET="$(openssl rand -base64 32)"
 #   docker compose up -d                                   # the app, on the compose network only
 #   APP_DOMAIN=tiehall.example.com docker compose --profile caddy up -d   # with Caddy and TLS
 # Upgrade with `docker compose pull && docker compose up -d`: the one-shot
@@ -19,9 +23,9 @@ services:
     environment:
       POSTGRES_USER: tiehall
       POSTGRES_DB: tiehall
-      POSTGRES_PASSWORD_FILE: /run/secrets/app_database_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/owner_database_password
     secrets:
-      - app_database_password
+      - owner_database_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -38,9 +42,10 @@ services:
     image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
     command: [migrate]
     environment:
-      DATABASE_URL: postgres://tiehall@postgres:5432/tiehall
-      DATABASE_PASSWORD_FILE: /run/secrets/app_database_password
+      TIEHALL_DATABASE_OWNER_PASSWORD_FILE: /run/secrets/owner_database_password
+      TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/app_database_password
     secrets:
+      - owner_database_password
       - app_database_password
     read_only: true
     tmpfs:
@@ -55,8 +60,10 @@ services:
     image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
     command: [all]
     environment:
-      DATABASE_URL: postgres://tiehall@postgres:5432/tiehall
-      DATABASE_PASSWORD_FILE: /run/secrets/app_database_password
+      TIEHALL_URL: ${TIEHALL_URL:-http://localhost:3000}
+      TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/app_database_password
+      TIEHALL_SECRET_KEY: ${TIEHALL_SECRET_KEY:-}
+      TIEHALL_AUTH_SECRET: ${TIEHALL_AUTH_SECRET:-}
     secrets:
       - app_database_password
     read_only: true
@@ -103,5 +110,7 @@ volumes:
   caddy-config:
 
 secrets:
+  owner_database_password:
+    file: ${TIEHALL_SECRETS_DIR:-./secrets}/owner_database_password
   app_database_password:
     file: ${TIEHALL_SECRETS_DIR:-./secrets}/app_database_password

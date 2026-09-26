@@ -3,8 +3,7 @@
 // and, unless PROBE_FINISH is set, runs until the worker gives it up. The failing probe mirrors a message into
 // a tracker that refuses it: it reads the message's text, holds a token, and fails with both in its error.
 import process from "node:process";
-import { defineJobType, type RunningJob, type WorkerServices } from "@tiehall/commands";
-import { readConfig } from "../../src/config.ts";
+import { defineJobType, readAppSettings, type RunningJob, type WorkerServices } from "@tiehall/commands";
 import { runWorkerRole } from "../../src/worker-role.ts";
 
 export const probeSlow = defineJobType<{ requestId: string }>("probe.slow", 1, {
@@ -37,7 +36,7 @@ async function mirrorIntoRefusingTracker(job: RunningJob<{ messageId: string }>,
 }
 
 if (import.meta.main) {
-  await runWorkerRole(readConfig(process.env), {
+  await runWorkerRole(readAppSettings(process.env), {
     jobs: [
       {
         type: probeSlow,
