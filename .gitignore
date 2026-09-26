@@ -31,6 +31,9 @@ __pycache__/
 # Next.js writes this on every typegen, dev and build
 apps/web/next-env.d.ts
 *.tsbuildinfo
+# Next.js 16's dev server writes its agent notes here; they are not Tiehall's
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
 
 # Planning material kept only on the maintainer machine (D38), like a .env
 private/
