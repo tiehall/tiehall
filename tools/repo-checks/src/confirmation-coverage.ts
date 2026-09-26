@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Catalog } from "@tiehall/catalog";
-import { activeChange, requirementListItems, taskStates } from "./plan.ts";
+import { planFor, requirementListItems, taskStates } from "./plan.ts";
 
 export { taskStates } from "./plan.ts";
 
@@ -164,18 +164,12 @@ function toolsOf(snapshot: unknown): Record<string, unknown>[] {
 
 /** Reads the check's inputs from a repository's root, with the catalog the checked code builds. */
 export function readCoverageInputs(root: string, catalog: Catalog): CoverageInputs {
-  const change = activeChange(root);
-  const specs = [
-    ...(change === undefined ? [] : [join(change, "specs", "agent-safety", "spec.md")]),
-    join(root, "openspec", "specs", "agent-safety", "spec.md"),
-  ];
-  const spec = specs.find((file) => existsSync(file) && specItems(readFileSync(file, "utf8")).length > 0);
-  const tasks = change === undefined ? "" : readFileSync(join(change, "tasks.md"), "utf8");
+  const plan = planFor(root, "agent-safety", REQUIREMENT_NAME);
   const json = (file: string): unknown => JSON.parse(readFileSync(join(root, file), "utf8"));
   return {
     list: json(CONFIRMATION_LIST),
-    specItems: spec === undefined ? [] : specItems(readFileSync(spec, "utf8")),
-    tasks: taskStates(tasks),
+    specItems: plan === undefined ? [] : specItems(plan.spec),
+    tasks: taskStates(plan?.tasks ?? ""),
     catalog,
     openapi: json("openapi/v1.json"),
     tools: json("mcp/tools.json"),

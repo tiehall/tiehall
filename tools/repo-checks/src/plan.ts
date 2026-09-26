@@ -1,12 +1,14 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // What the coverage checks read from the plan (openspec/changes/<change>):
-// the active change's folder, the state of each of its tasks, and the bullets
-// of a requirement's list in one of its specs. A check that mirrors a spec's
-// list, such as the confirmation coverage check or the security-event coverage
-// check, reads the list through these, so each list it mirrors is read the
-// same way.
+// the changes in progress, the state of each task of a plan, and the bullets
+// of a requirement's list in a spec. A check that mirrors a spec's list, such
+// as the confirmation coverage check or the security-event coverage check,
+// reads the list through these, so each list it mirrors is read the same way:
+// from the change in progress whose spec holds the list, with that change's
+// plan, or, once the change is archived, from the main spec under
+// openspec/specs, where no task is left to wait for.
 
 /** The bullets of the list under a requirement's heading, each without its "- ", up to the first blank line after them. */
 export function requirementListItems(spec: string, requirement: string): string[] {
@@ -30,16 +32,42 @@ export function taskStates(tasks: string): Map<string, boolean> {
   return states;
 }
 
-/**
- * The active change's folder under openspec/changes, which holds the plan and
- * the specs a list mirrors while the change is in progress; undefined once it
- * is archived.
- */
-export function activeChange(root: string): string | undefined {
+/** The folders of the changes in progress under openspec/changes, in name order; the archive is not one. */
+export function activeChanges(root: string): string[] {
   const changes = join(root, "openspec", "changes");
-  if (!existsSync(changes)) return undefined;
-  const folders = readdirSync(changes, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "archive" && existsSync(join(changes, entry.name, "tasks.md")))
-    .map((entry) => join(changes, entry.name));
-  return folders.length === 1 ? folders[0] : undefined;
+  if (!existsSync(changes)) return [];
+  return readdirSync(changes, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== "archive")
+    .map((entry) => join(changes, entry.name))
+    .sort();
+}
+
+/** A spec that holds a requirement's list, and the plan of the change it belongs to; an archived spec has no plan. */
+export interface Plan {
+  /** The text of the capability's spec. */
+  spec: string;
+  /** The text of the change's tasks.md; empty once the change is archived. */
+  tasks: string;
+}
+
+/**
+ * The spec of a capability that holds the requirement's list, and the plan
+ * that goes with it: the change in progress whose spec holds the list, with
+ * that change's tasks, or, once the change is archived, the main spec under
+ * openspec/specs, with no tasks; undefined when no spec holds the list.
+ */
+export function planFor(root: string, capability: string, requirement: string): Plan | undefined {
+  const holds = (file: string): string | undefined => {
+    if (!existsSync(file)) return undefined;
+    const spec = readFileSync(file, "utf8");
+    return requirementListItems(spec, requirement).length > 0 ? spec : undefined;
+  };
+  for (const change of activeChanges(root)) {
+    const spec = holds(join(change, "specs", capability, "spec.md"));
+    if (spec === undefined) continue;
+    const plan = join(change, "tasks.md");
+    return { spec, tasks: existsSync(plan) ? readFileSync(plan, "utf8") : "" };
+  }
+  const spec = holds(join(root, "openspec", "specs", capability, "spec.md"));
+  return spec === undefined ? undefined : { spec, tasks: "" };
 }

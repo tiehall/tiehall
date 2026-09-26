@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EventType } from "@tiehall/core";
-import { activeChange, requirementListItems, taskStates } from "./plan.ts";
+import { planFor, requirementListItems, taskStates } from "./plan.ts";
 
 // The security-event coverage check (activity-log: Which actions are security
 // events; design.md, Self-hosting decisions: S14). A committed list,
@@ -149,17 +149,11 @@ export function securityEventCoverageProblems(inputs: SecurityEventInputs): stri
 
 /** Reads the check's inputs from a repository's root, with the event types the checked code defines. */
 export function readSecurityEventInputs(root: string, eventTypes: readonly EventType[]): SecurityEventInputs {
-  const change = activeChange(root);
-  const specs = [
-    ...(change === undefined ? [] : [join(change, "specs", "activity-log", "spec.md")]),
-    join(root, "openspec", "specs", "activity-log", "spec.md"),
-  ];
-  const spec = specs.find((file) => existsSync(file) && specItems(readFileSync(file, "utf8")).length > 0);
-  const tasks = change === undefined ? "" : readFileSync(join(change, "tasks.md"), "utf8");
+  const plan = planFor(root, "activity-log", REQUIREMENT_NAME);
   return {
     list: JSON.parse(readFileSync(join(root, SECURITY_EVENT_LIST), "utf8")),
-    specItems: spec === undefined ? [] : specItems(readFileSync(spec, "utf8")),
-    tasks: taskStates(tasks),
+    specItems: plan === undefined ? [] : specItems(plan.spec),
+    tasks: taskStates(plan?.tasks ?? ""),
     eventTypes,
     readFile: (path) => {
       const file = join(root, path);
