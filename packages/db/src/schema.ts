@@ -423,3 +423,103 @@ export const usedConfirmationNonces = pgTable(
     check("used_confirmation_nonces_hash_length", sql`octet_length(${table.nonceHash}) = 32`),
   ],
 );
+
+// Requests (requests: A request is addressed to a team of the install;
+// requests: Request states; requests: Per-team request keys; design.md,
+// Design rules: Requests and events). One row per request: the target team
+// it is addressed to and its number in that team's count, which make its key,
+// such as FE-142, with the team's current key; its title, which its requester
+// wrote; where it is in its lifecycle, as the state machine in packages/core
+// keeps it (its state, who holds its claim, and while it waits on blocking
+// questions the state it returns to); and its requester, a user and the team
+// they picked. A request is never deleted, and its number is never given to
+// another request of the team. The users it names stay when they leave the
+// install, so a removed member's claim stays theirs.
+export const requests = pgTable(
+  "requests",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    targetTeamId: uuid("target_team_id").notNull(),
+    /** The request's number in its target team's count, from 1. */
+    number: integer("number").notNull(),
+    /** The title the requester wrote: user text, which agents see fenced. */
+    title: text("title").notNull(),
+    state: text("state").notNull().default("open"),
+    /** The user who holds the claim; none while the request is unclaimed. */
+    claimantUserId: uuid("claimant_user_id"),
+    /** While the request waits on blocking questions, the state it returns to once they are answered. */
+    resumeState: text("resume_state"),
+    /** The user who opened the request; none only where the contract-changes capability names a team alone. */
+    requestingUserId: uuid("requesting_user_id"),
+    requestingTeamId: uuid("requesting_team_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("requests_team_number").on(table.orgId, table.targetTeamId, table.number),
+    index("requests_created_at").on(table.orgId, table.createdAt),
+    foreignKey({
+      name: "requests_target_team_fk",
+      columns: [table.orgId, table.targetTeamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "requests_requesting_team_fk",
+      columns: [table.orgId, table.requestingTeamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "requests_requesting_user_fk",
+      columns: [table.orgId, table.requestingUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "requests_claimant_fk",
+      columns: [table.orgId, table.claimantUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("requests_number_positive", sql`${table.number} > 0`),
+    check("requests_title_length", sql`char_length(${table.title}) BETWEEN 1 AND 200`),
+    check(
+      "requests_state_known",
+      sql`${table.state} IN ('open', 'claimed', 'in_progress', 'needs_info', 'done', 'declined', 'withdrawn')`,
+    ),
+    check("requests_resume_state_known", sql`${table.resumeState} IS NULL OR ${table.resumeState} IN ('open', 'claimed', 'in_progress')`),
+    check("requests_needs_info_resumes", sql`${table.state} <> 'needs_info' OR ${table.resumeState} IS NOT NULL`),
+    check("requests_resume_state_only_when_waiting", sql`${table.resumeState} IS NULL OR ${table.state} IN ('needs_info', 'done', 'declined', 'withdrawn')`),
+    check("requests_open_unclaimed", sql`${table.state} <> 'open' OR ${table.claimantUserId} IS NULL`),
+    check("requests_claimed_has_claimant", sql`${table.state} NOT IN ('claimed', 'in_progress') OR ${table.claimantUserId} IS NOT NULL`),
+  ],
+);
+
+// The count of each team's requests (requests: Per-team request keys; design.md,
+// Design rules: Requests and events). One row per team that has had a request,
+// holding the last number it gave. The transaction that creates a request takes
+// the next number here, which locks the team's row until it ends: concurrent
+// creates for one team wait on each other, so no number repeats and a rolled
+// back create gives its number back unused, while every other team counts on
+// its own. A number a request took is never given again, also once a
+// reassignment gives the request a key from another team.
+export const requestCounters = pgTable(
+  "request_counters",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    /** The last number given to a request of the team. */
+    lastNumber: integer("last_number").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId] }),
+    foreignKey({
+      name: "request_counters_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("request_counters_last_number_positive", sql`${table.lastNumber} > 0`),
+  ],
+);

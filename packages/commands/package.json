@@ -31,6 +31,7 @@
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "fast-check": "4.10.1",
     "pg": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
