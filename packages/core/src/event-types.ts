@@ -1,5 +1,5 @@
 import { defineEventType, type EventType } from "./events.ts";
-import { COMMITMENT_KINDS } from "./proposals.ts";
+import { CANCEL_REASONS, COMMITMENT_KINDS, PROPOSAL_ENDINGS } from "./proposals.ts";
 import { REQUEST_STATES } from "./request-states.ts";
 import { ROLES } from "./roles.ts";
 
@@ -169,6 +169,23 @@ export const proposalCreated = defineEventType({
 });
 
 /**
+ * A proposal ended without taking effect (requests: How a proposal ends
+ * without taking effect; requests: The event log). It names the request, the
+ * proposal and how it ended: rejected, withdrawn, expired or cancelled, and,
+ * for a cancellation, why; its provenance names who or what ended it.
+ */
+export const proposalEnded = defineEventType({
+  type: "proposal.ended",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    proposalId: { kind: "id", of: "proposal" },
+    how: { kind: "enum", values: PROPOSAL_ENDINGS },
+    reason: { kind: "enum", values: CANCEL_REASONS, optional: true },
+  },
+});
+
+/**
  * An admin changed a member's role (teams-and-roles: Changing a member's role;
  * activity-log: Which actions are security events). It names the member and
  * the role they had and now have; its provenance names the admin.
@@ -227,6 +244,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,
   proposalCreated,
+  proposalEnded,
   memberRoleChanged,
   memberRemoved,
   writeBudgetChanged,

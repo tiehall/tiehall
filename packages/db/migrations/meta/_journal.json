@@ -183,6 +183,13 @@
       "when": 1790418427452,
       "tag": "0025_add_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790418992186,
+      "tag": "0026_add_proposal_endings",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,18 @@
 import type { proposal } from "@tiehall/catalog";
 import {
   accountableSideOf,
+  cancelledBy,
   proposalCreated,
+  proposalEnded,
   proposalExpiresAt,
   secondConfirmation,
   type CommitmentKind,
+  type ProposalCancellingChange,
   type ProposalState,
   type SecondConfirmer,
 } from "@tiehall/core";
 import { proposals, requests, teams, users } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { HandlerContext } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
@@ -17,6 +20,7 @@ import { actingUserOf, partiesOf, stampOf, teamActedFor } from "./request-change
 import type { RequestRow } from "./request-views.ts";
 import { requestView } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
+import type { Writer } from "./write.ts";
 
 // Proposals (requests: Commitments become proposals; handoff-packet: Packet
 // changes that are commitments; requests: Cross-team commitments need a
@@ -96,6 +100,42 @@ export async function createProposal(context: HandlerContext, row: RequestRow, c
     },
     { teamId },
   );
+}
+
+/**
+ * Cancels the request's pending proposals that a change to it cancels
+ * (requests: How a proposal ends without taking effect; handoff-packet: Packet
+ * changes that are commitments), in the change's own transaction, each with
+ * its proposal.ended event: a terminal state cancels them all, a confirmed
+ * reassignment every other one, a removal those of the removed accountable
+ * human, and a new revision the packet changes based on an older one, as
+ * stale. The pending proposals are locked first, so a confirmation that
+ * arrives meanwhile waits and then finds the proposal ended.
+ */
+export async function cancelProposals(writer: Writer, requestId: string, change: ProposalCancellingChange): Promise<string[]> {
+  const pending = await writer.tx
+    .select({
+      id: proposals.id,
+      kind: proposals.kind,
+      accountableUserId: proposals.accountableUserId,
+      baseRevision: proposals.baseRevision,
+    })
+    .from(proposals)
+    .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.requestId, requestId), eq(proposals.state, "pending")))
+    .orderBy(asc(proposals.createdAt), asc(proposals.id))
+    .for("update");
+  const cancelled = cancelledBy(
+    change,
+    pending.map((proposal) => ({ ...proposal, kind: proposal.kind as CommitmentKind })),
+  );
+  for (const { id, reason } of cancelled) {
+    await writer.tx
+      .update(proposals)
+      .set({ state: "cancelled", cancelReason: reason, endedAt: writer.now() })
+      .where(and(eq(proposals.orgId, writer.orgId), eq(proposals.id, id)));
+    await writer.record(proposalEnded, { requestId, proposalId: id, how: "cancelled", reason });
+  }
+  return cancelled.map(({ id }) => id);
 }
 
 /** One proposal as the operations return it. */

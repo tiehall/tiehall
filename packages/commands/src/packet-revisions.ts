@@ -3,6 +3,7 @@ import { Refusal, requestPacketRevised } from "@tiehall/core";
 import { packetRevisions } from "@tiehall/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
+import { cancelProposals } from "./proposals.ts";
 import { lockRequestById, stampOf } from "./request-changes.ts";
 import { requestView } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -17,7 +18,9 @@ import type { Writer } from "./write.ts";
 // locks the request's row first, so revisions added at once take their numbers
 // one after the other, and a number is never taken twice. A revision never
 // changes once it is stored, which the database also refuses (migration 0020),
-// and each stays readable by its number.
+// and each stays readable by its number. A new revision cancels, as stale,
+// every pending proposed packet change based on an older one, whoever or
+// whatever added it (handoff-packet: Packet changes that are commitments).
 
 /** A packet revision as the packet operations return it. */
 export type PacketRevisionView = z.input<typeof packetRevision>;
@@ -53,6 +56,7 @@ export async function storePacketRevision(writer: Writer, requestId: string, pac
   const { provenance } = writer;
   await insertPacketRevision(writer, requestId, number, packet, stampOf(provenance, provenance.actorKind === "operator" ? undefined : provenance.teamId));
   await writer.record(requestPacketRevised, { requestId, revision: number });
+  await cancelProposals(writer, requestId, { kind: "revision_added", revision: number });
   return number;
 }
 

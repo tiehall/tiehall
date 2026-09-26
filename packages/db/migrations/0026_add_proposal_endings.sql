@@ -1,0 +1,4 @@
+ALTER TABLE "proposals" ADD COLUMN "ended_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "proposals" ADD COLUMN "cancel_reason" text;--> statement-breakpoint
+ALTER TABLE "proposals" ADD CONSTRAINT "proposals_ended_when_not_pending" CHECK (("proposals"."state" = 'pending') = ("proposals"."ended_at" IS NULL));--> statement-breakpoint
+ALTER TABLE "proposals" ADD CONSTRAINT "proposals_cancel_reason_known" CHECK (("proposals"."state" = 'cancelled') = ("proposals"."cancel_reason" IS NOT NULL) AND ("proposals"."cancel_reason" IS NULL OR "proposals"."cancel_reason" IN ('terminal_state', 'reassigned', 'accountable_removed', 'stale')));

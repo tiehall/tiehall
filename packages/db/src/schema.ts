@@ -884,6 +884,10 @@ export const proposals = pgTable(
     state: text("state").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** When it took effect or ended without taking effect; none while it is pending. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Why it was cancelled: its request reached a terminal state, was reassigned, lost its accountable human, or moved past its base revision. */
+    cancelReason: text("cancel_reason"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -921,5 +925,10 @@ export const proposals = pgTable(
       sql`${table.state} IN ('pending', 'applied', 'rejected', 'withdrawn', 'expired', 'cancelled')`,
     ),
     check("proposals_expire_after_7_days", sql`${table.expiresAt} = ${table.createdAt} + interval '7 days'`),
+    check("proposals_ended_when_not_pending", sql`(${table.state} = 'pending') = (${table.endedAt} IS NULL)`),
+    check(
+      "proposals_cancel_reason_known",
+      sql`(${table.state} = 'cancelled') = (${table.cancelReason} IS NOT NULL) AND (${table.cancelReason} IS NULL OR ${table.cancelReason} IN ('terminal_state', 'reassigned', 'accountable_removed', 'stale'))`,
+    ),
   ],
 );
