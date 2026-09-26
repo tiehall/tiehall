@@ -77,6 +77,7 @@ export { assertRoleAllows, memberOf, teamsOfMember, type Member, type MemberTeam
 export { migrate, type AppRole, type DatabaseConnection, type MigrateOptions } from "./migrations.ts";
 export { openDatabase, type Database } from "./database.ts";
 export { HANDLERS } from "./handlers.ts";
+export { noticeOfEvent, type NoticeEvent } from "./notices.ts";
 export { createRestHandler, type RestHandler, type RestOptions } from "./rest.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 export { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
