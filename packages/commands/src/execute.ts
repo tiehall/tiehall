@@ -1,7 +1,8 @@
 import type { Catalog, CommandDefinition } from "@tiehall/catalog";
-import { Refusal, type RefusalIssue } from "@tiehall/core";
+import { Refusal, roleAllows, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
-import { catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
+import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
+import { memberOf, type Member } from "./members.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 
@@ -26,15 +27,21 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    with this exact input, is checked and consumed in the call's transaction
 //    (agent-safety: One confirmation approves one action);
 // 5. runs the handler inside withOrg(), so its change, its events and its jobs
-//    commit together or not at all;
+//    commit together or not at all; for a caller that acts for a user, it
+//    first reads the user's role in that transaction and consults the role
+//    matrix, refusing an admin action to anyone whose role does not allow it
+//    with 403 before the nonce is consumed or the handler runs
+//    (teams-and-roles: The role bounds every caller acting for a user);
 // 6. returns only output that passes the operation's output schema: any
 //    other output rolls the call back and is never returned.
-// Later tasks add the role and side rules (9.1, 15.5), the membership re-check
-// (9.2) and commitments that become proposals (14.4).
+// Later tasks add the token's side of the rules (15.5), the membership
+// re-check (9.2) and commitments that become proposals (14.4).
 
 /** What a handler gets besides its parsed input. */
 export interface HandlerContext extends OrgContext {
   readonly caller: Caller;
+  /** The membership of the user the caller acts for, as this call read it; none for a caller that acts for no user. */
+  readonly member: Member | undefined;
   /** Runs a change in the call's transaction, with the event that records it and the caller's provenance. */
   write<R>(change: (writer: Writer) => Promise<R>): Promise<R>;
 }
@@ -156,6 +163,10 @@ export function createExecute(services: ExecuteServices): Execute {
     return withOrg(
       store.database,
       async (context) => {
+        const member = actsForUser(caller) ? await memberOf(context, caller.userId) : undefined;
+        if (actsForUser(caller) && definition.admin !== undefined && (member === undefined || !roleAllows(member.role, definition.admin))) {
+          throw new Refusal("forbidden", "Only an admin of the install may do this.");
+        }
         if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
           const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
           if (!(await confirmations.consume(context, claim))) {
@@ -165,6 +176,7 @@ export function createExecute(services: ExecuteServices): Execute {
         const handlerContext: HandlerContext = {
           ...context,
           caller,
+          member,
           write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
         };
         const run = async () => {

@@ -56,8 +56,8 @@ describe("the org id lint", () => {
   it("fails a foreign key that leaves org_id out", async () => {
     await owner.query(fixture("foreign-key-without-org-id"));
     expect(await lintOrgIds(owner)).toEqual([
-      "public.members: foreign key members_team_id_teams_id_fk (team_id) to public.teams (id) leaves out org_id; " +
-        "it should be (org_id, team_id) to (org_id, id).",
+      "public.squad_members: foreign key squad_members_squad_id_squads_id_fk (squad_id) to public.squads (id) leaves out org_id; " +
+        "it should be (org_id, squad_id) to (org_id, id).",
     ]);
   });
 

@@ -71,6 +71,16 @@ export type CallerKind = Caller["kind"];
 export type UserCaller = WebSessionCaller | OAuthTokenCaller | PersonalAccessTokenCaller;
 
 /**
+ * Whether a caller acts for a user within that user's role, through a web
+ * session or a token (teams-and-roles: The role bounds every caller acting
+ * for a user). A job or an integration event that acts for a mapped user, such
+ * as a pull request's author, does not: the user did not start it.
+ */
+export function actsForUser(caller: Caller): caller is UserCaller {
+  return caller.kind === "web_session" || caller.kind === "oauth_token" || caller.kind === "personal_access_token";
+}
+
+/**
  * The surface of the catalog a caller's call came through: a token or CI
  * call through REST or MCP. A web session (the web UI) and the worker's
  * callers come through none, and run in-process.

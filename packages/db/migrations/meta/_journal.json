@@ -71,6 +71,13 @@
       "when": 1790400294494,
       "tag": "0009_add_used_confirmation_nonces",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790401813391,
+      "tag": "0010_add_users_and_members",
+      "breakpoints": true
     }
   ]
 }

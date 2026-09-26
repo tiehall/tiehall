@@ -1,3 +1,4 @@
+import type { AdminAction } from "@tiehall/core";
 import type { z } from "zod";
 
 // One definition per operation (public-api: One definition per operation, the
@@ -7,8 +8,9 @@ import type { z } from "zod";
 // zod schemas for its input and output; its method and path on REST; the
 // scopes a token needs to run it; two flags, `commitment` (it becomes a
 // proposal a person confirms) and `confirm` (it needs the confirmation step in
-// the web UI); the surfaces that offer it; and its stability level, with its
-// deprecation dates once it is deprecated.
+// the web UI); the admin action it is, for an operation only admins may run;
+// the surfaces that offer it; and its stability level, with its deprecation
+// dates once it is deprecated.
 
 /** The three OAuth scopes (agent-access: OAuth scopes are coarse). There is no admin scope. */
 export const SCOPES = ["requests:read", "requests:write", "contracts:report"] as const;
@@ -55,6 +57,12 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   readonly commitment: boolean;
   /** It needs the confirmation step, so it runs only in the web UI and no agent surface offers it. */
   readonly confirm: boolean;
+  /**
+   * The admin action it is, from the role matrix, for an operation only admins
+   * may run (teams-and-roles: What admins and members may do): it runs only in
+   * the web UI, so no agent surface offers it.
+   */
+  readonly admin?: AdminAction;
   /** The agent surfaces that offer it; none makes it an internal command. */
   readonly surfaces: readonly CommandSurface[];
   /** The MCP tool's name, for a command offered on MCP, such as get_request. */

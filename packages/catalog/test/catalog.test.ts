@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CATALOG, CatalogError, catalogProblems, defineCatalog, defineCommand, type CommandDefinition } from "../src/index.ts";
+import { CATALOG, CatalogError, catalogProblems, defineCatalog, defineCommand, role, type CommandDefinition } from "../src/index.ts";
 
 // The command catalog (public-api: One definition per operation, the same on
 // every surface; agent-safety: The confirmation step runs only in the web UI;
@@ -125,6 +125,42 @@ describe("a catalog", () => {
     }
   });
 
+  // teams-and-roles: What admins and members may do. Admin actions run only in the web UI, so an admin's agent
+  // gets the same tools and commands as a member's (agent-surfaces: Admin actions and trust changes are on no
+  // agent surface).
+  it("refuses an admin action offered on any agent surface", () => {
+    const createTeam = defineCommand({
+      id: "teams.create",
+      summary: "Create a team.",
+      input: z.object({ key: z.string(), name: z.string() }),
+      output: z.object({ teamId: z.string() }),
+      scopes: [],
+      commitment: false,
+      confirm: false,
+      admin: "teams",
+      surfaces: [],
+      stability: "alpha",
+    });
+    expect(catalogProblems([...fixtureCatalog, createTeam])).toEqual([]);
+    for (const surface of ["rest", "mcp", "cli"] as const) {
+      const offered = {
+        ...createTeam,
+        surfaces: [surface, ...(surface === "cli" ? (["rest"] as const) : [])],
+        method: "POST",
+        path: "/api/v1/teams",
+        scopes: ["requests:write"],
+        tool: "create_team",
+        cliCommand: "team create",
+      } as CommandDefinition;
+      expect(catalogProblems([...fixtureCatalog, offered]), surface).toEqual([
+        "teams.create: it is an admin action, which runs only in the web UI, so no agent surface offers it.",
+      ]);
+    }
+    expect(catalogProblems([...fixtureCatalog, { ...createTeam, admin: "owners" } as unknown as CommandDefinition])).toEqual([
+      "teams.create: the admin action owners is not one of members, teams, sign_in_policy, integrations, apis, agent_access, bot_flag, fan_out, activity_log.",
+    ]);
+  });
+
   it("names every problem of a catalog at once", () => {
     const definitions = [...withChanged("getRequest", { scopes: ["admin"], path: undefined }), fixture.getRequest];
     expect(() => defineCatalog(definitions)).toThrow(
@@ -186,6 +222,16 @@ describe("a catalog", () => {
     expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", path: "/api/v1/read/{key}", tool: "read_request" }])).toEqual([
       "requests.read: the CLI command get is also the CLI command of requests.get.",
     ]);
+  });
+});
+
+// teams-and-roles: Two roles, admin and member. An invite or a role change names one of the two roles, and input
+// that names any other, such as owner, fails its schema, which the error model answers with 400.
+describe("the role an input names", () => {
+  it("is admin or member, and never owner", () => {
+    expect(role.safeParse("admin").success).toBe(true);
+    expect(role.safeParse("member").success).toBe(true);
+    for (const other of ["owner", "Admin", "", null]) expect(role.safeParse(other).success, String(other)).toBe(false);
   });
 });
 

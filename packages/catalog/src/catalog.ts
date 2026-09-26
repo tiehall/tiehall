@@ -1,3 +1,4 @@
+import { ADMIN_ACTIONS } from "@tiehall/core";
 import { z } from "zod";
 import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CommandDefinition } from "./command.ts";
 import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
@@ -9,7 +10,9 @@ import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 // do: a second definition with the same id, a scope outside the three OAuth
 // scopes, a REST operation without its method and path or with the method and
 // path of another, even with its parameters named differently, and a command that
-// needs the confirmation step but is offered on an agent surface. A REST
+// needs the confirmation step, or is an admin action, but is offered on an
+// agent surface (agent-surfaces: Admin actions and trust changes are on no
+// agent surface). A REST
 // operation's input is an object, or, sent as a JSON body, variants of
 // objects, as a tool whose input has variants takes (agent-surfaces: Tool
 // schemas that current clients accept). A tool's
@@ -67,6 +70,13 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
     }
     if (definition.confirm && offered) {
       problem("it needs the confirmation step, which runs only in the web UI, so no agent surface offers it.");
+    }
+    if (definition.admin !== undefined) {
+      if (!(ADMIN_ACTIONS as readonly string[]).includes(definition.admin)) {
+        problem(`the admin action ${definition.admin} is not one of ${ADMIN_ACTIONS.join(", ")}.`);
+      } else if (offered) {
+        problem("it is an admin action, which runs only in the web UI, so no agent surface offers it.");
+      }
     }
     if (offered && !definition.confirm && definition.scopes.length === 0) {
       problem("it is offered on an agent surface, so it names the scopes a token needs to run it.");

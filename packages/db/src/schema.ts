@@ -237,6 +237,57 @@ export const setupSessions = pgTable(
   ],
 );
 
+// Users (sign-in: One Tiehall user per GitHub account; teams-and-roles: One org
+// per install). One row per person the install knows, identified by their
+// GitHub account's numeric id, never by the login or an email address; the
+// login is kept to show them by, and follows a rename. A user row stays when
+// the person leaves the install, so the requests, messages and events that name
+// them keep naming them.
+export const users = pgTable(
+  "users",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** The GitHub account's numeric id, which never changes. */
+    githubAccountId: bigint("github_account_id", { mode: "number" }).notNull(),
+    /** The GitHub account's login when Tiehall last saw it, which a rename changes. */
+    githubLogin: text("github_login").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("users_github_account_id").on(table.orgId, table.githubAccountId),
+    check("users_github_account_id_positive", sql`${table.githubAccountId} > 0`),
+  ],
+);
+
+// The members of the install (teams-and-roles: Two roles, admin and member;
+// teams-and-roles: Membership is re-checked on every call). A user is a member
+// while they have a row here, with exactly one of the two roles. Removing a
+// member deletes the row, and their user stays.
+export const members = pgTable(
+  "members",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    role: text("role").notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId] }),
+    foreignKey({
+      name: "members_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("members_role_known", sql`${table.role} IN ('admin', 'member')`),
+  ],
+);
+
 // Used confirmation nonces (agent-safety: One confirmation approves one action;
 // design.md, Self-hosting decisions: S7). A review page's nonce is signed, not
 // stored, so opening the page changes nothing; once the nonce has approved its

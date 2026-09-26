@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@tiehall/core": "workspace:*",
     "zod": "catalog:",
     "zod-openapi": "6.0.2"
   },
