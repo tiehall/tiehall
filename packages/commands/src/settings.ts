@@ -84,7 +84,7 @@ export const SETTINGS: readonly SettingDefinition[] = [
   {
     name: "TIEHALL_DATABASE_OWNER_URL",
     description:
-      "For an external Postgres 17 or later instead of the bundled one: the connection URLs of the database owner and of the app role. Leave both empty to use the bundled Postgres.",
+      "For an external Postgres 17 or later instead of the bundled one: the connection URLs of the database owner and of the app role, each with its own password. Leave both empty to use the bundled Postgres, which the two passwords above are for.",
     init: "fixed",
     value: "",
   },
@@ -229,7 +229,7 @@ export function readAppSettings(env: Environment): AppSettings {
 
 export function readMigrateSettings(env: Environment): MigrateSettings {
   const ownerUrl = readPostgresUrl(env, "TIEHALL_DATABASE_OWNER_URL", BUNDLED_OWNER_DATABASE_URL);
-  const ownerPassword = optional(env, "TIEHALL_DATABASE_OWNER_PASSWORD") ?? decodeURIComponent(new URL(ownerUrl).password);
+  const ownerPassword = passwordOf(ownerUrl) ?? optional(env, "TIEHALL_DATABASE_OWNER_PASSWORD") ?? "";
   if (ownerPassword === "") {
     throw new SettingsError(
       "The database owner has no password. Set TIEHALL_DATABASE_OWNER_PASSWORD or TIEHALL_DATABASE_OWNER_PASSWORD_FILE, " +
@@ -243,12 +243,23 @@ export function readMigrateSettings(env: Environment): MigrateSettings {
   };
 }
 
+/**
+ * The password a database URL gives, which is used for it; a password setting
+ * applies only to a URL that gives none, such as the bundled Postgres's. An
+ * install on an external Postgres so keeps the bundled one's password in
+ * `.env` beside the URLs, and each password stays where it was written.
+ */
+function passwordOf(connectionString: string): string | undefined {
+  const password = decodeURIComponent(new URL(connectionString).password);
+  return password === "" ? undefined : password;
+}
+
 /** The app role's connection: the bundled Postgres unless TIEHALL_DATABASE_APP_URL names another database. */
 export function readAppDatabase(env: Environment): DatabaseConnection & { password: string } {
   const connectionString = readPostgresUrl(env, "TIEHALL_DATABASE_APP_URL", BUNDLED_APP_DATABASE_URL);
   const url = new URL(connectionString);
   if (url.username === "") throw new SettingsError("TIEHALL_DATABASE_APP_URL must name the app role as its user.");
-  const password = optional(env, "TIEHALL_DATABASE_APP_PASSWORD") ?? decodeURIComponent(url.password);
+  const password = passwordOf(connectionString) ?? optional(env, "TIEHALL_DATABASE_APP_PASSWORD") ?? "";
   if (password === "") {
     throw new SettingsError(
       "The app role has no password. Set TIEHALL_DATABASE_APP_PASSWORD or TIEHALL_DATABASE_APP_PASSWORD_FILE, " +

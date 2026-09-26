@@ -252,6 +252,17 @@ describe("the migrate role's settings", () => {
     });
   });
 
+  it("use a password given in a database URL, and the password setting only for a URL that gives none", () => {
+    // An install on an external Postgres keeps the bundled one's password in .env, and gives each URL its own.
+    const owner = "postgres://tiehall:owner-url-pass@db.example.com:5432/tiehall";
+    const app = "postgres://tiehall_app:app-url-pass@db.example.com:5432/tiehall";
+    expect(readMigrateSettings({ ...MIGRATE, TIEHALL_DATABASE_OWNER_URL: owner, TIEHALL_DATABASE_APP_URL: app })).toEqual({
+      owner: { connectionString: owner, password: "owner-url-pass" },
+      appRole: { name: "tiehall_app", password: "app-url-pass" },
+    });
+    expect(readAppSettings({ ...APP, TIEHALL_DATABASE_APP_URL: app }).database).toEqual({ connectionString: app, password: "app-url-pass" });
+  });
+
   it("need no install URL and no keys", () => {
     expect(() => readMigrateSettings(MIGRATE)).not.toThrow();
   });

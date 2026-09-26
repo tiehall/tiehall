@@ -1,4 +1,7 @@
-# Self-host: Caddy gets a certificate for APP_DOMAIN and passes requests to the app.
-{$APP_DOMAIN} {
+# The caddy profile of compose.yaml (self-host-install: `TIEHALL_URL` and TLS):
+# Caddy serves TIEHALL_URL from .env, obtains and renews its certificate, and
+# passes each request to the app with X-Forwarded-For and X-Forwarded-Proto,
+# which the app trusts from the proxies TIEHALL_TRUSTED_PROXIES names.
+{$TIEHALL_URL} {
 	reverse_proxy app:3000
 }

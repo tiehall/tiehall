@@ -41,7 +41,7 @@ describe("the Compose policy check", () => {
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout.trim().split("\n")).toEqual([
-      "deploy/compose.yaml: only caddy publishes ports; the app receives only its own secrets.",
+      "deploy/compose.yaml: only caddy publishes ports, and the app one port on 127.0.0.1; the app receives only its own secrets.",
     ]);
   });
 });

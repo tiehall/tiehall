@@ -34,7 +34,7 @@ for (const files of stacks.length > 0 ? stacks : DEFAULT_STACKS) {
   }
   const violations = checkComposePolicy(result.model);
   if (violations.length === 0) {
-    console.log(`${label}: only caddy publishes ports; the app receives only its own secrets.`);
+    console.log(`${label}: only caddy publishes ports, and the app one port on 127.0.0.1; the app receives only its own secrets.`);
   }
   for (const { service, rule, detail } of violations) console.error(`${label}: ${service}: [${rule}] ${detail}`);
   failed ||= violations.length > 0;

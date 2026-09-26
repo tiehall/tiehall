@@ -1,21 +1,35 @@
-# Tiehall, self-hosted: the image in its all-in-one role, stock Postgres 17
-# and, optionally, Caddy in front (self-host-install: Compose runs Tiehall and
-# Postgres). CI boots this file on every pull request and every build of main.
-#
-# Start it with the image pinned by digest, the database passwords in files and
-# the keys in the environment:
-#   export TIEHALL_IMAGE=ghcr.io/<owner>/tiehall@sha256:<digest>
-#   mkdir -p secrets && for name in owner_database_password app_database_password; do
-#     openssl rand -hex 32 > "secrets/$name"; done
-#   export TIEHALL_URL=https://tiehall.example.com
-#   export TIEHALL_SECRET_KEY="$(openssl rand -base64 32)" TIEHALL_AUTH_SECRET="$(openssl rand -base64 32)"
-#   docker compose up -d                                   # the app, on the compose network only
-#   APP_DOMAIN=tiehall.example.com docker compose --profile caddy up -d   # with Caddy and TLS
-# Upgrade with `docker compose pull && docker compose up -d`: the one-shot
-# migrate service finishes before the app starts on the new image.
-# Configuration is environment variables and *_FILE secrets only.
+# Tiehall, self-hosted: stock Postgres 17, the one-shot migrate step and the
+# app in its all-in-one role, with Caddy in front in the optional caddy profile
+# (self-host-install: Compose runs Tiehall and Postgres). Every setting comes
+# from the .env file beside this one, which init prints with fresh secrets
+# (self-host-install: One `.env` holds the install settings):
+#   docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env
+#   docker compose up -d                   # the app on 127.0.0.1:3000, for your own reverse proxy
+#   docker compose --profile caddy up -d   # with Caddy in front, and TLS for TIEHALL_URL
+# To upgrade, back up, set the new TIEHALL_IMAGE in .env and run
+# `docker compose pull && docker compose up -d`: the one-shot migrate step
+# finishes before the app starts on the new image.
+# Only the migrate step receives the database owner's credentials; the app
+# connects as the app role, which owns nothing (self-host-install: Only the
+# migrate step holds the database owner's credentials). A secret can instead
+# come from a file, as its NAME_FILE form, with the path inside the container.
+# CI boots this file on every pull request and every build of main.
 
 name: tiehall
+
+# How Tiehall's own containers run (self-host-install: Tiehall's containers
+# are confined): as the image's unprivileged user, on a read-only root
+# filesystem with a memory-backed /tmp, with no capabilities and no way to
+# gain privileges.
+x-confined: &confined
+  user: "1000:1000"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
 
 services:
   postgres:
@@ -23,9 +37,10 @@ services:
     environment:
       POSTGRES_USER: tiehall
       POSTGRES_DB: tiehall
-      POSTGRES_PASSWORD_FILE: /run/secrets/owner_database_password
-    secrets:
-      - owner_database_password
+      POSTGRES_PASSWORD: ${TIEHALL_DATABASE_OWNER_PASSWORD:-}
+      POSTGRES_PASSWORD_FILE: ${TIEHALL_DATABASE_OWNER_PASSWORD_FILE:-}
+      # Every connection over the network must give a password.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -37,38 +52,55 @@ services:
       start_interval: 1s
     restart: unless-stopped
 
-  # Runs the migrations once, then exits; the app waits for it to succeed.
+  # Runs the migrations once as the database owner, creates or updates the app
+  # role, then exits; the app waits for it to succeed. With an external
+  # Postgres, the two URLs name its owner and its app role.
   migrate:
-    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
+    <<: *confined
+    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE in .env to the Tiehall image, pinned by digest}
     command: [migrate]
     environment:
-      TIEHALL_DATABASE_OWNER_PASSWORD_FILE: /run/secrets/owner_database_password
-      TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/app_database_password
-    secrets:
-      - owner_database_password
-      - app_database_password
-    read_only: true
-    tmpfs:
-      - /tmp
+      - TIEHALL_DATABASE_OWNER_URL
+      - TIEHALL_DATABASE_OWNER_URL_FILE
+      - TIEHALL_DATABASE_OWNER_PASSWORD
+      - TIEHALL_DATABASE_OWNER_PASSWORD_FILE
+      - TIEHALL_DATABASE_APP_URL
+      - TIEHALL_DATABASE_APP_URL_FILE
+      - TIEHALL_DATABASE_APP_PASSWORD
+      - TIEHALL_DATABASE_APP_PASSWORD_FILE
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
-  # The web server and the worker in one container.
+  # The web server and the worker in one container, as the app role. Its one
+  # port is published on 127.0.0.1 unless TIEHALL_HTTP_BIND says otherwise.
   app:
-    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE to the Tiehall image, pinned by digest}
+    <<: *confined
+    image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE in .env to the Tiehall image, pinned by digest}
     command: [all]
     environment:
-      TIEHALL_URL: ${TIEHALL_URL:-http://localhost:3000}
-      TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/app_database_password
-      TIEHALL_SECRET_KEY: ${TIEHALL_SECRET_KEY:-}
-      TIEHALL_AUTH_SECRET: ${TIEHALL_AUTH_SECRET:-}
-    secrets:
-      - app_database_password
-    read_only: true
-    tmpfs:
-      - /tmp
+      - TIEHALL_URL
+      - TIEHALL_DATABASE_APP_URL
+      - TIEHALL_DATABASE_APP_URL_FILE
+      - TIEHALL_DATABASE_APP_PASSWORD
+      - TIEHALL_DATABASE_APP_PASSWORD_FILE
+      - TIEHALL_SECRET_KEY
+      - TIEHALL_SECRET_KEY_FILE
+      - TIEHALL_AUTH_SECRET
+      - TIEHALL_AUTH_SECRET_FILE
+      - TIEHALL_TRUSTED_PROXIES
+      - TIEHALL_CLIENT_METADATA_FETCH
+      - TIEHALL_SOURCE_URL
+      - TIEHALL_SMTP_HOST
+      - TIEHALL_SMTP_PORT
+      - TIEHALL_SMTP_TLS
+      - TIEHALL_SMTP_USER
+      - TIEHALL_SMTP_PASSWORD
+      - TIEHALL_SMTP_PASSWORD_FILE
+      - TIEHALL_SMTP_FROM
+    ports:
+      - ${TIEHALL_HTTP_BIND:-127.0.0.1:3000}:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,12 +120,13 @@ services:
     stop_grace_period: 30s
     restart: unless-stopped
 
-  # Optional: TLS for APP_DOMAIN in front of the app. The only service that publishes ports.
+  # Optional: TLS for TIEHALL_URL, with certificates Caddy obtains and renews.
+  # The only service that publishes 80 and 443.
   caddy:
     profiles: [caddy]
     image: caddy:2.11.4@sha256:14a9c00d4e833ebc2b65d36515b37bde3b73f0b323a2663aaafc88953d8c4e3f
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      TIEHALL_URL: ${TIEHALL_URL:-}
     ports:
       - "80:80"
       - "443:443"
@@ -102,15 +135,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    depends_on:
+      - app
     restart: unless-stopped
 
 volumes:
   postgres-data:
   caddy-data:
   caddy-config:
-
-secrets:
-  owner_database_password:
-    file: ${TIEHALL_SECRETS_DIR:-./secrets}/owner_database_password
-  app_database_password:
-    file: ${TIEHALL_SECRETS_DIR:-./secrets}/app_database_password

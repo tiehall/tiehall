@@ -1,5 +1,7 @@
-# The app cannot start: it is pointed at a database password file that does not exist.
+# The app cannot start: it is pointed at a database password file that does not exist, in place of the
+# password the .env gives.
 services:
   app:
     environment:
+      TIEHALL_DATABASE_APP_PASSWORD: ""
       TIEHALL_DATABASE_APP_PASSWORD_FILE: /run/secrets/missing_database_password

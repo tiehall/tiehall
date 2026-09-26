@@ -2,10 +2,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, inject, it } from "vitest";
 
-// The self-host boot test (task 2.11; self-host-install: Compose runs Tiehall
-// and Postgres). It runs the same script as the CI job: boot
-// deploy/compose.yaml in the all-in-one role against stock Postgres 17 and wait
-// for /healthz to report healthy.
+// The self-host boot test (tasks 2.11 and 5.3; self-host-install: Compose runs
+// Tiehall and Postgres). It runs the same script as the CI job: boot
+// deploy/compose.yaml from a .env printed by init, in the all-in-one role
+// against stock Postgres 17, and wait for /healthz to report healthy.
 
 const image = inject("image");
 const script = fileURLToPath(new URL("../src/boot-test.ts", import.meta.url));
@@ -23,9 +23,12 @@ function boot(...overrides: string[]) {
 }
 
 describe("the self-host boot test", () => {
-  it("goes green when the stack comes up and /healthz reports healthy", () => {
+  it("goes green when the stack comes up from a .env printed by init and /healthz reports healthy", () => {
     const run = boot();
-    expect(run.output).toContain('migrate exited 0; /healthz answered 200 {"status":"up"}');
+    expect(run.output).toContain("Wrote .env with the image's init role");
+    expect(run.output).toMatch(
+      /migrate exited 0; \/healthz answered 200 \{"status":"up"\}; on the host, 127\.0\.0\.1:\d+ answered 200 \{"status":"up"\}/,
+    );
     expect(run.status).toBe(0);
   }, 600_000);
 

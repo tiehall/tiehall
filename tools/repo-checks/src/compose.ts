@@ -33,13 +33,22 @@ export interface ComposeResult {
   model?: ComposeModel;
 }
 
-/** Runs `docker compose config` over the files, with the example variables and the given profiles. */
-export function composeConfig(files: string[], options: { profiles?: string[]; cwd?: string } = {}): ComposeResult {
+export interface ComposeConfigOptions {
+  profiles?: string[];
+  cwd?: string;
+  /** A .env file to read the settings from, as an install does; without one, only the example variables. */
+  envFile?: string;
+}
+
+/** Runs `docker compose config` over the files, with the example variables or an env file, and the given profiles. */
+export function composeConfig(files: string[], options: ComposeConfigOptions = {}): ComposeResult {
   const args = ["compose", ...files.flatMap((file) => ["--file", file])];
   for (const profile of options.profiles ?? []) args.push("--profile", profile);
+  // Without an env file, --env-file /dev/null keeps Compose from reading a .env beside the files.
+  args.push("--env-file", options.envFile ?? "/dev/null");
   args.push("config", "--format", "json");
-  // No .env file and no inherited COMPOSE_* settings: only the example variables.
-  const env: Record<string, string> = { ...EXAMPLE_ENVIRONMENT };
+  // No inherited settings and no COMPOSE_* variables: only the env file's, or the example variables.
+  const env: Record<string, string> = options.envFile === undefined ? { ...EXAMPLE_ENVIRONMENT } : {};
   for (const name of ["PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT", "TMPDIR"]) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;

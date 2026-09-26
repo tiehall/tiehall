@@ -31,6 +31,8 @@ export function checkComposePolicy(model: ComposeModel): PolicyViolation[] {
   for (const [service, definition] of Object.entries(model.services).sort(([a], [b]) => a.localeCompare(b))) {
     if (service !== REVERSE_PROXY) {
       for (const port of definition.ports ?? []) {
+        // The app's one port may be published on the host's loopback address, for a reverse proxy in front.
+        if (roleOf(definition) === "all" && (port as Port).host_ip === "127.0.0.1") continue;
         violations.push({ service, rule: "ports-only-on-caddy", detail: `publishes ${describePort(port as Port)}` });
       }
       if (definition["network_mode"] === "host") {
