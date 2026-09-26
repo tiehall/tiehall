@@ -57,31 +57,44 @@ export async function write<R>(
   change: (writer: Writer) => Promise<R>,
   options: WriteOptions = {},
 ): Promise<R> {
+  return withOrg(store.database, (context) => writeIn(context, store.jobs, provenance, change, options));
+}
+
+/**
+ * The same write inside a transaction withOrg() already opened, such as the
+ * one execute() runs a handler in: the change, its events and its jobs join
+ * that transaction and commit or roll back with it.
+ */
+export async function writeIn<R>(
+  context: OrgContext,
+  jobs: JobSender,
+  provenance: Provenance,
+  change: (writer: Writer) => Promise<R>,
+  options: WriteOptions = {},
+): Promise<R> {
   const ipAddress = options.origin?.ipAddress;
   const userAgent = options.origin?.userAgent?.slice(0, USER_AGENT_MAX_LENGTH);
-  return withOrg(store.database, async (context) => {
-    let recorded = 0;
-    const writer: Writer = {
-      ...context,
-      async record(type, data) {
-        const event = await appendEvent(context, type, data, provenance);
-        recorded++;
-        if (type.class === "security" && (ipAddress !== undefined || userAgent !== undefined)) {
-          await context.tx.insert(securityEventOrigins).values({
-            orgId: context.orgId,
-            eventNumber: event.number,
-            ipAddress: ipAddress ?? null,
-            userAgent: userAgent ?? null,
-          });
-        }
-        return event;
-      },
-      async enqueue(type, data) {
-        await store.jobs.send(context.tx, type.queue, data);
-      },
-    };
-    const result = await change(writer);
-    if (recorded === 0) throw new WriteWithoutEventError();
-    return result;
-  });
+  let recorded = 0;
+  const writer: Writer = {
+    ...context,
+    async record(type, data) {
+      const event = await appendEvent(context, type, data, provenance);
+      recorded++;
+      if (type.class === "security" && (ipAddress !== undefined || userAgent !== undefined)) {
+        await context.tx.insert(securityEventOrigins).values({
+          orgId: context.orgId,
+          eventNumber: event.number,
+          ipAddress: ipAddress ?? null,
+          userAgent: userAgent ?? null,
+        });
+      }
+      return event;
+    },
+    async enqueue(type, data) {
+      await jobs.send(context.tx, type.queue, data);
+    },
+  };
+  const result = await change(writer);
+  if (recorded === 0) throw new WriteWithoutEventError();
+  return result;
 }

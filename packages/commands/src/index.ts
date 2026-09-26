@@ -1,6 +1,33 @@
 // @tiehall/commands: execute() and one handler per command definition; everything that touches the database, the queue or the network.
 export { type AppendedEvent } from "./append-event.ts";
 export {
+  catalogSurfaceOf,
+  provenanceOf,
+  type AgentSurface,
+  type Caller,
+  type CallerKind,
+  type CiCaller,
+  type IntegrationEventCaller,
+  type OAuthTokenCaller,
+  type PersonalAccessTokenCaller,
+  type SystemJobCaller,
+  type UserCaller,
+  type WebSessionCaller,
+} from "./caller.ts";
+export {
+  createExecute,
+  defineHandler,
+  OutputSchemaError,
+  type ConfirmationClaim,
+  type Confirmations,
+  type Execute,
+  type ExecuteOptions,
+  type ExecuteServices,
+  type Handler,
+  type HandlerContext,
+  type Handlers,
+} from "./execute.ts";
+export {
   INTEGRATION_SECRETS,
   readSecret,
   storeSecret,
@@ -76,6 +103,7 @@ export { WORKER_JOBS } from "./worker-jobs.ts";
 export {
   USER_AGENT_MAX_LENGTH,
   write,
+  writeIn,
   WriteWithoutEventError,
   type Origin,
   type Store,

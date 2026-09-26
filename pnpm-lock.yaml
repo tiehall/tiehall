@@ -310,6 +310,9 @@ importers:
 
   packages/commands:
     dependencies:
+      '@tiehall/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@tiehall/core':
         specifier: workspace:*
         version: link:../core
@@ -325,6 +328,9 @@ importers:
       pg-boss:
         specifier: 12.33.2
         version: 12.33.2
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
     devDependencies:
       '@tiehall/testing':
         specifier: workspace:*

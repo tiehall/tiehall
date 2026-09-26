@@ -1,0 +1,171 @@
+import type { Catalog, CommandDefinition } from "@tiehall/catalog";
+import { Refusal, type RefusalIssue } from "@tiehall/core";
+import type { z } from "zod";
+import { catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
+import { withOrg, type OrgContext } from "./with-org.ts";
+import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
+
+// execute(commandId, caller, input) (public-api: One definition per operation,
+// the same on every surface; public-api: Input and output follow the published
+// schemas; agent-access: Six kinds of caller; agent-safety: The confirmation
+// step runs only in the web UI; design.md, Technical decisions: T3). Every
+// operation runs through it, whichever surface starts it: REST, MCP, the CLI
+// through REST, a negotiated URL, the web UI or the worker. In order, it:
+// 1. refuses, as a path that is not there (404), an operation that the
+//    surface the call came through does not offer, which is every internal
+//    command for a token or CI caller;
+// 2. parses the input against the operation's input schema, refusing input
+//    that fails it with 400 before anything runs, and drops keys it does not
+//    know;
+// 3. lets each kind of caller run only what its kind may run: a CI caller
+//    only contract.report, and a system job or an integration event only
+//    internal commands;
+// 4. asks for the confirmation step for a `confirm` command, refusing one
+//    without a valid confirmation nonce with 403;
+// 5. runs the handler inside withOrg(), so its change, its events and its jobs
+//    commit together or not at all;
+// 6. returns only output that passes the operation's output schema: any
+//    other output rolls the call back and is never returned.
+// Later tasks add the role and side rules (9.1, 15.5), the membership re-check
+// (9.2), commitments that become proposals (14.4) and the nonce check (8.2).
+
+/** What a handler gets besides its parsed input. */
+export interface HandlerContext extends OrgContext {
+  readonly caller: Caller;
+  /** Runs a change in the call's transaction, with the event that records it and the caller's provenance. */
+  write<R>(change: (writer: Writer) => Promise<R>): Promise<R>;
+}
+
+/** Runs one operation: it gets the parsed input and returns the output its schema describes. */
+export type Handler = (input: unknown, context: HandlerContext) => Promise<unknown>;
+
+/** One handler per operation of the catalog, by the operation's id. */
+export type Handlers = Readonly<Record<string, Handler>>;
+
+/** A handler typed by its definition's schemas. */
+export function defineHandler<D extends CommandDefinition>(
+  _definition: D,
+  handler: (input: z.output<D["input"]>, context: HandlerContext) => Promise<z.input<D["output"]>>,
+): Handler {
+  return handler as Handler;
+}
+
+/** The confirmation step's check of a nonce, which task 8.2 builds. */
+export interface Confirmations {
+  /** Checks and consumes the nonce, inside the call's transaction; false when it is not valid for this exact action. */
+  consume(context: OrgContext, claim: ConfirmationClaim): Promise<boolean>;
+}
+
+export interface ConfirmationClaim {
+  nonce: string;
+  userId: string;
+  sessionId: string;
+  commandId: string;
+  /** The parsed input, whose digest the nonce is bound to. */
+  input: unknown;
+}
+
+export interface ExecuteServices {
+  catalog: Catalog;
+  handlers: Handlers;
+  store: Store;
+  confirmations?: Confirmations;
+}
+
+export interface ExecuteOptions {
+  /** The confirmation step's nonce, which a `confirm` command needs. */
+  confirmation?: { nonce: string };
+  /** Where the call came from, kept for the security events it appends. */
+  origin?: Origin;
+}
+
+export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
+
+/**
+ * A handler's output that fails its operation's output schema. It is a bug in
+ * Tiehall, not a refusal: the call is rolled back and the output is never
+ * returned. Its message names the operation and never the output.
+ */
+export class OutputSchemaError extends Error {
+  override name = "OutputSchemaError";
+  constructor(commandId: string) {
+    super(`The output of ${commandId} fails its schema, so it was not returned and the call was rolled back.`);
+  }
+}
+
+/** Refused as the error model's row for a path that serves no operation on the surface. */
+function notOffered(): Refusal {
+  return new Refusal("route-not-found", "There is no such operation here.");
+}
+
+export function createExecute(services: ExecuteServices): Execute {
+  const { catalog, handlers, store } = services;
+  const missing = catalog.commands.filter(({ id }) => typeof handlers[id] !== "function").map(({ id }) => `${id} has no handler.`);
+  const extra = Object.keys(handlers)
+    .filter((id) => catalog.get(id) === undefined)
+    .map((id) => `${id} is a handler for an operation the catalog does not hold.`);
+  if (missing.length > 0 || extra.length > 0) throw new Error([...missing, ...extra].join("\n"));
+
+  return async function execute(commandId, caller, input, options = {}) {
+    const definition = catalog.get(commandId);
+    const handler = handlers[commandId];
+    if (definition === undefined || handler === undefined) throw notOffered();
+
+    // 1. A token or CI call reaches only what the surface it came through offers.
+    const surface = catalogSurfaceOf(caller);
+    if (surface !== undefined && !definition.surfaces.includes(surface)) throw notOffered();
+
+    // 2. Nothing runs on input that fails the schema.
+    const parsed = definition.input.safeParse(input);
+    if (!parsed.success) {
+      throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+    }
+
+    // 3. What each kind of caller may run.
+    if (caller.kind === "ci" && commandId !== "contract.report") {
+      throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
+    }
+    if ((caller.kind === "system_job" || caller.kind === "integration_event") && definition.surfaces.length > 0) {
+      throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
+    }
+
+    // 4. The confirmation step, for a user signed in to the web UI only.
+    const confirmation = options.confirmation;
+    const confirmations = services.confirmations;
+    if (definition.confirm && (caller.kind !== "web_session" || confirmation === undefined || confirmations === undefined)) {
+      throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+    }
+
+    if (definition.commitment) {
+      throw new Error(`${commandId} is a commitment, which becomes a proposal; proposals are not built yet.`);
+    }
+
+    // 5. and 6. The handler, in the install's org, and only output that passes its schema.
+    const provenance = provenanceOf(caller);
+    const writeOptions = options.origin === undefined ? {} : { origin: options.origin };
+    return withOrg(store.database, async (context) => {
+      if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
+        const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: parsed.data };
+        if (!(await confirmations.consume(context, claim))) {
+          throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+        }
+      }
+      const handlerContext: HandlerContext = {
+        ...context,
+        caller,
+        write: (change) => writeIn(context, store.jobs, provenance, change, writeOptions),
+      };
+      const output = definition.output.safeParse(await handler(parsed.data, handlerContext));
+      if (!output.success) throw new OutputSchemaError(commandId);
+      return output.data;
+    });
+  };
+}
+
+/** Where the input fails its schema, by path and by the schema's own message, never with the value. */
+function issuesOf(error: z.ZodError): RefusalIssue[] {
+  return error.issues.map((issue) => ({
+    path: issue.path.map((part) => (typeof part === "number" ? part : String(part))),
+    message: issue.message,
+  }));
+}

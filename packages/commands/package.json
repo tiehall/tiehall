@@ -17,11 +17,13 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@tiehall/catalog": "workspace:*",
     "@tiehall/core": "workspace:*",
     "@tiehall/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "nodemailer": "10.0.10",
-    "pg-boss": "12.33.2"
+    "pg-boss": "12.33.2",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@tiehall/testing": "workspace:*",
