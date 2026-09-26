@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { storePacketRevision, write, type Store } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequestInTheWebUi, packetOf, sendApi, tokenOf } from "./support/requests.ts";
 
 // What changed since revision N (handoff-packet: What changed since revision
 // N; agent-safety: User text in JSON sits under untrusted objects; design.md,
@@ -57,7 +57,7 @@ function applied(document: unknown, patch: unknown): unknown {
 describe("what changed since a revision", () => {
   it("names the acceptance criteria and the links changed in revisions 2 and 3, and patches revision 1 into revision 3", async () => {
     const first = packetWith({ acceptance_criteria: ["It follows the system setting."] });
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: first });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: first });
     const second = packetWith({ acceptance_criteria: ["It follows the system setting.", "The choice is kept."] });
     await addRevision(opened.key, second);
     const third = packetWith({ acceptance_criteria: ["It follows the system setting.", "The choice is kept."], links: [{ url: "https://wiki.example.com/dark" }] });
@@ -76,16 +76,16 @@ describe("what changed since a revision", () => {
   });
 
   it("is an empty patch and an empty list of fields since the current revision", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     await addRevision(opened.key, packetWith({ links: [{ url: "https://wiki.example.com/a" }] }));
     await addRevision(opened.key, packetWith({ links: [{ url: "https://wiki.example.com/b" }] }));
     expect((await changesSince(opened.key, 3)).body).toMatchObject({ since: 3, revision: 3, changedFields: [], untrusted: { patch: [] } });
-    const only = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const only = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect((await changesSince(only.key, 1)).body).toMatchObject({ since: 1, revision: 1, changedFields: [], untrusted: { patch: [] } });
   });
 
   it("answers 404 for a revision the request does not have yet, and 400 for one that is not a number from 1", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect(await changesSince(opened.key, 2)).toEqual({ status: 404, body: expect.objectContaining({ type: "https://tiehall.com/problems/record-not-found" }) });
     for (const since of ["0", "one", ""]) expect((await changesSince(opened.key, since)).status, since).toBe(400);
     expect((await callApi(install, tokenOf(alice), "GET", `/api/v1/requests/${opened.key}/packet/changes`)).status).toBe(400);
@@ -112,7 +112,7 @@ describe("the patch since any revision", () => {
     await fc.assert(
       fc.asyncProperty(fc.array(revisionPacket, { minLength: 1, maxLength: 4 }), fc.nat(), async (packets, pick) => {
         const [opening, ...later] = packets as unknown as [Record<string, unknown>, ...Record<string, unknown>[]];
-        const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: opening });
+        const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: opening });
         for (const packet of later) {
           await write(store, { actorKind: "agent", userId: alice, surface: "api" }, (writer) => storePacketRevision(writer, opened.id, packet as never));
         }

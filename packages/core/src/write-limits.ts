@@ -4,7 +4,9 @@
 // confirm with the founder: R15). Pure numbers and time arithmetic: one token
 // makes at most 60 writes within any 60 seconds; the install's agents make at
 // most the daily write budget of writes per UTC day, 5,000 unless an admin
-// changes it, to between 1 and 1,000,000.
+// changes it, to between 1 and 1,000,000; agents acting for one user open at
+// most 20 requests within any hour, and agents open at most 50 requests from
+// one team to another per UTC day.
 
 export const WRITE_LIMITS = {
   /** The most writes one token makes within any window of this many milliseconds. */
@@ -15,6 +17,11 @@ export const WRITE_LIMITS = {
   /** The budgets an admin may set. */
   minDailyWriteBudget: 1,
   maxDailyWriteBudget: 1_000_000,
+  /** The most requests agents acting for one user open within any window of this many milliseconds. */
+  openedPerUserPerWindow: 20,
+  openedWindowMs: 3_600_000,
+  /** The most requests agents open from one team to another per UTC day. */
+  openedPerTeamPairPerDay: 50,
 } as const;
 
 /** How many whole seconds, at least 1, until a time. */

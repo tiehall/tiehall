@@ -799,3 +799,46 @@ export const installSettings = pgTable(
   },
   (table) => [check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`)],
 );
+
+// The requests agents opened (agent-safety: Agent-opened requests are capped).
+// One row per request opened with an OAuth token or a personal access token:
+// who it was opened for, from which team to which, and when, by the clock of
+// the call that opened it. The caps on opened requests count these rows.
+export const agentOpenedRequests = pgTable(
+  "agent_opened_requests",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    requestId: uuid("request_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    requestingTeamId: uuid("requesting_team_id").notNull(),
+    targetTeamId: uuid("target_team_id").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.requestId] }),
+    index("agent_opened_requests_user_time").on(table.orgId, table.userId, table.openedAt),
+    index("agent_opened_requests_pair_time").on(table.orgId, table.requestingTeamId, table.targetTeamId, table.openedAt),
+    foreignKey({
+      name: "agent_opened_requests_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "agent_opened_requests_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "agent_opened_requests_requesting_team_fk",
+      columns: [table.orgId, table.requestingTeamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "agent_opened_requests_target_team_fk",
+      columns: [table.orgId, table.targetTeamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);

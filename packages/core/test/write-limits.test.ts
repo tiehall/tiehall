@@ -12,6 +12,9 @@ describe("the limits on agent writes", () => {
       defaultDailyWriteBudget: 5_000,
       minDailyWriteBudget: 1,
       maxDailyWriteBudget: 1_000_000,
+      openedPerUserPerWindow: 20,
+      openedWindowMs: 3_600_000,
+      openedPerTeamPairPerDay: 50,
     });
   });
 

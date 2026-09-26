@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequestInTheWebUi, sessionOf, tokenOf } from "./support/requests.ts";
 
 // A request's thread (requests: Thread messages and blocking questions;
 // requests: Requests only, with questions in the request's thread; design.md,
@@ -41,7 +41,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  key = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
+  key = (await openRequestInTheWebUi(install, alice, { targetTeam: "FE" })).key;
 });
 
 const post = (user: string, message: Record<string, unknown>, on = key) => callApi(install, tokenOf(user), "POST", `/api/v1/requests/${on}/messages`, message);
@@ -127,7 +127,7 @@ describe("a message", () => {
   });
 
   it("gets 404 for an answer that names no question of this request", async () => {
-    const elsewhere = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
+    const elsewhere = (await openRequestInTheWebUi(install, alice, { targetTeam: "FE" })).key;
     const otherQuestion = (await post(bob, { kind: "question", body: "Elsewhere?" }, elsewhere)).body.message.id;
     const comment = await posted(bob, { kind: "comment", body: "Just a comment." });
     for (const questionId of [otherQuestion, comment, "7a1f0c56-6ad1-4a3e-9b1c-3f0d8f2f2b11"]) {

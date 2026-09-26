@@ -169,6 +169,13 @@
       "when": 1790411781213,
       "tag": "0023_add_write_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790411987664,
+      "tag": "0024_add_agent_opened_requests",
+      "breakpoints": true
     }
   ]
 }

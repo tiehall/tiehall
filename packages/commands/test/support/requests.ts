@@ -86,3 +86,23 @@ export async function openRequest<T = any>(
   if (answer.status !== 200) throw new Error(`requests.create answered ${answer.status}: ${JSON.stringify(answer.body)}`);
   return answer.body;
 }
+
+/**
+ * Opens a request as the user in the web UI and returns it; fails the test on
+ * any other answer. No cap on agent-opened requests counts it, so a test that
+ * opens many requests to set up what it checks uses this.
+ */
+export async function openRequestInTheWebUi<T = any>(
+  install: TestInstall,
+  userId: string,
+  input: { targetTeam: string; requestingTeam?: string; title?: string; packet?: unknown },
+): Promise<T> {
+  const session = sessionOf(userId);
+  const result = await install.web(session).write<T>(
+    "requests.create",
+    { title: "Add a dark mode", packet: packetOf(), ...input },
+    install.fromThePage(session),
+  );
+  if (!result.ok) throw new Error(`requests.create answered ${result.problem.status}: ${JSON.stringify(result.problem)}`);
+  return result.output;
+}

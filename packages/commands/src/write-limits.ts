@@ -1,7 +1,7 @@
 import { setWriteBudget } from "@tiehall/catalog";
 import { nextUtcDay, Refusal, secondsUntil, utcDay, WRITE_LIMITS, writeBudgetChanged } from "@tiehall/core";
-import { agentTokenWrites, agentWriteDays, installSettings } from "@tiehall/db";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { agentOpenedRequests, agentTokenWrites, agentWriteDays, installSettings } from "@tiehall/db";
+import { and, asc, eq, gt, gte, lt, lte, sql } from "drizzle-orm";
 import type { Caller } from "./caller.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -28,6 +28,14 @@ import type { OrgContext } from "./with-org.ts";
 //
 // The budget is 5,000 until an admin changes it in the web UI, with the
 // confirmation step; the change is a security event.
+//
+// The requests agents open are capped (agent-safety: Agent-opened requests are
+// capped), so that loops spanning several requests stop: agents acting for one
+// user open at most 20 within any hour, and agents open at most 50 from one
+// team to another per UTC day. Opening one takes a transaction lock on its
+// user and on its pair of teams, so two at once count one after the other; a
+// request beyond either cap is not opened and the call gets 429 with
+// Retry-After. Requests people open in the web UI are not counted.
 
 /** The key a token's writes are counted by; undefined for a caller that is no agent token. */
 export function tokenKeyOf(caller: Caller): string | undefined {
@@ -84,6 +92,64 @@ export async function countTokenWrite(context: OrgContext, token: string, now: D
       retryAfterSeconds: secondsUntil(now, nextUtcDay(now)),
     });
   }
+}
+
+/** Who an agent opens a request for, and from which team to which. */
+export interface AgentOpening {
+  userId: string;
+  requestingTeamId: string;
+  targetTeamId: string;
+}
+
+async function lock({ tx, orgId }: OrgContext, name: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId} ${name}`}, 0))`);
+}
+
+/** Refuses, with 429, a request an agent would open beyond the caps; otherwise holds the caps' locks until the transaction ends. */
+export async function capAgentOpenedRequest(context: OrgContext, opening: AgentOpening, now: Date): Promise<void> {
+  const { tx, orgId } = context;
+  await lock(context, `requests opened for ${opening.userId}`);
+  await lock(context, `requests opened from ${opening.requestingTeamId} to ${opening.targetTeamId}`);
+  const byUser = await tx
+    .select({ openedAt: agentOpenedRequests.openedAt })
+    .from(agentOpenedRequests)
+    .where(
+      and(
+        eq(agentOpenedRequests.orgId, orgId),
+        eq(agentOpenedRequests.userId, opening.userId),
+        gt(agentOpenedRequests.openedAt, new Date(now.getTime() - WRITE_LIMITS.openedWindowMs)),
+      ),
+    )
+    .orderBy(asc(agentOpenedRequests.openedAt));
+  const [oldest] = byUser;
+  if (oldest !== undefined && byUser.length >= WRITE_LIMITS.openedPerUserPerWindow) {
+    throw new Refusal("rate-limited", "Agents acting for you have opened 20 requests in the last hour; they can open another once the oldest of them is an hour old.", {
+      retryAfterSeconds: secondsUntil(now, new Date(oldest.openedAt.getTime() + WRITE_LIMITS.openedWindowMs)),
+    });
+  }
+  const dayStart = new Date(`${utcDay(now)}T00:00:00Z`);
+  const [byPair] = await tx
+    .select({ opened: sql<number>`count(*)::int` })
+    .from(agentOpenedRequests)
+    .where(
+      and(
+        eq(agentOpenedRequests.orgId, orgId),
+        eq(agentOpenedRequests.requestingTeamId, opening.requestingTeamId),
+        eq(agentOpenedRequests.targetTeamId, opening.targetTeamId),
+        gte(agentOpenedRequests.openedAt, dayStart),
+        lt(agentOpenedRequests.openedAt, nextUtcDay(now)),
+      ),
+    );
+  if ((byPair?.opened ?? 0) >= WRITE_LIMITS.openedPerTeamPairPerDay) {
+    throw new Refusal("rate-limited", "Agents have opened 50 requests from this team to that one today; they can open more when the next UTC day begins.", {
+      retryAfterSeconds: secondsUntil(now, nextUtcDay(now)),
+    });
+  }
+}
+
+/** Records a request an agent opened, which the caps count. */
+export async function recordAgentOpenedRequest({ tx, orgId }: OrgContext, requestId: string, opening: AgentOpening, now: Date): Promise<void> {
+  await tx.insert(agentOpenedRequests).values({ orgId, requestId, ...opening, openedAt: now });
 }
 
 const number = (value: number) => value.toLocaleString("en-US");

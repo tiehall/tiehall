@@ -9,6 +9,7 @@ import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import { requestView, requestViews, threadOf } from "./request-views.ts";
+import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.ts";
 
 // The request operations (requests: A request is addressed to a team of the
 // install; requests: The requester picks the requesting team; requests:
@@ -34,7 +35,9 @@ import { requestView, requestViews, threadOf } from "./request-views.ts";
 // packet, as the catalog's definition parsed it, as revision 1 (handoff-packet:
 // Immutable, numbered revisions; handoff-packet: Open objects, strict server);
 // the request, its number, its first revision and its event commit together or
-// not at all.
+// not at all. A request an agent opens counts toward the caps on agent-opened
+// requests, and one beyond them is not opened (agent-safety: Agent-opened
+// requests are capped).
 
 /** "BE", "BE and QA", or "BE, OPS and QA". */
 function listed(keys: readonly string[]): string {
@@ -69,13 +72,17 @@ export const REQUEST_HANDLERS: Handlers = {
     const target = await teamOfKey(context, targetTeam);
     if (target === undefined) throw new Refusal("record-not-found", "There is no such team.");
     const from = await requestingTeamOf(context, userId, requestingTeam);
+    const opening = { userId, requestingTeamId: from.id, targetTeamId: target.id };
+    const byAgent = context.provenance.actorKind === "agent";
     return context.write(async (writer) => {
+      if (byAgent) await capAgentOpenedRequest(writer, opening, writer.now());
       const number = await takeRequestNumber(writer, target.id);
       const [row] = await writer.tx
         .insert(requests)
         .values({ orgId: writer.orgId, targetTeamId: target.id, number, title, requestingUserId: userId, requestingTeamId: from.id })
         .returning({ id: requests.id });
       if (row === undefined) throw new Error("The new request was not returned.");
+      if (byAgent) await recordAgentOpenedRequest(writer, row.id, opening, writer.now());
       await insertPacketRevision(writer, row.id, 1, packet, stampOf(context.provenance, from.id));
       await writer.record(requestOpened, { requestId: row.id, targetTeamId: target.id, requestingTeamId: from.id });
       return requestView(writer, row.id);

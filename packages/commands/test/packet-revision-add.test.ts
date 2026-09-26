@@ -3,7 +3,7 @@ import net from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequestInTheWebUi, packetOf, sendApi, tokenOf } from "./support/requests.ts";
 
 // Adding a packet revision (public-api: Packet revisions use ETag and
 // If-Match; handoff-packet: Immutable, numbered revisions; handoff-packet:
@@ -87,7 +87,7 @@ async function reachRevision(key: string, revision: number): Promise<void> {
 
 describe("reading a packet", () => {
   it("answers with the ETag of its current revision, and of the revision read by its number", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const read = await readPacket(alice, opened.key);
     expect(read.status).toBe(200);
     expect(read.headers.get("etag")).toBe('"1"');
@@ -100,7 +100,7 @@ describe("reading a packet", () => {
 
 describe("adding a revision", () => {
   it("adds the next revision for the requester with the current revision's ETag, and answers with the new ETag", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const changed = packetWith({ acceptance_criteria: ["The toggle is on the settings page."] });
     const added = await addRevision(alice, opened.key, changed, '"1"');
     expect(added.status).toBe(200);
@@ -110,7 +110,7 @@ describe("adding a revision", () => {
   });
 
   it("lets any member of the requesting team add one, and records the change as theirs for that team", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect((await addRevision(ayse, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/dark" }] }), '"1"')).status).toBe(200);
     const { rows } = await install.owner.query(
       "SELECT type, data, actor_kind, actor_user_id, surface FROM events WHERE data->>'requestId' = $1 ORDER BY number DESC LIMIT 1",
@@ -124,7 +124,7 @@ describe("adding a revision", () => {
   });
 
   it("gets 428 without If-Match, even when the body names a revision, and adds nothing", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     await reachRevision(opened.key, 3);
     const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith({ acceptance_criteria: ["Changed."] }));
@@ -139,7 +139,7 @@ describe("adding a revision", () => {
   });
 
   it("gives the second of two writers at revision 3 a 412, and the packet stays at revision 4", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     await reachRevision(opened.key, 3);
     const etag = (await readPacket(alice, opened.key)).headers.get("etag") ?? "";
     expect(etag).toBe('"3"');
@@ -155,7 +155,7 @@ describe("adding a revision", () => {
   });
 
   it("lets only one of two writers at the same revision through when they write at once", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     await reachRevision(opened.key, 3);
     const answers = await Promise.all([
       addRevision(alice, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/a" }] }), '"3"'),
@@ -166,7 +166,7 @@ describe("adding a revision", () => {
   });
 
   it.each([["W/\"1\""], ["*"], ["1"], ['"1", "2"'], ['"one"'], ['"0"']])("gets 412 for If-Match: %s, which names no current revision, and adds nothing", async (ifMatch) => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/x" }] }), ifMatch);
     expect(answer.status).toBe(412);
@@ -177,7 +177,7 @@ describe("adding a revision", () => {
     ["a member of the target team", () => bob],
     ["a member of a third team", () => carol],
   ])("gets 403 for %s, and adds nothing", async (_who, who) => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const before = await stateOf(opened.id);
     const answer = await addRevision(who(), opened.key, packetWith({ acceptance_criteria: ["Theirs."] }), '"1"');
     expect(answer.status).toBe(403);
@@ -192,13 +192,13 @@ describe("adding a revision", () => {
 
 describe("what a revision may change", () => {
   it("adds a scope change at once while the request is unclaimed", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const answer = await addRevision(alice, opened.key, packetWith({ need: "A different need.", acceptance_criteria: ["New."] }), '"1"');
     expect(answer.status).toBe(200);
   });
 
   it("adds a change outside the scope while the request is claimed", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
     const answer = await addRevision(alice, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/more" }], code_refs: [{ repository: "acme/web" }] }), '"1"');
     expect(answer.status).toBe(200);
@@ -209,7 +209,7 @@ describe("what a revision may change", () => {
     ["the acceptance criteria", { acceptance_criteria: ["Changed after the claim."] }],
     ["the contract section", { contract: (fixture("valid/contract-packet.json")["untrusted"] as Record<string, unknown>)["contract"] }],
   ])("refuses with 409 a change to %s while the request is claimed, until proposals come, and adds nothing", async (_what, change) => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
     const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith(change), '"1"');
@@ -219,7 +219,7 @@ describe("what a revision may change", () => {
   });
 
   it("refuses with 409 setting or moving the due date after the request was opened, until proposals come, and adds nothing", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: packetWith({}, { due_date: "2026-10-15" }) });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({}, { due_date: "2026-10-15" }) });
     const before = await stateOf(opened.id);
     for (const packet of [packetWith({}, { due_date: "2026-10-22" }), packetWith({})]) {
       const answer = await addRevision(alice, opened.key, packet, '"1"');
@@ -231,7 +231,7 @@ describe("what a revision may change", () => {
   });
 
   it("keeps the packet's kind: a contract-change packet without its contract section, or a change of kind, gets 400 and adds nothing", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE", packet: fixture("valid/contract-packet.json") });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: fixture("valid/contract-packet.json") });
     const before = await stateOf(opened.id);
     const withoutContract = await addRevision(alice, opened.key, fixture("invalid/contract-change-without-contract.json"), '"1"');
     expect(withoutContract.status).toBe(400);
@@ -242,7 +242,7 @@ describe("what a revision may change", () => {
   });
 
   it("gets 400 for a known field of the wrong type, and adds nothing", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith({ links: "https://wiki.example.com" }), '"1"');
     expect(answer.status).toBe(400);
@@ -252,7 +252,7 @@ describe("what a revision may change", () => {
 
 describe("validating a new revision", () => {
   it("makes no connection but to the install's own database", async () => {
-    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE" });
     const attempts: string[] = [];
     const connect = net.Socket.prototype.connect;
     const fetch = globalThis.fetch;
