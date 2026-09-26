@@ -23,7 +23,8 @@ import {
 //
 // One org per install (teams-and-roles: One org per install; design.md,
 // Self-hosting decisions: S1): `orgs` holds at most one row, the company the
-// install serves, named on the setup screen. Every other table carries
+// install serves. The web role makes it at the install's first start, before
+// anyone has named it, and the setup screen names it. Every other table carries
 // `org_id`, first in its primary key, such as (org_id, id), referencing orgs,
 // and part of every foreign key to another table; the org id lint checks it.
 
@@ -31,7 +32,8 @@ export const orgs = pgTable(
   "orgs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    name: text("name").notNull(),
+    /** The company's name, from the setup screen; none before the setup screen names it. */
+    name: text("name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /**
      * When the first admin's sign-in completed setup; until then, pages lead
@@ -195,5 +197,42 @@ export const idempotencyKeys = pgTable(
     primaryKey({ columns: [table.orgId, table.caller, table.key] }),
     index("idempotency_keys_created_at").on(table.orgId, table.createdAt),
     check("idempotency_keys_digest_length", sql`octet_length(${table.requestDigest}) = 32`),
+  ],
+);
+
+// The setup code (self-host-install: The setup code guards the setup screen;
+// design.md, Self-hosting decisions: S3). While setup is incomplete, each start
+// of the web role prints a new code to its log and stores only its SHA-256
+// here, replacing the previous one. The code carries 140 random bits, so a
+// fast hash is enough to keep it out of the database and its backups.
+export const setupCodes = pgTable(
+  "setup_codes",
+  {
+    orgId: uuid("org_id")
+      .primaryKey()
+      .references(() => orgs.id),
+    codeHash: bytea("code_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check("setup_codes_hash_length", sql`octet_length(${table.codeHash}) = 32`)],
+);
+
+// Setup sessions: a browser that entered the current setup code holds a random
+// token in a cookie, and every step of the setup screen needs it. Only the
+// token's SHA-256 is stored. They are of no use once setup is complete.
+export const setupSessions = pgTable(
+  "setup_sessions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    tokenHash: bytea("token_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("setup_sessions_token_hash").on(table.orgId, table.tokenHash),
+    check("setup_sessions_hash_length", sql`octet_length(${table.tokenHash}) = 32`),
   ],
 );

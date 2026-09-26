@@ -3,7 +3,8 @@
 // - web imports the Next.js standalone server into this process, behind the
 //   request guard, which trusts forwarded headers only from the proxies the
 //   settings name, and on SIGTERM answers new calls with 503 while the calls
-//   in flight finish;
+//   in flight finish; while setup is incomplete, it prints a new setup code at
+//   each start;
 // - worker and migrate run here: worker works the job queues until SIGTERM,
 //   and migrate applies the migrations from /app/packages/db/migrations,
 //   beside this bundle, and installs the job queue's schema;

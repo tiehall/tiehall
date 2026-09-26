@@ -113,6 +113,17 @@ export {
   type SetupGateOptions,
   type SetupState,
 } from "./setup-gate.ts";
+export {
+  generateSetupCode,
+  isSetupSession,
+  normalizeSetupCode,
+  openSetupSession,
+  SETUP_CODE_BITS,
+  SETUP_CODE_LENGTH,
+  startSetup,
+  type StartSetupOptions,
+} from "./setup-code.ts";
+export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
 export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,

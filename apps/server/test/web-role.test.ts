@@ -1,9 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { migrate } from "@tiehall/commands";
+import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 
 // The web role stops gracefully (self-host-install: A restart stops the app
 // gracefully; public-api: One error model for Tiehall's own refusals). Docker
@@ -163,5 +166,78 @@ describe("the web role's log", () => {
       expect.objectContaining({ level: "error", msg: "⨯", via: "console", error: expect.objectContaining({ name: "Error" }) }),
     );
     expect(web.output()).not.toContain(canary);
+  });
+});
+
+// self-host-install: The setup code guards the setup screen. While setup is incomplete, each start prints a new
+// setup code to the log, where `docker compose logs app` shows it, and stores only its hash, which replaces the
+// previous one.
+describe("the web role at start", () => {
+  const migrationsFolder = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
+  const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
+  let database: TestDatabase;
+  let owner: pg.Client;
+  let appDatabase: Record<string, string>;
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    owner = new pg.Client({ connectionString: database.url });
+    await owner.connect();
+    await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+    const url = new URL(database.url);
+    url.username = appRole.name;
+    url.password = "";
+    appDatabase = { TIEHALL_DATABASE_APP_URL: url.toString(), TIEHALL_DATABASE_APP_PASSWORD: appRole.password, WITH_SETUP: "on" };
+  });
+
+  afterAll(async () => {
+    await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
+    await owner.end();
+    await database.drop();
+  });
+
+  const CODE_LINE = /^setup: setup is not complete\. Open http:\/\/localhost:3000\/setup and enter the setup code ([0-9A-Z-]+)$/;
+
+  /** Starts the role, waits for the setup code it prints, stops it, and returns the code. */
+  async function codeOfOneStart(): Promise<string> {
+    const web = await startWebRole(appDatabase);
+    await until("the setup code", () => logEntries(web.stdout()).some(({ msg }) => CODE_LINE.test(String(msg))));
+    web.child.kill("SIGTERM");
+    expect(await web.exited).toBe(0);
+    const line = logEntries(web.stdout()).find(({ msg }) => CODE_LINE.test(String(msg)));
+    expect(line).toMatchObject({ level: "info", role: "web" });
+    return CODE_LINE.exec(String(line?.["msg"]))?.[1] ?? "";
+  }
+
+  it("prints a new setup code each time while setup is incomplete, and stores only the hash of the latest", async () => {
+    const first = await codeOfOneStart();
+    const second = await codeOfOneStart();
+    expect(first).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/);
+    expect(second).not.toBe(first);
+    const hash = createHash("sha256").update(second.replaceAll("-", "")).digest();
+    expect((await owner.query("SELECT code_hash FROM setup_codes")).rows).toEqual([{ code_hash: hash }]);
+  });
+
+  it("prints no setup code once setup is complete", async () => {
+    await owner.query("UPDATE orgs SET name = 'Acme', setup_completed_at = now()");
+    try {
+      const web = await startWebRole(appDatabase);
+      // The step reads the database beside the server's start, well within this wait.
+      await sleep(1_500);
+      web.child.kill("SIGTERM");
+      expect(await web.exited).toBe(0);
+      expect(web.output()).not.toContain("setup code");
+    } finally {
+      await owner.query("UPDATE orgs SET setup_completed_at = NULL");
+    }
+  });
+
+  it("serves while the database cannot be reached, and logs that the setup code is not printed yet", async () => {
+    const web = await startWebRole({ ...appDatabase, TIEHALL_DATABASE_APP_URL: "postgres://tiehall_app@127.0.0.1:1/tiehall" });
+    await until("the role to say why", () => web.output().includes("web: the setup code could not be printed"));
+    expect(logEntries(web.stdout())).toContainEqual(
+      expect.objectContaining({ level: "warn", msg: "web: the setup code could not be printed; trying again in 5 seconds" }),
+    );
+    expect(await (await fetch(`http://127.0.0.1:${web.port}/`)).text()).toBe("ok");
   });
 });

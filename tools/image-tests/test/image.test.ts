@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { get as httpGet } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,6 +135,19 @@ beforeAll(async () => {
 afterAll(() => {
   stopPostgres(rolesNetwork, rolesPostgres);
 });
+
+/** A GET with the Host header a browser at that host sends, which fetch() does not let a caller set. */
+function getWithHost(port: number, path: string, host: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const request = httpGet({ host: "127.0.0.1", port, path, headers: { host } }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (body += chunk));
+      response.on("end", () => resolve({ status: response.statusCode ?? 0, body }));
+    });
+    request.on("error", reject);
+  });
+}
 
 /** Runs a query as the database owner inside a Postgres container, and returns its rows as text. */
 function ownerQuery(postgres: string, query: string): string {
@@ -346,6 +360,12 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expectReadOnlyOutsideTmp(name);
   });
 
+  // self-host-install: Setup names the company and makes the first admin. Setup is complete on this database.
+  it("prints no setup code, and answers /setup with 404", async () => {
+    await waitFor("the web server to answer", async () => ((await fetch(`http://127.0.0.1:${port}/setup`)).status === 404 ? true : undefined));
+    expect(dockerOk(["logs", name])).not.toContain("setup code");
+  });
+
   it("tags its pages with the commit as the deployment id", async () => {
     const html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
     expect(html).toContain(`data-dpl-id="${revision()}"`);
@@ -530,6 +550,46 @@ describe("/healthz", () => {
     }
     expect(await healthz(port)).toEqual({ status: 200, body: { status: "up" } });
     expect(ownerQuery(database, "SELECT count(*) FROM orgs WHERE setup_completed_at IS NOT NULL")).toBe("0");
+  });
+
+  // self-host-install: The setup code guards the setup screen.
+  it("prints a setup code to its log at start, which opens a setup session only from the install's URL", async () => {
+    const line = await waitFor("the setup code in the log", () =>
+      logLines(docker(["logs", name]).stdout).find(({ msg }) => msg.startsWith("setup: setup is not complete.")),
+    );
+    expect(line).toMatchObject({ level: "info", role: "web" });
+    const code = /enter the setup code ([0-9A-Z-]+)$/.exec(line.msg)?.[1] ?? "";
+    expect(code).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/);
+    expect(line.msg).toBe(`setup: setup is not complete. Open http://localhost:3000/setup and enter the setup code ${code}`);
+    expect(ownerQuery(database, "SELECT count(*) FROM setup_codes")).toBe("1");
+    expect(ownerQuery(database, "SELECT encode(code_hash, 'escape') FROM setup_codes")).not.toContain(code.replaceAll("-", ""));
+
+    // Read at the install's URL, the screen asks for the code; read at another address, it names that URL instead.
+    const form = await getWithHost(port, "/setup", "localhost:3000");
+    expect(form.status).toBe(200);
+    expect(form.body).toContain('name="code"');
+    const elsewherePage = await (await fetch(`http://127.0.0.1:${port}/setup`)).text();
+    expect(elsewherePage).not.toContain('name="code"');
+    expect(elsewherePage).toContain("http://localhost:3000/setup");
+    const enter = (value: string, origin: string) =>
+      fetch(`http://127.0.0.1:${port}/setup`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { origin, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code: value }).toString(),
+      });
+    const wrong = await enter("ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345", "http://localhost:3000");
+    expect(wrong.status).toBe(403);
+    expect(wrong.headers.get("set-cookie")).toBeNull();
+    const elsewhere = await enter(code, "http://10.0.0.5:3000");
+    expect(elsewhere.status).toBe(403);
+    expect(elsewhere.headers.get("set-cookie")).toBeNull();
+    expect(ownerQuery(database, "SELECT count(*) FROM setup_sessions")).toBe("0");
+    const right = await enter(code, "http://localhost:3000");
+    expect(right.status).toBe(303);
+    expect(right.headers.get("location")).toBe("http://localhost:3000/setup");
+    expect(right.headers.get("set-cookie")).toMatch(/^tiehall-setup=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax$/);
+    expect(ownerQuery(database, "SELECT count(*) FROM setup_sessions")).toBe("1");
   });
 
   it("answers down while the database is stopped, and up once it is back", async () => {

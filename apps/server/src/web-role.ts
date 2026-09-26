@@ -1,6 +1,6 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { createLogger, routeConsoleTo, type AppSettings, type Logger } from "@tiehall/commands";
+import { createLogger, openDatabase, routeConsoleTo, startSetup, type AppSettings, type Logger } from "@tiehall/commands";
 import { installRequestGuard } from "./request-guard.ts";
 import { TrustedProxies } from "./trusted-proxies.ts";
 
@@ -17,6 +17,13 @@ import { TrustedProxies } from "./trusted-proxies.ts";
 // the console, such as its version, its addresses and "Ready" at start, goes
 // through the role's logger too (self-host-install: Logs carry ids, never
 // message text or credentials).
+//
+// At each start while setup is incomplete, the role prints a new setup code to
+// its log and stores its hash, replacing the previous one (self-host-install:
+// The setup code guards the setup screen). It does so beside the server's
+// start, so a database that cannot be reached never holds the server back: the
+// role logs why, serves /healthz, which answers "down", and tries again every
+// few seconds until the code is printed.
 
 export interface WebRoleOptions {
   /** The standalone server that `next build` writes, which starts listening when it is loaded. */
@@ -24,10 +31,25 @@ export interface WebRoleOptions {
   /** How long the calls in flight may take to finish once the role stops. */
   drainTimeoutMs?: number;
   logger?: Logger;
+  /** The setup step at start, which prints the setup code while setup is incomplete. */
+  setup?: (settings: AppSettings, logger: Logger) => Promise<void>;
 }
 
 /** Well within the 30 seconds Compose waits after SIGTERM before it kills the container. */
 export const DEFAULT_DRAIN_TIMEOUT_MS = 20_000;
+
+/** How long the role waits before it tries again to print the setup code, when the database could not be reached. */
+export const SETUP_RETRY_MS = 5_000;
+
+/** Prints a new setup code while setup is incomplete, over a connection of its own as the app role. */
+export async function printSetupCode(settings: AppSettings, logger: Logger): Promise<void> {
+  const database = openDatabase(settings.database, { applicationName: "tiehall web setup code" });
+  try {
+    await startSetup({ database, url: settings.url, logger });
+  } finally {
+    await database.$client.end();
+  }
+}
 
 export async function runWebRole(settings: AppSettings, options: WebRoleOptions): Promise<void> {
   const logger = options.logger ?? createLogger().child({ role: "web" });
@@ -42,10 +64,23 @@ export async function runWebRole(settings: AppSettings, options: WebRoleOptions)
   const guard = installRequestGuard({ proxies });
   routeConsoleTo(logger);
 
+  const setup = options.setup ?? printSetupCode;
+  let setupRetry: NodeJS.Timeout | undefined;
+  const startSetupStep = async (): Promise<void> => {
+    try {
+      await setup(settings, logger);
+    } catch (error) {
+      logger.warn(`web: the setup code could not be printed; trying again in ${SETUP_RETRY_MS / 1000} seconds`, { error });
+      setupRetry = setTimeout(() => void startSetupStep(), SETUP_RETRY_MS);
+    }
+  };
+  void startSetupStep();
+
   let stopping = false;
   const stop = () => {
     if (stopping) return;
     stopping = true;
+    clearTimeout(setupRetry);
     const inFlight = guard.inFlight;
     logger.info(
       inFlight === 0
