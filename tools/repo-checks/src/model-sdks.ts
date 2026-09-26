@@ -27,10 +27,28 @@ const SKIPPED_FOLDERS = new Set(["node_modules", ".git", ".next"]);
 /** Top-level folders that are never workspace packages: agent state, spikes and the OpenSpec plan. */
 const SKIPPED_TOP_LEVEL = new Set([".claude", "spikes", "openspec"]);
 
+/** The model SDK denylist (self-host-install: No model calls). */
 export function loadDenylist(): Denylist {
-  const file = new URL("../model-sdk-denylist.json", import.meta.url);
-  const { scopes, packages } = JSON.parse(readFileSync(file, "utf8")) as Denylist;
+  return readDenylist("../model-sdk-denylist.json");
+}
+
+/**
+ * The telemetry denylist: analytics SDKs, error-reporting SDKs and update
+ * checkers (self-host-install: No telemetry and a documented list of outbound
+ * connections).
+ */
+export function loadTelemetryDenylist(): Denylist {
+  return readDenylist("../telemetry-sdk-denylist.json");
+}
+
+function readDenylist(path: string): Denylist {
+  const { scopes, packages } = JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8")) as Denylist;
   return { scopes, packages };
+}
+
+/** What a denylist says about the entry a finding matched. */
+export function denylistReason(denylist: Denylist, listedAs: string): string | undefined {
+  return Object.hasOwn(denylist.packages, listedAs) ? denylist.packages[listedAs] : denylist.scopes[listedAs];
 }
 
 /** Finds every dependency on a denylisted package in the package.json files under root. */

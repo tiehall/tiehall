@@ -71,7 +71,9 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      # Uses only Node built-ins, so it needs no install.
+      # No model-vendor SDK, and no analytics SDK, error-reporting SDK or
+      # update checker, in any package.json. Uses only Node built-ins, so it
+      # needs no install.
       - run: node tools/repo-checks/src/check-model-sdks.ts
 
   workflow-rules:

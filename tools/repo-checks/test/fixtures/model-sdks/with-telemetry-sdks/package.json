@@ -1,0 +1,7 @@
+{
+  "name": "fixture-with-telemetry-sdks",
+  "private": true,
+  "dependencies": {
+    "posthog-node": "5.0.0"
+  }
+}

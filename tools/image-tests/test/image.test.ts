@@ -184,6 +184,25 @@ describe("the image", () => {
     expect(JSON.parse(env)).toContain(`TIEHALL_VERSION=${label}`);
   });
 
+  // self-host-install: No telemetry and a documented list of outbound connections.
+  it("switches framework telemetry off in the environment every role runs with", () => {
+    const env = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image])) as string[];
+    expect(env).toContain("NEXT_TELEMETRY_DISABLED=1");
+    const run = docker([
+      "run",
+      "--rm",
+      ...confined,
+      "--network",
+      "none",
+      "--entrypoint",
+      "node",
+      image,
+      "--eval",
+      "process.stdout.write(String(process.env.NEXT_TELEMETRY_DISABLED))",
+    ]);
+    expect(run.stdout).toBe("1");
+  });
+
   it("carries node but no package manager, so nothing at run time can install code", () => {
     const run = docker([
       "run",

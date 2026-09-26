@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/cli",
+  "private": true,
+  "dependencies": {
+    "update-notifier": "7.0.0"
+  }
+}

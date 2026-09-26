@@ -12,6 +12,8 @@
 FROM node:24.21.0-trixie-slim@sha256:d7b4e5c4ad20b327d7bb16fab6aecd60ac20aa50f8514eb75a2b059e89abe48e AS base
 
 FROM base AS build
+# No framework telemetry at build time, and none at run time below (self-host-install: No telemetry and a
+# documented list of outbound connections).
 ENV CI=true NEXT_TELEMETRY_DISABLED=1
 WORKDIR /repo
 # pnpm, at the version in package.json "packageManager", without install scripts.

@@ -9,9 +9,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "typecheck": "next typegen && tsc -p tsconfig.json"
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "typecheck": "NEXT_TELEMETRY_DISABLED=1 next typegen && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@tiehall/commands": "workspace:*",
