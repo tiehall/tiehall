@@ -11,7 +11,11 @@
     {
       "item": "changing a member's role, removing a member, and creating an invite;",
       "actions": [
-        { "action": "changing a member's role", "pending": "9.7" },
+        {
+          "action": "changing a member's role",
+          "command": "members.change_role",
+          "input": { "userId": "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "role": "admin" }
+        },
         { "action": "removing a member", "pending": "9.8" },
         { "action": "creating an invite", "pending": "9.5" }
       ]
