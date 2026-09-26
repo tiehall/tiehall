@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
-import { message, request, requestKey, teamRef } from "./requests.ts";
+import { message, request, requestKey, requestRef, teamRef } from "./requests.ts";
 
 // The operations on a request's thread (requests: Thread messages and blocking
 // questions; requests: Requests only, with questions in the request's thread;
@@ -67,7 +67,7 @@ export const messageVersion = z.object({
 
 /** A message with every version of its text, oldest first, and the request whose thread holds it. */
 export const messageWithVersions = message.extend({
-  request: z.object({ id: z.uuid(), key: z.string(), targetTeam: teamRef }),
+  request: requestRef.extend({ targetTeam: teamRef }),
   versions: z.array(messageVersion),
 });
 

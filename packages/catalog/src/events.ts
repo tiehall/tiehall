@@ -1,3 +1,4 @@
+import { EVENT_FIELD_NAME, EVENT_STRING_VALUE, EVENT_TYPE_NAME } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 
@@ -14,9 +15,9 @@ import { defineCommand } from "./command.ts";
 /** An event as a reader gets it: its number, its type, when it happened, and the ids and values its type declares. */
 export const eventView = z.object({
   number: z.number().int().min(1),
-  type: z.string(),
+  type: z.string().regex(EVENT_TYPE_NAME),
   occurredAt: z.iso.datetime(),
-  data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+  data: z.record(z.string().regex(EVENT_FIELD_NAME), z.union([z.string().regex(EVENT_STRING_VALUE), z.number(), z.boolean()])),
 });
 
 /** A reader's cursor: the number of the last event it acknowledged, 0 before the first. */

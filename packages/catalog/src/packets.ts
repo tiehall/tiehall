@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { packet } from "./packet.ts";
-import { requestKey } from "./requests.ts";
+import { requestKey, requestRef } from "./requests.ts";
 
 // The operations on a request's packet (handoff-packet: Immutable, numbered
 // revisions; handoff-packet: Open objects, strict server; handoff-packet: One
@@ -19,7 +19,7 @@ import { requestKey } from "./requests.ts";
 
 /** A revision of a request's packet, as the packet operations return it. */
 export const packetRevision = z.object({
-  request: z.object({ id: z.uuid(), key: z.string() }),
+  request: requestRef,
   /** The revision's number, from 1 for the packet the request was opened with. */
   revision: z.number().int().min(1),
   createdAt: z.iso.datetime(),
@@ -85,6 +85,9 @@ export const addPacketRevision = defineCommand({
   etag: "revision",
 });
 
+/** The form of a packet field's name, such as acceptance_criteria. */
+export const PACKET_FIELD_NAME = /^[a-z][a-z_]*$/;
+
 /** One operation of an RFC 6902 JSON Patch, of the three kinds Tiehall's patches use. */
 const jsonPatchOperation = z.object({
   op: z.enum(["add", "remove", "replace"]),
@@ -101,12 +104,12 @@ export const getPacketChanges = defineCommand({
     since: z.coerce.number().int().min(1).meta({ description: "The revision to compare the current one with." }),
   }),
   output: z.object({
-    request: z.object({ id: z.uuid(), key: z.string() }),
+    request: requestRef,
     since: z.number().int().min(1),
     /** The current revision. */
     revision: z.number().int().min(1),
     /** The packet's fields that changed, such as acceptance_criteria and links. */
-    changedFields: z.array(z.string()),
+    changedFields: z.array(z.string().regex(PACKET_FIELD_NAME)),
     /** The patch holds what people wrote, so it sits under untrusted. */
     untrusted: z.object({ patch: z.array(jsonPatchOperation) }),
   }),

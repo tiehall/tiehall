@@ -1,4 +1,4 @@
-import { REQUEST_KEY, REQUEST_STATES, SURFACES } from "@tiehall/core";
+import { REQUEST_KEY, REQUEST_STATES, SURFACES, TEAM_KEY } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { packet } from "./packet.ts";
@@ -14,10 +14,12 @@ import { teamKey } from "./teams.ts";
 //
 // Text a user wrote, such as a request's title, sits under an object named
 // `untrusted`, apart from the key, the state and the ids Tiehall writes
-// (agent-safety: User text in JSON sits under untrusted objects).
+// (agent-safety: User text in JSON sits under untrusted objects). Outputs name
+// requests and teams by keys whose schemas close them to their form, which
+// holds no space.
 
 /** A team as a request names it: its id and its current key. */
-export const teamRef = z.object({ id: z.uuid(), key: z.string() });
+export const teamRef = z.object({ id: z.uuid(), key: z.string().regex(TEAM_KEY) });
 
 /** A request's key, such as FE-142: a team key, current or from before a rename, a hyphen and a number. */
 export const requestKey = z
@@ -33,11 +35,17 @@ export const requestTitle = z
   .max(200)
   .regex(/^[^\u0000-\u001f\u007f]*$/, "A title is one line, without control characters.");
 
+/** A request's key as outputs write it, with its target team's current key. */
+export const requestKeyOutput = z.string().regex(REQUEST_KEY);
+
+/** A request as other records name it: its id and its key. */
+export const requestRef = z.object({ id: z.uuid(), key: requestKeyOutput });
+
 /** A request as the request operations return it. */
 export const request = z.object({
   id: z.uuid(),
   /** Its key, such as FE-142, written with its target team's current key. */
-  key: z.string(),
+  key: requestKeyOutput,
   state: z.enum(REQUEST_STATES),
   targetTeam: teamRef,
   /** Who opened it: the user, and the team they opened it from. */

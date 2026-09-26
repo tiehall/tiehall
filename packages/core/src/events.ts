@@ -114,6 +114,13 @@ const FIELD_NAME = /^[a-z][a-zA-Z0-9]*$/;
 const ENUM_VALUE = /^[a-z][a-z0-9_]*$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** The form of an event type's name, such as request.message_posted. */
+export const EVENT_TYPE_NAME = TYPE_NAME;
+/** The form of an event field's name, such as requestId. */
+export const EVENT_FIELD_NAME = FIELD_NAME;
+/** The form of an event's string values: the id of a Tiehall record, or one of a fixed set of lower-case values. */
+export const EVENT_STRING_VALUE = new RegExp(`^(?:${UUID.source.slice(1, -1)}|${ENUM_VALUE.source.slice(1, -1)})$`);
+
 /** Words in a field's name that say it holds content someone wrote. */
 const BODY_WORDS = new Set([
   "body",

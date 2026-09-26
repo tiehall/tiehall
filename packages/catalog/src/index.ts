@@ -30,6 +30,8 @@ export {
   request,
   REQUEST_COMMANDS,
   requestKey,
+  requestKeyOutput,
+  requestRef,
   requestTitle,
   requestWithThread,
   setRequestStatus,
@@ -58,8 +60,17 @@ export {
   type Packet,
   type PacketKind,
 } from "./packet.ts";
-export { addPacketRevision, getPacket, getPacketChanges, getPacketRevision, PACKET_COMMANDS, packetRevision } from "./packets.ts";
-export { role, user } from "./schemas.ts";
+export {
+  addPacketRevision,
+  getPacket,
+  getPacketChanges,
+  getPacketRevision,
+  PACKET_COMMANDS,
+  PACKET_FIELD_NAME,
+  packetRevision,
+} from "./packets.ts";
+export { GITHUB_LOGIN, role, user } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
+export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";

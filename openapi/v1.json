@@ -766,13 +766,21 @@
                         "properties": {
                           "data": {
                             "additionalProperties": {
-                              "type": [
-                                "string",
-                                "number",
-                                "boolean"
+                              "anyOf": [
+                                {
+                                  "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9_]*)$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
                               ]
                             },
                             "propertyNames": {
+                              "pattern": "^[a-z][a-zA-Z0-9]*$",
                               "type": "string"
                             },
                             "type": "object"
@@ -788,6 +796,7 @@
                             "type": "string"
                           },
                           "type": {
+                            "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$",
                             "type": "string"
                           }
                         },
@@ -1173,6 +1182,7 @@
                                   "type": "string"
                                 },
                                 "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                   "type": "string"
                                 }
                               },
@@ -1204,6 +1214,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -1249,6 +1260,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         },
                         "targetTeam": {
@@ -1259,6 +1271,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -1577,6 +1590,7 @@
                                   "type": "string"
                                 },
                                 "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                   "type": "string"
                                 }
                               },
@@ -1608,6 +1622,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -1880,6 +1895,7 @@
                                     "type": "string"
                                   },
                                   "login": {
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                     "type": "string"
                                   }
                                 },
@@ -1907,6 +1923,7 @@
                             "type": "string"
                           },
                           "key": {
+                            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                             "type": "string"
                           },
                           "requester": {
@@ -1919,6 +1936,7 @@
                                     "type": "string"
                                   },
                                   "key": {
+                                    "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                     "type": "string"
                                   }
                                 },
@@ -1945,6 +1963,7 @@
                                         "type": "string"
                                       },
                                       "login": {
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                         "type": "string"
                                       }
                                     },
@@ -1988,6 +2007,7 @@
                                 "type": "string"
                               },
                               "key": {
+                                "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                 "type": "string"
                               }
                             },
@@ -2196,6 +2216,7 @@
                               "type": "string"
                             },
                             "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                               "type": "string"
                             }
                           },
@@ -2223,6 +2244,7 @@
                       "type": "string"
                     },
                     "key": {
+                      "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
                     "requester": {
@@ -2235,6 +2257,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -2261,6 +2284,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -2304,6 +2328,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                           "type": "string"
                         }
                       },
@@ -2492,6 +2517,7 @@
                               "type": "string"
                             },
                             "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                               "type": "string"
                             }
                           },
@@ -2519,6 +2545,7 @@
                       "type": "string"
                     },
                     "key": {
+                      "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
                     "messages": {
@@ -2602,6 +2629,7 @@
                                         "type": "string"
                                       },
                                       "key": {
+                                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                         "type": "string"
                                       }
                                     },
@@ -2633,6 +2661,7 @@
                                         "type": "string"
                                       },
                                       "login": {
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                         "type": "string"
                                       }
                                     },
@@ -2720,6 +2749,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -2746,6 +2776,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -2789,6 +2820,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                           "type": "string"
                         }
                       },
@@ -2967,6 +2999,7 @@
                               "type": "string"
                             },
                             "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                               "type": "string"
                             }
                           },
@@ -2994,6 +3027,7 @@
                       "type": "string"
                     },
                     "key": {
+                      "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
                     "requester": {
@@ -3006,6 +3040,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -3032,6 +3067,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -3075,6 +3111,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                           "type": "string"
                         }
                       },
@@ -3427,6 +3464,7 @@
                                       "type": "string"
                                     },
                                     "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                       "type": "string"
                                     }
                                   },
@@ -3458,6 +3496,7 @@
                                       "type": "string"
                                     },
                                     "login": {
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                       "type": "string"
                                     }
                                   },
@@ -3552,6 +3591,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -3579,6 +3619,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         },
                         "requester": {
@@ -3591,6 +3632,7 @@
                                   "type": "string"
                                 },
                                 "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                                   "type": "string"
                                 }
                               },
@@ -3617,6 +3659,7 @@
                                       "type": "string"
                                     },
                                     "login": {
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                       "type": "string"
                                     }
                                   },
@@ -3660,6 +3703,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -3854,6 +3898,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         }
                       },
@@ -4019,6 +4064,7 @@
                   "properties": {
                     "changedFields": {
                       "items": {
+                        "pattern": "^[a-z][a-z_]*$",
                         "type": "string"
                       },
                       "type": "array"
@@ -4031,6 +4077,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         }
                       },
@@ -4265,6 +4312,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         }
                       },
@@ -4484,6 +4532,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         }
                       },
@@ -4683,6 +4732,7 @@
                               "type": "string"
                             },
                             "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                               "type": "string"
                             }
                           },
@@ -4710,6 +4760,7 @@
                       "type": "string"
                     },
                     "key": {
+                      "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
                     "requester": {
@@ -4722,6 +4773,7 @@
                               "type": "string"
                             },
                             "key": {
+                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                               "type": "string"
                             }
                           },
@@ -4748,6 +4800,7 @@
                                   "type": "string"
                                 },
                                 "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
                                   "type": "string"
                                 }
                               },
@@ -4791,6 +4844,7 @@
                           "type": "string"
                         },
                         "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                           "type": "string"
                         }
                       },
