@@ -30,4 +30,21 @@ export const memberRoleChanged = defineEventType({
   },
 });
 
-export const EVENT_TYPES: readonly EventType[] = [messagePosted, memberRoleChanged];
+/**
+ * A member was removed from the install (teams-and-roles: Removing a member;
+ * activity-log: Which actions are security events). It names the member, and
+ * whether an admin removed them, which records a block on their GitHub
+ * account, or they were removed because they left the GitHub organization,
+ * which records none; for an admin removal its provenance names the admin.
+ */
+export const memberRemoved = defineEventType({
+  type: "member.removed",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    cause: { kind: "enum", values: ["admin", "left_organization"] },
+    blocked: { kind: "boolean" },
+  },
+});
+
+export const EVENT_TYPES: readonly EventType[] = [messagePosted, memberRoleChanged, memberRemoved];

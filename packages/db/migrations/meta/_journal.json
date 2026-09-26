@@ -92,6 +92,13 @@
       "when": 1790402511376,
       "tag": "0012_add_team_key_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790402918777,
+      "tag": "0013_add_sign_in_blocks",
+      "breakpoints": true
     }
   ]
 }

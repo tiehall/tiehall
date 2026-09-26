@@ -17,7 +17,7 @@ export {
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
-export { changeMemberRole, MEMBER_COMMANDS } from "./members.ts";
+export { changeMemberRole, MEMBER_COMMANDS, removeMember } from "./members.ts";
 export { role } from "./schemas.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";

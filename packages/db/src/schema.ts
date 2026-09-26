@@ -288,6 +288,32 @@ export const members = pgTable(
   ],
 );
 
+// Blocks that an admin removal records (sign-in: An admin removal blocks
+// rejoining through the organization; design.md, Self-hosting decisions: S5).
+// When an admin removes a member, their GitHub account is blocked: membership
+// of a GitHub organization no longer admits it, and only an invite an admin
+// creates after the removal does, whose sign-in clears the block. A removal
+// because the person left the GitHub organization records none.
+export const signInBlocks = pgTable(
+  "sign_in_blocks",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The blocked GitHub account, by its numeric id. */
+    githubAccountId: bigint("github_account_id", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.githubAccountId] }),
+    foreignKey({
+      name: "sign_in_blocks_user_fk",
+      columns: [table.orgId, table.githubAccountId],
+      foreignColumns: [users.orgId, users.githubAccountId],
+    }),
+  ],
+);
+
 // Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's
 // teams, kept in Tiehall's own records, each with its current key and a name.
 // Only admins change them, through the team operations; nothing is taken from
