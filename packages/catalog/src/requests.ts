@@ -53,6 +53,10 @@ export const request = z.object({
   /** Who holds its claim; null while it is unclaimed. */
   claimant: user.nullable(),
   createdAt: z.iso.datetime(),
+  /** Whether agents made so many writes on it that it waits for a person, who clears it with a message in the web UI. */
+  needsHuman: z.boolean().meta({
+    description: "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+  }),
   untrusted: z.object({ title: z.string() }),
 });
 

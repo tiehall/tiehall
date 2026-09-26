@@ -56,6 +56,7 @@ describe("opening a request", () => {
       requester: { user: { id: alice, login: "alice", kind: "human", bot: false }, team: { id: team["BE"], key: "BE" } },
       claimant: null,
       createdAt: expect.any(String),
+      needsHuman: false,
       untrusted: { title: "Add a dark mode" },
     });
     const { rows } = await install.owner.query(

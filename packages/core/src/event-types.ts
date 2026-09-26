@@ -124,6 +124,33 @@ export const requestStateChanged = defineEventType({
 });
 
 /**
+ * Agents made so many writes on a request since the last human action that it
+ * now waits for a person (agent-safety: The needs_human flag is visible and
+ * reaches the people on the request). Its provenance names the agent write
+ * that set the flag.
+ */
+export const requestNeedsHumanFlagged = defineEventType({
+  type: "request.needs_human_flagged",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+  },
+});
+
+/**
+ * A human action cleared a request's needs_human flag (agent-safety: The
+ * needs_human flag is visible and reaches the people on the request). Its
+ * provenance names the web session whose message or confirmation cleared it.
+ */
+export const requestNeedsHumanCleared = defineEventType({
+  type: "request.needs_human_cleared",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+  },
+});
+
+/**
  * An admin changed a member's role (teams-and-roles: Changing a member's role;
  * activity-log: Which actions are security events). It names the member and
  * the role they had and now have; its provenance names the admin.
@@ -164,6 +191,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   messageEdited,
   requestPacketRevised,
   requestStateChanged,
+  requestNeedsHumanFlagged,
+  requestNeedsHumanCleared,
   memberRoleChanged,
   memberRemoved,
 ];

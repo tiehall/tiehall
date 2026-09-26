@@ -1,4 +1,4 @@
-import { recordAgentWrite, Refusal } from "@tiehall/core";
+import { recordAgentWrite, Refusal, requestNeedsHumanCleared, requestNeedsHumanFlagged } from "@tiehall/core";
 import { requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { OrgContext } from "./with-org.ts";
@@ -18,8 +18,11 @@ import type { Writer } from "./write.ts";
 //   flags the request and is accepted;
 // - a write recorded as system, integration or web_session is neither counted
 //   nor refused.
-// Because the row is locked, two writes at once take turns, and only one of
-// them can pass the limit. A refused write, and a write that fails later,
+// Setting the flag and clearing it each append a domain event on the request
+// in the same transaction (agent-safety: The needs_human flag is visible and
+// reaches the people on the request), which the pull readers carry, with no
+// email at once. Because the row is locked, two writes at once take turns, and
+// only one of them can pass the limit. A refused write, and a write that fails later,
 // rolls back with its count. A human action, a message posted from a web
 // session or a confirmation in the web UI of a proposal on the request (task
 // 14.8 calls the same function), clears the flag and both counts with
@@ -52,13 +55,15 @@ export async function countAgentWrite(writer: Writer, requestId: string): Promis
     .update(requests)
     .set({ agentWriteTimes: writes, needsHuman: flags })
     .where(and(eq(requests.orgId, writer.orgId), eq(requests.id, requestId)));
+  if (flags) await writer.record(requestNeedsHumanFlagged, { requestId });
 }
 
 /** A human action on the request: it clears the flag and restarts both counts. */
 export async function recordHumanAction(writer: Writer, requestId: string): Promise<void> {
-  await lockLoopState(writer, requestId);
+  const state = await lockLoopState(writer, requestId);
   await writer.tx
     .update(requests)
     .set({ agentWriteTimes: [], needsHuman: false })
     .where(and(eq(requests.orgId, writer.orgId), eq(requests.id, requestId)));
+  if (state.needsHuman) await writer.record(requestNeedsHumanCleared, { requestId });
 }

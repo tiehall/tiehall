@@ -1926,6 +1926,10 @@
                             "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                             "type": "string"
                           },
+                          "needsHuman": {
+                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                            "type": "boolean"
+                          },
                           "requester": {
                             "properties": {
                               "team": {
@@ -2037,6 +2041,7 @@
                           "requester",
                           "claimant",
                           "createdAt",
+                          "needsHuman",
                           "untrusted"
                         ],
                         "type": "object"
@@ -2247,6 +2252,10 @@
                       "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
+                    "needsHuman": {
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "type": "boolean"
+                    },
                     "requester": {
                       "properties": {
                         "team": {
@@ -2358,6 +2367,7 @@
                     "requester",
                     "claimant",
                     "createdAt",
+                    "needsHuman",
                     "untrusted"
                   ],
                   "type": "object"
@@ -2739,6 +2749,10 @@
                       },
                       "type": "array"
                     },
+                    "needsHuman": {
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "type": "boolean"
+                    },
                     "requester": {
                       "properties": {
                         "team": {
@@ -2850,6 +2864,7 @@
                     "requester",
                     "claimant",
                     "createdAt",
+                    "needsHuman",
                     "untrusted",
                     "messages"
                   ],
@@ -3030,6 +3045,10 @@
                       "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
+                    "needsHuman": {
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "type": "boolean"
+                    },
                     "requester": {
                       "properties": {
                         "team": {
@@ -3141,6 +3160,7 @@
                     "requester",
                     "claimant",
                     "createdAt",
+                    "needsHuman",
                     "untrusted"
                   ],
                   "type": "object"
@@ -3622,6 +3642,10 @@
                           "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                           "type": "string"
                         },
+                        "needsHuman": {
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "type": "boolean"
+                        },
                         "requester": {
                           "properties": {
                             "team": {
@@ -3733,6 +3757,7 @@
                         "requester",
                         "claimant",
                         "createdAt",
+                        "needsHuman",
                         "untrusted"
                       ],
                       "type": "object"
@@ -4763,6 +4788,10 @@
                       "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                       "type": "string"
                     },
+                    "needsHuman": {
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "type": "boolean"
+                    },
                     "requester": {
                       "properties": {
                         "team": {
@@ -4874,6 +4903,7 @@
                     "requester",
                     "claimant",
                     "createdAt",
+                    "needsHuman",
                     "untrusted"
                   ],
                   "type": "object"

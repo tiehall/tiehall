@@ -67,6 +67,7 @@ export async function requestViews(context: OrgContext, rows: readonly RequestRo
       requester: { user: userOf(row.requestingUserId), team: teamOf(row.requestingTeamId) },
       claimant: userOf(row.claimantUserId),
       createdAt: row.createdAt.toISOString(),
+      needsHuman: row.needsHuman,
       untrusted: { title: row.title },
     };
   });
