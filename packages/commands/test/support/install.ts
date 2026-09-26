@@ -54,8 +54,12 @@ export interface TestInstall {
    * given, such as a local server's for a browser.
    */
   confirmRouteFor(session: (request: Request) => Promise<WebSessionCaller | undefined>, url?: string): ConfirmRoute;
-  /** Opens the action's review page and posts its form, as a person confirming it does; returns the answer. */
-  confirm(caller: WebSessionCaller, commandId: string, input: unknown): Promise<Response>;
+  /**
+   * Opens the action's review page and posts its form, as a person confirming
+   * it does, with any further headers of the browser's request, such as its
+   * X-Forwarded-For and User-Agent; returns the answer.
+   */
+  confirm(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<Response>;
   close(): Promise<void>;
 }
 
@@ -95,7 +99,7 @@ export async function startTestInstall(
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,
     confirmRouteFor,
-    async confirm(caller, commandId, input) {
+    async confirm(caller, commandId, input, headers = {}) {
       const route = confirmRoute(caller);
       const page = await route(new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`));
       const html = await page.text();
@@ -107,7 +111,7 @@ export async function startTestInstall(
       return route(
         new Request(`${URL_OF_INSTALL}/confirm/${commandId}`, {
           method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+          headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
           body: new URLSearchParams({ input: field("input"), nonce: field("nonce"), csrf: field("csrf") }).toString(),
         }),
       );

@@ -159,6 +159,7 @@ export {
   type Reviews,
 } from "./confirmation-step.ts";
 export { CONFIRM_PATH, createConfirmRoute, type ConfirmRoute, type ConfirmRouteOptions } from "./confirm-route.ts";
+export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export {
   actionDigest,
   checkConfirmationNonce,

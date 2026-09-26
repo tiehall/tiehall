@@ -1,0 +1,160 @@
+import { listActivityLog, type activityEvent } from "@tiehall/catalog";
+import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
+import type { z } from "zod";
+import type { WebSessionCaller } from "./caller.ts";
+import type { Execute } from "./execute.ts";
+import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { createLogger, type Logger } from "./log.ts";
+
+// The activity log's page in the web UI, at /admin/activity-log
+// (activity-log: The admin view; activity-log: Security events are shown to
+// admins only; design.md, Self-hosting decisions: S14 and S15). A GET shows a
+// signed-in admin the events activity_log.list returns for the filters in
+// the query (from, to, actor, request, type, before), newest first, with a
+// form to change the filters and a link to the older events. Every event
+// shows its number, time, class, type, the ids it carries, who caused it and
+// the request it concerns, and a security event its IP address and user
+// agent while they are kept. The page runs no script, loads nothing and
+// cannot be framed. It reads through execute(), in a read-only transaction,
+// so it takes the same path as every other operation and changes nothing:
+// 401 without a signed-in user, 403 for a member, 400 for a filter that
+// fails the operation's schema, as RFC 9457 problems (public-api: One error
+// model for Tiehall's own refusals).
+
+export interface ActivityLogRouteOptions {
+  execute: Execute;
+  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
+  session(request: Request): Promise<WebSessionCaller | undefined>;
+  logger?: Logger;
+}
+
+export type ActivityLogRoute = (request: Request) => Promise<Response>;
+
+/** Where the page lives. */
+export const ACTIVITY_LOG_PATH = "/admin/activity-log";
+
+/** How many events a page shows. */
+const PAGE_SIZE = 100;
+
+type ActivityEvent = z.output<typeof activityEvent>;
+
+/** The filters a page's query names, as the operation's input; a value the schema refuses gets 400 from execute(). */
+const FILTERS: readonly [query: string, input: string][] = [
+  ["from", "from"],
+  ["to", "to"],
+  ["actor", "actorUserId"],
+  ["request", "request"],
+  ["type", "type"],
+];
+
+export function createActivityLogRoute(options: ActivityLogRouteOptions): ActivityLogRoute {
+  const logger = options.logger ?? createLogger();
+  return async function activityLog(request) {
+    try {
+      if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
+      const caller = await options.session(request);
+      if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to view the activity log.");
+      const query = new URL(request.url).searchParams;
+      const input: Record<string, unknown> = { limit: PAGE_SIZE };
+      for (const [name, field] of FILTERS) {
+        const value = query.get(name)?.trim();
+        if (value !== undefined && value !== "") input[field] = value;
+      }
+      const before = query.get("before")?.trim();
+      if (before !== undefined && before !== "") input["before"] = /^\d+$/.test(before) ? Number(before) : before;
+      const output = (await options.execute(listActivityLog.id, caller, input, { readOnly: true })) as { events: ActivityEvent[] };
+      return new Response(page(query, output.events), { headers: PAGE_HEADERS });
+    } catch (error) {
+      if (error instanceof Refusal) return problem(httpProblem(error));
+      logger.error("activity log: the page failed", { error });
+      return problem(internalErrorProblem());
+    }
+  };
+}
+
+function problem({ status, headers, body }: HttpProblem): Response {
+  // A refusal cannot be framed either.
+  return new Response(JSON.stringify(body), { status, headers: { ...headers, "content-security-policy": PAGE_HEADERS["content-security-policy"] } });
+}
+
+/** The page: the filters as a form, the events as a table, and a link to the older ones. */
+function page(query: URLSearchParams, events: ActivityEvent[]): string {
+  const field = (name: string, label: string, placeholder: string) =>
+    `        <label>${escapeHtml(label)} <input name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}" placeholder="${escapeHtml(placeholder)}"></label>`;
+  const rows = events.map(
+    (event) => `        <tr>
+          <td>${event.number}</td>
+          <td><time datetime="${escapeHtml(event.occurredAt)}">${escapeHtml(event.occurredAt)}</time></td>
+          <td>${escapeHtml(event.class)}</td>
+          <td>${escapeHtml(event.type)}</td>
+          <td>${escapeHtml(event.request?.key ?? "")}</td>
+          <td>${escapeHtml(actorText(event))}</td>
+          <td>${escapeHtml(dataText(event))}</td>
+          <td>${escapeHtml(originText(event))}</td>
+        </tr>`,
+  );
+  const last = events.at(-1);
+  const older =
+    events.length === PAGE_SIZE && last !== undefined
+      ? `      <p><a href="${escapeHtml(olderLink(query, last.number))}">Older events</a></p>`
+      : "";
+  return htmlPage(
+    "Activity log",
+    [
+      "      <h1>Activity log</h1>",
+      "      <p>Every change to a request, and every security-relevant action, newest first. Security events show their IP address and user agent for 90 days.</p>",
+      `      <form method="get" action="${ACTIVITY_LOG_PATH}">`,
+      field("from", "From", "2026-10-01T00:00:00Z"),
+      field("to", "To", "2026-10-01T23:59:59Z"),
+      field("actor", "Actor (user id)", ""),
+      field("request", "Request", "FE-142"),
+      field("type", "Event type", "member.role_changed"),
+      "        <button type=\"submit\">Filter</button>",
+      "      </form>",
+      "      <table>",
+      "        <thead><tr><th>#</th><th>Time</th><th>Class</th><th>Type</th><th>Request</th><th>Actor</th><th>Data</th><th>Origin</th></tr></thead>",
+      "        <tbody>",
+      ...(rows.length === 0 ? ["        <tr><td colspan=\"8\">No events match.</td></tr>"] : rows),
+      "        </tbody>",
+      "      </table>",
+      older,
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+  );
+}
+
+/** Who caused the event, in a few words: the user by their login, or the system, an integration or an operator command. */
+function actorText({ actor }: ActivityEvent): string {
+  switch (actor.kind) {
+    case "operator":
+      return `operator: ${actor.operatorCommand ?? ""}`;
+    case "system":
+    case "integration":
+      return [actor.kind, actor.surface, actor.user?.login].filter((part) => part !== undefined).join(" ");
+    default:
+      return `${actor.user?.login ?? ""}${actor.user?.bot === true ? " (a bot user)" : ""} (${actor.kind}${actor.surface === undefined ? "" : `, ${actor.surface}`})`;
+  }
+}
+
+/** The ids and values the event carries, as name=value pairs. */
+function dataText({ data }: ActivityEvent): string {
+  return Object.entries(data)
+    .map(([name, value]) => `${name}=${String(value)}`)
+    .join(" ");
+}
+
+function originText({ origin }: ActivityEvent): string {
+  return origin === undefined ? "" : [origin.ipAddress, origin.userAgent].filter((part) => part !== undefined).join(" ");
+}
+
+/** The same filters, for the events before a number. */
+function olderLink(query: URLSearchParams, before: number): string {
+  const next = new URLSearchParams();
+  for (const [name] of FILTERS) {
+    const value = query.get(name);
+    if (value !== null && value.trim() !== "") next.set(name, value);
+  }
+  next.set("before", String(before));
+  return `${ACTIVITY_LOG_PATH}?${next.toString()}`;
+}

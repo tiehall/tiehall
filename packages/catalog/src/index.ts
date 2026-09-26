@@ -15,6 +15,7 @@ export {
   type StabilityLevel,
 } from "./command.ts";
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
+export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
 export { acknowledgeEvents, EVENT_COMMANDS, eventView, readEvents } from "./events.ts";

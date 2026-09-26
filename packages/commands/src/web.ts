@@ -1,4 +1,5 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
+import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
@@ -28,6 +29,7 @@ let services: { execute: Execute; step: ConfirmationStep; logger: Logger } | und
 let rest: RestHandler | undefined;
 let web: WebCommands | undefined;
 let confirm: ConfirmRoute | undefined;
+let activityLog: ActivityLogRoute | undefined;
 
 /** The process's one execute() and confirmation step, built from the install's settings on first use. */
 function servicesOf(env: Environment): { execute: Execute; step: ConfirmationStep; logger: Logger } {
@@ -108,4 +110,13 @@ export function confirmRoute(env: Environment): ConfirmRoute {
     logger,
   });
   return confirm;
+}
+
+/** The activity log's page under /admin/activity-log, built once per process, for the signed-in admin's web session. */
+export function activityLogRoute(env: Environment): ActivityLogRoute {
+  if (activityLog !== undefined) return activityLog;
+  const { execute, logger } = servicesOf(env);
+  // Sessions come with sign-in (group 7); until then nobody is signed in.
+  activityLog = createActivityLogRoute({ execute, session: async () => undefined, logger });
+  return activityLog;
 }
