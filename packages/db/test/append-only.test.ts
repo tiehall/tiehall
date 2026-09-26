@@ -82,7 +82,9 @@ describe("the event tables", () => {
   it("refuse every update and delete of an event, even from the owner", async () => {
     expect(await failureOf(owner, "UPDATE events SET type = 'request.rewritten'")).toMatch(REFUSED);
     expect(await failureOf(owner, "DELETE FROM events")).toMatch(REFUSED);
-    expect(await failureOf(owner, "TRUNCATE events")).toMatch(REFUSED);
+    // Truncating, even together with the tables that reference the events, is refused too.
+    expect(await failureOf(owner, "TRUNCATE events CASCADE")).toMatch(REFUSED);
+    expect(await failureOf(owner, "TRUNCATE events")).toBeDefined();
     expect(await theEvent()).toEqual([{ number: "1", type: "request.opened", data: {} }]);
   });
 });

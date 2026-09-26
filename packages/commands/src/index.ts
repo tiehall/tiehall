@@ -28,13 +28,23 @@ export {
   type SecretBox,
 } from "./secret-box.ts";
 export { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
+export { ORIGIN_RETENTION_DAYS, pruneSecurityEventOrigins } from "./security-event-origins.ts";
 export {
   DEFAULT_STOP_TIMEOUT_MS,
   startWorker,
-  WORKER_JOBS,
   type RunningJob,
   type Worker,
   type WorkerJob,
   type WorkerOptions,
+  type WorkerServices,
 } from "./worker.ts";
-export { write, WriteWithoutEventError, type Store, type Writer } from "./write.ts";
+export { WORKER_JOBS } from "./worker-jobs.ts";
+export {
+  USER_AGENT_MAX_LENGTH,
+  write,
+  WriteWithoutEventError,
+  type Origin,
+  type Store,
+  type WriteOptions,
+  type Writer,
+} from "./write.ts";

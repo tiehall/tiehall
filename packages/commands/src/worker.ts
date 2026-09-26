@@ -1,4 +1,4 @@
-import type { DatabaseConnection } from "@tiehall/db";
+import { openDatabase, type Database, type DatabaseConnection } from "@tiehall/db";
 import { openJobQueue } from "./job-queue.ts";
 import type { DefinedJobType, JobData } from "./jobs.ts";
 
@@ -19,16 +19,23 @@ export interface RunningJob<D extends JobData> {
   signal: AbortSignal;
 }
 
+/** What a job's handler works with. */
+export interface WorkerServices {
+  /** The app's database, as the app role; handlers reach it through withOrg() or write(). */
+  database: Database;
+  /** The worker's clock. */
+  now(): Date;
+}
+
 export interface WorkerJob<D extends JobData> {
   type: DefinedJobType<D>;
   /** Runs one job; a throw fails the attempt, which the queue retries until the retry limit. */
-  handle(job: RunningJob<D>): Promise<void>;
+  handle(job: RunningJob<D>, services: WorkerServices): Promise<void>;
   /** How many jobs of this type the worker runs at once. */
   concurrency?: number;
+  /** A cron expression, in UTC, on which the worker schedules a job of this type with no data. */
+  schedule?: string;
 }
-
-/** The jobs the worker role runs. Each task that adds a kind of job adds it here. */
-export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [];
 
 export interface WorkerOptions {
   /** The app's connection, as the app role. */
@@ -38,6 +45,8 @@ export interface WorkerOptions {
   stopTimeoutMs?: number;
   /** How often each queue is polled for new jobs. */
   pollingIntervalSeconds?: number;
+  /** The clock handlers read; the system clock unless a test controls it. */
+  clock?: () => Date;
   log?: (line: string) => void;
 }
 
@@ -58,6 +67,10 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     applicationName: "tiehall worker",
     log,
   });
+  const services: WorkerServices = {
+    database: openDatabase(options.connection, { applicationName: "tiehall worker" }),
+    now: options.clock ?? (() => new Date()),
+  };
   let stopping = false;
   /** Jobs whose handler is running, by id, with their queue. */
   const active = new Map<string, string>();
@@ -77,7 +90,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           if (running === undefined) return;
           active.set(running.id, name);
           try {
-            await job.handle({ id: running.id, queue: name, data: running.data, signal: running.signal });
+            await job.handle({ id: running.id, queue: name, data: running.data, signal: running.signal }, services);
           } catch (error) {
             log(`worker: job ${running.id} on ${name} failed (${error instanceof Error ? error.name : typeof error})`);
             throw error;
@@ -88,9 +101,14 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           }
         },
       );
+      if (job.schedule !== undefined) {
+        // Once a day at most is missed while the install is down; the next start sends it once.
+        await queue.boss.schedule(name, job.schedule, {}, { tz: "UTC", missed: "once" });
+      }
     }
   } catch (error) {
     await queue.stop({ timeoutMs: 0 });
+    await services.database.$client.end();
     throw error;
   }
   const count = options.jobs.length;
@@ -100,6 +118,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       if (stopping) return;
       stopping = true;
       await queue.stop({ timeoutMs: options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS });
+      await services.database.$client.end();
       for (const [id, name] of active) released.set(id, name);
       if (released.size === 0) {
         log("worker: stopped");

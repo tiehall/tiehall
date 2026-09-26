@@ -1,5 +1,5 @@
 import type { EventData, EventType, Provenance } from "@tiehall/core";
-import type { Database } from "@tiehall/db";
+import { securityEventOrigins, type Database } from "@tiehall/db";
 import { appendEvent, type AppendedEvent } from "./append-event.ts";
 import type { JobData, JobSender, JobType } from "./jobs.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
@@ -11,7 +11,10 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // for the install's org, so all of them commit or none does. The event log is
 // then also the outbox: no separate table and no relay. Every event of a write
 // carries the caller's provenance, which the server stamped from the caller's
-// token, session or job, never a value the handler or the payload chose.
+// token, session or job, never a value the handler or the payload chose. For a
+// security event, the caller's IP address and user agent go into a side table
+// in the same transaction, never into the event (activity-log: IP addresses and
+// user agents are kept apart for 90 days).
 
 /** Where writes go: the app's database and the queue that jobs are sent to. */
 export interface Store {
@@ -26,6 +29,20 @@ export interface Writer extends OrgContext {
   enqueue<D extends JobData>(type: JobType<D>, data: D): Promise<void>;
 }
 
+/** Where a caller's request came from, as the web layer saw it. */
+export interface Origin {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export interface WriteOptions {
+  /** Kept for the write's security events, apart from them, for 90 days. */
+  origin?: Origin;
+}
+
+/** A longer user agent is cut to this length; it is shown to admins, not parsed. */
+export const USER_AGENT_MAX_LENGTH = 512;
+
 /** A write that recorded no event: it is rolled back, because every committed change leaves its event. */
 export class WriteWithoutEventError extends Error {
   override name = "WriteWithoutEventError";
@@ -34,7 +51,14 @@ export class WriteWithoutEventError extends Error {
   }
 }
 
-export async function write<R>(store: Store, provenance: Provenance, change: (writer: Writer) => Promise<R>): Promise<R> {
+export async function write<R>(
+  store: Store,
+  provenance: Provenance,
+  change: (writer: Writer) => Promise<R>,
+  options: WriteOptions = {},
+): Promise<R> {
+  const ipAddress = options.origin?.ipAddress;
+  const userAgent = options.origin?.userAgent?.slice(0, USER_AGENT_MAX_LENGTH);
   return withOrg(store.database, async (context) => {
     let recorded = 0;
     const writer: Writer = {
@@ -42,6 +66,14 @@ export async function write<R>(store: Store, provenance: Provenance, change: (wr
       async record(type, data) {
         const event = await appendEvent(context, type, data, provenance);
         recorded++;
+        if (type.class === "security" && (ipAddress !== undefined || userAgent !== undefined)) {
+          await context.tx.insert(securityEventOrigins).values({
+            orgId: context.orgId,
+            eventNumber: event.number,
+            ipAddress: ipAddress ?? null,
+            userAgent: userAgent ?? null,
+          });
+        }
         return event;
       },
       async enqueue(type, data) {

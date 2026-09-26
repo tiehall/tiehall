@@ -1,5 +1,18 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, customType, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  check,
+  customType,
+  foreignKey,
+  inet,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 // The Drizzle schema of the app's tables (design.md, Technical decisions: T4).
 // drizzle-kit generates the migrations in ../migrations from it with
@@ -117,5 +130,31 @@ export const integrationSecrets = pgTable(
     primaryKey({ columns: [table.orgId, table.name] }),
     check("integration_secrets_key_id_format", sql`${table.keyId} ~ '^[0-9a-f]{16}$'`),
     check("integration_secrets_nonce_length", sql`octet_length(${table.nonce}) = 12`),
+  ],
+);
+
+// The IP address and user agent of security events, kept apart from the events
+// (activity-log: IP addresses and user agents are kept apart for 90 days;
+// design.md, Self-hosting decisions: S14). The write path records them with a
+// security event, in its transaction; a daily job deletes them 90 days after
+// their event, which stays. Only admins see them, next to the event, while they
+// are kept; the export leaves them out.
+export const securityEventOrigins = pgTable(
+  "security_event_origins",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    eventNumber: bigint("event_number", { mode: "number" }).notNull(),
+    ipAddress: inet("ip_address"),
+    userAgent: text("user_agent"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.eventNumber] }),
+    foreignKey({
+      name: "security_event_origins_event_fk",
+      columns: [table.orgId, table.eventNumber],
+      foreignColumns: [events.orgId, events.number],
+    }),
   ],
 );
