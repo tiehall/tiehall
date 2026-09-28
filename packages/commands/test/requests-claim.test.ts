@@ -9,7 +9,9 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // on: D23, D28 #3, #10, #13; D29 (3)). An agent acting for its own user, or the
 // user in the web UI, claims an open request of their team and starts work on
 // it without a proposal. The claimant releases the claim, which returns the
-// request to open with no claimant; any member of the target team may release
+// request to open with no claimant, or, while it waits on a blocking question,
+// keeps it needs_info with no claimant until the answer returns it to open
+// (design.md, Decisions: D46 (1)); any member of the target team may release
 // a claim held by someone who is no longer a member, and nobody else may. A
 // change the state does not allow gets 409 and one the caller's side does not
 // allow 403, and neither changes anything.
@@ -158,6 +160,39 @@ describe("releasing a claim", () => {
 
   it("refuses to release an open request, which nobody holds, with 409", async () => {
     expect((await setStatus(bob, "open")).status).toBe(409);
+  });
+
+  it("keeps a request that waits on a blocking question in needs_info with no claimant, which nobody can claim until the answer returns it to open", async () => {
+    await claim(bob);
+    await setStatus(bob, "in_progress");
+    const question = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Which browsers?", blocking: true });
+    expect(question.status).toBe(200);
+    const released = await setStatus(bob, "open");
+    expect(released.status).toBe(200);
+    expect(released.body).toMatchObject({ state: "needs_info", claimant: null });
+    expect(await claim(erin)).toEqual({ status: 409, body: expect.objectContaining({ type: "https://tiehall.com/problems/conflict" }) });
+    expect(await stored()).toMatchObject({ state: "needs_info", claimant: null });
+    const answered = await callApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/messages`, {
+      kind: "answer",
+      body: "The last two versions of each.",
+      questionId: question.body.message.id,
+    });
+    expect(answered.status).toBe(200);
+    expect(await stored()).toEqual({
+      state: "open",
+      claimant: null,
+      events: [
+        "request.opened",
+        "request.claimed",
+        "request.started",
+        "request.message_posted",
+        "request.state_changed",
+        "request.released",
+        "request.message_posted",
+        "request.state_changed",
+      ],
+    });
+    expect((await claim(erin)).body).toMatchObject({ state: "claimed", claimant: { id: erin } });
   });
 
   describe("held by someone no longer a member of the install", () => {

@@ -9,7 +9,9 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // on: D28 #10; D29 (3)). When an admin removes a member, the requests they
 // claimed stay claimed by them, so the target team decides what happens next:
 // any member of the target team, and only such a member, may release the claim
-// without a proposal, and another member can then claim the request. Cancelling
+// without a proposal, and another member can then claim the request. A request
+// that waits on a blocking question stays needs_info with no claimant after the
+// release, until the answer returns it to open (design.md, Decisions: D46 (1)). Cancelling
 // the removed member's pending proposals comes with the proposals (task 14.12),
 // and a removal because a member left the GitHub organization with the
 // organization checks (group 10).
@@ -25,6 +27,9 @@ let carol: string;
 let dana: string;
 let fe142: string;
 let fe143: string;
+let fe144: string;
+/** Dana's agent's blocking question on FE-144, which waits for its answer. */
+let question: string;
 
 beforeAll(async () => {
   install = await startTestInstall();
@@ -42,10 +47,17 @@ beforeAll(async () => {
   await install.owner.query("INSERT INTO request_counters (org_id, team_id, last_number) SELECT id, $1, 141 FROM orgs", [team["FE"]]);
   fe142 = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
   fe143 = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
-  // Dana claims FE-142 and starts work on it, and claims FE-143; then Ada removes Dana from the install.
+  fe144 = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
+  // Dana claims FE-142 and starts work on it, and claims FE-143; Dana claims FE-144, starts work on it and
+  // Dana's agent asks a blocking question on it; then Ada removes Dana from the install.
   expect((await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe142}/claim`)).status).toBe(200);
   expect((await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe142}/status`, { state: "in_progress" })).status).toBe(200);
   expect((await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe143}/claim`)).status).toBe(200);
+  expect((await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe144}/claim`)).status).toBe(200);
+  expect((await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe144}/status`, { state: "in_progress" })).status).toBe(200);
+  const asked = await callApi(install, tokenOf(dana), "POST", `/api/v1/requests/${fe144}/messages`, { kind: "question", body: "Which browsers?", blocking: true });
+  expect(asked.status).toBe(200);
+  question = asked.body.message.id;
   expect((await install.confirm(sessionOf(ada), "members.remove", { userId: dana })).status).toBe(200);
 });
 
@@ -96,6 +108,22 @@ describe("a removed member's claim", () => {
     const answer = await callApi(install, tokenOf(erin), "POST", `/api/v1/requests/${fe142}/claim`);
     expect(answer.status).toBe(200);
     expect(await read(fe142)).toMatchObject({ state: "claimed", claimant: { id: erin } });
+  });
+
+  it("is released by Bob while the request waits on Dana's agent's blocking question: it stays needs_info with no claimant until the answer returns it to open", async () => {
+    expect(fe144).toBe("FE-144");
+    expect(await read(fe144)).toMatchObject({ state: "needs_info", claimant: { id: dana } });
+    const answer = await release(bob, fe144);
+    expect(answer.status).toBe(200);
+    expect(await read(fe144)).toMatchObject({ state: "needs_info", claimant: null });
+    const answered = await callApi(install, tokenOf(alice), "POST", `/api/v1/requests/${fe144}/messages`, {
+      kind: "answer",
+      body: "The last two versions of each.",
+      questionId: question,
+    });
+    expect(answered.status).toBe(200);
+    expect(await read(fe144)).toMatchObject({ state: "open", claimant: null });
+    expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${fe144}/claim`)).body).toMatchObject({ state: "claimed", claimant: { id: bob } });
   });
 
   it("is released from the web UI the same way, after which Bob claims it for himself", async () => {

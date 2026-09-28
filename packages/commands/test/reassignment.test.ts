@@ -13,7 +13,9 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // the next key of the new team, its old key names it still, as a read that
 // answers under the new key, and every other pending proposal on it is
 // cancelled, so none made while the old team owned it can be confirmed for the
-// new one.
+// new one. A request that waits on a blocking question stays needs_info with
+// no claimant, with no state-change event, and its answer returns it to open
+// in the new team (design.md, Decisions: D46 (1)).
 
 let install: TestInstall;
 const team: Record<string, string> = {};
@@ -94,6 +96,40 @@ describe("a reassignment", () => {
     // MOB's next request takes the number after it, and FE's number 142 is never taken again.
     expect((await openRequest(install, tokenOf(alice), { targetTeam: "MOB" })).key).toBe("MOB-38");
     expect((await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key).toBe("FE-143");
+  });
+
+  it("confirmed while the request waits on a blocking question keeps it needs_info with no claimant, and the answer returns it to open in its new team", async () => {
+    const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/claim`);
+    await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/status`, { state: "in_progress" });
+    const question = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/messages`, { kind: "question", body: "Which browsers?", blocking: true });
+    expect(question.body.request.state).toBe("needs_info");
+    const reassign = await propose(bob, request.key, { kind: "reassign", team: "MOB" });
+    expect(reassign.status).toBe(202);
+    expect((await confirm(bob, reassign.body.proposal.id)).status).toBe(200);
+
+    const moved = (await read(request.key)).body;
+    expect(moved).toMatchObject({ id: request.id, key: expect.stringMatching(/^MOB-\d+$/), state: "needs_info", claimant: null, targetTeam: { key: "MOB" } });
+    const stateChanges = async () =>
+      (
+        await install.owner.query<{ type: string; data: Record<string, unknown> }>(
+          "SELECT type, data FROM events WHERE data->>'requestId' = $1 AND type IN ('request.reassigned', 'request.state_changed') ORDER BY number",
+          [request.id],
+        )
+      ).rows;
+    expect(await stateChanges()).toEqual([
+      { type: "request.state_changed", data: { requestId: request.id, state: "needs_info", previousState: "in_progress" } },
+      { type: "request.reassigned", data: { requestId: request.id, teamId: team["MOB"], previousTeamId: team["FE"] } },
+    ]);
+
+    const answered = await callApi(install, tokenOf(alice), "POST", `/api/v1/requests/${moved.key}/messages`, {
+      kind: "answer",
+      body: "The last two versions of each.",
+      questionId: question.body.message.id,
+    });
+    expect(answered.status).toBe(200);
+    expect((await read(moved.key)).body).toMatchObject({ id: request.id, key: moved.key, state: "open", claimant: null, targetTeam: { key: "MOB" } });
+    expect((await stateChanges()).at(-1)).toEqual({ type: "request.state_changed", data: { requestId: request.id, state: "open", previousState: "needs_info" } });
   });
 
   it("changes nothing while it is not confirmed", async () => {
