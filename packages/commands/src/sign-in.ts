@@ -4,7 +4,6 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { authorizationCodeRequest, getOAuth2Tokens } from "better-auth/oauth2";
 import type { GithubProfile } from "better-auth/social-providers";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { isIP } from "node:net";
 import { httpProblem, internalErrorProblem, Refusal, signInCompleted, signInRefused, type HttpProblem } from "@tiehall/core";
 import {
@@ -20,7 +19,7 @@ import {
   type Database,
 } from "@tiehall/db";
 import type { WebSessionCaller } from "./caller.ts";
-import { GITHUB_API_URL } from "./github-client.ts";
+import { GITHUB_API_URL, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
@@ -412,24 +411,15 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
 
   /**
    * Who signed in, from GitHub, with the user token of the sign-in, which is
-   * used for this and nothing else: the account's numeric id and login, and
-   * its primary verified email address, if it has one.
+   * used for this and nothing else, through the GitHub client: the account's
+   * numeric id and login, and its primary verified email address, if it has
+   * one.
    */
   async function githubUser(accessToken: string | undefined) {
     if (accessToken === undefined) return null;
-    const headers = { authorization: `Bearer ${accessToken}`, accept: "application/vnd.github+json", "user-agent": "tiehall", "x-github-api-version": "2022-11-28" };
-    const profileAnswer = await githubFetch(`${apiUrl}/user`, { headers });
-    if (!profileAnswer.ok) {
-      logger.warn("sign-in service: GitHub did not say who signed in", { status: profileAnswer.status });
-      return null;
-    }
-    const profileJson: unknown = await profileAnswer.json();
-    const profile = GITHUB_USER.safeParse(profileJson);
-    if (!profile.success) return null;
-    const emailsAnswer = await githubFetch(`${apiUrl}/user/emails`, { headers });
-    const emails = emailsAnswer.ok ? GITHUB_EMAILS.safeParse(await emailsAnswer.json()) : undefined;
-    const primary = emails?.success === true ? emails.data.find((email) => email.primary && email.verified)?.email : undefined;
-    const { id, login } = profile.data;
+    const signedIn = await readSignedInUser(accessToken, { apiUrl, fetch: githubFetch as typeof fetch, logger });
+    if (signedIn === undefined) return null;
+    const { id, login, primaryEmail } = signedIn;
     return {
       // The account itself is identified by the profile's id (Better Auth's GitHub provider's account subject).
       user: {
@@ -437,9 +427,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         email: `github:${id}`,
         emailVerified: true,
         githubAccountId: id,
-        primaryEmail: primary ?? null,
+        primaryEmail: primaryEmail ?? null,
       },
-      data: profileJson as GithubProfile,
+      data: signedIn.profile as unknown as GithubProfile,
     };
   }
 
@@ -644,8 +634,6 @@ function refusalOf(answer: Response): boolean {
   }
 }
 
-const GITHUB_USER = z.object({ id: z.number().int().positive(), login: z.string().min(1) });
-const GITHUB_EMAILS = z.array(z.object({ email: z.string(), primary: z.boolean(), verified: z.boolean() }));
 
 /** The page to return to after signing in: a path of the install, never another site; the home page by default. */
 function returnPath(value: string | null): string {

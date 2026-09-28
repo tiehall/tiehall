@@ -22,9 +22,14 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 // GitHub's manifest flow returns into the new App's credentials
 // (self-host-install: The GitHub App is created with GitHub's manifest flow).
 //
-// This is the part of the client that tasks 1.9 of github-app-reachability
-// and 7.4 of add-tiehall-oss-v1 need; task 10.5 of add-tiehall-oss-v1 moves
-// every outbound GitHub call onto it.
+// Every call Tiehall makes to GitHub's API goes through this module, on
+// Octokit (tracker-mirrors: GitHub writes appear as the App's bot;
+// agent-access: Outbound calls use Tiehall's own credentials): no other module
+// builds an Octokit or a URL on GitHub's API. The one call made with a user's
+// token is the sign-in's, which reads who signed in with the token GitHub
+// issued for that sign-in, and nothing else. The OAuth code exchange of the
+// sign-in goes to GitHub's web host, not its API, and stays with the sign-in
+// service.
 
 /** The App's credentials from the manifest conversion, as the setup screen stores them. */
 export interface GitHubAppCredentials {
@@ -85,6 +90,74 @@ export function createGitHubClient(credentials: GitHubAppCredentials, options: G
       return octokit;
     },
   };
+}
+
+/** The URL GitHub's Link header names as the next page, or undefined on the last page. */
+function nextPage(link: string | undefined): string | undefined {
+  for (const part of (link ?? "").split(",")) {
+    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(part.trim());
+    if (match?.[2]?.split(/\s+/).includes("next")) return match[1];
+  }
+  return undefined;
+}
+
+/**
+ * Every page of a GitHub listing, as the client calls it: the first page asked
+ * for with these parameters, and each next one by the URL GitHub's Link header
+ * names.
+ */
+export async function everyPage(octokit: Octokit, route: string, parameters: Record<string, unknown>): Promise<unknown[]> {
+  const pages: unknown[] = [];
+  let response = await octokit.request(route, parameters);
+  pages.push(response.data);
+  for (let next = nextPage(response.headers.link); next !== undefined; next = nextPage(response.headers.link)) {
+    response = await octokit.request(`GET ${next}`);
+    pages.push(response.data);
+  }
+  return pages;
+}
+
+/** Who signed in, as GitHub says: the account's numeric id and login, its primary verified email address, and its profile. */
+export interface SignedInUser {
+  id: number;
+  login: string;
+  /** The primary verified email address; undefined when the account has none, or GitHub did not give it. */
+  primaryEmail: string | undefined;
+  profile: Record<string, unknown>;
+}
+
+const SIGNED_IN_USER = z.looseObject({ id: z.number().int().positive(), login: z.string().min(1) });
+const USER_EMAILS = z.array(z.object({ email: z.string(), primary: z.boolean(), verified: z.boolean() }));
+
+/**
+ * Reads who signed in, with the user token of that sign-in (sign-in: Tiehall
+ * keeps no GitHub user token; sign-in: The email address comes from GitHub).
+ * It is the one call Tiehall makes with a user's token, during the sign-in
+ * that GitHub issued the token for, and the token is used for nothing else:
+ * nothing keeps it. Undefined when GitHub does not say who signed in.
+ */
+export async function readSignedInUser(accessToken: string, options: GitHubClientOptions = {}): Promise<SignedInUser | undefined> {
+  const logger = (options.logger ?? createLogger()).child({ integration: "github" });
+  const octokit = new Octokit({ ...octokitBase(options), auth: accessToken });
+  let profile;
+  try {
+    ({ data: profile } = await octokit.request("GET /user"));
+  } catch (error) {
+    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined;
+    logger.warn("github: GitHub did not say who signed in", { status });
+    return undefined;
+  }
+  const parsed = SIGNED_IN_USER.safeParse(profile);
+  if (!parsed.success) return undefined;
+  let primaryEmail: string | undefined;
+  try {
+    const { data } = await octokit.request("GET /user/emails");
+    const emails = USER_EMAILS.safeParse(data);
+    primaryEmail = emails.success ? emails.data.find((email) => email.primary && email.verified)?.email : undefined;
+  } catch {
+    primaryEmail = undefined;
+  }
+  return { id: parsed.data.id, login: parsed.data.login, primaryEmail, profile: parsed.data };
 }
 
 /**

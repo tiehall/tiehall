@@ -54,8 +54,11 @@ export {
 export {
   convertManifestCode,
   createGitHubClient,
+  everyPage,
   GITHUB_API_URL,
   ManifestConversionError,
+  readSignedInUser,
+  type SignedInUser,
   type ConvertedApp,
   type GitHubAppCredentials,
   type GitHubClient,

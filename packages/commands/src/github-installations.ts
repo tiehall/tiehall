@@ -1,8 +1,7 @@
-import type { Octokit } from "@octokit/core";
 import { githubConnectedInstallations, githubCoveredRepositories, githubInstallations, type Database } from "@tiehall/db";
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { GitHubClient } from "./github-client.ts";
+import { everyPage, type GitHubClient } from "./github-client.ts";
 import { defineJobType } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -92,27 +91,6 @@ const INSTALLATION = z.object({
 const REPOSITORIES = z.object({
   repositories: z.array(z.object({ id: z.number().int().positive(), full_name: z.string().min(1) })),
 });
-
-/** The URL GitHub's Link header names as the next page, or undefined on the last page. */
-function nextPage(link: string | undefined): string | undefined {
-  for (const part of (link ?? "").split(",")) {
-    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(part.trim());
-    if (match?.[2]?.split(/\s+/).includes("next")) return match[1];
-  }
-  return undefined;
-}
-
-/** Every page of a GitHub listing, the first asked for with these parameters and the rest by the Link header. */
-async function everyPage(octokit: Octokit, route: string, parameters: Record<string, unknown>): Promise<unknown[]> {
-  const pages: unknown[] = [];
-  let response = await octokit.request(route, parameters);
-  pages.push(response.data);
-  for (let next = nextPage(response.headers.link); next !== undefined; next = nextPage(response.headers.link)) {
-    response = await octokit.request(`GET ${next}`);
-    pages.push(response.data);
-  }
-  return pages;
-}
 
 /** Lists every installation of the App, with the App's own token, 100 at a time. */
 export async function listAppInstallations(client: GitHubClient, logger: Logger = createLogger()): Promise<ListedInstallation[]> {
