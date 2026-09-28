@@ -1,0 +1,25 @@
+{
+  "name": "Tiehall tiehall.example.com",
+  "url": "https://tiehall.example.com",
+  "hook_attributes": {
+    "url": "https://tiehall.example.com/webhooks/github",
+    "active": true
+  },
+  "redirect_url": "https://tiehall.example.com/setup/github",
+  "callback_urls": [
+    "https://tiehall.example.com/api/auth/callback/github"
+  ],
+  "public": false,
+  "default_permissions": {
+    "metadata": "read",
+    "pull_requests": "read",
+    "issues": "write",
+    "members": "write",
+    "emails": "read"
+  },
+  "default_events": [
+    "pull_request",
+    "issues",
+    "organization"
+  ]
+}

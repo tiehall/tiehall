@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   BUNDLED_APP_DATABASE_URL,
   BUNDLED_OWNER_DATABASE_URL,
+  isTrialUrl,
   readAppSettings,
   readMigrateSettings,
   SettingsError,
@@ -73,6 +74,16 @@ describe("TIEHALL_URL", () => {
     expect(() => readAppSettings({ ...APP, TIEHALL_URL: "http://127.0.0.1:3000" })).toThrow(refusal);
     expect(() => readAppSettings({ ...APP, TIEHALL_URL: "http://[::1]:3000" })).toThrow(refusal);
     expect(() => readAppSettings({ ...APP, TIEHALL_URL: "http://localhost.example.com" })).toThrow(refusal);
+  });
+
+  // One check decides what a trial URL is, for the settings reader and for the GitHub App's manifest, whose
+  // webhook follows it (github-app-reachability: design.md, Technical decisions: T1).
+  it("takes exactly http://localhost, with or without a port, as a trial URL", () => {
+    for (const url of ["http://localhost", "http://localhost:3000", "http://LOCALHOST:3000"]) expect(isTrialUrl(url), url).toBe(true);
+    for (const url of ["https://localhost", "https://tiehall.example.com", "http://127.0.0.1:3000", "http://localhost.example.com", "localhost"]) {
+      expect(isTrialUrl(url), url).toBe(false);
+    }
+    expect(readAppSettings({ ...APP, TIEHALL_URL: "http://LOCALHOST:3000" }).url).toBe("http://localhost:3000");
   });
 
   it("refuses other schemes and values that are not URLs", () => {

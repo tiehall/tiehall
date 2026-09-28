@@ -299,15 +299,27 @@ function readInstallUrl(env: Environment): string {
 }
 
 /**
- * A value for TIEHALL_URL, as its origin. It must use HTTPS, except
- * http://localhost with or without a port, for a trial on one machine;
- * http://127.0.0.1 is not a trial URL (design.md, Self-hosting decisions: S2).
- * It throws SettingsError, naming TIEHALL_URL and not the value, otherwise.
+ * Whether a TIEHALL_URL is a trial URL: http://localhost, with or without a
+ * port, the only plain-HTTP URL an install accepts, for a trial on one
+ * machine; http://127.0.0.1 and https://localhost are not (design.md,
+ * Self-hosting decisions: S2). The settings reader and the GitHub App's
+ * manifest both decide by it, so the URLs an install accepts over plain HTTP
+ * are exactly the ones whose App gets no webhook (github-app-reachability:
+ * design.md, Technical decisions: T1).
+ */
+export function isTrialUrl(value: string): boolean {
+  const url = parseUrl(value);
+  return url?.protocol === "http:" && url.hostname === "localhost";
+}
+
+/**
+ * A value for TIEHALL_URL, as its origin. It must use HTTPS, except a trial
+ * URL (isTrialUrl). It throws SettingsError, naming TIEHALL_URL and not the
+ * value, otherwise.
  */
 export function installUrl(value: string): string {
   const url = parseUrl(value);
-  const trial = url?.protocol === "http:" && url.hostname === "localhost";
-  if (url === undefined || !(url.protocol === "https:" || trial)) {
+  if (url === undefined || !(url.protocol === "https:" || isTrialUrl(value))) {
     throw new SettingsError(
       "TIEHALL_URL must be an https:// URL, or http://localhost with or without a port for a trial on one machine.",
     );

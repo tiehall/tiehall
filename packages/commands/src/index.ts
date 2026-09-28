@@ -40,6 +40,16 @@ export {
   type Handlers,
 } from "./execute.ts";
 export {
+  buildAppManifest,
+  GITHUB_APP_ACCESS,
+  manifestHasWebhook,
+  MANIFEST_REDIRECT_PATH,
+  SIGN_IN_CALLBACK_PATH,
+  WEBHOOK_PATH,
+  type AppManifest,
+  type AppManifestInput,
+} from "./github-manifest.ts";
+export {
   createGitHubClient,
   GITHUB_API_URL,
   type GitHubAppCredentials,
@@ -128,6 +138,7 @@ export {
   BUNDLED_APP_DATABASE_URL,
   BUNDLED_OWNER_DATABASE_URL,
   installUrl,
+  isTrialUrl,
   readAppDatabase,
   readAppSettings,
   readAuthSecret,
