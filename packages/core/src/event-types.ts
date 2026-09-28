@@ -361,6 +361,35 @@ export const setupCompleted = defineEventType({
   },
 });
 
+/**
+ * An installation of the install's GitHub App was connected (tracker-mirrors:
+ * Admins connect GitHub installations with the confirmation step;
+ * activity-log: Which actions are security events): by an admin, with the
+ * confirmation step, or by the sign-in that completed setup. It names Tiehall's
+ * record of the installation; its provenance names who connected it.
+ */
+export const githubInstallationConnected = defineEventType({
+  type: "github.installation_connected",
+  class: "security",
+  fields: {
+    installationId: { kind: "id", of: "installation" },
+  },
+});
+
+/**
+ * An admin disconnected an installation of the install's GitHub App
+ * (tracker-mirrors: Admins connect GitHub installations with the confirmation
+ * step; activity-log: Which actions are security events). It names Tiehall's
+ * record of the installation; its provenance names the admin.
+ */
+export const githubInstallationDisconnected = defineEventType({
+  type: "github.installation_disconnected",
+  class: "security",
+  fields: {
+    installationId: { kind: "id", of: "installation" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -385,4 +414,6 @@ export const EVENT_TYPES: readonly EventType[] = [
   signInCompleted,
   signInRefused,
   setupCompleted,
+  githubInstallationConnected,
+  githubInstallationDisconnected,
 ];

@@ -68,8 +68,22 @@
     {
       "item": "an integration connected, changed or disconnected, and a new private key uploaded for the install's GitHub App;",
       "actions": [
-        { "action": "a GitHub installation connected", "pending": "10.3" },
-        { "action": "a GitHub installation disconnected", "pending": "10.3" },
+        {
+          "action": "a GitHub installation connected",
+          "event": "github.installation_connected",
+          "test": {
+            "file": "packages/commands/test/github-installation-connections.test.ts",
+            "case": "connects it once an admin confirms it: its repositories are read at once and count as covered, and a security event records it"
+          }
+        },
+        {
+          "action": "a GitHub installation disconnected",
+          "event": "github.installation_disconnected",
+          "test": {
+            "file": "packages/commands/test/github-installation-connections.test.ts",
+            "case": "needs no confirmation step: it stops covering the repositories, keeps every member, and is a security event"
+          }
+        },
         { "action": "the Jira connection connected", "pending": "25.1" },
         { "action": "the Jira connection changed", "pending": "25.2" },
         { "action": "the Jira connection disconnected", "pending": "25.2" },

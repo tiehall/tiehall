@@ -165,6 +165,7 @@ describe("naming the company", () => {
 
 describe("the sign-in that completes setup", () => {
   it("makes the person the first admin, connects every installation the listing holds, and records the completion naming them", async () => {
+    // Also: each installation connected then is recorded as a security event, as an admin's connection is.
     const install = await start();
     const { operator, app } = await createApp(install);
     const installation = await stub.install(app, { account: "acme", repositories: ["acme/web"] });
@@ -184,14 +185,18 @@ describe("the sign-in that completes setup", () => {
     // The completion, then the sign-in, as security events naming Omar, with where they came from kept apart.
     const { rows: events } = await install.owner.query<{ type: string; login: string; actor_kind: string; ip_address: string; user_agent: string }>(
       `SELECT e.type, u.github_login AS login, e.actor_kind, host(o.ip_address) AS ip_address, o.user_agent
-         FROM events e JOIN users u ON u.org_id = e.org_id AND u.id = (e.data->>'userId')::uuid
+         FROM events e JOIN users u ON u.org_id = e.org_id AND u.id = coalesce(e.data->>'userId', e.actor_user_id::text)::uuid
          LEFT JOIN security_event_origins o ON o.org_id = e.org_id AND o.event_number = e.number
         ORDER BY e.number`,
     );
     expect(events).toEqual([
       { type: "setup.completed", login: "omar", actor_kind: "web_session", ip_address: "203.0.113.7", user_agent: "Omar's browser" },
+      { type: "github.installation_connected", login: "omar", actor_kind: "web_session", ip_address: "203.0.113.7", user_agent: "Omar's browser" },
       { type: "sign_in.completed", login: "omar", actor_kind: "web_session", ip_address: "203.0.113.7", user_agent: "Omar's browser" },
     ]);
+    const { rows: connections } = await install.owner.query("SELECT e.data->>'installationId' AS installation FROM events e WHERE e.type = 'github.installation_connected'");
+    const { rows: known } = await install.owner.query("SELECT id AS installation FROM github_installations");
+    expect(connections).toEqual(known);
 
     // Omar is signed in, and the setup cookie is dropped.
     expect(await install.signIn.session(new Headers({ cookie: operator.jar.header() }))).toMatchObject({ kind: "web_session" });

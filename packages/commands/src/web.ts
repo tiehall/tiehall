@@ -5,6 +5,7 @@ import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
 import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
+import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
 import { HANDLERS } from "./handlers.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
@@ -148,6 +149,22 @@ export function activityLogRoute(env: Environment): ActivityLogRoute {
   const { execute, logger, signIn } = servicesOf(env);
   activityLog = createActivityLogRoute({ execute, session: (request) => signIn.session(request.headers), logger });
   return activityLog;
+}
+
+let githubAdmin: GitHubAdminRoute | undefined;
+
+/** The GitHub page of the admin UI under /admin/github, built once per process, for the signed-in admin's web session. */
+export function githubAdminRoute(env: Environment): GitHubAdminRoute {
+  if (githubAdmin !== undefined) return githubAdmin;
+  const { execute, logger, signIn } = servicesOf(env);
+  githubAdmin = createGitHubAdminRoute({
+    execute,
+    session: (request) => signIn.session(request.headers),
+    url: installUrl(env["TIEHALL_URL"] ?? ""),
+    secret: () => readAuthSecret(env),
+    logger,
+  });
+  return githubAdmin;
 }
 
 /**

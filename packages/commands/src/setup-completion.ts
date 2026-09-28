@@ -1,4 +1,4 @@
-import { setupCompleted } from "@tiehall/core";
+import { githubInstallationConnected, setupCompleted } from "@tiehall/core";
 import { members, orgs, setupCodes, setupSessions, type Database } from "@tiehall/db";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -32,8 +32,9 @@ import { writeIn, type Origin } from "./write.ts";
 //   signed in becomes a member with the role admin, the install's first; the
 //   org records the time setup completed, so the setup code and every setup
 //   session stop working and /setup answers 404; the completion is recorded as
-//   a security event that names the first admin; and the deliveries held
-//   during setup are released to be processed.
+//   a security event that names the first admin, and each connection as the
+//   security event an admin's connection gets; and the deliveries held during
+//   setup are released to be processed.
 // Setup that is already complete, a company that is not named yet, and an App
 // that is not stored refuse the completion, and so the sign-in; GitHub that
 // cannot be reached refuses it too, and the operator signs in again.
@@ -83,7 +84,7 @@ export async function completeSetup(options: CompleteSetupOptions, input: { user
 
     await recordInstallations(context, app.appId, listed);
     const known = (await knownInstallations(context)).filter((installation) => installation.appId === app.appId && !installation.deleted);
-    await connectInstallations(
+    const connected = await connectInstallations(
       context,
       known.map(({ id }) => id),
     );
@@ -101,7 +102,11 @@ export async function completeSetup(options: CompleteSetupOptions, input: { user
       context,
       jobs ?? { send: () => Promise.reject(new Error("Completing setup sends no job without a job queue.")) },
       { actorKind: "web_session", userId: input.userId, surface: "web" },
-      (writer) => writer.record(setupCompleted, { userId: input.userId }),
+      async (writer) => {
+        await writer.record(setupCompleted, { userId: input.userId });
+        // Each installation made during setup is connected, as an admin's connection is recorded.
+        for (const installationId of connected) await writer.record(githubInstallationConnected, { installationId });
+      },
       { origin: input.origin },
     );
     if (jobs !== undefined) await releaseHeldDeliveries(context, jobs);

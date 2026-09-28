@@ -2,6 +2,7 @@ import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
+import { GITHUB_INSTALLATION_HANDLERS } from "./github-installation-changes.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
 import { PACKET_HANDLERS } from "./packets.ts";
@@ -34,4 +35,5 @@ export const HANDLERS: Handlers = {
   ...WRITE_LIMIT_HANDLERS,
   ...ACTIVITY_LOG_HANDLERS,
   ...ACTIVITY_LOG_EXPORT_HANDLERS,
+  ...GITHUB_INSTALLATION_HANDLERS,
 };

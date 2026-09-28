@@ -23,6 +23,7 @@ import {
   type Database,
   type Logger,
   type Execute,
+  type JobData,
   type RestHandler,
   type WebCommands,
   type WebSessionCaller,
@@ -48,6 +49,8 @@ export interface TestInstall {
   /** The app's database, as the app role. */
   db: Database;
   execute: Execute;
+  /** The jobs the install's writes sent, in order. */
+  sentJobs: { queue: string; data: JobData }[];
   /** The REST route under /api/v1, for calls whose credentials stand for the given caller; none answers 401. */
   api(caller: Caller | undefined): RestHandler;
   /** The web UI's commands, for the given signed-in session. */
@@ -96,7 +99,8 @@ export async function startTestInstall(
   const secret = randomBytes(32).toString("base64url");
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
-  const store = { database: db, jobs: { send: async () => {} } };
+  const sentJobs: { queue: string; data: JobData }[] = [];
+  const store = { database: db, jobs: { send: async (_tx: unknown, queue: string, data: JobData) => void sentJobs.push({ queue, data }) } };
   const subjects = CONFIRMATION_SUBJECTS;
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects, ...(options.now === undefined ? {} : { now: options.now }) });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects });
@@ -129,6 +133,7 @@ export async function startTestInstall(
     logger,
     db,
     execute,
+    sentJobs,
     api: (caller) => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger }),
     web: (caller) => createWebCommands({ execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => secret, logger }),
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),

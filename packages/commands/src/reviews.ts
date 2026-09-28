@@ -1,6 +1,7 @@
 import { ACTIVITY_LOG_DOWNLOADS, ACTIVITY_LOG_REVIEWS } from "./activity-log-export.ts";
 import type { ConfirmDownloads } from "./confirm-route.ts";
 import type { ConfirmationSubjects, Reviews } from "./confirmation-step.ts";
+import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
 import { UNDO_REVIEWS } from "./proposal-undo.ts";
@@ -10,7 +11,14 @@ import { WRITE_LIMIT_REVIEWS } from "./write-limits.ts";
 // the command's id (agent-safety: The review page of the confirmation step).
 // Each task that adds such a command adds its review here; the confirmation
 // step refuses to start while one is missing.
-export const REVIEWS: Reviews = { ...MEMBER_REVIEWS, ...WRITE_LIMIT_REVIEWS, ...PROPOSAL_REVIEWS, ...UNDO_REVIEWS, ...ACTIVITY_LOG_REVIEWS };
+export const REVIEWS: Reviews = {
+  ...MEMBER_REVIEWS,
+  ...WRITE_LIMIT_REVIEWS,
+  ...PROPOSAL_REVIEWS,
+  ...UNDO_REVIEWS,
+  ...ACTIVITY_LOG_REVIEWS,
+  ...GITHUB_INSTALLATION_REVIEWS,
+};
 
 // What a command's confirmation nonce is bound to, where it is not the
 // command's input (agent-safety: One confirmation approves one action): a

@@ -3,8 +3,10 @@ import { githubConnectedInstallations, githubCoveredRepositories, githubInstalla
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { GitHubClient } from "./github-client.ts";
+import { defineJobType } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
-import { withOrg, type OrgContext } from "./with-org.ts";
+import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
+import type { WorkerJob } from "./worker.ts";
 
 // The installations of the install's GitHub App and the repositories they
 // cover, found by listing them (github-app-reachability: design.md, Design
@@ -23,9 +25,10 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // none of its repositories is read or counts as covered.
 //
 // A listing runs when the sign-in that completes setup arrives, when an admin
-// connects an installation, and when a delivery about an installation arrives
-// in webhook mode; the poll of polling mode and the 15-minute reconciliation
-// run it too, once they are built (tasks 10.8 and 10.9 of add-tiehall-oss-v1).
+// connects an installation (a job, which reads that installation's
+// repositories at once), and when a delivery about an installation arrives in
+// webhook mode; the poll of polling mode and the 15-minute reconciliation run
+// it too, once they are built (tasks 10.8 and 10.9 of add-tiehall-oss-v1).
 
 /** One installation of the App, as GitHub's listing gives it. */
 export interface ListedInstallation {
@@ -314,3 +317,29 @@ export async function readInstallations(options: ReadInstallationsOptions): Prom
     for (const [installationId, read] of repositories) if (still.has(installationId)) await recordCoveredRepositories(context, installationId, read);
   });
 }
+
+/**
+ * A job that lists the App's installations and reads the repositories of the
+ * connected ones, or of those it names, by GitHub's ids: sent when an admin
+ * connects an installation, so its repositories count as covered at once.
+ */
+export const syncGitHubInstallations: WorkerJob<{ repositoriesOf?: number[] }> = {
+  // Five attempts over about an hour, then the dead-letter queue, as for every integration job (design.md, Decisions this change rests on: D28 #83).
+  type: defineJobType<{ repositoriesOf?: number[] }>("github.sync_installations", 1, {
+    retryLimit: 4,
+    retryDelaySeconds: 240,
+    retryBackoff: true,
+    expireInSeconds: 300,
+  }),
+  async handle(job, { database, github }) {
+    if (github === undefined) throw new Error("The worker gives this job no GitHub App to list the installations of.");
+    const app = await github.app();
+    if (app === undefined) return;
+    try {
+      await readInstallations({ database, app, ...(job.data.repositoriesOf === undefined ? {} : { repositoriesOf: job.data.repositoriesOf }) });
+    } catch (error) {
+      // Before setup completes there is nothing to sync; the sign-in that completes it lists the installations.
+      if (!(error instanceof SetupRequiredError)) throw error;
+    }
+  },
+};

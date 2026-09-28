@@ -90,6 +90,7 @@ export { INBOX_COMMANDS, standingList } from "./inbox.ts";
 export { setWriteBudget, SETTINGS_COMMANDS } from "./settings.ts";
 export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { JIRA_SITE_URL, jiraSiteUrl } from "./integrations.ts";
+export { connectGitHubInstallation, disconnectGitHubInstallation, GITHUB_COMMANDS, githubInstallation, listGitHubInstallations } from "./github.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
