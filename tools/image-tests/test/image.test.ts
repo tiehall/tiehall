@@ -417,11 +417,11 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(dockerOk(["logs", name])).not.toContain("setup code");
   });
 
-  // agent-safety: The review page of the confirmation step. Nobody is signed in until sign-in exists.
-  it("serves the review pages of the confirmation step, which answer 401 without a session and cannot be framed", async () => {
-    const response = await fetch(`http://127.0.0.1:${port}/confirm/tokens.create?input=%7B%7D`);
-    expect(response.status).toBe(401);
-    expect(response.headers.get("content-type")).toBe("application/problem+json");
+  // agent-safety: The review page of the confirmation step; requests: The proposal's confirm page. Nobody is signed in here.
+  it("serves the review pages of the confirmation step, which send a browser without a session to sign in first and cannot be framed", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/confirm/tokens.create?input=%7B%7D`, { redirect: "manual" });
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`/sign-in?return=${encodeURIComponent("/confirm/tokens.create?input=%7B%7D")}`);
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     const confirmation = await fetch(`http://127.0.0.1:${port}/confirm/tokens.create`, {
       method: "POST",
@@ -432,8 +432,28 @@ describe.each(["web", "all"])("the %s role", (role) => {
   });
 
   it("tags its pages with the commit as the deployment id", async () => {
-    const html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+    // A page Next.js renders itself, such as the one for a path no route serves.
+    const html = await (await fetch(`http://127.0.0.1:${port}/no-such-page`)).text();
     expect(html).toContain(`data-dpl-id="${revision()}"`);
+  });
+
+  // sign-in: GitHub is the only way to sign in. No GitHub App is stored on this database, so nobody can sign in yet.
+  it("sends a visitor to the sign-in page, which offers GitHub only, and serves no other sign-in route", async () => {
+    const home = await fetch(`http://127.0.0.1:${port}/`, { redirect: "manual" });
+    expect(home.status).toBe(303);
+    expect(home.headers.get("location")).toBe("/sign-in");
+    const page = await fetch(`http://127.0.0.1:${port}/sign-in`);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("Sign in with GitHub");
+    expect(html.toLowerCase()).not.toContain("password");
+    const password = await fetch(`http://127.0.0.1:${port}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "ana@acme.example", password: "correct horse battery" }),
+    });
+    expect(password.status).toBe(404);
+    expect(password.headers.get("content-type")).toBe("application/problem+json");
   });
 
   // public-api: Operations not offered on REST answer 404; public-api: Errors are RFC 9457 problem details.

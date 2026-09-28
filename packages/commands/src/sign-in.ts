@@ -22,13 +22,13 @@ import {
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL } from "./github-client.ts";
 import { SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
-import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
+import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
 import { RemovedMemberError } from "./with-org.ts";
 import { assertWebWrite } from "./web-writes.ts";
 import { write, type Origin, type Store } from "./write.ts";
@@ -50,8 +50,8 @@ import { write, type Origin, type Store } from "./write.ts";
 // with 404 as the error model answers a route the install does not serve,
 // every route that the committed classification (sign-in-routes.ts) does not
 // mark as harmless: over HTTP the service answers only GitHub's return to the
-// sign-in callback. The sign-in page and sign-out are
-// Tiehall's own pages, which call the service in the same process.
+// sign-in callback. The sign-in page and sign-out are Tiehall's own pages,
+// which call the service in the same process.
 //
 // Better Auth keeps its records in Tiehall's tables: a user is a row of
 // `users`, whose login is the name Better Auth keeps; a web session is a row
