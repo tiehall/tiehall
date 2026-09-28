@@ -169,6 +169,7 @@ describe("adding a revision", () => {
     const before = await stateOf(opened.id);
     const answer = await addRevision(alice, opened.key, packetWith({ links: [{ url: "https://wiki.example.com/x" }] }), ifMatch);
     expect(answer.status).toBe(412);
+    expect(answer.body).toMatchObject({ type: "https://tiehall.com/problems/precondition-failed", status: 412, detail: expect.stringMatching(/^If-Match names no current revision/) });
     expect(await stateOf(opened.id)).toEqual(before);
   });
 
