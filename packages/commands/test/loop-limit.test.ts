@@ -16,7 +16,10 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // write to it gets 409 needs-human and is not counted. Writes by the system, an
 // integration or a web session are neither counted nor refused, nor are
 // acknowledgements and reads. The count is decided in the writing transaction,
-// so two writes at once cannot both pass the limit.
+// so two writes at once cannot both pass the limit. The flag is checked last,
+// after the caller's side, the request's state and If-Match, and a message
+// edited from a web session is no human action: it leaves the flag and the
+// counts as they are (design.md, Decisions: D46 (6), (7)).
 
 let clock = new Date("2026-10-01T08:59:00Z");
 /** Sets the clock to a time of 2026-10-01 (UTC), such as 09:04:30. */
@@ -250,6 +253,30 @@ describe("a flagged request", () => {
     expect(await flagged()).toBe(false);
     expect(await agentWrites(["14:07:00"])).toEqual([200]);
     expect(await flagged()).toBe(true);
+  });
+
+  it("stays flagged when a member edits their message in the web UI, which adds its version and changes neither count", async () => {
+    at("09:00:00");
+    const bobs = await comment(bob);
+    expect(bobs.status).toBe(200);
+    expect(await agentWrites(times("09:00:30", 6, 30))).toEqual([200, 200, 200, 200, 200, 200]);
+    expect(await flagged()).toBe(true);
+    const counts = async () =>
+      (await install.owner.query("SELECT agent_write_times::text AS writes, needs_human FROM requests WHERE id = $1", [requestId])).rows[0];
+    const before = await counts();
+    at("09:05:00");
+    const session = sessionOf(bob);
+    const edited = await install.web(session).write(
+      "messages.edit",
+      { messageId: bobs.body.message.id, body: "Any news on this? Asked again." },
+      install.fromThePage(session),
+    );
+    expect(edited).toMatchObject({ ok: true, output: { id: bobs.body.message.id, version: 2 } });
+    expect(await counts()).toEqual(before);
+    expect(await comment(alice)).toMatchObject({ status: 409, body: { type: NEEDS_HUMAN } });
+    const posted = await install.web(session).write("messages.post", { key, kind: "comment", body: "Let us talk first." }, install.fromThePage(session));
+    expect(posted.ok).toBe(true);
+    expect(await flagged()).toBe(false);
   });
 
   it("stays flagged when a claim and a state change made in the web UI are applied", async () => {
