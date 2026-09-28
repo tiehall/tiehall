@@ -12,8 +12,9 @@ import { addTeam, callApi, joinTeams, openRequest, tokenOf } from "./support/req
 // schema does not define still validates against it. The server parses every
 // incoming packet strictly all the same: a known field with a value of the
 // wrong type is refused with 400 and nothing is stored, and a key it does not
-// know is dropped, so it is neither stored nor returned. A request is opened
-// with its packet, which becomes its revision 1.
+// know is dropped, so it is neither stored nor returned. A packet without its
+// kind, or with a kind that is neither request nor contract_change, gets 400
+// too. A request is opened with its packet, which becomes its revision 1.
 
 let install: TestInstall;
 let alice: string;
@@ -63,6 +64,17 @@ describe("opening a request with its packet", () => {
       title: "No need",
       packet: fixture("invalid/no-need.json"),
     });
+    expect(answer.status).toBe(400);
+    expect(answer.body).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", status: 400 });
+    expect(await everything()).toEqual(before);
+  });
+
+  it.each([
+    ["without a kind", "invalid/no-kind.json"],
+    ["whose kind is neither request nor contract_change", "invalid/unknown-kind.json"],
+  ])("gets 400 for a packet %s, and creates nothing", async (_name, name) => {
+    const before = await everything();
+    const answer = await callApi(install, tokenOf(alice), "POST", "/api/v1/requests", { targetTeam: "FE", title: "No kind", packet: fixture(name) });
     expect(answer.status).toBe(400);
     expect(answer.body).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", status: 400 });
     expect(await everything()).toEqual(before);
