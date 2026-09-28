@@ -18,6 +18,11 @@ import { addTeam, joinTeams, openRequestInTheWebUi, packetOf, tokenOf } from "./
 
 const MiB = 1024 * 1024;
 
+// Each case sends bodies of several MiB through the route and the database, and
+// the contract report's cases send 10 and 17 MiB: a timeout that holds on a
+// slower CI runner, not the project's default of 5 seconds.
+const LARGE_BODIES = { timeout: 30_000 };
+
 let install: TestInstall;
 let alice: string;
 
@@ -60,7 +65,7 @@ async function counts(): Promise<unknown> {
   return rows[0];
 }
 
-describe("a packet revision at the limit", () => {
+describe("a packet revision at the limit", LARGE_BODIES, () => {
   it("is not refused for its size at exactly 2 MiB, and one byte more gets 413 and adds nothing", async () => {
     const opened = await openRequestInTheWebUi<{ key: string }>(install, alice, { targetTeam: "FE" });
     const path = `/api/v1/requests/${opened.key}/packet/revisions`;
@@ -85,7 +90,7 @@ describe("a packet revision at the limit", () => {
 // contract.report is defined by add-tiehall-oss-v1's task 22.5. Until then the
 // catalog holds no such operation, every path gets 2 MiB, and these cases fail
 // as expected; they become plain tests in the commit that adds it.
-describe("a contract report, whose limit is 16 MiB", () => {
+describe("a contract report, whose limit is 16 MiB", LARGE_BODIES, () => {
   const ci: Caller = { kind: "ci", repositoryId: "100200300" };
 
   /** contract.report's method and path, from the catalog. */
