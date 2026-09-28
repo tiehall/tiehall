@@ -8,6 +8,7 @@ import {
   SETUP_PATH,
   SIGN_IN_CALLBACK_PATH,
   SIGN_IN_PATH,
+  SIGN_OUT_PATH,
   WEBHOOKS_GITHUB_PATH,
 } from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
@@ -76,6 +77,14 @@ describe("the app", () => {
   // view of the activity log (activity-log: The admin view) and the packet
   // schema (handoff-packet: The beta label). A page that
   // no route file mounts answers with the app's 404, whatever its handler does.
+  // The web UI's sign-out form (sign-in: Signing out and ending sessions), which only posts.
+  it("mounts the sign-out on its path, for a POST", async () => {
+    const files = routesOf(SIGN_OUT_PATH);
+    expect(files, `the route files ${SIGN_OUT_PATH} reaches`).toHaveLength(1);
+    const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["POST"]).toBeTypeOf("function");
+  });
+
   it.each([
     { name: "the activity log's admin page", path: ACTIVITY_LOG_PATH },
     { name: "the packet schema", path: PACKET_SCHEMA_PATH },

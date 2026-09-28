@@ -12,6 +12,10 @@ export default async function Home() {
     <main>
       <h1>Tiehall</h1>
       <p>You are signed in.</p>
+      <form method="post" action="/sign-out">
+        <input type="hidden" name="csrf" value={state.csrfToken} />
+        <button type="submit">Sign out</button>
+      </form>
     </main>
   );
 }

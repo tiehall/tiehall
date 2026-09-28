@@ -137,7 +137,7 @@ describe("a key that spells an app path", () => {
     expect((await create("MCP")).key).toBe("MCP");
     expect((await create("API")).key).toBe("API");
     // The app's own paths (design.md, Self-hosting decisions: S15), and every route the web app serves at its top level.
-    const appPaths = ["api", "mcp", "docs", "confirm", "setup", "webhooks", "schemas", ".well-known", "healthz", "admin", "sign-in"];
+    const appPaths = ["api", "mcp", "docs", "confirm", "setup", "webhooks", "schemas", ".well-known", "healthz", "admin", "sign-in", "sign-out"];
     const routes = readdirSync(webApp, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map(({ name }) => name);

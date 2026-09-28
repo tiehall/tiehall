@@ -15,11 +15,12 @@ import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Environment } from "./settings.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
+import { csrfTokenFor } from "./web-writes.ts";
 import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
-export { AUTH_BASE_PATH, SIGN_IN_PATH } from "./sign-in.ts";
+export { AUTH_BASE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 import { WORKER_JOBS } from "./worker-jobs.ts";
 
 // What the web role's routes, server actions and server components run
@@ -147,6 +148,17 @@ export function signInServiceRoute(env: Environment): (request: Request) => Prom
 export function signInPageRoute(env: Environment): (request: Request) => Promise<Response> {
   const { signIn } = servicesOf(env);
   return (request) => signIn.page(request);
+}
+
+/** The web UI's sign-out at /sign-out, which ends the session the request's cookie names. */
+export function signOutRoute(env: Environment): (request: Request) => Promise<Response> {
+  const { signIn } = servicesOf(env);
+  return (request) => signIn.signOut(request);
+}
+
+/** The CSRF token a page puts in its forms, such as the sign-out form, for the signed-in web session. */
+export function csrfTokenOf(env: Environment, caller: WebSessionCaller): string {
+  return csrfTokenFor(readAuthSecret(env), caller.sessionId);
 }
 
 /**

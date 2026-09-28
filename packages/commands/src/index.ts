@@ -196,6 +196,7 @@ export {
   createSignInService,
   SIGN_IN_PATH,
   SIGN_IN_REFUSED,
+  SIGN_OUT_PATH,
   type SignInService,
   type SignInServiceOptions,
 } from "./sign-in.ts";

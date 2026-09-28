@@ -30,6 +30,7 @@ import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { RemovedMemberError } from "./with-org.ts";
+import { assertWebWrite } from "./web-writes.ts";
 import { write, type Origin, type Store } from "./write.ts";
 
 // The sign-in service (sign-in: GitHub is the only way to sign in; design.md,
@@ -93,6 +94,8 @@ import { write, type Origin, type Store } from "./write.ts";
 export const AUTH_BASE_PATH = "/api/auth";
 /** The sign-in page: GET shows it, POST starts a sign-in with GitHub. */
 export const SIGN_IN_PATH = "/sign-in";
+/** Where the web UI's sign-out form posts. */
+export const SIGN_OUT_PATH = "/sign-out";
 
 /** What a refused person reads. */
 export const SIGN_IN_REFUSED =
@@ -129,6 +132,12 @@ export interface SignInService {
   handler(request: Request): Promise<Response>;
   /** The sign-in page: GET shows it; POST, from a form of the install, sends the browser to GitHub to sign in. */
   page(request: Request): Promise<Response>;
+  /**
+   * The web UI's sign-out: a POST that passes the web UI's write checks ends
+   * the web session its cookie names, that one only, and leads to the sign-in
+   * page.
+   */
+  signOut(request: Request): Promise<Response>;
   /**
    * The web session a request's cookie names, or undefined when it names
    * none. A session that a removal ended is refused with 403 removed-member.
@@ -448,6 +457,29 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       } catch (error) {
         if (error instanceof Refusal) return problem(httpProblem(error));
         logger.error("sign-in service: the sign-in page failed", { error });
+        return problem(internalErrorProblem());
+      }
+    },
+
+    async signOut(request) {
+      try {
+        if (request.method !== "POST") return problem(httpProblem(new Refusal("route-not-found", "Sign out with the sign-out button of a page.")));
+        const toSignIn = new Headers({ location: SIGN_IN_PATH, "cache-control": "no-store" });
+        const session = cookieNames(request.headers).includes(sessionCookie) ? await this.session(request.headers).catch(() => undefined) : undefined;
+        const auth = await current();
+        if (session === undefined || auth === undefined) return new Response(null, { status: 303, headers: toSignIn });
+        const form = new URLSearchParams(await request.text());
+        assertWebWrite(
+          { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
+          { url: options.url, secret: options.secret(), sessionId: session.sessionId, confirm: false },
+        );
+        // In the same process: the service deletes the session, and its answer expires the browser's cookie.
+        const ended = await auth.api.signOut({ headers: request.headers, returnHeaders: true });
+        for (const cookie of ended.headers.getSetCookie()) toSignIn.append("set-cookie", cookie);
+        return new Response(null, { status: 303, headers: toSignIn });
+      } catch (error) {
+        if (error instanceof Refusal) return problem(httpProblem(error));
+        logger.error("sign-in service: a sign-out failed", { error });
         return problem(internalErrorProblem());
       }
     },
