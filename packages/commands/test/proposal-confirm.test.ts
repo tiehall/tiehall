@@ -15,7 +15,9 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // last confirmation a proposal needs applies the commitment: the confirmation,
 // the change and their events commit together, or nothing does. Creating a
 // proposal and each confirmation append a domain event, and a confirmation is
-// a human action on the request, which clears its needs_human flag.
+// a human action on the request, which clears its needs_human flag. A decline,
+// a withdrawal or a done proposal that takes effect appends a state-change
+// event too (requests: The event log; design.md, Decisions: D45 (4)).
 
 let install: TestInstall;
 let alice: string;
@@ -101,6 +103,31 @@ describe("confirming a decline", () => {
     const before = await stored(request.id);
     for (const user of [alice, carol]) expect((await confirm(user, proposal)).status).toBe(403);
     expect(await stored(request.id)).toEqual(before);
+  });
+});
+
+describe("a withdrawal or a done proposal", () => {
+  it.each([
+    ["a withdrawal Alice, the requester, proposes on an open request", "withdrawn", "open", "proposals", { kind: "withdraw" }],
+    ["a done proposal Bob, the claimant, makes on a claimed request", "done", "claimed", "status", { state: "done" }],
+  ] as const)("appends a state-change event once confirmed: %s", async (_name, state, previousState, operation, body) => {
+    const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    if (previousState === "claimed") expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    const proposer = previousState === "claimed" ? bob : alice;
+    const proposed = await callApi(install, tokenOf(proposer), "POST", `/api/v1/requests/${request.key}/${operation}`, body);
+    expect(proposed.status).toBe(202);
+    const proposal = proposed.body.proposal.id;
+    expect((await confirm(proposer, proposal)).status).toBe(200);
+    const after = await stored(request.id);
+    expect(after.state).toBe(state);
+    expect(after.events.map(({ type }: { type: string }) => type)).toEqual([
+      "request.opened",
+      ...(previousState === "claimed" ? ["request.claimed"] : []),
+      "proposal.created",
+      "proposal.confirmed",
+      "request.state_changed",
+    ]);
+    expect(after.events.at(-1)).toMatchObject({ actorKind: "web_session", userId: proposer, data: { requestId: request.id, state, previousState } });
   });
 });
 
