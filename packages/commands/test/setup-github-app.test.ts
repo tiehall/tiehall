@@ -334,7 +334,9 @@ describe("GitHub's return with the code", () => {
     const other = await setupSession(INSTALL);
     const { location } = await createOnGitHub(createForm((await open(INSTALL, other, { org: "acme" })).html)!);
     const tampered = new URL(location!);
-    tampered.searchParams.set("state", `${location!.searchParams.get("state")!.slice(0, -1)}A`);
+    // Its last character changed to another one, whatever it was.
+    const state = location!.searchParams.get("state")!;
+    tampered.searchParams.set("state", `${state.slice(0, -1)}${state.endsWith("A") ? "B" : "A"}`);
     for (const [url, browser] of [
       [location!, cookie],
       [tampered, other],
