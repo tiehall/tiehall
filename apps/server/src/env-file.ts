@@ -114,10 +114,11 @@ const FILE_FORMS = [
 // The registry is a host name, or an IPv6 address in brackets, with an
 // optional port; the repository is one or more components of lowercase
 // letters and digits joined by ".", "_", "__" or one or more "-", with "/"
-// between them, at most 255 characters with the registry; the tag is at most
-// 128 letters, digits, "_", "." and "-", starting with a letter, a digit or
-// "_"; and the digest is an algorithm the engines support, ":" and its value
-// in lowercase hexadecimal, of the length the algorithm gives.
+// between them, at most 255 characters without the registry, as Docker
+// counts them (see dockerPath); the tag is at most 128 letters, digits, "_",
+// "." and "-", starting with a letter, a digit or "_"; and the digest is an
+// algorithm the engines support, ":" and its value in lowercase hexadecimal,
+// of the length the algorithm gives.
 const PATH_COMPONENT = "[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*";
 const DOMAIN_COMPONENT = "(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])";
 const REGISTRY = `(?:${DOMAIN_COMPONENT}(?:\\.${DOMAIN_COMPONENT})*|\\[[a-fA-F0-9:]+\\])(?::[0-9]+)?`;
@@ -136,8 +137,25 @@ export function isImageReference(value: string): boolean {
   const match = IMAGE_REFERENCE.exec(value);
   if (match === null) return false;
   const [, name = "", algorithm, hex] = match;
-  if (name.length > 255) return false;
+  if (dockerPath(name).length > 255) return false;
   return algorithm === undefined || DIGEST_LENGTHS.get(algorithm) === hex?.length;
+}
+
+/**
+ * The repository path of an image name as Docker reads it, which Docker holds
+ * to 255 characters: the name without its registry, and `library/<name>` for a
+ * one-component name on Docker Hub. The first component is the registry when
+ * it has a "." or a ":", is "localhost" or has an uppercase letter; with no
+ * registry, the name is on Docker Hub, as it is with docker.io or
+ * index.docker.io.
+ */
+function dockerPath(name: string): string {
+  const slash = name.indexOf("/");
+  const first = slash === -1 ? "" : name.slice(0, slash);
+  const hasRegistry = slash !== -1 && (/[.:]/.test(first) || first === "localhost" || first !== first.toLowerCase());
+  const path = hasRegistry ? name.slice(slash + 1) : name;
+  const dockerHub = !hasRegistry || first === "docker.io" || first === "index.docker.io";
+  return dockerHub && !path.includes("/") ? `library/${path}` : path;
 }
 
 /** The image a build names: its release tag, or, for a build of main, the tag of its commit. */

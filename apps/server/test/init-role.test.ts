@@ -126,6 +126,44 @@ describe("init", () => {
     }
   });
 
+  // Docker counts the 255 characters on the repository path without the
+  // registry, and reads a one-component name on Docker Hub as library/<name>.
+  it("accepts a repository path of up to 255 characters, not counting the registry, as Docker does", () => {
+    for (const name of [
+      `ghcr.io/${"a".repeat(248)}`,
+      `ghcr.io/${"a".repeat(255)}`,
+      `ghcr.io/acme/${"a".repeat(250)}`,
+      `localhost:5000/${"a".repeat(255)}`,
+      `docker.io/acme/${"a".repeat(250)}`,
+      // Without a registry: one component of up to 247 characters, which Docker reads as library/<name>.
+      "a".repeat(247),
+      // Without a registry: a path of two components, counted in full.
+      `acme/${"a".repeat(250)}`,
+    ]) {
+      const image = `${name}:1.3.0`;
+      expect(parseEnvFile(initEnv({ url: "https://tiehall.example.com", image }))["TIEHALL_IMAGE"], `${name.length}`).toBe(
+        image,
+      );
+    }
+  });
+
+  it("refuses a repository path of more than 255 characters, as Docker counts it", () => {
+    for (const name of [
+      `ghcr.io/${"a".repeat(256)}`,
+      `ghcr.io/acme/${"a".repeat(251)}`,
+      // A one-component name on Docker Hub counts as library/<name>: 8 characters more.
+      "a".repeat(248),
+      "a".repeat(255),
+      `docker.io/${"a".repeat(248)}`,
+      `index.docker.io/${"a".repeat(248)}`,
+      `acme/${"a".repeat(251)}`,
+    ]) {
+      expect(() => initEnv({ url: "https://tiehall.example.com", image: `${name}:1.3.0` }), `${name.length}`).toThrow(
+        /not an image reference/,
+      );
+    }
+  });
+
   it("prints fresh secrets on each run with the same --image", () => {
     const first = parseEnvFile(initEnv({ url: "https://tiehall.example.com", image: RELEASE_IMAGE }));
     const second = parseEnvFile(initEnv({ url: "https://tiehall.example.com", image: RELEASE_IMAGE }));
