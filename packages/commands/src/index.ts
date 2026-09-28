@@ -74,6 +74,7 @@ export {
 export {
   connectInstallations,
   coveredRepositories,
+  coveringInstallation,
   knownInstallations,
   listAppInstallations,
   listInstallationRepositories,

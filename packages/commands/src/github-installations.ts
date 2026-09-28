@@ -253,6 +253,37 @@ export async function coveredRepositories({ tx, orgId }: Pick<OrgContext, "tx" |
     .orderBy(asc(githubCoveredRepositories.fullName), asc(githubCoveredRepositories.repositoryId));
 }
 
+/**
+ * The connected installation that covers a repository, by the repository's
+ * GitHub id, which a rename keeps: Tiehall's id of the installation and
+ * GitHub's; undefined when no connected installation that is neither
+ * suspended nor deleted covers it. The merged-PR rules, the mirrors and the
+ * provider PRs ask it.
+ */
+export async function coveringInstallation(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  repositoryId: number,
+): Promise<{ installation: string; installationId: number } | undefined> {
+  const [row] = await tx
+    .select({ installation: githubInstallations.id, installationId: githubInstallations.installationId })
+    .from(githubCoveredRepositories)
+    .innerJoin(
+      githubInstallations,
+      and(eq(githubInstallations.orgId, githubCoveredRepositories.orgId), eq(githubInstallations.id, githubCoveredRepositories.installationId)),
+    )
+    .where(
+      and(
+        eq(githubCoveredRepositories.orgId, orgId),
+        eq(githubCoveredRepositories.repositoryId, repositoryId),
+        isNull(githubInstallations.suspendedAt),
+        isNull(githubInstallations.deletedAt),
+      ),
+    )
+    .orderBy(asc(githubInstallations.installationId))
+    .limit(1);
+  return row;
+}
+
 /** The connected installations of the App whose repositories are read: those neither suspended nor deleted. */
 async function liveConnectedInstallations(
   { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
