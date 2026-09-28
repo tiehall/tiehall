@@ -1,0 +1,140 @@
+{
+    "source": "Transcribed from RECORD.md of spikes 1.5 and 1.6 (branch spike/github-app, run on 2026-09-28, 13:58-14:35 UTC), where GitHub's answers are quoted word for word. The manifests are the ones the spike posted to GitHub's personal new-App page, rebuilt from its src/manifest.ts.",
+    "manifests": {
+        "newAppPage": "https://github.com/settings/apps/new",
+        "refusalTitle": "Invalid GitHub App configuration",
+        "answers": [
+            {
+                "variant": 1,
+                "manifest": {
+                    "name": "Tiehall example localhost",
+                    "url": "http://localhost:4780",
+                    "redirect_url": "http://localhost:4780/setup/callback",
+                    "callback_urls": [
+                        "http://localhost:4780/api/auth/callback/github"
+                    ],
+                    "public": false,
+                    "default_permissions": {
+                        "metadata": "read",
+                        "pull_requests": "read",
+                        "issues": "write",
+                        "members": "read",
+                        "emails": "read"
+                    },
+                    "description": "Throwaway App of the Tiehall spike for tasks 1.5 and 1.6. Delete it after the run.",
+                    "hook_attributes": {
+                        "url": "http://localhost:4780/webhooks/github",
+                        "active": true
+                    },
+                    "default_events": [
+                        "pull_request",
+                        "issues",
+                        "installation",
+                        "installation_repositories",
+                        "organization"
+                    ]
+                },
+                "accepted": false,
+                "messages": [
+                    "Hook url is not supported because it isn't reachable over the public Internet (localhost)",
+                    "Hook is invalid",
+                    "Default events unsupported: installation and installation_repositories",
+                    "Default events are not supported by permissions: installation and installation_repositories"
+                ]
+            },
+            {
+                "variant": 2,
+                "manifest": {
+                    "name": "Tiehall example localhost",
+                    "url": "http://localhost:4780",
+                    "redirect_url": "http://localhost:4780/setup/callback",
+                    "callback_urls": [
+                        "http://localhost:4780/api/auth/callback/github"
+                    ],
+                    "public": false,
+                    "default_permissions": {
+                        "metadata": "read",
+                        "pull_requests": "read",
+                        "issues": "write",
+                        "members": "read",
+                        "emails": "read"
+                    },
+                    "description": "Throwaway App of the Tiehall spike for tasks 1.5 and 1.6. Delete it after the run.",
+                    "hook_attributes": {
+                        "url": "http://localhost:4780/webhooks/github",
+                        "active": false
+                    },
+                    "default_events": [
+                        "pull_request",
+                        "issues",
+                        "organization"
+                    ]
+                },
+                "accepted": false,
+                "messages": [
+                    "Hook url is not supported because it isn't reachable over the public Internet (localhost)",
+                    "Hook is invalid"
+                ]
+            },
+            {
+                "variant": 3,
+                "manifest": {
+                    "name": "Tiehall example localhost",
+                    "url": "http://localhost:4780",
+                    "redirect_url": "http://localhost:4780/setup/callback",
+                    "callback_urls": [
+                        "http://localhost:4780/api/auth/callback/github"
+                    ],
+                    "public": false,
+                    "default_permissions": {
+                        "metadata": "read",
+                        "pull_requests": "read",
+                        "issues": "write",
+                        "members": "read",
+                        "emails": "read"
+                    },
+                    "description": "Throwaway App of the Tiehall spike for tasks 1.5 and 1.6. Delete it after the run.",
+                    "default_events": [
+                        "pull_request",
+                        "issues",
+                        "organization"
+                    ]
+                },
+                "accepted": false,
+                "messages": [
+                    "Hook url cannot be blank",
+                    "Hook is invalid"
+                ]
+            },
+            {
+                "variant": 4,
+                "manifest": {
+                    "name": "Tiehall example localhost",
+                    "url": "http://localhost:4780",
+                    "redirect_url": "http://localhost:4780/setup/callback",
+                    "callback_urls": [
+                        "http://localhost:4780/api/auth/callback/github"
+                    ],
+                    "public": false,
+                    "default_permissions": {
+                        "metadata": "read",
+                        "pull_requests": "read",
+                        "issues": "write",
+                        "members": "read",
+                        "emails": "read"
+                    },
+                    "description": "Throwaway App of the Tiehall spike for tasks 1.5 and 1.6. Delete it after the run.",
+                    "default_events": []
+                },
+                "accepted": true,
+                "messages": []
+            }
+        ]
+    },
+    "tokenExchange": {
+        "wrongClientSecret": {
+            "error": "incorrect_client_credentials",
+            "error_description": "The client_id and/or client_secret passed are incorrect."
+        }
+    }
+}

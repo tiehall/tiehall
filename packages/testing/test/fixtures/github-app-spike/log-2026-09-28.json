@@ -1,0 +1,689 @@
+[
+    {
+        "id": 1,
+        "at": "2026-09-28T13:42:25.037Z",
+        "kind": "process_started",
+        "detail": {
+            "org": null,
+            "node": "v26.0.0",
+            "baseUrl": "http://localhost:4780"
+        }
+    },
+    {
+        "id": 2,
+        "at": "2026-09-28T13:58:43.139Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "06a07947"
+        }
+    },
+    {
+        "id": 3,
+        "at": "2026-09-28T13:58:58.697Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "7df8ee6b"
+        }
+    },
+    {
+        "id": 4,
+        "at": "2026-09-28T14:00:03.187Z",
+        "kind": "process_started",
+        "detail": {
+            "org": null,
+            "node": "v26.0.0",
+            "baseUrl": "http://localhost:4780"
+        }
+    },
+    {
+        "id": 5,
+        "at": "2026-09-28T14:00:07.668Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "539450ff"
+        }
+    },
+    {
+        "id": 6,
+        "at": "2026-09-28T14:00:27.302Z",
+        "kind": "process_started",
+        "detail": {
+            "org": null,
+            "node": "v26.0.0",
+            "baseUrl": "http://localhost:4780"
+        }
+    },
+    {
+        "id": 7,
+        "at": "2026-09-28T14:00:30.897Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "fcb64dba"
+        }
+    },
+    {
+        "id": 8,
+        "at": "2026-09-28T14:07:23.505Z",
+        "kind": "process_started",
+        "detail": {
+            "org": null,
+            "node": "v26.0.0",
+            "baseUrl": "http://localhost:4780"
+        }
+    },
+    {
+        "id": 9,
+        "at": "2026-09-28T14:07:24.260Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "049503c7"
+        }
+    },
+    {
+        "id": 10,
+        "at": "2026-09-28T14:07:31.894Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "aede234f"
+        }
+    },
+    {
+        "id": 11,
+        "at": "2026-09-28T14:08:13.860Z",
+        "kind": "callback_received",
+        "detail": {
+            "reason": null,
+            "hasCode": true,
+            "stateOk": true,
+            "statePrefix": "aede234f"
+        }
+    },
+    {
+        "id": 12,
+        "at": "2026-09-28T14:08:13.862Z",
+        "kind": "conversion_requested",
+        "detail": {
+            "endpoint": "POST /app-manifests/{code}/conversions"
+        }
+    },
+    {
+        "id": 13,
+        "at": "2026-09-28T14:08:15.027Z",
+        "kind": "conversion_response",
+        "detail": {
+            "status": 201,
+            "elapsedMs": 1165,
+            "fieldNames": [
+                "client_id",
+                "client_secret",
+                "created_at",
+                "description",
+                "events",
+                "external_url",
+                "html_url",
+                "id",
+                "name",
+                "node_id",
+                "owner",
+                "pem",
+                "permissions",
+                "slug",
+                "updated_at",
+                "webhook_secret"
+            ]
+        }
+    },
+    {
+        "id": 14,
+        "at": "2026-09-28T14:09:15.029Z",
+        "kind": "process_started",
+        "detail": {
+            "org": null,
+            "node": "v26.0.0",
+            "baseUrl": "http://localhost:4780"
+        }
+    },
+    {
+        "id": 15,
+        "at": "2026-09-28T14:10:35.982Z",
+        "kind": "setup_rendered",
+        "detail": {
+            "org": null,
+            "name": "Tiehall example localhost",
+            "statePrefix": "cfebb63a"
+        }
+    },
+    {
+        "id": 16,
+        "at": "2026-09-28T14:20:57.565Z",
+        "kind": "callback_received",
+        "detail": {
+            "reason": null,
+            "hasCode": true,
+            "stateOk": true,
+            "statePrefix": "cfebb63a"
+        }
+    },
+    {
+        "id": 17,
+        "at": "2026-09-28T14:20:57.568Z",
+        "kind": "conversion_requested",
+        "detail": {
+            "endpoint": "POST /app-manifests/{code}/conversions"
+        }
+    },
+    {
+        "id": 18,
+        "at": "2026-09-28T14:20:59.063Z",
+        "kind": "conversion_response",
+        "detail": {
+            "status": 201,
+            "elapsedMs": 1494,
+            "fieldNames": [
+                "client_id",
+                "client_secret",
+                "created_at",
+                "description",
+                "events",
+                "external_url",
+                "html_url",
+                "id",
+                "name",
+                "node_id",
+                "owner",
+                "pem",
+                "permissions",
+                "slug",
+                "updated_at",
+                "webhook_secret"
+            ]
+        }
+    },
+    {
+        "id": 19,
+        "at": "2026-09-28T14:20:59.068Z",
+        "kind": "credentials_stored",
+        "detail": {
+            "name": "Tiehall example localhost",
+            "slug": "tiehall-example-localhost",
+            "appId": 2000001,
+            "source": "conversion",
+            "htmlUrl": "https://github.com/apps/tiehall-example-localhost",
+            "version": 2,
+            "clientId": "Iv23liExample0000001",
+            "createdAt": "2026-09-28T14:20:59.065Z",
+            "simulated": false,
+            "ownerLogin": "example-user",
+            "privateKeyLength": 1679,
+            "webhookSecretLength": null,
+            "clientSecretFingerprint": "0000000000a1"
+        }
+    },
+    {
+        "id": 20,
+        "at": "2026-09-28T14:20:59.083Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:20:59.074Z",
+            "key": "v2:Iv23liExample0000001:0000000000a1",
+            "trigger": "conversion",
+            "version": 2,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 1,
+            "clientSecretFingerprint": "0000000000a1"
+        }
+    },
+    {
+        "id": 21,
+        "at": "2026-09-28T14:23:20.814Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:20Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 22,
+        "at": "2026-09-28T14:23:21.737Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:21Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 23,
+        "at": "2026-09-28T14:23:22.279Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 24,
+        "at": "2026-09-28T14:23:22.386Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 25,
+        "at": "2026-09-28T14:23:22.457Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 26,
+        "at": "2026-09-28T14:23:22.911Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 27,
+        "at": "2026-09-28T14:23:22.991Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 28,
+        "at": "2026-09-28T14:23:23.083Z",
+        "kind": "installation_token_used",
+        "detail": {
+            "expiresAt": "2026-09-28T15:23:22Z",
+            "permissions": {
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read"
+            },
+            "reposStatus": 200,
+            "tokenLength": 383,
+            "tokenStatus": 201,
+            "repositories": [
+                "example-user/example-repo"
+            ],
+            "installationId": 3000001
+        }
+    },
+    {
+        "id": 29,
+        "at": "2026-09-28T14:23:44.805Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 1
+        }
+    },
+    {
+        "id": 30,
+        "at": "2026-09-28T14:23:49.409Z",
+        "kind": "account_created",
+        "detail": {
+            "stored": {
+                "idToken": "null",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null"
+            },
+            "accountId": "1000001",
+            "providerId": "github"
+        }
+    },
+    {
+        "id": 31,
+        "at": "2026-09-28T14:23:49.412Z",
+        "kind": "account_create_before",
+        "detail": {
+            "seen": {
+                "idToken": "absent",
+                "accessToken": "string(40)",
+                "refreshToken": "string(80)",
+                "accessTokenExpiresAt": "date(24)",
+                "refreshTokenExpiresAt": "date(24)"
+            },
+            "providerId": "github"
+        }
+    },
+    {
+        "id": 32,
+        "at": "2026-09-28T14:23:49.418Z",
+        "kind": "session_created",
+        "detail": {
+            "userId": "exampleUserId0000000000000000001",
+            "expiresAt": "2026-10-05T14:23:49.409Z"
+        }
+    },
+    {
+        "id": 33,
+        "at": "2026-09-28T14:25:00.077Z",
+        "kind": "admin_rotate",
+        "detail": {
+            "version": 3,
+            "simulated": true,
+            "clientSecretFingerprint": "0000000000a2"
+        }
+    },
+    {
+        "id": 34,
+        "at": "2026-09-28T14:25:00.080Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:25:00.080Z",
+            "key": "v3:Iv23liExample0000001:0000000000a2",
+            "trigger": "admin/rotate",
+            "version": 3,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 2,
+            "clientSecretFingerprint": "0000000000a2"
+        }
+    },
+    {
+        "id": 35,
+        "at": "2026-09-28T14:25:19.442Z",
+        "kind": "admin_rotate",
+        "detail": {
+            "version": 4,
+            "simulated": true,
+            "clientSecretFingerprint": "0000000000a3"
+        }
+    },
+    {
+        "id": 36,
+        "at": "2026-09-28T14:25:19.445Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:25:19.445Z",
+            "key": "v4:Iv23liExample0000001:0000000000a3",
+            "trigger": "admin/rotate",
+            "version": 4,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 3,
+            "clientSecretFingerprint": "0000000000a3"
+        }
+    },
+    {
+        "id": 37,
+        "at": "2026-09-28T14:25:48.626Z",
+        "kind": "admin_rotate",
+        "detail": {
+            "version": 5,
+            "simulated": true,
+            "clientSecretFingerprint": "0000000000a4"
+        }
+    },
+    {
+        "id": 38,
+        "at": "2026-09-28T14:25:48.629Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:25:48.629Z",
+            "key": "v5:Iv23liExample0000001:0000000000a4",
+            "trigger": "admin/rotate",
+            "version": 5,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 4,
+            "clientSecretFingerprint": "0000000000a4"
+        }
+    },
+    {
+        "id": 39,
+        "at": "2026-09-28T14:27:57.739Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 4
+        }
+    },
+    {
+        "id": 40,
+        "at": "2026-09-28T14:28:26.040Z",
+        "kind": "admin_rotate",
+        "detail": {
+            "version": 6,
+            "simulated": true,
+            "clientSecretFingerprint": "0000000000a5"
+        }
+    },
+    {
+        "id": 41,
+        "at": "2026-09-28T14:28:26.044Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:28:26.043Z",
+            "key": "v6:Iv23liExample0000001:0000000000a5",
+            "trigger": "admin/rotate",
+            "version": 6,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 5,
+            "clientSecretFingerprint": "0000000000a5"
+        }
+    },
+    {
+        "id": 42,
+        "at": "2026-09-28T14:28:35.021Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 5
+        }
+    },
+    {
+        "id": 43,
+        "at": "2026-09-28T14:28:48.596Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 5
+        }
+    },
+    {
+        "id": 44,
+        "at": "2026-09-28T14:28:56.012Z",
+        "kind": "admin_rotate",
+        "detail": {
+            "version": 7,
+            "simulated": true,
+            "clientSecretFingerprint": "0000000000a6"
+        }
+    },
+    {
+        "id": 45,
+        "at": "2026-09-28T14:28:56.015Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:28:56.015Z",
+            "key": "v7:Iv23liExample0000001:0000000000a6",
+            "trigger": "admin/rotate",
+            "version": 7,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 6,
+            "clientSecretFingerprint": "0000000000a6"
+        }
+    },
+    {
+        "id": 46,
+        "at": "2026-09-28T14:29:09.395Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 6
+        }
+    },
+    {
+        "id": 47,
+        "at": "2026-09-28T14:32:49.389Z",
+        "kind": "admin_restore",
+        "detail": {
+            "version": 8,
+            "clientSecretFingerprint": "0000000000a1"
+        }
+    },
+    {
+        "id": 48,
+        "at": "2026-09-28T14:32:49.391Z",
+        "kind": "auth_built",
+        "detail": {
+            "at": "2026-09-28T14:32:49.391Z",
+            "key": "v8:Iv23liExample0000001:0000000000a1",
+            "trigger": "admin/restore",
+            "version": 8,
+            "clientId": "Iv23liExample0000001",
+            "instance": "built",
+            "generation": 7,
+            "clientSecretFingerprint": "0000000000a1"
+        }
+    },
+    {
+        "id": 49,
+        "at": "2026-09-28T14:32:56.221Z",
+        "kind": "sign_in_started",
+        "detail": {
+            "redirect": true,
+            "generation": 7
+        }
+    },
+    {
+        "id": 50,
+        "at": "2026-09-28T14:32:57.928Z",
+        "kind": "account_update_before",
+        "detail": {
+            "seen": {
+                "idToken": "absent",
+                "accessToken": "string(40)",
+                "refreshToken": "string(80)",
+                "accessTokenExpiresAt": "date(24)",
+                "refreshTokenExpiresAt": "date(24)"
+            }
+        }
+    },
+    {
+        "id": 51,
+        "at": "2026-09-28T14:32:57.931Z",
+        "kind": "account_updated",
+        "detail": {
+            "stored": {
+                "idToken": "null",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null"
+            }
+        }
+    },
+    {
+        "id": 52,
+        "at": "2026-09-28T14:32:57.933Z",
+        "kind": "session_created",
+        "detail": {
+            "userId": "exampleUserId0000000000000000001",
+            "expiresAt": "2026-10-05T14:32:57.931Z"
+        }
+    }
+]

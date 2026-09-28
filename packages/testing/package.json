@@ -2,7 +2,7 @@
   "name": "@tiehall/testing",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared test harness: one Testcontainers Postgres 17 per Vitest project, a fresh database per test file, a setup file that fails a test file using pg in a way pg 9 removes, and a local SMTP test server.",
+  "description": "Shared test harness: one Testcontainers Postgres 17 per Vitest project, a fresh database per test file, a setup file that fails a test file using pg in a way pg 9 removes, a local SMTP test server, and the GitHub stub every GitHub test runs against.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
@@ -12,7 +12,8 @@
     "./postgres": "./src/postgres.ts",
     "./global-setup": "./src/global-setup.ts",
     "./pg-warnings": "./src/pg-warnings.ts",
-    "./smtp": "./src/smtp.ts"
+    "./smtp": "./src/smtp.ts",
+    "./github": "./src/github/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

@@ -1,0 +1,155 @@
+{
+    "checks": [
+        {
+            "task": "1.6",
+            "id": "manifest-accepted",
+            "title": "GitHub accepted the manifest and returned a code",
+            "state": "pass",
+            "evidence": [
+                "App id 2000001, slug tiehall-example-localhost, name \"Tiehall example localhost\", owner example-user",
+                "credentials stored at 2026-09-28T14:20:59.065Z (version 2)",
+                "https://github.com/apps/tiehall-example-localhost"
+            ]
+        },
+        {
+            "task": "1.6",
+            "id": "app-permissions",
+            "title": "The App has the Members and Email addresses permissions and the five events",
+            "state": "fail",
+            "evidence": [
+                "GET /app permissions: emails:read, issues:write, members:read, metadata:read, pull_requests:read",
+                "GET /app events: (none)",
+                "asked: metadata:read, pull_requests:read, issues:write, members:read, emails:read; events pull_request, issues, organization",
+                "events: missing [pull_request, issues, organization], extra []",
+                "members kept: yes; email addresses kept: yes, reported as \"emails\" (asked as \"emails\")"
+            ]
+        },
+        {
+            "task": "1.6",
+            "id": "code-converted",
+            "title": "The code was converted within the hour",
+            "state": "pass",
+            "evidence": [
+                "setup page rendered at 2026-09-28T14:10:35.982Z",
+                "callback with the code received at 2026-09-28T14:20:57.565Z",
+                "conversion answered 201 at 2026-09-28T14:20:59.063Z (1494 ms after the callback, measured in the process, 623 s after the setup page)",
+                "response fields: client_id, client_secret, created_at, description, events, external_url, html_url, id, name, node_id, owner, pem, permissions, slug, updated_at, webhook_secret"
+            ]
+        },
+        {
+            "task": "1.6",
+            "id": "deliveries-after-install",
+            "title": "GitHub's delivery log shows the deliveries for the installation made after creation",
+            "state": "fail",
+            "evidence": [
+                "GET /app/hook/deliveries failed: 404 {\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/apps/webhooks#list-deliveries-for-an-app-webhook\",\"status\":\"404\"}"
+            ]
+        },
+        {
+            "task": "1.6",
+            "id": "failed-delivery",
+            "title": "The delivery log shows a failed delivery for the unreachable localhost URL",
+            "state": "fail",
+            "evidence": []
+        },
+        {
+            "task": "1.5",
+            "id": "sign-in",
+            "title": "A person signed in through the App's user authorization (Better Auth GitHub provider)",
+            "state": "pass",
+            "evidence": [
+                "user exampleUserId0000000000000000001 = GitHub account id 1000001, account row created 2026-09-28T14:23:49.405Z, sessions: 2",
+                "session_created events: 2 (last at 2026-09-28T14:32:57.933Z)"
+            ]
+        },
+        {
+            "task": "1.5",
+            "id": "credentials-rebuilt",
+            "title": "The sign-in service is built from stored credentials and rebuilt when they change, without a restart",
+            "state": "pass",
+            "evidence": [
+                "generation 1 built at 2026-09-28T14:20:59.074Z, trigger conversion, key v2:Iv23liExample0000001:0000000000a1",
+                "generation 2 built at 2026-09-28T14:25:00.080Z, trigger admin/rotate, key v3:Iv23liExample0000001:0000000000a2",
+                "generation 3 built at 2026-09-28T14:25:19.445Z, trigger admin/rotate, key v4:Iv23liExample0000001:0000000000a3",
+                "generation 4 built at 2026-09-28T14:25:48.629Z, trigger admin/rotate, key v5:Iv23liExample0000001:0000000000a4",
+                "generation 5 built at 2026-09-28T14:28:26.043Z, trigger admin/rotate, key v6:Iv23liExample0000001:0000000000a5",
+                "generation 6 built at 2026-09-28T14:28:56.015Z, trigger admin/rotate, key v7:Iv23liExample0000001:0000000000a6",
+                "generation 7 built at 2026-09-28T14:32:49.391Z, trigger admin/restore, key v8:Iv23liExample0000001:0000000000a1",
+                "credential versions in the database: v2 conversion, v3 rotate (simulated), v4 rotate (simulated), v5 rotate (simulated), v6 rotate (simulated), v7 rotate (simulated), v8 restore"
+            ]
+        },
+        {
+            "task": "1.5",
+            "id": "no-user-token",
+            "title": "No GitHub user access or refresh token is stored after sign-in",
+            "state": "pass",
+            "evidence": [
+                "account exampleAccountId0000000000000001: id=exampleAccountId0000000000000001, accountId=1000001, providerId=github, userId=exampleUserId0000000000000000001, accessToken=null, refreshToken=null, idToken=null, accessTokenExpiresAt=null, refreshTokenExpiresAt=null, scope=, password=null, createdAt=2026-09-28T14:23:49.405Z, updatedAt=2026-09-28T14:32:57.927Z",
+                "session exampleSessionId0000000000000001: id=exampleSessionId0000000000000001, expiresAt=2026-10-05T14:23:49.409Z, token=string(32), createdAt=2026-09-28T14:23:49.409Z, updatedAt=2026-09-28T14:23:49.409Z, ipAddress=, userAgent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/2.9939.2 Chrome/152.0.7977.130 Safari/537.36, userId=exampleUserId0000000000000000001",
+                "session exampleSessionId0000000000000002: id=exampleSessionId0000000000000002, expiresAt=2026-10-05T14:32:57.931Z, token=string(32), createdAt=2026-09-28T14:32:57.931Z, updatedAt=2026-09-28T14:32:57.931Z, ipAddress=, userAgent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/2.9939.2 Chrome/152.0.7977.130 Safari/537.36, userId=exampleUserId0000000000000000001",
+                "account_create_before at 2026-09-28T14:23:49.412Z saw {\"idToken\":\"absent\",\"accessToken\":\"string(40)\",\"refreshToken\":\"string(80)\",\"accessTokenExpiresAt\":\"date(24)\",\"refreshTokenExpiresAt\":\"date(24)\"}",
+                "account_update_before at 2026-09-28T14:32:57.928Z saw {\"idToken\":\"absent\",\"accessToken\":\"string(40)\",\"refreshToken\":\"string(80)\",\"accessTokenExpiresAt\":\"date(24)\",\"refreshTokenExpiresAt\":\"date(24)\"}"
+            ]
+        }
+    ],
+    "credentials": {
+        "version": 8,
+        "appId": 2000001,
+        "slug": "tiehall-example-localhost",
+        "name": "Tiehall example localhost",
+        "htmlUrl": "https://github.com/apps/tiehall-example-localhost",
+        "ownerLogin": "example-user",
+        "clientId": "Iv23liExample0000001",
+        "clientSecretFingerprint": "0000000000a1",
+        "webhookSecretLength": null,
+        "privateKeyLength": 1679,
+        "source": "restore",
+        "simulated": false,
+        "createdAt": "2026-09-28T14:32:49.386Z"
+    },
+    "builds": [
+        {
+            "generation": 1,
+            "key": "v2:Iv23liExample0000001:0000000000a1",
+            "trigger": "conversion",
+            "at": "2026-09-28T14:20:59.074Z"
+        },
+        {
+            "generation": 2,
+            "key": "v3:Iv23liExample0000001:0000000000a2",
+            "trigger": "admin/rotate",
+            "at": "2026-09-28T14:25:00.080Z"
+        },
+        {
+            "generation": 3,
+            "key": "v4:Iv23liExample0000001:0000000000a3",
+            "trigger": "admin/rotate",
+            "at": "2026-09-28T14:25:19.445Z"
+        },
+        {
+            "generation": 4,
+            "key": "v5:Iv23liExample0000001:0000000000a4",
+            "trigger": "admin/rotate",
+            "at": "2026-09-28T14:25:48.629Z"
+        },
+        {
+            "generation": 5,
+            "key": "v6:Iv23liExample0000001:0000000000a5",
+            "trigger": "admin/rotate",
+            "at": "2026-09-28T14:28:26.043Z"
+        },
+        {
+            "generation": 6,
+            "key": "v7:Iv23liExample0000001:0000000000a6",
+            "trigger": "admin/rotate",
+            "at": "2026-09-28T14:28:56.015Z"
+        },
+        {
+            "generation": 7,
+            "key": "v8:Iv23liExample0000001:0000000000a1",
+            "trigger": "admin/restore",
+            "at": "2026-09-28T14:32:49.391Z"
+        }
+    ],
+    "storedAt": "2026-09-28T14:20:59.065Z"
+}
