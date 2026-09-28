@@ -1,0 +1,312 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Add a dark mode.",
+    "links": [
+      {
+        "url": "https://wiki.example.com/dark-mode/1"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/2"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/3"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/4"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/5"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/6"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/7"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/8"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/9"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/10"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/11"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/12"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/13"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/14"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/15"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/16"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/17"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/18"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/19"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/20"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/21"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/22"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/23"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/24"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/25"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/26"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/27"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/28"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/29"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/30"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/31"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/32"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/33"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/34"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/35"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/36"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/37"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/38"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/39"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/40"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/41"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/42"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/43"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/44"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/45"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/46"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/47"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/48"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/49"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/50"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/51"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/52"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/53"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/54"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/55"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/56"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/57"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/58"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/59"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/60"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/61"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/62"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/63"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/64"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/65"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/66"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/67"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/68"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/69"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/70"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/71"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/72"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/73"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/74"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/75"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/76"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/77"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/78"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/79"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/80"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/81"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/82"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/83"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/84"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/85"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/86"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/87"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/88"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/89"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/90"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/91"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/92"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/93"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/94"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/95"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/96"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/97"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/98"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/99"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/100"
+      },
+      {
+        "url": "https://wiki.example.com/dark-mode/101"
+      }
+    ]
+  }
+}

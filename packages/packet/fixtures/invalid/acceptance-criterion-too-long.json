@@ -1,0 +1,10 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Add a dark mode.",
+    "acceptance_criteria": [
+      "The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or dark setting. The settings page follows the operating system's light or"
+    ]
+  }
+}
