@@ -60,6 +60,7 @@ export {
   type GitHubClientOptions,
 } from "./github-client.ts";
 export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export { userOfGitHubAccount } from "./github-users.ts";
 export {
   createGitHubWebhookRoute,
   processGitHubDelivery,
