@@ -317,6 +317,36 @@ export const activityLogExported = defineEventType({
   },
 });
 
+/**
+ * A person signed in with GitHub (activity-log: Which actions are security
+ * events; activity-log: Writes the sign-in service owns are still recorded).
+ * It names the user; its provenance names their new web session's user, and
+ * the side table keeps the client's address and user agent.
+ */
+export const signInCompleted = defineEventType({
+  type: "sign_in.completed",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+  },
+});
+
+/**
+ * A GitHub account was refused at sign-in (sign-in: Who may sign in;
+ * activity-log: Which actions are security events). It names the record of
+ * the refusal, which holds the GitHub account, and the account's user when
+ * Tiehall knows one, such as a removed member's; its provenance is the
+ * system's, since no user acted.
+ */
+export const signInRefused = defineEventType({
+  type: "sign_in.refused",
+  class: "security",
+  fields: {
+    refusalId: { kind: "id", of: "sign_in_refusal" },
+    userId: { kind: "id", of: "user", optional: true },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -338,4 +368,6 @@ export const EVENT_TYPES: readonly EventType[] = [
   writeBudgetChanged,
   trustStateReconciled,
   activityLogExported,
+  signInCompleted,
+  signInRefused,
 ];

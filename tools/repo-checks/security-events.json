@@ -4,8 +4,22 @@
     {
       "item": "a sign-in, and a refused sign-in, naming the GitHub account that was refused; a sign-in that clears an admin removal's block, as the sign-in capability defines, SHALL name the clearing;",
       "actions": [
-        { "action": "a sign-in", "pending": "7.14" },
-        { "action": "a refused sign-in", "pending": "7.14" },
+        {
+          "action": "a sign-in",
+          "event": "sign_in.completed",
+          "test": {
+            "file": "packages/commands/test/sign-in-events.test.ts",
+            "case": "appends a security event naming the user, right after the session is stored, with the client's address and user agent kept apart"
+          }
+        },
+        {
+          "action": "a refused sign-in",
+          "event": "sign_in.refused",
+          "test": {
+            "file": "packages/commands/test/sign-in-events.test.ts",
+            "case": "appends a security event naming the GitHub account that was refused, and creates no session or user"
+          }
+        },
         { "action": "a sign-in that clears an admin removal's block", "pending": "9.9" }
       ]
     },

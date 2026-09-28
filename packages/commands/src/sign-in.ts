@@ -5,8 +5,20 @@ import { authorizationCodeRequest, getOAuth2Tokens } from "better-auth/oauth2";
 import type { GithubProfile } from "better-auth/social-providers";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
-import { githubApp, integrationSecrets, members, orgs, signInAccounts, signInVerifications, users, webSessions, type Database } from "@tiehall/db";
+import { isIP } from "node:net";
+import { httpProblem, internalErrorProblem, Refusal, signInCompleted, signInRefused, type HttpProblem } from "@tiehall/core";
+import {
+  githubApp,
+  integrationSecrets,
+  members,
+  orgs,
+  signInAccounts,
+  signInRefusals,
+  signInVerifications,
+  users,
+  webSessions,
+  type Database,
+} from "@tiehall/db";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL } from "./github-client.ts";
 import { SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -18,6 +30,7 @@ import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { RemovedMemberError } from "./with-org.ts";
+import { write, type Origin, type Store } from "./write.ts";
 
 // The sign-in service (sign-in: GitHub is the only way to sign in; design.md,
 // Technical decisions: T7 and T8; design.md, Self-hosting decisions: S4 and
@@ -58,6 +71,15 @@ import { RemovedMemberError } from "./with-org.ts";
 // and both expiries to null. An after-hook cannot change the row, so it is the
 // pair of before-hooks (design.md, Technical decisions: T7), and the database
 // refuses a stored token besides.
+//
+// The security events of sign-ins (activity-log: Writes the sign-in service
+// owns are still recorded; activity-log: Which actions are security events;
+// design.md, Technical decisions: T8): the service stores a web session
+// itself, so an after-hook appends the sign-in's event right after that
+// write. A refused sign-in stores nothing of the service's; Tiehall records
+// the refused GitHub account itself, with the refusal's event, which names
+// that record. Each keeps the client's address, the one the trusted proxies
+// yield, and user agent in the side table, apart from the event.
 //
 // Who may sign in (sign-in: Who may sign in): every sign-in is decided before
 // the service writes anything, and a refused one gets 403 sign-in-refused,
@@ -134,6 +156,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   /** The session cookie's name, which Better Auth prefixes with __Secure- over HTTPS. */
   const sessionCookie = `${secure ? "__Secure-" : ""}tiehall.session_token`;
   let built: { key: string; auth: Auth } | undefined;
+  // Sign-in events start no job.
+  const store: Store = {
+    database: options.database,
+    jobs: {
+      send: () => Promise.reject(new Error("the sign-in service's writes start no job")),
+    },
+  };
 
   /** Which credentials are stored now: one small read per request, so a change reaches the next request. */
   async function storedCredentials(): Promise<StoredCredentials | undefined> {
@@ -209,9 +238,18 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           githubAccountId: { type: "number", required: true },
           primaryEmail: { type: "string", required: false, fieldName: "email" },
         },
-        async validateUserInfo(data) {
-          const githubAccountId = Number((data.user as { githubAccountId?: unknown }).githubAccountId);
+        async validateUserInfo(data, context) {
+          const user = data.user as { id?: unknown; name?: unknown; githubAccountId?: unknown };
+          const githubAccountId = Number(user.githubAccountId);
           if (Number.isSafeInteger(githubAccountId) && data.source.action !== "link-account" && (await admits(githubAccountId))) return;
+          // A known user, such as a removed member, is named too: the one a sign-in of an existing account would reach.
+          const userId = data.source.action === "sign-in" && typeof user.id === "string" ? user.id : undefined;
+          try {
+            await recordRefusal({ githubAccountId, login: typeof user.name === "string" ? user.name : "", userId }, whereFrom(context));
+          } catch (error) {
+            // The refusal stands: nobody is signed in, and the log says the event is missing.
+            logger.error("sign-in service: the security event of a refused sign-in could not be appended", { error });
+          }
           return { error: REFUSED_CODE, errorDescription: SIGN_IN_REFUSED };
         },
       },
@@ -227,6 +265,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
       verification: { modelName: "signInVerifications", additionalFields: { orgId } },
       databaseHooks: {
+        session: {
+          create: {
+            async after(session, context) {
+              await recordSignIn(session.userId, whereFrom(context));
+            },
+          },
+        },
         account: {
           create: { before: async () => ({ data: NO_USER_TOKEN }) },
           update: { before: async () => ({ data: NO_USER_TOKEN }) },
@@ -246,6 +291,33 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       plugins: [githubEndpoints()],
       hooks: { before: routeGuard },
     };
+  }
+
+  /** Appends the security event of a sign-in whose session the service just stored. */
+  async function recordSignIn(userId: string, origin: Origin): Promise<void> {
+    try {
+      await write(store, { actorKind: "web_session", userId, surface: "web" }, (writer) => writer.record(signInCompleted, { userId }), { origin });
+    } catch (error) {
+      // The session is stored: the person is signed in, and the log says the event is missing.
+      logger.error("sign-in service: the security event of a sign-in could not be appended", { error, userId });
+    }
+  }
+
+  /** Records the GitHub account a sign-in refused, and appends the refusal's security event, in one write. */
+  async function recordRefusal(account: { githubAccountId: number; login: string; userId: string | undefined }, origin: Origin): Promise<void> {
+    if (!Number.isSafeInteger(account.githubAccountId) || account.githubAccountId <= 0) return;
+    await write(
+      store,
+      { actorKind: "system", surface: "web" },
+      async (writer) => {
+        const [refusal] = await writer.tx
+          .insert(signInRefusals)
+          .values({ orgId: writer.orgId, githubAccountId: account.githubAccountId, githubLogin: account.login })
+          .returning({ id: signInRefusals.id });
+        await writer.record(signInRefused, { refusalId: refusal!.id, ...(account.userId === undefined ? {} : { userId: account.userId }) });
+      },
+      { origin },
+    );
   }
 
   /**
@@ -434,6 +506,21 @@ function returnPath(value: string | null): string {
   } catch {
     return "/";
   }
+}
+
+/**
+ * Where a sign-in came from: the client's address, which the web role's
+ * request guard puts, alone, in X-Forwarded-For from what the trusted proxies
+ * yield, and its user agent.
+ */
+function whereFrom(context: { request?: Request | undefined; headers?: Headers | undefined } | null | undefined): Origin {
+  const headers = context?.request?.headers ?? context?.headers;
+  const address = headers?.get("x-forwarded-for")?.trim();
+  const userAgent = headers?.get("user-agent") ?? undefined;
+  return {
+    ...(address !== undefined && isIP(address) !== 0 ? { ipAddress: address } : {}),
+    ...(userAgent === undefined ? {} : { userAgent }),
+  };
 }
 
 /** The origin an Origin header names, in the form TIEHALL_URL is kept in; undefined for none. */

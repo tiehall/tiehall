@@ -22,7 +22,8 @@ export type EventClass = (typeof EVENT_CLASSES)[number];
  * The records Tiehall keeps that an event may name by id. Later tasks add the
  * kinds of the records they create. None of them is a record kept elsewhere,
  * such as a GitHub account: Tiehall names such an account through its own user
- * or invite record.
+ * or invite record, or, for a GitHub account refused at sign-in, the record of
+ * that refusal.
  */
 export const RECORD_KINDS = [
   "request",
@@ -39,6 +40,7 @@ export const RECORD_KINDS = [
   "integration",
   "api",
   "change_set",
+  "sign_in_refusal",
 ] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 

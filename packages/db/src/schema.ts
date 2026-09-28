@@ -492,6 +492,28 @@ export const signInAccounts = pgTable(
   ],
 );
 
+// GitHub accounts refused at sign-in (sign-in: Who may sign in; activity-log:
+// Which actions are security events). A refused sign-in creates no session,
+// no user and no membership; this record keeps which GitHub account was
+// refused, by its numeric id and the login it had then, so the security event
+// of the refusal can name it: an event names only Tiehall's own records.
+export const signInRefusals = pgTable(
+  "sign_in_refusals",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    githubAccountId: bigint("github_account_id", { mode: "number" }).notNull(),
+    githubLogin: text("github_login").notNull(),
+    refusedAt: timestamp("refused_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    check("sign_in_refusals_github_account_id_positive", sql`${table.githubAccountId} > 0`),
+  ],
+);
+
 // What the sign-in service keeps for a moment, such as the state of a sign-in
 // with GitHub between the redirect to GitHub and GitHub's return, which
 // expires after 10 minutes.
