@@ -12,7 +12,9 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // posted. An agent's blocking question that would start a fourth counted flip
 // that day, on a request that is in_progress, is posted as non-blocking, and
 // Tiehall adds a notice. Blocking questions posted from a web session start no
-// counted flip, and one on an open or claimed request is no flip.
+// counted flip, and one on an open or claimed request is no flip. A flip is
+// counted when its question is posted and stays counted, even when the round
+// trip never completes (design.md, Decisions: D46 (5)).
 
 let clock = new Date("2026-10-01T08:00:00Z");
 /** Sets the clock to a time on 2026-10-01 (UTC), or on another day given as YYYY-MM-DDTHH:MM. */
@@ -134,6 +136,29 @@ describe("counted flips", () => {
     const asked = await post(bob, "agent", { kind: "question", body: "Still there?", blocking: true });
     expect(asked.message.blocking).toBe(true);
     expect(asked.request.state).toBe("needs_info");
+  });
+
+  it("stay counted when the round trip never completes: a claim released while the request waits, and the answer returns it to open", async () => {
+    const setStatus = (state: string) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state });
+    for (const time of ["09:00", "10:00", "11:00"]) {
+      at(time);
+      const asked = await post(bob, "agent", { kind: "question", body: "Which browsers must it support?", blocking: true });
+      expect(asked.request.state).toBe("needs_info");
+      expect((await setStatus("open")).body).toMatchObject({ state: "needs_info", claimant: null });
+      at(later(time, 1));
+      const answered = await post(alice, "agent", { kind: "answer", body: "The last two versions.", questionId: asked.message.id });
+      expect(answered.request.state).toBe("open");
+      at(later(time, 2));
+      expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`)).status).toBe(200);
+      expect((await setStatus("in_progress")).status).toBe(200);
+    }
+    at("12:00");
+    const asked = await post(bob, "agent", { kind: "question", body: "And tablets?", blocking: true });
+    expect(asked.message).toMatchObject({ kind: "question", blocking: false });
+    expect(asked.request.state).toBe("in_progress");
+    const notice = (await callApi(install, tokenOf(alice), "GET", `/api/v1/requests/${key}`)).body.messages.at(-1);
+    expect(notice).toMatchObject({ kind: "comment", provenance: { actorKind: "system" } });
+    expect(notice.untrusted.body).toMatch(/^Tiehall posted the question above as non-blocking/);
   });
 
   it("count one flip for two blocking questions of the same round trip", async () => {
