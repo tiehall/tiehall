@@ -69,7 +69,9 @@ export const SETTINGS: readonly SettingDefinition[] = [
   },
   {
     name: "TIEHALL_IMAGE",
-    description: `The Tiehall image, pinned by version and digest as the release notes give it. ${IMAGE_UPGRADE}`,
+    description:
+      "The Tiehall image, pinned by version, and by digest as well when the reference carries one; the reference the release " +
+      `notes give carries both. ${IMAGE_UPGRADE}`,
     init: "image",
     // A container cannot see its own digest, so without --image init names the image by the version its build baked in.
     initComment: {
