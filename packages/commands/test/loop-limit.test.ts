@@ -34,6 +34,7 @@ let store: Store;
 let alice: string;
 let bob: string;
 let carol: string;
+let erin: string;
 /** The request each test acts on, which Alice of team BE opens to team FE before it. */
 let key: string;
 let requestId: string;
@@ -47,9 +48,11 @@ beforeAll(async () => {
   alice = await addUser(install.owner, { login: "alice" });
   bob = await addUser(install.owner, { login: "bob" });
   carol = await addUser(install.owner, { login: "carol" });
+  erin = await addUser(install.owner, { login: "erin" });
   await joinTeams(install.owner, alice, be);
   await joinTeams(install.owner, bob, fe);
   await joinTeams(install.owner, carol, ops);
+  await joinTeams(install.owner, erin, fe);
 });
 
 afterAll(async () => {
@@ -273,6 +276,41 @@ describe("a flagged request", () => {
     expect(await flagged(other.id)).toBe(false);
     expect(await agentWrites(["09:04:00"], other.key)).toEqual([200]);
     expect(await flagged(other.id)).toBe(true);
+  });
+
+  it("refuses a write for the flag only after its side, the request's state and If-Match allow it, and counts none of the refusals", async () => {
+    at("09:00:00");
+    expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`)).status).toBe(200);
+    // A new link only, which changes no scope, so the claimed request takes it as revision 2 at once.
+    const revision = (ifMatch: string) =>
+      sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/packet/revisions`, {
+        body: { packet: { ...packetOf(), untrusted: { ...(packetOf()["untrusted"] as object), links: [{ url: "https://design.example.com/dark" }] } } },
+        headers: { "if-match": ifMatch },
+      });
+    at("09:00:20");
+    expect((await revision('"1"')).status).toBe(200);
+    expect(await agentWrites(times("09:00:40", 5, 30))).toEqual([200, 200, 200, 200, 200]);
+    expect(await flagged()).toBe(true);
+    const everything = async () =>
+      (
+        await install.owner.query(
+          `SELECT r.claimant_user_id AS claimant, r.agent_write_times::text AS "agentWrites",
+                  (SELECT count(*) FROM messages WHERE request_id = r.id) AS messages,
+                  (SELECT count(*) FROM packet_revisions WHERE request_id = r.id) AS revisions,
+                  (SELECT coalesce(sum(writes), 0) FROM agent_write_days) AS "budgetSpent"
+             FROM requests r WHERE r.id = $1`,
+          [requestId],
+        )
+      ).rows[0];
+    at("09:05:00");
+    const before = await everything();
+    expect(await comment(carol)).toMatchObject({ status: 403, body: { type: "https://tiehall.com/problems/forbidden" } });
+    const erins = await callApi(install, tokenOf(erin), "POST", `/api/v1/requests/${key}/claim`);
+    expect(erins).toMatchObject({ status: 409, body: { type: "https://tiehall.com/problems/conflict" } });
+    expect(await revision('"1"')).toMatchObject({ status: 412, body: { type: "https://tiehall.com/problems/precondition-failed" } });
+    expect(await comment(bob)).toMatchObject({ status: 409, body: { type: NEEDS_HUMAN } });
+    expect(await everything()).toEqual(before);
+    expect(before).toMatchObject({ claimant: bob, messages: "5", revisions: "2" });
   });
 
   it("still lets agents read it and acknowledge its events", async () => {
