@@ -12,8 +12,10 @@ import { addUser } from "./support/members.ts";
 // Tiehall's own records, and only admins manage them, in the web UI: they
 // create teams, rename them, change their keys, and add people to them and
 // remove them. A user can belong to several teams, and a team may have no
-// members. Who belongs to a team is never taken from GitHub teams or any other
-// outside source.
+// members. A team's name is 1 to 100 characters once its leading and trailing
+// blanks are removed, and any other gets 400 (design.md, Decisions: D45 (2)).
+// Who belongs to a team is never taken from GitHub teams or any other outside
+// source.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -111,6 +113,32 @@ describe("an admin", () => {
     expect(await submit(ada, "teams.change_key", { teamId: pay.id, key: "BILL" })).toEqual({
       ok: true,
       output: { id: pay.id, key: "BILL", name: "Payments and billing" },
+    });
+  });
+
+  it("gets 400 for a name of 101 characters or of blanks only, creating a team or renaming one, and nothing changes", async () => {
+    const ux = await createTeam("UX", "Design");
+    const before = await allTeams();
+    for (const name of ["n".repeat(101), "   "]) {
+      for (const [commandId, input] of [
+        ["teams.create", { key: "UXR", name }],
+        ["teams.rename", { teamId: ux.id, name }],
+      ] as const) {
+        expect(await submit(ada, commandId, input), `${commandId} with a name of ${name.length}`).toMatchObject({
+          ok: false,
+          problem: { status: 400, type: "https://tiehall.com/problems/invalid-input" },
+        });
+      }
+    }
+    expect(await allTeams()).toEqual(before);
+  });
+
+  it("accepts a name of 100 characters, creating a team and renaming one", async () => {
+    const team = await createTeam("LONG", "l".repeat(100));
+    expect(team.name).toBe("l".repeat(100));
+    expect(await submit(ada, "teams.rename", { teamId: team.id, name: "m".repeat(100) })).toEqual({
+      ok: true,
+      output: { id: team.id, key: "LONG", name: "m".repeat(100) },
     });
   });
 
