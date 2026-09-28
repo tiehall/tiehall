@@ -6,8 +6,12 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { signBody, startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing/github";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
+import { CATALOG } from "@tiehall/catalog";
 import {
+  createExecute,
   createGitHubWebhookRoute,
+  createInstallGitHub,
+  HANDLERS,
   migrate,
   openDatabase,
   openSecretBox,
@@ -105,7 +109,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stub.close();
-  await owner.query("DELETE FROM github_deliveries; DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM orgs");
+  await owner.query(
+    `DELETE FROM github_deliveries; DELETE FROM github_covered_repositories; DELETE FROM github_connected_installations;
+     DELETE FROM github_installations; DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM orgs`,
+  );
 });
 
 /** The install before setup completes, with the App the setup screen stored; its webhook secret is the stub App's. */
@@ -172,7 +179,13 @@ async function runSentJobs(): Promise<void> {
     expect(queue).toBe(processGitHubDelivery.type.queue);
     await processGitHubDelivery.handle(
       { id: randomUUID(), queue, data: data as { deliveryId: string }, signal: new AbortController().signal },
-      { database: db, now: () => new Date() },
+      {
+        database: db,
+        now: () => new Date(),
+        // Processing an installation's delivery lists the App's installations, on the stub.
+        github: createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch }),
+        execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database: db, jobs } }),
+      },
     );
   }
 }

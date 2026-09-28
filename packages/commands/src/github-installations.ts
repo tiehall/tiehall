@@ -254,7 +254,7 @@ export async function coveredRepositories({ tx, orgId }: Pick<OrgContext, "tx" |
 async function liveConnectedInstallations(
   { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
   appId: number,
-  only?: readonly string[],
+  only?: readonly number[],
 ): Promise<{ id: string; installationId: number }[]> {
   return tx
     .select({ id: githubInstallations.id, installationId: githubInstallations.installationId })
@@ -269,7 +269,7 @@ async function liveConnectedInstallations(
         eq(githubInstallations.appId, appId),
         isNull(githubInstallations.suspendedAt),
         isNull(githubInstallations.deletedAt),
-        ...(only === undefined ? [] : [inArray(githubInstallations.id, [...only])]),
+        ...(only === undefined ? [] : only.length === 0 ? [sql`false`] : [inArray(githubInstallations.installationId, [...only])]),
       ),
     )
     .orderBy(asc(githubInstallations.installationId));
@@ -289,8 +289,8 @@ export interface ReadInstallationsOptions {
   /** The app's database, as the app role; setup must be complete. */
   database: Database;
   app: GitHubAppAccess;
-  /** Reads the repositories of these connected installations only, by Tiehall's ids; of every connected one by default. */
-  repositoriesOf?: readonly string[];
+  /** Reads the repositories of these connected installations only, by GitHub's ids; of every connected one by default. */
+  repositoriesOf?: readonly number[];
   logger?: Logger;
 }
 

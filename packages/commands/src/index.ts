@@ -63,6 +63,15 @@ export {
 } from "./github-client.ts";
 export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
 export {
+  GITHUB_EVENT_PROCESSORS,
+  processDelivery,
+  type DeliveryProcessingServices,
+  type GitHubEvent,
+  type GitHubEventContext,
+  type GitHubEventProcessor,
+  type GitHubEventProcessors,
+} from "./github-delivery-processing.ts";
+export {
   connectInstallations,
   coveredRepositories,
   knownInstallations,

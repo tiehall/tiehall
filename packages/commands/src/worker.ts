@@ -1,9 +1,14 @@
+import { CATALOG } from "@tiehall/catalog";
 import type { Database, DatabaseConnection } from "@tiehall/db";
 import { openAppDatabase } from "./database.ts";
+import { createExecute, type Execute } from "./execute.ts";
+import { HANDLERS } from "./handlers.ts";
+import { createInstallGitHub, type InstallGitHub } from "./install-github.ts";
 import { openJobQueue } from "./job-queue.ts";
 import type { Mailer } from "./email.ts";
 import type { DefinedJobType, JobData, JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
+import type { SecretBox } from "./secret-box.ts";
 
 // The worker role (design.md, Technical decisions: T6; self-host-install: A
 // restart stops the app gracefully). It works the queues of the job types it
@@ -38,6 +43,10 @@ export interface WorkerServices {
   mailer?: Mailer;
   /** The install's URL (TIEHALL_URL), for the links an email holds. */
   installUrl?: string;
+  /** The install's GitHub App, which jobs that call GitHub call it as. */
+  github?: InstallGitHub;
+  /** execute(), through which a job's changes run as a system job or an integration event. */
+  execute?: Execute;
 }
 
 export interface WorkerJob<D extends JobData> {
@@ -64,6 +73,10 @@ export interface WorkerOptions {
   mailer?: Mailer;
   /** The install's URL (TIEHALL_URL), for the links an email holds. */
   installUrl?: string;
+  /** TIEHALL_SECRET_KEY's box, which opens the GitHub App's stored private key for the jobs that call GitHub. */
+  secrets?: () => SecretBox;
+  /** GitHub's API and the fetch that reaches it, which a test points at the GitHub stub; api.github.com otherwise. */
+  github?: { apiUrl?: string; fetch?: typeof fetch };
   logger?: Logger;
 }
 
@@ -84,12 +97,27 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     applicationName: "tiehall worker",
     logger,
   });
+  const database = openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" });
+  const now = options.clock ?? (() => new Date());
   const services: WorkerServices = {
-    database: openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" }),
-    now: options.clock ?? (() => new Date()),
+    database,
+    now,
     jobs: queue,
+    // The worker's own execute(), for the changes jobs and integration events make.
+    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs: queue }, now }),
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
+    ...(options.secrets === undefined
+      ? {}
+      : {
+          github: createInstallGitHub({
+            database,
+            secrets: options.secrets,
+            ...(options.github?.apiUrl === undefined ? {} : { apiUrl: options.github.apiUrl }),
+            ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
+            logger,
+          }),
+        }),
   };
   let stopping = false;
   /** Jobs whose handler is running, by id, with their queue. */

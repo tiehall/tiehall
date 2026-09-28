@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { githubDeliveries, orgs, type Database } from "@tiehall/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { processDelivery } from "./github-delivery-processing.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -34,9 +35,9 @@ import type { WorkerJob } from "./worker.ts";
 // sees setup complete and gets its job at once, or is held and committed
 // before setup can complete, so the next run finds it.
 //
-// Processing proper, as the integration-event caller through the table of
-// connected installations, is task 10.2 of add-tiehall-oss-v1; until then the
-// job records that the delivery was processed.
+// The job processes the delivery through the table of connected
+// installations, as the integration-event caller (github-delivery-
+// processing.ts).
 
 /** The route's answer to one request. */
 export type GitHubWebhookRoute = (request: Request) => Promise<Response>;
@@ -61,15 +62,11 @@ export const processGitHubDelivery: WorkerJob<{ deliveryId: string }> = {
     expireInSeconds: 300,
   }),
   concurrency: 4,
-  async handle(job, { database, now }) {
-    await withOrg(database, async ({ tx, orgId }) => {
-      await tx
-        .update(githubDeliveries)
-        .set({ processedAt: now() })
-        .where(
-          and(eq(githubDeliveries.orgId, orgId), eq(githubDeliveries.deliveryId, job.data.deliveryId), isNull(githubDeliveries.processedAt)),
-        );
-    });
+  async handle(job, { database, now, github, execute }) {
+    if (github === undefined || execute === undefined) {
+      throw new Error("The worker gives this job no GitHub App or execute() to process the delivery with.");
+    }
+    await processDelivery({ database, github, execute, now }, job.data.deliveryId);
   },
 };
 

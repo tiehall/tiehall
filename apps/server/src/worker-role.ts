@@ -2,11 +2,13 @@ import process from "node:process";
 import {
   createLogger,
   openMailer,
+  openSecretBox,
   startWorker,
   WORKER_JOBS,
   type AppSettings,
   type JobData,
   type Logger,
+  type SecretBox,
   type WorkerJob,
 } from "@tiehall/commands";
 
@@ -27,9 +29,12 @@ export interface WorkerRoleOptions {
   logger?: Logger;
 }
 
-export async function runWorkerRole(settings: Pick<AppSettings, "database" | "url" | "smtp">, options: WorkerRoleOptions = {}): Promise<void> {
+export async function runWorkerRole(settings: Pick<AppSettings, "database" | "url" | "smtp" | "secretKey">, options: WorkerRoleOptions = {}): Promise<void> {
   const logger = options.logger ?? createLogger().child({ role: "worker" });
+  // TIEHALL_SECRET_KEY opens the GitHub App's stored private key, when a job first calls GitHub.
+  let box: SecretBox | undefined;
   const starting = startWorker({
+    secrets: () => (box ??= openSecretBox(settings.secretKey)),
     connection: settings.database,
     jobs: options.jobs ?? WORKER_JOBS,
     // Email goes out through the install's SMTP settings, or, without them, nowhere.
