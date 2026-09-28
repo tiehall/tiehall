@@ -10,8 +10,12 @@ import { createLogger, type Logger } from "./log.ts";
 // - /setup, the setup screen, with its steps under it;
 // - /healthz, which Compose's health check and monitors read;
 // - /webhooks/github, from the moment the setup screen has stored the GitHub
-//   App's credentials, so the delivery for the installation made during setup
-//   is verified and stored, to be processed once setup completes.
+//   App's credentials, with or without a webhook secret, so a delivery that
+//   arrives during setup is verified and stored, to be processed once setup
+//   completes. The route refuses every delivery with 401 while no webhook
+//   secret is stored, as for an App created without a webhook
+//   (github-app-reachability: design.md, Design rules: An App without a
+//   webhook).
 // Every other call is answered before any route sees it: a page leads to the
 // setup screen at the install's URL, TIEHALL_URL/setup, and an API call
 // answers 503 with the problem type setup-required, the OpenAPI document at
@@ -27,7 +31,10 @@ import { createLogger, type Logger } from "./log.ts";
 export interface SetupState {
   /** The first admin's sign-in has completed setup. */
   complete: boolean;
-  /** The setup screen has stored the GitHub App's credentials, the webhook secret among them. */
+  /**
+   * The setup screen has stored the GitHub App's credentials: its id, client
+   * credentials and private key, with a webhook secret or without one.
+   */
   appCredentialsStored: boolean;
 }
 
@@ -59,16 +66,21 @@ const SETUP_REQUIRED = httpProblem(
   new Refusal("setup-required", "Setup is not complete. The install's operator completes it on the setup screen at /setup."),
 );
 
-/** Reads whether setup is complete and whether the App's credentials are stored. */
+/**
+ * Reads whether setup is complete and whether the App's credentials are
+ * stored, which the App's private key says: every App has one, and an App
+ * created without a webhook has no webhook secret (github-app-reachability:
+ * design.md, Technical decisions: T3).
+ */
 export async function readSetupState(database: Database): Promise<SetupState> {
   return database.transaction(async (tx) => {
     const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
     if (org === undefined) return { complete: false, appCredentialsStored: false };
-    const [secret] = await tx
+    const [privateKey] = await tx
       .select({ name: integrationSecrets.name })
       .from(integrationSecrets)
-      .where(and(eq(integrationSecrets.orgId, org.id), eq(integrationSecrets.name, "github_app.webhook_secret")));
-    return { complete: org.setupCompletedAt !== null, appCredentialsStored: secret !== undefined };
+      .where(and(eq(integrationSecrets.orgId, org.id), eq(integrationSecrets.name, "github_app.private_key")));
+    return { complete: org.setupCompletedAt !== null, appCredentialsStored: privateKey !== undefined };
   });
 }
 

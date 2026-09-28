@@ -305,9 +305,16 @@ describe("GitHub's return with the code", () => {
     const { location } = await createOnGitHub(createForm((await open(TRIAL, cookie)).html)!);
     expect(location?.href.startsWith(`${TRIAL}/setup/github?`)).toBe(true);
     expect((await returnFromGitHub(TRIAL, location!, cookie)).status).toBe(303);
-    expect(stub.apps()[0]?.webhookSecret).toBeNull();
-    expect(await storedApp()).toHaveLength(1);
+    const [app] = stub.apps();
+    expect(app?.webhookSecret).toBeNull();
+    // Its id, slug, name, client id and owner, its client secret and its private key, and no webhook secret.
+    expect(await storedApp()).toEqual([
+      { app_id: String(app!.id), slug: app!.slug, name: "Tiehall localhost", client_id: app!.clientId, owner_login: "omar", owner_type: "User" },
+    ]);
     expect(await storedSecretNames()).toEqual(["github_app.client_secret", "github_app.private_key"]);
+    expect(await secret("github_app.client_secret")).toBe(app!.clientSecret);
+    expect(await secret("github_app.private_key")).toBe(app!.pem);
+    expect(await secret("github_app.webhook_secret")).toBeUndefined();
   });
 
   it("refuses a return without a state, converts nothing and stores nothing", async () => {

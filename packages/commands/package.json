@@ -13,7 +13,8 @@
     "./health": "./src/health.ts",
     "./settings": "./src/settings.ts",
     "./setup": "./src/setup.ts",
-    "./web": "./src/web.ts"
+    "./web": "./src/web.ts",
+    "./webhooks": "./src/webhooks.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

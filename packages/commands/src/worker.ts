@@ -2,7 +2,7 @@ import type { Database, DatabaseConnection } from "@tiehall/db";
 import { openAppDatabase } from "./database.ts";
 import { openJobQueue } from "./job-queue.ts";
 import type { Mailer } from "./email.ts";
-import type { DefinedJobType, JobData } from "./jobs.ts";
+import type { DefinedJobType, JobData, JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 
 // The worker role (design.md, Technical decisions: T6; self-host-install: A
@@ -32,6 +32,8 @@ export interface WorkerServices {
   database: Database;
   /** The worker's clock. */
   now(): Date;
+  /** Sends further jobs, inside a handler's transaction: the worker's own job queue. */
+  jobs?: JobSender;
   /** How email goes out: through the install's SMTP settings, or, without them, nowhere. */
   mailer?: Mailer;
   /** The install's URL (TIEHALL_URL), for the links an email holds. */
@@ -85,6 +87,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   const services: WorkerServices = {
     database: openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" }),
     now: options.clock ?? (() => new Date()),
+    jobs: queue,
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
   };

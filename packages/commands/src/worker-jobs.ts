@@ -1,4 +1,5 @@
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
+import { processGitHubDelivery, releaseHeldGitHubDeliveries } from "./github-webhooks.ts";
 import { pruneIdempotencyKeys } from "./idempotency.ts";
 import { expireProposals } from "./proposal-endings.ts";
 import { notifyWaitingProposals } from "./proposal-waiting.ts";
@@ -17,4 +18,6 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   expireProposals,
   notifyWaitingProposals,
   emailReceipts,
+  processGitHubDelivery,
+  releaseHeldGitHubDeliveries,
 ];

@@ -9,6 +9,7 @@ import {
   migrate,
   openDatabase,
   openSecretBox,
+  storeGitHubApp,
   storeSecret,
   type Database,
   type SetupGate,
@@ -20,6 +21,9 @@ import {
 // /setup, and every API call answers 503 with the problem type
 // setup-required, the OpenAPI document included. Only /setup, /healthz and,
 // once the GitHub App's credentials are stored, /webhooks/github are served.
+// The App's credentials count as stored from its private key, which every App
+// has, with or without a webhook secret, which an App created without a
+// webhook lacks (github-app-reachability: design.md, Technical decisions: T3).
 // The gate reads the install's state as the app role, as the web role does.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
@@ -49,7 +53,7 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  await owner.query("DELETE FROM integration_secrets; DELETE FROM orgs");
+  await owner.query("DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM orgs");
 });
 
 /** What the gate answers for a call: its status, Location and problem, or "served" when it lets the call through. */
@@ -150,17 +154,43 @@ describe.each([
 });
 
 describe("the setup gate once the App's credentials are stored", () => {
-  it("serves /webhooks/github, and still nothing else but /setup and /healthz", async () => {
-    const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id ?? "";
-    // The setup screen stores the App's credentials before setup completes.
-    const box = openSecretBox(randomBytes(32).toString("base64url"));
-    await db.transaction((tx) => storeSecret({ tx, orgId }, box, "github_app.webhook_secret", "a webhook secret"));
-    const gate = createSetupGate({ database: db, url: ORIGIN });
+  async function servesWebhooksOnly(gate: SetupGate) {
     expect(await ask(gate, "/webhooks/github", { method: "POST", body: "{}" })).toBe("served");
     expect(await ask(gate, "/webhooks/jira/abc", { method: "POST", body: "{}" })).toEqual(setupRequired);
     expect(await ask(gate, "/api/v1/openapi.json")).toEqual(setupRequired);
     expect(await ask(gate, "/docs/api")).toEqual(toSetup(307));
     expect(await ask(gate, "/setup")).toBe("served");
+  }
+
+  it("serves /webhooks/github, and still nothing else but /setup and /healthz", async () => {
+    const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id ?? "";
+    // The setup screen stores the App's credentials before setup completes; the private key says they are stored.
+    const box = openSecretBox(randomBytes(32).toString("base64url"));
+    await db.transaction((tx) => storeSecret({ tx, orgId }, box, "github_app.private_key", "a private key"));
+    await servesWebhooksOnly(createSetupGate({ database: db, url: ORIGIN }));
+  });
+
+  it("serves /webhooks/github for an App stored without a webhook secret, and still nothing else but /setup and /healthz", async () => {
+    const orgId = (await owner.query<{ id: string }>("INSERT INTO orgs (name) VALUES ('Acme') RETURNING id")).rows[0]?.id ?? "";
+    // An App created without a webhook, such as a trial install's: GitHub gives it no webhook secret.
+    const box = openSecretBox(randomBytes(32).toString("base64url"));
+    await db.transaction((tx) =>
+      storeGitHubApp({ tx, orgId }, box, {
+        id: 2000001,
+        slug: "tiehall-localhost",
+        name: "Tiehall localhost",
+        clientId: "Iv23liExampleClient",
+        clientSecret: "a client secret",
+        privateKey: "a private key",
+        webhookSecret: null,
+        owner: { login: "acme", type: "Organization" },
+      }),
+    );
+    expect((await owner.query("SELECT name FROM integration_secrets ORDER BY name")).rows).toEqual([
+      { name: "github_app.client_secret" },
+      { name: "github_app.private_key" },
+    ]);
+    await servesWebhooksOnly(createSetupGate({ database: db, url: ORIGIN }));
   });
 });
 

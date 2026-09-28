@@ -1,6 +1,13 @@
 /// <reference types="vitest/importMeta" />
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACTIVITY_LOG_PATH, CONFIRM_ROUTE_PATHS, MANIFEST_REDIRECT_PATH, PACKET_SCHEMA_PATH, SETUP_PATH } from "@tiehall/commands";
+import {
+  ACTIVITY_LOG_PATH,
+  CONFIRM_ROUTE_PATHS,
+  MANIFEST_REDIRECT_PATH,
+  PACKET_SCHEMA_PATH,
+  SETUP_PATH,
+  WEBHOOKS_GITHUB_PATH,
+} from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
 
 // The review pages of the confirmation step (agent-safety: The review page of
@@ -81,7 +88,9 @@ describe("the app", () => {
   // The setup screen and the page GitHub sends the operator back to from the
   // manifest flow (self-host-install: The GitHub App is created with GitHub's
   // manifest flow): one route reads the path, so both reach it.
-  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH])("mounts the setup screen on %s, for a GET and a POST", async (path) => {
+  // Where GitHub delivers the App's webhooks (tracker-mirrors: GitHub webhooks
+  // are verified, deduplicated and processed in the background).
+  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH, WEBHOOKS_GITHUB_PATH])("mounts its route on %s, for a GET and a POST", async (path) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);
     const [file] = files;

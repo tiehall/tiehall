@@ -271,6 +271,38 @@ export const githubApp = pgTable(
   (table) => [check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`)],
 );
 
+// GitHub's webhook deliveries (tracker-mirrors: GitHub webhooks are verified,
+// deduplicated and processed in the background; design.md, Technical
+// decisions: T16). One row per delivery whose signature verified, stored once
+// by the delivery id GitHub gives it and keeps on a redelivery, with its event
+// and payload for the job that processes it. A delivery's job is sent in the
+// transaction that stores it once setup is complete; a delivery that arrives
+// before is held, with no job, until setup completes.
+export const githubDeliveries = pgTable(
+  "github_deliveries",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** GitHub's X-GitHub-Delivery. */
+    deliveryId: text("delivery_id").notNull(),
+    /** GitHub's X-GitHub-Event, such as installation or pull_request. */
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When its processing job was sent; null while it is held until setup completes. */
+    enqueuedAt: timestamp("enqueued_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.deliveryId] }),
+    index("github_deliveries_held").on(table.orgId).where(sql`${table.enqueuedAt} IS NULL`),
+    check("github_deliveries_delivery_id_format", sql`${table.deliveryId} ~ '^[A-Za-z0-9-]{1,100}$'`),
+    check("github_deliveries_event_format", sql`${table.event} ~ '^[a-z_]{1,100}$'`),
+    check("github_deliveries_payload_is_object", sql`jsonb_typeof(${table.payload}) = 'object'`),
+  ],
+);
+
 // Users (sign-in: One Tiehall user per GitHub account; teams-and-roles: One org
 // per install; teams-and-roles: Bot users). One row per person the install
 // knows, identified by their GitHub account's numeric id, never by the login

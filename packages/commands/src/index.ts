@@ -60,6 +60,14 @@ export {
   type GitHubClientOptions,
 } from "./github-client.ts";
 export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export {
+  createGitHubWebhookRoute,
+  processGitHubDelivery,
+  releaseHeldDeliveries,
+  releaseHeldGitHubDeliveries,
+  type GitHubWebhookRoute,
+  type GitHubWebhookRouteOptions,
+} from "./github-webhooks.ts";
 export { defaultAppName, GITHUB_WEB_URL, manifestState, stateMatches, UNREACHABLE_OPTION } from "./setup-github.ts";
 export {
   INTEGRATION_SECRETS,
