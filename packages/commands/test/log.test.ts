@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makeInstallationToken } from "@tiehall/testing/github";
 import { createLogger, LOGGABLE, routeConsoleTo, type LogEntry } from "../src/index.ts";
 
 // Logs carry ids, never message text or credentials (self-host-install: Logs
@@ -102,6 +103,24 @@ describe("redaction", () => {
     });
     expect(lines.join("\n")).not.toMatch(/canary|eyJ/);
     expect(lines.join("\n")).toContain("[redacted]");
+  });
+
+  // GitHub is moving installation tokens to a format of about 520 characters, with `_`, `-` and `.` after
+  // the prefix (github-app-reachability: design.md, Design rules: Installation tokens).
+  it("drops a whole installation token, whatever its length and whatever follows its prefix", () => {
+    for (const length of [520, 2_048]) {
+      const token = makeInstallationToken(length);
+      for (const mark of ["_", "-", "."]) expect(token.slice(4)).toContain(mark);
+      const { lines, logger } = capture();
+      logger.warn(`GitHub refused ${token}.`, { note: `retried with token ${token}, then gave up`, pieces: [token, { deeper: `(${token})` }] });
+      const log = lines.join("\n");
+      expect(log).toContain("[redacted]");
+      expect(log).not.toContain("ghs_");
+      for (let start = 4; start + 8 <= token.length; start += 1) {
+        const piece = token.slice(start, start + 8);
+        if (log.includes(piece)) throw new Error(`the log holds part of a ${length}-character token: ${piece}`);
+      }
+    }
   });
 
   it("never logs a body field, such as a message's text", () => {

@@ -233,13 +233,19 @@ function stackFrames(error: Error): string[] {
     .map(scrub);
 }
 
-/** Token shapes, anywhere in a string. */
+/**
+ * Token shapes, anywhere in a string. A GitHub token is found by its prefix
+ * alone and dropped whole, whatever follows it: GitHub's installation tokens
+ * are moving to a format of about 520 characters with `_`, `-` and `.` after
+ * the prefix, so no length and no alphabet of letters and digits is assumed
+ * (github-app-reachability: design.md, Design rules: Installation tokens).
+ */
 const TOKEN_PATTERNS: RegExp[] = [
   /\bth_pat_[A-Za-z0-9_-]+/g,
   /\b(?:Bearer|bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/g,
   /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g,
-  /\bgh[pousr]_[A-Za-z0-9]{16,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{16,}/g,
+  /\bgh[pousr]_[A-Za-z0-9_.-]+/g,
+  /\bgithub_pat_[A-Za-z0-9_.-]+/g,
   /\bATATT[A-Za-z0-9_=-]{16,}/g,
 ];
 

@@ -129,6 +129,8 @@ export interface GitHubStub {
   addRepositories(installation: StubInstallation, fullNames: string[], options?: DeliveryOptions): Promise<void>;
   removeRepositories(installation: StubInstallation, fullNames: string[], options?: DeliveryOptions): Promise<void>;
   setInstallationTokenLength(length: number): void;
+  /** The installation tokens the stub issued, oldest first: of one installation, or of every one. */
+  issuedInstallationTokens(installation?: StubInstallation): string[];
   /** Makes the new-App page refuse this hook URL as unreachable, with GitHub's refusal page. */
   refuseHookUrl(url: string): void;
   /** False plays an install GitHub cannot reach: every delivery fails until it is true again. */
@@ -405,6 +407,10 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
     setInstallationTokenLength(length) {
       world.installationTokenLength = length;
     },
+    issuedInstallationTokens: (installation) =>
+      [...world.installationTokens.values()]
+        .filter((grant) => installation === undefined || grant.installationId === installation.id)
+        .map((grant) => grant.token),
     refuseHookUrl(url) {
       refused.add(normalizedUrl(url));
     },

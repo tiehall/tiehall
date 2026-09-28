@@ -40,6 +40,13 @@ export {
   type Handlers,
 } from "./execute.ts";
 export {
+  createGitHubClient,
+  GITHUB_API_URL,
+  type GitHubAppCredentials,
+  type GitHubClient,
+  type GitHubClientOptions,
+} from "./github-client.ts";
+export {
   INTEGRATION_SECRETS,
   readSecret,
   storeSecret,
