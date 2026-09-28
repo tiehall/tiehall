@@ -9,7 +9,9 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // and reads back in the web UI, exactly as it was written, byte for byte;
 // agents read it on /api/v1 without the invisible characters the agent view
 // strips (agent-safety: Invisible characters are stripped from the agent
-// view). Only the message's author edits it. The database holds to it too: the app role may only insert and read
+// view). Any member reads a message on its own, with every version, oldest
+// first, and the request whose thread holds it (design.md, Decisions: D45
+// (3)). Only the message's author edits it. The database holds to it too: the app role may only insert and read
 // messages and their versions, and a trigger refuses every update and delete,
 // whoever tries.
 
@@ -19,6 +21,7 @@ let alice: string;
 let bob: string;
 let carol: string;
 let key: string;
+let requestId: string;
 let messageId: string;
 
 /** A body that a normalizing, trimming or re-encoding store would change. */
@@ -34,7 +37,9 @@ beforeAll(async () => {
   await joinTeams(install.owner, alice, team["BE"] ?? "");
   await joinTeams(install.owner, bob, team["FE"] ?? "");
   await joinTeams(install.owner, carol, team["OPS"] ?? "");
-  key = (await openRequest(install, tokenOf(alice), { targetTeam: "FE" })).key;
+  await install.owner.query("INSERT INTO request_counters (org_id, team_id, last_number) SELECT id, $1, 141 FROM orgs", [team["FE"]]);
+  ({ key, id: requestId } = await openRequest(install, tokenOf(alice), { targetTeam: "FE" }));
+  expect(key).toBe("FE-142");
   const posted = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "comment", body: ORIGINAL });
   expect(posted.status).toBe(200);
   messageId = posted.body.message.id;
@@ -80,6 +85,10 @@ describe("editing a message", () => {
       { version: 1, bytes: Buffer.from(ORIGINAL, "utf8") },
       { version: 2, bytes: Buffer.from(EDITED, "utf8") },
     ]);
+  });
+
+  it("names the request whose thread holds it, by its id, its key and its target team", async () => {
+    expect((await readMessage()).request).toEqual({ id: requestId, key: "FE-142", targetTeam: { id: team["FE"], key: "FE" } });
   });
 
   it("shows the latest version in the thread, with when it was edited", async () => {
