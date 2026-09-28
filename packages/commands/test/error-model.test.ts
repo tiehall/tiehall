@@ -17,14 +17,18 @@ import {
   type Database,
   type RestHandler,
 } from "../src/index.ts";
+import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
+import { addTeam, joinTeams, packetOf, tokenOf } from "./support/requests.ts";
 
 // The rows of the error model that REST reaches now (public-api: One error
 // model for Tiehall's own refusals; public-api: Errors are RFC 9457 problem
 // details), through the real route and execute(): both 404 rows, 400, 403 for
-// a removed member, 409, 429 with Retry-After and 503 setup-required. The 503 with Retry-After: 0
-// that a call gets while the app shuts down is the web role's, tested in
-// apps/server. Later tasks add a test for each row they make reachable.
+// a removed member, 409, 429 with Retry-After and 503 setup-required, and 413
+// for a body over the size limit, through the real catalog. The 503 with
+// Retry-After: 0 that a call gets while the app shuts down is the web role's,
+// tested in apps/server, as are the web role's own 413 answers. Later tasks add
+// a test for each row they make reachable.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const INSTALL = "https://tiehall.example.com";
@@ -187,5 +191,44 @@ describe("once the install has its org", () => {
     expect(status).toBe(429);
     expect(retryAfter).toBe("17");
     expect(problem).toMatchObject({ type: `${PROBLEM_TYPE_BASE}rate-limited`, status: 429, retryAfter: 17 });
+  });
+});
+
+// public-api: Request bodies have a size limit. A body over 2 MiB is refused before it is parsed, so the
+// operation does not run, whatever the body holds: this one would open a request if it were smaller.
+describe("a body over the size limit", () => {
+  let install: TestInstall;
+  let alice: string;
+
+  beforeAll(async () => {
+    install = await startTestInstall();
+    const be = await addTeam(install.owner, "BE");
+    await addTeam(install.owner, "FE");
+    alice = await addUser(install.owner, { login: "alice" });
+    await joinTeams(install.owner, alice, be);
+  });
+
+  afterAll(async () => {
+    await install.close();
+  });
+
+  it.fails("answers a 3 MiB requests.create body with 413 payload-too-large, and creates nothing", async () => {
+    const valid = JSON.stringify({ targetTeam: "FE", title: "Add a dark mode", packet: packetOf() });
+    const body = valid.padEnd(3 * 1024 * 1024, " ");
+    const count = async () =>
+      (await install.owner.query("SELECT (SELECT count(*) FROM requests) AS requests, (SELECT count(*) FROM events) AS events")).rows[0];
+    const before = await count();
+    const response = await install.api(tokenOf(alice))(
+      new Request(`${URL_OF_INSTALL}/api/v1/requests`, { method: "POST", headers: { "content-type": "application/json" }, body }),
+    );
+    expect(response.status).toBe(413);
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    expect(response.headers.get("retry-after")).toBeNull();
+    expect(await response.json()).toMatchObject({
+      type: `${PROBLEM_TYPE_BASE}payload-too-large`,
+      status: 413,
+      detail: expect.stringContaining("2 MiB"),
+    });
+    expect(await count()).toEqual(before);
   });
 });

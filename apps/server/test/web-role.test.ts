@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import http, { type IncomingHttpHeaders } from "node:http";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -166,6 +167,163 @@ describe("the web role's log", () => {
       expect.objectContaining({ level: "error", msg: "⨯", via: "console", error: expect.objectContaining({ name: "Error" }) }),
     );
     expect(web.output()).not.toContain(canary);
+  });
+});
+
+// public-api: Request bodies have a size limit; public-api: One error model for Tiehall's own refusals. The web
+// role's request guard sees every request before the app does, so a body over 2 MiB is answered 413, as an RFC
+// 9457 problem whose detail names the limit, before any route, the setup gate or a token check can answer it: a
+// declared length above the limit at once, and a body sent in chunks at the byte past the limit. The answer
+// carries `Connection: close`, and the rest of the body is not read. The fixture stands in for the app's routes:
+// /api/v1/… answers as the setup gate does before setup is complete, /mcp answers 200 as an MCP server does, and
+// /setup reads the form posted to it.
+describe("the web role's limit on request bodies", () => {
+  const MiB = 1024 * 1024;
+  const LIMIT = 2 * MiB;
+  const PAYLOAD_TOO_LARGE = "https://tiehall.com/problems/payload-too-large";
+
+  interface Answer {
+    status: number;
+    headers: IncomingHttpHeaders;
+    body: string;
+  }
+
+  /** Collects an answer's status, headers and body. */
+  function collect(response: http.IncomingMessage): Promise<Answer> {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (body += chunk));
+      response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body }));
+      response.on("error", reject);
+    });
+  }
+
+  /** The problem of a 413 answer, after checking that it is the error model's answer to a body over the limit. */
+  function expectPayloadTooLarge(answer: Answer): void {
+    expect(answer.status).toBe(413);
+    expect(answer.headers["content-type"]).toBe("application/problem+json");
+    expect(answer.headers["connection"]).toBe("close");
+    expect(answer.headers["retry-after"]).toBeUndefined();
+    expect(JSON.parse(answer.body)).toMatchObject({ type: PAYLOAD_TOO_LARGE, status: 413, detail: expect.stringContaining("2 MiB") });
+  }
+
+  it.fails("answers a request that declares a body above 2 MiB with 413 before any byte of the body is sent", async () => {
+    const web = await startWebRole();
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path: "/api/v1/requests",
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": String(3 * MiB) },
+    });
+    try {
+      const answered = new Promise<Answer>((resolve, reject) => {
+        request.on("response", (response) => void collect(response).then(resolve, reject));
+        request.on("error", reject);
+      });
+      // Only the request line and the headers leave: the body is never written.
+      request.flushHeaders();
+      expectPayloadTooLarge(await answered);
+    } finally {
+      request.destroy();
+    }
+  });
+
+  it.fails("answers a body sent in chunks with 413 at the byte past 2 MiB, before the client has finished, and reads no further", async () => {
+    const web = await startWebRole({ LOG_CONNECTIONS: "on" });
+    const planned = 32 * MiB;
+    const chunk = Buffer.alloc(64 * 1024, " ");
+    let written = 0;
+    // No content-length: the body goes in chunks, with no declared length.
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path: "/api/v1/requests",
+      agent: false,
+      headers: { "content-type": "application/json" },
+    });
+    let answer: Answer & { writtenBefore: number };
+    try {
+      answer = await new Promise((resolve, reject) => {
+        let answered = false;
+        request.on("response", (response) => {
+          answered = true;
+          const writtenBefore = written;
+          void collect(response).then((collected) => resolve({ ...collected, writtenBefore }), reject);
+        });
+        request.on("error", (error) => {
+          if (!answered) reject(error);
+        });
+        const send = (): void => {
+          while (!answered && written < planned) {
+            written += chunk.length;
+            if (!request.write(chunk)) {
+              request.once("drain", send);
+              return;
+            }
+          }
+          if (!answered) request.end();
+        };
+        send();
+      });
+    } finally {
+      request.destroy();
+    }
+    expectPayloadTooLarge(answer);
+    expect(answer.writtenBefore).toBeGreaterThan(LIMIT);
+    expect(answer.writtenBefore).toBeLessThan(planned);
+    // The app got none of the body, and the connection read no more than the one socket read, of at most 64 KiB,
+    // that held the byte past the limit, besides the request's head and the chunks' framing.
+    const closed = /^fixture: a connection closed after reading (\d+) bytes$/;
+    await until("the connection to close", () => logEntries(web.stdout()).some(({ msg }) => closed.test(String(msg))));
+    const bytesRead = Number(closed.exec(String(logEntries(web.stdout()).find(({ msg }) => closed.test(String(msg)))?.["msg"]))?.[1]);
+    expect(bytesRead).toBeGreaterThan(LIMIT);
+    expect(bytesRead).toBeLessThanOrEqual(LIMIT + 128 * 1024);
+    expect(web.output()).not.toContain("fixture: /api/v1/requests");
+  });
+
+  it.fails("answers a body over 2 MiB to /mcp with the HTTP status 413, not with a tool result in a 200", async () => {
+    const web = await startWebRole();
+    const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_request", arguments: { title: "x".repeat(3 * MiB) } } };
+    const response = await fetch(`http://127.0.0.1:${web.port}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify(call),
+    });
+    expectPayloadTooLarge({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() });
+    expect(web.output()).not.toContain("fixture: /mcp");
+  });
+
+  it.fails("answers a body over 2 MiB with 413 before setup is complete and without a token, not with 503 or 401", async () => {
+    const web = await startWebRole();
+    const response = await fetch(`http://127.0.0.1:${web.port}/api/v1/requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Add a dark mode", padding: " ".repeat(3 * MiB) }),
+    });
+    expectPayloadTooLarge({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() });
+    expect(web.output()).not.toContain("fixture: /api/v1/requests");
+  });
+
+  it.fails("passes a form of the web UI of up to 2 MiB on to its page, and answers one byte more with 413", async () => {
+    const web = await startWebRole();
+    const post = (bytes: number) =>
+      fetch(`http://127.0.0.1:${web.port}/setup`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: `code=${"A".repeat(bytes - "code=".length)}`,
+      });
+    for (const bytes of [LIMIT - 1, LIMIT]) {
+      const response = await post(bytes);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(`form of ${bytes} bytes`);
+    }
+    const over = await post(LIMIT + 1);
+    expectPayloadTooLarge({ status: over.status, headers: Object.fromEntries(over.headers), body: await over.text() });
+    expect(web.output()).not.toContain(`fixture: /setup read ${LIMIT + 1} bytes`);
   });
 });
 

@@ -3,8 +3,32 @@
 // its version, its addresses and "Ready" at start, and an error it catches with the error itself. /slow answers
 // only after SLOW_MS, so a test can hold a call in flight while the role stops; /fail prints an error whose
 // message quotes what the call carried, as a library's error can.
+//
+// For the tests of request bodies, three paths answer as the app's routes do, and print what they did with the
+// body: /api/v1/… answers as the setup gate does before setup is complete, 503 setup-required, without reading
+// the body; /mcp reads the body and answers 200, as an MCP server answers a JSON-RPC call; and a form posted to
+// /setup is read and answered 200. With LOG_CONNECTIONS=on it also prints how many bytes each connection read
+// from its socket when it closes.
 import http from "node:http";
 import process from "node:process";
+
+const SETUP_REQUIRED = JSON.stringify({
+  type: "https://tiehall.com/problems/setup-required",
+  title: "Setup is not complete",
+  status: 503,
+  detail: "Setup is not complete. The install's operator completes it on the setup screen at /setup.",
+});
+
+/** Reads the whole body, prints how many bytes it held, and answers 200 with this content type and body. */
+function readThenAnswer(request: http.IncomingMessage, response: http.ServerResponse, type: string, body: (bytes: number) => string): void {
+  let bytes = 0;
+  request.on("data", (chunk: Buffer) => (bytes += chunk.length));
+  request.on("end", () => {
+    console.log(`fixture: ${request.url} read ${bytes} bytes`);
+    response.writeHead(200, { "content-type": type });
+    response.end(body(bytes));
+  });
+}
 
 const server = http.createServer((request, response) => {
   if (request.url === "/slow") {
@@ -18,8 +42,27 @@ const server = http.createServer((request, response) => {
     response.end();
     return;
   }
+  if (request.url?.startsWith("/api/v1/") === true) {
+    console.log(`fixture: ${request.url} answered 503 without reading the body`);
+    response.writeHead(503, { "content-type": "application/problem+json" });
+    response.end(SETUP_REQUIRED);
+    return;
+  }
+  if (request.url === "/mcp" && request.method === "POST") {
+    readThenAnswer(request, response, "application/json", () => JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }));
+    return;
+  }
+  if (request.url === "/setup" && request.method === "POST") {
+    readThenAnswer(request, response, "text/plain", (bytes) => `form of ${bytes} bytes`);
+    return;
+  }
   response.end("ok");
 });
+if (process.env["LOG_CONNECTIONS"] === "on") {
+  server.on("connection", (socket) => {
+    socket.on("close", () => console.log(`fixture: a connection closed after reading ${socket.bytesRead} bytes`));
+  });
+}
 server.listen(Number(process.env["PORT"]), process.env["HOSTNAME"], () => {
   console.log("\u001b[1m\u001b[35m▲ Next.js 16.3.5\u001b[39m\u001b[22m");
   console.log(`   - Local:        http://localhost:${process.env["PORT"]}`);
