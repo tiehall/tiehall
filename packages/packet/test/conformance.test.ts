@@ -51,6 +51,11 @@ describe("the fixtures", () => {
     );
   });
 
+  // handoff-packet: Packet fields. The kind is request or contract_change, at the packet's top level.
+  it("covers a packet without a kind, and one whose kind is neither request nor contract_change", () => {
+    expect(names).toEqual(expect.arrayContaining(["invalid/no-kind.json", "invalid/unknown-kind.json"]));
+  });
+
   it("covers an unknown key, which the schema allows, and extensions under a namespace", () => {
     expect(names).toEqual(expect.arrayContaining(["valid/unknown-keys.json", "valid/extensions.json"]));
   });
