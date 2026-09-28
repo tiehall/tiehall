@@ -1,4 +1,4 @@
-import { CATALOG, type Catalog } from "@tiehall/catalog";
+import { BODY_LIMIT, CATALOG, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB, type Catalog } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 
@@ -14,7 +14,8 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 //   contract.report 16 MiB, read from the method and path of the catalog's
 //   contract.report definition; until that operation is defined, every path
 //   gets 2 MiB. A MiB is 1,048,576 bytes, and a body of exactly the limit is
-//   not refused for its size;
+//   not refused for its size. The two numbers are defined in the catalog
+//   package, whose OpenAPI document states them, and are re-exported here;
 // - the webhook deliveries get no limit here, which is an open question
 //   (design.md, Readings to confirm: R1; Open Questions): today that is
 //   /webhooks/github;
@@ -25,17 +26,7 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 //   declared length, and at the first byte past the limit cancels the stream
 //   and refuses, so a body over the limit is never held whole.
 
-/** 1,048,576 bytes. */
-export const MIB = 1024 * 1024;
-
-/** The limit on every request body, except the one that carries a contract.report. */
-export const BODY_LIMIT = 2 * MIB;
-
-/** The limit on a contract.report body, which carries classified OpenAPI diffs that can be large. */
-export const CONTRACT_REPORT_BODY_LIMIT = 16 * MIB;
-
-/** The operation whose body gets the larger limit. */
-export const CONTRACT_REPORT_ID = "contract.report";
+export { BODY_LIMIT, CONTRACT_REPORT_BODY_LIMIT, MIB };
 
 /** The paths whose bodies get no limit here: the webhook deliveries, whose limit is an open question. */
 export const UNLIMITED_BODY_PATHS: readonly string[] = [WEBHOOKS_GITHUB_PATH];

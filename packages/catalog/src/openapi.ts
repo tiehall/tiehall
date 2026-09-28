@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
+import { bodyLimitOf, MIB } from "./body-limits.ts";
 import { variantsOf, type Catalog } from "./catalog.ts";
 import type { CommandDefinition } from "./command.ts";
 import { packet, PACKET_COMPONENT } from "./packet.ts";
@@ -27,7 +28,9 @@ import { proposalAnswer } from "./proposals.ts";
 //   428 too, and the ETag header of an answer that states one;
 // - its answer, 200 with its output, and for a commitment also 202 with the
 //   proposal a call that makes one creates instead, and its errors as RFC
-//   9457 problems;
+//   9457 problems; an operation whose method takes a body also lists 413,
+//   described with the limit on its body, 2 MiB or 16 MiB for
+//   contract.report (public-api: Request bodies have a size limit);
 // - x-tiehall-cli with the CLI's command, on each operation the CLI offers,
 //   from which the CLI builds its request commands (design.md, Self-hosting
 //   decisions: S16).
@@ -215,6 +218,7 @@ function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiR
     ...ERRORS,
     ...(method === "GET" ? {} : WRITE_ERRORS),
     ...(method === "POST" ? POST_ERRORS : {}),
+    ...(BODY_METHODS.has(method) ? { "413": payloadTooLargeOf(definition) } : {}),
     ...(definition.ifMatch === undefined ? {} : IF_MATCH_ERRORS),
   };
   for (const [status, description] of Object.entries(errors)) {
@@ -225,6 +229,11 @@ function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiR
     };
   }
   return responses;
+}
+
+/** The 413 of an operation that takes a body, which names the limit on its body. */
+function payloadTooLargeOf(definition: CommandDefinition): string {
+  return `The request body is larger than ${bodyLimitOf(definition.id) / MIB} MiB, the limit on this operation's body; it is not read, and nothing runs.`;
 }
 
 /** The document as it is committed: every object's keys sorted, two-space indents and a final newline. */

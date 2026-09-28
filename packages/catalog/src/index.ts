@@ -15,6 +15,7 @@ export {
   type StabilityLevel,
 } from "./command.ts";
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
+export { BODY_LIMIT, bodyLimitOf, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB } from "./body-limits.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";

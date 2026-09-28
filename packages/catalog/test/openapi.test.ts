@@ -279,6 +279,55 @@ describe("the OpenAPI document", () => {
   });
 });
 
+// public-api: Request bodies have a size limit; public-api: What the document
+// states for each operation. Every operation whose method takes a body lists
+// 413 as an RFC 9457 problem, described with the limit that applies to it:
+// 2 MiB, and 16 MiB for contract.report. An operation without a body lists
+// none, since no documented call to it can get one.
+describe("the size limit on request bodies in the document", () => {
+  /** The 413 an operation lists, and its problem schema, resolved. */
+  function payloadTooLarge(path: string, method: string): { description: unknown; headers: unknown; schema: Json; media: string[] } | undefined {
+    const response = operation(path, method).responses["413"];
+    if (response === undefined) return undefined;
+    const content = response["content"] as Record<string, { schema: Json }>;
+    return {
+      description: response["description"],
+      headers: response["headers"],
+      media: Object.keys(content),
+      schema: resolved(content["application/problem+json"]?.schema ?? {}),
+    };
+  }
+
+  it("lists 413 on an operation that takes a body, described with its 2 MiB limit, as a problem with no Retry-After", () => {
+    for (const path of ["/api/v1/requests", "/api/v1/requests/{key}/decline"]) {
+      const listed = payloadTooLarge(path, "post");
+      expect(listed, path).toMatchObject({ description: expect.stringContaining("2 MiB"), media: ["application/problem+json"] });
+      expect(listed?.schema).toMatchObject({ type: "object", required: expect.arrayContaining(["type", "title", "status", "detail"]) });
+      expect(listed?.headers).toBeUndefined();
+    }
+  });
+
+  it("describes contract.report's 413 with its own 16 MiB limit", () => {
+    const listed = payloadTooLarge("/api/v1/contract/reports", "post");
+    expect(listed?.description).toEqual(expect.stringContaining("16 MiB"));
+    expect(listed?.description).not.toEqual(expect.stringContaining("2 MiB"));
+  });
+
+  it("lists no 413 on an operation without a body", () => {
+    expect(operation("/api/v1/requests/{key}", "get").responses["413"]).toBeUndefined();
+  });
+
+  it("lists 413 on every operation of the real catalog whose method takes a body, and on no other", () => {
+    const real = openApiDocument(CATALOG) as Json & { paths: Record<string, Record<string, { responses: Record<string, Json> }>> };
+    const methods = Object.entries(real.paths).flatMap(([path, operations]) => Object.entries(operations).map(([method, described]) => ({ path, method, described })));
+    expect(methods.some(({ method }) => method === "post")).toBe(true);
+    expect(methods.some(({ method }) => method === "get")).toBe(true);
+    for (const { path, method, described } of methods) {
+      expect("413" in described.responses, `${method} ${path}`).toBe(["post", "put", "patch"].includes(method));
+    }
+  });
+});
+
 // public-api: Packet revisions use ETag and If-Match; public-api: What the
 // document states for each operation. The operation that adds a packet
 // revision lists If-Match as a required header, which REST turns into the
