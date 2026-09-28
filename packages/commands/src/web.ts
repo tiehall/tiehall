@@ -11,11 +11,15 @@ import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
-import { installUrl, readAppDatabase, readAuthSecret, type Environment } from "./settings.ts";
+import { openSecretBox, type SecretBox } from "./secret-box.ts";
+import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Environment } from "./settings.ts";
+import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
+import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
+export { AUTH_BASE_PATH, SIGN_IN_PATH } from "./sign-in.ts";
 import { WORKER_JOBS } from "./worker-jobs.ts";
 
 // What the web role's routes, server actions and server components run
@@ -25,14 +29,14 @@ import { WORKER_JOBS } from "./worker-jobs.ts";
 // sends the jobs its writes start, and opens the job queue only when a write
 // first sends one; it works no queue, which the worker does.
 
-let services: { execute: Execute; step: ConfirmationStep; logger: Logger } | undefined;
+let services: { execute: Execute; step: ConfirmationStep; logger: Logger; signIn: SignInService } | undefined;
 let rest: RestHandler | undefined;
 let web: WebCommands | undefined;
 let confirm: ConfirmRoute | undefined;
 let activityLog: ActivityLogRoute | undefined;
 
-/** The process's one execute() and confirmation step, built from the install's settings on first use. */
-function servicesOf(env: Environment): { execute: Execute; step: ConfirmationStep; logger: Logger } {
+/** The process's one execute(), confirmation step and sign-in service, built from the install's settings on first use. */
+function servicesOf(env: Environment): { execute: Execute; step: ConfirmationStep; logger: Logger; signIn: SignInService } {
   if (services !== undefined) return services;
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
@@ -54,7 +58,17 @@ function servicesOf(env: Environment): { execute: Execute; step: ConfirmationSte
   };
   // The confirmation step's nonces, signed with TIEHALL_AUTH_SECRET, which is read when one is first issued or checked.
   const confirmations = createConfirmationNonces({ secret: () => readAuthSecret(env) });
+  // The sign-in service opens the GitHub App's stored client secret with TIEHALL_SECRET_KEY, read when it is first built.
+  let box: SecretBox | undefined;
+  const signIn = createSignInService({
+    database,
+    url: installUrl(env["TIEHALL_URL"] ?? ""),
+    secret: () => readAuthSecret(env),
+    secrets: () => (box ??= openSecretBox(readSecretKey(env))),
+    logger,
+  });
   services = {
+    signIn,
     execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     logger,
@@ -79,15 +93,15 @@ export function restRoute(env: Environment): RestHandler {
 
 /**
  * What the web UI's server actions and server components run operations
- * through, as the signed-in user's web session, built once per process.
+ * through, as the signed-in user's web session, which the headers of the
+ * request they answer name; built once per process.
  */
-export function webCommands(env: Environment): WebCommands {
+export function webCommands(env: Environment, requestHeaders: () => Promise<Headers>): WebCommands {
   if (web !== undefined) return web;
-  const { execute, logger } = servicesOf(env);
+  const { execute, logger, signIn } = servicesOf(env);
   web = createWebCommands({
     execute,
-    // Sessions come with sign-in (group 7); until then nobody is signed in.
-    session: async () => undefined,
+    session: async () => signIn.session(await requestHeaders()),
     url: installUrl(env["TIEHALL_URL"] ?? ""),
     secret: () => readAuthSecret(env),
     logger,
@@ -101,12 +115,11 @@ export function webCommands(env: Environment): WebCommands {
  */
 export function confirmRoute(env: Environment): ConfirmRoute {
   if (confirm !== undefined) return confirm;
-  const { execute, step, logger } = servicesOf(env);
-  // Sessions come with sign-in (group 7); until then nobody is signed in.
+  const { execute, step, logger, signIn } = servicesOf(env);
   confirm = createConfirmRoute({
     step,
     downloads: CONFIRM_DOWNLOADS,
-    session: async () => undefined,
+    session: (request) => signIn.session(request.headers),
     write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
     logger,
   });
@@ -116,8 +129,32 @@ export function confirmRoute(env: Environment): ConfirmRoute {
 /** The activity log's page under /admin/activity-log, built once per process, for the signed-in admin's web session. */
 export function activityLogRoute(env: Environment): ActivityLogRoute {
   if (activityLog !== undefined) return activityLog;
-  const { execute, logger } = servicesOf(env);
-  // Sessions come with sign-in (group 7); until then nobody is signed in.
-  activityLog = createActivityLogRoute({ execute, session: async () => undefined, logger });
+  const { execute, logger, signIn } = servicesOf(env);
+  activityLog = createActivityLogRoute({ execute, session: (request) => signIn.session(request.headers), logger });
   return activityLog;
+}
+
+/**
+ * The sign-in service's routes under /api/auth, such as GitHub's return to the
+ * sign-in callback (sign-in: GitHub is the only way to sign in).
+ */
+export function signInServiceRoute(env: Environment): (request: Request) => Promise<Response> {
+  const { signIn } = servicesOf(env);
+  return (request) => signIn.handler(request);
+}
+
+/** The sign-in page at /sign-in, which offers sign-in with GitHub only. */
+export function signInPageRoute(env: Environment): (request: Request) => Promise<Response> {
+  const { signIn } = servicesOf(env);
+  return (request) => signIn.page(request);
+}
+
+/**
+ * The web session the request's cookie names, or undefined when it names
+ * none; a session a removal ended is refused with 403 removed-member.
+ */
+export function webSession(env: Environment, headers: Headers): Promise<WebSessionCaller | undefined> {
+  // A request without a session cookie reaches neither the database nor the settings.
+  if (!/(?:^|;\s*)(?:__Secure-)?tiehall\.session_token=/.test(headers.get("cookie") ?? "")) return Promise.resolve(undefined);
+  return servicesOf(env).signIn.session(headers);
 }

@@ -191,6 +191,14 @@ export {
 } from "./setup-code.ts";
 export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
 export {
+  AUTH_BASE_PATH,
+  createSignInService,
+  SIGN_IN_PATH,
+  SIGN_IN_REFUSED,
+  type SignInService,
+  type SignInServiceOptions,
+} from "./sign-in.ts";
+export {
   createConfirmationStep,
   type ConfirmationStep,
   type ConfirmationStepServices,

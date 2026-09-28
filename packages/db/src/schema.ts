@@ -329,11 +329,31 @@ export const users = pgTable(
     email: text("email"),
     /** Whether the user gets the daily digest email; transactional email, such as proposal notices and receipts, ignores it. */
     digestEnabled: boolean("digest_enabled").notNull().default(true),
+    /**
+     * What the sign-in service knows the user by besides their GitHub
+     * account: `github:` and the account's numeric id, never an email
+     * address, so the service can never find one person's user by another
+     * person's email address (sign-in: One Tiehall user per GitHub account).
+     * The service fills it at the user's first sign-in.
+     */
+    signInKey: text("sign_in_key"),
+    /** Whether the last sign-in found a primary verified email address, which `email` then holds. */
+    emailVerified: boolean("email_verified").notNull().default(false),
+    /** When the sign-in service last changed the user, such as the login or the email address at a sign-in. */
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The sign-in service's field for a picture of the user, which Tiehall
+     * never fills: the web UI loads no image from another host.
+     */
+    image: text("image"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
     uniqueIndex("users_github_account_id").on(table.orgId, table.githubAccountId),
+    uniqueIndex("users_sign_in_key").on(table.signInKey),
     check("users_github_account_id_positive", sql`${table.githubAccountId} > 0`),
+    check("users_sign_in_key_format", sql`${table.signInKey} IS NULL OR ${table.signInKey} = 'github:' || ${table.githubAccountId}`),
+    check("users_no_image", sql`${table.image} IS NULL`),
   ],
 );
 
@@ -386,6 +406,103 @@ export const signInBlocks = pgTable(
       foreignColumns: [users.orgId, users.githubAccountId],
     }),
   ],
+);
+
+// Web sessions (sign-in: GitHub is the only way to sign in; sign-in: Signing
+// out and ending sessions; design.md, Technical decisions: T7). The sign-in
+// service stores one row per browser that signed in with GitHub, found by the
+// token its cookie holds. Signing out deletes the row. A removal ends every
+// session of the removed person: the row stays, marked ended, so a request
+// that still carries its cookie is refused with 403 and no data, and the
+// session never works again, even after the person rejoins. The IP address is
+// the client address the trusted proxies yield.
+export const webSessions = pgTable(
+  "web_sessions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    /** The random token the session cookie carries, signed. */
+    token: text("token").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When a removal ended the session; it then serves nothing again. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("web_sessions_token").on(table.token),
+    index("web_sessions_user_id").on(table.orgId, table.userId),
+    foreignKey({
+      name: "web_sessions_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+  ],
+);
+
+// The GitHub account each user signs in with, as the sign-in service links it
+// (sign-in: One Tiehall user per GitHub account; sign-in: Tiehall keeps no
+// GitHub user token). One row per user: the provider is always GitHub, and
+// the account id is the GitHub account's numeric id, the user's own.
+export const signInAccounts = pgTable(
+  "sign_in_accounts",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    /** The GitHub account's numeric id, as text. */
+    accountId: text("account_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("sign_in_accounts_account").on(table.providerId, table.accountId),
+    uniqueIndex("sign_in_accounts_user_id").on(table.orgId, table.userId),
+    foreignKey({
+      name: "sign_in_accounts_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("sign_in_accounts_github_only", sql`${table.providerId} = 'github' AND ${table.accountId} ~ '^[1-9][0-9]{0,18}$'`),
+    // Tiehall keeps no password (sign-in: GitHub is the only way to sign in).
+    check("sign_in_accounts_no_password", sql`${table.password} IS NULL`),
+  ],
+);
+
+// What the sign-in service keeps for a moment, such as the state of a sign-in
+// with GitHub between the redirect to GitHub and GitHub's return, which
+// expires after 10 minutes.
+export const signInVerifications = pgTable(
+  "sign_in_verifications",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.id] }), index("sign_in_verifications_identifier").on(table.identifier)],
 );
 
 // Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's

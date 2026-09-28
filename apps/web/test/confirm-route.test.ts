@@ -6,6 +6,8 @@ import {
   MANIFEST_REDIRECT_PATH,
   PACKET_SCHEMA_PATH,
   SETUP_PATH,
+  SIGN_IN_CALLBACK_PATH,
+  SIGN_IN_PATH,
   WEBHOOKS_GITHUB_PATH,
 } from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
@@ -90,7 +92,10 @@ describe("the app", () => {
   // manifest flow): one route reads the path, so both reach it.
   // Where GitHub delivers the App's webhooks (tracker-mirrors: GitHub webhooks
   // are verified, deduplicated and processed in the background).
-  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH, WEBHOOKS_GITHUB_PATH])("mounts its route on %s, for a GET and a POST", async (path) => {
+  // The sign-in page, and the sign-in service's routes, among them GitHub's
+  // return to the sign-in callback (sign-in: GitHub is the only way to sign in),
+  // whose own guard answers every other route under /api/auth with 404.
+  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH, WEBHOOKS_GITHUB_PATH, SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH, "/api/auth/sign-in/email"])("mounts its route on %s, for a GET and a POST", async (path) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);
     const [file] = files;

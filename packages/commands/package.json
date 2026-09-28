@@ -26,6 +26,7 @@
     "@tiehall/core": "workspace:*",
     "@tiehall/db": "workspace:*",
     "@tiehall/packet": "workspace:*",
+    "better-auth": "1.7.5",
     "drizzle-orm": "catalog:",
     "nodemailer": "10.0.10",
     "pg-boss": "12.33.2",

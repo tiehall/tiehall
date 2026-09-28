@@ -13,8 +13,8 @@ FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584
 
 FROM base AS build
 # No framework telemetry at build time, and none at run time below (self-host-install: No telemetry and a
-# documented list of outbound connections).
-ENV CI=true NEXT_TELEMETRY_DISABLED=1
+# documented list of outbound connections): neither Next.js's nor the sign-in library's.
+ENV CI=true NEXT_TELEMETRY_DISABLED=1 BETTER_AUTH_TELEMETRY=0
 WORKDIR /repo
 # pnpm, at the version in package.json "packageManager", without install scripts.
 COPY package.json ./
@@ -45,6 +45,7 @@ ARG TIEHALL_VERSION=0.0.0-dev
 ARG TIEHALL_IMAGE_NAME=tiehall
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
+    BETTER_AUTH_TELEMETRY=0 \
     TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA} \
     TIEHALL_VERSION=${TIEHALL_VERSION} \
     TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME}

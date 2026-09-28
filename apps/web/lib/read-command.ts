@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { webCommands, type WebResult } from "@tiehall/commands/web";
 
 // How a server component reads through an operation (public-api: One
@@ -9,5 +10,5 @@ import { webCommands, type WebResult } from "@tiehall/commands/web";
 // it, and a write goes through writeCommand().
 
 export function readCommand<Output = unknown>(commandId: string, input: unknown): Promise<WebResult<Output>> {
-  return webCommands(process.env).read<Output>(commandId, input);
+  return webCommands(process.env, async () => new Headers(await headers())).read<Output>(commandId, input);
 }

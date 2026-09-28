@@ -21,6 +21,7 @@ import {
   type Caller,
   type ConfirmRoute,
   type Database,
+  type Logger,
   type Execute,
   type RestHandler,
   type WebCommands,
@@ -38,6 +39,10 @@ export const URL_OF_INSTALL = "https://tiehall.example.com";
 export interface TestInstall {
   /** A connection as the database owner, to set up and inspect state. */
   owner: pg.Client;
+  /** The install's auth secret, TIEHALL_AUTH_SECRET, which signs the CSRF tokens, the nonces and the sign-in service's cookies. */
+  authSecret: string;
+  /** The install's logger, which writes nowhere. */
+  logger: Logger;
   /** The app's database, as the app role. */
   db: Database;
   execute: Execute;
@@ -117,6 +122,8 @@ export async function startTestInstall(
 
   return {
     owner,
+    authSecret: secret,
+    logger,
     db,
     execute,
     api: (caller) => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger }),

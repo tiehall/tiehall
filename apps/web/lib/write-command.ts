@@ -17,7 +17,7 @@ export async function writeCommand<Output = unknown>(commandId: string, input: u
   const request = await headers();
   const ipAddress = request.get("x-forwarded-for") ?? undefined;
   const userAgent = request.get("user-agent") ?? undefined;
-  return webCommands(process.env).write<Output>(
+  return webCommands(process.env, async () => new Headers(await headers())).write<Output>(
     commandId,
     input,
     { origin: request.get("origin"), fetchSite: request.get("sec-fetch-site"), csrfToken },

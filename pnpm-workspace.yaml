@@ -44,3 +44,12 @@ catalog:
   vitest: 5.0.1
   yaml: 2.9.1
   zod: 4.6.5
+
+# drizzle-orm takes kysely as an optional peer, and the sign-in library brings
+# kysely along. Without this, packages/commands and packages/db would each get
+# a copy of drizzle-orm of their own, one with kysely and one without, whose
+# types do not mix. With kysely as drizzle-orm's own dependency, there is one.
+packageExtensions:
+  drizzle-orm@0.45.2:
+    dependencies:
+      kysely: 0.29.6

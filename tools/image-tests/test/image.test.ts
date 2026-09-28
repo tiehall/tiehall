@@ -211,6 +211,7 @@ describe("the image", () => {
   it("switches framework telemetry off in the environment every role runs with", () => {
     const env = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image])) as string[];
     expect(env).toContain("NEXT_TELEMETRY_DISABLED=1");
+    expect(env).toContain("BETTER_AUTH_TELEMETRY=0");
     const run = docker([
       "run",
       "--rm",
@@ -221,9 +222,9 @@ describe("the image", () => {
       "node",
       image,
       "--eval",
-      "process.stdout.write(String(process.env.NEXT_TELEMETRY_DISABLED))",
+      "process.stdout.write(`${process.env.NEXT_TELEMETRY_DISABLED} ${process.env.BETTER_AUTH_TELEMETRY}`)",
     ]);
-    expect(run.stdout).toBe("1");
+    expect(run.stdout).toBe("1 0");
   });
 
   it("carries node but no package manager, so nothing at run time can install code", () => {
