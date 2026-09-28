@@ -8,7 +8,9 @@
 // body: /api/v1/… answers as the setup gate does before setup is complete, 503 setup-required, without reading
 // the body; /mcp reads the body and answers 200, as an MCP server answers a JSON-RPC call; and a form posted to
 // /setup is read and answered 200. With LOG_CONNECTIONS=on it also prints how many bytes each connection read
-// from its socket when it closes.
+// from its socket when it closes. With LOG_HEADS=on it prints each call's method and path as soon as the server
+// has its head, from a listener of its own that the request guard does not wrap, so a test knows the server
+// holds a call whose body is still arriving.
 import http from "node:http";
 import process from "node:process";
 
@@ -58,6 +60,9 @@ const server = http.createServer((request, response) => {
   }
   response.end("ok");
 });
+if (process.env["LOG_HEADS"] === "on") {
+  server.on("request", (request: http.IncomingMessage) => console.log(`fixture: the server has the head of ${request.method} ${request.url}`));
+}
 if (process.env["LOG_CONNECTIONS"] === "on") {
   server.on("connection", (socket) => {
     socket.on("close", () => console.log(`fixture: a connection closed after reading ${socket.bytesRead} bytes`));

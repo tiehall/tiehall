@@ -22,7 +22,12 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // Shutdown (self-host-install: A restart stops the app gracefully): once the
 // web role starts to stop, the guard answers every new call itself, with 503,
 // `Retry-After: 0` and an RFC 9457 problem (public-api: One error model for
-// Tiehall's own refusals), while the calls already in flight finish.
+// Tiehall's own refusals), while the calls already in flight finish. A call
+// counts from the moment its head arrives until its answer is done, whoever
+// answers it, so the shutdown waits for a body still arriving in chunks as for
+// any call in flight: a call whose head arrived before the shutdown started
+// goes on to the app once its body is complete, and a new one gets its 503, or
+// its 413, rather than a closed connection.
 //
 // Request bodies (public-api: Request bodies have a size limit;
 // request-body-limit's design.md, Technical decisions: T2): the guard applies
@@ -57,7 +62,7 @@ export interface ShutdownResult {
 }
 
 export interface RequestGuard {
-  /** The calls the guarded servers are answering now. */
+  /** The calls the guarded servers are answering now, a call whose body is still arriving included. */
   readonly inFlight: number;
   /**
    * Answers every new call with 503 from now on, waits until the calls in
@@ -96,14 +101,16 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
   let drained: (() => void) | undefined;
 
   const guard = (listener: RequestListener): RequestListener => (request: IncomingMessage, response: ServerResponse) => {
+    // Decided when the head arrives, not when a held body is complete.
+    const newDuringShutdown = stopping;
+    inFlight += 1;
+    response.once("close", () => {
+      inFlight -= 1;
+      if (stopping && inFlight === 0) drained?.();
+    });
     const serve = (): void => {
-      if (stopping) return shuttingDown(request, response);
+      if (newDuringShutdown) return shuttingDown(request, response);
       setForwardedHeaders(request, options.proxies);
-      inFlight += 1;
-      response.once("close", () => {
-        inFlight -= 1;
-        if (stopping && inFlight === 0) drained?.();
-      });
       listener(request, response);
     };
     const limit = bodyLimitFor(request.method ?? "GET", pathOf(request.url));

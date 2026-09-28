@@ -322,6 +322,71 @@ describe("the web role's limit on request bodies", () => {
     expect(await web.exited).toBe(0);
   });
 
+  // self-host-install: A restart stops the app gracefully. The guard holds a body sent in chunks until it is
+  // complete, so the call counts as in flight from the moment its head arrives: a shutdown waits for its body as
+  // for any call in flight, and never closes its connection while the body is still arriving.
+
+  /** A POST to this path whose body goes in chunks, and the answer it gets; it rejects if the connection fails. */
+  function chunkedPost(port: number, path: string): { request: http.ClientRequest; answered: Promise<Answer> } {
+    const request = http.request({ host: "127.0.0.1", port, method: "POST", path, agent: false, headers: { "content-type": "application/json" } });
+    const answered = new Promise<Answer>((resolve, reject) => {
+      request.on("response", (response) => void collect(response).then(resolve, reject));
+      request.on("error", reject);
+    });
+    // Handled where the test awaits it; this only keeps an early failure from counting as unhandled.
+    answered.catch(() => undefined);
+    return { request, answered };
+  }
+
+  it("lets a call whose body is still arriving in chunks when the role stops finish, as a call in flight", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on" });
+    const { request, answered } = chunkedPost(web.port, "/mcp");
+    const chunk = Buffer.alloc(64 * 1024, " ");
+    try {
+      request.write(chunk);
+      await until("the server to have the call's head", () => web.output().includes("fixture: the server has the head of POST /mcp"));
+      web.child.kill("SIGTERM");
+      await until("the role to start stopping", () => web.output().includes("web: stopping"));
+      for (let sent = chunk.length; sent < MiB; sent += chunk.length) request.write(chunk);
+      request.end();
+      const answer = await answered;
+      expect(answer.status).toBe(200);
+    } finally {
+      request.destroy();
+    }
+    expect(web.output()).toContain(`fixture: /mcp read ${MiB} bytes`);
+    expect(await web.exited).toBe(0);
+    expect(logEntries(web.output()).map(({ msg }) => msg)).toEqual(
+      expect.arrayContaining(["web: stopping; new calls get 503 until the 1 call in flight finishes", "web: stopped"]),
+    );
+  });
+
+  it("answers a new call whose body is still arriving when the calls in flight finish with 503, once its body is complete", async () => {
+    // The slow call stays in flight well past the time the new call takes to reach the server.
+    const web = await startWebRole({ LOG_HEADS: "on", SLOW_MS: "3000" });
+    const slow = fetch(`http://127.0.0.1:${web.port}/slow`).then((response) => response.text());
+    await until("the slow call to start", () => web.output().includes("fixture: slow call started"));
+    web.child.kill("SIGTERM");
+    await until("the role to start stopping", () => web.output().includes("web: stopping"));
+    const { request, answered } = chunkedPost(web.port, "/api/v1/requests");
+    try {
+      request.write('{"title":');
+      await until("the server to have the new call's head", () => web.output().includes("fixture: the server has the head of POST /api/v1/requests"));
+      // The call in flight finishes while the new call's body is still arriving.
+      expect(await slow).toBe("slow call done");
+      request.end('"Add a dark mode"}');
+      const answer = await answered;
+      expect(answer.status).toBe(503);
+      expect(answer.headers["retry-after"]).toBe("0");
+      expect(answer.headers["content-type"]).toBe("application/problem+json");
+      expect(JSON.parse(answer.body)).toMatchObject({ type: "https://tiehall.com/problems/shutting-down", status: 503 });
+    } finally {
+      request.destroy();
+    }
+    expect(web.output()).not.toContain("fixture: /api/v1/requests answered");
+    expect(await web.exited).toBe(0);
+  });
+
   it("answers a body over 2 MiB to /mcp with the HTTP status 413, not with a tool result in a 200", async () => {
     const web = await startWebRole();
     const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_request", arguments: { title: "x".repeat(3 * MiB) } } };
