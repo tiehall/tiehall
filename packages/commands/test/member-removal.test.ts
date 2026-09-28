@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, defineCatalog, defineCommand } from "@tiehall/catalog";
+import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { createExecute, HANDLERS, type Caller, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { callApi, openRequest, tokenOf } from "./support/requests.ts";
+import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
 // Removing a member (teams-and-roles: Removing a member; sign-in: An admin
 // removal blocks rejoining through the organization; activity-log: Which
@@ -207,10 +209,52 @@ describe("a confirmed removal", () => {
 });
 
 describe("the removed person's web sessions", () => {
-  // The sign-in service stores web sessions from task 7.6 on, which waits for the GitHub stub of task 7.3. The
-  // removal then deletes them in its own transaction, so none of them works again if the person rejoins; until
-  // then no web session is stored, and the membership re-check refuses every call through one with 403.
-  it.todo("are deleted by the removal, so none of them works again after the person rejoins through an invite");
+  // The sign-in service stores web sessions (task 7.6). The removal ends every
+  // one of them in its own transaction: a request that still carries one is
+  // refused with 403 and no data, and none of them works again, even after the
+  // person rejoins.
+  let stub: GitHubStub;
+  let harness: SignInHarness;
+
+  beforeAll(async () => {
+    stub = await startGitHubStub();
+    stub.addOrg({ login: "acme" });
+    harness = await startSignIn(install, stub);
+  });
+
+  afterAll(async () => {
+    await stub?.close();
+  });
+
+  it("are ended by the removal, on every browser, so none of them works again after the person rejoins through an invite", async () => {
+    const account = stub.addUser({ login: "dana-web" });
+    const userId = await addUser(install.owner, { login: "dana-web", githubAccountId: account.id });
+    await install.owner.query("INSERT INTO team_members (org_id, team_id, user_id) SELECT id, $1, $2 FROM orgs", [fe, userId]);
+    const laptop = await harness.signIn("dana-web");
+    const phone = await harness.signIn("dana-web");
+    const pages = install.confirmRouteFor((request) => harness.service.session(request.headers));
+    const input = encodeURIComponent(JSON.stringify({ userId: ada.userId }));
+    const reviewPage = (cookie: string) => pages(new Request(`${URL_OF_INSTALL}/confirm/members.remove?input=${input}`, { headers: { cookie } }));
+    // Signed in on both browsers: each reaches a page, and gets a member's answer to it (a member may not remove anyone).
+    for (const { jar } of [laptop, phone]) expect(await problemOf(await reviewPage(jar.header()))).toMatchObject({ status: 403 });
+    expect(await harness.sessionOf(laptop.jar)).toMatchObject({ userId });
+
+    expect((await install.confirm(ada, "members.remove", { userId })).status).toBe(200);
+
+    for (const { jar } of [laptop, phone]) {
+      await expect(harness.sessionOf(jar)).rejects.toMatchObject({ reason: "removed-member" });
+      const answer = await reviewPage(jar.header());
+      expect(await problemOf(answer)).toEqual({ status: 403, type: "https://tiehall.com/problems/removed-member" });
+    }
+    expect((await install.owner.query("SELECT count(*) FROM web_sessions WHERE user_id = $1 AND ended_at IS NULL", [userId])).rows[0].count).toBe("0");
+
+    // The person rejoins, as an invite readmits them: their old sessions still serve nothing.
+    await install.owner.query("INSERT INTO members (org_id, user_id, role) SELECT id, $1, 'member' FROM orgs", [userId]);
+    for (const { jar } of [laptop, phone]) await expect(harness.sessionOf(jar)).rejects.toMatchObject({ reason: "removed-member" });
+    // A new sign-in gives them a new session, which works.
+    const again = await harness.signIn("dana-web");
+    expect(await harness.sessionOf(again.jar)).toMatchObject({ userId });
+  });
 });
 
 describe("an admin removing themselves", () => {

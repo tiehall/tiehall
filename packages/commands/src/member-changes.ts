@@ -1,7 +1,7 @@
 import { changeMemberRole, removeMember } from "@tiehall/catalog";
 import { leavesNoAdmin, memberRemoved, memberRoleChanged, Refusal, type Role } from "@tiehall/core";
-import { members, signInBlocks, teamMembers, teams, users } from "@tiehall/db";
-import { and, asc, eq } from "drizzle-orm";
+import { members, signInBlocks, teamMembers, teams, users, webSessions } from "@tiehall/db";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
@@ -28,11 +28,13 @@ import type { OrgContext } from "./with-org.ts";
 // member's claims stay and their proposals are cancelled); their requests and
 // they are locked before the removal's first event, after the members' rows,
 // in the lock order (event-sequence.ts). An admin removal also blocks their GitHub account from
-// rejoining through organization membership. Ending the person's stored web
-// sessions joins the removal once the sign-in service stores sessions (task
-// 7.6), and revoking their agent grants and personal access tokens once those
-// exist (task 15.19); until then, and after, the membership re-check refuses
-// every call through them.
+// rejoining through organization membership. The removal ends every web
+// session the person holds, in its transaction (sign-in: Signing out and
+// ending sessions): a request that still carries one is refused with 403 and
+// no data, and none works again, even after the person rejoins. Revoking their
+// agent grants and personal access tokens joins the removal once those exist
+// (task 15.19); until then, and after, the membership re-check refuses every
+// call through them.
 
 /**
  * A member as a review or a change sees them: their GitHub account, the name a
@@ -76,6 +78,18 @@ async function lockAdmins({ tx, orgId }: OrgContext): Promise<string[]> {
   return rows.map(({ userId }) => userId);
 }
 
+/**
+ * Ends every web session a removed member holds, in the removal's
+ * transaction: each stays, marked ended, so the sign-in service refuses a
+ * request that still carries it with 403, now and after the person rejoins.
+ */
+export async function endWebSessionsOf({ tx, orgId }: OrgContext, userId: string): Promise<void> {
+  await tx
+    .update(webSessions)
+    .set({ endedAt: sql`now()` })
+    .where(and(eq(webSessions.orgId, orgId), eq(webSessions.userId, userId), isNull(webSessions.endedAt)));
+}
+
 /** Refuses, with 409, a change that would leave the install without an admin. */
 function keepAnAdmin(): Refusal {
   return new Refusal("conflict", "The install must keep at least one admin, so this change is refused.");
@@ -106,6 +120,7 @@ export const MEMBER_HANDLERS: Handlers = {
       // Their memberships of teams go with it: the foreign key cascades.
       await writer.tx.delete(members).where(and(eq(members.orgId, writer.orgId), eq(members.userId, userId)));
       await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
+      await endWebSessionsOf(writer, userId);
       await writer.record(memberRemoved, { userId, cause: "admin", blocked: true });
       await cancelProposalsOfRemovedMember(writer, userId, requestIds);
       return { userId };
