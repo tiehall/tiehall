@@ -449,7 +449,9 @@ export const webSessions = pgTable(
 // The GitHub account each user signs in with, as the sign-in service links it
 // (sign-in: One Tiehall user per GitHub account; sign-in: Tiehall keeps no
 // GitHub user token). One row per user: the provider is always GitHub, and
-// the account id is the GitHub account's numeric id, the user's own.
+// the account id is the GitHub account's numeric id, the user's own. The
+// token columns are the sign-in service's, and stay empty: Tiehall keeps no
+// user token GitHub issued, nor its expiry.
 export const signInAccounts = pgTable(
   "sign_in_accounts",
   {
@@ -483,6 +485,10 @@ export const signInAccounts = pgTable(
     check("sign_in_accounts_github_only", sql`${table.providerId} = 'github' AND ${table.accountId} ~ '^[1-9][0-9]{0,18}$'`),
     // Tiehall keeps no password (sign-in: GitHub is the only way to sign in).
     check("sign_in_accounts_no_password", sql`${table.password} IS NULL`),
+    check(
+      "sign_in_accounts_no_user_token",
+      sql`${table.accessToken} IS NULL AND ${table.refreshToken} IS NULL AND ${table.idToken} IS NULL AND ${table.accessTokenExpiresAt} IS NULL AND ${table.refreshTokenExpiresAt} IS NULL`,
+    ),
   ],
 );
 

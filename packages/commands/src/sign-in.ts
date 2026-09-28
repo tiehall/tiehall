@@ -48,6 +48,15 @@ import { RemovedMemberError } from "./with-org.ts";
 // account). The email address Tiehall keeps is the account's primary verified
 // one, which each sign-in reads from GitHub.
 //
+// Tiehall keeps no GitHub user token (sign-in: Tiehall keeps no GitHub user
+// token): the App issues expiring user tokens, an access token and a refresh
+// token, and Better Auth would store them with the linked account. The access
+// token serves only to learn who signed in; a hook before each write of the
+// account, at the first sign-in and at every later one, sets every token field
+// and both expiries to null. An after-hook cannot change the row, so it is the
+// pair of before-hooks (design.md, Technical decisions: T7), and the database
+// refuses a stored token besides.
+//
 // Who may sign in (sign-in: Who may sign in): every sign-in is decided before
 // the service writes anything, and a refused one gets 403 sign-in-refused,
 // telling the person to ask an admin for an invite, and creates no session, no
@@ -71,6 +80,15 @@ const HTTP_ALLOWLIST: ReadonlyMap<string, Readonly<Record<string, string>>> = ne
 /** What a refused person reads. */
 export const SIGN_IN_REFUSED =
   "Your GitHub account may not sign in to this install. Ask an admin of the install for an invite, then sign in again.";
+
+/** What every write of a linked account stores in place of the user tokens GitHub issued: nothing. */
+const NO_USER_TOKEN = {
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+} as const;
 
 /** The code Better Auth carries a refusal under, from the admission check to the callback's answer. */
 const REFUSED_CODE = "sign_in_refused";
@@ -211,6 +229,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         updateAccountOnSignIn: true,
       },
       verification: { modelName: "signInVerifications", additionalFields: { orgId } },
+      databaseHooks: {
+        account: {
+          create: { before: async () => ({ data: NO_USER_TOKEN }) },
+          update: { before: async () => ({ data: NO_USER_TOKEN }) },
+        },
+      },
       socialProviders: {
         github: {
           clientId: input.clientId,

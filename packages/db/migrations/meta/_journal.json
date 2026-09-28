@@ -253,6 +253,13 @@
       "when": 1790623750594,
       "tag": "0035_add_sign_in_service",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790624462797,
+      "tag": "0036_keep_no_user_token",
+      "breakpoints": true
     }
   ]
 }

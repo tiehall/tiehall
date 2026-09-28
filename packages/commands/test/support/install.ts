@@ -39,6 +39,8 @@ export const URL_OF_INSTALL = "https://tiehall.example.com";
 export interface TestInstall {
   /** A connection as the database owner, to set up and inspect state. */
   owner: pg.Client;
+  /** The database's URL, as its owner, such as for a dump. */
+  databaseUrl: string;
   /** The install's auth secret, TIEHALL_AUTH_SECRET, which signs the CSRF tokens, the nonces and the sign-in service's cookies. */
   authSecret: string;
   /** The install's logger, which writes nowhere. */
@@ -122,6 +124,7 @@ export async function startTestInstall(
 
   return {
     owner,
+    databaseUrl: database.url,
     authSecret: secret,
     logger,
     db,

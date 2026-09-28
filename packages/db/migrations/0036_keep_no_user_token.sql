@@ -1,0 +1,1 @@
+ALTER TABLE "sign_in_accounts" ADD CONSTRAINT "sign_in_accounts_no_user_token" CHECK ("sign_in_accounts"."access_token" IS NULL AND "sign_in_accounts"."refresh_token" IS NULL AND "sign_in_accounts"."id_token" IS NULL AND "sign_in_accounts"."access_token_expires_at" IS NULL AND "sign_in_accounts"."refresh_token_expires_at" IS NULL);
