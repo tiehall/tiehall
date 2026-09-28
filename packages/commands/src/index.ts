@@ -50,12 +50,17 @@ export {
   type AppManifestInput,
 } from "./github-manifest.ts";
 export {
+  convertManifestCode,
   createGitHubClient,
   GITHUB_API_URL,
+  ManifestConversionError,
+  type ConvertedApp,
   type GitHubAppCredentials,
   type GitHubClient,
   type GitHubClientOptions,
 } from "./github-client.ts";
+export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export { defaultAppName, GITHUB_WEB_URL, manifestState, stateMatches, UNREACHABLE_OPTION } from "./setup-github.ts";
 export {
   INTEGRATION_SECRETS,
   readSecret,
@@ -143,6 +148,7 @@ export {
   readAppSettings,
   readAuthSecret,
   readMigrateSettings,
+  readSecretKey,
   SETTINGS,
   SettingsError,
   type AppSettings,

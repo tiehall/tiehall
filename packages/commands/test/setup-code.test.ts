@@ -8,6 +8,7 @@ import {
   createSetupRoute,
   migrate,
   openDatabase,
+  openSecretBox,
   SETUP_CODE_BITS,
   startSetup,
   type Database,
@@ -65,7 +66,8 @@ async function start(): Promise<string> {
   return started.code;
 }
 
-const route = () => createSetupRoute({ database: db, url: URL_OF_INSTALL, logger });
+const secrets = () => openSecretBox(randomBytes(32).toString("base64url"));
+const route = () => createSetupRoute({ database: db, url: URL_OF_INSTALL, logger, secrets });
 
 /** Enters a code on the setup screen, as the browser's form does. */
 function enter(code: string, headers: Record<string, string> = { origin: URL_OF_INSTALL }): Promise<Response> {
@@ -238,7 +240,8 @@ describe("the setup screen", () => {
     const code = await start();
     const cookie = cookieOf(await enter(code));
     const withSession = await (await open(cookie)).text();
-    expect(withSession).toContain("The setup code is accepted.");
+    // The next step is the GitHub App's.
+    expect(withSession).toContain("Create the install's GitHub App");
     expect(withSession).not.toContain('name="code"');
     expect(await (await open("__Host-tiehall-setup=not-a-session")).text()).toContain('name="code"');
   });
@@ -273,7 +276,7 @@ describe("once setup is complete", () => {
 describe("a trial install on http://localhost", () => {
   it("keeps the session cookie without the Secure-only name, which http cannot set", async () => {
     const started = await startSetup({ database: db, url: "http://localhost:3000", logger });
-    const answer = await createSetupRoute({ database: db, url: "http://localhost:3000", logger })(
+    const answer = await createSetupRoute({ database: db, url: "http://localhost:3000", logger, secrets })(
       new Request("http://localhost:3000/setup", {
         method: "POST",
         headers: { origin: "http://localhost:3000", "content-type": "application/x-www-form-urlencoded" },

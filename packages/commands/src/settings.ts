@@ -219,9 +219,7 @@ export function readAppSettings(env: Environment): AppSettings {
   const url = readInstallUrl(env);
   const database = readAppDatabase(env);
   const port = readPort(env, "PORT", 3000);
-  const secretKey = required(env, "TIEHALL_SECRET_KEY");
-  const keyProblem = secretKeyProblem(secretKey);
-  if (keyProblem !== undefined) throw new SettingsError(keyProblem);
+  const secretKey = readSecretKey(env);
   const authSecret = readAuthSecret(env);
   const sourceUrl = optional(env, "TIEHALL_SOURCE_URL");
   if (sourceUrl !== undefined && !/^https?:$/.test(parseUrl(sourceUrl)?.protocol ?? "")) {
@@ -239,6 +237,14 @@ export function readAppSettings(env: Environment): AppSettings {
     ...(sourceUrl === undefined ? {} : { sourceUrl }),
     ...(smtp === undefined ? {} : { smtp }),
   };
+}
+
+/** TIEHALL_SECRET_KEY, which encrypts the integration secrets Tiehall stores, such as the GitHub App's private key. */
+export function readSecretKey(env: Environment): string {
+  const secretKey = required(env, "TIEHALL_SECRET_KEY");
+  const keyProblem = secretKeyProblem(secretKey);
+  if (keyProblem !== undefined) throw new SettingsError(keyProblem);
+  return secretKey;
 }
 
 /** TIEHALL_AUTH_SECRET, which signs sessions and tokens, such as the confirmation step's nonces. */

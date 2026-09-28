@@ -240,6 +240,37 @@ export const setupSessions = pgTable(
   ],
 );
 
+// The install's GitHub App (self-host-install: The GitHub App is created with
+// GitHub's manifest flow; design.md, Self-hosting decisions: S4): at most one
+// per install, which the setup screen creates through GitHub's manifest flow
+// and stores from the code GitHub returns. This row holds what identifies the
+// App; its client secret, its private key and, for an App with a webhook, its
+// webhook secret are stored integration secrets, encrypted
+// (github-app-reachability: design.md, Design rules: An App without a
+// webhook). The owner's login and type give the link to the App's settings on
+// GitHub.
+export const githubApp = pgTable(
+  "github_app",
+  {
+    orgId: uuid("org_id")
+      .primaryKey()
+      .references(() => orgs.id),
+    /** GitHub's numeric id of the App. */
+    appId: bigint("app_id", { mode: "number" }).notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    /** The App's client id, the issuer of its JSON web tokens and the client of its user authorization. */
+    clientId: text("client_id").notNull(),
+    /** The login of the account that owns the App. */
+    ownerLogin: text("owner_login").notNull(),
+    /** Whether the owner is an organization or a personal account, as GitHub names it. */
+    ownerType: text("owner_type").notNull(),
+    /** When the setup screen stored these credentials, from which the App's webhook deliveries count. */
+    storedAt: timestamp("stored_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`)],
+);
+
 // Users (sign-in: One Tiehall user per GitHub account; teams-and-roles: One org
 // per install; teams-and-roles: Bot users). One row per person the install
 // knows, identified by their GitHub account's numeric id, never by the login
