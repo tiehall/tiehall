@@ -252,10 +252,26 @@ describe("a review page that cannot be shown", () => {
     expect(await notJson.json()).toMatchObject({ type: "https://tiehall.com/problems/invalid-input" });
   });
 
-  it("answers 401 without a signed-in user", async () => {
-    const page = await review("probes.create_token", { scope: "requests:read", expiresOn: "2026-12-01" }, "nobody");
-    expect(page.status).toBe(401);
-    expect(await page.json()).toMatchObject({ type: "https://tiehall.com/problems/unauthenticated" });
+  it("sends a browser without a signed-in user to sign in first, back to the same review, and shows it nothing", async () => {
+    const input = { scope: "requests:read", expiresOn: "2026-12-01" };
+    const page = await review("probes.create_token", input, "nobody");
+    expect(page.status).toBe(303);
+    const target = new URL(page.headers.get("location") ?? "", URL_OF_INSTALL);
+    expect(target.pathname).toBe("/sign-in");
+    expect(target.searchParams.get("return")).toBe(`/confirm/probes.create_token?input=${encodeURIComponent(JSON.stringify(input))}`);
+    expect(await page.text()).toBe("");
+  });
+
+  it("answers a confirmation posted without a signed-in user with 401", async () => {
+    const answer = await route(undefined)(
+      new Request(`${URL_OF_INSTALL}/confirm/probes.create_token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+        body: "input=%7B%7D&nonce=x&csrf=y",
+      }),
+    );
+    expect(answer.status).toBe(401);
+    expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/unauthenticated" });
   });
 });
 

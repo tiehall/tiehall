@@ -6,8 +6,8 @@ import { writeCommand } from "../lib/write-command.ts";
 // operation, the same on every surface; agent-safety: One confirmation
 // approves one action): server components read through readCommand() and
 // server actions write through writeCommand(), which hands execute() the
-// request's Origin and Sec-Fetch-Site and the form's CSRF token. Until sign-in
-// exists (group 7), nobody is signed in, so both run nothing and answer as
+// request's Origin and Sec-Fetch-Site and the form's CSRF token. Without a
+// session cookie nobody is signed in, so both run nothing and answer as
 // /api/v1 answers a call without credentials. The paths they take are tested
 // against a database in packages/commands/test/web-commands.test.ts and
 // web-writes.test.ts.

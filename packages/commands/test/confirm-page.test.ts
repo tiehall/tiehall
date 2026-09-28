@@ -135,10 +135,12 @@ describe("the confirm page", () => {
     expect((await openPage(sessionOf(alice), proposal)).html).toContain('data-origin="same team"');
   });
 
-  it("shows no proposal to a browser without a session", async () => {
+  it("sends a browser without a session to sign in first, back to this page, and shows it nothing of the proposal", async () => {
     const { proposal, request } = await dueDateProposal();
     const page = await openPage(undefined, proposal);
-    expect(page.status).toBe(401);
+    expect(page.status).toBe(303);
+    expect(page.headers.get("location")).toBe(`/sign-in?return=${encodeURIComponent(`/confirm/${proposal}`)}`);
+    expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(page.html).not.toContain(request.key);
     expect(page.html).not.toContain("2026-10-15");
   });

@@ -29,11 +29,14 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // applied action answers with a "Confirmed" page, or, for a command listed
 // under downloads, such as the activity log's export, with the file made from
 // its output (activity-log: Exporting the activity log).
+// A GET from a browser without a session shows nothing of the action: it is
+// sent to the sign-in page, which brings it back to the same page once it has
+// signed in (D28 #66; requests: The proposal's confirm page).
 // Every answer, refusals included, sends a Content-Security-Policy with
 // frame-ancestors 'none', so no other site can frame the page and trick a
 // click; the pages run no script and load nothing. A refusal is an RFC 9457
-// problem (public-api: One error model for Tiehall's own refusals): 401
-// without a signed-in user, 404 for an action with no review page, 403
+// problem (public-api: One error model for Tiehall's own refusals): 401 for
+// a POST without a signed-in user, 404 for an action with no review page, 403
 // removed-member for a user who is no longer a member, whatever they send, 400
 // for input that fails its schema or is not JSON, 403 for a failed check or a
 // missing or invalid nonce.
@@ -100,7 +103,9 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     try {
       if (request.method === "POST") return await apply(request, commandId, proposal, undo);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
-      const caller = await signedIn(request);
+      const caller = await options.session(request);
+      // A browser without a session signs in first, and comes back to this page (agent-surfaces: A browser without a session is sent to sign-in).
+      if (caller === undefined) return signInFirst(`${url.pathname}${url.search}`);
       const { input, refusal } = proposal === undefined ? parseInput(url.searchParams.get("input")) : { input: { proposal }, refusal: undefined };
       const reviewed = await options.step.review(commandId, caller, input, refusal);
       const csrf = csrfTokenFor(secret(), caller.sessionId);
@@ -196,6 +201,18 @@ function problem({ status, headers, body }: HttpProblem): Response {
 
 function page(html: string): Response {
   return new Response(html, { headers: PAGE_HEADERS });
+}
+
+/** Sends a browser without a session to the sign-in page, which brings it back to this path; the answer holds nothing of the page. */
+function signInFirst(path: string): Response {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: `/sign-in?return=${encodeURIComponent(path)}`,
+      "cache-control": "no-store",
+      "content-security-policy": PAGE_HEADERS["content-security-policy"],
+    },
+  });
 }
 
 /** The file a confirmed action answers with: sent as an attachment, never cached, and, like a page, not framed. */
