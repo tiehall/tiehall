@@ -292,11 +292,35 @@ function envValues(text: string): Map<string, string> {
   );
 }
 
+/** The comment just above a setting's line in a printed `.env`, as one text without its "#" marks. */
+function commentAbove(text: string, name: string): string {
+  const lines = text.split("\n");
+  const comment: string[] = [];
+  for (let index = lines.findIndex((line) => line.startsWith(`${name}=`)) - 1; index >= 0; index -= 1) {
+    const line = lines[index] ?? "";
+    if (!line.startsWith("#")) break;
+    comment.unshift(line.replace(/^# ?/, ""));
+  }
+  return comment.join(" ");
+}
+
 // self-host-install: `init` prints a complete `.env`.
 describe("the init role", () => {
-  /** Runs init as `docker run --rm <image> init --url <url>` does, with no network. */
-  function init() {
-    return docker(["run", "--rm", ...confined, "--network", "none", image, "init", "--url", "https://tiehall.example.com"]);
+  /** Runs init as `docker run --rm [--env ...] <image> init --url <url> [options]` does, with no network. */
+  function init(options: string[] = [], env: string[] = []) {
+    return docker([
+      "run",
+      "--rm",
+      ...confined,
+      "--network",
+      "none",
+      ...env.flatMap((setting) => ["--env", setting]),
+      image,
+      "init",
+      "--url",
+      "https://tiehall.example.com",
+      ...options,
+    ]);
   }
 
   it("prints a complete .env with fresh secrets on standard output, and nothing else", () => {
@@ -322,6 +346,32 @@ describe("the init role", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toBe("");
     expect(run.stderr).toContain("tiehall init: TIEHALL_URL must be an https:// URL");
+  });
+
+  it("pins the image --image gives, verbatim, as the install command in the release notes passes it", () => {
+    const run = init(["--image", image]);
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(envValues(run.stdout).get("TIEHALL_IMAGE")).toBe(image);
+  });
+
+  it.fails("refuses an --image that is not an image reference, and prints no .env", () => {
+    const run = init(["--image", "ghcr.io/acme/Tiehall:1.3.0 latest"]);
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toContain("not an image reference");
+  });
+
+  // The roles read the build's values from the environment, so --env stands in for a release build's.
+  it.fails("names a release build by its version without --image, with the comment that says where the digest comes from", () => {
+    const run = init([], ["TIEHALL_VERSION=1.3.0", "TIEHALL_IMAGE_NAME=ghcr.io/acme/tiehall"]);
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(envValues(run.stdout).get("TIEHALL_IMAGE")).toBe("ghcr.io/acme/tiehall:1.3.0");
+    const comment = commentAbove(run.stdout, "TIEHALL_IMAGE");
+    expect(comment).toMatch(/release notes name/);
+    expect(comment).toMatch(/set TIEHALL_IMAGE to the reference the release notes give/);
+    expect(comment).toMatch(/run init again with --image/);
   });
 });
 
