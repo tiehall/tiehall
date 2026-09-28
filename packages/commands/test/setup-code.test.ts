@@ -21,7 +21,9 @@ import {
 // previous one. Only a browser that enters the current code gets a setup
 // session; a wrong code, the previous code and a POST from any origin but the
 // install's own get 403 and no session. Every step of the setup screen needs
-// that session.
+// that session. A setup session does not expire with time, and a later start
+// does not end it; only the completion of setup does (design.md, Decisions:
+// D45 (7)).
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const URL_OF_INSTALL = "https://tiehall.example.com";
@@ -195,6 +197,23 @@ describe("entering the setup code", () => {
   it("refuses a code while no start has printed one", async () => {
     expect((await enter("ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345")).status).toBe(403);
     expect(await sessions()).toBe(0);
+  });
+});
+
+describe("a setup session", () => {
+  it("outlives a later start: it still shows the next step, while the earlier code opens no new session", async () => {
+    const first = await start();
+    const cookie = cookieOf(await enter(first));
+    await start();
+    expect(await (await open(cookie)).text()).toContain("The setup code is accepted.");
+    expect((await enter(first)).status).toBe(403);
+    expect(await sessions()).toBe(1);
+  });
+
+  it("does not expire with time: one opened 30 days ago still shows the next step", async () => {
+    const cookie = cookieOf(await enter(await start()));
+    await owner.query("UPDATE setup_sessions SET created_at = created_at - interval '30 days'");
+    expect(await (await open(cookie)).text()).toContain("The setup code is accepted.");
   });
 });
 
