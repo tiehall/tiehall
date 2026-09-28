@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { homeState } from "../lib/home.ts";
+import { GET } from "../app/route.ts";
 
 // The home page (sign-in: GitHub is the only way to sign in): a person who is
 // not signed in is sent to the sign-in page, which offers sign-in with GitHub
 // only. A browser that carries no session cookie reaches neither the database
-// nor the sign-in service. packages/commands/test/sign-in.test.ts tests the
-// sign-in service and its sessions against a database.
-
-const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
-vi.mock("next/headers", () => ({ headers: async () => requestHeaders.current }));
+// nor the sign-in service. packages/commands/test/home-page.test.ts tests the
+// page with sessions against a database.
 
 beforeEach(() => {
   // Settings that name an app role and a password, never used: nothing reaches the database.
@@ -23,7 +20,8 @@ afterEach(() => {
 
 describe("the home page", () => {
   it("sends a person who is not signed in to the sign-in page", async () => {
-    requestHeaders.current = new Headers({ cookie: "other=1" });
-    expect(await homeState()).toEqual({ kind: "sign-in" });
+    const answer = await GET(new Request("https://tiehall.example.com/", { headers: { cookie: "other=1" } }));
+    expect(answer.status).toBe(303);
+    expect(answer.headers.get("location")).toBe("/sign-in");
   });
 });

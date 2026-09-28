@@ -5,6 +5,7 @@ import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
 import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
+import { createHomeRoute, type HomeRoute } from "./home-route.ts";
 import { HANDLERS } from "./handlers.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
@@ -15,7 +16,6 @@ import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Environment } from "./settings.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
-import { csrfTokenFor } from "./web-writes.ts";
 import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
@@ -150,15 +150,20 @@ export function signInPageRoute(env: Environment): (request: Request) => Promise
   return (request) => signIn.page(request);
 }
 
+let homePage: HomeRoute | undefined;
+
+/** The home page at /, which sends a person who is not signed in to the sign-in page; built once per process. */
+export function homeRoute(env: Environment): HomeRoute {
+  if (homePage !== undefined) return homePage;
+  const { logger } = servicesOf(env);
+  homePage = createHomeRoute({ session: (request) => webSession(env, request.headers), secret: () => readAuthSecret(env), logger });
+  return homePage;
+}
+
 /** The web UI's sign-out at /sign-out, which ends the session the request's cookie names. */
 export function signOutRoute(env: Environment): (request: Request) => Promise<Response> {
   const { signIn } = servicesOf(env);
   return (request) => signIn.signOut(request);
-}
-
-/** The CSRF token a page puts in its forms, such as the sign-out form, for the signed-in web session. */
-export function csrfTokenOf(env: Environment, caller: WebSessionCaller): string {
-  return csrfTokenFor(readAuthSecret(env), caller.sessionId);
 }
 
 /**

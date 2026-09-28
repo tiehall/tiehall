@@ -212,6 +212,7 @@ export {
   type Reviews,
 } from "./confirmation-step.ts";
 export { CONFIRM_PATH, CONFIRM_ROUTE_PATHS, createConfirmRoute, type ConfirmDownloads, type ConfirmRoute, type ConfirmRouteOptions, type Download } from "./confirm-route.ts";
+export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export {
   actionDigest,
