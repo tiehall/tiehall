@@ -162,6 +162,20 @@ describe("counting agent writes", () => {
     expect([await flagged(), await flagged(other.id)]).toEqual([false, false]);
   });
 
+  it("counts no read or acknowledgement: after six writes, reads and an acknowledgement, only the seventh write flags the request", async () => {
+    expect(await agentWrites(times("09:00:00", 6, 30))).toEqual([200, 200, 200, 200, 200, 200]);
+    at("09:03:00");
+    const token = tokenOf(bob);
+    for (const path of [`/api/v1/requests/${key}`, `/api/v1/requests/${key}/packet`, "/api/v1/requests"]) {
+      expect((await callApi(install, token, "GET", path)).status, path).toBe(200);
+    }
+    const read = await callApi(install, token, "GET", "/api/v1/events?limit=500");
+    expect(await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: read.body.events.at(-1).number })).toMatchObject({ status: 200 });
+    expect(await flagged()).toBe(false);
+    expect(await agentWrites(["09:04:00"])).toEqual([200]);
+    expect(await flagged()).toBe(true);
+  });
+
   it("counts no refused write", async () => {
     at("09:00:00");
     for (let attempt = 0; attempt < 10; attempt++) expect((await comment(carol)).status).toBe(403);

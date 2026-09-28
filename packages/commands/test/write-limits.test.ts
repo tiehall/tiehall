@@ -129,6 +129,25 @@ describe("the limit per token", () => {
     }
     expect(statuses).toEqual([...Array.from({ length: 20 }, () => 200), 429]);
   });
+
+  it("counts no read or acknowledgement: after 59 writes, reads and an acknowledgement, the token's 60th write is accepted", async () => {
+    at("11:00:00Z");
+    const requests = await openRequests(11);
+    const token = tokenOf(bob);
+    for (let index = 0; index < 59; index++) {
+      at(after("11:00:00", index * 0.5));
+      expect((await comment(token, requests[Math.floor(index / 6)]?.key ?? "")).status, `write ${index + 1}`).toBe(200);
+    }
+    at(after("11:00:00", 30));
+    for (const path of [`/api/v1/requests/${requests[0]?.key ?? ""}`, "/api/v1/requests", "/api/v1/events?limit=500"]) {
+      expect((await callApi(install, token, "GET", path)).status, path).toBe(200);
+    }
+    const events = await callApi(install, token, "GET", "/api/v1/events?limit=500");
+    expect((await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: events.body.events.at(-1).number })).status).toBe(200);
+    const last = requests[10]?.key ?? "";
+    expect((await comment(token, last)).status).toBe(200);
+    expect((await comment(token, last)).status).toBe(429);
+  });
 });
 
 describe("the install's daily budget", () => {
