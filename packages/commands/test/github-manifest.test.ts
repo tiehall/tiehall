@@ -55,6 +55,8 @@ describe("every manifest", () => {
       expect(manifest.name).toBe("Tiehall Acme");
       expect(manifest.url).toBe(url);
       for (const address of [manifest.redirect_url, ...manifest.callback_urls]) expect(new URL(address).origin).toBe(url);
+      // The usual sign-in's callback, and the setup screen's, which completes setup while the setup gate serves only /setup.
+      expect(manifest.callback_urls).toEqual([`${url}/api/auth/callback/github`, `${url}/setup/sign-in/callback/github`]);
     });
   }
 

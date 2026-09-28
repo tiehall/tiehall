@@ -31,6 +31,13 @@ export const GITHUB_APP_ACCESS = {
 export const MANIFEST_REDIRECT_PATH = "/setup/github";
 /** Where GitHub sends a person back after they authorize the App to sign them in: the sign-in service's GitHub callback. */
 export const SIGN_IN_CALLBACK_PATH = "/api/auth/callback/github";
+/**
+ * Where the setup screen's sign-in lives, which completes setup: under
+ * /setup, the one path the setup gate serves before setup completes.
+ */
+export const SETUP_SIGN_IN_PATH = "/setup/sign-in";
+/** Where GitHub sends the operator back after they authorize the App to sign them in from the setup screen. */
+export const SETUP_SIGN_IN_CALLBACK_PATH = `${SETUP_SIGN_IN_PATH}/callback/github`;
 /** Where GitHub delivers the App's webhooks. */
 export const WEBHOOK_PATH = "/webhooks/github";
 
@@ -68,7 +75,8 @@ export function buildAppManifest(input: AppManifestInput): AppManifest {
     url: base,
     ...(webhook ? { hook_attributes: { url: `${base}${WEBHOOK_PATH}`, active: true as const } } : {}),
     redirect_url: `${base}${MANIFEST_REDIRECT_PATH}`,
-    callback_urls: [`${base}${SIGN_IN_CALLBACK_PATH}`],
+    // The usual sign-in's callback, and the setup screen's, which completes setup while the setup gate serves only /setup.
+    callback_urls: [`${base}${SIGN_IN_CALLBACK_PATH}`, `${base}${SETUP_SIGN_IN_CALLBACK_PATH}`],
     public: false,
     default_permissions: { ...GITHUB_APP_ACCESS.permissions },
     default_events: webhook ? [...GITHUB_APP_ACCESS.events] : [],

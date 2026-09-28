@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { buildAppManifest, MANIFEST_REDIRECT_PATH, manifestHasWebhook, WEBHOOK_PATH } from "./github-manifest.ts";
+import { buildAppManifest, MANIFEST_REDIRECT_PATH, manifestHasWebhook, SETUP_SIGN_IN_PATH, WEBHOOK_PATH } from "./github-manifest.ts";
 import type { StoredGitHubApp } from "./github-app.ts";
 import { escapeHtml } from "./html.ts";
 import { isTrialUrl } from "./settings.ts";
@@ -31,6 +31,40 @@ import { isTrialUrl } from "./settings.ts";
 
 /** GitHub's web pages, where the manifest is posted and the App is installed. */
 export const GITHUB_WEB_URL = "https://github.com";
+
+/** Where the setup screen's form names the company. */
+export const COMPANY_PATH = "/setup/company";
+
+/** The longest company name, in characters, as for a team's name. */
+export const COMPANY_NAME_MAX_LENGTH = 100;
+
+/**
+ * The company's name as the operator typed it, trimmed; undefined when it is
+ * empty, longer than 100 characters or holds a control character.
+ */
+export function companyName(value: string | null): string | undefined {
+  const name = (value ?? "").trim();
+  if (name === "" || [...name].length > COMPANY_NAME_MAX_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(name)) return undefined;
+  return name;
+}
+
+/** The step that names the company, which becomes the name of the install's one org. */
+export function companyStepBody(current: string): string {
+  return `      <h2>Name the company</h2>
+      <p>${escapeHtml("An install of Tiehall serves one company. Its name is the name of the install, shown in the web UI.")}</p>
+      <form method="post" action="${COMPANY_PATH}">
+        <label for="company">The company's name</label>
+        <input id="company" name="name" type="text" value="${escapeHtml(current)}" maxlength="${COMPANY_NAME_MAX_LENGTH}" autocomplete="organization" required>
+        <button type="submit">Save the name</button>
+      </form>
+`;
+}
+
+/** The line that names the company on the later steps, with the way to change it. */
+function companyLine(company: string): string {
+  return `      <p>${escapeHtml(`The company: ${company}.`)} <a href="/setup?step=company">Change the name</a></p>
+`;
+}
 
 /** The option that creates the App without a webhook, as the setup screen names it. */
 export const UNREACHABLE_OPTION = "GitHub cannot reach this address";
@@ -89,7 +123,7 @@ export function newAppPage(webUrl: string, org: string, state: string): string {
 }
 
 /** The App step: the operator's settings, what the App gets, and the button that posts the manifest to GitHub. */
-export function appStepBody(input: { url: string; webUrl: string; settings: AppStepSettings; state: string }): string {
+export function appStepBody(input: { url: string; webUrl: string; settings: AppStepSettings; state: string; company?: string }): string {
   const { url, webUrl, settings, state } = input;
   const trial = isTrialUrl(url);
   const orgValid = settings.org === "" || GITHUB_LOGIN.test(settings.org);
@@ -112,7 +146,7 @@ export function appStepBody(input: { url: string; webUrl: string; settings: AppS
 ${option}        <button type="submit">Apply</button>
       </form>
 `;
-  const intro = `      <h2>Create the install's GitHub App</h2>
+  const intro = `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Create the install's GitHub App</h2>
       <p>${escapeHtml(
         "Tiehall signs people in with GitHub, links pull requests and mirrors requests into GitHub Issues through a GitHub App of its own. " +
           "The button below takes you to GitHub, which asks you to confirm the App and then sends you back here. " +
@@ -143,14 +177,39 @@ ${option}        <button type="submit">Apply</button>
 `;
 }
 
-/** The step after the App is stored: install it on its owner, then sign in. */
-export function installStepBody(input: { webUrl: string; app: StoredGitHubApp }): string {
+/** Why the sign-in from the setup screen did not complete setup, by the code it returned with. */
+const SIGN_IN_ERRORS: Readonly<Record<string, string>> = {
+  github_failed: "GitHub could not be reached to list the App's installations, so setup is not complete. Sign in again.",
+  company_not_named: "Name the company before you sign in.",
+  no_app: "Create the install's GitHub App before you sign in.",
+  sign_in_refused: "The sign-in did not come from the browser that entered the setup code. Sign in from that browser.",
+  access_denied: "GitHub says you did not authorize the install's GitHub App, so setup is not complete. Sign in again.",
+};
+
+/** The step after the App is stored: install it on its owner, then sign in with GitHub, which completes setup. */
+export function installStepBody(input: { webUrl: string; app: StoredGitHubApp; company?: string; signIn?: boolean; error?: string | null }): string {
   const { webUrl, app } = input;
   const owner = app.owner.type === "Organization" ? `the GitHub organization ${app.owner.login}` : `your GitHub account ${app.owner.login}`;
   const install = `${webUrl}/apps/${encodeURIComponent(app.slug)}/installations/new`;
-  return `      <h2>Install the GitHub App</h2>
+  const error =
+    input.error === undefined || input.error === null
+      ? ""
+      : `      <p>${escapeHtml(SIGN_IN_ERRORS[input.error] ?? "The sign-in with GitHub did not complete setup. Sign in again.")}</p>
+`;
+  const signIn =
+    input.signIn === false
+      ? `      <p>${escapeHtml("Then come back here to sign in with GitHub, which completes setup.")}</p>
+`
+      : `      <h2>Sign in to complete setup</h2>
+${error}      <p>${escapeHtml(
+          "Once the App is installed, sign in with your GitHub account. You become the install's first admin, the installations of the App are connected, and setup is complete.",
+        )}</p>
+      <form method="post" action="${SETUP_SIGN_IN_PATH}">
+        <button type="submit">Sign in with GitHub</button>
+      </form>
+`;
+  return `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Install the GitHub App</h2>
       <p>${escapeHtml(`The GitHub App "${app.name}" is created, owned by ${owner}. Install it there, and choose the repositories it covers.`)}</p>
       <p><a href="${escapeHtml(install)}">${escapeHtml(`Install ${app.name} on GitHub`)}</a></p>
-      <p>${escapeHtml("Then come back here to sign in with GitHub, which completes setup.")}</p>
-`;
+${signIn}`;
 }

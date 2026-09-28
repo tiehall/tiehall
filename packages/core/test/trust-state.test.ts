@@ -4,6 +4,7 @@ import {
   memberRemoved,
   memberRoleChanged,
   recordedTrustState,
+  setupCompleted,
   TRUST_STATE_EVENT_TYPES,
   trustDifferences,
   trustStateReconciled,
@@ -39,8 +40,8 @@ describe("the reconciled event", () => {
     expect(Object.keys(trustStateReconciled.fields).sort()).toEqual(["grantId", "present", "role", "subject", "userId"]);
   });
 
-  it("is among the event types the replay reads, with the role change and the removal", () => {
-    expect(TRUST_STATE_EVENT_TYPES).toEqual([memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type]);
+  it("is among the event types the replay reads, with the role change, the removal and the completion of setup", () => {
+    expect(TRUST_STATE_EVENT_TYPES).toEqual([memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type, setupCompleted.type]);
   });
 });
 
@@ -52,6 +53,14 @@ describe("the state the security events record", () => {
   it("takes a role change as the member's presence in the new role, and a removal as their absence", () => {
     expect(recordedTrustState([roleChanged(LEE, "admin", "member")])).toEqual({ members: [{ userId: LEE, role: "admin" }], grants: [] });
     expect(recordedTrustState([roleChanged(LEE, "admin", "member"), removed(LEE)])).toEqual({ members: [], grants: [] });
+  });
+
+  it("takes the completion of setup as the first admin's presence as an admin", () => {
+    expect(setupCompleted.class).toBe("security");
+    expect(recordedTrustState([{ type: setupCompleted.type, data: { userId: PIA } }])).toEqual({ members: [{ userId: PIA, role: "admin" }], grants: [] });
+    expect(recordedTrustState([{ type: setupCompleted.type, data: { userId: PIA } }, roleChanged(PIA, "member", "admin")]).members).toEqual([
+      { userId: PIA, role: "member" },
+    ]);
   });
 
   it("lets the latest event about a member win, in the order given", () => {

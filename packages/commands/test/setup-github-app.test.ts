@@ -89,7 +89,7 @@ function browserRequest(url: string, path: string, cookie?: string, init: Reques
   });
 }
 
-/** Starts the web role's setup step and enters its code, as the operator does; returns the browser's session cookie. */
+/** Starts the web role's setup step, enters its code and names the company, as the operator does; returns the browser's session cookie. */
 async function setupSession(url: string): Promise<string> {
   const started = await startSetup({ database: db, url, logger });
   const answer = await route(url)(
@@ -100,7 +100,17 @@ async function setupSession(url: string): Promise<string> {
     }),
   );
   expect(answer.status).toBe(303);
-  return (answer.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const cookie = (answer.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  // The company is named first; the App step follows.
+  const named = await route(url)(
+    browserRequest(url, "/setup/company", cookie, {
+      method: "POST",
+      headers: { origin: url, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ name: "Acme" }).toString(),
+    }),
+  );
+  expect(named.status).toBe(303);
+  return cookie;
 }
 
 /** The setup screen, as the browser with this cookie sees it, with the App step's settings in its query. */

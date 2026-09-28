@@ -44,6 +44,8 @@ export {
   GITHUB_APP_ACCESS,
   manifestHasWebhook,
   MANIFEST_REDIRECT_PATH,
+  SETUP_SIGN_IN_CALLBACK_PATH,
+  SETUP_SIGN_IN_PATH,
   SIGN_IN_CALLBACK_PATH,
   WEBHOOK_PATH,
   type AppManifest,
@@ -60,6 +62,23 @@ export {
   type GitHubClientOptions,
 } from "./github-client.ts";
 export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export {
+  connectInstallations,
+  coveredRepositories,
+  knownInstallations,
+  listAppInstallations,
+  listInstallationRepositories,
+  readInstallations,
+  readRepositoriesOf,
+  recordCoveredRepositories,
+  recordInstallations,
+  type CoveredRepository,
+  type GitHubAppAccess,
+  type KnownInstallation,
+  type ListedInstallation,
+  type ListedRepository,
+  type ReadInstallationsOptions,
+} from "./github-installations.ts";
 export { userOfGitHubAccount } from "./github-users.ts";
 export {
   createGitHubWebhookRoute,
@@ -69,7 +88,9 @@ export {
   type GitHubWebhookRoute,
   type GitHubWebhookRouteOptions,
 } from "./github-webhooks.ts";
-export { defaultAppName, GITHUB_WEB_URL, manifestState, stateMatches, UNREACHABLE_OPTION } from "./setup-github.ts";
+export { COMPANY_NAME_MAX_LENGTH, COMPANY_PATH, companyName, defaultAppName, GITHUB_WEB_URL, manifestState, stateMatches, UNREACHABLE_OPTION } from "./setup-github.ts";
+export { createInstallGitHub, type InstallGitHub, type InstallGitHubOptions } from "./install-github.ts";
+export { completeSetup, SetupCompletionError, type CompleteSetupOptions } from "./setup-completion.ts";
 export {
   INTEGRATION_SECRETS,
   readSecret,
@@ -194,9 +215,11 @@ export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOpti
 export {
   AUTH_BASE_PATH,
   createSignInService,
+  SETUP_SIGN_IN_REFUSED,
   SIGN_IN_PATH,
   SIGN_IN_REFUSED,
   SIGN_OUT_PATH,
+  type SetupSignIn,
   type SignInService,
   type SignInServiceOptions,
 } from "./sign-in.ts";

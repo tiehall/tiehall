@@ -1,25 +1,40 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { orgs, type Database } from "@tiehall/db";
+import { eq } from "drizzle-orm";
 import { readGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, ManifestConversionError } from "./github-client.ts";
-import { MANIFEST_REDIRECT_PATH } from "./github-manifest.ts";
+import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession, openSetupSession } from "./setup-code.ts";
 import { readSetupState, SETUP_PATH } from "./setup-gate.ts";
-import { appStepBody, appStepSettings, GITHUB_WEB_URL, installStepBody, manifestState, stateMatches } from "./setup-github.ts";
+import {
+  appStepBody,
+  appStepSettings,
+  companyStepBody,
+  COMPANY_PATH,
+  companyName,
+  GITHUB_WEB_URL,
+  installStepBody,
+  manifestState,
+  stateMatches,
+} from "./setup-github.ts";
+import type { SetupSignIn } from "./sign-in.ts";
 
 // The setup screen at /setup (self-host-install: The setup code guards the
 // setup screen; self-host-install: The GitHub App is created with GitHub's
 // manifest flow; design.md, Self-hosting decisions: S3 and S4):
 // - GET shows the form for the setup code, or, to a browser that holds a setup
-//   session, the next step of setup: the GitHub App step until the App's
-//   credentials are stored, then the step that installs the App. A browser
-//   that reached the install through any origin but TIEHALL_URL's, such as its
-//   address on the local network, gets neither: the page names the URL to open
-//   instead, because the GitHub App that setup creates works only at
-//   TIEHALL_URL.
+//   session, the next step of setup: the company's name until it is given,
+//   then the GitHub App step until the App's credentials are stored, then the
+//   step that installs the App and signs in. A browser that reached the
+//   install through any origin but TIEHALL_URL's, such as its address on the
+//   local network, gets neither: the page names the URL to open instead,
+//   because the GitHub App that setup creates works only at TIEHALL_URL.
+// - POST /setup/company names the company, which becomes the name of the
+//   install's one org (teams-and-roles: One org per install); the operator can
+//   change it until setup completes.
 // - POST takes the code a person typed. It is refused with 403, and opens no
 //   session, unless its Origin is TIEHALL_URL's and the code is the current
 //   one; otherwise it opens a setup session, sets its cookie and leads back
@@ -33,6 +48,13 @@ import { appStepBody, appStepSettings, GITHUB_WEB_URL, installStepBody, manifest
 //   before, and leads back to the setup screen, which then sends the operator
 //   on to install the App. A code GitHub no longer converts stores nothing,
 //   and the page says to create the App again.
+// - POST /setup/sign-in starts the sign-in with GitHub that completes setup,
+//   and GET /setup/sign-in/callback/github is GitHub's return to it
+//   (self-host-install: Setup names the company and makes the first admin):
+//   the sign-in service's own instance for setup takes both (sign-in.ts). The
+//   person who signs in becomes the first admin, the App's installations are
+//   connected, and setup closes: the browser lands on the web UI, signed in,
+//   and its setup cookie is dropped.
 // - Once setup is complete, every path under /setup answers 404 to everyone.
 // Refusals are RFC 9457 problems, as on every endpoint Tiehall serves
 // (public-api: One error model for Tiehall's own refusals). The pages are
@@ -48,6 +70,8 @@ export interface SetupRouteOptions {
   secrets: () => SecretBox;
   /** GitHub's web pages and API, which a test points at the GitHub stub; github.com and api.github.com otherwise. */
   github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch };
+  /** The sign-in with GitHub that completes setup; without it, the setup screen offers none. */
+  signIn?: SetupSignIn;
   logger?: Logger;
 }
 
@@ -72,6 +96,10 @@ const NO_CODE = httpProblem(
 const WRONG_ORIGIN = httpProblem(
   new Refusal("forbidden", "The setup screen takes a setup code only from a form on the install's own URL, TIEHALL_URL."),
 );
+const NOT_IN_SESSION = httpProblem(
+  new Refusal("forbidden", "Setup continues only in the browser that entered the setup code. Open /setup there, or enter the setup code in this one."),
+);
+const NOT_YET = httpProblem(new Refusal("conflict", "Name the company and create the install's GitHub App before you sign in."));
 const WRONG_CODE = httpProblem(
   new Refusal(
     "forbidden",
@@ -88,6 +116,9 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       if ((await readSetupState(options.database)).complete) return problem(CLOSED);
       const { pathname } = new URL(request.url);
       if (pathname === MANIFEST_REDIRECT_PATH && request.method === "GET") return await fromGitHub(request);
+      if (pathname === COMPANY_PATH && request.method === "POST") return await nameCompany(request);
+      if (pathname === SETUP_SIGN_IN_PATH && request.method === "POST" && options.signIn !== undefined) return await startSignIn(request, options.signIn);
+      if (pathname === SETUP_SIGN_IN_CALLBACK_PATH && request.method === "GET" && options.signIn !== undefined) return await signedIn(request, options.signIn);
       if (pathname !== SETUP_PATH) return problem(NO_SUCH_STEP);
       if (request.method === "POST") return await enterCode(request);
       if (browserOrigin(request) !== options.url) return page(wrongOriginPage(options.url));
@@ -100,17 +131,78 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     }
   };
 
-  /** The step a browser with a setup session is at: the App step, or installing the App once it is stored. */
+  /**
+   * The step a browser with a setup session is at: the company's name until it
+   * is given, or when the operator asks to change it; then the App step; then
+   * installing the App and signing in once the App is stored.
+   */
   async function nextStep(request: Request, token: string): Promise<Response> {
-    const app = await options.database.transaction(async (tx) => {
-      const [org] = await tx.select({ id: orgs.id }).from(orgs).limit(1);
-      return org === undefined ? undefined : readGitHubApp({ tx, orgId: org.id });
+    const { company, app } = await options.database.transaction(async (tx) => {
+      const [org] = await tx.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1);
+      return { company: org?.name ?? null, app: org === undefined ? undefined : await readGitHubApp({ tx, orgId: org.id }) };
     });
-    if (app !== undefined) return page(layout(installStepBody({ webUrl, app })));
-    const settings = appStepSettings(options.url, new URL(request.url).searchParams);
-    const body = appStepBody({ url: options.url, webUrl, settings, state: manifestState(token) });
-    // The step's one button posts the manifest to GitHub's new-App page, so its forms may post there too.
-    return page(layout(body), { "content-security-policy": pagePolicy(`'self' ${new URL(webUrl).origin}`) });
+    const query = new URL(request.url).searchParams;
+    if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? "")));
+    // Both steps' buttons lead to GitHub: the manifest's form posts there, and the sign-in's answer redirects there.
+    const toGitHub = { "content-security-policy": pagePolicy(`'self' ${new URL(webUrl).origin}`) };
+    if (app !== undefined) {
+      return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error") })), toGitHub);
+    }
+    const settings = appStepSettings(options.url, query);
+    return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token), company })), toGitHub);
+  }
+
+  /** Whether a request comes from a form of the install, TIEHALL_URL, in a browser that holds a setup session. */
+  async function inSession(request: Request): Promise<Response | undefined> {
+    if (originOf(request.headers.get("origin")) !== options.url) return problem(WRONG_ORIGIN);
+    const token = cookieOf(request, cookieName);
+    if (token === undefined || !(await isSetupSession(options.database, token))) return problem(NOT_IN_SESSION);
+    return undefined;
+  }
+
+  /** Names the company: the install's one org takes the name, which the operator can change until setup completes. */
+  async function nameCompany(request: Request): Promise<Response> {
+    const refused = await inSession(request);
+    if (refused !== undefined) return refused;
+    const name = companyName(new URLSearchParams(await request.text()).get("name"));
+    if (name === undefined) {
+      const message = "The company's name is 1 to 100 characters, with no control characters.";
+      return problem(httpProblem(new Refusal("invalid-input", message, { issues: [{ path: ["name"], message }] })));
+    }
+    const named = await options.database.transaction(async (tx) => {
+      const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1).for("update");
+      if (org === undefined || org.setupCompletedAt !== null) return false;
+      await tx.update(orgs).set({ name }).where(eq(orgs.id, org.id));
+      return true;
+    });
+    if (!named) return problem(CLOSED);
+    return new Response(null, { status: 303, headers: { location: `${options.url}${SETUP_PATH}`, "cache-control": "no-store" } });
+  }
+
+  /** Starts the sign-in with GitHub that completes setup, once the company is named and the App is stored. */
+  async function startSignIn(request: Request, signIn: SetupSignIn): Promise<Response> {
+    const refused = await inSession(request);
+    if (refused !== undefined) return refused;
+    const ready = await options.database.transaction(async (tx) => {
+      const [org] = await tx.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1);
+      return org !== undefined && org.name !== null && (await readGitHubApp({ tx, orgId: org.id })) !== undefined;
+    });
+    if (!ready) return problem(NOT_YET);
+    return signIn.start(request);
+  }
+
+  /** GitHub's return to the sign-in of the setup screen, served only to the browser that holds the setup session. */
+  async function signedIn(request: Request, signIn: SetupSignIn): Promise<Response> {
+    const token = cookieOf(request, cookieName);
+    if (token === undefined || !(await isSetupSession(options.database, token))) return problem(NOT_IN_SESSION);
+    const answer = await signIn.callback(request);
+    if (answer.status >= 300 && answer.status < 400 && (await readSetupState(options.database)).complete) {
+      // Setup is complete: the setup session is of no use any more, so its cookie goes.
+      const headers = new Headers(answer.headers);
+      headers.append("set-cookie", `${cookieName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${options.url.startsWith("https:") ? "; Secure" : ""}`);
+      return new Response(answer.body, { status: answer.status, headers });
+    }
+    return answer;
   }
 
   /** GitHub's return from the manifest flow: the code, converted and stored when the state is this browser's. */

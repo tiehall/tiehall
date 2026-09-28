@@ -21,13 +21,19 @@ import {
 } from "@tiehall/db";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL } from "./github-client.ts";
-import { SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
+import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
+import { createInstallGitHub } from "./install-github.ts";
+import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
+import { isSetupSession } from "./setup-code.ts";
+import { completeSetup, SetupCompletionError } from "./setup-completion.ts";
+import { SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
+import { setupCookieName } from "./setup-route.ts";
 import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
 import { RemovedMemberError } from "./with-org.ts";
 import { assertWebWrite } from "./web-writes.ts";
@@ -86,9 +92,21 @@ import { write, type Origin, type Store } from "./write.ts";
 // the service writes anything, and a refused one gets 403 sign-in-refused,
 // telling the person to ask an admin for an invite, and creates no session, no
 // user and no membership. For now a person is admitted when their user is
-// already a member of the install; the sign-in that completes setup (task 7.9)
-// and organization members and invites (task 7.10) join the rule when they are
-// built.
+// already a member of the install; organization members and invites (task
+// 7.10) join the rule when they are built.
+//
+// The sign-in that completes setup (self-host-install: Setup names the company
+// and makes the first admin; sign-in: Who may sign in): while setup is
+// incomplete, the setup gate serves only /setup and what lies under it, so the
+// setup screen signs the operator in through a second instance of the service
+// that lives under /setup/sign-in, whose GitHub callback, TIEHALL_URL
+// /setup/sign-in/callback/github, the App's manifest registers beside the
+// usual one. It admits a person only from a browser that holds a setup session
+// while setup is incomplete, and, before it stores their web session, it
+// completes setup with them as the first admin (setup-completion.ts): a
+// completion that fails stores no session, and the operator is sent back to
+// the setup screen, which says why. Once setup is complete, /setup answers 404
+// and that instance is never reached again.
 
 /** Where the sign-in service's own routes live, such as GitHub's return to the sign-in callback. */
 export const AUTH_BASE_PATH = "/api/auth";
@@ -100,6 +118,10 @@ export const SIGN_OUT_PATH = "/sign-out";
 /** What a refused person reads. */
 export const SIGN_IN_REFUSED =
   "Your GitHub account may not sign in to this install. Ask an admin of the install for an invite, then sign in again.";
+
+/** What a sign-in from the setup screen without a setup session reads. */
+export const SETUP_SIGN_IN_REFUSED =
+  "Setup is completed only by a sign-in from the browser that entered the setup code, while setup is not complete. Open the setup screen in that browser.";
 
 /** What every write of a linked account stores in place of the user tokens GitHub issued: nothing. */
 const NO_USER_TOKEN = {
@@ -124,7 +146,21 @@ export interface SignInServiceOptions {
   secrets: () => SecretBox;
   /** GitHub's web pages and API, which a test points at the GitHub stub; github.com and api.github.com otherwise. */
   github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch };
+  /** Where the sign-in that completes setup sends the jobs of the deliveries held during setup; without it, a job that runs every minute releases them. */
+  jobs?: JobSender;
   logger?: Logger;
+}
+
+/**
+ * The sign-in that completes setup, which the setup screen offers to a browser
+ * that holds a setup session, once it has checked that session and the form's
+ * origin.
+ */
+export interface SetupSignIn {
+  /** Starts a sign-in with GitHub from the setup screen: sends the browser to GitHub's authorize page. */
+  start(request: Request): Promise<Response>;
+  /** GitHub's return to the setup screen's sign-in callback, which completes setup and signs the first admin in. */
+  callback(request: Request): Promise<Response>;
 }
 
 export interface SignInService {
@@ -145,7 +181,12 @@ export interface SignInService {
   session(headers: Headers): Promise<WebSessionCaller | undefined>;
   /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
   routes(): Promise<string[]>;
+  /** The sign-in that completes setup, under /setup/sign-in. */
+  setup: SetupSignIn;
 }
+
+/** The two instances of the service: the usual one under /api/auth, and the one that completes setup under /setup/sign-in. */
+type Mode = "sign-in" | "setup";
 
 /** The stored credentials a built instance serves with, as a key that changes whenever they do. */
 interface StoredCredentials {
@@ -164,7 +205,16 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   const secure = options.url.startsWith("https:");
   /** The session cookie's name, which Better Auth prefixes with __Secure- over HTTPS. */
   const sessionCookie = `${secure ? "__Secure-" : ""}tiehall.session_token`;
-  let built: { key: string; auth: Auth } | undefined;
+  /** The setup session's cookie, which the setup screen sets. */
+  const setupCookie = setupCookieName(options.url);
+  const built = new Map<Mode, { key: string; auth: Auth }>();
+  const installGitHub = createInstallGitHub({
+    database: options.database,
+    secrets: options.secrets,
+    ...(options.github?.apiUrl === undefined ? {} : { apiUrl: options.github.apiUrl }),
+    ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
+    logger,
+  });
   // Sign-in events start no job.
   const store: Store = {
     database: options.database,
@@ -186,16 +236,23 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   }
 
   /** The instance built from the stored credentials, built again when they change; undefined while no App is stored. */
-  async function current(): Promise<Auth | undefined> {
+  async function current(mode: Mode = "sign-in"): Promise<Auth | undefined> {
     const stored = await storedCredentials();
     if (stored === undefined) return undefined;
-    if (built?.key === stored.key) return built.auth;
+    const existing = built.get(mode);
+    if (existing?.key === stored.key) return existing.auth;
     const clientSecret = await options.database.transaction((tx) => readSecret({ tx, orgId: stored.orgId }, options.secrets(), "github_app.client_secret"));
     if (clientSecret === undefined) return undefined;
-    const auth = betterAuth(authOptions({ orgId: stored.orgId, clientId: stored.clientId, clientSecret }));
-    built = { key: stored.key, auth };
-    logger.info("sign-in service: the sign-in service is built from the GitHub App's stored credentials", { clientId: stored.clientId });
+    const auth = betterAuth(authOptions({ orgId: stored.orgId, clientId: stored.clientId, clientSecret }, mode));
+    built.set(mode, { key: stored.key, auth });
+    logger.info("sign-in service: the sign-in service is built from the GitHub App's stored credentials", { clientId: stored.clientId, mode });
     return auth;
+  }
+
+  /** Whether a sign-in from the setup screen comes from a browser that holds a setup session while setup is incomplete. */
+  async function admitsSetup(context: { request?: Request | undefined; headers?: Headers | undefined } | null | undefined): Promise<boolean> {
+    const headers = context?.request?.headers ?? context?.headers;
+    return isSetupSession(options.database, cookieValue(headers, setupCookie));
   }
 
   /** Whether this user may sign in: for now, whether they are a member of the install. */
@@ -208,12 +265,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     return row !== undefined;
   }
 
-  function authOptions(input: { orgId: string; clientId: string; clientSecret: string }): BetterAuthOptions {
+  function authOptions(input: { orgId: string; clientId: string; clientSecret: string }, mode: Mode): BetterAuthOptions {
     const orgId = { type: "string", required: true, input: false, returned: false, defaultValue: () => input.orgId } as const;
+    const setup = mode === "setup";
     return {
       appName: "Tiehall",
       baseURL: options.url,
-      basePath: AUTH_BASE_PATH,
+      basePath: setup ? SETUP_SIGN_IN_PATH : AUTH_BASE_PATH,
       secret: options.secret(),
       trustedOrigins: [options.url],
       telemetry: { enabled: false },
@@ -237,7 +295,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         // The client address the trusted proxies yield: the web role's request guard puts it, alone, in X-Forwarded-For.
         ipAddress: { ipAddressHeaders: ["x-forwarded-for"], ipv6Subnet: 128 },
       },
-      onAPIError: { errorURL: `${options.url}${SIGN_IN_PATH}` },
+      onAPIError: { errorURL: `${options.url}${setup ? SETUP_PATH : SIGN_IN_PATH}` },
       emailAndPassword: { enabled: false },
       user: {
         modelName: "users",
@@ -249,6 +307,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         },
         async validateUserInfo(data, context) {
           const user = data.user as { id?: unknown; name?: unknown; githubAccountId?: unknown };
+          if (setup) {
+            if (data.source.action !== "link-account" && (await admitsSetup(context))) return;
+            // Nothing is recorded: the activity log takes no event before setup completes.
+            logger.warn("sign-in service: a sign-in from the setup screen came without a setup session, or after setup completed");
+            return { error: REFUSED_CODE, errorDescription: SETUP_SIGN_IN_REFUSED };
+          }
           const githubAccountId = Number(user.githubAccountId);
           if (Number.isSafeInteger(githubAccountId) && data.source.action !== "link-account" && (await admits(githubAccountId))) return;
           // A known user, such as a removed member, is named too: the one a sign-in of an existing account would reach.
@@ -276,6 +340,23 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       databaseHooks: {
         session: {
           create: {
+            // The sign-in from the setup screen completes setup before its session is stored, or stores none.
+            ...(setup
+              ? {
+                  async before(session: { userId: string }, context: Parameters<typeof whereFrom>[0]) {
+                    try {
+                      await completeSetup(
+                        { database: options.database, github: installGitHub, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), logger },
+                        { userId: session.userId, origin: whereFrom(context) },
+                      );
+                    } catch (error) {
+                      if (!(error instanceof SetupCompletionError)) throw error;
+                      logger.warn("sign-in service: setup could not be completed", { error, reason: error.code });
+                      throw new APIError("FORBIDDEN", { code: error.code, message: error.message });
+                    }
+                  },
+                }
+              : {}),
             async after(session, context) {
               await recordSignIn(session.userId, whereFrom(context));
             },
@@ -290,7 +371,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         github: {
           clientId: input.clientId,
           clientSecret: input.clientSecret,
-          redirectURI: `${options.url}${SIGN_IN_CALLBACK_PATH}`,
+          redirectURI: `${options.url}${setup ? SETUP_SIGN_IN_CALLBACK_PATH : SIGN_IN_CALLBACK_PATH}`,
           // A GitHub App ignores OAuth scopes: its permissions decide what a user token may do.
           disableDefaultScope: true,
           overrideUserInfoOnSignIn: true,
@@ -489,6 +570,43 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       return auth === undefined ? [] : routeInventory(auth.api);
     },
 
+    setup: {
+      async start(request) {
+        try {
+          const auth = await current("setup");
+          if (auth === undefined) return problem(httpProblem(new Refusal("conflict", "Create the install's GitHub App first: sign-in goes through it.")));
+          const started = await auth.api.signInSocial({
+            body: { provider: "github", callbackURL: "/", errorCallbackURL: SETUP_PATH },
+            headers: request.headers,
+            returnHeaders: true,
+          });
+          const target = started.response.url;
+          if (typeof target !== "string") throw new Error("the sign-in service gave no URL of GitHub's authorize page");
+          const answer = new Headers({ location: target, "cache-control": "no-store" });
+          for (const cookie of started.headers.getSetCookie()) answer.append("set-cookie", cookie);
+          return new Response(null, { status: 303, headers: answer });
+        } catch (error) {
+          if (error instanceof Refusal) return problem(httpProblem(error));
+          logger.error("sign-in service: a sign-in from the setup screen could not start", { error });
+          return problem(internalErrorProblem());
+        }
+      },
+
+      async callback(request) {
+        try {
+          const auth = await current("setup");
+          if (auth === undefined) return problem(httpProblem(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App.")));
+          const answer = await auth.handler(request);
+          if (answer.status === 404) return problem(httpProblem(new Refusal("route-not-found", "The install serves no such sign-in route.")));
+          if (refusalOf(answer)) return problem(httpProblem(new Refusal("forbidden", SETUP_SIGN_IN_REFUSED)), answer.headers);
+          return answer;
+        } catch (error) {
+          logger.error("sign-in service: GitHub's return to the setup screen's sign-in failed", { error });
+          return problem(internalErrorProblem());
+        }
+      },
+    },
+
     async session(headers) {
       if (!cookieNames(headers).includes(sessionCookie)) return undefined;
       const auth = await current();
@@ -563,6 +681,15 @@ function originOf(value: string | null): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** A cookie's value from a Cookie header, or undefined when it carries none by that name. */
+function cookieValue(headers: Headers | undefined, name: string): string | undefined {
+  for (const pair of (headers?.get("cookie") ?? "").split(";")) {
+    const [key, ...value] = pair.trim().split("=");
+    if (key === name) return value.join("=");
+  }
+  return undefined;
 }
 
 function cookieNames(headers: Headers): string[] {

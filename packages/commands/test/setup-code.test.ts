@@ -240,8 +240,8 @@ describe("the setup screen", () => {
     const code = await start();
     const cookie = cookieOf(await enter(code));
     const withSession = await (await open(cookie)).text();
-    // The next step is the GitHub App's.
-    expect(withSession).toContain("Create the install's GitHub App");
+    // The next step names the company.
+    expect(withSession).toContain("Name the company");
     expect(withSession).not.toContain('name="code"');
     expect(await (await open("__Host-tiehall-setup=not-a-session")).text()).toContain('name="code"');
   });

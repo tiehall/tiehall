@@ -347,6 +347,20 @@ export const signInRefused = defineEventType({
   },
 });
 
+/**
+ * The first admin's sign-in completed setup (self-host-install: Setup names
+ * the company and makes the first admin; activity-log: Which actions are
+ * security events). It names the first admin, who joined the install as an
+ * admin with it; its provenance names their web session's user.
+ */
+export const setupCompleted = defineEventType({
+  type: "setup.completed",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -370,4 +384,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   activityLogExported,
   signInCompleted,
   signInRefused,
+  setupCompleted,
 ];

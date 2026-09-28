@@ -5,7 +5,10 @@ import {
   CONFIRM_ROUTE_PATHS,
   MANIFEST_REDIRECT_PATH,
   PACKET_SCHEMA_PATH,
+  COMPANY_PATH,
   SETUP_PATH,
+  SETUP_SIGN_IN_CALLBACK_PATH,
+  SETUP_SIGN_IN_PATH,
   SIGN_IN_CALLBACK_PATH,
   SIGN_IN_PATH,
   SIGN_OUT_PATH,
@@ -96,15 +99,17 @@ describe("the app", () => {
     expect(module?.["GET"], `${file} exports GET`).toBeTypeOf("function");
   });
 
-  // The setup screen and the page GitHub sends the operator back to from the
+  // The setup screen, the page GitHub sends the operator back to from the
   // manifest flow (self-host-install: The GitHub App is created with GitHub's
-  // manifest flow): one route reads the path, so both reach it.
+  // manifest flow), the company's name and the sign-in that completes setup,
+  // with GitHub's return to it (self-host-install: Setup names the company and
+  // makes the first admin): one route reads the path, so all of them reach it.
   // Where GitHub delivers the App's webhooks (tracker-mirrors: GitHub webhooks
   // are verified, deduplicated and processed in the background).
   // The sign-in page, and the sign-in service's routes, among them GitHub's
   // return to the sign-in callback (sign-in: GitHub is the only way to sign in),
   // whose own guard answers every other route under /api/auth with 404.
-  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH, WEBHOOKS_GITHUB_PATH, SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH, "/api/auth/sign-in/email"])("mounts its route on %s, for a GET and a POST", async (path) => {
+  it.each([SETUP_PATH, MANIFEST_REDIRECT_PATH, COMPANY_PATH, SETUP_SIGN_IN_PATH, SETUP_SIGN_IN_CALLBACK_PATH, WEBHOOKS_GITHUB_PATH, SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH, "/api/auth/sign-in/email"])("mounts its route on %s, for a GET and a POST", async (path) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);
     const [file] = files;

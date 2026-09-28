@@ -303,6 +303,109 @@ export const githubDeliveries = pgTable(
   ],
 );
 
+// The installations of the install's GitHub App, as Tiehall last listed them
+// (tracker-mirrors: Admins connect GitHub installations with the confirmation
+// step; tracker-mirrors: Covered repositories follow each connected
+// installation; github-app-reachability: design.md, Design rules: Finding
+// installations, and Technical decisions: T5). Tiehall finds them by listing
+// the App's installations through GitHub's API with the App's own
+// credentials, never only from a delivery, so an App without a webhook knows
+// them too. One row per installation GitHub reported, with the id Tiehall's
+// events name it by: its account, which repositories it covers (all, or a
+// selection), and whether GitHub reports it suspended. An installation that a
+// later listing no longer holds was deleted on GitHub, and is marked so. The
+// admin page lists these rows; only the connected ones are acted on.
+export const githubInstallations = pgTable(
+  "github_installations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** Tiehall's id of the installation, which its events name. */
+    id: uuid("id").notNull().defaultRandom(),
+    /** GitHub's numeric id of the App the installation belongs to. */
+    appId: bigint("app_id", { mode: "number" }).notNull(),
+    /** GitHub's numeric id of the installation. */
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    /** The GitHub account the App is installed on, by its numeric id, its login when last listed, and its type. */
+    accountId: bigint("account_id", { mode: "number" }).notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(),
+    /** Whether the installation covers all of the account's repositories or a selection of them. */
+    repositorySelection: text("repository_selection").notNull(),
+    /** When GitHub suspended the installation, as the last listing reported it; null while it is not suspended. */
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    /** When a listing first no longer held the installation: it was deleted on GitHub. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    firstListedAt: timestamp("first_listed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When a listing last held the installation. */
+    listedAt: timestamp("listed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("github_installations_installation_id").on(table.orgId, table.installationId),
+    check("github_installations_ids_positive", sql`${table.appId} > 0 AND ${table.installationId} > 0 AND ${table.accountId} > 0`),
+    check("github_installations_account_type_known", sql`${table.accountType} IN ('Organization', 'User')`),
+    check("github_installations_repository_selection_known", sql`${table.repositorySelection} IN ('all', 'selected')`),
+  ],
+);
+
+// The installations an admin connected, or setup connected (tracker-mirrors:
+// Admins connect GitHub installations with the confirmation step;
+// self-host-install: Setup names the company and makes the first admin).
+// Tiehall acts only on these: their repositories count as covered, and
+// membership of their GitHub organizations can admit people. Disconnecting
+// deletes the row, and the repositories it covered with it.
+export const githubConnectedInstallations = pgTable(
+  "github_connected_installations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    installationId: uuid("installation_id").notNull(),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.installationId] }),
+    foreignKey({
+      name: "github_connected_installations_installation_fk",
+      columns: [table.orgId, table.installationId],
+      foreignColumns: [githubInstallations.orgId, githubInstallations.id],
+    }),
+  ],
+);
+
+// The repositories each connected installation covers, as Tiehall last read
+// them through GitHub's API with the installation's own token
+// (tracker-mirrors: Covered repositories follow each connected installation;
+// github-app-reachability: design.md, Design rules: Finding installations).
+// A repository counts as covered while a connected installation that is
+// neither suspended nor deleted holds it here.
+export const githubCoveredRepositories = pgTable(
+  "github_covered_repositories",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    installationId: uuid("installation_id").notNull(),
+    /** GitHub's numeric id of the repository, which a rename keeps. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    /** The repository's owner and name when last read, such as acme/web. */
+    fullName: text("full_name").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.installationId, table.repositoryId] }),
+    index("github_covered_repositories_repository_id").on(table.orgId, table.repositoryId),
+    foreignKey({
+      name: "github_covered_repositories_installation_fk",
+      columns: [table.orgId, table.installationId],
+      foreignColumns: [githubConnectedInstallations.orgId, githubConnectedInstallations.installationId],
+    }).onDelete("cascade"),
+    check("github_covered_repositories_repository_id_positive", sql`${table.repositoryId} > 0`),
+  ],
+);
+
 // Users (sign-in: One Tiehall user per GitHub account; teams-and-roles: One org
 // per install; teams-and-roles: Bot users). One row per person the install
 // knows, identified by their GitHub account's numeric id, never by the login

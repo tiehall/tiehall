@@ -14,6 +14,7 @@ import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Environment } from "./settings.ts";
+import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 import type { WebSessionCaller } from "./caller.ts";
@@ -30,14 +31,23 @@ import { WORKER_JOBS } from "./worker-jobs.ts";
 // sends the jobs its writes start, and opens the job queue only when a write
 // first sends one; it works no queue, which the worker does.
 
-let services: { execute: Execute; step: ConfirmationStep; logger: Logger; signIn: SignInService } | undefined;
+interface Services {
+  execute: Execute;
+  step: ConfirmationStep;
+  logger: Logger;
+  signIn: SignInService;
+  database: ReturnType<typeof openAppDatabase>;
+  secrets: () => SecretBox;
+}
+
+let services: Services | undefined;
 let rest: RestHandler | undefined;
 let web: WebCommands | undefined;
 let confirm: ConfirmRoute | undefined;
 let activityLog: ActivityLogRoute | undefined;
 
 /** The process's one execute(), confirmation step and sign-in service, built from the install's settings on first use. */
-function servicesOf(env: Environment): { execute: Execute; step: ConfirmationStep; logger: Logger; signIn: SignInService } {
+function servicesOf(env: Environment): Services {
   if (services !== undefined) return services;
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
@@ -61,14 +71,19 @@ function servicesOf(env: Environment): { execute: Execute; step: ConfirmationSte
   const confirmations = createConfirmationNonces({ secret: () => readAuthSecret(env) });
   // The sign-in service opens the GitHub App's stored client secret with TIEHALL_SECRET_KEY, read when it is first built.
   let box: SecretBox | undefined;
+  const secrets = () => (box ??= openSecretBox(readSecretKey(env)));
   const signIn = createSignInService({
     database,
     url: installUrl(env["TIEHALL_URL"] ?? ""),
     secret: () => readAuthSecret(env),
-    secrets: () => (box ??= openSecretBox(readSecretKey(env))),
+    secrets,
+    // The sign-in that completes setup releases the deliveries held during setup.
+    jobs,
     logger,
   });
   services = {
+    database,
+    secrets,
     signIn,
     execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
@@ -142,6 +157,21 @@ export function activityLogRoute(env: Environment): ActivityLogRoute {
 export function signInServiceRoute(env: Environment): (request: Request) => Promise<Response> {
   const { signIn } = servicesOf(env);
   return (request) => signIn.handler(request);
+}
+
+let setup: SetupRoute | undefined;
+
+/**
+ * The setup screen at /setup, with its steps under it, built once per process
+ * (self-host-install: The setup code guards the setup screen; self-host-install:
+ * Setup names the company and makes the first admin). It shares the sign-in
+ * service, whose own instance under /setup/sign-in completes setup.
+ */
+export function setupRoute(env: Environment): SetupRoute {
+  if (setup !== undefined) return setup;
+  const { database, secrets, signIn, logger } = servicesOf(env);
+  setup = createSetupRoute({ database, url: installUrl(env["TIEHALL_URL"] ?? ""), secrets, signIn: signIn.setup, logger });
+  return setup;
 }
 
 /** The sign-in page at /sign-in, which offers sign-in with GitHub only. */

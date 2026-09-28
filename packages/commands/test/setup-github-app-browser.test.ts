@@ -114,6 +114,8 @@ describe("the way back after GitHub refuses the webhook URL", { timeout: 90_000 
     await page.getByLabel("Setup code").fill(started?.code ?? "");
     await Promise.all([page.waitForURL(`${INSTALL}/setup`), page.getByRole("button", { name: "Continue" }).click()]);
     expect((await context.cookies(INSTALL)).map(({ name }) => name)).toEqual(["__Host-tiehall-setup"]);
+    await page.getByLabel("The company's name").fill("Acme");
+    await Promise.all([page.waitForURL(`${INSTALL}/setup`), page.getByRole("button", { name: "Save the name" }).click()]);
 
     // The App step, for the organization acme, with its webhook: GitHub refuses the webhook URL.
     await page.getByLabel("The GitHub organization that owns the App").fill("acme");

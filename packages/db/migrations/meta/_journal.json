@@ -267,6 +267,13 @@
       "when": 1790625393546,
       "tag": "0037_add_sign_in_refusals",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790627445855,
+      "tag": "0038_add_github_installations",
+      "breakpoints": true
     }
   ]
 }

@@ -145,7 +145,16 @@
     },
     {
       "item": "the completion of setup, naming the first admin.",
-      "actions": [{ "action": "the completion of setup", "pending": "7.9" }]
+      "actions": [
+        {
+          "action": "the completion of setup",
+          "event": "setup.completed",
+          "test": {
+            "file": "packages/commands/test/setup-completion.test.ts",
+            "case": "makes the person the first admin, connects every installation the listing holds, and records the completion naming them"
+          }
+        }
+      ]
     }
   ]
 }
