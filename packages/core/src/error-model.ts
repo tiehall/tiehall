@@ -67,6 +67,12 @@ export const REFUSAL_REASONS = {
   "needs-human": { status: 409, title: "The request needs a person" },
   /** Any other state conflict. */
   conflict: { status: 409, title: "Conflict" },
+  /**
+   * A request body is larger than the size limit: 2 MiB, or 16 MiB for
+   * contract.report. Its detail names the limit that applied. It carries no
+   * Retry-After, because the same body is refused again.
+   */
+  "payload-too-large": { status: 413, title: "Request body too large" },
   /** A packet revision is sent without If-Match. */
   "if-match-required": { status: 428, title: "If-Match required" },
   /** A write limit, a budget or a request cap is exceeded. */

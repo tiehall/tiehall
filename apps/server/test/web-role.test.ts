@@ -208,7 +208,7 @@ describe("the web role's limit on request bodies", () => {
     expect(JSON.parse(answer.body)).toMatchObject({ type: PAYLOAD_TOO_LARGE, status: 413, detail: expect.stringContaining("2 MiB") });
   }
 
-  it.fails("answers a request that declares a body above 2 MiB with 413 before any byte of the body is sent", async () => {
+  it("answers a request that declares a body above 2 MiB with 413 before any byte of the body is sent", async () => {
     const web = await startWebRole();
     const request = http.request({
       host: "127.0.0.1",
@@ -231,7 +231,7 @@ describe("the web role's limit on request bodies", () => {
     }
   });
 
-  it.fails("answers a body sent in chunks with 413 at the byte past 2 MiB, before the client has finished, and reads no further", async () => {
+  it("answers a body sent in chunks with 413 at the byte past 2 MiB, before the client has finished, and reads no further", async () => {
     const web = await startWebRole({ LOG_CONNECTIONS: "on" });
     const planned = 32 * MiB;
     const chunk = Buffer.alloc(64 * 1024, " ");
@@ -285,7 +285,44 @@ describe("the web role's limit on request bodies", () => {
     expect(web.output()).not.toContain("fixture: /api/v1/requests");
   });
 
-  it.fails("answers a body over 2 MiB to /mcp with the HTTP status 413, not with a tool result in a 200", async () => {
+  it("passes a body sent in chunks on whole once it is complete, when it is no larger than 2 MiB", async () => {
+    const web = await startWebRole();
+    const request = http.request({ host: "127.0.0.1", port: web.port, method: "POST", path: "/mcp", agent: false });
+    try {
+      const answered = new Promise<Answer>((resolve, reject) => {
+        request.on("response", (response) => void collect(response).then(resolve, reject));
+        request.on("error", reject);
+      });
+      const chunk = Buffer.alloc(64 * 1024, " ");
+      for (let sent = 0; sent < LIMIT; sent += chunk.length) request.write(chunk);
+      request.end();
+      const answer = await answered;
+      expect(answer.status).toBe(200);
+      expect(web.output()).toContain(`fixture: /mcp read ${LIMIT} bytes`);
+    } finally {
+      request.destroy();
+    }
+  });
+
+  it("answers a body over 2 MiB with 413 while the role shuts down, before the 503 every other new call gets", async () => {
+    const web = await startWebRole();
+    const slow = fetch(`http://127.0.0.1:${web.port}/slow`).then((response) => response.text());
+    await until("the slow call to start", () => web.output().includes("fixture: slow call started"));
+    web.child.kill("SIGTERM");
+    await until("the role to start stopping", () => web.output().includes("web: stopping"));
+    const over = await fetch(`http://127.0.0.1:${web.port}/api/v1/requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: " ".repeat(LIMIT + 1),
+    });
+    expectPayloadTooLarge({ status: over.status, headers: Object.fromEntries(over.headers), body: await over.text() });
+    const within = await fetch(`http://127.0.0.1:${web.port}/api/v1/requests`, { method: "POST", body: "{}" });
+    expect(within.status).toBe(503);
+    expect(await slow).toBe("slow call done");
+    expect(await web.exited).toBe(0);
+  });
+
+  it("answers a body over 2 MiB to /mcp with the HTTP status 413, not with a tool result in a 200", async () => {
     const web = await startWebRole();
     const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_request", arguments: { title: "x".repeat(3 * MiB) } } };
     const response = await fetch(`http://127.0.0.1:${web.port}/mcp`, {
@@ -297,7 +334,7 @@ describe("the web role's limit on request bodies", () => {
     expect(web.output()).not.toContain("fixture: /mcp");
   });
 
-  it.fails("answers a body over 2 MiB with 413 before setup is complete and without a token, not with 503 or 401", async () => {
+  it("answers a body over 2 MiB with 413 before setup is complete and without a token, not with 503 or 401", async () => {
     const web = await startWebRole();
     const response = await fetch(`http://127.0.0.1:${web.port}/api/v1/requests`, {
       method: "POST",
@@ -308,7 +345,7 @@ describe("the web role's limit on request bodies", () => {
     expect(web.output()).not.toContain("fixture: /api/v1/requests");
   });
 
-  it.fails("passes a form of the web UI of up to 2 MiB on to its page, and answers one byte more with 413", async () => {
+  it("passes a form of the web UI of up to 2 MiB on to its page, and answers one byte more with 413", async () => {
     const web = await startWebRole();
     const post = (bytes: number) =>
       fetch(`http://127.0.0.1:${web.port}/setup`, {

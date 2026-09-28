@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
   // Trace files from the whole monorepo, so workspace packages land in the standalone output.
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
   ...(commitSha ? { deploymentId: commitSha } : {}),
+  // A server action's body may be 2 MiB, the limit the web role's request guard applies to the web UI's forms,
+  // so the framework's own cap, 1 MB by default and refused with an error of its own shape, never answers before
+  // the guard's 413 (public-api: Request bodies have a size limit). The limit is BODY_LIMIT in @tiehall/commands,
+  // which a test holds this to.
+  experimental: {
+    serverActions: { bodySizeLimit: 2 * 1024 * 1024 },
+  },
 };
 
 export default nextConfig;

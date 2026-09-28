@@ -212,7 +212,7 @@ describe("a body over the size limit", () => {
     await install.close();
   });
 
-  it.fails("answers a 3 MiB requests.create body with 413 payload-too-large, and creates nothing", async () => {
+  it("answers a 3 MiB requests.create body with 413 payload-too-large, and creates nothing", async () => {
     const valid = JSON.stringify({ targetTeam: "FE", title: "Add a dark mode", packet: packetOf() });
     const body = valid.padEnd(3 * 1024 * 1024, " ");
     const count = async () =>

@@ -1,6 +1,7 @@
 import { API_PREFIX, deprecationHeaders, isProposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson } from "@tiehall/packet/render";
+import { bodyLimitFor, readBoundedBody } from "./body-limit.ts";
 import type { Caller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
 import { idempotencyCallerOf, IdempotentReplay, parseIdempotencyKey, requestDigest, runOnce } from "./idempotency.ts";
@@ -17,6 +18,14 @@ import { createLogger, type Logger } from "./log.ts";
 //   match, as /api/v1/requests/search and /api/v1/requests/{key} do, the one
 //   with a literal segment where the other has a parameter, from the left,
 //   wins, as OpenAPI matches concrete paths before templated ones;
+// - it reads the body first, before it judges anything else about the call,
+//   its path, its token and the setup gate included, and refuses a body over
+//   the size limit with 413, as the error model gives it: 2 MiB, or 16 MiB
+//   for contract.report, counted in bytes as they arrive, so no operation
+//   runs, nothing changes and no Idempotency-Key is kept for it, whatever it
+//   holds (public-api: Request bodies have a size limit). The web role's
+//   request guard refuses such a body before the route sees it; the route
+//   refuses it too, so the rule holds where the guard is not installed;
 // - it asks who is calling, and answers a call without credentials with 401;
 // - it builds the input from the path's parameters and, for GET and DELETE,
 //   the query string, or, for the other methods, the JSON object in the body,
@@ -81,6 +90,9 @@ interface Route {
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
+/** Reads a body's bytes as UTF-8 text, as Request.text() does. */
+const decoder = new TextDecoder();
+
 /** Where the OpenAPI document is served. */
 export const DOCUMENT_PATH = `${API_PREFIX}openapi.json`;
 
@@ -94,6 +106,14 @@ export function createRestHandler(options: RestOptions): RestHandler {
 
   return async function handle(request) {
     const url = new URL(request.url);
+    const found = resolve(routes, request.method, url.pathname);
+    let body: string;
+    try {
+      body = decoder.decode(await readBoundedBody(request, bodyLimitFor(request.method, url.pathname, options.catalog)));
+    } catch (error) {
+      if (!(error instanceof Refusal)) logger.error("rest: the body could not be read", { operationId: found?.definition.id, error });
+      return withDeprecation(error instanceof Refusal ? problem(error) : response(internalErrorProblem()), found);
+    }
     if (url.pathname === DOCUMENT_PATH && (request.method === "GET" || request.method === "HEAD")) {
       // Needs no authentication and holds nothing of the install, so it is the same for every reader.
       return new Response(request.method === "HEAD" ? null : options.document, {
@@ -101,14 +121,11 @@ export function createRestHandler(options: RestOptions): RestHandler {
         headers: { "content-type": "application/json", "cache-control": "no-cache" },
       });
     }
-    const found = resolve(routes, request.method, url.pathname);
     if (found === undefined) return problem(new Refusal("route-not-found", "There is no such operation here."));
-    const response = await answer(request, url, found);
-    for (const [name, value] of Object.entries(deprecationHeaders(found.definition))) response.headers.set(name, value);
-    return response;
+    return withDeprecation(await answer(request, url, found, body), found);
   };
 
-  async function answer(request: Request, url: URL, found: ResolvedRoute): Promise<Response> {
+  async function answer(request: Request, url: URL, found: ResolvedRoute, body: string): Promise<Response> {
     const { definition, parameters } = found;
     try {
       const caller = await options.authenticate(request);
@@ -122,7 +139,6 @@ export function createRestHandler(options: RestOptions): RestHandler {
       if (idempotencyHeader !== null && idempotencyKey === undefined) {
         refusal = new Refusal("invalid-input", "The Idempotency-Key header is a string of 1 to 255 visible characters.");
       }
-      const body = BODY_METHODS.has(request.method) ? await request.text() : "";
       const built = inputOf(request, url, body, parameters);
       if (built === undefined) {
         refusal ??= new Refusal("invalid-input", "The body of this operation is a JSON object, sent as application/json.");
@@ -267,6 +283,12 @@ function json(status: number, body: string, etag?: string): Response {
   const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
   if (etag !== undefined) headers["etag"] = etag;
   return new Response(body, { status, headers });
+}
+
+/** The answer, with the Deprecation and Sunset headers of a deprecated operation. */
+function withDeprecation(answer: Response, found: ResolvedRoute | undefined): Response {
+  if (found !== undefined) for (const [name, value] of Object.entries(deprecationHeaders(found.definition))) answer.headers.set(name, value);
+  return answer;
 }
 
 /** A refusal as an RFC 9457 problem details response. */

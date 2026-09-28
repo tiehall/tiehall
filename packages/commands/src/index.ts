@@ -1,6 +1,16 @@
 // @tiehall/commands: execute() and one handler per command definition; everything that touches the database, the queue or the network.
 export { type AppendedEvent } from "./append-event.ts";
 export {
+  BODY_LIMIT,
+  bodyLimitFor,
+  CONTRACT_REPORT_BODY_LIMIT,
+  declaredLength,
+  MIB,
+  payloadTooLarge,
+  readBoundedBody,
+  UNLIMITED_BODY_PATHS,
+} from "./body-limit.ts";
+export {
   actsForUser,
   catalogSurfaceOf,
   provenanceOf,

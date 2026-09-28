@@ -265,6 +265,57 @@ describe("the REST route", () => {
   });
 });
 
+// public-api: Request bodies have a size limit. The route reads the body first, through the bounded reader, so a
+// body over 2 MiB is answered 413 before its path, its token or anything execute() judges, and nothing runs; the
+// web role's request guard answers such a body before the route sees it, and the route holds the rule without it.
+describe("a body over the size limit", () => {
+  const MiB = 1024 * 1024;
+  const json = { "content-type": "application/json" };
+  const padded = (bytes: number) => '{"body":"Which endpoint?"}'.padEnd(bytes, " ");
+
+  it("is read and run at exactly 2 MiB", async () => {
+    const response = await handler()(call("POST", "/api/v1/probes/FE-142/messages", { body: padded(2 * MiB), headers: json }));
+    expect(response.status).toBe(200);
+    expect(calls).toMatchObject([{ commandId: "probes.post", input: { key: "FE-142", body: "Which endpoint?" } }]);
+  });
+
+  it("is answered 413 one byte past 2 MiB, before the path, the token or execute() is judged, and runs nothing", async () => {
+    const answers = [
+      await handler()(call("POST", "/api/v1/probes/FE-142/messages", { body: padded(2 * MiB + 1), headers: json })),
+      await handler(null)(call("POST", "/api/v1/probes/FE-142/messages", { body: padded(3 * MiB), headers: json })),
+      await handler()(call("POST", "/api/v1/nothing-here", { body: padded(3 * MiB), headers: json })),
+      await handler()(call("POST", "/api/v1/probes/FE-142/messages", { body: padded(3 * MiB), headers: { ...json, "idempotency-key": "k1" } })),
+    ];
+    for (const response of answers) {
+      const problem = await expectProblem(response, 413);
+      expect(problem).toMatchObject({ type: "https://tiehall.com/problems/payload-too-large", detail: expect.stringContaining("2 MiB") });
+      expect(response.headers.has("www-authenticate")).toBe(false);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("is answered 413 at once when its declared length is above the limit", async () => {
+    // 3 MiB in chunks of 64 KiB, so a route that read it all would still end.
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(64 * 1024).fill(0x20));
+        if (pulled === 48) controller.close();
+      },
+    });
+    const request = new Request(`${INSTALL}/api/v1/probes/FE-142/messages`, {
+      method: "POST",
+      headers: { ...json, "content-length": String(3 * MiB) },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    await expectProblem(await handler()(request), 413);
+    expect(pulled).toBeLessThanOrEqual(1);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("a deprecated operation", () => {
   // public-api: Deprecated operations send Deprecation and Sunset headers.
   it("answers with Deprecation (RFC 9745) and Sunset (RFC 8594) from its deprecation metadata", async () => {

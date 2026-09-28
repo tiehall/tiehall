@@ -61,7 +61,7 @@ async function counts(): Promise<unknown> {
 }
 
 describe("a packet revision at the limit", () => {
-  it.fails("is not refused for its size at exactly 2 MiB, and one byte more gets 413 and adds nothing", async () => {
+  it("is not refused for its size at exactly 2 MiB, and one byte more gets 413 and adds nothing", async () => {
     const opened = await openRequestInTheWebUi<{ key: string }>(install, alice, { targetTeam: "FE" });
     const path = `/api/v1/requests/${opened.key}/packet/revisions`;
     const packet = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings page.", acceptance_criteria: ["The toggle is on the settings page."] } };

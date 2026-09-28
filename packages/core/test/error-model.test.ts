@@ -27,6 +27,7 @@ const TABLE: Record<RefusalReason, number> = {
   "ci-caller-refused": 403,
   "needs-human": 409,
   conflict: 409,
+  "payload-too-large": 413,
   "if-match-required": 428,
   "rate-limited": 429,
   unauthenticated: 401,
@@ -108,6 +109,20 @@ describe("the error model", () => {
     expect(status).toBe(503);
     expect(headers["retry-after"]).toBeUndefined();
     expect(body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}setup-required`, title: "Setup is not complete", status: 503 });
+  });
+
+  // public-api: Request bodies have a size limit. The detail is the refusal's own server text, which names the
+  // limit that applied; the row carries no Retry-After, because the same body is refused again.
+  it("answers a body over the size limit with 413 payload-too-large, a detail that names the limit, and no Retry-After", () => {
+    const { status, headers, body } = httpProblem(new Refusal("payload-too-large", "The request body is larger than 2 MiB."));
+    expect(status).toBe(413);
+    expect(headers).toEqual({ "content-type": "application/problem+json", "cache-control": "no-store" });
+    expect(body).toEqual({
+      type: `${PROBLEM_TYPE_BASE}payload-too-large`,
+      title: "Request body too large",
+      status: 413,
+      detail: "The request body is larger than 2 MiB.",
+    });
   });
 
   it("challenges a call without a valid token as OAuth defines", () => {

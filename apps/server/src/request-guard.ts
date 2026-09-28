@@ -1,7 +1,9 @@
 import http, { type IncomingMessage, type RequestListener, type ServerResponse } from "node:http";
 import { syncBuiltinESMExports } from "node:module";
+import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
-import { httpProblem, Refusal } from "@tiehall/core";
+import { bodyLimitFor, declaredLength, payloadTooLarge } from "@tiehall/commands";
+import { httpProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
 // The request guard of the web role. The web role runs the Next.js
@@ -21,6 +23,27 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // web role starts to stop, the guard answers every new call itself, with 503,
 // `Retry-After: 0` and an RFC 9457 problem (public-api: One error model for
 // Tiehall's own refusals), while the calls already in flight finish.
+//
+// Request bodies (public-api: Request bodies have a size limit;
+// request-body-limit's design.md, Technical decisions: T2): the guard applies
+// the size limit to every request, before any route, the setup gate or a
+// token check sees it, so a body over the limit is answered 413 before any
+// other refusal the call would get, a shutdown's 503 included. The limit is
+// 2 MiB, or 16 MiB for contract.report, and none for the webhook paths, from
+// the one module that holds them (bodyLimitFor):
+// - a request that declares a length above its limit is refused at once,
+//   before any byte of its body is read; one that declares a length within
+//   it is passed on as it is, since it cannot carry more than it declares;
+// - a body sent in chunks, with no declared length, is counted as it arrives
+//   and held until it is complete: at the byte past the limit it is refused,
+//   and a complete body within the limit is passed on whole, so the app never
+//   sees part of a body that is over the limit, or answers a call before its
+//   size is known;
+// - the refusal is the error model's 413 payload-too-large, whose detail
+//   names the limit, with `Connection: close`. No more of the body is read:
+//   once the answer is sent the connection is ended, and it is closed after
+//   a short grace period in which it is still not read, so that the client
+//   reads the 413 before the reset its unread body causes.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
@@ -55,6 +78,16 @@ const SHUTTING_DOWN = httpProblem(
 );
 const SHUTTING_DOWN_BODY = JSON.stringify(SHUTTING_DOWN.body);
 
+/**
+ * How long a connection whose body was refused stays ended but open, and
+ * unread, before it is closed: time for the client to read the 413 before the
+ * reset that closing a connection with unread data sends.
+ */
+export const REFUSED_BODY_GRACE_MS = 2_000;
+
+/** The answer to a body over each limit, built once per limit. */
+const refusals = new Map<number, { problem: HttpProblem; body: string }>();
+
 /** Installs the guard on every HTTP server the process creates from now on. */
 export function installRequestGuard(options: RequestGuardOptions): RequestGuard {
   const servers = new Set<http.Server>();
@@ -63,14 +96,23 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
   let drained: (() => void) | undefined;
 
   const guard = (listener: RequestListener): RequestListener => (request: IncomingMessage, response: ServerResponse) => {
-    if (stopping) return shuttingDown(request, response);
-    setForwardedHeaders(request, options.proxies);
-    inFlight += 1;
-    response.once("close", () => {
-      inFlight -= 1;
-      if (stopping && inFlight === 0) drained?.();
-    });
-    return listener(request, response);
+    const serve = (): void => {
+      if (stopping) return shuttingDown(request, response);
+      setForwardedHeaders(request, options.proxies);
+      inFlight += 1;
+      response.once("close", () => {
+        inFlight -= 1;
+        if (stopping && inFlight === 0) drained?.();
+      });
+      listener(request, response);
+    };
+    const limit = bodyLimitFor(request.method ?? "GET", pathOf(request.url));
+    if (limit === undefined) return serve();
+    const declared = declaredLength(request.headers["content-length"]);
+    if (declared !== undefined) return declared > limit ? refuseBody(request, response, limit) : serve();
+    // A request with neither a declared length nor chunks has no body.
+    if (request.headers["transfer-encoding"] === undefined) return serve();
+    holdBody(request, limit, serve, () => refuseBody(request, response, limit));
   };
 
   const original = http.createServer;
@@ -123,6 +165,79 @@ function shuttingDown(request: IncomingMessage, response: ServerResponse): void 
     connection: "close",
   });
   response.end(request.method === "HEAD" ? undefined : SHUTTING_DOWN_BODY);
+}
+
+/** The path a request names, without its query; "/" for a target that is not a path. */
+function pathOf(target: string | undefined): string {
+  try {
+    return new URL(target ?? "/", "http://localhost").pathname;
+  } catch {
+    return "/";
+  }
+}
+
+/**
+ * Holds a body sent in chunks until it is complete, counting its bytes as the
+ * connection delivers them: past the limit it calls over, and once the body
+ * is complete within the limit it hands the whole body back to the request
+ * and calls complete. It takes the chunks where Node puts a request's body,
+ * the request's push(), so nothing reads them before the size is known.
+ */
+function holdBody(request: IncomingMessage, limit: number, complete: () => void, over: () => void): void {
+  const held: Buffer[] = [];
+  let received = 0;
+  request.push = (chunk: Buffer | null): boolean => {
+    if (chunk === null) {
+      Reflect.deleteProperty(request, "push");
+      for (const piece of held) request.push(piece);
+      request.push(null);
+      complete();
+      return false;
+    }
+    received += chunk.length;
+    if (received > limit) {
+      held.length = 0;
+      over();
+      return false;
+    }
+    held.push(chunk);
+    // Keep the connection delivering chunks, though nothing reads them yet.
+    return true;
+  };
+}
+
+/**
+ * Answers a body over its limit with 413 and `Connection: close`, and reads
+ * no more of it: what the connection still delivers is dropped, the
+ * connection is not read from again, and once the answer is sent it is ended
+ * and, after the grace period, closed.
+ */
+function refuseBody(request: IncomingMessage, response: ServerResponse, limit: number): void {
+  const socket = request.socket;
+  request.push = (): boolean => false;
+  // Once an answer is sent, Node resumes a request nobody read, to discard the rest of its body; not this one.
+  request.resume = function (this: IncomingMessage) {
+    return this;
+  };
+  socket.pause();
+  // Node ends a connection whose answer says `Connection: close`, and closes it once the end is sent; this one
+  // stays open, and unread, for the grace period first.
+  socket.destroySoon = function (this: Socket) {
+    this.end();
+    setTimeout(() => this.destroy(), REFUSED_BODY_GRACE_MS).unref();
+  };
+  let refusal = refusals.get(limit);
+  if (refusal === undefined) {
+    const problem = httpProblem(payloadTooLarge(limit));
+    refusal = { problem, body: JSON.stringify(problem.body) };
+    refusals.set(limit, refusal);
+  }
+  response.writeHead(refusal.problem.status, {
+    ...refusal.problem.headers,
+    "content-length": Buffer.byteLength(refusal.body),
+    connection: "close",
+  });
+  response.end(request.method === "HEAD" ? undefined : refusal.body);
 }
 
 /** Rewrites a request's forwarded headers to the client the install trusts. */
