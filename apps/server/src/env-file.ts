@@ -1,12 +1,19 @@
 import { randomBytes } from "node:crypto";
-import { installUrl, SETTINGS, type SettingDefinition } from "@tiehall/commands";
+import { installUrl, SETTINGS, SettingsError, type SettingDefinition } from "@tiehall/commands";
 
 // The `.env` file (self-host-install: One `.env` holds the install settings;
 // self-host-install: `init` prints a complete `.env`). `init` prints one with
 // every setting and fresh random secrets, and deploy/.env.example, which each
 // release publishes, is written from the same list, so the two never name
-// different settings. Values never need quoting: URLs, host names and
-// base64url secrets hold no spaces, quotes or `#`.
+// different settings. Values never need quoting: URLs, host names, image
+// references and base64url secrets hold no spaces, quotes or `#`.
+//
+// TIEHALL_IMAGE is the reference `init --image` gives, verbatim, as the
+// install command in the release notes passes it, pinned by version and
+// digest. A container cannot see the image it was started from, and a digest
+// exists only after the build, so without --image init names its own build
+// by the name and version the build baked in, with a comment that says where
+// the digest comes from (D42).
 
 /** The build of the image that runs `init`, which names its own image when `--image` is not given. */
 export interface ImageBuild {
@@ -21,7 +28,7 @@ export interface ImageBuild {
 export interface InitOptions {
   /** TIEHALL_URL, which init checks as the install does. */
   url: string;
-  /** The image to pin, such as ghcr.io/acme/tiehall:1.4.0@sha256:<digest>. */
+  /** The image to pin, such as ghcr.io/acme/tiehall:1.4.0@sha256:<digest>; it must be an image reference. */
   image?: string;
   build?: ImageBuild;
 }
@@ -34,10 +41,21 @@ export function freshSecret(): string {
   return randomBytes(32).toString("base64url");
 }
 
-/** The `.env` that `init` prints: every setting, with fresh secrets. It throws SettingsError for a URL the install would refuse. */
+/**
+ * The `.env` that `init` prints: every setting, with fresh secrets. It throws
+ * SettingsError for a URL the install would refuse, and for an image that is
+ * not an image reference.
+ */
 export function initEnv(options: InitOptions): string {
   const url = installUrl(options.url);
+  if (options.image !== undefined && !isImageReference(options.image)) {
+    throw new SettingsError(
+      "The value of --image is not an image reference. Give one as [registry/]repository[:tag][@digest], " +
+        "such as ghcr.io/<owner>/tiehall:1.3.0@sha256:<digest>.",
+    );
+  }
   const image = options.image ?? imageOf(options.build ?? DEVELOPMENT_BUILD);
+  const imageComment = options.image === undefined ? "build" : "given";
   const values = (setting: SettingDefinition) => {
     switch (setting.init) {
       case "url":
@@ -58,6 +76,7 @@ export function initEnv(options: InitOptions): string {
       ...FILE_FORMS,
     ],
     values,
+    (setting) => setting.initComment?.[imageComment] ?? setting.description,
   );
 }
 
@@ -90,6 +109,37 @@ const FILE_FORMS = [
   "inside the container, so mount the file there, for example with a compose.override.yaml.",
 ];
 
+// An image reference as container engines read one (D42; self-host-install:
+// `init` prints a complete `.env`): [registry/]repository[:tag][@digest].
+// The registry is a host name, or an IPv6 address in brackets, with an
+// optional port; the repository is one or more components of lowercase
+// letters and digits joined by ".", "_", "__" or one or more "-", with "/"
+// between them, at most 255 characters with the registry; the tag is at most
+// 128 letters, digits, "_", "." and "-", starting with a letter, a digit or
+// "_"; and the digest is an algorithm the engines support, ":" and its value
+// in lowercase hexadecimal, of the length the algorithm gives.
+const PATH_COMPONENT = "[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*";
+const DOMAIN_COMPONENT = "(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])";
+const REGISTRY = `(?:${DOMAIN_COMPONENT}(?:\\.${DOMAIN_COMPONENT})*|\\[[a-fA-F0-9:]+\\])(?::[0-9]+)?`;
+const IMAGE_REFERENCE = new RegExp(
+  `^((?:${REGISTRY}/)?${PATH_COMPONENT}(?:/${PATH_COMPONENT})*)(?::[\\w][\\w.-]{0,127})?(?:@([a-z0-9]+):([0-9a-f]+))?$`,
+);
+/** The digest algorithms container engines support, with the number of hexadecimal digits of each. */
+const DIGEST_LENGTHS: ReadonlyMap<string, number> = new Map([
+  ["sha256", 64],
+  ["sha384", 96],
+  ["sha512", 128],
+]);
+
+/** Whether a value is an image reference, as `init --image` accepts it. */
+export function isImageReference(value: string): boolean {
+  const match = IMAGE_REFERENCE.exec(value);
+  if (match === null) return false;
+  const [, name = "", algorithm, hex] = match;
+  if (name.length > 255) return false;
+  return algorithm === undefined || DIGEST_LENGTHS.get(algorithm) === hex?.length;
+}
+
 /** The image a build names: its release tag, or, for a build of main, the tag of its commit. */
 function imageOf(build: ImageBuild): string {
   const development = build.version.endsWith("-dev");
@@ -97,13 +147,17 @@ function imageOf(build: ImageBuild): string {
   return `${build.name}:${tag}`;
 }
 
-function render(header: readonly string[], valueOf: (setting: SettingDefinition) => string): string {
+function render(
+  header: readonly string[],
+  valueOf: (setting: SettingDefinition) => string,
+  commentOf: (setting: SettingDefinition) => string = (setting) => setting.description,
+): string {
   const lines = header.map((line) => `# ${line}`);
   for (const setting of SETTINGS) {
     // A setting without a description continues the one before it, under the same comment.
     if (setting.description !== "" || setting.group !== undefined) lines.push("");
     if (setting.group !== undefined) lines.push(...comment(setting.group), "#");
-    lines.push(...comment(setting.description), `${setting.name}=${valueOf(setting)}`);
+    lines.push(...comment(commentOf(setting)), `${setting.name}=${valueOf(setting)}`);
   }
   return `${lines.join("\n")}\n`;
 }

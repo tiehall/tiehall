@@ -43,7 +43,17 @@ export interface SettingDefinition {
   readonly value?: string;
   /** The comment above a group of settings, printed once before the first of them. */
   readonly group?: string;
+  /**
+   * For the image, which `init` takes from `--image` or names from its own
+   * build: the comment `init` prints in place of the description, which
+   * `.env.example` shows. Each says where the value came from and ends as the
+   * description does.
+   */
+  readonly initComment?: { readonly given: string; readonly build: string };
 }
+
+/** The upgrade step, which ends every comment on TIEHALL_IMAGE. */
+const IMAGE_UPGRADE = "To upgrade, back up, set the new image here and run `docker compose pull && docker compose up -d`.";
 
 /**
  * Every setting of `.env`, in the order `init` prints them. Compose reads
@@ -59,9 +69,16 @@ export const SETTINGS: readonly SettingDefinition[] = [
   },
   {
     name: "TIEHALL_IMAGE",
-    description:
-      "The Tiehall image, pinned by version and digest as the release notes give it. To upgrade, back up, set the new image here and run `docker compose pull && docker compose up -d`.",
+    description: `The Tiehall image, pinned by version and digest as the release notes give it. ${IMAGE_UPGRADE}`,
     init: "image",
+    // A container cannot see its own digest, so without --image init names the image by the version its build baked in.
+    initComment: {
+      given: `The Tiehall image, as given to init with --image. ${IMAGE_UPGRADE}`,
+      build:
+        "The Tiehall image init ran from, named by its version, without the digest. The release notes name each release's digest; " +
+        "to pin it, set TIEHALL_IMAGE to the reference the release notes give, or run init again with --image, as the install " +
+        `command in the release notes does. ${IMAGE_UPGRADE}`,
+    },
   },
   {
     name: "TIEHALL_HTTP_BIND",

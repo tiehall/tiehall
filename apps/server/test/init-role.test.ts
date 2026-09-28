@@ -152,7 +152,7 @@ describe("init", () => {
     ).toBe(`ghcr.io/acme/tiehall:sha-${"c".repeat(40)}`);
   });
 
-  it.fails("says at TIEHALL_IMAGE, without --image, that the release notes name the digest and both ways to pin it", () => {
+  it("says at TIEHALL_IMAGE, without --image, that the release notes name the digest and both ways to pin it", () => {
     const upgrade = /To upgrade, back up, set the new image here and run `docker compose pull && docker compose up -d`\.$/;
     for (const build of [
       { name: "ghcr.io/acme/tiehall", version: "1.3.0" },
@@ -198,7 +198,7 @@ describe("the init role", () => {
     );
   });
 
-  it.fails.each([
+  it.each([
     // An uppercase letter in the repository.
     "ghcr.io/acme/Tiehall:1.3.0",
     // A space.

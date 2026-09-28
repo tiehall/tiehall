@@ -3,9 +3,12 @@ import { SettingsError } from "@tiehall/commands";
 import { initEnv, type ImageBuild } from "./env-file.ts";
 
 // The init role (self-host-install: `init` prints a complete `.env`):
-//   docker run --rm <image> init --url https://tiehall.example.com > .env
-// prints every install setting with fresh random secrets. Its standard output
-// is the file, so it logs nothing there: a refusal is one plain line on
+//   docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env
+// prints every install setting with fresh random secrets. TIEHALL_IMAGE is the
+// reference --image gives, verbatim, or without it the image's own name and
+// version tag, which the build bakes in (D42). Its standard output is the
+// file, so it logs nothing there: a refusal, of a URL the install would refuse
+// or of an --image that is not an image reference, is one plain line on
 // standard error, and then nothing is printed. It reads no other setting and
 // connects to nothing.
 
@@ -16,7 +19,11 @@ export interface InitOutput {
   stderr(text: string): void;
 }
 
-/** Runs the init role and returns its exit code: 0, 1 for a URL the install would refuse, 2 for a usage error. */
+/**
+ * Runs the init role and returns its exit code: 0; 1 for a URL the install
+ * would refuse or an --image that is not an image reference; 2 for a usage
+ * error, such as a missing --url, or --image without a value.
+ */
 export function runInitRole(args: readonly string[], build: ImageBuild, output: InitOutput): number {
   let url: string | undefined;
   let image: string | undefined;

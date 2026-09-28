@@ -1,7 +1,8 @@
 // The self-host boot test (self-host-install: Compose runs Tiehall and
 // Postgres). It boots deploy/compose.yaml, the file a self-hosting company
-// runs, from a .env printed by the image's own init role, with the image in
-// the all-in-one role against stock Postgres 17, waits until every service is
+// runs, from a .env printed by the image's own init role with --image, as the
+// install command in the release notes runs it, with the image in the
+// all-in-one role against stock Postgres 17, waits until every service is
 // up and healthy, and then asks /healthz itself. It exits 0 when the stack
 // came up healthy and 1 when it did not, printing the stack's state and logs.
 // It always tears the stack down.
@@ -26,11 +27,13 @@ const project = `tiehall-boot-${randomBytes(4).toString("hex")}`;
 const folder = mkdtempSync(join(tmpdir(), "tiehall-boot-"));
 const envFile = join(folder, ".env");
 
-// The .env an operator writes: `docker run --rm <image> init --url <url> > .env`, unedited.
-const init = spawnSync("docker", ["run", "--rm", "--network", "none", image, "init", "--url", "http://localhost:3000"], {
-  encoding: "utf8",
-  timeout: 120_000,
-});
+// The .env an operator writes with the install command in the release notes, unedited:
+// `docker run --rm <image> init --url <url> --image <image> > .env`, so the stack runs the image the printed file names.
+const init = spawnSync(
+  "docker",
+  ["run", "--rm", "--network", "none", image, "init", "--url", "http://localhost:3000", "--image", image],
+  { encoding: "utf8", timeout: 120_000 },
+);
 if (init.error) throw init.error;
 if (init.status !== 0) {
   console.error(`init failed:\n${init.stderr}`);
@@ -38,11 +41,11 @@ if (init.status !== 0) {
   process.exit(1);
 }
 writeFileSync(envFile, init.stdout, { mode: 0o600 });
-console.log("Wrote .env with the image's init role, for http://localhost:3000.");
+console.log(`Wrote .env with the image's init role, for http://localhost:3000 and --image ${image}.`);
 
-// Only the image under test, and a free host port for the app, override the .env; no other setting of the
-// shell running the test reaches the stack.
-const env: Record<string, string> = { TIEHALL_IMAGE: image, TIEHALL_HTTP_BIND: "127.0.0.1:0" };
+// Only a free host port for the app overrides the .env; no other setting of the shell running the test
+// reaches the stack.
+const env: Record<string, string> = { TIEHALL_HTTP_BIND: "127.0.0.1:0" };
 for (const [name, value] of Object.entries(process.env)) {
   if (value !== undefined && !name.startsWith("TIEHALL_") && !name.startsWith("COMPOSE_")) env[name] ??= value;
 }

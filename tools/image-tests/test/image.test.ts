@@ -355,7 +355,7 @@ describe("the init role", () => {
     expect(envValues(run.stdout).get("TIEHALL_IMAGE")).toBe(image);
   });
 
-  it.fails("refuses an --image that is not an image reference, and prints no .env", () => {
+  it("refuses an --image that is not an image reference, and prints no .env", () => {
     const run = init(["--image", "ghcr.io/acme/Tiehall:1.3.0 latest"]);
     expect(run.status).toBe(1);
     expect(run.stdout).toBe("");
@@ -363,7 +363,7 @@ describe("the init role", () => {
   });
 
   // The roles read the build's values from the environment, so --env stands in for a release build's.
-  it.fails("names a release build by its version without --image, with the comment that says where the digest comes from", () => {
+  it("names a release build by its version without --image, with the comment that says where the digest comes from", () => {
     const run = init([], ["TIEHALL_VERSION=1.3.0", "TIEHALL_IMAGE_NAME=ghcr.io/acme/tiehall"]);
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
