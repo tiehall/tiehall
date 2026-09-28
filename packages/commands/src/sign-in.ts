@@ -10,6 +10,7 @@ import { githubApp, integrationSecrets, members, orgs, signInAccounts, signInVer
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL } from "./github-client.ts";
 import { SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
+import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -33,8 +34,9 @@ import { RemovedMemberError } from "./with-org.ts";
 // account. Better Auth's other routes still exist, and some answer even with
 // their flow switched off, so a route guard in front of all of them refuses,
 // with 404 as the error model answers a route the install does not serve,
-// every route that is not on its allowlist: over HTTP the service answers only
-// GitHub's return to the sign-in callback. The sign-in page and sign-out are
+// every route that the committed classification (sign-in-routes.ts) does not
+// mark as harmless: over HTTP the service answers only GitHub's return to the
+// sign-in callback. The sign-in page and sign-out are
 // Tiehall's own pages, which call the service in the same process.
 //
 // Better Auth keeps its records in Tiehall's tables: a user is a row of
@@ -69,13 +71,6 @@ import { RemovedMemberError } from "./with-org.ts";
 export const AUTH_BASE_PATH = "/api/auth";
 /** The sign-in page: GET shows it, POST starts a sign-in with GitHub. */
 export const SIGN_IN_PATH = "/sign-in";
-
-/**
- * The routes of the sign-in service that anyone may reach over HTTP, by method
- * and the route's path under AUTH_BASE_PATH, with the one value each of its
- * parameters may take: GitHub's return to the sign-in callback.
- */
-const HTTP_ALLOWLIST: ReadonlyMap<string, Readonly<Record<string, string>>> = new Map([["GET /callback/:id", { id: "github" }]]);
 
 /** What a refused person reads. */
 export const SIGN_IN_REFUSED =
@@ -117,6 +112,8 @@ export interface SignInService {
    * none. A session that a removal ended is refused with 403 removed-member.
    */
   session(headers: Headers): Promise<WebSessionCaller | undefined>;
+  /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
+  routes(): Promise<string[]>;
 }
 
 /** The stored credentials a built instance serves with, as a key that changes whenever they do. */
@@ -383,6 +380,11 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       }
     },
 
+    async routes() {
+      const auth = await current();
+      return auth === undefined ? [] : routeInventory(auth.api);
+    },
+
     async session(headers) {
       if (!cookieNames(headers).includes(sessionCookie)) return undefined;
       const auth = await current();
@@ -398,14 +400,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
 
 /**
  * The route guard (design.md, Technical decisions: T8): over HTTP, only the
- * routes on the allowlist are served, and every other one answers 404. A call
- * Tiehall makes itself, in the same process, carries no request and passes.
+ * routes the committed classification marks as harmless are served
+ * (sign-in-routes.ts), and every other one answers 404. A call Tiehall makes
+ * itself, in the same process, carries no request and passes.
  */
 const routeGuard = createAuthMiddleware(async (context) => {
   if (context.request === undefined) return;
-  const allowed = HTTP_ALLOWLIST.get(`${context.request.method.toUpperCase()} ${context.path}`);
-  const params = (context.params ?? {}) as Record<string, unknown>;
-  if (allowed !== undefined && Object.entries(allowed).every(([name, value]) => params[name] === value)) return;
+  if (servedOverHttp(context.request.method, context.path, (context.params ?? {}) as Record<string, unknown>)) return;
   throw new APIError("NOT_FOUND", { code: "route_not_found", message: "The install serves no such sign-in route." });
 });
 

@@ -198,6 +198,7 @@ export {
   type SignInService,
   type SignInServiceOptions,
 } from "./sign-in.ts";
+export { routeInventory, servedOverHttp, SIGN_IN_ROUTES, unclassifiedRoutes, type SignInRouteClass } from "./sign-in-routes.ts";
 export {
   createConfirmationStep,
   type ConfirmationStep,
