@@ -10,7 +10,9 @@ import { addUser } from "./support/members.ts";
 // flagged user stays an identity of kind human that carries the flag, and
 // holds a role and teams like anyone else; v1 counts no seats, so the flag's
 // only effect is that it is shown wherever a user is listed or named. A
-// member's attempt to set or clear it gets 403 and changes nothing.
+// member's attempt to set or clear it gets 403 and changes nothing. Every
+// member sees the members list in the web UI, ordered by GitHub login, and no
+// agent surface offers it (design.md, Decisions: D45 (3)).
 
 let install: TestInstall;
 let ada: WebSessionCaller;
@@ -111,5 +113,17 @@ describe("the bot flag", () => {
   it("is set on no agent surface: a token gets 404, even an admin's", async () => {
     const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
     await expect(install.execute("users.set_bot_flag", token, { userId: dana.userId, bot: true })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("the members list", () => {
+  it("shows a member every member of the install, ordered by GitHub login", async () => {
+    const result = await install.web(dana).read<{ members: ListedMember[] }>("members.list", {});
+    expect(result.ok ? result.output.members.map(({ login }) => login) : result).toEqual(["acme-ci-bot", "ada", "dana"]);
+  });
+
+  it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
+    const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:read"], surface: "api" };
+    await expect(install.execute("members.list", token, {})).rejects.toMatchObject({ status: 404 });
   });
 });
