@@ -12,9 +12,9 @@ import { MCP_RESOURCE, pkcePair, startAgentAccess, type AgentAccessHarness, type
 // design.md, Technical decisions: T7 and T9). An agent client registers, the
 // signed-in person has approved it, and the client runs the authorization
 // code flow with PKCE and the install's MCP resource, then calls /api/v1 with
-// the access token. The cases wait as expected failures until the tasks that
-// build each rule turn them into plain tests (15.3, 15.4 and 15.11); the /mcp
-// cases join when the MCP endpoint is built (16.2).
+// the access token. The cases waited as expected failures until the tasks that
+// build each rule turned them into plain tests; the rest still wait (15.4 and
+// 15.11), and the /mcp cases join when the MCP endpoint is built (16.2).
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
@@ -51,7 +51,7 @@ function forgedToken(userId: string): string {
 }
 
 describe("Authorization requests use PKCE S256, resource indicators and the iss parameter", () => {
-  it.fails("refuses an authorization request with no code_challenge with invalid_request, and issues no code", async () => {
+  it("refuses an authorization request with no code_challenge with invalid_request, and issues no code", async () => {
     const client = await harness.registerClient();
     await harness.approve(ana.userId, client.clientId, ["requests:read"]);
     const answer = await harness.authorize(ana.cookie, client, pkcePair(), { code_challenge: undefined, code_challenge_method: undefined, scope: "requests:read" });
@@ -61,7 +61,7 @@ describe("Authorization requests use PKCE S256, resource indicators and the iss 
     expect(location.searchParams.get("code")).toBeNull();
   });
 
-  it.fails("refuses the plain PKCE method with invalid_request, and issues no code", async () => {
+  it("refuses the plain PKCE method with invalid_request, and issues no code", async () => {
     const client = await harness.registerClient();
     await harness.approve(ana.userId, client.clientId, ["requests:read"]);
     const pkce = pkcePair();
@@ -71,14 +71,14 @@ describe("Authorization requests use PKCE S256, resource indicators and the iss 
     expect(location.searchParams.get("code")).toBeNull();
   });
 
-  it.fails("binds the access token's audience to the resource it was asked for, and /api/v1 accepts it", async () => {
+  it("binds the access token's audience to the resource it was asked for, and /api/v1 accepts it", async () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     expect(claimsOf(accessToken)["aud"]).toBe(MCP_RESOURCE);
     const answer = await harness.api("GET", "/api/v1/requests", { authorization: `Bearer ${accessToken}` });
     expect(answer.status).toBe(200);
   });
 
-  it.fails("puts iss, equal to the issuer of the authorization server metadata, in the authorization response", async () => {
+  it("puts iss, equal to the issuer of the authorization server metadata, in the authorization response", async () => {
     const metadata = (await (await harness.handle(new Request(`${URL_OF_INSTALL}/.well-known/oauth-authorization-server`))).json()) as { issuer?: string };
     expect(metadata.issuer).toBe(URL_OF_INSTALL);
     const client = await harness.registerClient();
@@ -100,7 +100,7 @@ describe("Missing and insufficient tokens get standard challenges", () => {
     expect(challenge).toContain('scope="requests:read"');
   });
 
-  it.fails("answers a token whose signature does not verify with 401 and invalid_token", async () => {
+  it("answers a token whose signature does not verify with 401 and invalid_token", async () => {
     const answer = await harness.api("GET", "/api/v1/requests", { authorization: `Bearer ${forgedToken(ana.userId)}` });
     expect(answer.status).toBe(401);
     expect(answer.headers.get("www-authenticate")).toContain('error="invalid_token"');
@@ -119,7 +119,7 @@ describe("Missing and insufficient tokens get standard challenges", () => {
 });
 
 describe("Credentials are accepted only in the Authorization header", () => {
-  it.fails("ignores a valid token in the query string: the call answers 401", async () => {
+  it("ignores a valid token in the query string: the call answers 401", async () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     const accepted = await harness.api("GET", "/api/v1/requests", { authorization: `Bearer ${accessToken}` });
     expect(accepted.status).toBe(200);
@@ -129,7 +129,7 @@ describe("Credentials are accepted only in the Authorization header", () => {
 });
 
 describe("Access tokens live 10 minutes and refresh tokens rotate", () => {
-  it.fails("refuses an access token issued 11 minutes earlier with 401", async () => {
+  it("refuses an access token issued 11 minutes earlier with 401", async () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     const claims = claimsOf(accessToken);
     expect(Number(claims["exp"]) - Number(claims["iat"])).toBe(600);

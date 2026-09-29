@@ -1,5 +1,6 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
+import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -102,13 +103,14 @@ function servicesOf(env: Environment): Services {
 /** The REST route under /api/v1, built once per process from the install's settings. */
 export function restRoute(env: Environment): RestHandler {
   if (rest !== undefined) return rest;
-  const { execute, logger } = servicesOf(env);
+  const { execute, logger, signIn } = servicesOf(env);
   rest = createRestHandler({
     catalog: CATALOG,
     document: OPENAPI_JSON,
     execute,
-    // Tokens are checked from group 15 on (agent-access); until then no call carries valid credentials.
-    authenticate: async () => undefined,
+    // A call acts for the user its access token names, checked against the keys the sign-in service signs them
+    // with, read in this process (agent-access: Tiehall is the authorization server for agent clients).
+    authenticate: createAgentTokenCheck({ url: installUrl(env["TIEHALL_URL"] ?? ""), signingKeys: () => signIn.signingKeys() }),
     logger,
   });
   return rest;
@@ -223,6 +225,17 @@ export function signInPolicyRoute(env: Environment): PageRoute {
  * sign-in callback (sign-in: GitHub is the only way to sign in).
  */
 export function signInServiceRoute(env: Environment): (request: Request) => Promise<Response> {
+  const { signIn } = servicesOf(env);
+  return (request) => signIn.handler(request);
+}
+
+/**
+ * The discovery documents of the install's authorization server under
+ * /.well-known: the protected resource metadata of its MCP resource and the
+ * authorization server metadata (agent-access: Tiehall is the authorization
+ * server for agent clients), which the sign-in service serves.
+ */
+export function wellKnownRoute(env: Environment): (request: Request) => Promise<Response> {
   const { signIn } = servicesOf(env);
   return (request) => signIn.handler(request);
 }

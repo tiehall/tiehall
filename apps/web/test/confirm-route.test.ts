@@ -35,8 +35,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-/** Every route handler under app/, by its path from app/, with a loader for its module. */
-const routeFiles = import.meta.glob("../app/**/route.ts");
+/**
+ * Every route handler under app/, by its path from app/, with a loader for its
+ * module; a glob skips a folder whose name starts with a dot unless it names
+ * it, so /.well-known is named.
+ */
+const routeFiles = import.meta.glob(["../app/**/route.ts", "../app/.well-known/**/route.ts"]);
 
 /**
  * Whether Next.js routes a URL with these segments to the route file whose
@@ -115,10 +119,16 @@ describe("the app", () => {
     expect(module?.["POST"]).toBeTypeOf("function");
   });
 
+  // The discovery documents of the install's authorization server for agent
+  // clients (agent-access: Tiehall is the authorization server for agent
+  // clients), which clients fetch at the install's own /.well-known paths.
   it.each([
     { name: "the activity log's admin page", path: ACTIVITY_LOG_PATH },
     { name: "the packet schema", path: PACKET_SCHEMA_PATH },
     { name: "the sign-in policy's admin page", path: SIGN_IN_POLICY_PATH },
+    { name: "the protected resource metadata of the MCP resource", path: "/.well-known/oauth-protected-resource/mcp" },
+    { name: "the protected resource metadata at the root", path: "/.well-known/oauth-protected-resource" },
+    { name: "the authorization server metadata", path: "/.well-known/oauth-authorization-server" },
   ])("mounts $name on $path, for a GET", async ({ path }) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);

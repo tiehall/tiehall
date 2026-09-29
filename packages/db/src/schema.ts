@@ -832,6 +832,299 @@ export const signInVerifications = pgTable(
   (table) => [primaryKey({ columns: [table.orgId, table.id] }), index("sign_in_verifications_identifier").on(table.identifier)],
 );
 
+// The install's OAuth 2.1 authorization server for agent clients
+// (agent-access: Tiehall is the authorization server for agent clients;
+// design.md, Technical decisions: T7). The sign-in service keeps its records
+// in these tables, whose columns are the fields the service's authorization
+// server and its signing keys store, by their names; Tiehall reads them to
+// check the access tokens a call carries and to show and revoke a person's
+// grants. No token is kept in the clear: refresh tokens, authorization codes
+// and any client secret are stored as hashes, and the private signing keys
+// encrypted with the install's auth secret.
+
+// The keys that sign the access tokens the install issues: an Ed25519 key
+// pair, the private key encrypted. A token names its key by the row's id.
+export const oauthSigningKeys = pgTable(
+  "oauth_signing_keys",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    publicKey: text("public_key").notNull(),
+    privateKey: text("private_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    alg: text("alg"),
+    crv: text("crv"),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.id] })],
+);
+
+// The agent clients the authorization server knows: a client identified by a
+// Client ID Metadata Document, whose client id is the document's URL and whose
+// fields come from the document, or a client registered through Dynamic
+// Client Registration, whose fields are its own claims. The client id is
+// what a client sends; the row's id is Tiehall's own.
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    clientSecret: text("client_secret"),
+    /** How the client was discovered: `cimd` for a Client ID Metadata Document; none for a registered client. */
+    clientDiscoveryId: text("client_discovery_id"),
+    disabled: boolean("disabled").default(false),
+    skipConsent: boolean("skip_consent"),
+    enableEndSession: boolean("enable_end_session"),
+    subjectType: text("subject_type"),
+    scopes: text("scopes").array(),
+    clientCredentialsScopes: text("client_credentials_scopes").array().default(sql`'{}'`),
+    userId: uuid("user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+    name: text("name"),
+    uri: text("uri"),
+    icon: text("icon"),
+    contacts: text("contacts").array(),
+    tos: text("tos"),
+    policy: text("policy"),
+    softwareId: text("software_id"),
+    softwareVersion: text("software_version"),
+    softwareStatement: text("software_statement"),
+    redirectUris: text("redirect_uris").array().notNull(),
+    postLogoutRedirectUris: text("post_logout_redirect_uris").array(),
+    backchannelLogoutUri: text("backchannel_logout_uri"),
+    backchannelLogoutSessionRequired: boolean("backchannel_logout_session_required"),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
+    applicationType: text("application_type"),
+    jwks: text("jwks"),
+    jwksUri: text("jwks_uri"),
+    grantTypes: text("grant_types").array(),
+    responseTypes: text("response_types").array(),
+    requirePKCE: boolean("require_pkce"),
+    dpopBoundAccessTokens: boolean("dpop_bound_access_tokens").default(false),
+    referenceId: text("reference_id"),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("oauth_clients_client_id").on(table.orgId, table.clientId),
+    foreignKey({
+      name: "oauth_clients_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+  ],
+);
+
+// The protected resources the authorization server issues access tokens for:
+// the install's MCP resource, TIEHALL_URL/mcp, which /api/v1 accepts tokens
+// for too.
+export const oauthResources = pgTable(
+  "oauth_resources",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    identifier: text("identifier").notNull(),
+    name: text("name").notNull(),
+    accessTokenTtl: integer("access_token_ttl"),
+    refreshTokenTtl: integer("refresh_token_ttl"),
+    signingAlgorithm: text("signing_algorithm"),
+    signingKeyId: text("signing_key_id"),
+    allowedScopes: text("allowed_scopes").array(),
+    customClaims: jsonb("custom_claims"),
+    dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required").default(false),
+    disabled: boolean("disabled").default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+    policyVersion: integer("policy_version").default(1),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.id] }), uniqueIndex("oauth_resources_identifier").on(table.orgId, table.identifier)],
+);
+
+// Which clients may ask for which resources.
+export const oauthClientResources = pgTable(
+  "oauth_client_resources",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("oauth_client_resources_pair").on(table.orgId, table.clientId, table.resourceId),
+    foreignKey({
+      name: "oauth_client_resources_client_fk",
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "oauth_client_resources_resource_fk",
+      columns: [table.orgId, table.resourceId],
+      foreignColumns: [oauthResources.orgId, oauthResources.identifier],
+    }).onDelete("cascade"),
+  ],
+);
+
+// The refresh tokens of agent grants, by their hash. Each use rotates the
+// token: the used one is marked revoked, and a used one presented again
+// revokes every refresh token of that client for that user. The web session
+// the grant was approved in is named but not tied to it: signing out ends the
+// session and leaves the grant.
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    token: text("token").notNull(),
+    clientId: text("client_id").notNull(),
+    sessionId: uuid("session_id"),
+    userId: uuid("user_id").notNull(),
+    referenceId: text("reference_id"),
+    authorizationCodeId: text("authorization_code_id"),
+    resources: text("resources").array(),
+    requestedUserInfoClaims: text("requested_user_info_claims").array(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    revoked: timestamp("revoked", { withTimezone: true }),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    rotationReplayResponse: text("rotation_replay_response"),
+    rotationReplayExpiresAt: timestamp("rotation_replay_expires_at", { withTimezone: true }),
+    authTime: timestamp("auth_time", { withTimezone: true }),
+    confirmation: jsonb("confirmation"),
+    scopes: text("scopes").array().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("oauth_refresh_tokens_token").on(table.token),
+    index("oauth_refresh_tokens_client_user").on(table.orgId, table.clientId, table.userId),
+    index("oauth_refresh_tokens_authorization_code").on(table.authorizationCodeId),
+    foreignKey({
+      name: "oauth_refresh_tokens_client_fk",
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }),
+    foreignKey({
+      name: "oauth_refresh_tokens_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+  ],
+);
+
+// Opaque access tokens, by their hash, which the authorization server issues
+// only for a request that names no resource. The access tokens that /api/v1
+// and /mcp accept are JWTs for the install's resource, which are not stored.
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    token: text("token"),
+    clientId: text("client_id").notNull(),
+    sessionId: uuid("session_id"),
+    userId: uuid("user_id"),
+    referenceId: text("reference_id"),
+    authorizationCodeId: text("authorization_code_id"),
+    resources: text("resources").array(),
+    requestedUserInfoClaims: text("requested_user_info_claims").array(),
+    refreshId: uuid("refresh_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    revoked: timestamp("revoked", { withTimezone: true }),
+    confirmation: jsonb("confirmation"),
+    scopes: text("scopes").array().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("oauth_access_tokens_token").on(table.token),
+    index("oauth_access_tokens_client_user").on(table.orgId, table.clientId, table.userId),
+    index("oauth_access_tokens_authorization_code").on(table.authorizationCodeId),
+    foreignKey({
+      name: "oauth_access_tokens_client_fk",
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }),
+    foreignKey({
+      name: "oauth_access_tokens_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "oauth_access_tokens_refresh_fk",
+      columns: [table.orgId, table.refreshId],
+      foreignColumns: [oauthRefreshTokens.orgId, oauthRefreshTokens.id],
+    }),
+  ],
+);
+
+// Agent grants: a person's approval of an agent client, for the scopes and
+// the resource it approved (agent-access: Approving an agent client uses the
+// confirmation step). While a grant exists, the client gets an authorization
+// code for that person without asking again; revoking the grant removes it
+// and revokes the client's refresh tokens for that person.
+export const oauthConsents = pgTable(
+  "oauth_consents",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id"),
+    referenceId: text("reference_id"),
+    resources: text("resources").array(),
+    requestedUserInfoClaims: text("requested_user_info_claims").array(),
+    scopes: text("scopes").array().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("oauth_consents_client_user").on(table.orgId, table.clientId, table.userId),
+    foreignKey({
+      name: "oauth_consents_client_fk",
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }),
+    foreignKey({
+      name: "oauth_consents_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+  ],
+);
+
+// The client assertions a private_key_jwt client has used, by a digest of
+// their jti, so none is accepted twice.
+export const oauthClientAssertions = pgTable(
+  "oauth_client_assertions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: text("id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.id] })],
+);
+
 // Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's
 // teams, kept in Tiehall's own records, each with its current key and a name.
 // Only admins change them, through the team operations; nothing is taken from

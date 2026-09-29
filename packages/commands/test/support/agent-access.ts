@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
-import { createRestHandler, type Caller, type RestHandler } from "../../src/index.ts";
+import { createAgentTokenCheck, createRestHandler, type AgentTokenCheck, type RestHandler } from "../../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./install.ts";
 import { addUser } from "./members.ts";
 import { startSignIn, type SignInHarness } from "./sign-in.ts";
@@ -79,6 +79,8 @@ export interface AgentAccessHarness {
    * test when a step does not answer as it should.
    */
   tokens(person: SignedIn, scopes?: readonly string[]): Promise<{ client: AgentClient; accessToken: string; refreshToken: string | undefined }>;
+  /** A new check of access tokens, as a process that has not read the install's keys yet has, on the same clock. */
+  freshTokenCheck(): AgentTokenCheck;
   /** Calls /api/v1 with these headers. */
   api(method: string, path: string, headers?: Record<string, string>, body?: unknown): Promise<Response>;
   close(): Promise<void>;
@@ -114,9 +116,15 @@ export async function startAgentAccess(): Promise<AgentAccessHarness> {
       offset += milliseconds;
     },
   };
-  // Until the install checks access tokens, no call to /api/v1 carries valid credentials.
-  const authenticate = async (_request: Request): Promise<Caller | undefined> => undefined;
-  const rest: RestHandler = createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute: install.execute, authenticate, logger: install.logger });
+  // /api/v1 checks access tokens as the web role does: against the keys the sign-in service signs them with.
+  const freshTokenCheck = () => createAgentTokenCheck({ url: URL_OF_INSTALL, signingKeys: () => signIn.service.signingKeys(), now: clock.now });
+  const rest: RestHandler = createRestHandler({
+    catalog: CATALOG,
+    document: OPENAPI_JSON,
+    execute: install.execute,
+    authenticate: freshTokenCheck(),
+    logger: install.logger,
+  });
 
   const handle = async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -211,6 +219,7 @@ export async function startAgentAccess(): Promise<AgentAccessHarness> {
       if (exchanged.status !== 200 || typeof accessToken !== "string") throw new Error(`the token endpoint answered ${exchanged.status}: ${JSON.stringify(exchanged.body)}`);
       return { client, accessToken, refreshToken: typeof refreshToken === "string" ? refreshToken : undefined };
     },
+    freshTokenCheck,
     api: (method, path, headers = {}, body) =>
       handle(
         new Request(`${URL_OF_INSTALL}${path}`, {

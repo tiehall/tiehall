@@ -10,6 +10,14 @@ import {
   githubApp,
   integrationSecrets,
   members,
+  oauthAccessTokens,
+  oauthClientAssertions,
+  oauthClientResources,
+  oauthClients,
+  oauthConsents,
+  oauthRefreshTokens,
+  oauthResources,
+  oauthSigningKeys,
   orgs,
   signInAccounts,
   signInRefusals,
@@ -18,6 +26,8 @@ import {
   webSessions,
   type Database,
 } from "@tiehall/db";
+import type { SigningKeys } from "./agent-tokens.ts";
+import { authorizationServerPlugins } from "./authorization-server.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -34,7 +44,7 @@ import { completeSetup, SetupCompletionError } from "./setup-completion.ts";
 import { SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { setupCookieName } from "./setup-route.ts";
-import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
+import { routeInventory, servedOverHttp, servedOverHttpAt } from "./sign-in-routes.ts";
 import { RemovedMemberError } from "./with-org.ts";
 import { assertWebWrite } from "./web-writes.ts";
 import { write, type Origin, type Store, type Writer } from "./write.ts";
@@ -56,8 +66,19 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // with 404 as the error model answers a route the install does not serve,
 // every route that the committed classification (sign-in-routes.ts) does not
 // mark as harmless: over HTTP the service answers only GitHub's return to the
-// sign-in callback. The sign-in page and sign-out are Tiehall's own pages,
+// sign-in callback and the routes agent clients run the OAuth flow through.
+// A path the guard does not serve gets its 404 before the service reads the
+// request at all. The sign-in page and sign-out are Tiehall's own pages,
 // which call the service in the same process.
+//
+// The service is also the install's OAuth 2.1 authorization server for agent
+// clients (agent-access: Tiehall is the authorization server for agent
+// clients; authorization-server.ts): the person who approves an agent client
+// is the one signed in to the web UI with GitHub. It serves the discovery
+// documents under /.well-known, and the public keys its access tokens are
+// signed with, which the check of those tokens reads in this process
+// (agent-tokens.ts). The instance that completes setup is no authorization
+// server.
 //
 // Better Auth keeps its records in Tiehall's tables: a user is a row of
 // `users`, whose login is the name Better Auth keeps; a web session is a row
@@ -242,6 +263,12 @@ export interface SignInService {
   session(headers: Headers, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
   routes(): Promise<string[]>;
+  /**
+   * The install's public signing keys, which the access tokens of agent
+   * clients are signed with, read in this process (agent-tokens.ts);
+   * undefined while no App is stored, so no service exists.
+   */
+  signingKeys(): Promise<SigningKeys | undefined>;
   /** The sign-in that completes setup, under /setup/sign-in. */
   setup: SetupSignIn;
 }
@@ -357,7 +384,20 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
       database: drizzleAdapter(options.database, {
         provider: "pg",
-        schema: { users, webSessions, signInAccounts, signInVerifications },
+        schema: {
+          users,
+          webSessions,
+          signInAccounts,
+          signInVerifications,
+          oauthSigningKeys,
+          oauthClients,
+          oauthResources,
+          oauthClientResources,
+          oauthRefreshTokens,
+          oauthAccessTokens,
+          oauthConsents,
+          oauthClientAssertions,
+        },
       }),
       advanced: {
         cookiePrefix: "tiehall",
@@ -512,7 +552,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           getUserInfo: (tokens) => githubUser(tokens.accessToken),
         },
       },
-      plugins: [githubEndpoints()],
+      // The usual instance is also the install's authorization server for agent clients (authorization-server.ts);
+      // the one that completes setup signs the first admin in and nothing more.
+      plugins: [githubEndpoints(), ...(setup ? [] : authorizationServerPlugins({ url: options.url, orgId: input.orgId }))],
       hooks: { before: routeGuard },
     };
   }
@@ -692,6 +734,11 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           new URL(request.url).pathname === SIGN_IN_CALLBACK_PATH ? refused(request, refusal, TO_SIGN_IN, extra) : problem(httpProblem(refusal), extra);
         const auth = await current();
         if (auth === undefined) return answerRefused(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App."));
+        // A route under /api/auth that the guard does not serve over HTTP gets 404 before the service reads the request.
+        const { pathname } = new URL(request.url);
+        if (pathname.startsWith(`${AUTH_BASE_PATH}/`) && !servedOverHttpAt(request.method, pathname.slice(AUTH_BASE_PATH.length))) {
+          return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
+        }
         const answer = await auth.handler(request);
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
         if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
@@ -765,6 +812,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     async routes() {
       const auth = await current();
       return auth === undefined ? [] : routeInventory(auth.api);
+    },
+
+    async signingKeys() {
+      const auth = await current();
+      if (auth === undefined) return undefined;
+      // The public keys only, as the JWKS endpoint serves them, read from the database in this process.
+      return (await (auth.api as unknown as { getJwks(): Promise<SigningKeys> }).getJwks());
     },
 
     setup: {

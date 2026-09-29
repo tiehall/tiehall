@@ -1,0 +1,92 @@
+import { verifyJwsAccessToken } from "better-auth/oauth2";
+import { SCOPES, type Scope } from "@tiehall/catalog";
+import { Refusal } from "@tiehall/core";
+import { mcpResourceOf } from "./authorization-server.ts";
+import type { Caller } from "./caller.ts";
+
+// The access tokens agents call /api/v1 with (agent-access: Tiehall is the
+// authorization server for agent clients; agent-access: Six kinds of caller;
+// design.md, Design rules: Agent access; design.md, Technical decisions: T7
+// and T9). A call names who it acts for with an access token in its
+// Authorization header, as `Bearer <token>`; a call without one names no one.
+// A token the install issued is a JWT of the type at+jwt, signed with one of
+// the install's own keys, issued by the install's URL, TIEHALL_URL, for its
+// one protected resource, TIEHALL_URL/mcp, as its audience, and not expired. It acts for its subject, the user who approved the client, through
+// the client that holds it, within the three OAuth scopes it carries. Any
+// other token is refused with 401 and invalid_token.
+//
+// Checking a token makes no outbound call: the install's public keys are read
+// in the same process, from the sign-in service, and kept for a few minutes;
+// a token signed with a key they do not hold makes the check read them again,
+// since a key the service made since then may have signed it.
+
+/** The install's public signing keys, as a JSON Web Key Set. */
+export interface SigningKeys {
+  keys: readonly Record<string, unknown>[];
+}
+
+export interface AgentTokenCheckOptions {
+  /** The install's URL (TIEHALL_URL), as its origin: the issuer of the tokens it accepts. */
+  url: string;
+  /** Reads the install's public signing keys in the same process; undefined while the install has none. */
+  signingKeys(): Promise<SigningKeys | undefined>;
+  /** The clock tokens expire by; the system clock unless a test controls it. */
+  now?: () => Date;
+}
+
+/** Who a call's access token acts for: undefined for a call without one; a refusal for a token that is not valid. */
+export type AgentTokenCheck = (request: Request) => Promise<Caller | undefined>;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A bearer token, as RFC 6750 allows its characters. */
+const BEARER = /^Bearer +([A-Za-z0-9\-._~+/]+=*)$/i;
+
+function invalidToken(): Refusal {
+  return new Refusal("invalid-token", "The access token is not valid: it is expired, malformed or not issued by this install.");
+}
+
+export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTokenCheck {
+  const now = options.now ?? (() => new Date());
+  // The key the check's cached public keys are kept under, one per check.
+  const cacheKey = {};
+  const signingKeys = async () => {
+    const keys = await options.signingKeys();
+    if (keys === undefined || keys.keys.length === 0) throw invalidToken();
+    return keys as never;
+  };
+
+  return async function checkToken(request) {
+    const header = request.headers.get("authorization");
+    if (header === null) return undefined;
+    const bearer = BEARER.exec(header.trim());
+    // Another scheme names no access token.
+    if (bearer === null) return undefined;
+    const token = bearer[1] ?? "";
+    let claims: Record<string, unknown>;
+    try {
+      claims = await verifyJwsAccessToken(token, {
+        jwksFetch: signingKeys,
+        jwksCacheKey: cacheKey,
+        verifyOptions: { issuer: options.url, audience: mcpResourceOf(options.url), typ: "at+jwt", currentDate: now() },
+      });
+    } catch (error) {
+      if (error instanceof Refusal) throw error;
+      if (isTokenError(error)) throw invalidToken();
+      throw error;
+    }
+    const userId = claims["sub"];
+    const clientId = claims["azp"] ?? claims["client_id"];
+    if (typeof userId !== "string" || !UUID.test(userId) || typeof clientId !== "string" || clientId === "") throw invalidToken();
+    const granted = typeof claims["scope"] === "string" ? claims["scope"].split(" ") : [];
+    const scopes = SCOPES.filter((scope): scope is Scope => granted.includes(scope));
+    return { kind: "oauth_token", userId, clientId, scopes, surface: "api" };
+  };
+}
+
+/** Whether a failure of the check is the token's: a JOSE error, such as a malformed token, a bad signature, a wrong claim or an expired token. */
+function isTokenError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.startsWith("ERR_J");
+}

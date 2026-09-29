@@ -10,6 +10,7 @@ import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres
 import { createTestCertificate } from "@tiehall/testing/tls";
 import {
   CONFIRMATION_SUBJECTS,
+  createAgentTokenCheck,
   createConfirmationNonces,
   createConfirmationStep,
   createConfirmRoute,
@@ -51,7 +52,8 @@ import {
 // then the setup screen, the webhooks, the sign-in service's routes, the
 // sign-in page, the home page, the members page, the admin UI's pages for
 // invites, teams, the sign-in policy and GitHub, the review pages of the
-// confirmation step and the REST API, each built as the web role
+// confirmation step, the REST API, with its check of access tokens, and the
+// authorization server's discovery documents, each built as the web role
 // builds it, against the GitHub stub. An install whose URL is not a trial URL
 // is served over HTTPS with a test certificate the browser trusts by its key,
 // through a host-resolver rule, so the browser keeps the `__Host-` and
@@ -163,7 +165,13 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     write: { execute, url, secret: authSecret },
     logger,
   });
-  const rest = createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => undefined, logger });
+  const rest = createRestHandler({
+    catalog: CATALOG,
+    document: OPENAPI_JSON,
+    execute,
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys() }),
+    logger,
+  });
   const githubAdmin = createGitHubAdminRoute({
     execute,
     session: (request, renewal) => signIn.session(request.headers, renewal),
@@ -186,7 +194,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     if (pathname === "/setup" || pathname.startsWith("/setup/")) return setup(request);
     if (pathname === "/webhooks/github") return webhooks(request);
     if (pathname === "/sign-in") return signIn.page(request);
-    if (pathname.startsWith("/api/auth/")) return signIn.handler(request);
+    if (pathname.startsWith("/api/auth/") || pathname.startsWith("/.well-known/")) return signIn.handler(request);
     if (pathname.startsWith("/api/v1/")) return rest(request);
     if (pathname === "/admin/github") return githubAdmin(request);
     const page = Object.hasOwn(pages, pathname) ? pages[pathname] : undefined;

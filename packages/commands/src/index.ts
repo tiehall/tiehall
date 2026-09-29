@@ -1,5 +1,17 @@
 // @tiehall/commands: execute() and one handler per command definition; everything that touches the database, the queue or the network.
 export { type AppendedEvent } from "./append-event.ts";
+export { createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOptions, type SigningKeys } from "./agent-tokens.ts";
+export {
+  ACCESS_TOKEN_LIFETIME_SECONDS,
+  AUTHORIZATION_SIGN_IN_PATH,
+  authorizationServerPlugins,
+  CONSENT_PATH,
+  MCP_PATH,
+  mcpResourceOf,
+  REFRESH_SCOPE,
+  resourceMetadataUrlOf,
+  type AuthorizationServerOptions,
+} from "./authorization-server.ts";
 export {
   BODY_LIMIT,
   bodyLimitFor,
