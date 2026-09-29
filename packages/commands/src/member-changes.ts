@@ -111,7 +111,8 @@ export type RemovalCause = { cause: "admin" } | { cause: "left_organization"; in
 export async function removeMembership(writer: Writer, member: { userId: string; githubAccountId: number }, removal: RemovalCause): Promise<void> {
   const { userId } = member;
   const requestIds = await lockProposalsOfMember(writer, userId);
-  // Their memberships of teams, and the organizations they were seen in, go with it: the foreign keys cascade.
+  // Their memberships of teams, and the organizations they were seen in, go with it: the foreign keys cascade, under
+  // the lock the caller holds on the member's row, which every writer of those records takes first (event-sequence.ts).
   await writer.tx.delete(members).where(and(eq(members.orgId, writer.orgId), eq(members.userId, userId)));
   if (removal.cause === "admin") {
     await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();

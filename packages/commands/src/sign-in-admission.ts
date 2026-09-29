@@ -223,6 +223,7 @@ export async function applyAdmission(
           return { blockCleared: block !== undefined };
         }
         if (block !== undefined || !admitsOrganizationMembers(await signInPolicyOf(writer))) throw new AdmissionWithdrawnError();
+        // The member's row first, then the records of their organizations, in the lock order (event-sequence.ts).
         await writer.tx.insert(members).values({ orgId: writer.orgId, userId, role: "member" });
         await writer.tx
           .insert(memberOrganizations)

@@ -110,9 +110,21 @@ async function seenMembers({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, user
   return [...byUser].map(([id, member]) => ({ userId: id, ...member }));
 }
 
-/** Keeps a member as seen in the organizations that report them a member now, if they still joined through an organization. */
+/**
+ * Keeps a member as seen in the organizations that report them a member now,
+ * if they still joined through an organization. In the lock order
+ * (event-sequence.ts), it locks the member's row before it writes the records
+ * of their organizations, and writes nothing once the member is gone: a
+ * removal that holds the row goes first, and the records go with the member.
+ */
 async function stillSeenIn({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string, organizations: readonly number[]): Promise<void> {
   if (organizations.length === 0) return;
+  const [member] = await tx
+    .select({ userId: members.userId })
+    .from(members)
+    .where(and(eq(members.orgId, orgId), eq(members.userId, userId)))
+    .for("key share");
+  if (member === undefined) return;
   const [any] = await tx
     .select({ userId: memberOrganizations.userId })
     .from(memberOrganizations)

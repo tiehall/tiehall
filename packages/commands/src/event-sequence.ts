@@ -18,20 +18,29 @@ import type { OrgContext } from "./with-org.ts";
 // lock it needs before its first record(), and every write takes its locks in
 // this one order, so that two at once wait in a line and never on each other:
 // 1. the members' rows a change to who is a member locks (member-changes.ts);
-// 2. the request's row (request-changes.ts), or, for a write on several
+// 2. the records of the GitHub organizations Tiehall saw those members in
+//    (member_organizations), which every writer changes only once it holds
+//    the member's row, and not at all once the member is gone: a departure
+//    check that records the organizations reporting a member
+//    (organization-departures.ts), a join through organization membership,
+//    which inserts the member's row first (sign-in-admission.ts), and a
+//    removal, whose delete of the member's row takes the records with it
+//    (member-changes.ts);
+// 3. the request's row (request-changes.ts), or, for a write on several
 //    requests, such as a removal or the expiry job, their rows in the order
 //    of their ids;
-// 3. the request's proposals: its pending ones, oldest first, then the one
+// 4. the request's proposals: its pending ones, oldest first, then the one
 //    the call names, then the record of what its commitment replaced
 //    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);
-// 4. what a write counts or numbers before its first event: an agent token's
+// 5. what a write counts or numbers before its first event: an agent token's
 //    writes (write-limits.ts), the loop limit's re-lock of the request's row
 //    (loop-limit.ts) and a team's next request number (request-numbers.ts);
-// 5. the org's event counter, here, with the first event: the last lock a
+// 6. the org's event counter, here, with the first event: the last lock a
 //    write takes. What a write does after its first event, such as cancelling
 //    the proposals its change ends, locks only rows it holds already.
-// packages/commands/test/proposal-locks.test.ts runs the pairs of writes that
-// once waited on each other, in both orders.
+// packages/commands/test/proposal-locks.test.ts and
+// member-organization-locks.test.ts run the pairs of writes that once waited
+// on each other, in both orders.
 
 /** Takes the next event number of the org, locking its counter row until the transaction ends. */
 export async function takeEventNumber({ tx, orgId }: OrgContext): Promise<number> {
