@@ -164,10 +164,14 @@ async function createOnGitHub(form: { action: URL; manifest: Record<string, unkn
   return { location: new URL(confirmed.headers.get("location") ?? "") };
 }
 
-/** GitHub's redirect back to the setup screen, followed by the browser with this cookie. */
-function returnFromGitHub(url: string, location: URL, cookie: string | undefined): Promise<Response> {
-  return route(url)(browserRequest(url, `${location.pathname}${location.search}`, cookie));
+/** GitHub's redirect back to the setup screen, followed by the browser with this cookie, which sends these headers too, such as its Accept. */
+function returnFromGitHub(url: string, location: URL, cookie: string | undefined, headers: Record<string, string> = {}): Promise<Response> {
+  return route(url)(browserRequest(url, `${location.pathname}${location.search}`, cookie, { headers }));
 }
+
+/** What a browser's Accept header names, text/html first, and what a client that asks for JSON sends. */
+const AS_BROWSER = { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" };
+const AS_JSON_CLIENT = { accept: "application/json" };
 
 async function storedApp() {
   return (await owner.query("SELECT app_id, slug, name, client_id, owner_login, owner_type FROM github_app")).rows;
@@ -479,20 +483,24 @@ describe("GitHub's return with the code", () => {
     expect((await open(INSTALL, cookie)).html).not.toContain("no longer used");
   });
 
-  // D50 (3): GitHub failing the exchange of the manifest's code is 502 integration-unavailable. The answer stays
-  // a page until the refusal pages of 1.17 negotiate it, and names the problem type in its markup.
+  // D50 (3), (7): GitHub failing the exchange of the manifest's code is 502 integration-unavailable: a page for
+  // a browser, which names the problem type in its markup, and the problem for a client that asks for JSON.
   it("stores nothing when GitHub no longer converts the code, and says to create the App again", async () => {
     const cookie = await setupSession(INSTALL);
     const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
     // GitHub converts a manifest's code only within the hour.
     stub.advanceClock(61 * 60 * 1000);
-    const answer = await returnFromGitHub(INSTALL, location!, cookie);
+    const answer = await returnFromGitHub(INSTALL, location!, cookie, AS_BROWSER);
     expect(answer.status).toBe(502);
     expect(answer.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await answer.text();
     expect(html).toContain("create the App again");
     expect(html).toContain("https://tiehall.com/problems/integration-unavailable");
-    expect(conversions().map(({ status }) => status)).toEqual([404]);
+    const asJson = await returnFromGitHub(INSTALL, location!, cookie, AS_JSON_CLIENT);
+    expect(asJson.status).toBe(502);
+    expect(asJson.headers.get("content-type")).toBe("application/problem+json");
+    expect(await asJson.json()).toMatchObject({ type: "https://tiehall.com/problems/integration-unavailable", detail: expect.stringContaining("create the App again") });
+    expect(conversions().map(({ status }) => status)).toEqual([404, 404]);
     expect(await storedApp()).toEqual([]);
     expect(await storedSecretNames()).toEqual([]);
   });
@@ -516,12 +524,15 @@ describe("GitHub's return with the code", () => {
       github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: slow, timeoutMs: 200 },
       now: () => clock(),
     });
-    const answer = await slowRoute(browserRequest(INSTALL, `${location!.pathname}${location!.search}`, cookie));
+    const answer = await slowRoute(browserRequest(INSTALL, `${location!.pathname}${location!.search}`, cookie, { headers: AS_BROWSER }));
     expect(answer.status).toBe(502);
     expect(answer.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await answer.text();
     expect(html).toContain("create the App again");
     expect(html).toContain("https://tiehall.com/problems/integration-unavailable");
+    const asJson = await slowRoute(browserRequest(INSTALL, `${location!.pathname}${location!.search}`, cookie, { headers: AS_JSON_CLIENT }));
+    expect(asJson.status).toBe(502);
+    expect(await asJson.json()).toMatchObject({ type: "https://tiehall.com/problems/integration-unavailable" });
     expect(await storedApp()).toEqual([]);
     expect(await storedSecretNames()).toEqual([]);
   });

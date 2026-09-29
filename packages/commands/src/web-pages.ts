@@ -1,7 +1,7 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
-import { escapeHtml, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
@@ -19,9 +19,10 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // posted here: the page links to its review page instead. A browser without a
 // session is sent to sign in first and comes back to the page (D28 #66); a
 // POST without one gets 401. Every answer runs no script, loads nothing and
-// cannot be framed; refusals are RFC 9457 problems (public-api: One error
-// model for Tiehall's own refusals), and any other failure is a 500 that says
-// nothing about it.
+// cannot be framed; a refusal is a page for a browser, which leads back to
+// the page, or to sign in, and an RFC 9457 problem for every other client
+// (public-api: One error model for Tiehall's own refusals; html.ts), and any
+// other failure is a 500 that says nothing about it.
 
 export interface PageRouteOptions {
   execute: Execute;
@@ -87,11 +88,16 @@ export function createPageRoute(options: PageRouteOptions, handlers: PageHandler
       );
       return await post!(form, calls);
     } catch (error) {
-      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), wayOnFrom(error, handlers));
       logger.error(`${handlers.name}: the page failed`, { error });
       return problem(internalErrorProblem());
     }
   };
+}
+
+/** Where a page's refusal leads a browser on: to sign in when it is not signed in, and otherwise back to the page, whose form it was. */
+function wayOnFrom(refusal: Refusal, handlers: Pick<PageHandlers, "path" | "name">): WayOn {
+  return refusal.reason === "unauthenticated" ? TO_SIGN_IN : { href: handlers.path, text: `Back to the ${handlers.name} page` };
 }
 
 /** The headers every answer carries, so that no other site can frame it. */

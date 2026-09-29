@@ -128,6 +128,11 @@ describe("signing in with GitHub in a browser", { timeout: 90_000 }, () => {
     ]);
     expect(refused.status()).toBe(403);
     await expect(page.content()).resolves.toContain("Ask an admin of the install for an invite");
+    // The browser gets a page, not the problem as JSON: the refusal's title and its problem type, and a link to sign in.
+    expect(refused.headers()["content-type"]).toBe("text/html; charset=utf-8");
+    await expect(page.getByRole("heading", { level: 1 }).textContent()).resolves.toBe("Sign-in refused");
+    await expect(page.content()).resolves.toContain("https://tiehall.com/problems/sign-in-refused");
+    await expect(page.getByRole("link", { name: "Go to the sign-in page" }).getAttribute("href")).resolves.toBe("/sign-in");
     expect((await context.cookies(URL_OF_INSTALL)).map(({ name }) => name)).not.toContain("__Secure-tiehall.session_token");
     await context.close();
   });

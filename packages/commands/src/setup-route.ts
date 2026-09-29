@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, GitHubUnavailableError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession, openSetupSession } from "./setup-code.ts";
@@ -58,9 +58,9 @@ import type { SetupSignIn } from "./sign-in.ts";
 //   with a code not in the form GitHub issues codes in, is refused with 400
 //   invalid-input, and GitHub is not asked. A code GitHub does not convert,
 //   whatever it answers, or does not answer within the client's 10 seconds,
-//   stores nothing, and the page, answered with 502 and the problem type
-//   integration-unavailable in its markup, says to create the App again
-//   (public-api: One error model for Tiehall's own refusals).
+//   stores nothing, and the answer, 502 integration-unavailable, says to
+//   create the App again (public-api: One error model for Tiehall's own
+//   refusals).
 // - POST /setup/sign-in starts the sign-in with GitHub that completes setup,
 //   and GET /setup/sign-in/callback/github is GitHub's return to it
 //   (self-host-install: Setup names the company and makes the first admin):
@@ -69,8 +69,10 @@ import type { SetupSignIn } from "./sign-in.ts";
 //   connected, and setup closes: the browser lands on the web UI, signed in,
 //   and its setup cookie is dropped.
 // - Once setup is complete, every path under /setup answers 404 to everyone.
-// Refusals are RFC 9457 problems, as on every endpoint Tiehall serves
-// (public-api: One error model for Tiehall's own refusals). The pages are
+// A refusal is a page for a browser, which leads back to the setup screen, or
+// to Tiehall once setup is complete, and an RFC 9457 problem for every other
+// client (public-api: One error model for Tiehall's own refusals; html.ts);
+// the setup gate's answers before setup completes are its own. The pages are
 // plain HTML: no script, no style from anywhere, no framing, and forms that
 // post only to the install.
 
@@ -119,7 +121,7 @@ const NOT_IN_SESSION = httpProblem(
   new Refusal("forbidden", "Setup continues only in the browser that entered the setup code. Open /setup there, or enter the setup code in this one."),
 );
 const NOT_YET = httpProblem(new Refusal("conflict", "Name the company and create the install's GitHub App before you sign in."));
-/** GitHub did not convert the manifest's code: answered as a page that names the problem, until refusal pages negotiate it. */
+/** GitHub did not convert the manifest's code: a page for a browser, which says to create the App again, and the problem otherwise. */
 const CONVERSION_FAILED = new Refusal(
   "integration-unavailable",
   "GitHub did not give Tiehall the new App's credentials: it did not answer in time, or no longer converts the code it sent back, " +
@@ -140,13 +142,13 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   const now = options.now ?? (() => new Date());
   return async function setup(request) {
     try {
-      if ((await readSetupState(options.database)).complete) return problem(CLOSED);
+      if ((await readSetupState(options.database)).complete) return refuse(request, CLOSED);
       const { pathname } = new URL(request.url);
       if (pathname === MANIFEST_REDIRECT_PATH && request.method === "GET") return await fromGitHub(request);
       if (pathname === COMPANY_PATH && request.method === "POST") return await nameCompany(request);
       if (pathname === SETUP_SIGN_IN_PATH && request.method === "POST" && options.signIn !== undefined) return await startSignIn(request, options.signIn);
       if (pathname === SETUP_SIGN_IN_CALLBACK_PATH && request.method === "GET" && options.signIn !== undefined) return await signedIn(request, options.signIn);
-      if (pathname !== SETUP_PATH) return problem(NO_SUCH_STEP);
+      if (pathname !== SETUP_PATH) return refuse(request, NO_SUCH_STEP);
       if (request.method === "POST") return await enterCode(request);
       if (browserOrigin(request) !== options.url) return page(wrongOriginPage(options.url));
       const token = cookieOf(request, cookieName);
@@ -182,9 +184,9 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
 
   /** Whether a request comes from a form of the install, TIEHALL_URL, in a browser that holds a setup session. */
   async function inSession(request: Request): Promise<Response | undefined> {
-    if (originOf(request.headers.get("origin")) !== options.url) return problem(WRONG_ORIGIN);
+    if (originOf(request.headers.get("origin")) !== options.url) return refuse(request, WRONG_ORIGIN);
     const token = cookieOf(request, cookieName);
-    if (token === undefined || !(await isSetupSession(options.database, token))) return problem(NOT_IN_SESSION);
+    if (token === undefined || !(await isSetupSession(options.database, token))) return refuse(request, NOT_IN_SESSION);
     return undefined;
   }
 
@@ -195,7 +197,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     const name = companyName(new URLSearchParams(await request.text()).get("name"));
     if (name === undefined) {
       const message = "The company's name is 1 to 100 characters, with no control characters.";
-      return problem(httpProblem(new Refusal("invalid-input", message, { issues: [{ path: ["name"], message }] })));
+      return refuse(request, httpProblem(new Refusal("invalid-input", message, { issues: [{ path: ["name"], message }] })));
     }
     const named = await options.database.transaction(async (tx) => {
       const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1).for("update");
@@ -203,7 +205,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       await tx.update(orgs).set({ name }).where(eq(orgs.id, org.id));
       return true;
     });
-    if (!named) return problem(CLOSED);
+    if (!named) return refuse(request, CLOSED);
     return new Response(null, { status: 303, headers: { location: `${options.url}${SETUP_PATH}`, "cache-control": "no-store" } });
   }
 
@@ -215,14 +217,14 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       const [org] = await tx.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1);
       return org !== undefined && org.name !== null && (await readGitHubApp({ tx, orgId: org.id })) !== undefined;
     });
-    if (!ready) return problem(NOT_YET);
+    if (!ready) return refuse(request, NOT_YET);
     return signIn.start(request);
   }
 
   /** GitHub's return to the sign-in of the setup screen, served only to the browser that holds the setup session. */
   async function signedIn(request: Request, signIn: SetupSignIn): Promise<Response> {
     const token = cookieOf(request, cookieName);
-    if (token === undefined || !(await isSetupSession(options.database, token))) return problem(NOT_IN_SESSION);
+    if (token === undefined || !(await isSetupSession(options.database, token))) return refuse(request, NOT_IN_SESSION);
     const answer = await signIn.callback(request);
     if (answer.status >= 300 && answer.status < 400 && (await readSetupState(options.database)).complete) {
       // Setup is complete: the setup session is of no use any more, so its cookie goes.
@@ -239,12 +241,12 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     const query = new URL(request.url).searchParams;
     const nonce = token === undefined ? undefined : manifestStateNonce(token, query.get("state"), now());
     if (token === undefined || nonce === undefined || !(await isSetupSession(options.database, token))) {
-      return problem(FOREIGN_RETURN);
+      return refuse(request, FOREIGN_RETURN);
     }
     // A state that stored an App already is used up: GitHub is not asked again.
-    if (await manifestStateUsed(options.database, token, nonce)) return problem(FOREIGN_RETURN);
+    if (await manifestStateUsed(options.database, token, nonce)) return refuse(request, FOREIGN_RETURN);
     const code = query.get("code");
-    if (code === null || code === "") return problem(NO_CODE);
+    if (code === null || code === "") return refuse(request, NO_CODE);
     // Opened before the code is used: GitHub converts a code only once.
     const box = options.secrets();
     let app;
@@ -257,10 +259,10 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       });
     } catch (error) {
       // A code not in GitHub's form: refused before GitHub is asked.
-      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (error instanceof Refusal) return refuse(request, httpProblem(error));
       if (!(error instanceof GitHubUnavailableError)) throw error;
       logger.warn("setup: GitHub did not convert the manifest's code", { error, status: error.status });
-      return page(layout(conversionFailedBody()), {}, CONVERSION_FAILED.status);
+      return refuse(request, httpProblem(CONVERSION_FAILED));
     }
     const stored = await options.database.transaction(async (tx) => {
       // Setup may have completed meanwhile, in another browser; the org row is locked against that.
@@ -282,8 +284,8 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       await storeGitHubApp({ tx, orgId: org.id }, box, app);
       return { replaced };
     });
-    if (stored === "closed") return problem(CLOSED);
-    if (stored === "used") return problem(FOREIGN_RETURN);
+    if (stored === "closed") return refuse(request, CLOSED);
+    if (stored === "used") return refuse(request, FOREIGN_RETURN);
     if (stored.replaced !== undefined) {
       logger.warn("setup: a new GitHub App replaced the one stored before", { appId: app.id, replacedAppId: stored.replaced.appId });
     }
@@ -292,10 +294,10 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   }
 
   async function enterCode(request: Request): Promise<Response> {
-    if (originOf(request.headers.get("origin")) !== options.url) return problem(WRONG_ORIGIN);
+    if (originOf(request.headers.get("origin")) !== options.url) return refuse(request, WRONG_ORIGIN);
     const code = new URLSearchParams(await request.text()).get("code") ?? "";
     const token = await openSetupSession(options.database, code);
-    if (token === undefined) return problem(WRONG_CODE);
+    if (token === undefined) return refuse(request, WRONG_CODE);
     const secure = options.url.startsWith("https:") ? "; Secure" : "";
     return new Response(null, {
       status: 303,
@@ -353,6 +355,15 @@ function problem({ status, headers, body }: HttpProblem): Response {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+/** Where a refusal of the setup screen leads a browser on: back to the setup screen, or, once setup is complete, to Tiehall. */
+const TO_SETUP: WayOn = { href: SETUP_PATH, text: "Back to the setup screen" };
+const TO_TIEHALL: WayOn = { href: "/", text: "Go to Tiehall" };
+
+/** A refusal of the setup screen: a page for a browser and the problem for every other client (html.ts). */
+function refuse(request: Request, refusal: HttpProblem): Response {
+  return answerRefusal(request, refusal, refusal === CLOSED ? TO_TIEHALL : TO_SETUP);
+}
+
 function page(html: string, headers: Record<string, string> = {}, status = 200): Response {
   return new Response(html, { status, headers: { ...PAGE_HEADERS, ...headers } });
 }
@@ -373,14 +384,6 @@ function codePage(): string {
         <input id="code" name="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
         <button type="submit">Continue</button>
       </form>`);
-}
-
-function conversionFailedBody(): string {
-  return `      <h2>The GitHub App could not be stored</h2>
-      <p>${escapeHtml(CONVERSION_FAILED.message)}</p>
-      <p><a href="${SETUP_PATH}">Back to the setup screen</a></p>
-      <p>Problem type: <code>${escapeHtml(CONVERSION_FAILED.type)}</code></p>
-`;
 }
 
 function wrongOriginPage(url: string): string {

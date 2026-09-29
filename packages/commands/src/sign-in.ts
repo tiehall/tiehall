@@ -21,7 +21,7 @@ import {
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import type { JobSender } from "./jobs.ts";
@@ -131,6 +131,11 @@ export const AUTH_BASE_PATH = "/api/auth";
 export const SIGN_IN_PATH = "/sign-in";
 /** Where the web UI's sign-out form posts. */
 export const SIGN_OUT_PATH = "/sign-out";
+
+/** Where a refused sign-out leads a browser on: back to the home page, whose form it posted. */
+const TO_HOME: WayOn = { href: "/", text: "Back to Tiehall's home page" };
+/** Where a refusal of the setup screen's sign-in leads a browser on: back to the setup screen. */
+const TO_SETUP: WayOn = { href: SETUP_PATH, text: "Back to the setup screen" };
 
 /** What a refused person reads. */
 export const SIGN_IN_REFUSED =
@@ -634,17 +639,29 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     return new Response(JSON.stringify(body), { status, headers: answer });
   }
 
+  /**
+   * A refusal of GitHub's return to the sign-in callback, or of a page's
+   * form: a page for a browser, which leads on to the sign-in page or back to
+   * the setup screen or the home page, and the problem for every other client
+   * (public-api: One error model for Tiehall's own refusals; html.ts).
+   */
+  function refused(request: Request, refusal: Refusal, wayOn: WayOn, extra: Headers = new Headers()): Response {
+    return answerRefusal(request, httpProblem(refusal), wayOn, extra);
+  }
+
   return {
     async handler(request) {
       try {
+        // GitHub's return to the sign-in callback is a page route; every other route of the service answers problems.
+        const answerRefused = (refusal: Refusal, extra?: Headers) =>
+          new URL(request.url).pathname === SIGN_IN_CALLBACK_PATH ? refused(request, refusal, TO_SIGN_IN, extra) : problem(httpProblem(refusal), extra);
         const auth = await current();
-        if (auth === undefined) return problem(httpProblem(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App.")));
+        if (auth === undefined) return answerRefused(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App."));
         const answer = await auth.handler(request);
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
-        if (answer.status === 404) return problem(httpProblem(new Refusal("route-not-found", "The install serves no such sign-in route.")));
-        if (answer.status === 429) return problem(httpProblem(refusalOfRateLimit(answer)));
-        const refused = refusalOf(answer);
-        if (refused) return problem(httpProblem(new Refusal("sign-in-refused", SIGN_IN_REFUSED)), answer.headers);
+        if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
+        if (answer.status === 429) return answerRefused(refusalOfRateLimit(answer));
+        if (refusalOf(answer)) return answerRefused(new Refusal("sign-in-refused", SIGN_IN_REFUSED), answer.headers);
         return answer;
       } catch (error) {
         logger.error("sign-in service: a request to the sign-in service failed", { error });
@@ -663,12 +680,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
             "content-security-policy": PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", `form-action 'self' ${new URL(webUrl).origin}`),
           });
         }
-        if (request.method !== "POST") return problem(httpProblem(new Refusal("route-not-found", "There is no such page here.")));
+        if (request.method !== "POST") return refused(request, new Refusal("route-not-found", "There is no such page here."), TO_SIGN_IN);
         if (originOf(request.headers.get("origin")) !== options.url) {
-          return problem(httpProblem(new Refusal("forbidden", "A sign-in starts only from the sign-in page on the install's own URL, TIEHALL_URL.")));
+          return refused(request, new Refusal("forbidden", "A sign-in starts only from the sign-in page on the install's own URL, TIEHALL_URL."), TO_SIGN_IN);
         }
         const auth = await current();
-        if (auth === undefined) return problem(httpProblem(new Refusal("setup-required", "Setup is not complete.")));
+        if (auth === undefined) return refused(request, new Refusal("setup-required", "Setup is not complete."), TO_SIGN_IN);
         const back = returnPath(new URLSearchParams(await request.text()).get("return"));
         const started = await auth.api.signInSocial({
           body: { provider: "github", callbackURL: back, errorCallbackURL: SIGN_IN_PATH },
@@ -681,7 +698,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         for (const cookie of started.headers.getSetCookie()) answer.append("set-cookie", cookie);
         return new Response(null, { status: 303, headers: answer });
       } catch (error) {
-        if (error instanceof Refusal) return problem(httpProblem(error));
+        if (error instanceof Refusal) return refused(request, error, TO_SIGN_IN);
         logger.error("sign-in service: the sign-in page failed", { error });
         return problem(internalErrorProblem());
       }
@@ -689,7 +706,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
 
     async signOut(request) {
       try {
-        if (request.method !== "POST") return problem(httpProblem(new Refusal("route-not-found", "Sign out with the sign-out button of a page.")));
+        if (request.method !== "POST") return refused(request, new Refusal("route-not-found", "Sign out with the sign-out button of a page."), TO_HOME);
         const toSignIn = new Headers({ location: SIGN_IN_PATH, "cache-control": "no-store" });
         const session = cookieNames(request.headers).includes(sessionCookie) ? await this.session(request.headers).catch(() => undefined) : undefined;
         const auth = await current();
@@ -704,7 +721,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         for (const cookie of ended.headers.getSetCookie()) toSignIn.append("set-cookie", cookie);
         return new Response(null, { status: 303, headers: toSignIn });
       } catch (error) {
-        if (error instanceof Refusal) return problem(httpProblem(error));
+        if (error instanceof Refusal) return refused(request, error, TO_HOME);
         logger.error("sign-in service: a sign-out failed", { error });
         return problem(internalErrorProblem());
       }
@@ -719,7 +736,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       async start(request) {
         try {
           const auth = await current("setup");
-          if (auth === undefined) return problem(httpProblem(new Refusal("conflict", "Create the install's GitHub App first: sign-in goes through it.")));
+          if (auth === undefined) return refused(request, new Refusal("conflict", "Create the install's GitHub App first: sign-in goes through it."), TO_SETUP);
           const started = await auth.api.signInSocial({
             body: { provider: "github", callbackURL: "/", errorCallbackURL: SETUP_PATH },
             headers: request.headers,
@@ -731,7 +748,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           for (const cookie of started.headers.getSetCookie()) answer.append("set-cookie", cookie);
           return new Response(null, { status: 303, headers: answer });
         } catch (error) {
-          if (error instanceof Refusal) return problem(httpProblem(error));
+          if (error instanceof Refusal) return refused(request, error, TO_SETUP);
           logger.error("sign-in service: a sign-in from the setup screen could not start", { error });
           return problem(internalErrorProblem());
         }
@@ -740,11 +757,11 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       async callback(request) {
         try {
           const auth = await current("setup");
-          if (auth === undefined) return problem(httpProblem(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App.")));
+          if (auth === undefined) return refused(request, new Refusal("route-not-found", "There is no sign-in without the install's GitHub App."), TO_SETUP);
           const answer = await auth.handler(request);
-          if (answer.status === 404) return problem(httpProblem(new Refusal("route-not-found", "The install serves no such sign-in route.")));
-          if (answer.status === 429) return problem(httpProblem(refusalOfRateLimit(answer)));
-          if (refusalOf(answer)) return problem(httpProblem(new Refusal("forbidden", SETUP_SIGN_IN_REFUSED)), answer.headers);
+          if (answer.status === 404) return refused(request, new Refusal("route-not-found", "The install serves no such sign-in route."), TO_SETUP);
+          if (answer.status === 429) return refused(request, refusalOfRateLimit(answer), TO_SETUP);
+          if (refusalOf(answer)) return refused(request, new Refusal("forbidden", SETUP_SIGN_IN_REFUSED), TO_SETUP, answer.headers);
           return answer;
         } catch (error) {
           logger.error("sign-in service: GitHub's return to the setup screen's sign-in failed", { error });

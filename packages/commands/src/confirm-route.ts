@@ -3,7 +3,7 @@ import { canonicalJson, httpProblem, internalErrorProblem, quotePreamble, Refusa
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
 import type { Execute } from "./execute.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 
@@ -40,8 +40,10 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // signed in (D28 #66; requests: The proposal's confirm page).
 // Every answer, refusals included, sends a Content-Security-Policy with
 // frame-ancestors 'none', so no other site can frame the page and trick a
-// click; the pages run no script and load nothing. A refusal is an RFC 9457
-// problem (public-api: One error model for Tiehall's own refusals): 401 for
+// click; the pages run no script and load nothing. A refusal is a page for a
+// browser, which leads back to the review page, or to sign in, and an RFC
+// 9457 problem for every other client (public-api: One error model for
+// Tiehall's own refusals; html.ts): 401 for
 // a POST without a signed-in user, 404 for an action with no review page, 403
 // removed-member for a user who is no longer a member, whatever they send, 400
 // for input that fails its schema or is not JSON, 403 for a failed check or a
@@ -106,8 +108,10 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     const url = new URL(request.url);
     const { proposal, undo } = proposalPageOf(url.pathname);
     const commandId = proposal === undefined ? commandIdOf(url.pathname) : undo ? undoCommitment.id : confirmProposal.id;
+    // Where a refusal leads a browser on: back to the review page it asked for, or whose form it posted.
+    const back = { path: `${url.pathname}${url.search}` };
     try {
-      if (request.method === "POST") return await apply(request, commandId, proposal, undo);
+      if (request.method === "POST") return await apply(request, commandId, proposal, undo, back);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
       const caller = await options.session(request);
       // A browser without a session signs in first, and comes back to this page (agent-surfaces: A browser without a session is sent to sign-in).
@@ -119,7 +123,9 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       const fields = options.step.sealedFields(commandId);
       return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo, fields));
     } catch (error) {
-      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (error instanceof Refusal) {
+        return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : { href: back.path, text: "Back to the review page" });
+      }
       logger.error("confirm: the review page failed", { operationId: commandId, error });
       return problem(internalErrorProblem());
     }
@@ -132,10 +138,12 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   }
 
   /** Applies the action the review page's form posted: the action it reviewed, or, on a proposal's page, a rejection. */
-  async function apply(request: Request, commandId: string, proposal: string | undefined, undo: boolean): Promise<Response> {
+  async function apply(request: Request, commandId: string, proposal: string | undefined, undo: boolean, back: { path: string }): Promise<Response> {
     const caller = await signedIn(request);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
     const form = await formOf(request);
+    // A proposal's page is its own path; a command's review page is its path with the input its form posted.
+    if (proposal === undefined) back.path = `${CONFIRM_PATH}${commandId}?input=${encodeURIComponent(form.get("input") ?? "")}`;
     const rejecting = proposal !== undefined && !undo && form.get("action") === "reject";
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },

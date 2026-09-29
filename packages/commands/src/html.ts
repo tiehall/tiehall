@@ -1,3 +1,5 @@
+import type { HttpProblem } from "@tiehall/core";
+
 // The web role's own HTML pages, such as the setup screen and the review pages
 // of the confirmation step, render no raw HTML from anyone (design.md, Design
 // rules: Agent safety): every piece of text goes into the page escaped.
@@ -38,4 +40,67 @@ ${main}
   </body>
 </html>
 `;
+}
+
+// Refusals to browsers (public-api: One error model for Tiehall's own
+// refusals; github-layer-hardening: design.md, Decisions this change rests
+// on: D50 (7); Technical decisions: T5). On the routes that serve the web UI's
+// pages, the setup screen, the review pages and confirmations under
+// /confirm/… and GitHub's return to either sign-in callback, a refusal to a
+// request whose Accept header names text/html, as browsers send, is an HTML
+// page with the refusal's status: its title and detail in Tiehall's own words,
+// escaped, where the input fails its schema, the problem type in the markup,
+// and a link on. Every other request gets the RFC 9457 problem. Either answer
+// has the page headers' content security policy, so it cannot be framed, and
+// keeps the problem's own headers, such as Retry-After. One function decides
+// for every such route, as one function renders every page.
+
+/** Where a refusal page leads on: back to the page whose form was refused, to the page that was asked for, or to the sign-in page. */
+export interface WayOn {
+  href: string;
+  text: string;
+}
+
+/** The way on for a refused sign-in, or a browser that is not signed in. */
+export const TO_SIGN_IN: WayOn = { href: "/sign-in", text: "Go to the sign-in page" };
+
+/** Whether a request negotiates HTML on a page route: its Accept header names text/html, as browsers send. */
+export function acceptsHtml(request: Request): boolean {
+  return (request.headers.get("accept") ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
+}
+
+/** The page of a refusal: its title, its detail, where the input fails its schema, the way on and the problem type. */
+function refusalPage({ body }: HttpProblem, wayOn: WayOn): string {
+  const issues = body.errors ?? [];
+  return htmlPage(
+    body.title,
+    [
+      `      <h1>${escapeHtml(body.title)}</h1>`,
+      `      <p>${escapeHtml(body.detail)}</p>`,
+      ...(issues.length === 0
+        ? []
+        : [
+            "      <ul>",
+            ...issues.map(({ path, message }) => `        <li>${escapeHtml(path.length === 0 ? message : `${path.join(".")}: ${message}`)}</li>`),
+            "      </ul>",
+          ]),
+      `      <p><a href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`,
+      `      <p>Problem type: <code>${escapeHtml(body.type)}</code></p>`,
+    ].join("\n"),
+  );
+}
+
+/**
+ * Answers a refusal on a page route: the refusal's page for a request that
+ * negotiates HTML, the problem otherwise; with the problem's headers, any
+ * headers given, such as the cookies a sign-in's answer clears, and the page
+ * headers' content security policy.
+ */
+export function answerRefusal(request: Request, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): Response {
+  const answer = new Headers(problem.headers);
+  for (const cookie of headers.getSetCookie()) answer.append("set-cookie", cookie);
+  answer.set("content-security-policy", PAGE_HEADERS["content-security-policy"]);
+  if (!acceptsHtml(request)) return new Response(JSON.stringify(problem.body), { status: problem.status, headers: answer });
+  for (const [name, value] of Object.entries(PAGE_HEADERS)) answer.set(name, value);
+  return new Response(refusalPage(problem, wayOn), { status: problem.status, headers: answer });
 }

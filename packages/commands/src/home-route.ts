@@ -1,7 +1,7 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { MEMBERS_PATH } from "./admin-pages.ts";
 import type { WebSessionCaller } from "./caller.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 import { csrfTokenFor } from "./web-writes.ts";
@@ -12,7 +12,8 @@ import { csrfTokenFor } from "./web-writes.ts";
 // gets the web UI, with a link to the members page, from which an admin
 // reaches the admin pages, and the sign-out form, which carries the session's
 // CSRF token, as every web UI write does. A browser whose session a removal ended,
-// or whose user is not a member, gets 403 removed-member and no data. The page is plain HTML: no script, no
+// or whose user is not a member, gets 403 removed-member and no data, as a page for a browser and a problem
+// for every other client (html.ts). The page is plain HTML: no script, no
 // style from anywhere, no framing, and forms that post only to the install.
 
 export interface HomeRouteOptions {
@@ -47,7 +48,7 @@ export function createHomeRoute(options: HomeRouteOptions): HomeRoute {
         { headers: PAGE_HEADERS },
       );
     } catch (error) {
-      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), { href: "/", text: "Go to Tiehall's home page" });
       logger.error("home: the home page failed", { error });
       return problem(internalErrorProblem());
     }

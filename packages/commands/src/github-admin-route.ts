@@ -13,7 +13,7 @@ import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import type { Execute } from "./execute.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
 import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { isTrialUrl } from "./settings.ts";
@@ -45,8 +45,9 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // TIEHALL_URL and Sec-Fetch-Site: same-origin), and leads back to the page.
 // All run through execute(), so a member gets 403; a browser without a session
 // is sent to sign in first (D28 #66). The page runs no script, loads nothing,
-// and cannot be framed; refusals are RFC 9457 problems. The other admin pages
-// come with later tasks.
+// and cannot be framed; a refusal is a page for a browser, which leads back to
+// the page, or to sign in, and an RFC 9457 problem for every other client
+// (html.ts). The other admin pages come with later tasks.
 
 export interface GitHubAdminRouteOptions {
   execute: Execute;
@@ -84,7 +85,9 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
       const output = (await options.execute(listGitHubInstallations.id, caller, {}, { readOnly: true })) as { installations: Installation[] };
       return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId), options.url), { headers: PAGE_HEADERS });
     } catch (error) {
-      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (error instanceof Refusal) {
+        return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : { href: GITHUB_ADMIN_PATH, text: "Back to the GitHub page" });
+      }
       logger.error("github admin: the page failed", { error });
       return problem(internalErrorProblem());
     }
