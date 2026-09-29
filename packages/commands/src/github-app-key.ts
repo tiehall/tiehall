@@ -20,7 +20,8 @@ import { storeSecret } from "./integration-secrets.ts";
 // (github-app-reachability: design.md, Design rules: Moving to webhook mode).
 // Before it is stored, Tiehall checks it by asking GitHub for the App itself,
 // GET /app, with a JSON web token signed with the new key and issued by the
-// stored client id (design.md, Technical decisions: T1): the check needs no
+// stored client id (github-layer-hardening: design.md, Technical decisions:
+// T1): the check needs no
 // installation and uses none, so a key can be replaced while no installation
 // is connected. A file that is no private key, and a key GitHub does not
 // accept, such as one of another App or one deleted on GitHub, get 400 and are

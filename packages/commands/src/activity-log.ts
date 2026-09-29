@@ -20,8 +20,9 @@ import { resolveRequestKey } from "./request-keys.ts";
 // also shows the GitHub account that was refused, by its numeric id and the
 // login it had, read from the record the event names by its refusalId, which
 // is kept as long as the event, so the view names the account after the IP
-// address and user agent are gone (sign-in: Who may sign in; design.md,
-// Decisions this change rests on: D50 (5)). It is an admin action, so
+// address and user agent are gone (sign-in: Who may sign in;
+// github-layer-hardening: design.md, Decisions this change rests on:
+// D50 (5)). It is an admin action, so
 // execute() refuses it to a member with 403 and no agent surface offers it;
 // it reads and changes nothing.
 

@@ -41,7 +41,8 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 // job retries it, and a web action refuses as it does when GitHub fails.
 //
 // GitHub unavailable (public-api: One error model for Tiehall's own refusals;
-// design.md, Technical decisions: T2): a call that GitHub answers with a
+// github-layer-hardening: design.md, Technical decisions: T2): a call that
+// GitHub answers with a
 // status its caller gives no answer of its own for, such as a 5xx, a
 // rate-limit refusal or a refused manifest code, or does not answer within its
 // wait, throws one error, GitHubUnavailableError, whose message names the call
@@ -211,7 +212,8 @@ const APP = z.looseObject({ id: z.number().int().positive() });
 /**
  * Whether GitHub accepts these credentials as those of the App with this id,
  * such as a rotated private key before it is stored (self-host-install: A
- * rotated App key can be uploaded; design.md, Technical decisions: T1):
+ * rotated App key can be uploaded; github-layer-hardening: design.md,
+ * Technical decisions: T1):
  * Tiehall asks GitHub for the App itself, `GET /app`, with a JSON web token
  * signed with the key and issued by the client id. True when GitHub answers
  * with the App of this id; false when GitHub refuses the token with 401, as it

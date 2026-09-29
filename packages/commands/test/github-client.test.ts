@@ -187,7 +187,8 @@ describe("a GitHub that does not answer", () => {
 });
 
 // GitHub unavailable (public-api: One error model for Tiehall's own refusals;
-// design.md, Technical decisions: T2): when GitHub answers a call with a status
+// github-layer-hardening: design.md, Technical decisions: T2): when GitHub
+// answers a call with a status
 // its caller gives no answer of its own for, or not at all, the client throws
 // one error, which the actions that asked turn into 502
 // integration-unavailable. Its message is Tiehall's own words, which name
