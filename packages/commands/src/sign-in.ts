@@ -113,8 +113,10 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // while setup is incomplete, and, before it stores their web session, it
 // completes setup with them as the first admin (setup-completion.ts): a
 // completion that fails stores no session, and the operator is sent back to
-// the setup screen, which says why. Once setup is complete, /setup answers 404
-// and that instance is never reached again.
+// the setup screen, which says why; the user that sign-in created, if it
+// created one, goes with its link to the GitHub account, as for any refused
+// sign-in, and a user that existed before stays. Once setup is complete,
+// /setup answers 404 and that instance is never reached again.
 
 /** Where the sign-in service's own routes live, such as GitHub's return to the sign-in callback. */
 export const AUTH_BASE_PATH = "/api/auth";
@@ -374,12 +376,21 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
             ...(setup
               ? {
                   async before(session: { userId: string }, context: Parameters<typeof whereFrom>[0]) {
+                    const created = createdUsers.delete(session.userId);
                     try {
                       await completeSetup(
                         { database: options.database, github: installGitHub, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), logger },
                         { userId: session.userId, origin: whereFrom(context) },
                       );
                     } catch (error) {
+                      // A refused sign-in creates no Tiehall user: the one this sign-in created goes, with its link to the GitHub account.
+                      if (created) {
+                        try {
+                          await forgetCreatedUser(session.userId);
+                        } catch (failure) {
+                          logger.error("sign-in service: the user a sign-in from the setup screen created could not be removed", { error: failure });
+                        }
+                      }
                       if (!(error instanceof SetupCompletionError)) throw error;
                       logger.warn("sign-in service: setup could not be completed", { error, reason: error.code });
                       throw new APIError("FORBIDDEN", { code: error.code, message: error.message });
@@ -430,8 +441,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           create: { before: async () => ({ data: NO_USER_TOKEN }) },
           update: { before: async () => ({ data: NO_USER_TOKEN }) },
         },
-        // A sign-in that creates its person's user, which a refusal before the session is stored then removes.
-        ...(setup ? {} : { user: { create: { after: async (user: { id: string }) => void createdUsers.add(user.id) } } }),
+        // A sign-in that creates its person's user, which a refusal before the session is stored then removes, and so
+        // does a sign-in from the setup screen that could not complete setup.
+        user: { create: { after: async (user: { id: string }) => void createdUsers.add(user.id) } },
       },
       socialProviders: {
         github: {
@@ -498,6 +510,19 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
       { origin },
     );
+  }
+
+  /**
+   * Removes a user that a sign-in from the setup screen created, with its
+   * link to the GitHub account, when that sign-in could not complete setup.
+   * Setup is not complete, so nothing else refers to the user, and the
+   * activity log takes no event before setup completes.
+   */
+  async function forgetCreatedUser(userId: string): Promise<void> {
+    await options.database.transaction(async (tx) => {
+      await tx.delete(signInAccounts).where(eq(signInAccounts.userId, userId));
+      await tx.delete(users).where(eq(users.id, userId));
+    });
   }
 
   /** Records a refused GitHub account, and appends the refusal's security event, in the writer's transaction. */

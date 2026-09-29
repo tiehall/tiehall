@@ -24,11 +24,13 @@ let stub: GitHubStub;
 let server: AppServer | undefined;
 /** Whether the stub's listing of the App's installations fails, as GitHub out of reach would. */
 let listingFails = false;
+/** The numeric id of omar's GitHub account on the stub. */
+let omarAccountId: number;
 
 beforeEach(async () => {
   listingFails = false;
   stub = await startGitHubStub();
-  stub.addUser({ login: "omar" });
+  omarAccountId = stub.addUser({ login: "omar" }).id;
   stub.addUser({ login: "kim" });
   stub.addOrg({ login: "acme", members: { omar: "admin" } });
   stub.addRepo("acme/web");
@@ -120,6 +122,13 @@ async function members(install: AppServer): Promise<{ login: string; role: strin
     "SELECT u.github_login AS login, m.role FROM members m JOIN users u ON u.org_id = m.org_id AND u.id = m.user_id ORDER BY 1",
   );
   return rows;
+}
+
+async function userRecords(install: AppServer): Promise<{ users: number; accounts: number }> {
+  const { rows } = await install.owner.query<{ users: number; accounts: number }>(
+    "SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM sign_in_accounts) AS accounts",
+  );
+  return rows[0]!;
 }
 
 async function setupCompleted(install: AppServer): Promise<boolean> {
@@ -314,6 +323,27 @@ describe("the sign-in that completes setup", { timeout: 60_000 }, () => {
     expect((await browser(install).post("/setup/sign-in", {})).status).toBe(403);
   });
 
+  it("keeps a user that existed before the sign-in when GitHub cannot list the installations", async () => {
+    const install = await start();
+    const { operator, app } = await createApp(install);
+    await stub.install(app, { account: "acme" });
+    // Omar's user exists already, with its link to the GitHub account, as a sign-in before this one left it.
+    await install.owner.query(
+      "INSERT INTO users (org_id, id, github_account_id, github_login, sign_in_key) SELECT id, gen_random_uuid(), $1, 'omar', $2 FROM orgs",
+      [omarAccountId, `github:${omarAccountId}`],
+    );
+    await install.owner.query(
+      "INSERT INTO sign_in_accounts (org_id, id, user_id, provider_id, account_id) SELECT u.org_id, gen_random_uuid(), u.id, 'github', $1 FROM users u WHERE u.github_login = 'omar'",
+      [String(omarAccountId)],
+    );
+    listingFails = true;
+
+    expect((await signInFromSetup(operator, app, "omar")).status).toBe(302);
+
+    expect(await setupCompleted(install)).toBe(false);
+    expect(await userRecords(install)).toEqual({ users: 1, accounts: 1 });
+  });
+
   it("sends the operator back to the setup screen, with setup incomplete and no session, when GitHub cannot list the installations; a later sign-in completes it", async () => {
     const install = await start();
     const { operator, app } = await createApp(install);
@@ -327,6 +357,9 @@ describe("the sign-in that completes setup", { timeout: 60_000 }, () => {
     expect(await setupCompleted(install)).toBe(false);
     expect(await members(install)).toEqual([]);
     expect((await install.owner.query("SELECT count(*)::int AS rows FROM web_sessions")).rows).toEqual([{ rows: 0 }]);
+    // A refused sign-in creates no Tiehall user (sign-in: Who may sign in): the user and its link to the GitHub
+    // account that the sign-in created go with the failure.
+    expect(await userRecords(install)).toEqual({ users: 0, accounts: 0 });
     await expect((await operator.get("/setup?error=github_failed")).text()).resolves.toContain("GitHub could not be reached to list the App&#39;s installations");
 
     listingFails = false;
