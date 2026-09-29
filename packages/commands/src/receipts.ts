@@ -36,7 +36,7 @@ export interface ReceiptView {
 /** What an undo record says about a commitment: when it took effect, and who undid it, if anyone. */
 async function appliedOf({ tx, orgId }: OrgContext, proposalId: string) {
   const [row] = await tx
-    .select({ appliedAt: appliedCommitments.appliedAt, undoneBy: users.githubLogin })
+    .select({ appliedAt: appliedCommitments.appliedAt, undoneBy: users.githubLogin, undoneByBot: users.bot })
     .from(appliedCommitments)
     .leftJoin(users, and(eq(users.orgId, appliedCommitments.orgId), eq(users.id, appliedCommitments.undoneByUserId)))
     .where(and(eq(appliedCommitments.orgId, orgId), eq(appliedCommitments.proposalId, proposalId)));
@@ -57,10 +57,11 @@ export async function giveReceipts(
 }
 
 /** A receipt's facts from its proposal as it is now. */
-function factsOf(kind: ReceiptKind, proposal: ProposalView, undoneBy?: string | null): ReceiptFacts {
+function factsOf(kind: ReceiptKind, proposal: ProposalView, applied?: { undoneBy: string | null; undoneByBot: boolean | null }): ReceiptFacts {
+  const undoneBy = applied?.undoneBy;
   return {
     kind,
-    ...(undoneBy === undefined || undoneBy === null ? {} : { undoneBy }),
+    ...(undoneBy === undefined || undoneBy === null ? {} : { undoneBy, undoneByBot: applied?.undoneByBot === true }),
     commitment: proposal.kind,
     key: proposal.request.key,
     dueDate: proposal.change.dueDate,
@@ -89,7 +90,7 @@ export async function receiptViews(context: OrgContext, userId: string): Promise
     views.push({
       id: row.id,
       kind,
-      text: receiptSentence(factsOf(kind, proposal, applied?.undoneBy)),
+      text: receiptSentence(factsOf(kind, proposal, applied)),
       undoUntil: until === undefined ? null : until.toISOString(),
       createdAt: row.createdAt.toISOString(),
       proposal,
@@ -134,7 +135,7 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
                   ? undoUntil({ kind: proposal.kind as CommitmentKind, appliedAt: applied.appliedAt, undone: applied.undoneBy !== null })
                   : undefined,
               key: requestKey(proposal.request.key),
-              sentence: receiptSentence(factsOf(row.kind as ReceiptKind, proposal, applied?.undoneBy)),
+              sentence: receiptSentence(factsOf(row.kind as ReceiptKind, proposal, applied)),
             });
           }
           return found;

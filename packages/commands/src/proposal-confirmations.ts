@@ -20,7 +20,7 @@ import { and, eq } from "drizzle-orm";
 import type { ConfirmationSubjects, ReviewContext, ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { recordHumanAction } from "./loop-limit.ts";
-import { teamsOfMember } from "./members.ts";
+import { teamsOfMember, userName } from "./members.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { cancelProposals, lockPendingProposals, noSuchProposal, proposalView } from "./proposals.ts";
 import { giveReceipts } from "./receipts.ts";
@@ -302,12 +302,12 @@ export const PROPOSAL_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
     const lines: ReviewLine[] = [{ text: whatItDoes(view.kind, key, change, rules, stored?.baseRevision ?? null) }];
     if (change.packet !== undefined) lines.push({ quote: JSON.stringify(change.packet.untrusted, null, 2), origin });
     const through = view.proposedBy.actorKind === "web_session" ? "in the web UI" : `through an agent on the ${view.proposedBy.surface ?? "api"} surface`;
-    lines.push({ text: `${view.proposedBy.user.login} proposed it ${through}, as its accountable human.` });
+    lines.push({ text: `${userName(view.proposedBy.user)} proposed it ${through}, as its accountable human.` });
     if (view.untrusted.client !== null) lines.push({ quote: view.untrusted.client, origin: "external" });
     for (const needed of view.confirmations.needed) {
       const received = view.confirmations.received.find(({ step }) => step === needed.step);
-      const who = needed.step === "accountable_human" ? `${view.accountableHuman.login}, its accountable human` : otherSide(needed.rules, needed.team?.key, key);
-      lines.push({ text: `It needs a confirmation from ${who}: ${received === undefined ? "not given yet" : `given by ${received.user.login} at ${received.confirmedAt}`}.` });
+      const who = needed.step === "accountable_human" ? `${userName(view.accountableHuman)}, its accountable human` : otherSide(needed.rules, needed.team?.key, key);
+      lines.push({ text: `It needs a confirmation from ${who}: ${received === undefined ? "not given yet" : `given by ${userName(received.user)} at ${received.confirmedAt}`}.` });
     }
     lines.push({ text: view.state === "pending" ? `It expires at ${view.expiresAt}.` : `It is ${view.state}, so it takes no confirmation.` });
     return { title: `Confirm a proposal for ${key}`, lines };

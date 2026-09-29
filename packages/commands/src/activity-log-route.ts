@@ -6,6 +6,7 @@ import type { Execute } from "./execute.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { userName } from "./members.ts";
 
 // The activity log's page in the web UI, at /admin/activity-log
 // (activity-log: The admin view; activity-log: Security events are shown to
@@ -134,9 +135,9 @@ function actorText({ actor }: ActivityEvent): string {
       return `operator: ${actor.operatorCommand ?? ""}`;
     case "system":
     case "integration":
-      return [actor.kind, actor.surface, actor.user?.login].filter((part) => part !== undefined).join(" ");
+      return [actor.kind, actor.surface, actor.user === undefined ? undefined : userName(actor.user)].filter((part) => part !== undefined).join(" ");
     default:
-      return `${actor.user?.login ?? ""}${actor.user?.bot === true ? " (a bot user)" : ""} (${actor.kind}${actor.surface === undefined ? "" : `, ${actor.surface}`})`;
+      return `${actor.user === undefined ? "" : userName(actor.user)} (${actor.kind}${actor.surface === undefined ? "" : `, ${actor.surface}`})`;
   }
 }
 

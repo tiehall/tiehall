@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Caller, WebSessionCaller } from "../src/index.ts";
+import { signInCompleted } from "@tiehall/core";
+import { ACTIVITY_LOG_PATH, createActivityLogRoute, write, type Caller, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 
@@ -88,6 +89,23 @@ describe("an admin", () => {
   it("gets 404 for a user who is not a member of the install", async () => {
     const outsider = await addUser(install.owner, { role: null });
     expect(await setFlag(ada, outsider, true)).toMatchObject({ ok: false, problem: { status: 404 } });
+  });
+
+  it("finds the user marked as a bot where the activity log names them as the user an integration acted for", async () => {
+    await setFlag(ada, bot, true);
+    try {
+      await write(
+        { database: install.db, jobs: { send: async () => {} } },
+        { actorKind: "integration", userId: bot, surface: "github" },
+        (writer) => writer.record(signInCompleted, { userId: bot }),
+      );
+      const route = createActivityLogRoute({ execute: install.execute, session: async () => ada, logger: install.logger });
+      const page = await route(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?type=sign_in.completed`));
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain("integration github acme-ci-bot (a bot user)");
+    } finally {
+      await setFlag(ada, bot, false);
+    }
   });
 
   // whoami is built by task 16.5, which names the bot flag among what it returns.

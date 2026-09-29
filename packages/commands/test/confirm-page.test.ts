@@ -104,6 +104,19 @@ async function dueDateProposal() {
 }
 
 describe("the confirm page", () => {
+  it("marks a proposer and a confirmer who are bot users as bots wherever it names them (teams-and-roles: Bot users)", async () => {
+    const { proposal } = await dueDateProposal();
+    await install.owner.query("UPDATE users SET bot = true WHERE id = $1", [alice]);
+    try {
+      expect(await confirmOnPage(sessionOf(alice), proposal)).toBe(200);
+      const page = await openPage(sessionOf(bob), proposal);
+      expect(page.html).toContain("alice (a bot user) proposed it through an agent on the cli surface, as its accountable human.");
+      expect(page.html).toMatch(/It needs a confirmation from alice \(a bot user\), its accountable human: given by alice \(a bot user\) at \d{4}-/);
+    } finally {
+      await install.owner.query("UPDATE users SET bot = false WHERE id = $1", [alice]);
+    }
+  });
+
   it("shows the proposal in Tiehall's words, names who proposed it, and changes nothing", async () => {
     const { request, proposal } = await dueDateProposal();
     const before = await install.owner.query("SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM proposal_confirmations) AS confirmations");

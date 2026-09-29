@@ -4,6 +4,7 @@ import { members, signInBlocks, teamMembers, teams, users, webSessions } from "@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { userName } from "./members.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -53,7 +54,7 @@ async function memberRecord(
     .where(and(eq(members.orgId, orgId), eq(members.userId, userId)));
   const [row] = lock ? await query.for("update", { of: members }) : await query;
   if (row === undefined) throw new Refusal("record-not-found", "That person is not a member of the install.");
-  return { name: row.bot ? `${row.login} (a bot user)` : row.login, githubAccountId: row.githubAccountId, role: row.role as Role };
+  return { name: userName(row), githubAccountId: row.githubAccountId, role: row.role as Role };
 }
 
 /** The keys of the teams a member belongs to, in order. */

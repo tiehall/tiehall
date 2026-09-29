@@ -100,6 +100,18 @@ describe("undoing a decline", () => {
     expect((await undo(erin, decline)).status).toBe(409);
   });
 
+  it("by a bot user gets a receipt that marks the undoer as a bot (teams-and-roles: Bot users)", async () => {
+    const { key, decline } = await declinedByErin();
+    await install.owner.query("UPDATE users SET bot = true WHERE id = $1", [erin]);
+    try {
+      at("10:05:00");
+      expect((await undo(erin, decline)).status).toBe(200);
+      expect((await receiptsOf(erin, key)).at(-1)).toEqual({ kind: "undone", text: `The decline of ${key} was undone by erin (a bot user).`, undoUntil: null });
+    } finally {
+      await install.owner.query("UPDATE users SET bot = false WHERE id = $1", [erin]);
+    }
+  });
+
   it("is refused without a confirmation, and nothing changes", async () => {
     const { key, decline } = await declinedByErin();
     at("10:05:00");

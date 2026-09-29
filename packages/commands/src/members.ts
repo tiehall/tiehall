@@ -52,3 +52,12 @@ export async function teamsOfMember({ tx, orgId }: Pick<OrgContext, "tx" | "orgI
     .where(and(eq(teamMembers.orgId, orgId), eq(teamMembers.userId, userId)))
     .orderBy(asc(teams.key));
 }
+
+/**
+ * A user as a page or a server text names them: by their GitHub login, marked
+ * when an admin flagged them as a bot, so a bot is marked wherever the web UI
+ * names one (teams-and-roles: Bot users).
+ */
+export function userName(user: { login: string; bot: boolean }): string {
+  return user.bot ? `${user.login} (a bot user)` : user.login;
+}

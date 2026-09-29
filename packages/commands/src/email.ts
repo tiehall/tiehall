@@ -110,6 +110,8 @@ export interface ReceiptFacts {
   kind: "waits_for_other_side" | "took_effect" | "undone";
   /** For an undo, the login of the person who undid it. */
   undoneBy?: string | undefined;
+  /** For an undo, whether the person who undid it is a bot user, whom the sentence then marks as one (teams-and-roles: Bot users). */
+  undoneByBot?: boolean | undefined;
   commitment: string;
   /** The request's key now. */
   key: string;
@@ -130,8 +132,9 @@ export function receiptSentence(facts: ReceiptFacts): ServerText {
   const key = requestKey(facts.key);
   const dueDate = facts.dueDate === undefined || facts.dueDate === null ? facts.dueDate : calendarDay(facts.dueDate);
   if (facts.kind === "undone") {
-    const login = facts.undoneBy ?? "";
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(login)) throw new TypeError("A receipt names a user by their GitHub login.");
+    const undoneBy = facts.undoneBy ?? "";
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(undoneBy)) throw new TypeError("A receipt names a user by their GitHub login.");
+    const login = facts.undoneByBot === true ? `${undoneBy} (a bot user)` : undoneBy;
     switch (facts.commitment) {
       case "decline":
         return `The decline of ${key} was undone by ${login}.` as ServerText;
