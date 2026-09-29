@@ -2,6 +2,7 @@ import { ACTIVITY_LOG_DOWNLOADS, ACTIVITY_LOG_REVIEWS } from "./activity-log-exp
 import type { ConfirmDownloads } from "./confirm-route.ts";
 import type { ConfirmationSubjects, Reviews } from "./confirmation-step.ts";
 import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
+import { INVITE_REVIEWS } from "./invites.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
 import { UNDO_REVIEWS } from "./proposal-undo.ts";
@@ -13,6 +14,7 @@ import { WRITE_LIMIT_REVIEWS } from "./write-limits.ts";
 // step refuses to start while one is missing.
 export const REVIEWS: Reviews = {
   ...MEMBER_REVIEWS,
+  ...INVITE_REVIEWS,
   ...WRITE_LIMIT_REVIEWS,
   ...PROPOSAL_REVIEWS,
   ...UNDO_REVIEWS,

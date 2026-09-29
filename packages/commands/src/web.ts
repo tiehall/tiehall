@@ -8,6 +8,7 @@ import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
 import { HANDLERS } from "./handlers.ts";
+import { createInstallGitHub } from "./install-github.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -73,6 +74,8 @@ function servicesOf(env: Environment): Services {
   // The sign-in service opens the GitHub App's stored client secret with TIEHALL_SECRET_KEY, read when it is first built.
   let box: SecretBox | undefined;
   const secrets = () => (box ??= openSecretBox(readSecretKey(env)));
+  // The install's GitHub App, which the operations that ask GitHub, such as creating an invite, call it as.
+  const github = createInstallGitHub({ database, secrets, logger });
   const signIn = createSignInService({
     database,
     url: installUrl(env["TIEHALL_URL"] ?? ""),
@@ -86,7 +89,7 @@ function servicesOf(env: Environment): Services {
     database,
     secrets,
     signIn,
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
+    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS, github }),
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     logger,
   };

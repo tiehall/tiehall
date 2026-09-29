@@ -42,7 +42,14 @@
             "case": "makes the member an admin, and the activity log gains a security event naming the admin, the member and the new role"
           }
         },
-        { "action": "an invite", "pending": "9.5" },
+        {
+          "action": "an invite",
+          "event": "invite.created",
+          "test": {
+            "file": "packages/commands/test/invites.test.ts",
+            "case": "is bound to the GitHub account the username names, with the role member, expires 7 days after it is created, and is a security event"
+          }
+        },
         { "action": "the revocation of an invite", "pending": "9.6" },
         {
           "action": "a member's removal by an admin, with the block it records",

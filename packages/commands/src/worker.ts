@@ -99,25 +99,25 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   });
   const database = openAppDatabase(options.connection, { applicationName: "tiehall worker", logger, role: "worker" });
   const now = options.clock ?? (() => new Date());
+  const github =
+    options.secrets === undefined
+      ? undefined
+      : createInstallGitHub({
+          database,
+          secrets: options.secrets,
+          ...(options.github?.apiUrl === undefined ? {} : { apiUrl: options.github.apiUrl }),
+          ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
+          logger,
+        });
   const services: WorkerServices = {
     database,
     now,
     jobs: queue,
     // The worker's own execute(), for the changes jobs and integration events make.
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs: queue }, now }),
+    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs: queue }, now, ...(github === undefined ? {} : { github }) }),
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
-    ...(options.secrets === undefined
-      ? {}
-      : {
-          github: createInstallGitHub({
-            database,
-            secrets: options.secrets,
-            ...(options.github?.apiUrl === undefined ? {} : { apiUrl: options.github.apiUrl }),
-            ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
-            logger,
-          }),
-        }),
+    ...(github === undefined ? {} : { github }),
   };
   let stopping = false;
   /** Jobs whose handler is running, by id, with their queue. */

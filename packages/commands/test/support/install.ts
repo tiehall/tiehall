@@ -23,6 +23,7 @@ import {
   type Database,
   type Logger,
   type Execute,
+  type InstallGitHub,
   type JobData,
   type RestHandler,
   type WebCommands,
@@ -77,6 +78,12 @@ export interface TestInstall {
    * another call; a page that is refused is answered as it was.
    */
   prepareConfirmation(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<() => Promise<Response>>;
+  /**
+   * Makes the operations that call GitHub, such as creating an invite, reach
+   * it as this App, such as one a test stored from the GitHub stub; until
+   * then the install has no App to call GitHub as.
+   */
+  useGitHub(github: InstallGitHub): void;
   close(): Promise<void>;
 }
 
@@ -102,7 +109,17 @@ export async function startTestInstall(
   const sentJobs: { queue: string; data: JobData }[] = [];
   const store = { database: db, jobs: { send: async (_tx: unknown, queue: string, data: JobData) => void sentJobs.push({ queue, data }) } };
   const subjects = CONFIRMATION_SUBJECTS;
-  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects, ...(options.now === undefined ? {} : { now: options.now }) });
+  let installGitHub: InstallGitHub | undefined;
+  const github: InstallGitHub = { app: () => installGitHub?.app() ?? Promise.resolve(undefined) };
+  const execute = createExecute({
+    catalog: CATALOG,
+    handlers: HANDLERS,
+    store,
+    confirmations,
+    subjects,
+    github,
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
     createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
@@ -141,6 +158,9 @@ export async function startTestInstall(
     confirmRouteFor,
     confirm: async (caller, commandId, input, headers) => (await prepareConfirmation(caller, commandId, input, headers))(),
     prepareConfirmation,
+    useGitHub(value) {
+      installGitHub = value;
+    },
     async close() {
       await db.$client.end();
       await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);

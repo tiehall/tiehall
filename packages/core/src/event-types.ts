@@ -290,6 +290,22 @@ export const memberJoined = defineEventType({
 });
 
 /**
+ * An admin invited a person by their GitHub username (teams-and-roles:
+ * Invites by GitHub username; activity-log: Which actions are security
+ * events). It names the invite, which holds the GitHub account it is bound
+ * to, and the role it gives; its provenance names the admin, whose web
+ * session confirmed it.
+ */
+export const inviteCreated = defineEventType({
+  type: "invite.created",
+  class: "security",
+  fields: {
+    inviteId: { kind: "id", of: "invite" },
+    role: { kind: "enum", values: ROLES },
+  },
+});
+
+/**
  * An admin changed the install's daily budget of agent writes (agent-safety:
  * Agent writes are limited per token and budgeted per install; activity-log:
  * Which actions are security events). It names the budget before and after;
@@ -431,6 +447,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   memberRoleChanged,
   memberRemoved,
   memberJoined,
+  inviteCreated,
   writeBudgetChanged,
   trustStateReconciled,
   activityLogExported,

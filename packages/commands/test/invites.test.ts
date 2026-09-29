@@ -1,0 +1,197 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
+import type { Caller, WebSessionCaller } from "../src/index.ts";
+import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { addUser } from "./support/members.ts";
+import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
+
+// Invites by GitHub username (teams-and-roles: Invites by GitHub username;
+// sign-in: Who may sign in; activity-log: Which actions are security events;
+// agent-safety: Actions that need the confirmation step; design.md,
+// Self-hosting decisions: S5 and S7). An admin invites a person by their
+// GitHub username, in the web UI, with the confirmation step. When the invite
+// is created, Tiehall resolves the username to the GitHub account's numeric
+// id through GitHub's API and binds the invite to that account, so it follows
+// a login rename and never passes to a new holder of the old login; a username
+// that names no account gets 404 and creates no invite. The invite names a
+// role, `member` unless it names `admin`, expires 7 days after it is created,
+// and needs no email: the invitee accepts it by signing in with that account
+// while it is valid. Each invite is a security event.
+
+let install: TestInstall;
+let stub: GitHubStub;
+let harness: SignInHarness;
+let ada: WebSessionCaller;
+let dana: WebSessionCaller;
+const accounts = new Map<string, StubUser>();
+
+beforeAll(async () => {
+  install = await startTestInstall();
+  stub = await startGitHubStub();
+  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev"]) accounts.set(login, stub.addUser({ login }));
+  stub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
+  harness = await startSignIn(install, stub);
+  await stub.install(harness.app, { account: "acme" });
+  await harness.connect("acme");
+  install.useGitHub(harness.github);
+  ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
+  dana = { kind: "web_session", userId: await addUser(install.owner, { role: "member", login: "dana" }), sessionId: randomUUID() };
+}, 60_000);
+
+afterAll(async () => {
+  await stub?.close();
+  await install?.close();
+});
+
+let lastEvent: number;
+beforeEach(async () => {
+  lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+});
+
+interface InviteRow {
+  id: string;
+  github_account_id: string;
+  github_login: string;
+  role: string;
+  created_by: string;
+  lifetime: string;
+  accepted_at: Date | null;
+}
+
+async function invitesFor(login: string): Promise<InviteRow[]> {
+  const { rows } = await install.owner.query<InviteRow>(
+    `SELECT id, github_account_id, github_login, role, created_by, (expires_at - created_at)::text AS lifetime, accepted_at
+       FROM invites WHERE lower(github_login) = lower($1) ORDER BY created_at`,
+    [login],
+  );
+  return rows;
+}
+
+async function eventsSince(): Promise<{ type: string; class: string; data: Record<string, unknown>; actor_user_id: string | null }[]> {
+  const { rows } = await install.owner.query("SELECT type, class, data, actor_user_id FROM events WHERE number > $1 ORDER BY number", [lastEvent]);
+  return rows;
+}
+
+async function problemOf(answer: Response): Promise<{ status: number; type: unknown }> {
+  const body = (await answer.text()).trim();
+  return { status: answer.status, type: body.startsWith("{") ? (JSON.parse(body) as { type?: unknown }).type : undefined };
+}
+
+async function roleOf(login: string): Promise<string | undefined> {
+  const { rows } = await install.owner.query<{ role: string }>(
+    "SELECT m.role FROM members m JOIN users u ON u.org_id = m.org_id AND u.id = m.user_id WHERE u.github_login = $1",
+    [login],
+  );
+  return rows[0]?.role;
+}
+
+describe("an invite an admin confirms", () => {
+  it("is bound to the GitHub account the username names, with the role member, expires 7 days after it is created, and is a security event", async () => {
+    const answer = await install.confirm(ada, "invites.create", { login: "lee-dev" });
+    expect(answer.status).toBe(200);
+    const [created] = await invitesFor("lee-dev");
+    expect(created).toMatchObject({
+      github_account_id: String(accounts.get("lee-dev")!.id),
+      github_login: "lee-dev",
+      role: "member",
+      created_by: ada.userId,
+      lifetime: "7 days",
+      accepted_at: null,
+    });
+    expect(await eventsSince()).toEqual([
+      { type: "invite.created", class: "security", data: { inviteId: created!.id, role: "member" }, actor_user_id: ada.userId },
+    ]);
+  });
+
+  it("that names the role admin makes the invitee an admin when they sign in, with no email sent", async () => {
+    expect((await install.confirm(ada, "invites.create", { login: "sam-dev", role: "admin" })).status).toBe(200);
+    expect((await invitesFor("sam-dev"))[0]).toMatchObject({ role: "admin" });
+    expect(install.sentJobs.filter(({ queue }) => queue.includes("email"))).toEqual([]);
+    expect((await harness.signIn("sam-dev")).response.status).toBe(302);
+    expect(await roleOf("sam-dev")).toBe("admin");
+  });
+
+  it("shows on its review page, in Tiehall's words, whom it invites and with which role", async () => {
+    const input = encodeURIComponent(JSON.stringify({ login: "tom-dev", role: "admin" }));
+    const page = await install.confirmRoute(ada)(new Request(`${URL_OF_INSTALL}/confirm/invites.create?input=${input}`));
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("Invite the GitHub account tom-dev to the install, with the role admin.");
+    expect(html).toContain("expires 7 days after it is created");
+    expect(await invitesFor("tom-dev")).toEqual([]);
+  });
+});
+
+describe("a username", () => {
+  it("that names no GitHub account gets 404 and an RFC 9457 problem, and creates no invite", async () => {
+    const answer = await install.confirm(ada, "invites.create", { login: "no-such-user-9f2" });
+    expect(await problemOf(answer)).toEqual({ status: 404, type: "https://tiehall.com/problems/record-not-found" });
+    expect(await invitesFor("no-such-user-9f2")).toEqual([]);
+    expect(await eventsSince()).toEqual([]);
+  });
+
+  it("that names a GitHub organization, not a person's account, gets 404 and creates no invite", async () => {
+    const answer = await install.confirm(ada, "invites.create", { login: "acme" });
+    expect((await problemOf(answer)).status).toBe(404);
+    expect(await invitesFor("acme")).toEqual([]);
+  });
+
+  it("is looked up with an installation token of the install's App", async () => {
+    const from = stub.received.length;
+    expect((await install.confirm(ada, "invites.create", { login: "uma-dev" })).status).toBe(200);
+    const lookups = stub.received.slice(from).filter(({ path }) => path === "/users/uma-dev");
+    expect(lookups.map(({ token }) => token?.kind)).toEqual(["installation"]);
+  });
+});
+
+describe("the invite", () => {
+  it("follows a login rename: Lee, renamed to lee-k, still joins through it", async () => {
+    stub.renameUser("lee-dev", "lee-k");
+    const { response } = await harness.signIn("lee-k");
+    expect(response.status).toBe(302);
+    expect(await roleOf("lee-k")).toBe("member");
+    expect((await invitesFor("lee-dev"))[0]?.accepted_at).not.toBeNull();
+  });
+
+  it("gives a new holder of the old login nothing, and stays valid for its account until it expires", async () => {
+    expect((await install.confirm(ada, "invites.create", { login: "vic-dev" })).status).toBe(200);
+    stub.renameUser("vic-dev", "vic-k");
+    stub.addUser({ login: "vic-dev" });
+    expect((await harness.signIn("vic-dev")).response.status).toBe(403);
+    expect((await invitesFor("vic-dev"))[0]).toMatchObject({ github_account_id: String(accounts.get("vic-dev")!.id), accepted_at: null });
+    expect((await harness.signIn("vic-k")).response.status).toBe(302);
+    expect(await roleOf("vic-k")).toBe("member");
+  });
+});
+
+describe("creating an invite", () => {
+  it("without the confirmation step gets 403, and creates no invite", async () => {
+    const result = await install.web(ada).write("invites.create", { login: "zed-dev" }, install.fromThePage(ada));
+    expect(result).toMatchObject({ ok: false, problem: { status: 403, type: "https://tiehall.com/problems/confirmation-required" } });
+    expect(await invitesFor("zed-dev")).toEqual([]);
+  });
+
+  it("by a member gets 403, and creates no invite", async () => {
+    stub.addUser({ login: "zoe-dev" });
+    const answer = await install.confirm(dana, "invites.create", { login: "zoe-dev" });
+    expect((await problemOf(answer)).status).toBe(403);
+    expect(await invitesFor("zoe-dev")).toEqual([]);
+  });
+
+  it("that names the role owner gets 400", async () => {
+    const answer = await install.confirm(ada, "invites.create", { login: "zoe-dev", role: "owner" });
+    expect(await problemOf(answer)).toEqual({ status: 400, type: "https://tiehall.com/problems/invalid-input" });
+  });
+
+  it("for a person who is already a member gets 409, and creates no invite", async () => {
+    const answer = await install.confirm(ada, "invites.create", { login: "sam-dev" });
+    expect(await problemOf(answer)).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+    expect(await invitesFor("sam-dev")).toHaveLength(1);
+  });
+
+  it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
+    const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
+    await expect(install.execute("invites.create", token, { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
+  });
+});

@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { users } from "@tiehall/db";
+import type { GitHubClient } from "./github-client.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // GitHub users as Tiehall users (sign-in: One Tiehall user per GitHub account;
@@ -19,4 +21,38 @@ export async function userOfGitHubAccount({ tx, orgId }: Pick<OrgContext, "tx" |
     .from(users)
     .where(and(eq(users.orgId, orgId), eq(users.githubAccountId, id)));
   return row?.id;
+}
+
+/** A GitHub account as GitHub's API names it: its numeric id, its login now, and whether it is a person's or an organization's. */
+export interface GitHubAccount {
+  id: number;
+  login: string;
+  type: "User" | "Organization";
+}
+
+const ACCOUNT = z.object({ id: z.number().int().positive(), login: z.string().min(1), type: z.string() });
+
+/** How long Tiehall waits for GitHub to name an account. */
+const LOOKUP_TIMEOUT_MS = 10_000;
+
+/**
+ * The GitHub account a login names now, as GitHub's API gives it to one of
+ * the App's installations, with that installation's token (teams-and-roles:
+ * Invites by GitHub username); undefined when GitHub knows no account by
+ * that login, or one of a kind that is neither a person's nor an
+ * organization's. It throws when GitHub does not answer.
+ */
+export async function gitHubAccountNamed(client: GitHubClient, installationId: number, login: string): Promise<GitHubAccount | undefined> {
+  let data: unknown;
+  try {
+    ({ data } = await client
+      .installation(installationId)
+      .request("GET /users/{username}", { username: login, request: { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) } }));
+  } catch (error) {
+    if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
+    throw error;
+  }
+  const account = ACCOUNT.safeParse(data);
+  if (!account.success || (account.data.type !== "User" && account.data.type !== "Organization")) return undefined;
+  return { id: account.data.id, login: account.data.login, type: account.data.type };
 }

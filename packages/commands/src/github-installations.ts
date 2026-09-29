@@ -262,6 +262,26 @@ export async function coveringInstallation(
   return row;
 }
 
+/**
+ * An installation of the App to ask GitHub a question through that concerns
+ * no organization in particular, such as which account a login names, by
+ * GitHub's id: a connected one that is neither suspended nor deleted, or, when
+ * none is, any other that is neither; undefined when the App has none.
+ */
+export async function anyLiveInstallation({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number): Promise<number | undefined> {
+  const [row] = await tx
+    .select({ installationId: githubInstallations.installationId })
+    .from(githubInstallations)
+    .leftJoin(
+      githubConnectedInstallations,
+      and(eq(githubConnectedInstallations.orgId, githubInstallations.orgId), eq(githubConnectedInstallations.installationId, githubInstallations.id)),
+    )
+    .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.appId, appId), isNull(githubInstallations.suspendedAt), isNull(githubInstallations.deletedAt)))
+    .orderBy(sql`${githubConnectedInstallations.installationId} IS NULL`, asc(githubInstallations.installationId))
+    .limit(1);
+  return row?.installationId;
+}
+
 /** The connected installations of the App whose repositories are read: those neither suspended nor deleted. */
 async function liveConnectedInstallations(
   { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,

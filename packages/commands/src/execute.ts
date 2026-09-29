@@ -3,6 +3,7 @@ import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
+import type { InstallGitHub } from "./install-github.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
 import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
 import type { RequestRow } from "./request-views.ts";
@@ -74,6 +75,12 @@ export interface HandlerContext extends OrgContext {
   /** The clock of this call, which the limits on agent writes count by. */
   now(): Date;
   /**
+   * The install's GitHub App, for the few operations that must ask GitHub
+   * before they change anything, such as resolving an invite's username;
+   * undefined where the process has none.
+   */
+  readonly github: InstallGitHub | undefined;
+  /**
    * Runs a change in the call's transaction, with the event that records it
    * and the caller's provenance, to which the handler adds the team the user
    * acted for, which it decides from the record, never from the payload.
@@ -134,6 +141,8 @@ export interface ExecuteServices {
   subjects?: ConfirmationSubjects;
   /** The clock the limits on agent writes are counted by; the system clock unless a test controls it. */
   now?: () => Date;
+  /** The install's GitHub App, which the operations that ask GitHub call it as. */
+  github?: InstallGitHub;
 }
 
 export interface ExecuteOptions {
@@ -247,6 +256,7 @@ export function createExecute(services: ExecuteServices): Execute {
           member,
           provenance,
           now,
+          github: services.github,
           write: (change, { teamId } = {}) =>
             writeIn(
               context,

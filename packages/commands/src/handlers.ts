@@ -3,6 +3,7 @@ import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
 import { GITHUB_INSTALLATION_HANDLERS } from "./github-installation-changes.ts";
+import { INVITE_HANDLERS } from "./invites.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
 import { PACKET_HANDLERS } from "./packets.ts";
@@ -21,6 +22,7 @@ import { WRITE_LIMIT_HANDLERS } from "./write-limits.ts";
 // adds its handler here; execute() refuses to start while one is missing.
 export const HANDLERS: Handlers = {
   ...MEMBER_HANDLERS,
+  ...INVITE_HANDLERS,
   ...TEAM_HANDLERS,
   ...USER_HANDLERS,
   ...REQUEST_HANDLERS,
