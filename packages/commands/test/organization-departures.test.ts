@@ -275,6 +275,13 @@ describe("the reconciliation", () => {
     expect(await removals(lee)).toEqual([]);
   });
 
+  it("removes no one when GitHub lists only the organization's public members to a token issued with the Members permission, as it may after an owner removes that permission", async () => {
+    const lee = await join("lee-acme");
+    await reconcileThrough({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }] });
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
+  });
+
   it("removes no one while another organization holds the organization's login, as after a rename, before the listing reads the new one", async () => {
     const lee = await join("lee-acme");
     await reconcileThrough({ org: "acme", publicMembers: [{ login: "mallory", id: 999_001 }], loginNowNames: 999_000 });

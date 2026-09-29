@@ -32,7 +32,11 @@ import type { OrgContext } from "./with-org.ts";
 // anything of the installation's organization. So a lookup counts only when
 // the token GitHub issued carries the Members permission and the login still
 // names the installation's organization, by its account's numeric id, and the
-// check's redirect is never followed.
+// check's redirect is never followed. A member list counts only when GitHub
+// also answers the check of a member it lists with 204, as it answers only a
+// requester that sees the members: the client keeps a token, with the
+// permissions GitHub issued it with, for up to an hour, and nothing in a list
+// says whether it holds the public members only.
 
 /** What GitHub reports of an account's membership of an organization. */
 export type OrganizationReport = "member" | "not_member" | "unknown";
@@ -48,7 +52,7 @@ export interface OrganizationInstallation {
   organizationLogin: string;
 }
 
-const MEMBER = z.object({ id: z.number().int().positive() });
+const MEMBER = z.object({ id: z.number().int().positive(), login: z.string().min(1) });
 
 /** An installation token as the client holds it, with the permissions GitHub issued it with. */
 const INSTALLATION_TOKEN = z.object({ permissions: z.record(z.string(), z.string()) });
@@ -103,15 +107,14 @@ export async function workingOrganizationInstallations(
 }
 
 /**
- * What GitHub reports of whether the account with this login, as GitHub gave
- * it just now, is a member of the installation's organization, asked with that
- * installation's own token.
+ * What GitHub's membership check answers of the account with this login:
+ * 204 for a member and 404 for anyone else, to a requester that sees the
+ * organization's members; its 302, to the public members, which it answers a
+ * requester that sees them only, is not followed, and is no report.
  */
-export async function organizationMembership(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
+async function membershipCheck(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
   let status: number;
   try {
-    if (!(await seesMembers(client, installation))) return "unknown";
-    // GitHub answers 204 for a member and 404 for anyone else; its 302 goes to the public members, and is not followed.
     ({ status } = await client
       .installation(installation.installationId)
       .request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login, request: { redirect: "manual" } }));
@@ -122,10 +125,27 @@ export async function organizationMembership(client: GitHubClient, installation:
 }
 
 /**
+ * What GitHub reports of whether the account with this login, as GitHub gave
+ * it just now, is a member of the installation's organization, asked with that
+ * installation's own token.
+ */
+export async function organizationMembership(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
+  try {
+    if (!(await seesMembers(client, installation))) return "unknown";
+  } catch {
+    return "unknown";
+  }
+  return membershipCheck(client, installation, login);
+}
+
+/**
  * The numeric ids of every member of the installation's organization, as
  * GitHub lists them to that installation, 100 at a time; it throws when
  * GitHub does not give the whole list, as when it would list the public
- * members only.
+ * members only. The list itself cannot tell: so GitHub's check of the first
+ * member it lists must report them a member, which GitHub answers only a
+ * requester that sees the organization's members, whatever permissions the
+ * token was issued with.
  */
 export async function organizationMemberIds(client: GitHubClient, installation: OrganizationInstallation): Promise<Set<number>> {
   if (!(await seesMembers(client, installation))) throw new Error("GitHub does not show the installation its organization's whole member list.");
@@ -133,9 +153,10 @@ export async function organizationMemberIds(client: GitHubClient, installation: 
     org: installation.organizationLogin,
     per_page: 100,
   });
-  const ids = new Set<number>();
-  for (const page of pages) {
-    for (const member of z.array(MEMBER).parse(page)) ids.add(member.id);
+  const members = pages.flatMap((page) => z.array(MEMBER).parse(page));
+  const first = members[0];
+  if (first === undefined || (await membershipCheck(client, installation, first.login)) !== "member") {
+    throw new Error("GitHub listed the installation its organization's public members only.");
   }
-  return ids;
+  return new Set(members.map(({ id }) => id));
 }

@@ -37,6 +37,8 @@ let world: {
   acmeIsNow: number;
   /** GitHub answers the membership check with 302 whatever the requester may see. */
   alwaysRedirects: boolean;
+  /** GitHub serves the token the public members only, whatever permissions it was issued with, as it may once an owner removed the Members permission. */
+  publicOnly: boolean;
 };
 
 let server: Server;
@@ -52,7 +54,8 @@ beforeAll(async () => {
     const url = new URL(request.url ?? "/", "http://localhost");
     const members = world.acmeIsNow === ACME_ID ? MEMBERS : OTHER_MEMBERS;
     // The token may see acme's members only with the Members permission, and only while acme is its organization.
-    const seesMembers = world.acmeIsNow === ACME_ID && (world.permissions["members"] === "read" || world.permissions["members"] === "write");
+    const seesMembers =
+      world.acmeIsNow === ACME_ID && !world.publicOnly && (world.permissions["members"] === "read" || world.permissions["members"] === "write");
     if (request.method === "POST" && /^\/app\/installations\/\d+\/access_tokens$/.test(url.pathname)) {
       send(response, 201, { token: "ghs_organizations", expires_at: new Date(Date.now() + 3_600_000).toISOString(), permissions: world.permissions });
       return;
@@ -95,7 +98,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  world = { permissions: { members: "read", metadata: "read" }, acmeIsNow: ACME_ID, alwaysRedirects: false };
+  world = { permissions: { members: "read", metadata: "read" }, acmeIsNow: ACME_ID, alwaysRedirects: false, publicOnly: false };
 });
 
 const { privateKey } = generateKeyPairSync("rsa", {
@@ -137,6 +140,22 @@ describe("asked through a token GitHub issued without the Members permission", (
   });
 
   it("gives no member list, since GitHub lists the public members only", async () => {
+    await expect(organizationMemberIds(client(), installation)).rejects.toThrow();
+  });
+});
+
+describe("asked through a token issued with the Members permission, while GitHub serves it the public members only", () => {
+  // As it may for a token issued before an owner removed the permission, which the client keeps for up to an hour.
+  beforeEach(() => {
+    world.publicOnly = true;
+  });
+
+  it("gives no report of a public member, nor that a private member is not one", async () => {
+    expect(await organizationMembership(client(), installation, "omar")).toBe("unknown");
+    expect(await organizationMembership(client(), installation, "ana")).toBe("unknown");
+  });
+
+  it("gives no member list: GitHub answers the check of a member it listed with 302, as to a requester that sees the public members only", async () => {
     await expect(organizationMemberIds(client(), installation)).rejects.toThrow();
   });
 });
