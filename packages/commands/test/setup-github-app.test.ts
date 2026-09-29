@@ -336,6 +336,20 @@ describe("GitHub's return with the code", () => {
     expect(createForm(next.html)).toBeUndefined();
   });
 
+  // The exchange of the manifest's code carries no credential (agent-access: Outbound calls use Tiehall's own
+  // credentials): the App does not exist before GitHub converts the code, and GitHub asks for none.
+  it("exchanges the manifest's code with no credential: the conversion carries no Authorization header", async () => {
+    const cookie = await setupSession(INSTALL);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    expect((await returnFromGitHub(INSTALL, location!, cookie)).status).toBe(303);
+
+    const recorded = conversions();
+    expect(recorded.map(({ method, status }) => `${method} ${status}`)).toEqual(["POST 201"]);
+    expect(recorded[0]!.headers).not.toHaveProperty("authorization");
+    expect(recorded[0]!.headers).not.toHaveProperty("cookie");
+    expect(recorded[0]!.token).toBeUndefined();
+  });
+
   it("stores an App on the operator's personal account as owned by a user", async () => {
     const cookie = await setupSession(INSTALL);
     const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie)).html)!);

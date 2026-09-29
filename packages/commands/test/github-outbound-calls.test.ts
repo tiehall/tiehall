@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
+import { startGitHubStub, type GitHubStub, type RecordedRequest } from "@tiehall/testing/github";
 import {
   createInstallGitHub,
   processDelivery,
@@ -25,8 +25,10 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // every other endpoint with an installation token. The one call made with a
 // user's token is the sign-in's own, which reads who signed in with the token
 // of that sign-in and nothing else (sign-in: Tiehall keeps no GitHub user
-// token). A token a client presented to Tiehall never reaches GitHub, nor does
-// a web session's cookie.
+// token). The App's client secret goes only into the sign-in's exchange of its
+// code for that token, on GitHub's web host (github-layer-hardening: D50 (1)).
+// A token a client presented to Tiehall never reaches GitHub, nor does a web
+// session's cookie.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -109,7 +111,52 @@ describe("the calls Tiehall makes to GitHub's API", () => {
     }
     expect(stub.received.slice(from).some(({ token }) => token?.kind === "user")).toBe(false);
   });
+
+  // The App's client id and client secret serve one call only: the exchange of a sign-in's code for that sign-in's
+  // user token, on GitHub's web host. Every other call carries the App's JWT, an installation token or the
+  // sign-in's own user token, and never the secret.
+  it("carry the App's client secret only in the sign-in's exchange of its code for its user token", async () => {
+    const from = stub.received.length;
+    const signedIn = await harness.signIn("ana-k");
+    expect(signedIn.response.status).toBe(302);
+
+    // Then Tiehall lists the App's installations and reads a pull request through one of them.
+    const acme = await stub.install(harness.app, { account: "acme" }, { delivery: "none" });
+    const pull = await stub.openPullRequest("acme/web", { title: "Dark mode toggle", head: "fe-142-dark-mode", author: "ana-k" }, { delivery: "none" });
+    const access = (await github.app())!;
+    await readInstallations({ database: install.db, app: access });
+    const read = await access.client.installation(acme.id).request("GET /repos/{owner}/{repo}/pulls/{pull_number}", { owner: "acme", repo: "web", pull_number: pull.number });
+    expect(read.status).toBe(200);
+
+    const calls = stub.received.slice(from);
+    expect(calls.map(({ host, method, path }) => `${host} ${method} ${path}`)).toEqual(
+      expect.arrayContaining(["api GET /app/installations", `api GET /repos/acme/web/pulls/${pull.number}`]),
+    );
+    const secret = harness.app.clientSecret;
+    expect(calls.filter((call) => carries(call, secret)).map(({ host, method, path, status }) => `${host} ${method} ${path} ${status}`)).toEqual([
+      "web POST /login/oauth/access_token 200",
+    ]);
+  });
 });
+
+/**
+ * Whether a request the stub recorded carries this value anywhere: in its path, query, headers or body, as sent
+ * or URL-decoded, or inside the Basic credentials of a header.
+ */
+function carries(call: RecordedRequest, value: string): boolean {
+  const decoded = (text: string): string => {
+    try {
+      return decodeURIComponent(text.replaceAll("+", " "));
+    } catch {
+      return text;
+    }
+  };
+  const basic = Object.values(call.headers).flatMap((header) => {
+    const credentials = /^basic\s+(\S+)$/i.exec(header)?.[1];
+    return credentials === undefined ? [] : [Buffer.from(credentials, "base64").toString("utf8")];
+  });
+  return [call.path, call.query, call.body, JSON.stringify(call.headers), ...basic].some((text) => text.includes(value) || decoded(text).includes(value));
+}
 
 describe("the modules that call GitHub", () => {
   const source = fileURLToPath(new URL("../src/", import.meta.url));

@@ -74,6 +74,12 @@ describe("installation tokens of any length", () => {
     await client.installation(installation.id).request("GET /installation/repositories");
     const kinds = stub.received.filter((request) => request.host === "api").map((request) => request.token?.kind);
     expect(new Set(kinds)).toEqual(new Set(["app-jwt", "installation"]));
+    // Each JWT names the App's client id as its issuer, not the App's numeric id, which GitHub would take too.
+    const issuers = stub.received
+      .filter((request) => request.token?.kind === "app-jwt")
+      .map((request) => (JSON.parse(Buffer.from(request.token!.value.split(".")[1] ?? "", "base64url").toString("utf8")) as { iss?: unknown }).iss);
+    expect(issuers.length).toBeGreaterThan(0);
+    for (const issuer of issuers) expect(issuer).toBe(app.clientId);
   });
 });
 
