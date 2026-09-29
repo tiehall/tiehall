@@ -1,5 +1,5 @@
 import { githubInstallationConnected, setupCompleted } from "@tiehall/core";
-import { members, orgs, setupCodes, setupSessions, type Database } from "@tiehall/db";
+import { githubApp, members, orgs, setupCodes, setupSessions, type Database } from "@tiehall/db";
 import { eq, sql } from "drizzle-orm";
 import {
   connectInstallations,
@@ -9,6 +9,7 @@ import {
   recordCoveredRepositories,
   recordInstallations,
 } from "./github-installations.ts";
+import { pollGitHub } from "./github-polling.ts";
 import { releaseHeldDeliveries } from "./github-webhooks.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import type { JobSender } from "./jobs.ts";
@@ -33,8 +34,11 @@ import { writeIn, type Origin } from "./write.ts";
 //   org records the time setup completed, so the setup code and every setup
 //   session stop working and /setup answers 404; the completion is recorded as
 //   a security event that names the first admin, and each connection as the
-//   security event an admin's connection gets; and the deliveries held during
-//   setup are released to be processed.
+//   security event an admin's connection gets; the deliveries held during
+//   setup are released to be processed; and, when GitHub runs in polling
+//   mode, as for an App without a webhook, the first poll is sent at once
+//   (github-app-reachability: design.md, Design rules: An App without a
+//   webhook).
 // Setup that is already complete, a company that is not named yet, and an App
 // that is not stored refuse the completion, and so the sign-in; GitHub that
 // cannot be reached refuses it too, and the operator signs in again.
@@ -109,7 +113,12 @@ export async function completeSetup(options: CompleteSetupOptions, input: { user
       },
       { origin: input.origin },
     );
-    if (jobs !== undefined) await releaseHeldDeliveries(context, jobs);
+    if (jobs !== undefined) {
+      await releaseHeldDeliveries(context, jobs);
+      // The poller's first run comes as setup completes, not a minute later.
+      const [stored] = await tx.select({ mode: githubApp.mode }).from(githubApp).where(eq(githubApp.orgId, org.id));
+      if (stored?.mode === "polling") await jobs.send(tx, pollGitHub.type.queue, {});
+    }
   });
   options.logger.info("setup: setup is complete", { userId: input.userId });
 }

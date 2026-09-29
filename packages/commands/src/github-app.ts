@@ -13,7 +13,13 @@ import type { OrgContext } from "./with-org.ts";
 // secrets, encrypted with the install's secret key. An App created without a
 // webhook has no webhook secret, and none is stored for it
 // (github-app-reachability: design.md, Design rules: An App without a
-// webhook): the App "has a webhook" exactly when one is stored.
+// webhook): the App "has a webhook" exactly when one is stored. Storing an
+// App's credentials sets GitHub's mode in the same write (tracker-mirrors:
+// GitHub and Jira each run in webhook mode or polling mode): polling mode for
+// an App without a webhook secret, and webhook mode for one with a secret,
+// whose delivery log then settles the mode after its first installation
+// (github-mode.ts). This holds in setup and in a step that `setup reopen`
+// opened, where a new App replaces the old one's credentials and mode.
 
 /** The install's GitHub App, without its secrets. */
 export interface StoredGitHubApp {
@@ -42,9 +48,9 @@ export async function readGitHubApp({ tx, orgId }: Pick<OrgContext, "tx" | "orgI
 
 /**
  * Stores a new App's credentials, in the caller's transaction, in place of any
- * App stored before: its row, and its client secret, private key and webhook
- * secret, encrypted. An App without a webhook replaces the webhook secret of
- * the App before it with none.
+ * App stored before: its row, with the mode they set, and its client secret,
+ * private key and webhook secret, encrypted. An App without a webhook replaces
+ * the webhook secret of the App before it with none.
  */
 export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: ConvertedApp): Promise<void> {
   const { tx, orgId } = context;
@@ -55,14 +61,15 @@ export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: C
     clientId: app.clientId,
     ownerLogin: app.owner.login,
     ownerType: app.owner.type,
+    mode: app.webhookSecret === null ? "polling" : "webhook",
   };
   await tx
     .insert(githubApp)
     .values({ orgId, ...identity })
-    // A new App starts afresh: in webhook mode until its own delivery log settles the mode, which the redelivery job reads from when it was stored.
+    // A new App starts afresh: its mode is unsettled, and the redelivery job and the poll read from when it was stored.
     .onConflictDoUpdate({
       target: githubApp.orgId,
-      set: { ...identity, storedAt: sql`now()`, redeliveryCheckedAt: null, mode: "webhook", modeSettledAt: null },
+      set: { ...identity, storedAt: sql`now()`, redeliveryCheckedAt: null, modeSettledAt: null, polledAt: null },
     });
   await storeSecret(context, box, "github_app.client_secret", app.clientSecret);
   await storeSecret(context, box, "github_app.private_key", app.privateKey);

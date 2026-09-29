@@ -101,6 +101,7 @@ export {
   GITHUB_MODE_HANDLERS,
   GITHUB_MODES,
   githubModeOf,
+  settleModeFromDeliveryLog,
   type DeliveryLogCheckOptions,
   type GitHubMode,
 } from "./github-mode.ts";

@@ -18,14 +18,19 @@ import { writeIn } from "./write.ts";
 // deliveries are redelivered (github-redelivery.ts); in polling mode, Tiehall
 // polls GitHub every 60 seconds. The 15-minute reconciliation runs in both.
 //
-// An App created with a webhook starts in webhook mode, and its delivery log
-// settles the mode once: after the App's first installation, a job that runs
+// Storing an App's credentials sets the mode (github-app.ts;
+// github-app-reachability: design.md, Design rules: An App without a
+// webhook): an App without a webhook secret runs in polling mode from the
+// start, and one with a secret starts in webhook mode, which its delivery log
+// settles once: after the App's first installation, a job that runs
 // every minute reads the log, counting only deliveries made after the App's
 // credentials were stored, because the install accepts deliveries from then
 // on; the delivery for the installation made during setup is the first that
 // counts. A failed delivery puts GitHub in polling mode; deliveries that all
 // succeeded keep it in webhook mode. Until a delivery made after the
-// credentials were stored is logged, the job looks again at its next run. The
+// credentials were stored is logged, the job looks again at its next run. It
+// never reads the log of an App without a webhook secret, which has none, and
+// GitHub's 404 for a missing log is no failed delivery. The
 // admin page shows the mode, and an admin switches it there, with the checks
 // every web UI write passes and no confirmation step; an admin's switch
 // settles the mode too, so the check never undoes it. Each change of the mode
@@ -101,29 +106,49 @@ export interface DeliveryLogCheckOptions {
  * The check of the App's delivery log after its first installation: settles
  * the mode once a delivery made after the credentials were stored is logged,
  * and returns the mode it settled, or undefined while there is nothing to
- * settle yet or the mode is settled already.
+ * settle yet or the mode is settled already. It runs only for an App that has
+ * a webhook secret, in webhook mode: an App without a webhook has no delivery
+ * log, and Tiehall does not ask for one (github-app-reachability: design.md,
+ * Design rules: An App without a webhook).
  */
 export async function checkDeliveryLog(options: DeliveryLogCheckOptions): Promise<GitHubMode | undefined> {
   const { database, app } = options;
-  const logger = (options.logger ?? createLogger()).child({ integration: "github" });
-  const pending = await withOrg(database, async ({ tx, orgId }) => {
-    const [row] = await tx
-      .select({ appId: githubApp.appId, storedAt: githubApp.storedAt, mode: githubApp.mode })
+  const due = await withOrg(database, async (context) => {
+    const [row] = await context.tx
+      .select({ appId: githubApp.appId, mode: githubApp.mode })
       .from(githubApp)
-      .where(and(eq(githubApp.orgId, orgId), isNull(githubApp.modeSettledAt)));
-    if (row === undefined || row.appId !== app.appId || row.mode !== "webhook") return undefined;
+      .where(and(eq(githubApp.orgId, context.orgId), isNull(githubApp.modeSettledAt)));
+    if (row === undefined || row.appId !== app.appId || row.mode !== "webhook" || !(await hasWebhookSecret(context))) return false;
     // After the first installation: a listing found one of this App.
-    const [installed] = await tx
+    const [installed] = await context.tx
       .select({ id: githubInstallations.id })
       .from(githubInstallations)
-      .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.appId, app.appId)))
+      .where(and(eq(githubInstallations.orgId, context.orgId), eq(githubInstallations.appId, app.appId)))
       .limit(1);
-    return installed === undefined ? undefined : row;
+    return installed !== undefined;
   });
-  if (pending === undefined) return undefined;
+  return due ? settleModeFromDeliveryLog(options) : undefined;
+}
 
-  const attempts = await readDeliveryLog(app.client, pending.storedAt, logger);
-  const counted = (attempts ?? []).filter((attempt) => madeAfter(attempt, pending.storedAt));
+/**
+ * Reads the App's delivery log from when its credentials were stored and
+ * settles the mode by what it finds, as the check does; returns the mode it
+ * settled, or undefined when it settled nothing. GitHub's 404 for an App
+ * without a delivery log is no failed delivery: it changes nothing, and
+ * reports no broken integration to admins.
+ */
+export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions): Promise<GitHubMode | undefined> {
+  const { database, app } = options;
+  const logger = (options.logger ?? createLogger()).child({ integration: "github" });
+  const stored = await withOrg(database, async ({ tx, orgId }) => {
+    const [row] = await tx.select({ appId: githubApp.appId, storedAt: githubApp.storedAt }).from(githubApp).where(eq(githubApp.orgId, orgId));
+    return row?.appId === app.appId ? row.storedAt : undefined;
+  });
+  if (stored === undefined) return undefined;
+  const attempts = await readDeliveryLog(app.client, stored, logger);
+  // No delivery log at all, as for an App without a webhook: nothing to settle, and nothing failed.
+  if (attempts === undefined) return undefined;
+  const counted = attempts.filter((attempt) => madeAfter(attempt, stored));
   if (counted.length === 0) return undefined;
   const settled: GitHubMode = counted.some(attemptFailed) ? "polling" : "webhook";
 
@@ -135,14 +160,16 @@ export async function checkDeliveryLog(options: DeliveryLogCheckOptions): Promis
       .set({ mode: settled, modeSettledAt: sql`now()` })
       .where(and(eq(githubApp.orgId, context.orgId), eq(githubApp.appId, app.appId), isNull(githubApp.modeSettledAt), eq(githubApp.mode, "webhook")))
       .returning({ appId: githubApp.appId });
-    if (updated.length === 0 || settled === "webhook") return false;
-    await writeIn(context, jobs, { actorKind: "system" }, (writer) =>
-      writer.record(githubModeChanged, { mode: "polling", previousMode: "webhook", cause: "failed_delivery" }),
-    );
-    return true;
+    if (updated.length === 0) return undefined;
+    if (settled === "polling") {
+      await writeIn(context, jobs, { actorKind: "system" }, (writer) =>
+        writer.record(githubModeChanged, { mode: "polling", previousMode: "webhook", cause: "failed_delivery" }),
+      );
+    }
+    return settled;
   });
-  if (changed) logger.info("github: a failed delivery put GitHub in polling mode");
-  return settled;
+  if (changed === "polling") logger.info("github: a failed delivery put GitHub in polling mode");
+  return changed;
 }
 
 /** The job that checks the App's delivery log after its first installation, every minute until the mode is settled. */

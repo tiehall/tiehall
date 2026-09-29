@@ -39,8 +39,9 @@ afterEach(async () => {
   await stub.close();
 });
 
-async function start(): Promise<AppServer> {
+async function start(options: { trial?: boolean } = {}): Promise<AppServer> {
   server = await startAppServer(stub, {
+    ...options,
     fetch: (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : input);
       if (listingFails && url.pathname === "/app/installations") return new Response(JSON.stringify({ message: "Server Error" }), { status: 500 });
@@ -243,6 +244,29 @@ describe("the sign-in that completes setup", () => {
       { database: install.db, now: () => new Date(), jobs: { send: async (_tx, queue, data) => void install.sentJobs.push({ queue, data }) } },
     );
     expect(install.sentJobs).toHaveLength(before);
+  });
+
+  it("runs GitHub in the mode the App's credentials set, and sends the first poll of polling mode as it completes (github-app-reachability 1.7)", async () => {
+    // On a trial URL the App has no webhook: polling mode, whose first poll the completion sends.
+    const trial = await start({ trial: true });
+    const { operator, app } = await createApp(trial);
+    expect(app.hook).toBeNull();
+    expect((await trial.owner.query("SELECT mode FROM github_app")).rows).toEqual([{ mode: "polling" }]);
+    await stub.install(app, { account: "acme" });
+
+    expect((await signInFromSetup(operator, app, "omar")).status).toBe(302);
+
+    expect(trial.sentJobs).toContainEqual({ queue: "github.poll.v1", data: {} });
+    await trial.close();
+    server = undefined;
+
+    // At https://tiehall.example.com the App has a webhook: webhook mode, and no poll.
+    const reachable = await start();
+    const created = await createApp(reachable);
+    expect(created.app.hook).not.toBeNull();
+    expect((await reachable.owner.query("SELECT mode FROM github_app")).rows).toEqual([{ mode: "webhook" }]);
+    expect((await signInFromSetup(created.operator, created.app, "omar")).status).toBe(302);
+    expect(reachable.sentJobs.map(({ queue }) => queue)).not.toContain("github.poll.v1");
   });
 
   it("completes with nothing connected when the App has no installation yet", async () => {

@@ -3,12 +3,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing/github";
 import {
   checkGitHubDeliveryLog,
+  connectInstallations,
   createGitHubAdminRoute,
   csrfTokenFor,
   GITHUB_ADMIN_PATH,
+  pollGitHub,
+  processDelivery,
   readInstallations,
   redeliverGitHubDeliveries,
+  settleModeFromDeliveryLog,
+  withOrg,
   WORKER_JOBS,
+  type GitHubEvent,
   type WebSessionCaller,
 } from "../src/index.ts";
 import { serveWebhooks, storeStubApp, type StoredStubApp, type WebhookServer } from "./support/github-app.ts";
@@ -60,16 +66,16 @@ afterEach(async () => {
 });
 
 /** One run of the check of the delivery log, as the worker runs it every minute. */
-async function check(): Promise<void> {
+async function check(github = stored.github): Promise<void> {
   await checkGitHubDeliveryLog.handle(
     { id: randomUUID(), queue: checkGitHubDeliveryLog.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date(), github: stored.github, jobs: { send: async () => {} } },
+    { database: install.db, now: () => new Date(), github, jobs: { send: async () => {} } },
   );
 }
 
 /** Lists the App's installations, as setup, the reconciliation or a delivery about an installation does. */
-async function listInstallations(): Promise<void> {
-  await readInstallations({ database: install.db, app: (await stored.github.app())! });
+async function listInstallations(github = stored.github): Promise<void> {
+  await readInstallations({ database: install.db, app: (await github.app())! });
 }
 
 async function mode(): Promise<string> {
@@ -232,5 +238,108 @@ describe("an admin's switch of the mode", () => {
     expect((await switchTo(ada, "polling", undefined, "")).status).toBe(403);
     expect(await mode()).toBe("webhook");
     expect(await modeEvents()).toEqual([]);
+  });
+});
+
+describe("the mode an App's credentials set (github-app-reachability 1.7)", () => {
+  /** An App created without a webhook, as on a trial URL, stored in place of the one stored before. */
+  async function storeAppWithoutWebhook(): Promise<StoredStubApp> {
+    await install.owner.query("DELETE FROM github_covered_repositories; DELETE FROM github_connected_installations; DELETE FROM github_installations");
+    const trial = stub.createApp({ owner: "acme", name: `Tiehall localhost ${stub.apps().length}` });
+    return storeStubApp(install, stub, trial);
+  }
+
+  it("is set as the credentials are stored: polling without a webhook secret, webhook with one", async () => {
+    await storeAppWithoutWebhook();
+    expect(await mode()).toBe("polling");
+    expect(await pageText()).toContain("GitHub runs in polling mode");
+
+    // A new App with a webhook, as after `setup reopen`, moves GitHub to webhook mode, and one without back to polling mode.
+    const withWebhook = stub.createApp({ owner: "acme", name: "Tiehall with a webhook", hook: { url: hooks.url } });
+    await storeStubApp(install, stub, withWebhook);
+    expect(await mode()).toBe("webhook");
+    await storeAppWithoutWebhook();
+    expect(await mode()).toBe("polling");
+  });
+
+  it("never asks GitHub for the delivery log of an App without a webhook", async () => {
+    const trial = await storeAppWithoutWebhook();
+    const app = stub.apps().at(-1)!;
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await listInstallations(trial.github);
+    const from = stub.received.length;
+
+    await check(trial.github);
+    await redeliverGitHubDeliveries.handle(
+      { id: randomUUID(), queue: redeliverGitHubDeliveries.type.queue, data: {}, signal: new AbortController().signal },
+      { database: install.db, now: () => new Date(), github: trial.github },
+    );
+
+    expect(stub.received.slice(from).filter(({ path }) => path.startsWith("/app/hook"))).toEqual([]);
+    expect(await mode()).toBe("polling");
+  });
+
+  it("takes GitHub's 404 for the delivery log of an App without a webhook for no failed delivery: the mode stays polling and nothing shows a broken integration", async () => {
+    const trial = await storeAppWithoutWebhook();
+    const app = stub.apps().at(-1)!;
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await listInstallations(trial.github);
+    const from = stub.received.length;
+
+    // Forced: the log is read as the check reads it, although the App has no webhook.
+    const settled = await settleModeFromDeliveryLog({ database: install.db, app: (await trial.github.app())! });
+
+    expect(settled).toBeUndefined();
+    expect(stub.received.slice(from).map(({ path, status }) => ({ path, status }))).toEqual([{ path: "/app/hook/deliveries", status: 404 }]);
+    expect(await mode()).toBe("polling");
+    expect(await modeEvents()).toEqual([]);
+    const page = await pageText();
+    expect(page).toContain("GitHub runs in polling mode");
+    expect(page).not.toMatch(/fail|broken|not reach/i);
+  });
+
+  it("keeps the behavior of an App with a webhook: webhook mode, until a failed delivery after the first installation", async () => {
+    expect(await mode()).toBe("webhook");
+    stub.setHookReachable(false);
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await stub.settled();
+    await listInstallations();
+    await check();
+    expect(await mode()).toBe("polling");
+  });
+
+  it("picks up a pull request change on an App without a webhook by polling, as a trial install does", async () => {
+    const trial = await storeAppWithoutWebhook();
+    const app = stub.apps().at(-1)!;
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await listInstallations(trial.github);
+    await withOrg(install.db, async (context) => {
+      const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM github_installations");
+      await connectInstallations(context, rows.map(({ id }) => id));
+    });
+    const poll = () =>
+      pollGitHub.handle(
+        { id: randomUUID(), queue: pollGitHub.type.queue, data: {}, signal: new AbortController().signal },
+        { database: install.db, now: () => new Date(), github: trial.github, jobs: { send: async (_tx, queue, data) => void install.sentJobs.push({ queue, data }) } },
+      );
+    await poll();
+    install.sentJobs.length = 0;
+    await stub.openPullRequest("acme/web", { title: "Close FE-142", head: "fe-142", author: "omar" });
+
+    await poll();
+
+    const seen: number[] = [];
+    for (const { data } of install.sentJobs.splice(0)) {
+      await processDelivery(
+        {
+          database: install.db,
+          github: trial.github,
+          execute: install.execute,
+          processors: { pull_request: async (event: GitHubEvent) => void seen.push((event.payload["pull_request"] as { number: number }).number) },
+        },
+        (data as { deliveryId: string }).deliveryId,
+      );
+    }
+    expect(seen).toEqual([1]);
   });
 });

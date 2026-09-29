@@ -158,6 +158,11 @@ describe("completing setup", { timeout: 120_000 }, () => {
     expect(await coveredRepositories()).toEqual(["acme/api", "acme/web"]);
     expect(stub.received.some((call) => call.host === "api" && call.method === "GET" && call.path === "/app/installations")).toBe(true);
     expect(stub.deliveries(app!)).toEqual([]);
+
+    // GitHub runs in polling mode, whose first poll the completion sent (github-app-reachability 1.7).
+    expect(server.sentJobs).toContainEqual({ queue: "github.poll.v1", data: {} });
+    await page.goto(`${server.url}/admin/github`);
+    await expect(page.getByText("GitHub runs in polling mode").count()).resolves.toBe(1);
     await context.close();
   });
 });
