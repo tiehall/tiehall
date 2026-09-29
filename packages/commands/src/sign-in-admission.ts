@@ -17,6 +17,11 @@ import { writeIn, type Origin } from "./write.ts";
 // - GitHub reports, through a working installation of the App that an admin
 //   connected, that the account is a member of that installation's
 //   organization (github-organizations.ts), and no admin removal blocks it.
+// An admin removal blocks the account (sign-in: An admin removal blocks
+// rejoining through the organization): membership of an organization no longer
+// admits it, and neither does an invite created before the removal; only an
+// invite an admin creates after it does, and the sign-in that accepts that
+// invite clears the block, which its security events name.
 // An installation nobody connected admits no one, and a lookup that fails, or
 // that would go through a suspended or deleted installation, admits no one
 // through that organization. Anyone else is refused.
@@ -60,8 +65,12 @@ export class AdmissionWithdrawnError extends Error {
   }
 }
 
-/** The newest valid invite bound to this GitHub account, if it holds one: neither accepted nor revoked, and not expired. */
-async function validInvite({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAccountId: number, lock = false) {
+/**
+ * The newest valid invite bound to this GitHub account, if it holds one:
+ * neither accepted nor revoked, not expired, and, for an account an admin
+ * removal blocked, created after that block.
+ */
+async function validInvite({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAccountId: number, block: Date | undefined, lock = false) {
   const query = tx
     .select({ id: invites.id, role: invites.role })
     .from(invites)
@@ -72,6 +81,7 @@ async function validInvite({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, gith
         isNull(invites.acceptedAt),
         isNull(invites.revokedAt),
         gt(invites.expiresAt, sql`now()`),
+        ...(block === undefined ? [] : [gt(invites.createdAt, block)]),
       ),
     )
     .orderBy(desc(invites.createdAt), desc(invites.id))
@@ -80,13 +90,14 @@ async function validInvite({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, gith
   return row === undefined ? undefined : { id: row.id, role: row.role as Role };
 }
 
-/** Whether an admin removal blocks this GitHub account from joining through organization membership. */
-async function isBlocked({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAccountId: number): Promise<boolean> {
-  const [row] = await tx
-    .select({ githubAccountId: signInBlocks.githubAccountId })
+/** When an admin removal blocked this GitHub account from joining through organization membership; undefined when none did. */
+async function blockOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAccountId: number, lock = false): Promise<Date | undefined> {
+  const query = tx
+    .select({ createdAt: signInBlocks.createdAt })
     .from(signInBlocks)
     .where(and(eq(signInBlocks.orgId, orgId), eq(signInBlocks.githubAccountId, githubAccountId)));
-  return row !== undefined;
+  const [row] = lock ? await query.for("update") : await query;
+  return row?.createdAt;
 }
 
 /**
@@ -104,18 +115,19 @@ export async function decideAdmission(services: AdmissionServices, account: { id
         .from(users)
         .innerJoin(members, and(eq(members.orgId, users.orgId), eq(members.userId, users.id)))
         .where(and(eq(users.orgId, context.orgId), eq(users.githubAccountId, account.id)));
+      const block = await blockOf(context, account.id);
       return {
         member: member !== undefined,
-        invite: await validInvite(context, account.id),
-        blocked: await isBlocked(context, account.id),
+        invite: await validInvite(context, account.id, block),
+        blocked: block !== undefined,
         organizations: app === undefined ? [] : await workingOrganizationInstallations(context, app.appId),
       };
     },
     { readOnly: true },
   );
   if (state.member) return { through: "member" };
-  if (state.blocked) return undefined;
   if (state.invite !== undefined) return { through: "invite", inviteId: state.invite.id, role: state.invite.role };
+  if (state.blocked) return undefined;
   if (app === undefined || state.organizations.length === 0) return undefined;
   const reporting: number[] = [];
   for (const installation of state.organizations) {
@@ -124,6 +136,12 @@ export async function decideAdmission(services: AdmissionServices, account: { id
     else if (report === "unknown") services.logger.warn("sign-in service: GitHub gave no report of an organization membership", { installationId: installation.installationId });
   }
   return reporting.length === 0 ? undefined : { through: "organization", organizations: reporting };
+}
+
+/** What a join did besides making the person a member. */
+export interface AppliedAdmission {
+  /** Accepting an invite cleared the block an admin removal recorded on the account. */
+  blockCleared: boolean;
 }
 
 /**
@@ -135,10 +153,10 @@ export async function decideAdmission(services: AdmissionServices, account: { id
 export async function applyAdmission(
   services: Pick<AdmissionServices, "database">,
   input: { userId: string; admission: Admission; origin: Origin },
-): Promise<void> {
+): Promise<AppliedAdmission> {
   const { userId, admission } = input;
-  if (admission.through === "member") return;
-  await withOrg(services.database, async (context) => {
+  if (admission.through === "member") return { blockCleared: false };
+  return withOrg(services.database, async (context): Promise<AppliedAdmission> => {
     // One join per person at a time: their user's row is held until the transaction ends.
     const [user] = await context.tx
       .select({ githubAccountId: users.githubAccountId })
@@ -150,31 +168,42 @@ export async function applyAdmission(
       .select({ userId: members.userId })
       .from(members)
       .where(and(eq(members.orgId, context.orgId), eq(members.userId, userId)));
-    if (already !== undefined) return;
+    if (already !== undefined) return { blockCleared: false };
     const jobs = { send: () => Promise.reject(new Error("A join sends no job.")) };
-    await writeIn(
+    return writeIn(
       context,
       jobs,
       { actorKind: "web_session", userId, surface: "web" },
-      async (writer) => {
+      async (writer): Promise<AppliedAdmission> => {
+        const block = await blockOf(writer, user.githubAccountId, true);
         if (admission.through === "invite") {
-          const invite = await validInvite(writer, user.githubAccountId, true);
+          const invite = await validInvite(writer, user.githubAccountId, block, true);
           if (invite?.id !== admission.inviteId) throw new AdmissionWithdrawnError();
           await writer.tx.insert(members).values({ orgId: writer.orgId, userId, role: invite.role });
           await writer.tx
             .update(invites)
             .set({ acceptedAt: sql`now()`, acceptedBy: userId })
             .where(and(eq(invites.orgId, writer.orgId), eq(invites.id, invite.id)));
-          await writer.record(memberJoined, { userId, role: invite.role, through: "invite", inviteId: invite.id });
-          return;
+          if (block !== undefined) {
+            await writer.tx.delete(signInBlocks).where(and(eq(signInBlocks.orgId, writer.orgId), eq(signInBlocks.githubAccountId, user.githubAccountId)));
+          }
+          await writer.record(memberJoined, {
+            userId,
+            role: invite.role,
+            through: "invite",
+            inviteId: invite.id,
+            ...(block === undefined ? {} : { blockCleared: true }),
+          });
+          return { blockCleared: block !== undefined };
         }
-        if (await isBlocked(writer, user.githubAccountId)) throw new AdmissionWithdrawnError();
+        if (block !== undefined) throw new AdmissionWithdrawnError();
         await writer.tx.insert(members).values({ orgId: writer.orgId, userId, role: "member" });
         await writer.tx
           .insert(memberOrganizations)
           .values(admission.organizations.map((githubOrganizationId) => ({ orgId: writer.orgId, userId, githubOrganizationId })))
           .onConflictDoNothing();
         await writer.record(memberJoined, { userId, role: "member", through: "organization" });
+        return { blockCleared: false };
       },
       { origin: input.origin },
     );

@@ -265,6 +265,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
    * the service has stored their user, just before their web session.
    */
   const admissions = new Map<number, Admission>();
+  /** The users whose sign-in in progress cleared an admin removal's block, which the sign-in's own security event names. */
+  const clearedBlocks = new Set<string>();
   const admissionServices = { database: options.database, github: installGitHub, logger };
 
   /** The GitHub account of a user, by its numeric id. */
@@ -379,7 +381,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                     if (githubAccountId !== undefined) admissions.delete(githubAccountId);
                     try {
                       if (admission === undefined) throw new AdmissionWithdrawnError();
-                      await applyAdmission({ database: options.database }, { userId: session.userId, admission, origin: whereFrom(context) });
+                      const applied = await applyAdmission({ database: options.database }, { userId: session.userId, admission, origin: whereFrom(context) });
+                      if (applied.blockCleared) clearedBlocks.add(session.userId);
                     } catch (error) {
                       if (!(error instanceof AdmissionWithdrawnError)) throw error;
                       logger.warn("sign-in service: a sign-in's admission no longer held when its session was to be stored", { userId: session.userId });
@@ -388,7 +391,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                   },
                 }),
             async after(session, context) {
-              await recordSignIn(session.userId, whereFrom(context));
+              const blockCleared = clearedBlocks.delete(session.userId);
+              await recordSignIn(session.userId, whereFrom(context), blockCleared);
             },
           },
         },
@@ -413,10 +417,15 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     };
   }
 
-  /** Appends the security event of a sign-in whose session the service just stored. */
-  async function recordSignIn(userId: string, origin: Origin): Promise<void> {
+  /** Appends the security event of a sign-in whose session the service just stored, naming a block it cleared. */
+  async function recordSignIn(userId: string, origin: Origin, blockCleared = false): Promise<void> {
     try {
-      await write(store, { actorKind: "web_session", userId, surface: "web" }, (writer) => writer.record(signInCompleted, { userId }), { origin });
+      await write(
+        store,
+        { actorKind: "web_session", userId, surface: "web" },
+        (writer) => writer.record(signInCompleted, { userId, ...(blockCleared ? { blockCleared: true } : {}) }),
+        { origin },
+      );
     } catch (error) {
       // The session is stored: the person is signed in, and the log says the event is missing.
       logger.error("sign-in service: the security event of a sign-in could not be appended", { error, userId });

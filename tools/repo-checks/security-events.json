@@ -28,7 +28,14 @@
             "case": "signs in, joins the install as a member, and the join and the sign-in are security events"
           }
         },
-        { "action": "a sign-in that clears an admin removal's block", "pending": "9.9" }
+        {
+          "action": "a sign-in that clears an admin removal's block",
+          "event": "sign_in.completed",
+          "test": {
+            "file": "packages/commands/test/sign-in-blocks.test.ts",
+            "case": "is admitted by an invite created after the removal, which clears the block, and the sign-in's security events name the clearing"
+          }
+        }
       ]
     },
     {

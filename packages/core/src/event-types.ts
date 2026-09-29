@@ -274,9 +274,11 @@ export const memberRemoved = defineEventType({
  * which the sign-in accepted and which gives their role, or through
  * membership of a GitHub organization whose installation an admin connected,
  * as a member. It names the new member, their role, the way they came in and,
- * for an invite, the invite; its provenance names their user, whose sign-in
- * it was. It is recorded together with the membership, before the sign-in's
- * own event.
+ * for an invite, the invite, and says when accepting that invite cleared the
+ * block an admin removal recorded on their GitHub account (sign-in: An admin
+ * removal blocks rejoining through the organization); its provenance names
+ * their user, whose sign-in it was. It is recorded together with the
+ * membership, and the clearing, before the sign-in's own event.
  */
 export const memberJoined = defineEventType({
   type: "member.joined",
@@ -286,6 +288,7 @@ export const memberJoined = defineEventType({
     role: { kind: "enum", values: ROLES },
     through: { kind: "enum", values: ["invite", "organization"] },
     inviteId: { kind: "id", of: "invite", optional: true },
+    blockCleared: { kind: "boolean", optional: true },
   },
 });
 
@@ -371,7 +374,9 @@ export const activityLogExported = defineEventType({
 /**
  * A person signed in with GitHub (activity-log: Which actions are security
  * events; activity-log: Writes the sign-in service owns are still recorded).
- * It names the user; its provenance names their new web session's user, and
+ * It names the user, and says when the sign-in cleared the block an admin
+ * removal recorded on their GitHub account, by accepting an invite created
+ * after the removal; its provenance names their new web session's user, and
  * the side table keeps the client's address and user agent.
  */
 export const signInCompleted = defineEventType({
@@ -379,6 +384,7 @@ export const signInCompleted = defineEventType({
   class: "security",
   fields: {
     userId: { kind: "id", of: "user" },
+    blockCleared: { kind: "boolean", optional: true },
   },
 });
 
