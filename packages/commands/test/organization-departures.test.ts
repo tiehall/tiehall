@@ -136,6 +136,65 @@ describe("the organization event", () => {
     expect(await isBlocked("lee-acme")).toBe(false);
   });
 
+  // GitHub's signature covers only a delivery's body, not its delivery id, so a captured body can come back under
+  // a new id; and GitHub may deliver late or out of order. A delivery is a hint: Tiehall asks GitHub whether the
+  // member is still in the organization before it removes anyone, so an old report removes nobody who is a member now.
+  it("replayed under a new delivery id after the member rejoined removes nobody", async () => {
+    const lee = await join("lee-acme");
+    const [delivery] = await stub.removeMember("acme", "lee-acme");
+    await processed(delivery);
+    expect(await isMember(lee)).toBe(false);
+    await stub.addMember("acme", "lee-acme", "member", { delivery: "none" });
+    expect(await join("lee-acme")).toBe(lee);
+
+    await processed({ ...delivery!, guid: randomUUID() });
+
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toHaveLength(1);
+  });
+
+  it("arriving after GitHub reports the member back in the organization removes nobody", async () => {
+    const lee = await join("lee-acme");
+    // Lee leaves and rejoins before Tiehall processes the delivery of the leaving.
+    const [delivery] = await stub.removeMember("acme", "lee-acme");
+    await stub.addMember("acme", "lee-acme", "member", { delivery: "none" });
+
+    await processed(delivery);
+
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
+  });
+
+  it("replayed after the member renamed their login removes nobody, because GitHub is asked by their account", async () => {
+    const lee = await join("lee-acme");
+    // A report of Lee leaving, captured and never processed; Lee stays in acme and renames the login.
+    const [delivery] = await stub.removeMember("acme", "lee-acme");
+    await stub.addMember("acme", "lee-acme", "member", { delivery: "none" });
+    stub.renameUser("lee-acme", "lee-renamed");
+
+    await processed({ ...delivery!, guid: randomUUID() });
+
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
+  });
+
+  it("removes nobody when GitHub cannot be asked whether the member left", async () => {
+    const lee = await join("lee-acme");
+    const [delivery] = await stub.removeMember("acme", "lee-acme");
+    const erroring = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (/^\/orgs\/[^/]+\/members/.test(url.pathname)) return new Response('{"message":"Server Error"}', { status: 500 });
+        return fetch(input, init);
+      },
+    });
+    const deliveryId = await storeDelivery(install, delivery!);
+    await processDelivery({ database: install.db, github: erroring.github, execute: install.execute, logger: install.logger }, deliveryId);
+
+    expect(await isMember(lee)).toBe(true);
+  });
+
   it("about someone who never joined through the organization changes nothing", async () => {
     // Kim became a member some other way, such as through an invite, so Tiehall has seen Kim in no organization.
     const kim = await addUser(install.owner, { login: "kim-acme", githubAccountId: ids.get("kim-acme")! });

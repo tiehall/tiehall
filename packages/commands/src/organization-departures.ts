@@ -10,7 +10,7 @@ import {
   type OrganizationInstallation,
   type OrganizationReport,
 } from "./github-organizations.ts";
-import { userOfGitHubAccount } from "./github-users.ts";
+import { gitHubAccountWithId, userOfGitHubAccount } from "./github-users.ts";
 import type { Logger } from "./log.ts";
 import { removeDepartedMember } from "./member-changes.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
@@ -35,13 +35,26 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 //   only admin, until another admin exists (member-changes.ts).
 // Tiehall checks at every sign-in of such a member, asking about their login
 // as GitHub gave it for that sign-in; on an `organization` event that reports
-// a member removed from an organization with a connected installation, which
-// is that organization's report; and in the reconciliation job every 15
-// minutes, in either GitHub mode, which reads each working organization's
-// whole member list once and judges every such member by their account's
-// numeric id (github-reconciliation.ts). Each removal is a security event
-// that names the installation whose organization GitHub reported them gone
-// from.
+// a member removed from an organization with a connected installation; and in
+// the reconciliation job every 15 minutes, in either GitHub mode, which reads
+// each working organization's whole member list once and judges every such
+// member by their account's numeric id (github-reconciliation.ts). Each
+// removal is a security event that names the installation whose organization
+// GitHub reported them gone from.
+//
+// The event is a hint, never the report itself (github-delivery-
+// processing.ts): GitHub's signature covers only a delivery's body, not its
+// delivery id or event name, so a captured body can come back under a new
+// delivery id, and GitHub may deliver late or out of order. So the member the
+// event names, by their account's numeric id, is checked as at a sign-in:
+// GitHub is asked for the account's login now, since the one the event names
+// may be old, and each working connected installation's organization is asked
+// now whether that login is a member. A replayed or stale report of a member
+// who has since rejoined, or renamed their login, removes nobody, and a report
+// that cannot be checked, because GitHub does not answer, removes nobody
+// either: the reconciliation checks again within 15 minutes. Deliveries are not deduplicated by their
+// body: two genuine reports of one person leaving can be byte for byte the
+// same, since the payload carries no time.
 
 export interface DepartureServices {
   /** The app's database, as the app role. */
@@ -53,8 +66,8 @@ export interface DepartureServices {
   provenance: Provenance;
 }
 
-/** Whom to check: one member, by their login as GitHub gave it just now and any organization GitHub already reported them gone from; or every member seen in an organization. */
-export type DepartureScope = { userId: string; login: string; reportedGoneFrom?: number } | { every: true };
+/** Whom to check: one member, by their login as GitHub gave it just now; or every member seen in an organization. */
+export type DepartureScope = { userId: string; login: string } | { every: true };
 
 /** A member Tiehall has seen in organizations: their GitHub account and the organizations, by their accounts' numeric ids. */
 interface SeenMember {
@@ -150,10 +163,7 @@ export async function checkDepartures(services: DepartureServices, scope: Depart
   } else {
     const reports = new Map<number, OrganizationReport>();
     for (const installation of state.installations) {
-      reports.set(
-        installation.organizationId,
-        installation.organizationId === scope.reportedGoneFrom ? "not_member" : await organizationMembership(app.client, installation, scope.login),
-      );
+      reports.set(installation.organizationId, await organizationMembership(app.client, installation, scope.login));
     }
     for (const member of state.members) reportsOf.set(member.userId, reports);
   }
@@ -187,21 +197,27 @@ function idOf(value: unknown): number | undefined {
 
 /**
  * The `organization` event's processor: a delivery from a connected
- * installation that reports a member removed from its organization is that
- * organization's report, and the member it names is checked at once, as the
- * integration from GitHub.
+ * installation that reports a member removed from its organization is a hint,
+ * and the member it names is checked at once against what GitHub reports now,
+ * as the integration from GitHub.
  */
 export const processOrganizationEvent: GitHubEventProcessor = async (event, context) => {
   if (event.action !== "member_removed") return;
-  const user = objectOf(objectOf(event.payload["membership"])?.["user"]);
-  const accountId = idOf(user?.["id"]);
-  const login = user?.["login"];
-  const organizationId = idOf(objectOf(event.payload["organization"])?.["id"]);
-  if (accountId === undefined || typeof login !== "string" || organizationId === undefined) return;
+  const accountId = idOf(objectOf(objectOf(event.payload["membership"])?.["user"])?.["id"]);
+  if (accountId === undefined) return;
   const userId = await withOrg(context.database, (orgContext) => userOfGitHubAccount(orgContext, { id: accountId }));
   if (userId === undefined) return;
+  // The account's login now, asked through the installation that delivered the event: the event's may be old.
+  let account;
+  try {
+    account = await gitHubAccountWithId(context.app.client, event.installation.installationId, accountId);
+  } catch (error) {
+    context.logger.warn("github: GitHub did not name the account an organization event reports", { error, installationId: event.installation.installationId });
+    return;
+  }
+  if (account?.type !== "User") return;
   await checkDepartures(
     { database: context.database, app: context.app, logger: context.logger, provenance: { actorKind: "integration", surface: "github" } },
-    { userId, login, reportedGoneFrom: organizationId },
+    { userId, login: account.login },
   );
 };

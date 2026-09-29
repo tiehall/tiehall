@@ -37,6 +37,22 @@ import { withOrg } from "./with-org.ts";
 // polling mode stores each change it finds in the same form, less the
 // delivery's action, and feeds it to the same processing (github-polling.ts),
 // so a processor reads the state of what changed, not the action.
+//
+// Every delivery is a hint, and processing is level-triggered (design.md,
+// Technical decisions: T16). GitHub's signature covers only a delivery's body,
+// not its X-GitHub-Delivery or X-GitHub-Event, so a captured signed body can
+// come back under a new delivery id and be stored again; GitHub also
+// redelivers, and may deliver late or out of order. So no processor acts on
+// what a payload says happened: before it changes anything, it reads the
+// current state from GitHub with an installation token, and acts on that. The
+// organization processor asks whether the member is still in the
+// organization (organization-departures.ts); the pull request and issues
+// processors that later tasks add read the pull request or the issue again,
+// and act on its state now. A replay, a redelivery and an out-of-order
+// delivery then change nothing that the current state does not call for.
+// Deliveries are not deduplicated by a digest of their body: two genuine
+// deliveries can be byte for byte the same, such as two reports of one person
+// leaving an organization, whose payload carries no time.
 
 /** A delivery from a connected installation, as its event's processor gets it. */
 export interface GitHubEvent {
@@ -71,8 +87,9 @@ export type GitHubEventProcessors = Readonly<Record<string, GitHubEventProcessor
  * The processors of the events a connected installation's deliveries carry.
  * Each task that acts on an event adds its processor here: pull requests for
  * PR links and close on merge, issues for the GitHub Issues mirror, and
- * organization for membership (organization-departures.ts). An event with no
- * processor changes nothing.
+ * organization for membership (organization-departures.ts). Each reads the
+ * current state from GitHub before it acts, as the rule above says. An event
+ * with no processor changes nothing.
  */
 export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = { organization: processOrganizationEvent };
 
