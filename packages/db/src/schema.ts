@@ -305,6 +305,31 @@ export const githubApp = pgTable(
   ],
 );
 
+// GitHub Apps that a later return from the manifest flow replaced during setup
+// (self-host-install: The GitHub App is created with GitHub's manifest flow):
+// the latest App wins, and the one it replaced stays registered on GitHub with
+// a private key nobody uses. The install step names each, with a link to its
+// settings on GitHub, built from its owner and slug, where it can be deleted.
+export const githubReplacedApps = pgTable(
+  "github_replaced_apps",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** GitHub's numeric id of the replaced App. */
+    appId: bigint("app_id", { mode: "number" }).notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    ownerLogin: text("owner_login").notNull(),
+    ownerType: text("owner_type").notNull(),
+    replacedAt: timestamp("replaced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.appId] }),
+    check("github_replaced_apps_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`),
+  ],
+);
+
 // The deliveries Tiehall asked GitHub to redeliver (tracker-mirrors: Failed
 // GitHub deliveries are redelivered; design.md, Self-hosting decisions: S9),
 // by the delivery id GitHub keeps on every attempt, with how often it asked.

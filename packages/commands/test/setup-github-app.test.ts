@@ -41,7 +41,9 @@ let db: Database;
 let stub: GitHubStub;
 let box: SecretBox;
 const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
-const logger = createLogger({ write: () => {} });
+/** What the setup screen logged, as JSON lines. */
+const logLines: string[] = [];
+const logger = createLogger({ write: (line) => void logLines.push(line) });
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -64,6 +66,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   clock = () => new Date();
+  logLines.length = 0;
   stub = await startGitHubStub();
   stub.addUser({ login: "omar" });
   stub.addOrg({ login: "acme", members: { omar: "admin" } });
@@ -74,7 +77,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await stub.close();
   await owner.query(
-    "DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM setup_sessions; DELETE FROM setup_codes; DELETE FROM orgs",
+    "DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM github_replaced_apps; DELETE FROM setup_sessions; DELETE FROM setup_codes; DELETE FROM orgs",
   );
 });
 
@@ -404,6 +407,36 @@ describe("GitHub's return with the code", () => {
     expect(answer.status).toBe(403);
     expect(conversions()).toHaveLength(1);
     expect(await storedApp()).toEqual(stored);
+  });
+
+  // The latest App wins: a second valid return during setup, such as from an older tab, replaces the stored App.
+  // The one it replaces stays registered on GitHub with a key nobody uses, so the install step names it, links to
+  // its settings on GitHub and says it can be deleted there, and the log records the replacement.
+  it("replaces the stored App with the next one a return brings, and the install step says the first can be deleted on GitHub", async () => {
+    const cookie = await setupSession(INSTALL);
+    const olderTab = createForm((await open(INSTALL, cookie, { org: "acme", name: "Tiehall older tab" })).html)!;
+    const newerTab = createForm((await open(INSTALL, cookie, { org: "acme" })).html)!;
+    const first = await createOnGitHub(newerTab);
+    expect((await returnFromGitHub(INSTALL, first.location!, cookie)).status).toBe(303);
+    const second = await createOnGitHub(olderTab);
+    expect((await returnFromGitHub(INSTALL, second.location!, cookie)).status).toBe(303);
+
+    const [replaced, latest] = stub.apps();
+    expect(await storedApp()).toEqual([expect.objectContaining({ app_id: String(latest!.id), name: "Tiehall older tab" })]);
+    const { html } = await open(INSTALL, cookie);
+    expect(html).toContain(`href="${stub.webUrl}/apps/${latest!.slug}/installations/new"`);
+    expect(html).toContain(`href="${stub.webUrl}/organizations/acme/settings/apps/${replaced!.slug}"`);
+    expect(unescapeHtml(html)).toContain(`The GitHub App "${replaced!.name}" that this setup created before is no longer used`);
+    expect(logLines.map((line) => JSON.parse(line) as Record<string, unknown>)).toContainEqual(
+      expect.objectContaining({ level: "warn", msg: "setup: a new GitHub App replaced the one stored before", appId: latest!.id, replacedAppId: replaced!.id }),
+    );
+  });
+
+  it("names no replaced App when the first return stores one", async () => {
+    const cookie = await setupSession(INSTALL);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    expect((await returnFromGitHub(INSTALL, location!, cookie)).status).toBe(303);
+    expect((await open(INSTALL, cookie)).html).not.toContain("no longer used");
   });
 
   it("stores nothing when GitHub no longer converts the code, and says to create the App again", async () => {

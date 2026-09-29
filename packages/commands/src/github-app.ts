@@ -1,5 +1,5 @@
-import { and, eq, sql } from "drizzle-orm";
-import { githubApp, integrationSecrets } from "@tiehall/db";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { githubApp, githubReplacedApps, integrationSecrets } from "@tiehall/db";
 import type { ConvertedApp } from "./github-client.ts";
 import { storeSecret } from "./integration-secrets.ts";
 import type { SecretBox } from "./secret-box.ts";
@@ -80,4 +80,53 @@ export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: C
   } else {
     await storeSecret(context, box, "github_app.webhook_secret", app.webhookSecret);
   }
+}
+
+/** A GitHub App that a later App replaced during setup: what names it, and its owner, whose settings on GitHub hold it. */
+export interface ReplacedGitHubApp {
+  appId: number;
+  slug: string;
+  name: string;
+  owner: { login: string; type: "Organization" | "User" };
+}
+
+/**
+ * Records, in the caller's transaction, that a new App replaces the stored
+ * one during setup, and returns the replaced App; undefined when no App was
+ * stored, or the same App is stored again. The latest App wins, and the one it
+ * replaces stays registered on GitHub, so the install step names it.
+ */
+export async function recordReplacedGitHubApp(context: Pick<OrgContext, "tx" | "orgId">, newAppId: number): Promise<ReplacedGitHubApp | undefined> {
+  const stored = await readGitHubApp(context);
+  if (stored === undefined || stored.appId === newAppId) return undefined;
+  await context.tx
+    .insert(githubReplacedApps)
+    .values({
+      orgId: context.orgId,
+      appId: stored.appId,
+      slug: stored.slug,
+      name: stored.name,
+      ownerLogin: stored.owner.login,
+      ownerType: stored.owner.type,
+    })
+    .onConflictDoNothing();
+  return { appId: stored.appId, slug: stored.slug, name: stored.name, owner: stored.owner };
+}
+
+/** The Apps that later Apps replaced during setup, oldest first, apart from the App in use. */
+export async function readReplacedGitHubApps({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<ReplacedGitHubApp[]> {
+  const [current] = await tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, orgId));
+  const rows = await tx
+    .select()
+    .from(githubReplacedApps)
+    .where(eq(githubReplacedApps.orgId, orgId))
+    .orderBy(asc(githubReplacedApps.replacedAt), asc(githubReplacedApps.appId));
+  return rows
+    .filter(({ appId }) => appId !== current?.appId)
+    .map((row) => ({
+      appId: row.appId,
+      slug: row.slug,
+      name: row.name,
+      owner: { login: row.ownerLogin, type: row.ownerType === "Organization" ? ("Organization" as const) : ("User" as const) },
+    }));
 }

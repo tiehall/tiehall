@@ -71,7 +71,14 @@ export {
   type GitHubClient,
   type GitHubClientOptions,
 } from "./github-client.ts";
-export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export {
+  readGitHubApp,
+  readReplacedGitHubApps,
+  recordReplacedGitHubApp,
+  storeGitHubApp,
+  type ReplacedGitHubApp,
+  type StoredGitHubApp,
+} from "./github-app.ts";
 export { GITHUB_APP_KEY_HANDLERS, GITHUB_APP_KEY_REVIEWS } from "./github-app-key.ts";
 export {
   GITHUB_EVENT_PROCESSORS,

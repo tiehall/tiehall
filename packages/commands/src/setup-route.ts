@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { orgs, setupSessions, type Database } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
-import { readGitHubApp, storeGitHubApp } from "./github-app.ts";
+import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, ManifestConversionError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
@@ -51,7 +51,10 @@ import type { SetupSignIn } from "./sign-in.ts";
 //   Otherwise Tiehall converts the code at once, well within the hour GitHub
 //   allows, stores the App's credentials encrypted, replacing any App stored
 //   before, and leads back to the setup screen, which then sends the operator
-//   on to install the App. A code GitHub no longer converts stores nothing,
+//   on to install the App. The latest App wins: an App it replaces, such as
+//   one created from an older tab, stays registered on GitHub, so the install
+//   step names it with a link to its settings on GitHub, where it can be
+//   deleted, and the log records the replacement. A code GitHub no longer converts stores nothing,
 //   and the page says to create the App again.
 // - POST /setup/sign-in starts the sign-in with GitHub that completes setup,
 //   and GET /setup/sign-in/callback/github is GitHub's return to it
@@ -145,16 +148,17 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
    * installing the App and signing in once the App is stored.
    */
   async function nextStep(request: Request, token: string): Promise<Response> {
-    const { company, app } = await options.database.transaction(async (tx) => {
+    const { company, app, replaced } = await options.database.transaction(async (tx) => {
       const [org] = await tx.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1);
-      return { company: org?.name ?? null, app: org === undefined ? undefined : await readGitHubApp({ tx, orgId: org.id }) };
+      if (org === undefined) return { company: null, app: undefined, replaced: [] };
+      return { company: org.name, app: await readGitHubApp({ tx, orgId: org.id }), replaced: await readReplacedGitHubApps({ tx, orgId: org.id }) };
     });
     const query = new URL(request.url).searchParams;
     if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? "")));
     // Both steps' buttons lead to GitHub: the manifest's form posts there, and the sign-in's answer redirects there.
     const toGitHub = { "content-security-policy": pagePolicy(`'self' ${new URL(webUrl).origin}`) };
     if (app !== undefined) {
-      return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error") })), toGitHub);
+      return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error"), replaced })), toGitHub);
     }
     const settings = appStepSettings(options.url, query);
     return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), company })), toGitHub);
@@ -254,11 +258,16 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
         .where(and(eq(setupSessions.orgId, org.id), eq(setupSessions.tokenHash, sha256(token)), sql`NOT (${nonce} = ANY(${setupSessions.usedManifestNonces}))`))
         .returning({ id: setupSessions.id });
       if (used.length === 0) return "used";
+      // The latest App wins; the one it replaces is recorded, so the install step says it can be deleted on GitHub.
+      const replaced = await recordReplacedGitHubApp({ tx, orgId: org.id }, app.id);
       await storeGitHubApp({ tx, orgId: org.id }, box, app);
-      return "stored";
+      return { replaced };
     });
     if (stored === "closed") return problem(CLOSED);
     if (stored === "used") return problem(FOREIGN_RETURN);
+    if (stored.replaced !== undefined) {
+      logger.warn("setup: a new GitHub App replaced the one stored before", { appId: app.id, replacedAppId: stored.replaced.appId });
+    }
     logger.info("setup: the GitHub App's credentials are stored", { appId: app.id });
     return new Response(null, { status: 303, headers: { location: `${options.url}${SETUP_PATH}`, "cache-control": "no-store" } });
   }

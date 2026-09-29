@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { buildAppManifest, MANIFEST_REDIRECT_PATH, manifestHasWebhook, SETUP_SIGN_IN_PATH, WEBHOOK_PATH } from "./github-manifest.ts";
-import type { StoredGitHubApp } from "./github-app.ts";
+import type { ReplacedGitHubApp, StoredGitHubApp } from "./github-app.ts";
 import { escapeHtml } from "./html.ts";
 import { isTrialUrl } from "./settings.ts";
 
@@ -204,8 +204,43 @@ const SIGN_IN_ERRORS: Readonly<Record<string, string>> = {
   access_denied: "GitHub says you did not authorize the install's GitHub App, so setup is not complete. Sign in again.",
 };
 
+/** An App's settings page on GitHub, under its owner: an organization's or a person's. */
+export function appSettingsPage(webUrl: string, app: Pick<ReplacedGitHubApp, "slug" | "owner">): string {
+  const slug = encodeURIComponent(app.slug);
+  return app.owner.type === "Organization"
+    ? `${webUrl}/organizations/${encodeURIComponent(app.owner.login)}/settings/apps/${slug}`
+    : `${webUrl}/settings/apps/${slug}`;
+}
+
+/**
+ * The notice for each App that a later return from the manifest flow
+ * replaced during setup, such as one created from an older tab: the latest App
+ * wins, and the replaced one stays registered on GitHub with a private key
+ * nobody uses, so the step names it and links to its settings on GitHub,
+ * where it can be deleted.
+ */
+function replacedAppNotices(webUrl: string, app: StoredGitHubApp, replaced: readonly ReplacedGitHubApp[]): string {
+  return replaced
+    .map(
+      (old) => `      <p>${escapeHtml(
+        `The GitHub App "${old.name}" that this setup created before is no longer used: Tiehall uses "${app.name}" in its place. ` +
+          "It is still registered on GitHub, with a private key nobody uses, so delete it there:",
+      )} <a href="${escapeHtml(appSettingsPage(webUrl, old))}">${escapeHtml(`${old.name} in its settings on GitHub`)}</a></p>
+`,
+    )
+    .join("");
+}
+
 /** The step after the App is stored: install it on its owner, then sign in with GitHub, which completes setup. */
-export function installStepBody(input: { webUrl: string; app: StoredGitHubApp; company?: string; signIn?: boolean; error?: string | null }): string {
+export function installStepBody(input: {
+  webUrl: string;
+  app: StoredGitHubApp;
+  company?: string;
+  signIn?: boolean;
+  error?: string | null;
+  /** The Apps that later returns replaced during setup, which the step says can be deleted on GitHub. */
+  replaced?: readonly ReplacedGitHubApp[];
+}): string {
   const { webUrl, app } = input;
   const owner = app.owner.type === "Organization" ? `the GitHub organization ${app.owner.login}` : `your GitHub account ${app.owner.login}`;
   const install = `${webUrl}/apps/${encodeURIComponent(app.slug)}/installations/new`;
@@ -229,5 +264,5 @@ ${error}      <p>${escapeHtml(
   return `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Install the GitHub App</h2>
       <p>${escapeHtml(`The GitHub App "${app.name}" is created, owned by ${owner}. Install it there, and choose the repositories it covers.`)}</p>
       <p><a href="${escapeHtml(install)}">${escapeHtml(`Install ${app.name} on GitHub`)}</a></p>
-${signIn}`;
+${replacedAppNotices(webUrl, app, input.replaced ?? [])}${signIn}`;
 }
