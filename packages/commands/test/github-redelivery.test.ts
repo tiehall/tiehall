@@ -255,6 +255,63 @@ describe("a run GitHub fails", () => {
   });
 });
 
+describe("a redelivery request GitHub refuses", () => {
+  /** The install's App, while GitHub refuses with 422 every request to redeliver the attempt with this id. */
+  function refusing(attemptId: number) {
+    return reachingGitHubThrough(async (input, init) =>
+      (init?.method ?? "GET").toUpperCase() === "POST" && pathOf(input) === `/app/hook/deliveries/${attemptId}/attempts`
+        ? new Response('{"message":"Validation Failed"}', { status: 422, headers: { "content-type": "application/json" } })
+        : fetch(input, init),
+    );
+  }
+
+  it("does not stop the run: Tiehall still asks GitHub to redeliver the other failed deliveries", async () => {
+    const first = await missedDelivery();
+    stub.advanceClock(2_000);
+    stub.setHookReachable(false);
+    await stub.openPullRequest("acme/web", { title: "Fix the footer", head: "fix-footer", author: "omar" });
+    await stub.settled();
+    stub.setHookReachable(true);
+    const second = stub.deliveries(app).at(-1)!;
+    expect(second.id).not.toBe(first.id);
+
+    await redeliver(refusing(first.id));
+
+    expect(asked()).toEqual([second.id]);
+  });
+
+  it("counts as one of the delivery's requests, so a delivery whose redelivery GitHub refuses every time is given up after the fifth", async () => {
+    const missed = await missedDelivery();
+    const github = refusing(missed.id);
+    for (let run = 0; run < REDELIVERY_ASKS; run += 1) await redeliver(github);
+    const givenUp = async () => (await install.owner.query<{ at: Date | null }>("SELECT webhook_given_up_at AS at FROM github_app")).rows[0]!.at;
+    expect(await givenUp()).toBeNull();
+
+    await redeliver(github);
+
+    expect(await givenUp()).not.toBeNull();
+    const { rows } = await install.owner.query<{ asks: number }>("SELECT asks FROM github_redeliveries WHERE delivery_id = $1", [missed.guid]);
+    expect(rows).toEqual([{ asks: REDELIVERY_ASKS }]);
+  });
+
+  it("with a server error, or not at all, fails the run, as GitHub failing it, and counts no request", async () => {
+    const missed = await missedDelivery();
+    const answers = [
+      async () => new Response('{"message":"Server Error"}', { status: 502, headers: { "content-type": "application/json" } }),
+      async (): Promise<Response> => {
+        throw new TypeError("fetch failed");
+      },
+    ];
+    for (const answer of answers) {
+      const failing = reachingGitHubThrough(async (input, init) =>
+        (init?.method ?? "GET").toUpperCase() === "POST" && pathOf(input) === `/app/hook/deliveries/${missed.id}/attempts` ? answer() : fetch(input, init),
+      );
+      await expect(redeliver(failing)).rejects.toThrow();
+    }
+    expect((await install.owner.query("SELECT 1 FROM github_redeliveries")).rows).toEqual([]);
+  });
+});
+
 describe("a delivery given up (github-layer-hardening 1.21)", () => {
   /** What the App's row says of the mode and of a given-up delivery. */
   async function appRow(): Promise<{ mode: string; given_up_at: Date | null }> {

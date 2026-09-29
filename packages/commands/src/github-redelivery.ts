@@ -20,7 +20,10 @@ import type { WorkerJob } from "./worker.ts";
 // redeliver that attempt. The redelivery keeps the delivery id, so
 // /webhooks/github stores it once and it is processed once. A redelivery that
 // fails too is asked for again at the next run, 5 times at most, so a
-// delivery that can never succeed does not cost a call every run; one that
+// delivery that can never succeed does not cost a call every run. A request
+// GitHub refuses, such as with 422 for a delivery it no longer redelivers,
+// counts as one of those 5, and the run goes on to the next delivery; GitHub
+// failing a request, with a server error or no answer, fails the run. One that
 // Tiehall stored although GitHub logged it as failed, such as when the answer
 // came too late for GitHub, is never asked for. Only deliveries made after the
 // App's credentials were stored count, because the install accepts deliveries
@@ -118,8 +121,16 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
     };
   });
 
+  let refused = 0;
   for (const attempt of toAsk) {
-    await askRedelivery(app.client, attempt.id);
+    try {
+      await askRedelivery(app.client, attempt.id);
+    } catch (error) {
+      // GitHub refused this request itself, as with 422 for a delivery it no longer redelivers: it counts as one of
+      // the delivery's requests, and the run asks for the others. GitHub failing the call stops the run.
+      if (!refusedRequest(error)) throw error;
+      refused += 1;
+    }
     await withOrg(database, ({ tx, orgId }) =>
       tx
         .insert(githubRedeliveries)
@@ -164,8 +175,20 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
       .delete(githubRedeliveries)
       .where(and(eq(githubRedeliveries.orgId, orgId), lt(githubRedeliveries.lastAskedAt, new Date(started.getTime() - REDELIVERY_WINDOW_MS))));
   });
+  if (refused > 0) logger.warn("github: GitHub refused requests to redeliver failed deliveries", { refused });
   if (toAsk.length > 0) logger.info("github: asked GitHub to redeliver failed deliveries", { asked: toAsk.length });
   return toAsk.length;
+}
+
+/**
+ * Whether GitHub answered a request to redeliver with a refusal of that
+ * request: a 4xx status other than 401, 403 and 429, which refuse the App or
+ * its rate rather than the request.
+ */
+function refusedRequest(error: unknown): boolean {
+  if ((error as { response?: unknown } | undefined)?.response === undefined) return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 401 && status !== 403 && status !== 429;
 }
 
 /** The job that asks GitHub to redeliver failed deliveries, every 10 minutes while GitHub runs in webhook mode. */
