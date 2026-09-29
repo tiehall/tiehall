@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
+import { reconcileGitHub } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -22,8 +24,8 @@ const accounts = new Map<string, StubUser>();
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-acme"]) accounts.set(login, stub.addUser({ login }));
-  stub.addOrg({ login: "acme", members: { "omar-acme": "admin", "lee-acme": "member" } });
+  for (const login of ["root-acme", "omar-acme", "lee-acme"]) accounts.set(login, stub.addUser({ login }));
+  stub.addOrg({ login: "acme", members: { "root-acme": "admin", "omar-acme": "admin", "lee-acme": "member" } });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
   await harness.connect("acme");
@@ -81,6 +83,14 @@ describe("a new member", () => {
     expect(seen.rows).toEqual([]);
   });
 
-  // Leaving the GitHub organization ends access through the checks of task 10.9, which turn this case into a plain test.
-  it.todo("who joined through an invite keeps their access after leaving the GitHub organization");
+  it("who joined through an invite keeps their access after leaving the GitHub organization", async () => {
+    await stub.removeMember("acme", "lee-acme", { delivery: "none" });
+    await reconcileGitHub.handle(
+      { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
+      { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute },
+    );
+    expect(await membershipOf("lee-acme")).toEqual({ role: "admin", teams: [] });
+    expect((await harness.signIn("lee-acme")).response.status).toBe(302);
+    expect(await membershipOf("lee-acme")).toEqual({ role: "admin", teams: [] });
+  });
 });

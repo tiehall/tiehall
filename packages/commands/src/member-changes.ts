@@ -1,12 +1,14 @@
 import { changeMemberRole, removeMember } from "@tiehall/catalog";
-import { leavesNoAdmin, memberRemoved, memberRoleChanged, Refusal, type Role } from "@tiehall/core";
-import { members, signInBlocks, teamMembers, teams, users, webSessions } from "@tiehall/db";
+import { leavesNoAdmin, memberRemoved, memberRoleChanged, Refusal, type Provenance, type Role } from "@tiehall/core";
+import { memberOrganizations, members, signInBlocks, teamMembers, teams, users, webSessions } from "@tiehall/db";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import type { JobSender } from "./jobs.ts";
 import { userName } from "./members.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
 import type { OrgContext } from "./with-org.ts";
+import { writeIn, type Origin, type Writer } from "./write.ts";
 
 // Changes to who is a member of the install and in which role
 // (teams-and-roles: Changing a member's role; teams-and-roles: Removing a
@@ -36,6 +38,11 @@ import type { OrgContext } from "./with-org.ts";
 // agent grants and personal access tokens joins the removal once those exist
 // (task 15.19); until then, and after, the membership re-check refuses every
 // call through them.
+//
+// A member who joined through membership of a GitHub organization is also
+// removed when they leave it (sign-in: Leaving the GitHub organization ends
+// access; organization-departures.ts): the same removal, with no block, and
+// never while they are the install's only admin.
 
 /**
  * A member as a review or a change sees them: their GitHub account, the name a
@@ -91,6 +98,73 @@ export async function endWebSessionsOf({ tx, orgId }: OrgContext, userId: string
     .where(and(eq(webSessions.orgId, orgId), eq(webSessions.userId, userId), isNull(webSessions.endedAt)));
 }
 
+/** Why a member is removed: an admin removed them, or GitHub reported them gone from an organization, through this installation. */
+export type RemovalCause = { cause: "admin" } | { cause: "left_organization"; installationId: string };
+
+/**
+ * Removes a member, in the caller's write, which has locked the admins' rows
+ * and the member's already: their membership goes, and with it their teams
+ * and the organizations Tiehall saw them in; an admin removal blocks their
+ * GitHub account; their web sessions end; the removal is recorded; and every
+ * pending proposal they are the accountable human of is cancelled.
+ */
+export async function removeMembership(writer: Writer, member: { userId: string; githubAccountId: number }, removal: RemovalCause): Promise<void> {
+  const { userId } = member;
+  const requestIds = await lockProposalsOfMember(writer, userId);
+  // Their memberships of teams, and the organizations they were seen in, go with it: the foreign keys cascade.
+  await writer.tx.delete(members).where(and(eq(members.orgId, writer.orgId), eq(members.userId, userId)));
+  if (removal.cause === "admin") {
+    await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
+  }
+  await endWebSessionsOf(writer, userId);
+  await writer.record(
+    memberRemoved,
+    removal.cause === "admin"
+      ? { userId, cause: "admin", blocked: true }
+      : { userId, cause: "left_organization", blocked: false, installationId: removal.installationId },
+  );
+  await cancelProposalsOfRemovedMember(writer, userId, requestIds);
+}
+
+/**
+ * Removes a member because GitHub reported them gone from an organization
+ * Tiehall saw them in, in its own write with the provenance of what found it:
+ * only a member who joined through organization membership, and never the
+ * install's only admin. Returns whether it removed them.
+ */
+export async function removeDepartedMember(
+  context: OrgContext,
+  jobs: JobSender,
+  provenance: Provenance,
+  input: { userId: string; installationId: string; origin?: Origin },
+): Promise<boolean> {
+  const admins = await lockAdmins(context);
+  const [member] = await context.tx
+    .select({ githubAccountId: users.githubAccountId })
+    .from(members)
+    .innerJoin(users, and(eq(users.orgId, members.orgId), eq(users.id, members.userId)))
+    .where(and(eq(members.orgId, context.orgId), eq(members.userId, input.userId)))
+    .for("update", { of: members });
+  if (member === undefined) return false;
+  const [seen] = await context.tx
+    .select({ githubOrganizationId: memberOrganizations.githubOrganizationId })
+    .from(memberOrganizations)
+    .where(and(eq(memberOrganizations.orgId, context.orgId), eq(memberOrganizations.userId, input.userId)))
+    .limit(1);
+  // A member who joined through an invite or by completing setup was seen in no organization, and stays.
+  if (seen === undefined) return false;
+  // The install keeps an admin: its only admin stays until another admin exists.
+  if (leavesNoAdmin(admins, { kind: "removal", userId: input.userId })) return false;
+  await writeIn(
+    context,
+    jobs,
+    provenance,
+    (writer) => removeMembership(writer, { userId: input.userId, githubAccountId: member.githubAccountId }, { cause: "left_organization", installationId: input.installationId }),
+    input.origin === undefined ? {} : { origin: input.origin },
+  );
+  return true;
+}
+
 /** Refuses, with 409, a change that would leave the install without an admin. */
 function keepAnAdmin(): Refusal {
   return new Refusal("conflict", "The install must keep at least one admin, so this change is refused.");
@@ -117,13 +191,7 @@ export const MEMBER_HANDLERS: Handlers = {
     const member = await memberRecord(context, userId, true);
     if (leavesNoAdmin(admins, { kind: "removal", userId })) throw keepAnAdmin();
     return context.write(async (writer) => {
-      const requestIds = await lockProposalsOfMember(writer, userId);
-      // Their memberships of teams go with it: the foreign key cascades.
-      await writer.tx.delete(members).where(and(eq(members.orgId, writer.orgId), eq(members.userId, userId)));
-      await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
-      await endWebSessionsOf(writer, userId);
-      await writer.record(memberRemoved, { userId, cause: "admin", blocked: true });
-      await cancelProposalsOfRemovedMember(writer, userId, requestIds);
+      await removeMembership(writer, { userId, githubAccountId: member.githubAccountId }, { cause: "admin" });
       return { userId };
     });
   }),

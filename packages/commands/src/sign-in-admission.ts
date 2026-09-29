@@ -3,6 +3,7 @@ import { invites, memberOrganizations, members, signInBlocks, users, type Databa
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { organizationMembership, workingOrganizationInstallations } from "./github-organizations.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import { checkDepartures } from "./organization-departures.ts";
 import { signInPolicyOf } from "./sign-in-policy.ts";
 import { LOGGABLE, type Logger } from "./log.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
@@ -12,7 +13,10 @@ import { writeIn, type Origin } from "./write.ts";
 // members; activity-log: Which actions are security events; design.md,
 // Self-hosting decisions: S5 and S6). A GitHub account may sign in when at
 // least one of these holds:
-// - its Tiehall user is already a member of the install;
+// - its Tiehall user is already a member of the install; for a member who
+//   joined through an organization, GitHub is asked first whether they left
+//   it, and a sign-in whose check removes them is refused (sign-in: Leaving
+//   the GitHub organization ends access; organization-departures.ts);
 // - it holds a valid invite: bound to the account's numeric id, neither
 //   accepted nor revoked, and not expired;
 // - GitHub reports, through a working installation of the App that an admin
@@ -120,7 +124,7 @@ export async function decideAdmission(services: AdmissionServices, account: { id
         .where(and(eq(users.orgId, context.orgId), eq(users.githubAccountId, account.id)));
       const block = await blockOf(context, account.id);
       return {
-        member: member !== undefined,
+        member: member?.userId,
         invite: await validInvite(context, account.id, block),
         blocked: block !== undefined,
         organizationsAdmit: admitsOrganizationMembers(await signInPolicyOf(context)),
@@ -129,7 +133,15 @@ export async function decideAdmission(services: AdmissionServices, account: { id
     },
     { readOnly: true },
   );
-  if (state.member) return { through: "member" };
+  if (state.member !== undefined) {
+    // A member who joined through an organization and left it is removed by this check, and so refused.
+    if (app === undefined) return { through: "member" };
+    const removed = await checkDepartures(
+      { database: services.database, app, logger: services.logger, provenance: { actorKind: "system" } },
+      { userId: state.member, login: account.login },
+    );
+    return removed.length === 0 ? { through: "member" } : undefined;
+  }
   if (state.invite !== undefined) return { through: "invite", inviteId: state.invite.id, role: state.invite.role };
   if (state.blocked || !state.organizationsAdmit) return undefined;
   if (app === undefined || state.organizations.length === 0) return undefined;

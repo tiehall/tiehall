@@ -73,7 +73,14 @@
             "case": "ends the membership of the install and of every team, and records a security event naming the admin and the block"
           }
         },
-        { "action": "a member's removal because they left the GitHub organization", "pending": "10.9" }
+        {
+          "action": "a member's removal because they left the GitHub organization",
+          "event": "member.removed",
+          "test": {
+            "file": "packages/commands/test/organization-departures.test.ts",
+            "case": "catches a change no event reported, in polling mode, and records it as the system's"
+          }
+        }
       ]
     },
     {

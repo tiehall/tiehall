@@ -25,9 +25,10 @@ import type { WorkerJob } from "./worker.ts";
 //
 // A listing runs when the sign-in that completes setup arrives, when an admin
 // connects an installation (a job, which reads that installation's
-// repositories at once), and when a delivery about an installation arrives in
-// webhook mode; the poll of polling mode and the 15-minute reconciliation run
-// it too, once they are built (tasks 10.8 and 10.9 of add-tiehall-oss-v1).
+// repositories at once), when a delivery about an installation arrives in
+// webhook mode, and on each run of the 15-minute reconciliation, in either
+// mode (github-reconciliation.ts); the poll of polling mode runs it too, once
+// it is built (task 10.8 of add-tiehall-oss-v1).
 
 /** One installation of the App, as GitHub's listing gives it. */
 export interface ListedInstallation {

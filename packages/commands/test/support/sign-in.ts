@@ -91,10 +91,17 @@ export interface SignInHarness {
 export async function startSignIn(
   install: TestInstall,
   stub: GitHubStub,
-  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness } = {},
+  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness; hook?: { url: string } } = {},
 ): Promise<SignInHarness> {
   // Another sign-in service for the App a harness stored, such as one whose fetch fails some calls, or a new App.
-  const app = options.sameAppAs?.app ?? stub.createApp({ owner: options.owner ?? "acme", callbackUrls: [`${URL_OF_INSTALL}/api/auth/callback/github`] });
+  const app =
+    options.sameAppAs?.app ??
+    stub.createApp({
+      owner: options.owner ?? "acme",
+      callbackUrls: [`${URL_OF_INSTALL}/api/auth/callback/github`],
+      // An App with a webhook, whose deliveries the stub logs with what GitHub sent, for a test to store.
+      ...(options.hook === undefined ? {} : { hook: options.hook }),
+    });
   const box = options.sameAppAs?.box ?? openSecretBox(randomBytes(32).toString("base64url"));
   const store = (clientSecret: string) =>
     install.db.transaction(async (tx) => {
@@ -143,7 +150,7 @@ export async function startSignIn(
     return { response, jar };
   }
 
-  const github = createInstallGitHub({ database: install.db, secrets: () => box, apiUrl: stub.apiUrl, fetch, logger: install.logger });
+  const github = createInstallGitHub({ database: install.db, secrets: () => box, apiUrl: stub.apiUrl, fetch: options.fetch ?? fetch, logger: install.logger });
 
   async function connect(...accounts: string[]): Promise<Record<string, string>> {
     const access = await github.app();

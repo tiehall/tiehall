@@ -1,5 +1,6 @@
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
 import { syncGitHubInstallations } from "./github-installations.ts";
+import { reconcileGitHub } from "./github-reconciliation.ts";
 import { processGitHubDelivery, releaseHeldGitHubDeliveries } from "./github-webhooks.ts";
 import { pruneIdempotencyKeys } from "./idempotency.ts";
 import { expireProposals } from "./proposal-endings.ts";
@@ -22,4 +23,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   processGitHubDelivery,
   releaseHeldGitHubDeliveries,
   syncGitHubInstallations,
+  reconcileGitHub,
 ];

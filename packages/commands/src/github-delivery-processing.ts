@@ -7,6 +7,7 @@ import { readInstallations } from "./github-installations.ts";
 import { userOfGitHubAccount } from "./github-users.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { processOrganizationEvent } from "./organization-departures.ts";
 import { withOrg } from "./with-org.ts";
 
 // Processing a stored GitHub delivery, in the worker (agent-access: Six kinds
@@ -68,9 +69,10 @@ export type GitHubEventProcessors = Readonly<Record<string, GitHubEventProcessor
  * The processors of the events a connected installation's deliveries carry.
  * Each task that acts on an event adds its processor here: pull requests for
  * PR links and close on merge, issues for the GitHub Issues mirror, and
- * organization for membership. An event with no processor changes nothing.
+ * organization for membership (organization-departures.ts). An event with no
+ * processor changes nothing.
  */
-export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = {};
+export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = { organization: processOrganizationEvent };
 
 /** The events that are about the App's installations, which make Tiehall list them again. */
 const INSTALLATION_EVENTS = new Set(["installation", "installation_repositories"]);

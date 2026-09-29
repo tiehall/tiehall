@@ -253,10 +253,13 @@ export const memberRoleChanged = defineEventType({
 
 /**
  * A member was removed from the install (teams-and-roles: Removing a member;
- * activity-log: Which actions are security events). It names the member, and
- * whether an admin removed them, which records a block on their GitHub
- * account, or they were removed because they left the GitHub organization,
- * which records none; for an admin removal its provenance names the admin.
+ * sign-in: Leaving the GitHub organization ends access; activity-log: Which
+ * actions are security events). It names the member, and whether an admin
+ * removed them, which records a block on their GitHub account, or they were
+ * removed because they left the GitHub organization, which records none; for
+ * that cause it names the connected installation whose organization GitHub
+ * reported them gone from. For an admin removal its provenance names the
+ * admin; for leaving, the integration or the system job that found it.
  */
 export const memberRemoved = defineEventType({
   type: "member.removed",
@@ -265,6 +268,7 @@ export const memberRemoved = defineEventType({
     userId: { kind: "id", of: "user" },
     cause: { kind: "enum", values: ["admin", "left_organization"] },
     blocked: { kind: "boolean" },
+    installationId: { kind: "id", of: "installation", optional: true },
   },
 });
 
