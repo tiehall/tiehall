@@ -255,6 +255,25 @@ describe("uploading a rotated private key", () => {
     expect(await keyEvents()).toEqual([]);
   });
 
+  // GitHub gives an App an RSA key, and the App's tokens are signed with RS256. A private key of another kind, such
+  // as an EC or Ed25519 key, cannot sign one: it is no key of the App, and GitHub, which is never asked, is not
+  // failing the check.
+  it("refuses a private key that cannot sign the App's tokens, such as an EC or Ed25519 key, with 400, before asking GitHub, and stores nothing", async () => {
+    const keys = {
+      ec: generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      ed25519: generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    };
+    for (const [kind, key] of Object.entries(keys)) {
+      const from = stub.received.length;
+      const answer = await upload(ada, key);
+      expect(answer.status, kind).toBe(400);
+      expect(await answer.json(), kind).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", errors: [{ path: ["privateKey"] }] });
+      expect(stub.received.slice(from), kind).toEqual([]);
+    }
+    expect(await storedKey()).toBe(keyInUse);
+    expect(await keyEvents()).toEqual([]);
+  });
+
   it("refuses a key file of 16,385 characters with 400 naming the 16,384-character bound, before asking GitHub, and stores nothing", async () => {
     const from = stub.received.length;
     const answer = await upload(ada, `${stub.addPrivateKey(app)}\n`.padEnd(16_385, "\n"));

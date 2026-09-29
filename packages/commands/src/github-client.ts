@@ -231,6 +231,21 @@ export function createGitHubClient(credentials: GitHubAppCredentials, options: G
 const APP = z.looseObject({ id: z.number().int().positive() });
 
 /**
+ * Whether this private key signs the App's JSON web tokens, as the client
+ * signs them, with RS256: true for an RSA key such as GitHub gives an App,
+ * false for a key of another kind, such as an EC or Ed25519 key, or one the
+ * signing cannot read. Nothing is sent to GitHub.
+ */
+export async function signsAppTokens(credentials: GitHubAppCredentials): Promise<boolean> {
+  try {
+    await createAppAuth({ appId: credentials.clientId, privateKey: credentials.privateKey })({ type: "app" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether GitHub accepts these credentials as those of the App with this id,
  * such as a rotated private key before it is stored (self-host-install: A
  * rotated App key can be uploaded; github-layer-hardening: design.md,
