@@ -30,6 +30,8 @@ export interface InstallGitHubOptions {
   /** The fetch the calls go through; one that reaches GitHub's own hosts only, unless a test gives another. */
   fetch?: typeof fetch;
   logger?: Logger;
+  /** How long one request waits for GitHub; the client's 10 seconds unless a test lowers it. */
+  timeoutMs?: number;
 }
 
 export interface InstallGitHub {
@@ -46,10 +48,15 @@ export interface InstallGitHub {
 export function createInstallGitHub(options: InstallGitHubOptions): InstallGitHub {
   const logger = (options.logger ?? createLogger()).child({ integration: "github" });
   const fetchImpl = options.fetch ?? (createGitHubFetch(fetch) as typeof fetch);
+  const clientOptions = {
+    apiUrl: options.apiUrl ?? GITHUB_API_URL,
+    fetch: fetchImpl,
+    logger,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+  };
   let built: { key: string; access: GitHubAppAccess } | undefined;
   return {
-    checkKey: (credentials, installationId) =>
-      requestInstallationToken(credentials, installationId, { apiUrl: options.apiUrl ?? GITHUB_API_URL, fetch: fetchImpl, logger }),
+    checkKey: (credentials, installationId) => requestInstallationToken(credentials, installationId, clientOptions),
     async app() {
       const stored = await options.database.transaction(async (tx) => {
         const [row] = await tx
@@ -69,7 +76,7 @@ export function createInstallGitHub(options: InstallGitHubOptions): InstallGitHu
         if (built?.key === key) return { key, access: built.access };
         const privateKey = await readSecret({ tx, orgId: row.orgId }, options.secrets(), "github_app.private_key");
         if (privateKey === undefined) return undefined;
-        const client = createGitHubClient({ clientId: row.clientId, privateKey }, { apiUrl: options.apiUrl ?? GITHUB_API_URL, fetch: fetchImpl, logger });
+        const client = createGitHubClient({ clientId: row.clientId, privateKey }, clientOptions);
         return { key, access: { appId: row.appId, client } };
       });
       if (stored === undefined) return undefined;

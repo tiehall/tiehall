@@ -206,9 +206,18 @@ describe("creating an invite", () => {
 // slow GitHub holds no connection in a transaction and no lock, and a GitHub that fails leaves the confirmation
 // unused, so the admin can post the same review page again.
 describe("creating an invite while GitHub answers slowly or fails", () => {
-  /** Makes the install reach GitHub through this fetch until the test ends. */
-  async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>): Promise<void> {
-    install.useGitHub(createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: through, logger: install.logger }));
+  /** Makes the install reach GitHub through this fetch until the test ends, with the client's timeout lowered when a test gives one. */
+  async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>, timeoutMs?: number): Promise<void> {
+    install.useGitHub(
+      createInstallGitHub({
+        database: install.db,
+        secrets: () => install.box,
+        apiUrl: stub.apiUrl,
+        fetch: through,
+        logger: install.logger,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      }),
+    );
     try {
       await run();
     } finally {
@@ -264,15 +273,58 @@ describe("creating an invite while GitHub answers slowly or fails", () => {
       },
       async () => {
         const post = await install.prepareConfirmation(ada, "invites.create", { login: "oli-dev" });
-        expect((await post()).status).toBeGreaterThanOrEqual(500);
+        expect(await problemOf(await post())).toEqual({ status: 502, type: "https://tiehall.com/problems/integration-unavailable" });
         expect(await invitesFor("oli-dev")).toEqual([]);
+        expect(await eventsSince()).toEqual([]);
         failing = false;
         expect((await post()).status).toBe(200);
       },
     );
     expect(await invitesFor("oli-dev")).toHaveLength(1);
   });
+
+  // D50 (3): not answering within the client's timeout, lowered here from its 10 seconds, is the same failure.
+  it("that GitHub does not answer in time leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
+    stub.addUser({ login: "pat-dev" });
+    let slow = true;
+    await reachingGitHubThrough(
+      async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (slow && url.pathname === "/users/pat-dev") return answerAfter(init?.signal, 2_000, () => fetch(input, init));
+        return fetch(input, init);
+      },
+      async () => {
+        const post = await install.prepareConfirmation(ada, "invites.create", { login: "pat-dev" });
+        expect(await problemOf(await post())).toEqual({ status: 502, type: "https://tiehall.com/problems/integration-unavailable" });
+        expect(await invitesFor("pat-dev")).toEqual([]);
+        expect(await eventsSince()).toEqual([]);
+        slow = false;
+        expect((await post()).status).toBe(200);
+      },
+      200,
+    );
+    expect(await invitesFor("pat-dev")).toHaveLength(1);
+  });
 });
+
+/**
+ * GitHub's answer, given only after this many milliseconds: the request's
+ * signal, which the client's timeout aborts, ends the wait first, as it ends a
+ * request GitHub has not answered.
+ */
+function answerAfter(signal: AbortSignal | null | undefined, delayMs: number, answer: () => Promise<Response>): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(answer()), delayMs);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
 
 /** Creates an invite for this username as Ada, with the confirmation step; returns its id. */
 async function invited(login: string): Promise<string> {

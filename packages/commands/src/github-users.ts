@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { users } from "@tiehall/db";
-import type { GitHubClient } from "./github-client.ts";
+import { gitHubUnavailable, type GitHubClient } from "./github-client.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // GitHub users as Tiehall users (sign-in: One Tiehall user per GitHub account;
@@ -37,8 +37,9 @@ const ACCOUNT = z.object({ id: z.number().int().positive(), login: z.string().mi
  * the App's installations, with that installation's token (teams-and-roles:
  * Invites by GitHub username); undefined when GitHub knows no account by
  * that login, or one of a kind that is neither a person's nor an
- * organization's. It throws when GitHub does not answer, within the client's
- * timeout (github-client.ts).
+ * organization's. It throws GitHubUnavailableError when GitHub answers with
+ * any other error, or does not answer within the client's timeout
+ * (github-client.ts).
  */
 export async function gitHubAccountNamed(client: GitHubClient, installationId: number, login: string): Promise<GitHubAccount | undefined> {
   let data: unknown;
@@ -46,7 +47,7 @@ export async function gitHubAccountNamed(client: GitHubClient, installationId: n
     ({ data } = await client.installation(installationId).request("GET /users/{username}", { username: login }));
   } catch (error) {
     if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
-    throw error;
+    throw gitHubUnavailable("the look-up of the username", error);
   }
   const account = ACCOUNT.safeParse(data);
   if (!account.success || (account.data.type !== "User" && account.data.type !== "Organization")) return undefined;

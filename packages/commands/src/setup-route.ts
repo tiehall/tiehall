@@ -3,7 +3,7 @@ import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@t
 import { orgs, setupSessions, type Database } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGitHubApp } from "./github-app.ts";
-import { convertManifestCode, GITHUB_API_URL, ManifestConversionError } from "./github-client.ts";
+import { convertManifestCode, GITHUB_API_URL, GitHubUnavailableError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -54,8 +54,13 @@ import type { SetupSignIn } from "./sign-in.ts";
 //   on to install the App. The latest App wins: an App it replaces, such as
 //   one created from an older tab, stays registered on GitHub, so the install
 //   step names it with a link to its settings on GitHub, where it can be
-//   deleted, and the log records the replacement. A code GitHub no longer converts stores nothing,
-//   and the page says to create the App again.
+//   deleted, and the log records the replacement. A return with no code, or
+//   with a code not in the form GitHub issues codes in, is refused with 400
+//   invalid-input, and GitHub is not asked. A code GitHub does not convert,
+//   whatever it answers, or does not answer within the client's 10 seconds,
+//   stores nothing, and the page, answered with 502 and the problem type
+//   integration-unavailable in its markup, says to create the App again
+//   (public-api: One error model for Tiehall's own refusals).
 // - POST /setup/sign-in starts the sign-in with GitHub that completes setup,
 //   and GET /setup/sign-in/callback/github is GitHub's return to it
 //   (self-host-install: Setup names the company and makes the first admin):
@@ -76,8 +81,12 @@ export interface SetupRouteOptions {
   url: string;
   /** Encrypts the GitHub App's credentials before they are stored: TIEHALL_SECRET_KEY's box, opened when first needed. */
   secrets: () => SecretBox;
-  /** GitHub's web pages and API, which a test points at the GitHub stub; github.com and api.github.com otherwise. */
-  github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch };
+  /**
+   * GitHub's web pages and API, which a test points at the GitHub stub, with
+   * the fetch and the wait of each request to GitHub that a test may give;
+   * github.com, api.github.com and the client's 10 seconds otherwise.
+   */
+  github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch; timeoutMs?: number };
   /** The sign-in with GitHub that completes setup; without it, the setup screen offers none. */
   signIn?: SetupSignIn;
   logger?: Logger;
@@ -110,6 +119,13 @@ const NOT_IN_SESSION = httpProblem(
   new Refusal("forbidden", "Setup continues only in the browser that entered the setup code. Open /setup there, or enter the setup code in this one."),
 );
 const NOT_YET = httpProblem(new Refusal("conflict", "Name the company and create the install's GitHub App before you sign in."));
+/** GitHub did not convert the manifest's code: answered as a page that names the problem, until refusal pages negotiate it. */
+const CONVERSION_FAILED = new Refusal(
+  "integration-unavailable",
+  "GitHub did not give Tiehall the new App's credentials: it did not answer in time, or no longer converts the code it sent back, " +
+    "which it converts only once and only within the hour. Nothing was stored. " +
+    "Delete the App GitHub created, if any, in your GitHub settings, then create the App again.",
+);
 const WRONG_CODE = httpProblem(
   new Refusal(
     "forbidden",
@@ -236,12 +252,15 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       app = await convertManifestCode(code, {
         apiUrl: options.github?.apiUrl ?? GITHUB_API_URL,
         ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
+        ...(options.github?.timeoutMs === undefined ? {} : { timeoutMs: options.github.timeoutMs }),
         logger,
       });
     } catch (error) {
-      if (!(error instanceof ManifestConversionError)) throw error;
+      // A code not in GitHub's form: refused before GitHub is asked.
+      if (error instanceof Refusal) return problem(httpProblem(error));
+      if (!(error instanceof GitHubUnavailableError)) throw error;
       logger.warn("setup: GitHub did not convert the manifest's code", { error, status: error.status });
-      return page(layout(conversionFailedBody()), {}, 502);
+      return page(layout(conversionFailedBody()), {}, CONVERSION_FAILED.status);
     }
     const stored = await options.database.transaction(async (tx) => {
       // Setup may have completed meanwhile, in another browser; the org row is locked against that.
@@ -358,11 +377,9 @@ function codePage(): string {
 
 function conversionFailedBody(): string {
   return `      <h2>The GitHub App could not be stored</h2>
-      <p>${escapeHtml(
-        "GitHub did not give Tiehall the new App's credentials: it converts the code it sends back only once, and only within the hour. " +
-          "Nothing was stored. Delete the App GitHub created, if any, in your GitHub settings, then create the App again.",
-      )}</p>
+      <p>${escapeHtml(CONVERSION_FAILED.message)}</p>
       <p><a href="${SETUP_PATH}">Back to the setup screen</a></p>
+      <p>Problem type: <code>${escapeHtml(CONVERSION_FAILED.type)}</code></p>
 `;
 }
 

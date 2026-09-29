@@ -4,6 +4,7 @@ import { githubApp, invites, members } from "@tiehall/db";
 import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, definePreparedHandler, type Handlers } from "./execute.ts";
+import { GitHubUnavailableError } from "./github-client.ts";
 import { anyConnectedInstallation } from "./github-installations.ts";
 import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 
@@ -16,7 +17,11 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // installation of the install's App, and with none the invite gets 409. It
 // asks outside any transaction, before the invite's write and the use of its
 // confirmation (execute.ts), and the write reads again what the answer rested
-// on: an App replaced meanwhile gets 409. It binds the invite to that
+// on: an App replaced meanwhile gets 409. GitHub failing the look-up, or not
+// answering it within the client's 10 seconds, gets 502
+// integration-unavailable, which leaves the confirmation unused, so the admin
+// can confirm the same review page again (public-api: One error model for
+// Tiehall's own refusals). It binds the invite to that
 // account's numeric id: the invite follows
 // a rename of the login and never passes to a new holder of the old one. A
 // username that names no person's GitHub account gets 404 and creates no
@@ -57,7 +62,16 @@ export const INVITE_HANDLERS: Handlers = {
           "The install's GitHub App has no connected installation to look the username up through. Install it on your GitHub organization and connect that installation first.",
         );
       }
-      const account = await gitHubAccountNamed(app.client, installationId, login);
+      let account;
+      try {
+        account = await gitHubAccountNamed(app.client, installationId, login);
+      } catch (error) {
+        if (!(error instanceof GitHubUnavailableError)) throw error;
+        throw new Refusal(
+          "integration-unavailable",
+          `${error.message} No invite was created, and your confirmation is still unused: confirm the same review page again, while it is valid, once GitHub answers.`,
+        );
+      }
       if (account?.type !== "User") throw new Refusal("record-not-found", "That GitHub username names no person's GitHub account.");
       return { appId: app.appId, account };
     },

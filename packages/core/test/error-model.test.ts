@@ -30,6 +30,7 @@ const TABLE: Record<RefusalReason, number> = {
   "payload-too-large": 413,
   "if-match-required": 428,
   "rate-limited": 429,
+  "integration-unavailable": 502,
   unauthenticated: 401,
   "insufficient-scope": 403,
   "precondition-failed": 412,
@@ -122,6 +123,25 @@ describe("the error model", () => {
       title: "Request body too large",
       status: 413,
       detail: "The request body is larger than 2 MiB.",
+    });
+  });
+
+  // public-api: One error model for Tiehall's own refusals (D50 (3)). GitHub or the Jira site failing a call
+  // that the action needs is the install's upstream failing, not Tiehall: 502, under its own problem type, and
+  // no Retry-After, because nobody can say when GitHub or the Jira site answers again.
+  it("answers GitHub or the Jira site failing an action with 502 integration-unavailable, and no Retry-After", () => {
+    const refusal = new Refusal("integration-unavailable", "GitHub did not answer the look-up of the username within 10 seconds.");
+    expect(refusal.type.endsWith("/integration-unavailable")).toBe(true);
+    expect(refusal.type).toBe(`${PROBLEM_TYPE_BASE}integration-unavailable`);
+    const { status, headers, body } = httpProblem(refusal);
+    expect(status).toBe(502);
+    expect(headers).toEqual({ "content-type": "application/problem+json", "cache-control": "no-store" });
+    expect(headers["retry-after"]).toBeUndefined();
+    expect(body).toEqual({
+      type: `${PROBLEM_TYPE_BASE}integration-unavailable`,
+      title: "Integration unavailable",
+      status: 502,
+      detail: "GitHub did not answer the look-up of the username within 10 seconds.",
     });
   });
 

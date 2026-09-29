@@ -3,11 +3,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp, type StubInstallation } from "@tiehall/testing/github";
+import { Refusal } from "@tiehall/core";
 import {
   convertManifestCode,
   createGitHubClient,
   GITHUB_REQUEST_TIMEOUT_MS,
-  ManifestConversionError,
+  GitHubUnavailableError,
+  LOGGABLE,
   readSignedInUser,
   requestInstallationToken,
 } from "../src/index.ts";
@@ -157,7 +159,10 @@ describe("a GitHub that does not answer", () => {
 
   it("gives up on the key check, the manifest conversion and the sign-in's read of who signed in", async () => {
     await expect(requestInstallationToken({ clientId: app.clientId, privateKey: app.pem }, installation.id, options)).rejects.toThrow();
-    await expect(convertManifestCode("a-manifest-code", options)).rejects.toBeInstanceOf(ManifestConversionError);
+    // Not answering is GitHub being unavailable (D50 (3)): the error gives no status, since GitHub gave none.
+    const conversion = convertManifestCode("a-manifest-code", options);
+    await expect(conversion).rejects.toBeInstanceOf(GitHubUnavailableError);
+    await expect(conversion).rejects.toMatchObject({ status: undefined });
     expect(await readSignedInUser("a-user-token", options)).toBeUndefined();
   });
 
@@ -176,5 +181,41 @@ describe("a GitHub that does not answer", () => {
     const own = new AbortController();
     await client.installation(installation.id).request("GET /repos/{owner}/{repo}", { owner: "acme", repo: "web", request: { signal: own.signal } });
     expect(signals.at(-1)).toBe(own.signal);
+  });
+});
+
+// GitHub unavailable (public-api: One error model for Tiehall's own refusals;
+// design.md, Technical decisions: T2): when GitHub answers a call with a status
+// its caller gives no answer of its own for, or not at all, the client throws
+// one error, which the actions that asked turn into 502
+// integration-unavailable. Its message is Tiehall's own words, which name
+// GitHub's status and nothing of the call's input, so the logger keeps it.
+describe("a GitHub that fails a call", () => {
+  it("that converts a manifest's code: GitHub's refusal of the code is GitHub unavailable, with GitHub's status", async () => {
+    const error = await convertManifestCode("a-code-github-never-issued", { apiUrl: stub.apiUrl }).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(GitHubUnavailableError);
+    expect(error).toMatchObject({ status: 404 });
+    expect((error as GitHubUnavailableError)[LOGGABLE]).toBe(true);
+    expect((error as Error).message).not.toContain("a-code-github-never-issued");
+
+    const failing = (async () => new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } })) as typeof fetch;
+    await expect(convertManifestCode("a-manifest-code", { apiUrl: stub.apiUrl, fetch: failing })).rejects.toMatchObject({
+      name: "GitHubUnavailableError",
+      status: 500,
+    });
+  });
+
+  it("that converts a code not in the form GitHub issues: refused as invalid input, before GitHub is asked", async () => {
+    let asked = 0;
+    const counting = (async (input: string | URL | Request, init?: RequestInit) => {
+      asked += 1;
+      return fetch(input, init);
+    }) as typeof fetch;
+    for (const code of ["", "not a code/../x", "a".repeat(201)]) {
+      const error = await convertManifestCode(code, { apiUrl: stub.apiUrl, fetch: counting }).catch((thrown: unknown) => thrown);
+      expect(error).toBeInstanceOf(Refusal);
+      expect(error).toMatchObject({ reason: "invalid-input", status: 400, issues: [{ path: ["code"] }] });
+    }
+    expect(asked).toBe(0);
   });
 });

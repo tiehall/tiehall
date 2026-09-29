@@ -24,8 +24,9 @@ import { addTeam, joinTeams, packetOf, tokenOf } from "./support/requests.ts";
 // The rows of the error model that REST reaches now (public-api: One error
 // model for Tiehall's own refusals; public-api: Errors are RFC 9457 problem
 // details), through the real route and execute(): both 404 rows, 400, 403 for
-// a removed member, 409, 429 with Retry-After and 503 setup-required, and 413
-// for a body over the size limit, through the real catalog. The 503 with
+// a removed member, 409, 429 with Retry-After, 502 integration-unavailable and
+// 503 setup-required, and 413 for a body over the size limit, through the real
+// catalog. The 503 with
 // Retry-After: 0 that a call gets while the app shuts down is the web role's,
 // tested in apps/server, as are the web role's own 413 answers. Later tasks add
 // a test for each row they make reachable.
@@ -74,6 +75,19 @@ const catalog = defineCatalog([
     surfaces: ["rest"],
     stability: "alpha",
   }),
+  defineCommand({
+    id: "probes.link",
+    summary: "Link a probe request to a pull request, which GitHub fails to name.",
+    input: z.object({ key: z.string(), pullRequest: z.string() }),
+    output: z.object({}),
+    method: "POST",
+    path: "/api/v1/probes/{key}/links",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+  }),
 ]);
 
 const agent: Caller = {
@@ -110,6 +124,9 @@ beforeAll(async () => {
       },
       "probes.post": async () => {
         throw new Refusal("rate-limited", "This token has made 60 writes in the last minute.", { retryAfterSeconds: 17 });
+      },
+      "probes.link": async () => {
+        throw new Refusal("integration-unavailable", "GitHub did not answer the read of the pull request within 10 seconds, so nothing changed.");
       },
     },
     store: { database: db, jobs: { send: async () => {} } },
@@ -184,6 +201,20 @@ describe("once the install has its org", () => {
     } finally {
       await owner.query("INSERT INTO members (org_id, user_id, role) SELECT id, $1, 'member' FROM orgs", [agent.userId]);
     }
+  });
+
+  // D50 (3): GitHub or the Jira site failing a call the action needs. No operation offered on REST asks GitHub
+  // during the call yet; the probe refuses as one that does, such as linking a PR (16.8), will.
+  it("answers GitHub or the Jira site failing the action with 502 integration-unavailable, and no Retry-After", async () => {
+    const { status, retryAfter, problem } = await send("POST", "/api/v1/probes/FE-142/links", { pullRequest: "acme/web#7" });
+    expect(status).toBe(502);
+    expect(retryAfter).toBeNull();
+    expect(problem).toEqual({
+      type: `${PROBLEM_TYPE_BASE}integration-unavailable`,
+      title: "Integration unavailable",
+      status: 502,
+      detail: "GitHub did not answer the read of the pull request within 10 seconds, so nothing changed.",
+    });
   });
 
   it("answers an exceeded limit with 429 and Retry-After", async () => {

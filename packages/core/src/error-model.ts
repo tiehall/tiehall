@@ -16,8 +16,8 @@
 // A problem type is a URI under https://tiehall.com/problems/, one per row.
 // It identifies the kind of refusal and is the same on every install; like the
 // packet schema's $id, no install fetches it and it need not resolve. Where
-// the spec names a type (setup-required, needs-human, upgrade-required), that
-// name ends the URI.
+// the spec names a type (setup-required, needs-human, upgrade-required,
+// payload-too-large, integration-unavailable), that name ends the URI.
 
 /** Where every problem type's URI starts. */
 export const PROBLEM_TYPE_BASE = "https://tiehall.com/problems/";
@@ -77,6 +77,14 @@ export const REFUSAL_REASONS = {
   "if-match-required": { status: 428, title: "If-Match required" },
   /** A write limit, a budget or a request cap is exceeded. */
   "rate-limited": { status: 429, title: "Limit exceeded", retryAfter: "required" },
+  /**
+   * GitHub or the Jira site failed a call that the action needs: it answered
+   * with an error the action gives no answer of its own for, or did not answer
+   * within 10 seconds. The action changes nothing and leaves its confirmation
+   * unused. It carries no Retry-After, because nobody can say when GitHub or
+   * the Jira site answers again.
+   */
+  "integration-unavailable": { status: 502, title: "Integration unavailable" },
   /** A call without a token, as OAuth answers it. */
   unauthenticated: { status: 401, title: "Authentication required", challenge: "Bearer" },
   /** A token without a scope the operation needs, as OAuth answers it. */

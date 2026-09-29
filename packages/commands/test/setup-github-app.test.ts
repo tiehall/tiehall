@@ -479,6 +479,8 @@ describe("GitHub's return with the code", () => {
     expect((await open(INSTALL, cookie)).html).not.toContain("no longer used");
   });
 
+  // D50 (3): GitHub failing the exchange of the manifest's code is 502 integration-unavailable. The answer stays
+  // a page until the refusal pages of 1.17 negotiate it, and names the problem type in its markup.
   it("stores nothing when GitHub no longer converts the code, and says to create the App again", async () => {
     const cookie = await setupSession(INSTALL);
     const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
@@ -486,10 +488,65 @@ describe("GitHub's return with the code", () => {
     stub.advanceClock(61 * 60 * 1000);
     const answer = await returnFromGitHub(INSTALL, location!, cookie);
     expect(answer.status).toBe(502);
-    expect(await answer.text()).toContain("create the App again");
+    expect(answer.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await answer.text();
+    expect(html).toContain("create the App again");
+    expect(html).toContain("https://tiehall.com/problems/integration-unavailable");
     expect(conversions().map(({ status }) => status)).toEqual([404]);
     expect(await storedApp()).toEqual([]);
     expect(await storedSecretNames()).toEqual([]);
+  });
+
+  it("answers a conversion GitHub does not answer in time with the same page, and stores nothing", async () => {
+    const cookie = await setupSession(INSTALL);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    // GitHub answers the conversion only after the client's timeout, lowered here from its 10 seconds, has passed.
+    const slow = (async (input: string | URL | Request, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+        signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+      });
+    }) as typeof fetch;
+    const slowRoute = createSetupRoute({
+      database: db,
+      url: INSTALL,
+      logger,
+      secrets: () => box,
+      github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: slow, timeoutMs: 200 },
+      now: () => clock(),
+    });
+    const answer = await slowRoute(browserRequest(INSTALL, `${location!.pathname}${location!.search}`, cookie));
+    expect(answer.status).toBe(502);
+    expect(answer.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await answer.text();
+    expect(html).toContain("create the App again");
+    expect(html).toContain("https://tiehall.com/problems/integration-unavailable");
+    expect(await storedApp()).toEqual([]);
+    expect(await storedSecretNames()).toEqual([]);
+  });
+
+  // A code that is missing, or not in the form GitHub issues codes in, is the return's own fault: 400, and GitHub
+  // is not asked (D50 (3)).
+  it("refuses a return with no code, or a code not in the form GitHub issues, with 400 invalid-input, asks GitHub nothing and stores nothing", async () => {
+    const cookie = await setupSession(INSTALL);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    for (const code of [undefined, "", "not a code/../x", "a".repeat(201)]) {
+      const url = new URL(location!);
+      if (code === undefined) url.searchParams.delete("code");
+      else url.searchParams.set("code", code);
+      const answer = await returnFromGitHub(INSTALL, url, cookie);
+      expect(answer.status).toBe(400);
+      expect(answer.headers.get("content-type")).toBe("application/problem+json");
+      expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", errors: [{ path: ["code"] }] });
+    }
+    expect(conversions()).toHaveLength(0);
+    expect(stub.received.filter((request) => request.host === "api")).toEqual([]);
+    expect(await storedApp()).toEqual([]);
+    expect(await storedSecretNames()).toEqual([]);
+    // The state is not used up: GitHub's own return, with its code, still stores the App.
+    expect((await returnFromGitHub(INSTALL, location!, cookie)).status).toBe(303);
+    expect(await storedApp()).toHaveLength(1);
   });
 
   it("answers 404 once setup is complete", async () => {

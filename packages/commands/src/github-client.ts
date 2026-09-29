@@ -1,5 +1,6 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/core";
+import { Refusal } from "@tiehall/core";
 import { z } from "zod";
 import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 
@@ -38,6 +39,16 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 // that stops answering then holds up no web request and no worker slot. A
 // request that gives up fails like any other call GitHub does not answer: a
 // job retries it, and a web action refuses as it does when GitHub fails.
+//
+// GitHub unavailable (public-api: One error model for Tiehall's own refusals;
+// design.md, Technical decisions: T2): a call that GitHub answers with a
+// status its caller gives no answer of its own for, such as a 5xx, a
+// rate-limit refusal or a refused manifest code, or does not answer within its
+// wait, throws one error, GitHubUnavailableError, whose message names the call
+// and GitHub's status in Tiehall's own words. An action that asked GitHub,
+// such as the look-up of an invite's username or the setup screen's exchange
+// of the manifest's code, turns it into 502 integration-unavailable, having
+// changed nothing.
 //
 // Every call Tiehall makes to GitHub's API goes through this module, on
 // Octokit (tracker-mirrors: GitHub writes appear as the App's bot;
@@ -109,6 +120,42 @@ const CONDITIONAL_ANSWERS = 500;
 function statusOf(error: unknown): number | undefined {
   const status = (error as { status?: unknown } | undefined)?.status;
   return typeof status === "number" ? status : undefined;
+}
+
+/**
+ * GitHub failed a call that an action needs: it answered with a status the
+ * caller gives no answer of its own for, or did not answer within the
+ * client's wait. Its message is Tiehall's own words, naming the call and
+ * GitHub's status and nothing of the call's input, so the logger keeps it.
+ */
+export class GitHubUnavailableError extends Error {
+  override name = "GitHubUnavailableError";
+  readonly [LOGGABLE] = true;
+  /** GitHub's HTTP status, or undefined when GitHub did not answer, or answered in a shape the call cannot use. */
+  readonly status: number | undefined;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * The GitHubUnavailableError for a call that failed with this error, which the
+ * caller has already checked for the statuses it answers itself. `call` names
+ * the call in Tiehall's words, such as "the look-up of the username". A
+ * failure with no answer from GitHub, such as the client's timeout, carries no
+ * status, although Octokit gives it one.
+ */
+export function gitHubUnavailable(call: string, error: unknown): GitHubUnavailableError {
+  if (error instanceof GitHubUnavailableError) return error;
+  const answered = (error as { response?: unknown } | undefined)?.response !== undefined;
+  const status = answered ? statusOf(error) : undefined;
+  const unavailable = new GitHubUnavailableError(
+    status === undefined ? `GitHub did not answer ${call}, or could not be reached.` : `GitHub answered ${status} to ${call}.`,
+    status,
+  );
+  unavailable.cause = error;
+  return unavailable;
 }
 
 /** Makes every GET of this Octokit a conditional request, and serves GitHub's 304 from the answer it remembers. */
@@ -282,42 +329,31 @@ const CONVERSION = z.object({
   owner: z.object({ login: z.string().min(1), type: z.enum(["Organization", "User"]) }),
 });
 
-/** GitHub did not convert a manifest's code; its message names the status and nothing of the code. */
-export class ManifestConversionError extends Error {
-  override name = "ManifestConversionError";
-  readonly [LOGGABLE] = true;
-  /** GitHub's HTTP status, or undefined when GitHub could not be reached or answered in another shape. */
-  readonly status: number | undefined;
-  constructor(message: string, status?: number) {
-    super(message);
-    this.status = status;
-  }
-}
-
 /** A manifest code as GitHub issues it: letters, digits, `_` and `-`. */
 const MANIFEST_CODE = /^[A-Za-z0-9_-]{1,200}$/;
 
 /**
  * Exchanges the code GitHub's manifest flow returned for the new App's
  * credentials, at POST /app-manifests/{code}/conversions. GitHub converts a
- * code once, within an hour of issuing it. It throws ManifestConversionError
- * when GitHub does not convert it.
+ * code once, within an hour of issuing it. A code not in the form GitHub
+ * issues codes in is refused as invalid input, 400, and GitHub is not asked.
+ * It throws GitHubUnavailableError when GitHub does not convert the code,
+ * whatever its status, or does not answer.
  */
 export async function convertManifestCode(code: string, options: GitHubClientOptions = {}): Promise<ConvertedApp> {
-  if (!MANIFEST_CODE.test(code)) throw new ManifestConversionError("GitHub's return carries no code in the form GitHub issues.");
+  if (!MANIFEST_CODE.test(code)) {
+    const message = "GitHub's return carries no code in the form GitHub issues.";
+    throw new Refusal("invalid-input", message, { issues: [{ path: ["code"], message }] });
+  }
   const octokit = new Octokit(octokitBase(options));
   let data: unknown;
   try {
     ({ data } = await octokit.request("POST /app-manifests/{code}/conversions", { code }));
   } catch (error) {
-    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined;
-    throw new ManifestConversionError(
-      status === undefined ? "GitHub could not be reached to convert the code." : `GitHub answered ${status} to the conversion of the code.`,
-      status,
-    );
+    throw gitHubUnavailable("the conversion of the manifest's code", error);
   }
   const parsed = CONVERSION.safeParse(data);
-  if (!parsed.success) throw new ManifestConversionError("GitHub's conversion of the code lacks the App's credentials.");
+  if (!parsed.success) throw new GitHubUnavailableError("GitHub's conversion of the manifest's code lacks the App's credentials.");
   const app = parsed.data;
   return {
     id: app.id,
