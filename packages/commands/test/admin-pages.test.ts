@@ -221,7 +221,10 @@ describe("the invites page", () => {
 
   it("is an admin's: a member gets 403 on the page, its invite form and its revoke form, and a browser without a session signs in first", async () => {
     const waiting = await addInvite("sam-dev", "waiting");
-    expect((await get(invitesPage(dana), INVITES_PATH)).status).toBe(403);
+    const refusedPage = await get(invitesPage(dana), INVITES_PATH);
+    expect(refusedPage.status).toBe(403);
+    // The refusal shows no invite.
+    expect(await refusedPage.text()).not.toContain("sam-dev");
     expect((await get(invitesPage(dana), `${INVITES_PATH}?login=lee-dev&role=admin`)).status).toBe(403);
     expect((await post(invitesPage(dana), INVITES_PATH, dana, { action: "revoke", invite: waiting })).status).toBe(403);
     expect((await post(invitesPage(ada), INVITES_PATH, ada, { action: "revoke", invite: waiting }, { origin: "https://evil.example", "sec-fetch-site": "cross-site" })).status).toBe(403);
@@ -295,7 +298,11 @@ describe("the teams page", () => {
   });
 
   it("is an admin's: a member gets 403 on the page and its forms, and a browser without a session signs in first", async () => {
-    expect((await get(teamsPage(dana), TEAMS_PATH)).status).toBe(403);
+    const refusedPage = await get(teamsPage(dana), TEAMS_PATH);
+    expect(refusedPage.status).toBe(403);
+    // The refusal shows no team, and none of a team's earlier keys or people.
+    const refusal = await refusedPage.text();
+    for (const shown of ["OPS", "Operations", "acme-ci-bot"]) expect(refusal).not.toContain(shown);
     const refused = await post(teamsPage(dana), TEAMS_PATH, dana, { action: "create", key: "DNA", name: "Dana's" });
     expect(refused.status).toBe(403);
     expect((await post(teamsPage(dana), TEAMS_PATH, dana, { action: "add_member", teamId: await teamIdOf("OPS"), userId: dana.userId })).status).toBe(403);
@@ -338,7 +345,11 @@ describe("the sign-in policy page", () => {
   });
 
   it("is an admin's: a member gets 403, and a browser without a session signs in first", async () => {
-    expect((await get(policyPage(dana), SIGN_IN_POLICY_PATH)).status).toBe(403);
+    const refusedPage = await get(policyPage(dana), SIGN_IN_POLICY_PATH);
+    expect(refusedPage.status).toBe(403);
+    // The refusal shows no policy.
+    const refusal = unescaped(await refusedPage.text());
+    for (const shown of ["organization members and invited", "invited people only", "organization_members_and_invited", "invited_only"]) expect(refusal).not.toContain(shown);
     const anonymous = await get(policyPage(undefined), SIGN_IN_POLICY_PATH);
     expect(anonymous.status).toBe(303);
     expect(anonymous.headers.get("location")).toBe(`/sign-in?return=${encodeURIComponent(SIGN_IN_POLICY_PATH)}`);
