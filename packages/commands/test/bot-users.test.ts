@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { signInCompleted } from "@tiehall/core";
-import { ACTIVITY_LOG_PATH, createActivityLogRoute, write, type Caller, type WebSessionCaller } from "../src/index.ts";
+import {
+  ACTIVITY_LOG_PATH,
+  createActivityLogRoute,
+  createMembersRoute,
+  createTeamsRoute,
+  MEMBERS_PATH,
+  TEAMS_PATH,
+  write,
+  type Caller,
+  type WebSessionCaller,
+} from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 
@@ -79,6 +89,23 @@ describe("an admin", () => {
       expect(page.status, commandId).toBe(200);
       expect(await page.text(), commandId).toContain("acme-ci-bot (a bot user)");
     }
+  });
+
+  it.each([
+    ["the members page", MEMBERS_PATH, createMembersRoute],
+    ["the teams page", TEAMS_PATH, createTeamsRoute],
+  ] as const)("finds the user marked as a bot wherever %s names them, its controls included", async (_page, path, create) => {
+    const route = create({ execute: install.execute, session: async () => ada, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
+    const answer = await route(new Request(`${URL_OF_INSTALL}${path}`));
+    expect(answer.status).toBe(200);
+    // The page's visible text, one line per element's text.
+    const lines = (await answer.text())
+      .replace(/<[^>]+>/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.includes("acme-ci-bot"));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.filter((line) => !line.includes("acme-ci-bot (a bot user)"))).toEqual([]);
   });
 
   it("clears the flag: the user no longer carries it, and their role and teams are unchanged", async () => {

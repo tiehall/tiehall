@@ -114,15 +114,17 @@ export function createMembersRoute(options: PageRouteOptions): PageRoute {
 /** An admin's controls for one member: the review pages for their role and their removal, and the bot flag's form. */
 function memberControls(member: ListedMember, csrf: string): string {
   const other = member.role === "admin" ? "member" : "admin";
+  // A control names the member as every other place does, marked when they are a bot (teams-and-roles: Bot users).
+  const name = userName(member);
   return [
     `          <td>`,
-    `            <p>${link(reviewPath(changeMemberRole.id, { userId: member.id, role: other }), `Make ${member.login} ${other === "admin" ? "an admin" : "a member"}`)}</p>`,
-    `            <p>${link(reviewPath(removeMember.id, { userId: member.id }), `Remove ${member.login} from the install`)}</p>`,
+    `            <p>${link(reviewPath(changeMemberRole.id, { userId: member.id, role: other }), `Make ${name} ${other === "admin" ? "an admin" : "a member"}`)}</p>`,
+    `            <p>${link(reviewPath(removeMember.id, { userId: member.id }), `Remove ${name} from the install`)}</p>`,
     postForm(
       MEMBERS_PATH,
       { action: "set_bot_flag", userId: member.id, bot: member.bot ? "false" : "true" },
       csrf,
-      member.bot ? `Clear the bot mark of ${member.login}` : `Mark ${member.login} as a bot`,
+      member.bot ? `Clear the bot mark of ${name}` : `Mark ${name} as a bot`,
       "            ",
     ),
     `          </td>`,
@@ -261,7 +263,7 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], csrf: s
     [
       "        <li>",
       `          <p>${escapeHtml(userName(member))}</p>`,
-      postForm(TEAMS_PATH, { action: "remove_member", teamId: team.id, userId: member.id }, csrf, `Remove ${member.login} from ${team.key}`, "          "),
+      postForm(TEAMS_PATH, { action: "remove_member", teamId: team.id, userId: member.id }, csrf, `Remove ${userName(member)} from ${team.key}`, "          "),
       "        </li>",
     ].join("\n"),
   );
