@@ -119,6 +119,11 @@ describe("a removed organization member", () => {
     await expect(harness.sessionOf(leeBrowser)).rejects.toMatchObject({ status: 403, type: "https://tiehall.com/problems/removed-member" });
   });
 
+  // Agent grants come with group 15 (15.2 to 15.11), and task 15.19 revokes them with a removal.
+  it.todo("rejoins with no agent grant from before: an OAuth token issued before the removal gets 401");
+  // Personal access tokens come with task 15.14, and task 15.19 revokes them with a removal.
+  it.todo("rejoins with no personal access token from before: a token created before the removal gets 401");
+
   it("signs in later with no block to clear, and the sign-in names none", async () => {
     const from = await lastEvent();
     expect((await harness.signIn("lee-acme")).response.status).toBe(302);
