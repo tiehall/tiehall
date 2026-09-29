@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { buildAppManifest, MANIFEST_REDIRECT_PATH, manifestHasWebhook, SETUP_SIGN_IN_PATH, WEBHOOK_PATH } from "./github-manifest.ts";
+import { APP_NAME_MAX_LENGTH, buildAppManifest, MANIFEST_REDIRECT_PATH, manifestHasWebhook, SETUP_SIGN_IN_PATH, WEBHOOK_PATH } from "./github-manifest.ts";
 import type { ReplacedGitHubApp, StoredGitHubApp } from "./github-app.ts";
 import { escapeHtml } from "./html.ts";
 import { isTrialUrl } from "./settings.ts";
@@ -111,9 +111,22 @@ function stateMac(sessionToken: string, nonce: string, issuedAt: string): string
   return createHmac("sha256", sessionToken).update(`${STATE_CONTEXT}${nonce}\n${issuedAt}`).digest("base64url");
 }
 
-/** The App's name unless the operator gives another: "Tiehall" and the install's host. */
+/**
+ * The App's name unless the operator gives another: "Tiehall" and the
+ * install's host, cut to the 34 characters GitHub takes, and with no space,
+ * dot or hyphen left at its end.
+ */
 export function defaultAppName(url: string): string {
-  return `Tiehall ${new URL(url).hostname}`;
+  return [...`Tiehall ${new URL(url).hostname}`]
+    .slice(0, APP_NAME_MAX_LENGTH)
+    .join("")
+    .replace(/[\s.-]+$/, "");
+}
+
+/** Whether GitHub takes an App name for its length: 1 to 34 characters. */
+function appNameFits(name: string): boolean {
+  const length = [...name].length;
+  return length >= 1 && length <= APP_NAME_MAX_LENGTH;
 }
 
 /** The operator's settings of the App step, from the step's query. */
@@ -126,10 +139,11 @@ export interface AppStepSettings {
 }
 
 export function appStepSettings(url: string, query: URLSearchParams): AppStepSettings {
-  const name = (query.get("name") ?? "").trim();
+  // The default until the operator applies a name of their own, which is kept as they typed it, trimmed, to be checked.
+  const name = query.get("name");
   return {
     org: (query.get("org") ?? "").trim(),
-    name: name === "" ? defaultAppName(url) : name,
+    name: name === null ? defaultAppName(url) : name.trim(),
     unreachable: !isTrialUrl(url) && query.get("unreachable") === "1",
   };
 }
@@ -159,7 +173,7 @@ export function appStepBody(input: { url: string; webUrl: string; settings: AppS
         </p>
         <p>
           <label for="name">The App's name, which must be unique on GitHub</label>
-          <input id="name" name="name" type="text" value="${escapeHtml(settings.name)}" maxlength="34" autocomplete="off" spellcheck="false">
+          <input id="name" name="name" type="text" value="${escapeHtml(settings.name)}" maxlength="${APP_NAME_MAX_LENGTH}" autocomplete="off" spellcheck="false">
         </p>
 ${option}        <button type="submit">Apply</button>
       </form>
@@ -173,6 +187,11 @@ ${option}        <button type="submit">Apply</button>
 `;
   if (!orgValid) {
     return `${intro}${settingsForm}      <p>${escapeHtml(`"${settings.org}" is not the name of a GitHub organization. Correct it and apply it, or leave it empty.`)}</p>
+`;
+  }
+  // GitHub refuses a longer name on its own page, which leads nowhere back here, so no manifest carries one.
+  if (!appNameFits(settings.name)) {
+    return `${intro}${settingsForm}      <p>${escapeHtml(`The App's name must be 1 to ${APP_NAME_MAX_LENGTH} characters long, as GitHub requires. Correct it and apply it.`)}</p>
 `;
   }
   const webhook = manifestHasWebhook({ url, unreachable: settings.unreachable });

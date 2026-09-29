@@ -8,6 +8,7 @@ import {
   buildAppManifest,
   createLogger,
   createSetupRoute,
+  defaultAppName,
   migrate,
   openDatabase,
   openSecretBox,
@@ -216,6 +217,30 @@ describe("the App step", () => {
     expect(edited?.manifest["name"]).toBe("Tiehall Acme");
     const trial = await setupSession(TRIAL);
     expect(createForm((await open(TRIAL, trial)).html)?.manifest["name"]).toBe("Tiehall localhost");
+  });
+
+  // GitHub takes an App name of at most 34 characters, and a longer one would leave the operator on GitHub's own
+  // error page, so no manifest carries one.
+  it("cuts the default name to 34 characters, GitHub's limit, on a long host", async () => {
+    const long = "https://tiehall.engineering.internal.acme-corporation.example.com";
+    expect(defaultAppName(long)).toBe("Tiehall tiehall.engineering.intern");
+    expect(defaultAppName(long)).toHaveLength(34);
+    expect(defaultAppName("https://tiehall.example.com")).toBe("Tiehall tiehall.example.com");
+    expect(defaultAppName("https://t.example.com-----------------------x.test")).not.toMatch(/[\s.-]$/);
+    const cookie = await setupSession(long);
+    const created = await createOnGitHub(createForm((await open(long, cookie, { org: "acme" })).html)!);
+    expect(created.refusal).toBeUndefined();
+  });
+
+  it("offers no button for a name that is empty or longer than 34 characters once trimmed, and says so", async () => {
+    const cookie = await setupSession(INSTALL);
+    for (const name of ["", "   ", "x".repeat(35), `  ${"y".repeat(35)}  `]) {
+      const { html } = await open(INSTALL, cookie, { org: "acme", name });
+      expect(unescapeHtml(html), JSON.stringify(name)).toContain("The App's name must be 1 to 34 characters long");
+      expect(createForm(html), JSON.stringify(name)).toBeUndefined();
+    }
+    const longest = createForm((await open(INSTALL, cookie, { org: "acme", name: ` ${"z".repeat(34)} ` })).html);
+    expect(longest?.manifest["name"]).toBe("z".repeat(34));
   });
 
   it("offers no button for an organization name that cannot be a GitHub login, and says so", async () => {

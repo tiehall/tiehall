@@ -41,6 +41,9 @@ export const SETUP_SIGN_IN_CALLBACK_PATH = `${SETUP_SIGN_IN_PATH}/callback/githu
 /** Where GitHub delivers the App's webhooks. */
 export const WEBHOOK_PATH = "/webhooks/github";
 
+/** The longest App name GitHub takes, in characters; the setup screen's App step offers no manifest with a longer one. */
+export const APP_NAME_MAX_LENGTH = 34;
+
 export interface AppManifestInput {
   /** The install's URL, TIEHALL_URL, as its origin. */
   url: string;
