@@ -1,7 +1,8 @@
 import { githubConnectedInstallations, githubInstallations } from "@tiehall/db";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { everyPage, type GitHubClient } from "./github-client.ts";
+import { everyPage, statusOfCall, type GitHubClient } from "./github-client.ts";
+import { gitHubAccountNamed } from "./github-users.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // Membership of the GitHub organizations whose installations an admin
@@ -15,11 +16,23 @@ import type { OrgContext } from "./with-org.ts";
 //
 // A lookup has three answers. GitHub reports the account a member, or it
 // positively reports that the account is not one: GitHub answers the lookup
-// with 404, and also shows the installation its organization's member list,
-// so the 404 is not an organization that is gone or out of the installation's
-// reach. Anything else, a server error, a refused token or no answer at all,
-// is no report, and never counts as the account leaving or joining; so is a
-// lookup GitHub does not answer within the client's timeout (github-client.ts).
+// with 404, to a token that may see the organization's members, as below.
+// Anything else, a server error, a refused token or no answer at all, is no
+// report, and never counts as the account leaving or joining; so is a lookup
+// GitHub does not answer within the client's timeout (github-client.ts).
+//
+// GitHub serves its member endpoints to a requester that may not see an
+// organization's members as it serves anyone: the check answers 302, to the
+// organization's public members, and the member list holds the public members
+// only. An installation's token is such a requester when GitHub issued it
+// without the Members permission, as after an owner removed that permission,
+// and for any organization but the installation's own, as when another
+// organization took the login of the installation's organization after a
+// rename, before the next listing reads the new login. Neither answer says
+// anything of the installation's organization. So a lookup counts only when
+// the token GitHub issued carries the Members permission and the login still
+// names the installation's organization, by its account's numeric id, and the
+// check's redirect is never followed.
 
 /** What GitHub reports of an account's membership of an organization. */
 export type OrganizationReport = "member" | "not_member" | "unknown";
@@ -37,10 +50,22 @@ export interface OrganizationInstallation {
 
 const MEMBER = z.object({ id: z.number().int().positive() });
 
-/** The HTTP status of a failed call to GitHub, or undefined when GitHub gave none. */
-function statusOf(error: unknown): number | undefined {
-  const status = (error as { status?: unknown } | undefined)?.status;
-  return typeof status === "number" ? status : undefined;
+/** An installation token as the client holds it, with the permissions GitHub issued it with. */
+const INSTALLATION_TOKEN = z.object({ permissions: z.record(z.string(), z.string()) });
+
+/**
+ * Whether GitHub shows this installation its organization's members: the
+ * token GitHub issued it carries the Members permission, and the login
+ * Tiehall asks by names the installation's organization now, by its account's
+ * numeric id. It throws when GitHub does not issue the token or does not
+ * answer.
+ */
+async function seesMembers(client: GitHubClient, installation: OrganizationInstallation): Promise<boolean> {
+  const token = INSTALLATION_TOKEN.safeParse(await client.installation(installation.installationId).auth({ type: "installation" }));
+  const members = token.success ? token.data.permissions["members"] : undefined;
+  if (members !== "read" && members !== "write") return false;
+  const organization = await gitHubAccountNamed(client, installation.installationId, installation.organizationLogin);
+  return organization?.type === "Organization" && organization.id === installation.organizationId;
 }
 
 /**
@@ -83,29 +108,27 @@ export async function workingOrganizationInstallations(
  * installation's own token.
  */
 export async function organizationMembership(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
-  const octokit = client.installation(installation.installationId);
+  let status: number;
   try {
-    const answer = await octokit.request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login });
-    // GitHub answers 204 for a member; Octokit's types know only the redirect it answers to a caller outside the organization.
-    return (answer.status as number) === 204 ? "member" : "unknown";
+    if (!(await seesMembers(client, installation))) return "unknown";
+    // GitHub answers 204 for a member and 404 for anyone else; its 302 goes to the public members, and is not followed.
+    ({ status } = await client
+      .installation(installation.installationId)
+      .request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login, request: { redirect: "manual" } }));
   } catch (error) {
-    if (statusOf(error) !== 404) return "unknown";
+    return statusOfCall(error) === 404 ? "not_member" : "unknown";
   }
-  // A 404 is a report only while GitHub still shows the installation its organization's members.
-  try {
-    await octokit.request("GET /orgs/{org}/members", { org: installation.organizationLogin, per_page: 1 });
-    return "not_member";
-  } catch {
-    return "unknown";
-  }
+  return status === 204 ? "member" : "unknown";
 }
 
 /**
  * The numeric ids of every member of the installation's organization, as
  * GitHub lists them to that installation, 100 at a time; it throws when
- * GitHub does not give the whole list.
+ * GitHub does not give the whole list, as when it would list the public
+ * members only.
  */
 export async function organizationMemberIds(client: GitHubClient, installation: OrganizationInstallation): Promise<Set<number>> {
+  if (!(await seesMembers(client, installation))) throw new Error("GitHub does not show the installation its organization's whole member list.");
   const pages = await everyPage(client.installation(installation.installationId), "GET /orgs/{org}/members", {
     org: installation.organizationLogin,
     per_page: 100,

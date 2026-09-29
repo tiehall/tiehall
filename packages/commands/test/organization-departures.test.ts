@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubDelivery, type StubInstallation } from "@tiehall/testing/github";
 import { processDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { storeDelivery } from "./support/github-app.ts";
+import { publicMembersOnly, type PublicMembersOptions } from "./support/github-public-members.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
@@ -81,6 +82,15 @@ async function reconcile(): Promise<void> {
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
     { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute },
+  );
+}
+
+/** The reconciliation, reaching GitHub through a fetch that answers with the organization's public members only. */
+async function reconcileThrough(options: PublicMembersOptions): Promise<void> {
+  const reading = await startSignIn(install, stub, { sameAppAs: harness, fetch: publicMembersOnly(options) });
+  await reconcileGitHub.handle(
+    { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
+    { database: install.db, now: () => new Date(), github: reading.github, execute: install.execute },
   );
 }
 
@@ -258,6 +268,20 @@ describe("the reconciliation", () => {
     expect(await isMember(lee)).toBe(true);
   });
 
+  it("removes no one when GitHub lists only the organization's public members, to a token GitHub issued without the Members permission", async () => {
+    const lee = await join("lee-acme");
+    await reconcileThrough({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }], withoutMembersPermission: true });
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
+  });
+
+  it("removes no one while another organization holds the organization's login, as after a rename, before the listing reads the new one", async () => {
+    const lee = await join("lee-acme");
+    await reconcileThrough({ org: "acme", publicMembers: [{ login: "mallory", id: 999_001 }], loginNowNames: 999_000 });
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
+  });
+
   it("removes no one after an admin disconnects the installation, until it is connected again and reports the member gone", async () => {
     const lee = await join("lee-acme");
     const result = await install.web(pia).write("github.disconnect_installation", { installation: connected["acme"] }, install.fromThePage(pia));
@@ -302,6 +326,17 @@ describe("a sign-in", () => {
     expect(((await response.json()) as { detail: string }).detail).toBe(SIGN_IN_REFUSED);
     expect(await isMember(lee)).toBe(false);
     expect((await removals(lee))[0]?.data).toMatchObject({ cause: "left_organization", blocked: false });
+  });
+
+  it("removes no member whose membership GitHub shows only publicly, to a token GitHub issued without the Members permission", async () => {
+    const lee = await join("lee-acme");
+    const reading = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: publicMembersOnly({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }], withoutMembersPermission: true }),
+    });
+    expect((await reading.signIn("lee-acme")).response.status).toBe(302);
+    expect(await isMember(lee)).toBe(true);
+    expect(await removals(lee)).toEqual([]);
   });
 
   it("admits a person who left and rejoined the organization again, because leaving records no block", async () => {

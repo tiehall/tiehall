@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubInstallation, type StubUser } from "@tiehall/testing/github";
 import { readInstallations, SIGN_IN_REFUSED } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { publicMembersOnly } from "./support/github-public-members.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
 
@@ -162,6 +163,19 @@ describe("a failed membership lookup", () => {
       },
     });
     await expectRefused(await failing.signIn("lou-acme"), "lou-acme");
+  });
+});
+
+describe("GitHub's answers for an organization's public members only", () => {
+  it("admit no one through an organization whose login another organization took, who is a public member of that one", async () => {
+    // acme was renamed, another organization took the login, and the listing has not read the new one yet.
+    const mallory = stub.addUser({ login: "mallory" });
+    accounts.set("mallory", mallory);
+    const reading = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: publicMembersOnly({ org: "acme", publicMembers: [{ login: "mallory", id: mallory.id }], loginNowNames: 999_000 }),
+    });
+    await expectRefused(await reading.signIn("mallory"), "mallory");
   });
 });
 
