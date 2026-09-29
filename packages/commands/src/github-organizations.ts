@@ -18,7 +18,8 @@ import type { OrgContext } from "./with-org.ts";
 // with 404, and also shows the installation its organization's member list,
 // so the 404 is not an organization that is gone or out of the installation's
 // reach. Anything else, a server error, a refused token or no answer at all,
-// is no report, and never counts as the account leaving or joining.
+// is no report, and never counts as the account leaving or joining; so is a
+// lookup GitHub does not answer within the client's timeout (github-client.ts).
 
 /** What GitHub reports of an account's membership of an organization. */
 export type OrganizationReport = "member" | "not_member" | "unknown";
@@ -34,20 +35,12 @@ export interface OrganizationInstallation {
   organizationLogin: string;
 }
 
-/** How long Tiehall waits for GitHub to answer one lookup. */
-const LOOKUP_TIMEOUT_MS = 10_000;
-
 const MEMBER = z.object({ id: z.number().int().positive() });
 
 /** The HTTP status of a failed call to GitHub, or undefined when GitHub gave none. */
 function statusOf(error: unknown): number | undefined {
   const status = (error as { status?: unknown } | undefined)?.status;
   return typeof status === "number" ? status : undefined;
-}
-
-/** A signal that gives up on GitHub after the lookup timeout. */
-function timeout() {
-  return { request: { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) } };
 }
 
 /**
@@ -92,7 +85,7 @@ export async function workingOrganizationInstallations(
 export async function organizationMembership(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
   const octokit = client.installation(installation.installationId);
   try {
-    const answer = await octokit.request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login, ...timeout() });
+    const answer = await octokit.request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login });
     // GitHub answers 204 for a member; Octokit's types know only the redirect it answers to a caller outside the organization.
     return (answer.status as number) === 204 ? "member" : "unknown";
   } catch (error) {
@@ -100,7 +93,7 @@ export async function organizationMembership(client: GitHubClient, installation:
   }
   // A 404 is a report only while GitHub still shows the installation its organization's members.
   try {
-    await octokit.request("GET /orgs/{org}/members", { org: installation.organizationLogin, per_page: 1, ...timeout() });
+    await octokit.request("GET /orgs/{org}/members", { org: installation.organizationLogin, per_page: 1 });
     return "not_member";
   } catch {
     return "unknown";
@@ -116,7 +109,6 @@ export async function organizationMemberIds(client: GitHubClient, installation: 
   const pages = await everyPage(client.installation(installation.installationId), "GET /orgs/{org}/members", {
     org: installation.organizationLogin,
     per_page: 100,
-    ...timeout(),
   });
   const ids = new Set<number>();
   for (const page of pages) {

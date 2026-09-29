@@ -89,7 +89,7 @@ export interface SignInHarness {
 export async function startSignIn(
   install: TestInstall,
   stub: GitHubStub,
-  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness; hook?: { url: string } } = {},
+  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness; hook?: { url: string }; timeoutMs?: number } = {},
 ): Promise<SignInHarness> {
   // Another sign-in service for the App a harness stored, such as one whose fetch fails some calls, or a new App.
   const app =
@@ -122,7 +122,7 @@ export async function startSignIn(
     secret: () => install.authSecret,
     secrets: () => box,
     // The stub serves on local ports, which the service reaches with the plain fetch; at an install it reaches GitHub only.
-    github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: options.fetch ?? fetch },
+    github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: options.fetch ?? fetch, ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) },
     logger: process.env["DEBUG_SIGN_IN"] === undefined ? install.logger : createLogger(),
   });
 

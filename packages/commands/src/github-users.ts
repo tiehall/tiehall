@@ -32,22 +32,18 @@ export interface GitHubAccount {
 
 const ACCOUNT = z.object({ id: z.number().int().positive(), login: z.string().min(1), type: z.string() });
 
-/** How long Tiehall waits for GitHub to name an account. */
-const LOOKUP_TIMEOUT_MS = 10_000;
-
 /**
  * The GitHub account a login names now, as GitHub's API gives it to one of
  * the App's installations, with that installation's token (teams-and-roles:
  * Invites by GitHub username); undefined when GitHub knows no account by
  * that login, or one of a kind that is neither a person's nor an
- * organization's. It throws when GitHub does not answer.
+ * organization's. It throws when GitHub does not answer, within the client's
+ * timeout (github-client.ts).
  */
 export async function gitHubAccountNamed(client: GitHubClient, installationId: number, login: string): Promise<GitHubAccount | undefined> {
   let data: unknown;
   try {
-    ({ data } = await client
-      .installation(installationId)
-      .request("GET /users/{username}", { username: login, request: { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) } }));
+    ({ data } = await client.installation(installationId).request("GET /users/{username}", { username: login }));
   } catch (error) {
     if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
     throw error;

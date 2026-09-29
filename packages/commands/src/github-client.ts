@@ -31,6 +31,14 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 // polling mode, which reads the same listings every 60 seconds, costs GitHub's
 // rate limit only when something changed.
 //
+// Bounded waits: every request to GitHub gives up after 10 seconds, unless
+// the call gives a signal of its own, whatever it is: a call as the App or
+// an installation, the installation token request before it, the key check,
+// the manifest conversion and the sign-in's read of who signed in. A GitHub
+// that stops answering then holds up no web request and no worker slot. A
+// request that gives up fails like any other call GitHub does not answer: a
+// job retries it, and a web action refuses as it does when GitHub fails.
+//
 // Every call Tiehall makes to GitHub's API goes through this module, on
 // Octokit (tracker-mirrors: GitHub writes appear as the App's bot;
 // agent-access: Outbound calls use Tiehall's own credentials): no other module
@@ -54,6 +62,18 @@ export interface GitHubClientOptions {
   /** The fetch the calls go through; the platform's unless a test gives another. */
   fetch?: typeof fetch;
   logger?: Logger;
+  /** How long one request waits for GitHub, unless the call gives its own signal; GITHUB_REQUEST_TIMEOUT_MS unless a test gives another. */
+  timeoutMs?: number;
+}
+
+/** How long one request waits for GitHub before it gives up, unless the call gives its own signal. */
+export const GITHUB_REQUEST_TIMEOUT_MS = 10_000;
+
+/** The fetch, with a timeout on every request that carries no signal of its own. */
+function boundedFetch(options: GitHubClientOptions): typeof fetch {
+  const timeoutMs = options.timeoutMs ?? GITHUB_REQUEST_TIMEOUT_MS;
+  return ((input: string | URL | Request, init?: RequestInit) =>
+    (options.fetch ?? fetch)(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(timeoutMs) })) as typeof fetch;
 }
 
 export interface GitHubClient {
@@ -65,13 +85,13 @@ export interface GitHubClient {
 
 export const GITHUB_API_URL = "https://api.github.com";
 
-/** What every Octokit of the client shares: GitHub's API, Tiehall's user agent, the fetch and the logger. */
+/** What every Octokit of the client shares: GitHub's API, Tiehall's user agent, the fetch with its timeout, and the logger. */
 function octokitBase(options: GitHubClientOptions) {
   const logger = (options.logger ?? createLogger()).child({ integration: "github" });
   return {
     baseUrl: options.apiUrl ?? GITHUB_API_URL,
     userAgent: "tiehall",
-    ...(options.fetch === undefined ? {} : { request: { fetch: options.fetch } }),
+    request: { fetch: boundedFetch(options) },
     // Octokit's own notices, such as a retry after a 401, go through Tiehall's logger and its redaction.
     log: {
       debug: () => {},

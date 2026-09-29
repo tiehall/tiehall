@@ -57,6 +57,7 @@ export {
   everyPage,
   pagesOf,
   GITHUB_API_URL,
+  GITHUB_REQUEST_TIMEOUT_MS,
   ManifestConversionError,
   readSignedInUser,
   requestInstallationToken,

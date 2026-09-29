@@ -19,7 +19,7 @@ import {
   type Database,
 } from "@tiehall/db";
 import type { WebSessionCaller } from "./caller.ts";
-import { GITHUB_API_URL, readSignedInUser } from "./github-client.ts";
+import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { readSecret } from "./integration-secrets.ts";
@@ -152,8 +152,11 @@ export interface SignInServiceOptions {
   secret: () => string;
   /** TIEHALL_SECRET_KEY's box, which opens the App's stored client secret. */
   secrets: () => SecretBox;
-  /** GitHub's web pages and API, which a test points at the GitHub stub; github.com and api.github.com otherwise. */
-  github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch };
+  /**
+   * GitHub's web pages and API, which a test points at the GitHub stub; github.com and api.github.com otherwise,
+   * and how long one request waits for GitHub, GITHUB_REQUEST_TIMEOUT_MS unless a test gives another.
+   */
+  github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch; timeoutMs?: number };
   /** Where the sign-in that completes setup sends the jobs of the deliveries held during setup; without it, a job that runs every minute releases them. */
   jobs?: JobSender;
   logger?: Logger;
@@ -211,6 +214,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   const webUrl = options.github?.webUrl ?? GITHUB_WEB_URL;
   const apiUrl = options.github?.apiUrl ?? GITHUB_API_URL;
   const githubFetch = options.github?.fetch ?? createGitHubFetch(fetch);
+  const timeoutMs = options.github?.timeoutMs ?? GITHUB_REQUEST_TIMEOUT_MS;
   const secure = options.url.startsWith("https:");
   /** The session cookie's name, which Better Auth prefixes with __Secure- over HTTPS. */
   const sessionCookie = `${secure ? "__Secure-" : ""}tiehall.session_token`;
@@ -513,7 +517,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
    */
   async function githubUser(accessToken: string | undefined) {
     if (accessToken === undefined) return null;
-    const signedIn = await readSignedInUser(accessToken, { apiUrl, fetch: githubFetch as typeof fetch, logger });
+    const signedIn = await readSignedInUser(accessToken, { apiUrl, fetch: githubFetch as typeof fetch, logger, timeoutMs });
     if (signedIn === undefined) return null;
     const { id, login, primaryEmail } = signedIn;
     return {
@@ -549,9 +553,21 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
             },
             async validateAuthorizationCode(input: { code: string; codeVerifier?: string; redirectURI: string }) {
               const { body, headers } = await authorizationCodeRequest({ ...input, options: provider.options ?? {} });
-              const answer = await githubFetch(`${webUrl}/login/oauth/access_token`, { method: "POST", body, headers });
-              if (!answer.ok) return null;
-              const data = (await answer.json()) as Record<string, unknown>;
+              let data: Record<string, unknown>;
+              try {
+                // A bounded wait, like every call to GitHub (github-client.ts): a GitHub that does not answer fails the sign-in.
+                const answer = await githubFetch(`${webUrl}/login/oauth/access_token`, {
+                  method: "POST",
+                  body,
+                  headers,
+                  signal: AbortSignal.timeout(timeoutMs),
+                });
+                if (!answer.ok) return null;
+                data = (await answer.json()) as Record<string, unknown>;
+              } catch (error) {
+                logger.warn("sign-in service: GitHub did not answer the sign-in's code exchange", { error });
+                return null;
+              }
               // GitHub answers a refused exchange with 200 and an error in the body.
               if (typeof data["error"] === "string" || typeof data["access_token"] !== "string") {
                 logger.warn("sign-in service: GitHub refused the sign-in's code exchange", { reason: typeof data["error"] === "string" ? data["error"] : "no token" });

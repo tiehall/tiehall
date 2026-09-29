@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp, type StubInstallation } from "@tiehall/testing/github";
-import { createGitHubClient } from "../src/index.ts";
+import {
+  convertManifestCode,
+  createGitHubClient,
+  GITHUB_REQUEST_TIMEOUT_MS,
+  ManifestConversionError,
+  readSignedInUser,
+  requestInstallationToken,
+} from "../src/index.ts";
 
 // The GitHub client assumes no length for installation tokens
 // (github-app-reachability: design.md, Design rules: Installation tokens;
@@ -113,5 +120,55 @@ describe("where installation tokens are kept", () => {
     for (const path of [...sourcesIn("packages/catalog/src", ".ts"), "openapi/v1.json", "mcp/tools.json", "packages/packet/schema/v1-beta.json"]) {
       expect({ path, match: TOKEN_FIELD.exec(read(path))?.[0] }).toEqual({ path, match: undefined });
     }
+  });
+});
+
+// Every call to GitHub waits a bounded time (tracker-mirrors: GitHub writes
+// appear as the App's bot; design.md, Technical decisions: T16): the client
+// gives each request a timeout of 10 seconds, unless the call gives a signal
+// of its own, so a GitHub that stops answering holds up no web request and no
+// worker slot. A call that times out fails like any other call GitHub does not
+// answer: the App's calls throw, the key check throws, the manifest conversion
+// throws its own error, and the sign-in learns nobody signed in.
+describe("a GitHub that does not answer", () => {
+  /** A fetch that never answers: its promise settles only when the request's signal aborts it. */
+  const silent = (async (_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+  const options = { apiUrl: "https://api.github.invalid", fetch: silent, timeoutMs: 200 };
+
+  it("waits 10 seconds by default", () => {
+    expect(GITHUB_REQUEST_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it("gives up on the App's own calls, on an installation's calls and on the token request before them", async () => {
+    const client = createGitHubClient({ clientId: app.clientId, privateKey: app.pem }, options);
+    await expect(client.app().request("GET /app/installations")).rejects.toThrow();
+    await expect(client.installation(installation.id).request("GET /installation/repositories")).rejects.toThrow();
+  });
+
+  it("gives up on the key check, the manifest conversion and the sign-in's read of who signed in", async () => {
+    await expect(requestInstallationToken({ clientId: app.clientId, privateKey: app.pem }, installation.id, options)).rejects.toThrow();
+    await expect(convertManifestCode("a-manifest-code", options)).rejects.toBeInstanceOf(ManifestConversionError);
+    expect(await readSignedInUser("a-user-token", options)).toBeUndefined();
+  });
+
+  it("gives every request a signal by default, and a call's own signal in place of it", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const recording = (async (input: string | URL | Request, init?: RequestInit) => {
+      signals.push(init?.signal ?? undefined);
+      return fetch(input, init);
+    }) as typeof fetch;
+    const client = createGitHubClient({ clientId: app.clientId, privateKey: app.pem }, { apiUrl: stub.apiUrl, fetch: recording });
+    await client.installation(installation.id).request("GET /installation/repositories");
+    // The token request and the call itself.
+    expect(signals).toHaveLength(2);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+
+    const own = new AbortController();
+    await client.installation(installation.id).request("GET /repos/{owner}/{repo}", { owner: "acme", repo: "web", request: { signal: own.signal } });
+    expect(signals.at(-1)).toBe(own.signal);
   });
 });

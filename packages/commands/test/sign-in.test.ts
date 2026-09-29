@@ -129,6 +129,31 @@ describe("a sign-in with GitHub", () => {
   });
 });
 
+describe("a sign-in while GitHub does not answer", () => {
+  // Every call to GitHub waits a bounded time (github-client.ts): the code exchange and the read of who signed
+  // in give up after the timeout, and the sign-in fails as it does when GitHub refuses it, with no session.
+  it.each(["/login/oauth/access_token", "/user"])("gives up on %s after the timeout, and stores no session", { timeout: 5_000 }, async (path) => {
+    const silent = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      timeoutMs: 200,
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (url.pathname !== path) return fetch(input, init);
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const before = await allSessions();
+    const { response, jar } = await silent.signIn("ana-k");
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get("location") ?? "", URL_OF_INSTALL).searchParams.get("error")).not.toBeNull();
+    expect(await silent.sessionOf(jar)).toBeUndefined();
+    expect(await allSessions()).toBe(before);
+  });
+});
+
 describe("a person who may not sign in", () => {
   it("is refused with 403 and the text that says to ask an admin for an invite, and gets no session and no user", async () => {
     const kim = stub.addUser({ login: "kim-outside", email: "kim@acme.example" });
