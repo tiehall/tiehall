@@ -301,8 +301,11 @@ describe("revoking an invite", () => {
     const inviteId = await invited("xia-dev");
     expect(await revoke(ada, inviteId)).toMatchObject({ ok: true });
     lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+    const revocation = async () => (await install.owner.query("SELECT revoked_at, revoked_by FROM invites WHERE id = $1", [inviteId])).rows;
+    const first = await revocation();
     expect(await revoke(ada, inviteId)).toEqual({ ok: true, output: { invite: inviteId, revoked: true } });
     expect(await eventsSince()).toEqual([]);
+    expect(await revocation()).toEqual(first);
   });
 
   it("by a member gets 403, and the invite stays valid", async () => {
@@ -317,6 +320,10 @@ describe("revoking an invite", () => {
     const [accepted] = await invitesFor("yan-dev");
     expect(await revoke(ada, accepted!.id)).toMatchObject({ ok: false, problem: { status: 409 } });
     expect((await invitesFor("yan-dev"))[0]?.accepted_at).not.toBeNull();
+    // The invite is not revoked, its person stays a member, and the activity log gains no revocation.
+    expect((await install.owner.query("SELECT revoked_at FROM invites WHERE id = $1", [accepted!.id])).rows).toEqual([{ revoked_at: null }]);
+    expect(await roleOf("yan-dev")).toBe("member");
+    expect(await eventsSince()).toEqual([]);
   });
 
   it("that names no invite gets 404", async () => {
