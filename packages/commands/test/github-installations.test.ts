@@ -141,6 +141,28 @@ describe("the known installations and the covered repositories", () => {
     expect((await withOrg(install.db, (context) => coveredRepositories(context))).map(({ fullName }) => fullName).sort()).toEqual(["acme/api", "acme/tools"]);
   });
 
+  // A 200 whose body is no listing, such as a page a proxy that inspects TLS serves, or an answer GitHub gives in an
+  // incident, is GitHub failing the listing: it says nothing of which installations exist.
+  it("marks no installation deleted when GitHub answers the listing with 200 and a body that is no listing, and the sync fails", async () => {
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] }, { delivery: "none" });
+    await sync();
+    const known = await withOrg(install.db, (context) => knownInstallations(context));
+    await withOrg(install.db, (context) => connectInstallations(context, known.map(({ id }) => id)));
+    await sync();
+
+    const page: typeof fetch = async (input, init) =>
+      new URL(input instanceof Request ? input.url : String(input)).pathname === "/app/installations"
+        ? new Response("<html><body>Blocked by policy.</body></html>", { status: 200, headers: { "content-type": "text/html" } })
+        : fetch(input, init);
+    const through = createGitHubClient({ clientId: app.clientId, privateKey: app.pem }, { apiUrl: stub.apiUrl, fetch: page });
+    await expect(listAppInstallations(through)).rejects.toThrow();
+    await expect(readInstallations({ database: install.db, app: { appId: app.id, client: through } })).rejects.toThrow();
+
+    const after = await withOrg(install.db, (context) => knownInstallations(context));
+    expect(after.map(({ account, deleted, connected }) => ({ login: account.login, deleted, connected }))).toEqual([{ login: "acme", deleted: false, connected: true }]);
+    expect((await withOrg(install.db, (context) => coveredRepositories(context))).map(({ fullName }) => fullName)).toEqual(["acme/web"]);
+  });
+
   it("stops counting the repositories of a connected installation that the listing shows suspended or no longer holds", async () => {
     stub.addUser({ login: "lee" });
     stub.addRepo("lee/notes");

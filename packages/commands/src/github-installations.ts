@@ -1,7 +1,7 @@
 import { githubConnectedInstallations, githubCoveredRepositories, githubInstallations, type Database } from "@tiehall/db";
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { everyPage, type GitHubClient } from "./github-client.ts";
+import { everyPage, GitHubUnavailableError, type GitHubClient } from "./github-client.ts";
 import { defineJobType } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -93,11 +93,18 @@ const REPOSITORIES = z.object({
   repositories: z.array(z.object({ id: z.number().int().positive(), full_name: z.string().min(1) })),
 });
 
-/** Lists every installation of the App, with the App's own token, 100 at a time. */
+/**
+ * Lists every installation of the App, with the App's own token, 100 at a
+ * time. It throws GitHubUnavailableError when a page GitHub answers with is
+ * not a list, such as a page a proxy serves for GitHub: that says nothing of
+ * which installations exist, and an empty listing would mark every known one
+ * deleted.
+ */
 export async function listAppInstallations(client: GitHubClient, logger: Logger = createLogger()): Promise<ListedInstallation[]> {
   const pages = await everyPage(client.app(), "GET /app/installations", { per_page: PER_PAGE });
+  if (!pages.every((page) => Array.isArray(page))) throw new GitHubUnavailableError("GitHub's answer to the listing of the App's installations is not a list.");
   const listed: ListedInstallation[] = [];
-  for (const item of pages.flatMap((page) => (Array.isArray(page) ? page : []))) {
+  for (const item of pages.flat()) {
     const parsed = INSTALLATION.safeParse(item);
     // An installation on an account that is neither a user nor an organization, such as an enterprise, is none Tiehall acts on.
     if (!parsed.success) {
