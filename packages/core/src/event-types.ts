@@ -306,6 +306,19 @@ export const inviteCreated = defineEventType({
 });
 
 /**
+ * An admin revoked a pending invite (teams-and-roles: Revoking an invite;
+ * activity-log: Which actions are security events). It names the invite; its
+ * provenance names the admin.
+ */
+export const inviteRevoked = defineEventType({
+  type: "invite.revoked",
+  class: "security",
+  fields: {
+    inviteId: { kind: "id", of: "invite" },
+  },
+});
+
+/**
  * An admin changed the install's daily budget of agent writes (agent-safety:
  * Agent writes are limited per token and budgeted per install; activity-log:
  * Which actions are security events). It names the budget before and after;
@@ -448,6 +461,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   memberRemoved,
   memberJoined,
   inviteCreated,
+  inviteRevoked,
   writeBudgetChanged,
   trustStateReconciled,
   activityLogExported,

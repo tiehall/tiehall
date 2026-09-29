@@ -1,5 +1,5 @@
-import { createInvite } from "@tiehall/catalog";
-import { inviteCreated, Refusal, type Role } from "@tiehall/core";
+import { createInvite, revokeInvite } from "@tiehall/catalog";
+import { inviteCreated, inviteRevoked, Refusal, type Role } from "@tiehall/core";
 import { invites, members } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
@@ -21,6 +21,14 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // it by signing in with that account while it is valid (sign-in-admission.ts).
 // An invite for a person who is already a member would admit nobody, so it is
 // refused with 409. The invite and its security event commit together.
+//
+// Revoking an invite (teams-and-roles: Revoking an invite): an admin revokes
+// a pending invite in the web UI, without the confirmation step, because it
+// only narrows who may join; the web UI's write checks still apply. A revoked
+// invite admits no one. Revoking one again changes nothing more, and an
+// invite that a sign-in accepted can no longer be revoked (409): its person is
+// a member, whom only a removal ends. The revocation and its security event
+// commit together.
 
 /** How long an invite stays valid after it is created. */
 export const INVITE_LIFETIME_DAYS = 7;
@@ -57,6 +65,25 @@ export const INVITE_HANDLERS: Handlers = {
         .returning({ id: invites.id, expiresAt: invites.expiresAt });
       await writer.record(inviteCreated, { inviteId: created!.id, role });
       return { invite: { id: created!.id, githubLogin: account.login, role, expiresAt: created!.expiresAt.toISOString() } };
+    });
+  }),
+
+  [revokeInvite.id]: defineHandler(revokeInvite, async ({ invite }, context) => {
+    const [row] = await context.tx
+      .select({ acceptedAt: invites.acceptedAt, revokedAt: invites.revokedAt })
+      .from(invites)
+      .where(and(eq(invites.orgId, context.orgId), eq(invites.id, invite)))
+      .for("update");
+    if (row === undefined) throw new Refusal("record-not-found", "The install has no such invite.");
+    if (row.revokedAt !== null) return { invite, revoked: true as const };
+    if (row.acceptedAt !== null) throw new Refusal("conflict", "A sign-in accepted that invite already, so it cannot be revoked; remove the member instead.");
+    return context.write(async (writer) => {
+      await writer.tx
+        .update(invites)
+        .set({ revokedAt: sql`now()`, revokedBy: context.member!.userId })
+        .where(and(eq(invites.orgId, writer.orgId), eq(invites.id, invite)));
+      await writer.record(inviteRevoked, { inviteId: invite });
+      return { invite, revoked: true as const };
     });
   }),
 };

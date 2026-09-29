@@ -18,6 +18,11 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // role, `member` unless it names `admin`, expires 7 days after it is created,
 // and needs no email: the invitee accepts it by signing in with that account
 // while it is valid. Each invite is a security event.
+//
+// Revoking an invite (teams-and-roles: Revoking an invite): an admin revokes a
+// pending invite in the web UI, without the confirmation step, because it only
+// narrows who may join; a revoked invite admits no one, and the revocation is
+// a security event. A member's attempt gets 403 and changes nothing.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -29,7 +34,7 @@ const accounts = new Map<string, StubUser>();
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev"]) accounts.set(login, stub.addUser({ login }));
+  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev", "wes-dev", "xia-dev"]) accounts.set(login, stub.addUser({ login }));
   stub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
@@ -193,5 +198,68 @@ describe("creating an invite", () => {
   it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
     const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
     await expect(install.execute("invites.create", token, { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+/** Creates an invite for this username as Ada, with the confirmation step; returns its id. */
+async function invited(login: string): Promise<string> {
+  expect((await install.confirm(ada, "invites.create", { login })).status).toBe(200);
+  const [created] = await invitesFor(login);
+  return created!.id;
+}
+
+function revoke(caller: WebSessionCaller, inviteId: string) {
+  return install.web(caller).write("invites.revoke", { invite: inviteId }, install.fromThePage(caller));
+}
+
+describe("revoking an invite", () => {
+  it("needs no confirmation step: the revoked invite admits no one, and the activity log holds a security event for the revocation", async () => {
+    const inviteId = await invited("wes-dev");
+    lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+    expect(await revoke(ada, inviteId)).toEqual({ ok: true, output: { invite: inviteId, revoked: true } });
+    expect(await eventsSince()).toEqual([{ type: "invite.revoked", class: "security", data: { inviteId }, actor_user_id: ada.userId }]);
+    const { rows } = await install.owner.query("SELECT revoked_by FROM invites WHERE id = $1 AND revoked_at IS NOT NULL", [inviteId]);
+    expect(rows).toEqual([{ revoked_by: ada.userId }]);
+    expect((await harness.signIn("wes-dev")).response.status).toBe(403);
+    expect(await roleOf("wes-dev")).toBeUndefined();
+  });
+
+  it("again changes nothing more and records nothing more", async () => {
+    const inviteId = await invited("xia-dev");
+    expect(await revoke(ada, inviteId)).toMatchObject({ ok: true });
+    lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+    expect(await revoke(ada, inviteId)).toEqual({ ok: true, output: { invite: inviteId, revoked: true } });
+    expect(await eventsSince()).toEqual([]);
+  });
+
+  it("by a member gets 403, and the invite stays valid", async () => {
+    stub.addUser({ login: "yan-dev" });
+    const inviteId = await invited("yan-dev");
+    expect(await revoke(dana, inviteId)).toMatchObject({ ok: false, problem: { status: 403, type: "https://tiehall.com/problems/forbidden" } });
+    expect((await harness.signIn("yan-dev")).response.status).toBe(302);
+    expect(await roleOf("yan-dev")).toBe("member");
+  });
+
+  it("that an accepted invite gets 409, and changes nothing", async () => {
+    const [accepted] = await invitesFor("yan-dev");
+    expect(await revoke(ada, accepted!.id)).toMatchObject({ ok: false, problem: { status: 409 } });
+    expect((await invitesFor("yan-dev"))[0]?.accepted_at).not.toBeNull();
+  });
+
+  it("that names no invite gets 404", async () => {
+    expect(await revoke(ada, randomUUID())).toMatchObject({ ok: false, problem: { status: 404, type: "https://tiehall.com/problems/record-not-found" } });
+  });
+
+  it("from another origin gets 403, as every web UI write does", async () => {
+    stub.addUser({ login: "zak-dev" });
+    const inviteId = await invited("zak-dev");
+    const result = await install.web(ada).write("invites.revoke", { invite: inviteId }, { ...install.fromThePage(ada), origin: "https://evil.example" });
+    expect(result).toMatchObject({ ok: false, problem: { status: 403 } });
+    expect(await install.owner.query("SELECT 1 FROM invites WHERE id = $1 AND revoked_at IS NULL", [inviteId])).toMatchObject({ rowCount: 1 });
+  });
+
+  it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
+    const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
+    await expect(install.execute("invites.revoke", token, { invite: randomUUID() })).rejects.toMatchObject({ status: 404 });
   });
 });

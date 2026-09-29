@@ -50,7 +50,14 @@
             "case": "is bound to the GitHub account the username names, with the role member, expires 7 days after it is created, and is a security event"
           }
         },
-        { "action": "the revocation of an invite", "pending": "9.6" },
+        {
+          "action": "the revocation of an invite",
+          "event": "invite.revoked",
+          "test": {
+            "file": "packages/commands/test/invites.test.ts",
+            "case": "needs no confirmation step: the revoked invite admits no one, and the activity log holds a security event for the revocation"
+          }
+        },
         {
           "action": "a member's removal by an admin, with the block it records",
           "event": "member.removed",

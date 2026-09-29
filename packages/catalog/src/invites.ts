@@ -8,7 +8,9 @@ import { GITHUB_LOGIN, role } from "./schemas.ts";
 // with the confirmation step, so no agent surface offers it. Tiehall resolves
 // the username to the GitHub account's numeric id when the invite is created,
 // and the invite is bound to that account; it names a role, `member` unless
-// it names `admin`, and expires 7 days after it is created.
+// it names `admin`, and expires 7 days after it is created. An admin revokes
+// a pending invite in the web UI without the confirmation step, because that
+// only narrows who may join (teams-and-roles: Revoking an invite).
 
 /** An invite as the operations return it: the GitHub login it was created for, the role it gives and when it expires. */
 export const invite = z.object({
@@ -39,4 +41,17 @@ export const createInvite = defineCommand({
   stability: "beta",
 });
 
-export const INVITE_COMMANDS = [createInvite];
+export const revokeInvite = defineCommand({
+  id: "invites.revoke",
+  summary: "Revoke a pending invite, so it admits no one.",
+  input: z.object({ invite: z.uuid() }),
+  output: z.object({ invite: z.uuid(), revoked: z.literal(true) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "members",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const INVITE_COMMANDS = [createInvite, revokeInvite];
