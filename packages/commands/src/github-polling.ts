@@ -2,7 +2,7 @@ import { githubApp, githubConnectedInstallations, githubCoveredRepositories, git
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
-import { pagesOf, type GitHubClient } from "./github-client.ts";
+import { GitHubUnavailableError, pagesOf, type GitHubClient } from "./github-client.ts";
 import { readInstallations, type GitHubAppAccess } from "./github-installations.ts";
 import { processGitHubDelivery } from "./github-webhooks.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
@@ -96,7 +96,12 @@ async function repositoriesToPoll({ tx, orgId }: Pick<OrgContext, "tx" | "orgId"
     .orderBy(asc(githubCoveredRepositories.repositoryId), asc(githubInstallations.installationId));
 }
 
-/** The pull requests of a repository updated at or after `since`, newest first, as GitHub lists them. */
+/**
+ * The pull requests of a repository updated at or after `since`, newest
+ * first, as GitHub lists them. It throws GitHubUnavailableError when a page
+ * GitHub answers with is not a list, such as a page a proxy serves for GitHub,
+ * which says nothing of what changed.
+ */
 async function pullRequestsUpdatedSince(client: GitHubClient, repository: PolledRepository, since: Date): Promise<Record<string, unknown>[]> {
   const [owner = "", repo = ""] = repository.fullName.split("/");
   const updated: Record<string, unknown>[] = [];
@@ -109,8 +114,9 @@ async function pullRequestsUpdatedSince(client: GitHubClient, repository: Polled
     per_page: PER_PAGE,
   });
   for await (const page of pages) {
+    if (!Array.isArray(page)) throw new GitHubUnavailableError("GitHub's answer to the listing of a repository's pull requests is not a list.");
     let older = false;
-    for (const item of Array.isArray(page) ? page : []) {
+    for (const item of page) {
       const parsed = PULL_REQUEST.safeParse(item);
       if (!parsed.success) continue;
       if (Date.parse(parsed.data.updated_at) < since.getTime()) {

@@ -56,14 +56,14 @@ afterEach(async () => {
   await install?.close();
 });
 
-/** One poll, as the worker runs it every 60 seconds. */
-async function poll(): Promise<void> {
+/** One poll, as the worker runs it every 60 seconds, by the worker's clock, reaching GitHub as the install's App. */
+async function poll(now: () => Date = () => new Date(), github = harness.github): Promise<void> {
   await pollGitHub.handle(
     { id: randomUUID(), queue: pollGitHub.type.queue, data: {}, signal: new AbortController().signal },
     {
       database: install.db,
-      now: () => new Date(),
-      github: harness.github,
+      now,
+      github,
       execute: install.execute,
       jobs: { send: async (_tx, queue, data) => void install.sentJobs.push({ queue, data }) },
     },
@@ -206,6 +206,25 @@ describe("the poll of polling mode", () => {
     expect((await changes()).map(({ repository }) => repository)).toEqual(["acme/api"]);
     await pruneAt(new Date(api!.received_at.getTime() + 31 * DAY));
     expect(await changes()).toEqual([]);
+  });
+
+  // A 200 whose body is not a list, such as a page a proxy that inspects TLS serves, says nothing of what changed.
+  it("reads a repository again from the same time when GitHub answers its pull requests with 200 and a body that is not a list", async () => {
+    await stub.openPullRequest("acme/web", { title: "Fix the header for FE-142", head: "fix-header", author: "omar" }, { delivery: "none" });
+    const opened = Date.now();
+    const page = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: async (input, init) =>
+        new URL(input instanceof Request ? input.url : String(input)).pathname === "/repos/acme/web/pulls"
+          ? new Response("<html><body>Blocked by policy.</body></html>", { status: 200, headers: { "content-type": "text/html" } })
+          : fetch(input, init),
+    });
+
+    await expect(poll(() => new Date(opened + 60 * 60 * 1000), page.github)).rejects.toThrow();
+    expect(await processSent()).toEqual([]);
+
+    await poll(() => new Date(opened + 61 * 60 * 1000));
+    expect(await processSent()).toEqual([{ repository: "acme/web", number: 1, title: "Fix the header for FE-142" }]);
   });
 
   it("does nothing in webhook mode", async () => {
