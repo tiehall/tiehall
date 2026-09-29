@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing/github";
 import {
@@ -201,10 +202,15 @@ describe("uploading a rotated private key", () => {
 });
 
 describe("an upload while GitHub checks the key slowly", () => {
-  /** Makes the install reach GitHub through a fetch that, once armed, answers token requests after a delay; resolves when one is asked. */
-  function slowTokens(delayMs: number): { arm: () => Promise<void>; disarm: () => void } {
+  /**
+   * Makes the install reach GitHub through a fetch that, once armed, holds the next token request open until it
+   * is released; arm() resolves when that request is asked.
+   */
+  function heldTokens(): { arm: () => Promise<void>; release: () => void } {
     let armed = false;
     let asked: () => void = () => {};
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
     install.useGitHub(
       createInstallGitHub({
         database: install.db,
@@ -214,8 +220,9 @@ describe("an upload while GitHub checks the key slowly", () => {
         fetch: async (input, init) => {
           const url = new URL(input instanceof Request ? input.url : String(input));
           if (armed && /^\/app\/installations\/\d+\/access_tokens$/.test(url.pathname)) {
+            armed = false;
             asked();
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            await released;
           }
           return fetch(input, init);
         },
@@ -226,38 +233,63 @@ describe("an upload while GitHub checks the key slowly", () => {
         armed = true;
         return new Promise<void>((resolve) => (asked = resolve));
       },
-      disarm: () => void (armed = false),
+      release,
     };
   }
 
-  it("does not hold the App's row, so an admin's mode switch meanwhile is not held up", { timeout: 30_000 }, async () => {
-    const slow = slowTokens(3_000);
+  /**
+   * Whether another transaction can lock the App's stored row at once, as a write of it, such as an admin's
+   * switch of GitHub's mode, locks it: FOR UPDATE NOWAIT fails at once, rather than waiting, on a row another
+   * transaction holds.
+   */
+  async function appRowIsFree(): Promise<boolean> {
+    const other = new pg.Client({ connectionString: install.databaseUrl });
+    await other.connect();
+    try {
+      await other.query("BEGIN");
+      await other.query("SELECT 1 FROM github_app FOR UPDATE NOWAIT");
+      return true;
+    } catch (error) {
+      if ((error as { code?: unknown }).code === "55P03") return false;
+      throw error;
+    } finally {
+      await other.query("ROLLBACK").catch(() => {});
+      await other.end();
+    }
+  }
+
+  it("holds no lock on the App's row while GitHub answers, so another write of it can lock it at once", { timeout: 30_000 }, async () => {
+    const held = heldTokens();
     const rotated = stub.addPrivateKey(app);
-    const asked = slow.arm();
+    const asked = held.arm();
     const uploading = upload(ada, rotated);
     await asked;
 
-    const started = Date.now();
-    const switched = await install.web(ada).write("github.set_mode", { mode: "polling" }, install.fromThePage(ada));
-    const waited = Date.now() - started;
-    slow.disarm();
+    let free: boolean;
+    try {
+      free = await appRowIsFree();
+    } finally {
+      held.release();
+    }
 
-    expect(switched).toMatchObject({ ok: true });
-    expect(waited).toBeLessThan(1_500);
+    expect(free).toBe(true);
     expect((await uploading).status).toBe(200);
     expect(await storedKey()).toBe(rotated);
   });
 
   it("does not store a key checked for an App that another replaced meanwhile, with 409", { timeout: 30_000 }, async () => {
-    const slow = slowTokens(500);
+    const held = heldTokens();
     const rotated = stub.addPrivateKey(app);
-    const asked = slow.arm();
+    const asked = held.arm();
     const uploading = upload(ada, rotated);
     await asked;
-    // A new App's credentials are stored while GitHub checks the key, as a step that setup reopen opened stores them.
-    await install.owner.query("UPDATE github_app SET app_id = app_id + 1, client_id = 'Iv23liAnotherApp'");
+    try {
+      // A new App's credentials are stored while GitHub checks the key, as a step that setup reopen opened stores them.
+      await install.owner.query("UPDATE github_app SET app_id = app_id + 1, client_id = 'Iv23liAnotherApp'");
+    } finally {
+      held.release();
+    }
     const answer = await uploading;
-    slow.disarm();
 
     expect(answer.status).toBe(409);
     expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/conflict" });
