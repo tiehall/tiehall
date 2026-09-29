@@ -274,8 +274,23 @@ export const githubApp = pgTable(
      * its first run for this App.
      */
     redeliveryCheckedAt: timestamp("redelivery_checked_at", { withTimezone: true }),
+    /**
+     * GitHub's mode (tracker-mirrors: GitHub and Jira each run in webhook mode
+     * or polling mode): webhook, in which changes arrive as deliveries, or
+     * polling, in which Tiehall polls GitHub every 60 seconds.
+     */
+    mode: text("mode").notNull().default("webhook"),
+    /**
+     * When the mode was settled: by the check of the App's delivery log after
+     * its first installation, or by an admin's switch. Null while the check
+     * has yet to run.
+     */
+    modeSettledAt: timestamp("mode_settled_at", { withTimezone: true }),
   },
-  (table) => [check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`)],
+  (table) => [
+    check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`),
+    check("github_app_mode_known", sql`${table.mode} IN ('webhook', 'polling')`),
+  ],
 );
 
 // The deliveries Tiehall asked GitHub to redeliver (tracker-mirrors: Failed

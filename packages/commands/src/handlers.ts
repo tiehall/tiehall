@@ -3,6 +3,7 @@ import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
 import { GITHUB_INSTALLATION_HANDLERS } from "./github-installation-changes.ts";
+import { GITHUB_MODE_HANDLERS } from "./github-mode.ts";
 import { INVITE_HANDLERS } from "./invites.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
@@ -40,4 +41,5 @@ export const HANDLERS: Handlers = {
   ...ACTIVITY_LOG_HANDLERS,
   ...ACTIVITY_LOG_EXPORT_HANDLERS,
   ...GITHUB_INSTALLATION_HANDLERS,
+  ...GITHUB_MODE_HANDLERS,
 };

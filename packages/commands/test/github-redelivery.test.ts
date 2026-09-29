@@ -151,13 +151,12 @@ describe("the redelivery of failed GitHub deliveries", () => {
     expect(await storedDeliveries()).not.toContain(missed.guid);
   });
 
-  it("asks nothing while GitHub runs in polling mode, as for an App without a webhook", async () => {
-    const polling = stub.createApp({ owner: "acme", name: "Tiehall without a webhook" });
-    await install.owner.query("DELETE FROM github_covered_repositories; DELETE FROM github_connected_installations; DELETE FROM github_installations");
-    const withoutWebhook = await storeStubApp(install, stub, polling);
+  it("asks nothing while GitHub runs in polling mode", async () => {
+    await missedDelivery();
+    await install.owner.query("UPDATE github_app SET mode = 'polling'");
     const from = stub.received.length;
 
-    await redeliver(withoutWebhook.github);
+    await redeliver();
 
     expect(stub.received.slice(from).filter(({ path }) => path.startsWith("/app/hook"))).toEqual([]);
   });

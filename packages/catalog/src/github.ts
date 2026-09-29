@@ -1,3 +1,4 @@
+import { GITHUB_MODES } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 
@@ -65,4 +66,48 @@ export const disconnectGitHubInstallation = defineCommand({
   stability: "beta",
 });
 
-export const GITHUB_COMMANDS = [listGitHubInstallations, connectGitHubInstallation, disconnectGitHubInstallation];
+/** GitHub's mode: webhook, in which changes arrive as deliveries, or polling, in which Tiehall polls GitHub every 60 seconds. */
+const githubMode = z.enum(GITHUB_MODES).meta({
+  description: "webhook: GitHub delivers changes to the install's webhook; polling: Tiehall polls GitHub every 60 seconds.",
+});
+
+export const getGitHubIntegration = defineCommand({
+  id: "github.get_integration",
+  summary: "Show the install's GitHub App and how its changes reach Tiehall: by webhook or by polling.",
+  input: z.object({}),
+  output: z.object({
+    app: z
+      .object({
+        name: z.string(),
+        slug: z.string(),
+        /** The GitHub account that owns the App, an organization's or a person's; not a Tiehall user. */
+        owner: z.string(),
+        ownerType: z.enum(["Organization", "User"]),
+        mode: githubMode,
+        /** Whether a webhook secret is stored, to verify deliveries with. */
+        webhookSecret: z.boolean(),
+      })
+      .nullable(),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "integrations",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const setGitHubMode = defineCommand({
+  id: "github.set_mode",
+  summary: "Switch how GitHub's changes reach Tiehall: by webhook, or by polling every 60 seconds.",
+  input: z.object({ mode: githubMode }),
+  output: z.object({ mode: githubMode, previousMode: githubMode }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "integrations",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const GITHUB_COMMANDS = [listGitHubInstallations, connectGitHubInstallation, disconnectGitHubInstallation, getGitHubIntegration, setGitHubMode];

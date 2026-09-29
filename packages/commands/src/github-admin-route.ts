@@ -1,4 +1,11 @@
-import { connectGitHubInstallation, disconnectGitHubInstallation, listGitHubInstallations, type githubInstallation } from "@tiehall/catalog";
+import {
+  connectGitHubInstallation,
+  disconnectGitHubInstallation,
+  getGitHubIntegration,
+  listGitHubInstallations,
+  setGitHubMode,
+  type githubInstallation,
+} from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
@@ -18,13 +25,16 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // disconnects each, and those not connected, each with a link to the review
 // page that connects it with the confirmation step. Tiehall ignores an
 // installation that is not connected, so leaving it there is how an admin
-// ignores it. A POST disconnects one: it needs no confirmation step, but passes
-// the checks every web UI write passes (the session's CSRF token, an Origin
-// equal to TIEHALL_URL and Sec-Fetch-Site: same-origin), and leads back to the
-// page. Both run through execute(), so a member gets 403; a browser without a
-// session is sent to sign in first (D28 #66). The page runs no script, loads
-// nothing, and cannot be framed; refusals are RFC 9457 problems. The
-// integrations' mode and the other admin pages come with later tasks.
+// ignores it. The page also shows GitHub's mode, webhook or polling, with a
+// form that switches it (tracker-mirrors: GitHub and Jira each run in webhook
+// mode or polling mode). A POST disconnects an installation or switches the
+// mode: neither needs the confirmation step, but each passes the checks every
+// web UI write passes (the session's CSRF token, an Origin equal to
+// TIEHALL_URL and Sec-Fetch-Site: same-origin), and leads back to the page.
+// All run through execute(), so a member gets 403; a browser without a session
+// is sent to sign in first (D28 #66). The page runs no script, loads nothing,
+// and cannot be framed; refusals are RFC 9457 problems. The other admin pages
+// come with later tasks.
 
 export interface GitHubAdminRouteOptions {
   execute: Execute;
@@ -43,12 +53,13 @@ export type GitHubAdminRoute = (request: Request) => Promise<Response>;
 export const GITHUB_ADMIN_PATH = "/admin/github";
 
 type Installation = z.output<typeof githubInstallation>;
+type Integration = z.output<typeof getGitHubIntegration.output>;
 
 export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHubAdminRoute {
   const logger = options.logger ?? createLogger();
   return async function githubAdmin(request) {
     try {
-      if (request.method === "POST") return await disconnect(request);
+      if (request.method === "POST") return await change(request);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
       const caller = await options.session(request);
       if (caller === undefined) {
@@ -57,8 +68,9 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
           headers: { location: `${SIGN_IN_PATH}?return=${encodeURIComponent(GITHUB_ADMIN_PATH)}`, "cache-control": "no-store", ...frameless() },
         });
       }
+      const integration = (await options.execute(getGitHubIntegration.id, caller, {}, { readOnly: true })) as Integration;
       const output = (await options.execute(listGitHubInstallations.id, caller, {}, { readOnly: true })) as { installations: Installation[] };
-      return new Response(page(output.installations, csrfTokenFor(options.secret(), caller.sessionId)), { headers: PAGE_HEADERS });
+      return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId)), { headers: PAGE_HEADERS });
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("github admin: the page failed", { error });
@@ -66,19 +78,25 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
     }
   };
 
-  /** Disconnects the installation the page's form names, once the request passes the web UI's write checks. */
-  async function disconnect(request: Request): Promise<Response> {
+  /**
+   * Disconnects the installation the page's form names, or switches GitHub's
+   * mode, once the request passes the web UI's write checks.
+   */
+  async function change(request: Request): Promise<Response> {
     const caller = await options.session(request);
-    if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to disconnect an installation.");
+    if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to change the GitHub integration.");
     const form = new URLSearchParams(await request.text());
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
       { url: options.url, secret: options.secret(), sessionId: caller.sessionId, confirm: false },
     );
-    if (form.get("action") !== "disconnect") throw new Refusal("route-not-found", "The GitHub page offers no such action.");
+    const action = form.get("action");
+    const commandId = action === "disconnect" ? disconnectGitHubInstallation.id : action === "set_mode" ? setGitHubMode.id : undefined;
+    if (commandId === undefined) throw new Refusal("route-not-found", "The GitHub page offers no such action.");
+    const input = action === "disconnect" ? { installation: form.get("installation") ?? "" } : { mode: form.get("mode") ?? "" };
     const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
     const userAgent = request.headers.get("user-agent") ?? undefined;
-    await options.execute(disconnectGitHubInstallation.id, caller, { installation: form.get("installation") ?? "" }, {
+    await options.execute(commandId, caller, input, {
       origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) },
     });
     return new Response(null, { status: 303, headers: { location: GITHUB_ADMIN_PATH, "cache-control": "no-store", ...frameless() } });
@@ -106,7 +124,27 @@ function stateText(installation: Installation): string {
   return installation.repositorySelection === "all" ? "Covers every repository of the account." : "Covers the repositories chosen on GitHub.";
 }
 
-function page(installations: readonly Installation[], csrf: string): string {
+/** GitHub's mode, what it means, and the form that switches it. */
+function modeSection(integration: Integration, csrf: string): string[] {
+  const app = integration.app;
+  if (app === null) return ["      <h2>How GitHub's changes reach Tiehall</h2>", "      <p>The install has no GitHub App yet.</p>"];
+  const other = app.mode === "webhook" ? "polling" : "webhook";
+  return [
+    "      <h2>How GitHub's changes reach Tiehall</h2>",
+    app.mode === "webhook"
+      ? "      <p>GitHub runs in webhook mode: GitHub delivers each change to the install as it happens, and Tiehall asks GitHub to redeliver deliveries that failed.</p>"
+      : "      <p>GitHub runs in polling mode: Tiehall asks GitHub for changes every 60 seconds, so a change reaches it within 2 minutes.</p>",
+    "      <p>A reconciliation every 15 minutes finds what either mode missed.</p>",
+    `      <form method="post" action="${GITHUB_ADMIN_PATH}">`,
+    '        <input type="hidden" name="action" value="set_mode">',
+    `        <input type="hidden" name="mode" value="${other}">`,
+    `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    `        <button type="submit">Switch to ${other} mode</button>`,
+    "      </form>",
+  ];
+}
+
+function page(integration: Integration, installations: readonly Installation[], csrf: string): string {
   const connected = installations.filter(({ connected: isConnected }) => isConnected);
   const others = installations.filter(({ connected: isConnected, deleted }) => !isConnected && !deleted);
   const connectedRows = connected.map(
@@ -132,6 +170,7 @@ function page(installations: readonly Installation[], csrf: string): string {
     "GitHub",
     [
       "      <h1>GitHub</h1>",
+      ...modeSection(integration, csrf),
       "      <h2>Connected installations</h2>",
       "      <p>Tiehall acts on these installations of the install's GitHub App: the repositories they cover count as covered. Disconnecting one needs no confirmation and removes no member.</p>",
       connectedRows.length === 0 ? "      <p>No installation is connected.</p>" : `      <ul>\n${connectedRows.join("\n")}\n      </ul>`,

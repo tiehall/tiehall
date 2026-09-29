@@ -466,6 +466,26 @@ export const githubInstallationDisconnected = defineEventType({
   },
 });
 
+/** GitHub's two modes (tracker-mirrors: GitHub and Jira each run in webhook mode or polling mode). */
+export const GITHUB_MODES = ["webhook", "polling"] as const;
+
+/**
+ * GitHub's mode changed (tracker-mirrors: GitHub and Jira each run in webhook
+ * mode or polling mode; activity-log: Which actions are security events): an
+ * admin switched it in the web UI, or a failed delivery in the App's delivery
+ * log after its first installation put GitHub in polling mode. It is a change
+ * of the integration; its provenance names the admin, or the system.
+ */
+export const githubModeChanged = defineEventType({
+  type: "github.mode_changed",
+  class: "security",
+  fields: {
+    mode: { kind: "enum", values: GITHUB_MODES },
+    previousMode: { kind: "enum", values: GITHUB_MODES },
+    cause: { kind: "enum", values: ["admin_switch", "failed_delivery"] },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -496,4 +516,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   setupCompleted,
   githubInstallationConnected,
   githubInstallationDisconnected,
+  githubModeChanged,
 ];

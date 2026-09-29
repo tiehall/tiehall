@@ -129,6 +129,22 @@
             "case": "needs no confirmation step: it stops covering the repositories, keeps every member, and is a security event"
           }
         },
+        {
+          "action": "GitHub's mode switched by an admin",
+          "event": "github.mode_changed",
+          "test": {
+            "file": "packages/commands/test/github-modes.test.ts",
+            "case": "switches GitHub between the modes in the web UI, each switch a security event naming the admin"
+          }
+        },
+        {
+          "action": "GitHub put in polling mode by a failed delivery in the App's delivery log",
+          "event": "github.mode_changed",
+          "test": {
+            "file": "packages/commands/test/github-modes.test.ts",
+            "case": "puts GitHub in polling mode on a failed delivery after the first installation, which the admin page shows and the activity log records"
+          }
+        },
         { "action": "the Jira connection connected", "pending": "25.1" },
         { "action": "the Jira connection changed", "pending": "25.2" },
         { "action": "the Jira connection disconnected", "pending": "25.2" },

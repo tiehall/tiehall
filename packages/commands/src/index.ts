@@ -95,7 +95,15 @@ export {
   type ReadInstallationsOptions,
 } from "./github-installations.ts";
 export { askRedelivery, attemptFailed, madeAfter, readDeliveryLog, type DeliveryAttempt } from "./github-delivery-log.ts";
-export { GITHUB_MODES, githubModeOf, type GitHubMode } from "./github-mode.ts";
+export {
+  checkDeliveryLog,
+  checkGitHubDeliveryLog,
+  GITHUB_MODE_HANDLERS,
+  GITHUB_MODES,
+  githubModeOf,
+  type DeliveryLogCheckOptions,
+  type GitHubMode,
+} from "./github-mode.ts";
 export { REDELIVERY_ASKS, redeliverFailedDeliveries, redeliverGitHubDeliveries, type RedeliveryOptions } from "./github-redelivery.ts";
 export { userOfGitHubAccount } from "./github-users.ts";
 export {
