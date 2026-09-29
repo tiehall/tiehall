@@ -36,7 +36,7 @@ import { setupCookieName } from "./setup-route.ts";
 import { routeInventory, servedOverHttp } from "./sign-in-routes.ts";
 import { RemovedMemberError } from "./with-org.ts";
 import { assertWebWrite } from "./web-writes.ts";
-import { write, type Origin, type Store } from "./write.ts";
+import { write, type Origin, type Store, type Writer } from "./write.ts";
 
 // The sign-in service (sign-in: GitHub is the only way to sign in; design.md,
 // Technical decisions: T7 and T8; design.md, Self-hosting decisions: S4 and
@@ -96,7 +96,11 @@ import { write, type Origin, type Store } from "./write.ts";
 // member of the organization of an installation an admin connected. A person
 // who is not a member yet joins just before their web session is stored,
 // once the service has stored their user, in one transaction with the join's
-// security event; a join that no longer holds by then stores no session.
+// security event. A join that no longer holds by then, such as one whose
+// invite an admin revoked while GitHub answered, is refused like any other
+// refused sign-in. It stores no session, the user it created goes with its
+// link to the GitHub account, and the refusal is recorded with its security
+// event.
 //
 // The sign-in that completes setup (self-host-install: Setup names the company
 // and makes the first admin; sign-in: Who may sign in): while setup is
@@ -267,6 +271,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   const admissions = new Map<number, Admission>();
   /** The users whose sign-in in progress cleared an admin removal's block, which the sign-in's own security event names. */
   const clearedBlocks = new Set<string>();
+  /** The users that sign-ins in progress created, which a sign-in refused before its session is stored does not leave behind. */
+  const createdUsers = new Set<string>();
   const admissionServices = { database: options.database, github: installGitHub, logger };
 
   /** The GitHub account of a user, by its numeric id. */
@@ -379,6 +385,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                     const githubAccountId = await githubAccountOf(session.userId);
                     const admission = githubAccountId === undefined ? undefined : admissions.get(githubAccountId);
                     if (githubAccountId !== undefined) admissions.delete(githubAccountId);
+                    const created = createdUsers.delete(session.userId);
                     try {
                       if (admission === undefined) throw new AdmissionWithdrawnError();
                       const applied = await applyAdmission({ database: options.database }, { userId: session.userId, admission, origin: whereFrom(context) });
@@ -386,6 +393,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                     } catch (error) {
                       if (!(error instanceof AdmissionWithdrawnError)) throw error;
                       logger.warn("sign-in service: a sign-in's admission no longer held when its session was to be stored", { userId: session.userId });
+                      try {
+                        await refuseWithdrawn(session.userId, created, whereFrom(context));
+                      } catch (failure) {
+                        // The refusal stands: nobody is signed in, and the log says what is missing.
+                        logger.error("sign-in service: a sign-in refused before its session was stored could not be recorded", { error: failure });
+                      }
                       throw new APIError("FORBIDDEN", { code: REFUSED_CODE, message: SIGN_IN_REFUSED });
                     }
                   },
@@ -400,6 +413,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           create: { before: async () => ({ data: NO_USER_TOKEN }) },
           update: { before: async () => ({ data: NO_USER_TOKEN }) },
         },
+        // A sign-in that creates its person's user, which a refusal before the session is stored then removes.
+        ...(setup ? {} : { user: { create: { after: async (user: { id: string }) => void createdUsers.add(user.id) } } }),
       },
       socialProviders: {
         github: {
@@ -435,18 +450,43 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   /** Records the GitHub account a sign-in refused, and appends the refusal's security event, in one write. */
   async function recordRefusal(account: { githubAccountId: number; login: string; userId: string | undefined }, origin: Origin): Promise<void> {
     if (!Number.isSafeInteger(account.githubAccountId) || account.githubAccountId <= 0) return;
+    await write(store, { actorKind: "system", surface: "web" }, (writer) => appendRefusal(writer, account), { origin });
+  }
+
+  /**
+   * Refuses a sign-in whose admission no longer held when its web session was
+   * to be stored, in one write: a user this sign-in created goes, with its
+   * link to the GitHub account, so the refusal leaves no Tiehall user behind,
+   * and the refused GitHub account is recorded with the refusal's event, which
+   * names the user only when it stays.
+   */
+  async function refuseWithdrawn(userId: string, created: boolean, origin: Origin): Promise<void> {
     await write(
       store,
       { actorKind: "system", surface: "web" },
       async (writer) => {
-        const [refusal] = await writer.tx
-          .insert(signInRefusals)
-          .values({ orgId: writer.orgId, githubAccountId: account.githubAccountId, githubLogin: account.login })
-          .returning({ id: signInRefusals.id });
-        await writer.record(signInRefused, { refusalId: refusal!.id, ...(account.userId === undefined ? {} : { userId: account.userId }) });
+        const [user] = await writer.tx
+          .select({ githubAccountId: users.githubAccountId, login: users.githubLogin })
+          .from(users)
+          .where(and(eq(users.orgId, writer.orgId), eq(users.id, userId)));
+        if (user === undefined) throw new Error("the refused sign-in's user is gone");
+        if (created) {
+          await writer.tx.delete(signInAccounts).where(and(eq(signInAccounts.orgId, writer.orgId), eq(signInAccounts.userId, userId)));
+          await writer.tx.delete(users).where(and(eq(users.orgId, writer.orgId), eq(users.id, userId)));
+        }
+        await appendRefusal(writer, { githubAccountId: user.githubAccountId, login: user.login, userId: created ? undefined : userId });
       },
       { origin },
     );
+  }
+
+  /** Records a refused GitHub account, and appends the refusal's security event, in the writer's transaction. */
+  async function appendRefusal(writer: Writer, account: { githubAccountId: number; login: string; userId: string | undefined }): Promise<void> {
+    const [refusal] = await writer.tx
+      .insert(signInRefusals)
+      .values({ orgId: writer.orgId, githubAccountId: account.githubAccountId, githubLogin: account.login })
+      .returning({ id: signInRefusals.id });
+    await writer.record(signInRefused, { refusalId: refusal!.id, ...(account.userId === undefined ? {} : { userId: account.userId }) });
   }
 
   /**
