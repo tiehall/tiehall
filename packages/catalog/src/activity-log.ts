@@ -9,8 +9,9 @@ import { user } from "./schemas.ts";
 // activity-log: IP addresses and user agents are kept apart for 90 days;
 // activity-log: Security events are shown to admins only; teams-and-roles:
 // What admins and members may do). An admin views the log in the web UI,
-// newest first, filtered by time, actor, request and event type. It is an
-// admin action, so it runs only in the web UI and no agent surface offers it.
+// newest first, filtered by time, actor, request and event type, with a
+// refused sign-in's GitHub account beside its event. It is an admin action,
+// so it runs only in the web UI and no agent surface offers it.
 
 /** Who caused an event, as the event records it: the actor kind, and the user, client, surface, team or operator command it names. */
 export const activityActor = z.object({
@@ -40,6 +41,12 @@ export const activityEvent = z.object({
   request: requestRef.optional(),
   /** Only for a security event, and only while they are kept: 90 days. */
   origin: activityOrigin.optional(),
+  /**
+   * Only for the event of a refused sign-in, which names no Tiehall user: the
+   * GitHub account that was refused, by its numeric id and the login it had,
+   * as the refusal's record keeps them for as long as the event.
+   */
+  refusedAccount: z.object({ githubAccountId: z.number().int().positive(), githubLogin: z.string().min(1) }).optional(),
 });
 
 /** An instant, as an ISO 8601 date-time with an offset or Z. */
@@ -78,7 +85,7 @@ export const listActivityLog = defineCommand({
 export const exportedActor = activityActor.omit({ user: true }).extend({ userId: z.uuid().optional() });
 
 /** An event as a line of the export carries it. */
-export const exportedEvent = activityEvent.omit({ request: true, origin: true, actor: true }).extend({ actor: exportedActor });
+export const exportedEvent = activityEvent.omit({ request: true, origin: true, refusedAccount: true, actor: true }).extend({ actor: exportedActor });
 
 export const exportActivityLog = defineCommand({
   id: "activity_log.export",

@@ -14,7 +14,9 @@ import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } fr
 // export's review page (activity-log: Exporting the activity log). Every event
 // shows its number, time, class, type, the ids it carries, who caused it and
 // the request it concerns, and a security event its IP address and user
-// agent while they are kept. The page runs no script, loads nothing and
+// agent while they are kept; a refused sign-in's event also names the GitHub
+// account that was refused, by the login it had and its numeric id, for as
+// long as the event is kept (D50 (5)). The page runs no script, loads nothing and
 // cannot be framed. It is served like every other page of the web UI
 // (web-pages.ts): a browser without a session is sent to sign in first and
 // comes back to the page (agent-surfaces: A browser without a session is sent
@@ -126,11 +128,12 @@ function actorText({ actor }: ActivityEvent): string {
   }
 }
 
-/** The ids and values the event carries, as name=value pairs. */
-function dataText({ data }: ActivityEvent): string {
-  return Object.entries(data)
+/** The ids and values the event carries, as name=value pairs, and, for a refused sign-in, the GitHub account that was refused. */
+function dataText({ data, refusedAccount }: ActivityEvent): string {
+  const pairs = Object.entries(data)
     .map(([name, value]) => `${name}=${String(value)}`)
     .join(" ");
+  return refusedAccount === undefined ? pairs : `${pairs}; refused GitHub account ${refusedAccount.githubLogin}, id ${refusedAccount.githubAccountId}`;
 }
 
 function originText({ origin }: ActivityEvent): string {

@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OPENAPI_JSON } from "@tiehall/catalog";
+import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { ACTIVITY_LOG_PATH, createActivityLogRoute, pruneSecurityEventOrigins, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
 // The admin view of the activity log (activity-log: The admin view;
 // activity-log: The activity log holds domain events and security events;
@@ -38,6 +40,7 @@ interface ActivityEvent {
   actor: Record<string, unknown>;
   request?: { id: string; key: string };
   origin?: { ipAddress?: string; userAgent?: string };
+  refusedAccount?: { githubAccountId: number; githubLogin: string };
 }
 
 beforeAll(async () => {
@@ -224,5 +227,111 @@ describe("the page at /admin/activity-log", () => {
     expect(post.status).toBe(404);
     const bad = await route(pia)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?from=yesterday`));
     expect(bad.status).toBe(400);
+  });
+});
+
+// A refused sign-in is named as long as its event (activity-log: IP addresses
+// and user agents are kept apart for 90 days; sign-in: Who may sign in;
+// D50 (5)). The refused sign-in's security event names a record of the refused
+// GitHub account, which holds only the account's numeric id, the login it had
+// and the time, and is kept as long as the event: the admin view shows the
+// account beside the event, before and after the pruning job deletes the
+// refusal's IP address and user agent 91 days later.
+describe("a refused sign-in in the admin view", () => {
+  const BROWSER = { "x-forwarded-for": "203.0.113.9", "user-agent": "Mozilla/5.0 (refused browser)" };
+  let refusedInstall: TestInstall;
+  let stub: GitHubStub;
+  let harness: SignInHarness;
+  let ada: WebSessionCaller;
+  let kim: StubUser;
+  let marked: StubUser;
+
+  beforeAll(async () => {
+    refusedInstall = await startTestInstall();
+    stub = await startGitHubStub();
+    stub.addOrg({ login: "acme" });
+    kim = stub.addUser({ login: "kim-x" });
+    // A login with markup, which GitHub never issues, shows that the view escapes whatever the record holds.
+    marked = stub.addUser({ login: 'kim<b onclick="x">&amp;' });
+    harness = await startSignIn(refusedInstall, stub);
+    ada = sessionOf(await addUser(refusedInstall.owner, { role: "admin", login: "ada" }));
+    for (const login of [kim.login, marked.login]) expect((await harness.signIn(login, { headers: BROWSER })).response.status).toBe(403);
+  }, 60_000);
+
+  afterAll(async () => {
+    await stub?.close();
+    await refusedInstall?.close();
+  });
+
+  async function refusals(): Promise<ActivityEvent[]> {
+    const result = await refusedInstall.web(ada).read<{ events: ActivityEvent[] }>("activity_log.list", { type: "sign_in.refused" });
+    expect(result).toMatchObject({ ok: true });
+    return result.ok ? result.output.events : [];
+  }
+
+  const page = async () =>
+    (
+      await createActivityLogRoute({
+        execute: refusedInstall.execute,
+        session: async () => ada,
+        url: URL_OF_INSTALL,
+        secret: () => refusedInstall.authSecret,
+        logger: { error() {} } as never,
+      })(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?type=sign_in.refused`))
+    ).text();
+
+  it("names the refused account's login and numeric id beside the event, escaped, with its IP address and user agent", async () => {
+    const [markedEvent, kimEvent] = await refusals();
+    expect(kimEvent).toMatchObject({
+      class: "security",
+      type: "sign_in.refused",
+      refusedAccount: { githubAccountId: kim.id, githubLogin: "kim-x" },
+      origin: { ipAddress: "203.0.113.9", userAgent: BROWSER["user-agent"] },
+    });
+    expect(markedEvent).toMatchObject({ refusedAccount: { githubAccountId: marked.id, githubLogin: marked.login } });
+    const html = await page();
+    expect(html).toContain("kim-x");
+    expect(html).toContain(String(kim.id));
+    expect(html).toContain(String(marked.id));
+    expect(html).toContain("kim&#60;b onclick=&#34;x&#34;&#62;&#38;amp;");
+    expect(html).not.toContain("<b onclick");
+    expect(html).toContain("203.0.113.9");
+  });
+
+  it("still names the refused account after the pruning job deletes the refusal's IP address and user agent 91 days later, and keeps its record and its event", async () => {
+    const before = await refusals();
+    const refusalIds = before.map(({ data }) => data["refusalId"]);
+    const records = async () =>
+      (
+        await refusedInstall.owner.query(
+          "SELECT id, github_account_id, github_login, refused_at FROM sign_in_refusals WHERE id = ANY($1::uuid[]) ORDER BY refused_at, id",
+          [refusalIds],
+        )
+      ).rows;
+    const kept = await records();
+    expect(kept).toHaveLength(2);
+    const latest = Math.max(...before.map(({ occurredAt }) => Date.parse(occurredAt)));
+    await pruneSecurityEventOrigins.handle(
+      { id: "prune", queue: pruneSecurityEventOrigins.type.queue, data: {}, signal: new AbortController().signal },
+      { database: refusedInstall.db, now: () => new Date(latest + 91 * DAY) },
+    );
+
+    const after = await refusals();
+    expect(after.map(({ number }) => number)).toEqual(before.map(({ number }) => number));
+    for (const event of after) expect(event).not.toHaveProperty("origin");
+    expect(after.map(({ refusedAccount }) => refusedAccount)).toEqual(before.map(({ refusedAccount }) => refusedAccount));
+    expect(await records()).toEqual(kept);
+    const html = await page();
+    expect(html).toContain("kim-x");
+    expect(html).toContain(String(kim.id));
+    expect(html).not.toContain("203.0.113.9");
+    expect(html).not.toContain("refused browser");
+  });
+
+  it("keeps in a refusal's record only the org, the record's id, the account's numeric id, the login it had and the time", async () => {
+    const { rows } = await refusedInstall.owner.query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sign_in_refusals' ORDER BY column_name",
+    );
+    expect(rows.map(({ column_name }) => column_name)).toEqual(["github_account_id", "github_login", "id", "org_id", "refused_at"]);
   });
 });

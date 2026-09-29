@@ -1,6 +1,6 @@
 import { listActivityLog } from "@tiehall/catalog";
-import { formatRequestKey, type EventActorKind, type EventClass, type OperatorCommand, type Surface } from "@tiehall/core";
-import { events, requests, securityEventOrigins, teams, users } from "@tiehall/db";
+import { formatRequestKey, signInRefused, type EventActorKind, type EventClass, type OperatorCommand, type Surface } from "@tiehall/core";
+import { events, requests, securityEventOrigins, signInRefusals, teams, users } from "@tiehall/db";
 import { and, desc, eq, gte, lt, lte, sql, type SQL } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { resolveRequestKey } from "./request-keys.ts";
@@ -16,7 +16,12 @@ import { resolveRequestKey } from "./request-keys.ts";
 // class, type, the ids and values its type declares, and who caused it, with
 // the user as every output names one and the current key of the request it
 // names; a security event also shows its IP address and user
-// agent while the side table still holds them. It is an admin action, so
+// agent while the side table still holds them. A refused sign-in's event
+// also shows the GitHub account that was refused, by its numeric id and the
+// login it had, read from the record the event names by its refusalId, which
+// is kept as long as the event, so the view names the account after the IP
+// address and user agent are gone (sign-in: Who may sign in; design.md,
+// Decisions this change rests on: D50 (5)). It is an admin action, so
 // execute() refuses it to a member with 403 and no agent surface offers it;
 // it reads and changes nothing.
 
@@ -52,12 +57,22 @@ export const ACTIVITY_LOG_HANDLERS: Handlers = {
         requestTeamKey: teams.key,
         ipAddress: securityEventOrigins.ipAddress,
         userAgent: securityEventOrigins.userAgent,
+        refusedAccountId: signInRefusals.githubAccountId,
+        refusedLogin: signInRefusals.githubLogin,
       })
       .from(events)
       .leftJoin(users, and(eq(users.orgId, events.orgId), eq(users.id, events.actorUserId)))
       .leftJoin(requests, and(eq(requests.orgId, events.orgId), sql`${requests.id}::text = ${events.data}->>'requestId'`))
       .leftJoin(teams, and(eq(teams.orgId, requests.orgId), eq(teams.id, requests.targetTeamId)))
       .leftJoin(securityEventOrigins, and(eq(securityEventOrigins.orgId, events.orgId), eq(securityEventOrigins.eventNumber, events.number)))
+      .leftJoin(
+        signInRefusals,
+        and(
+          eq(events.type, signInRefused.type),
+          eq(signInRefusals.orgId, events.orgId),
+          sql`${signInRefusals.id}::text = ${events.data}->>'refusalId'`,
+        ),
+      )
       .where(and(...conditions))
       .orderBy(desc(events.number))
       .limit(input.limit ?? 100);
@@ -87,6 +102,9 @@ export const ACTIVITY_LOG_HANDLERS: Handlers = {
           ...(row.class === "security" && (row.ipAddress !== null || row.userAgent !== null)
             ? { origin: { ...(row.ipAddress === null ? {} : { ipAddress: row.ipAddress }), ...(row.userAgent === null ? {} : { userAgent: row.userAgent }) } }
             : {}),
+          ...(row.refusedAccountId === null || row.refusedLogin === null
+            ? {}
+            : { refusedAccount: { githubAccountId: row.refusedAccountId, githubLogin: row.refusedLogin } }),
         };
       }),
     };
