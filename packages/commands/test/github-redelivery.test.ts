@@ -4,6 +4,7 @@ import { startGitHubStub, type GitHubStub, type StubApp, type StubDelivery } fro
 import {
   connectInstallations,
   createGitHubAdminRoute,
+  createInstallGitHub,
   GITHUB_ADMIN_PATH,
   processDelivery,
   processGitHubDelivery,
@@ -223,6 +224,34 @@ describe("the limits of redelivery (github-layer-hardening 1.21)", () => {
     await redeliver(stored.github, () => new Date(before + 26 * MINUTE));
 
     expect(asked()).toEqual([]);
+  });
+});
+
+/** The install's App, reaching GitHub through this fetch. */
+function reachingGitHubThrough(through: typeof fetch) {
+  return createInstallGitHub({ database: install.db, secrets: () => stored.box, apiUrl: stub.apiUrl, fetch: through, logger: install.logger });
+}
+
+function pathOf(input: string | URL | Request): string {
+  return new URL(input instanceof Request ? input.url : String(input)).pathname;
+}
+
+describe("a run GitHub fails", () => {
+  // A 200 whose body is not a list, such as a page a proxy that inspects TLS serves, says nothing of which deliveries
+  // failed: the run fails, records no run, and the next one reads the log from where it would have.
+  it("when GitHub answers the delivery log with 200 and a body that is not a list, records no run, so the next run still asks for the failed delivery", async () => {
+    const missed = await missedDelivery();
+    const made = Date.parse(missed.deliveredAt);
+    const page = reachingGitHubThrough(async (input, init) =>
+      pathOf(input) === "/app/hook/deliveries"
+        ? new Response("<html><body>Blocked by policy.</body></html>", { status: 200, headers: { "content-type": "text/html" } })
+        : fetch(input, init),
+    );
+    await expect(redeliver(page, () => new Date(made + 60 * MINUTE))).rejects.toThrow();
+    expect(asked()).toEqual([]);
+
+    await redeliver(stored.github, () => new Date(made + 70 * MINUTE));
+    expect(asked()).toEqual([missed.id]);
   });
 });
 

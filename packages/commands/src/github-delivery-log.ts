@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pagesOf, type GitHubClient } from "./github-client.ts";
+import { GitHubUnavailableError, pagesOf, type GitHubClient } from "./github-client.ts";
 import { createLogger, type Logger } from "./log.ts";
 
 // The App's webhook delivery log (tracker-mirrors: Failed GitHub deliveries
@@ -69,14 +69,17 @@ function statusOf(error: unknown): number | undefined {
 /**
  * The attempts GitHub logged from `since` on, newest first, read page by page
  * until the log reaches older ones; undefined when the App has no delivery
- * log, as an App without a webhook has none.
+ * log, as an App without a webhook has none. It throws GitHubUnavailableError
+ * when a page GitHub answers with is not a list, such as a page a proxy
+ * serves for GitHub, which says nothing of which deliveries failed.
  */
 export async function readDeliveryLog(client: GitHubClient, since: Date, logger: Logger = createLogger()): Promise<DeliveryAttempt[] | undefined> {
   const attempts: DeliveryAttempt[] = [];
   try {
     for await (const page of pagesOf(client.app(), "GET /app/hook/deliveries", { per_page: PER_PAGE })) {
+      if (!Array.isArray(page)) throw new GitHubUnavailableError("GitHub's answer to the read of the App's delivery log is not a list.");
       let older = false;
-      for (const item of Array.isArray(page) ? page : []) {
+      for (const item of page) {
         const parsed = ATTEMPT.safeParse(item);
         if (!parsed.success) {
           logger.warn("github: an attempt in the App's delivery log is not in the form GitHub documents, so it is left out");
