@@ -154,6 +154,26 @@ describe("a sign-in while GitHub does not answer", () => {
   });
 });
 
+describe("the sign-in service's rate limit", () => {
+  // The sign-in routes are rate limited in every environment, not only in production, by the client address the
+  // web role's request guard puts alone in X-Forwarded-For (design.md, Technical decisions: T7): GitHub's return
+  // to the callback, the one route served over HTTP, takes 100 calls per 10 seconds from one address, and the
+  // next gets the error model's 429 with Retry-After.
+  it("answers the 101st call within 10 seconds from one address with 429 and Retry-After, and calls from another address as before", async () => {
+    const callback = (address: string) =>
+      harness.service.handler(
+        new Request(`${URL_OF_INSTALL}/api/auth/callback/github?code=not-a-code&state=not-a-state`, { headers: { "x-forwarded-for": address } }),
+      );
+    for (let call = 0; call < 100; call += 1) expect((await callback("198.51.100.77")).status, `call ${call + 1}`).not.toBe(429);
+    const limited = await callback("198.51.100.77");
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(limited.headers.get("content-type")).toBe("application/problem+json");
+    expect(await limited.json()).toMatchObject({ type: "https://tiehall.com/problems/rate-limited", status: 429 });
+    expect((await callback("198.51.100.78")).status).not.toBe(429);
+  });
+});
+
 describe("a person who may not sign in", () => {
   it("is refused with 403 and the text that says to ask an admin for an invite, and gets no session and no user", async () => {
     const kim = stub.addUser({ login: "kim-outside", email: "kim@acme.example" });

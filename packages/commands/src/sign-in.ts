@@ -103,6 +103,13 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // link to the GitHub account, and the refusal is recorded with its security
 // event.
 //
+// The rate limit (design.md, Technical decisions: T7): the service's own
+// limiter is on in every environment, with the library's window and limits,
+// in this process's memory, which one web process per install needs; it is
+// keyed on the client address the web role's request guard puts, alone, in
+// X-Forwarded-For, which a client that is not a trusted proxy cannot set. A
+// call over the limit gets the error model's 429 with Retry-After.
+//
 // The sign-in that completes setup (self-host-install: Setup names the company
 // and makes the first admin; sign-in: Who may sign in): while setup is
 // incomplete, the setup gate serves only /setup and what lies under it, so the
@@ -144,6 +151,11 @@ const NO_USER_TOKEN = {
 
 /** The code Better Auth carries a refusal under, from the admission check to the callback's answer. */
 const REFUSED_CODE = "sign_in_refused";
+
+/** The sign-in service's rate limit: at most this many calls to one route from one client address in each window. */
+export const RATE_LIMIT_MAX = 100;
+/** The window of the sign-in service's rate limit, in seconds. */
+export const RATE_LIMIT_WINDOW_SECONDS = 10;
 
 export interface SignInServiceOptions {
   /** The app's database, as the app role. */
@@ -319,6 +331,11 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         // The client address the trusted proxies yield: the web role's request guard puts it, alone, in X-Forwarded-For.
         ipAddress: { ipAddressHeaders: ["x-forwarded-for"], ipv6Subnet: 128 },
       },
+      // The service's rate limit, on in every environment, not only in production, as the library would have it:
+      // keyed on the client address above, kept in this process's memory (one web process per install), with the
+      // library's own window and limits. Over HTTP it serves only GitHub's return to the callback, 100 calls per 10
+      // seconds from one address; the next gets the error model's 429 (refusalOfRateLimit).
+      rateLimit: { enabled: true, storage: "memory", window: RATE_LIMIT_WINDOW_SECONDS, max: RATE_LIMIT_MAX },
       onAPIError: { errorURL: `${options.url}${setup ? SETUP_PATH : SIGN_IN_PATH}` },
       emailAndPassword: { enabled: false },
       user: {
@@ -625,6 +642,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         const answer = await auth.handler(request);
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
         if (answer.status === 404) return problem(httpProblem(new Refusal("route-not-found", "The install serves no such sign-in route.")));
+        if (answer.status === 429) return problem(httpProblem(refusalOfRateLimit(answer)));
         const refused = refusalOf(answer);
         if (refused) return problem(httpProblem(new Refusal("sign-in-refused", SIGN_IN_REFUSED)), answer.headers);
         return answer;
@@ -725,6 +743,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           if (auth === undefined) return problem(httpProblem(new Refusal("route-not-found", "There is no sign-in without the install's GitHub App.")));
           const answer = await auth.handler(request);
           if (answer.status === 404) return problem(httpProblem(new Refusal("route-not-found", "The install serves no such sign-in route.")));
+          if (answer.status === 429) return problem(httpProblem(refusalOfRateLimit(answer)));
           if (refusalOf(answer)) return problem(httpProblem(new Refusal("forbidden", SETUP_SIGN_IN_REFUSED)), answer.headers);
           return answer;
         } catch (error) {
@@ -761,6 +780,16 @@ const routeGuard = createAuthMiddleware(async (context) => {
   if (servedOverHttp(context.request.method, context.path, (context.params ?? {}) as Record<string, unknown>)) return;
   throw new APIError("NOT_FOUND", { code: "route_not_found", message: "The install serves no such sign-in route." });
 });
+
+/**
+ * The error model's 429 for a call the sign-in service's rate limit refused,
+ * with the seconds to wait that the library's answer names.
+ */
+function refusalOfRateLimit(answer: Response): Refusal {
+  const named = Number(answer.headers.get("x-retry-after"));
+  const retryAfterSeconds = Number.isSafeInteger(named) && named > 0 ? named : RATE_LIMIT_WINDOW_SECONDS;
+  return new Refusal("rate-limited", "Too many sign-in calls came from this address. Wait, then sign in again.", { retryAfterSeconds });
+}
 
 /** Whether an answer of the sign-in callback is the redirect Better Auth makes for a refused sign-in. */
 function refusalOf(answer: Response): boolean {
