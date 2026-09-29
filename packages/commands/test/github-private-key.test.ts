@@ -277,6 +277,28 @@ describe("an upload while GitHub checks the key slowly", () => {
     expect(await storedKey()).toBe(rotated);
   });
 
+  it("holds no transaction open while GitHub checks the key", { timeout: 30_000 }, async () => {
+    const held = heldTokens();
+    const rotated = stub.addPrivateKey(app);
+    const asked = held.arm();
+    const uploading = upload(ada, rotated);
+    await asked;
+
+    let open: string[];
+    try {
+      const { rows } = await install.owner.query<{ state: string }>(
+        "SELECT state FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'",
+      );
+      open = rows.map(({ state }) => state);
+    } finally {
+      held.release();
+    }
+
+    expect(open).toEqual([]);
+    expect((await uploading).status).toBe(200);
+    expect(await storedKey()).toBe(rotated);
+  });
+
   it("does not store a key checked for an App that another replaced meanwhile, with 409", { timeout: 30_000 }, async () => {
     const held = heldTokens();
     const rotated = stub.addPrivateKey(app);

@@ -30,6 +30,7 @@ export {
   actingFor,
   createExecute,
   defineHandler,
+  definePreparedHandler,
   OutputSchemaError,
   type ConfirmationClaim,
   type Confirmations,
@@ -39,6 +40,8 @@ export {
   type Handler,
   type HandlerContext,
   type Handlers,
+  type Prepare,
+  type PrepareContext,
 } from "./execute.ts";
 export {
   buildAppManifest,

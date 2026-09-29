@@ -13,7 +13,9 @@ import type { WorkerJob } from "./worker.ts";
 // their web session and the digest of the action with its exact input; it
 // stores nothing. The nonce is checked and consumed:
 // - by execute(), in the call's transaction, before a command that needs the
-//   confirmation step runs;
+//   confirmation step runs; for a command whose handler must ask GitHub
+//   first, execute() also checks it, without consuming it, before that step
+//   runs outside the transaction;
 // - by the route guard, for a route of the sign-in service that the step
 //   gates, such as the consent approval, whose action is the route and its
 //   input.
@@ -45,6 +47,17 @@ export function createConfirmationNonces(options: ConfirmationNoncesOptions): Co
         { userId: caller.userId, sessionId: caller.sessionId, digest: actionDigest(action, input) },
         { now: now() },
       );
+    },
+    async check({ tx, orgId }, claim) {
+      const binding = { userId: claim.userId, sessionId: claim.sessionId, digest: actionDigest(claim.commandId, claim.input) };
+      const checked = checkConfirmationNonce(secret(), claim.nonce, binding, now());
+      if (checked === undefined) return false;
+      const [used] = await tx
+        .select({ orgId: usedConfirmationNonces.orgId })
+        .from(usedConfirmationNonces)
+        .where(and(eq(usedConfirmationNonces.orgId, orgId), eq(usedConfirmationNonces.nonceHash, Buffer.from(checked.id, "hex"))))
+        .limit(1);
+      return used === undefined;
     },
     async consume({ tx, orgId }, claim) {
       const binding = { userId: claim.userId, sessionId: claim.sessionId, digest: actionDigest(claim.commandId, claim.input) };

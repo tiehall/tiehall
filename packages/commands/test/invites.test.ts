@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
-import type { Caller, WebSessionCaller } from "../src/index.ts";
+import { createInstallGitHub, type Caller, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -34,7 +34,7 @@ const accounts = new Map<string, StubUser>();
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev", "wes-dev", "xia-dev"]) accounts.set(login, stub.addUser({ login }));
+  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev", "wes-dev", "xia-dev", "ned-dev", "oli-dev"]) accounts.set(login, stub.addUser({ login }));
   stub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
@@ -198,6 +198,79 @@ describe("creating an invite", () => {
   it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
     const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
     await expect(install.execute("invites.create", token, { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// GitHub is asked outside any transaction (design.md, Technical decisions: T3 and T16): the username is looked
+// up after the call is authorized and before its write transaction opens and its confirmation is used, so a
+// slow GitHub holds no connection in a transaction and no lock, and a GitHub that fails leaves the confirmation
+// unused, so the admin can post the same review page again.
+describe("creating an invite while GitHub answers slowly or fails", () => {
+  /** Makes the install reach GitHub through this fetch until the test ends. */
+  async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>): Promise<void> {
+    install.useGitHub(createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: through, logger: install.logger }));
+    try {
+      await run();
+    } finally {
+      install.useGitHub(harness.github);
+    }
+  }
+
+  /** The other sessions of this database that are in a transaction and waiting for their client, such as for GitHub. */
+  async function idleInTransaction(): Promise<string[]> {
+    const { rows } = await install.owner.query<{ state: string }>(
+      "SELECT state FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'",
+    );
+    return rows.map(({ state }) => state);
+  }
+
+  it("holds no transaction open while GitHub names the account", { timeout: 30_000 }, async () => {
+    let asked: () => void = () => {};
+    const lookedUp = new Promise<void>((resolve) => (asked = resolve));
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await reachingGitHubThrough(
+      async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (url.pathname === "/users/ned-dev") {
+          asked();
+          await released;
+        }
+        return fetch(input, init);
+      },
+      async () => {
+        const creating = install.confirm(ada, "invites.create", { login: "ned-dev" });
+        await lookedUp;
+        let open: string[];
+        try {
+          open = await idleInTransaction();
+        } finally {
+          release();
+        }
+        expect(open).toEqual([]);
+        expect((await creating).status).toBe(200);
+      },
+    );
+    expect(await invitesFor("ned-dev")).toHaveLength(1);
+  });
+
+  it("that GitHub fails leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
+    let failing = true;
+    await reachingGitHubThrough(
+      async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (failing && url.pathname === "/users/oli-dev") return new Response('{"message":"Server Error"}', { status: 500 });
+        return fetch(input, init);
+      },
+      async () => {
+        const post = await install.prepareConfirmation(ada, "invites.create", { login: "oli-dev" });
+        expect((await post()).status).toBeGreaterThanOrEqual(500);
+        expect(await invitesFor("oli-dev")).toEqual([]);
+        failing = false;
+        expect((await post()).status).toBe(200);
+      },
+    );
+    expect(await invitesFor("oli-dev")).toHaveLength(1);
   });
 });
 

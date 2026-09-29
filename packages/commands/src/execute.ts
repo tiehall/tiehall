@@ -68,6 +68,39 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // (write-limits.ts); the write path counts it against the loop limit of the
 // request it writes on (loop-limit.ts).
 // Later tasks add the token's side of the rules (15.5).
+//
+// A step before the transaction (design.md, Technical decisions: T3 and T16).
+// No call to GitHub is made inside a transaction, so a slow GitHub holds no
+// connection in a transaction and no lock. A handler that must ask GitHub
+// before it changes anything, such as the lookup of an invite's username or
+// the check of a rotated App key, gives execute() a step that runs before the
+// call's transaction: execute() first authorizes the call, steps 2 to 5, in a
+// short read-only transaction, checking the confirmation nonce without
+// consuming it; then runs the step, outside any transaction, where it may read
+// in read-only transactions of its own and call GitHub; then opens the call's
+// transaction, authorizes the call again, consumes the nonce and runs the
+// handler with what the step returned. The handler reads again what it
+// depends on and refuses with 409 when that changed meanwhile. A step that
+// fails, such as when GitHub does not answer, leaves the nonce unused, so the
+// person can post the same review page again.
+
+/** What a handler's step before the call's transaction gets besides the parsed input. */
+export interface PrepareContext {
+  readonly caller: Caller;
+  /** The membership of the user the caller acts for, as the authorization read it; none for a caller that acts for no user. */
+  readonly member: Member | undefined;
+  /** The install's GitHub App, which the step may ask; undefined where the process has none. */
+  readonly github: InstallGitHub | undefined;
+  /** TIEHALL_SECRET_KEY's box; undefined where the process has none. */
+  readonly secrets: (() => SecretBox) | undefined;
+  /** The values the person entered on the review page, parsed, by field name. */
+  readonly sealed: Readonly<Record<string, string>>;
+  /** Reads, in a short read-only transaction of its own, as the install's org. */
+  read<T>(read: (context: OrgContext) => Promise<T>): Promise<T>;
+}
+
+/** A handler's step before the call's transaction, such as a call to GitHub; what it returns is the handler's `prepared`. */
+export type Prepare = (input: unknown, context: PrepareContext) => Promise<unknown>;
 
 /** What a handler gets besides its parsed input. */
 export interface HandlerContext extends OrgContext {
@@ -91,6 +124,8 @@ export interface HandlerContext extends OrgContext {
   readonly secrets: (() => SecretBox) | undefined;
   /** The values the person entered on the review page, parsed, by field name; empty for a command that takes none. */
   readonly sealed: Readonly<Record<string, string>>;
+  /** What the handler's step before the transaction returned; undefined for a handler without one. */
+  readonly prepared: unknown;
   /**
    * Runs a change in the call's transaction, with the event that records it
    * and the caller's provenance, to which the handler adds the team the user
@@ -110,8 +145,8 @@ export function actingFor(provenance: Provenance, teamId: string | undefined): P
   return teamId === undefined || provenance.actorKind === "operator" ? provenance : { ...provenance, teamId };
 }
 
-/** Runs one operation: it gets the parsed input and returns the output its schema describes. */
-export type Handler = (input: unknown, context: HandlerContext) => Promise<unknown>;
+/** Runs one operation: it gets the parsed input and returns the output its schema describes; it may have a step before the call's transaction. */
+export type Handler = ((input: unknown, context: HandlerContext) => Promise<unknown>) & { readonly prepare?: Prepare };
 
 /** One handler per operation of the catalog, by the operation's id. */
 export type Handlers = Readonly<Record<string, Handler>>;
@@ -128,10 +163,28 @@ export function defineHandler<D extends CommandDefinition>(
   return handler as Handler;
 }
 
+/**
+ * A handler that must ask GitHub before it changes anything: its step,
+ * `prepare`, runs outside any transaction, before the call's transaction and
+ * the use of its confirmation nonce, and what it returns is the handler's
+ * `prepared` (execute(): A step before the transaction).
+ */
+export function definePreparedHandler<D extends CommandDefinition, P>(
+  _definition: D,
+  prepare: (input: z.output<D["input"]>, context: PrepareContext) => Promise<P>,
+  handler: (input: z.output<D["input"]>, context: HandlerContext & { readonly prepared: P }) => Promise<z.input<D["output"]> | ProposalAnswer>,
+): Handler {
+  return Object.assign((input: unknown, context: HandlerContext) => handler(input as z.output<D["input"]>, context as HandlerContext & { readonly prepared: P }), {
+    prepare: prepare as Prepare,
+  });
+}
+
 /** The confirmation step's check of a nonce (confirmations.ts). */
 export interface Confirmations {
   /** Checks and consumes the nonce, inside the call's transaction; false when it is not valid for this exact action. */
   consume(context: OrgContext, claim: ConfirmationClaim): Promise<boolean>;
+  /** Checks the nonce without consuming it, before a handler's step outside the transaction; false when it is not valid now. */
+  check?(context: OrgContext, claim: ConfirmationClaim): Promise<boolean>;
 }
 
 export interface ConfirmationClaim {
@@ -224,59 +277,86 @@ export function createExecute(services: ExecuteServices): Execute {
     // 2. withOrg() has refused a removed member already; then what the surface found wrong with the call.
     const provenance = provenanceOf(caller);
     const writeOptions = { ...(options.origin === undefined ? {} : { origin: options.origin }), now };
+    const forUser = actsForUser(caller) ? caller.userId : undefined;
+
+    /**
+     * Steps 2 to 5 in the given transaction: the call's own refusal, the
+     * input, what the caller's kind and role may run, and the confirmation
+     * nonce, checked, or consumed in the call's transaction; returns the
+     * parsed input, the membership and the values entered on the review page.
+     */
+    const authorize = async (context: OrgContext, nonce: "check" | "consume") => {
+      if (options.refusal !== undefined) throw options.refusal;
+
+      // 3. Nothing runs on input that fails the schema.
+      const parsed = definition.input.safeParse(input);
+      if (!parsed.success) {
+        throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+      }
+
+      // 4. What each kind of caller may run.
+      if (caller.kind === "ci" && commandId !== "contract.report") {
+        throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
+      }
+      const worker = caller.kind === "system_job" || caller.kind === "integration_event";
+      if (worker && definition.surfaces.length > 0) {
+        throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
+      }
+      // A system action takes effect with no proposal or confirmation, so only Tiehall's own jobs and verified events run it.
+      if (definition.system === true && !worker) {
+        throw new Refusal("forbidden", "Only Tiehall's own jobs and verified integration events run a system action.");
+      }
+
+      // 5. The confirmation step, for a user signed in to the web UI only.
+      const confirmation = options.confirmation;
+      const confirmations = services.confirmations;
+      if (definition.confirm && (caller.kind !== "web_session" || confirmation === undefined || confirmations === undefined)) {
+        throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+      }
+
+      // An admin action runs only for an admin: never for a job or an integration event, which act for no admin.
+      const member = context.member;
+      assertRoleAllows(definition, member);
+      if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
+        const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
+        const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: subject };
+        const valid = nonce === "consume" ? await confirmations.consume(context, claim) : await (confirmations.check?.(context, claim) ?? true);
+        if (!valid) throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
+      }
+      // The values entered on the review page, which no URL carries; a refusal names the field, never the value.
+      const sealed: Record<string, string> = {};
+      const sealedIssues: RefusalIssue[] = [];
+      for (const field of definition.sealed ?? []) {
+        const entered = field.schema.safeParse(options.sealed?.[field.name]);
+        if (entered.success) sealed[field.name] = entered.data;
+        else sealedIssues.push(...entered.error.issues.map((issue) => ({ path: [field.name], message: issue.message })));
+      }
+      if (sealedIssues.length > 0) {
+        throw new Refusal("invalid-input", `A value entered for ${commandId} does not match its schema.`, { issues: sealedIssues });
+      }
+      return { input: parsed.data as unknown, member, sealed };
+    };
+
+    // The handler's step before the transaction, once the call is authorized, with its nonce checked and not yet used.
+    let prepared: unknown;
+    if (handler.prepare !== undefined) {
+      const authorized = await withOrg(store.database, (context) => authorize(context, "check"), { readOnly: true, forUser });
+      prepared = await handler.prepare(authorized.input, {
+        caller,
+        member: authorized.member,
+        github: services.github,
+        secrets: services.secrets,
+        sealed: authorized.sealed,
+        read: (read) => withOrg(store.database, read, { readOnly: true }),
+      });
+    }
+
     return withOrg(
       store.database,
       async (context) => {
-        if (options.refusal !== undefined) throw options.refusal;
-
-        // 3. Nothing runs on input that fails the schema.
-        const parsed = definition.input.safeParse(input);
-        if (!parsed.success) {
-          throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
-        }
-
-        // 4. What each kind of caller may run.
-        if (caller.kind === "ci" && commandId !== "contract.report") {
-          throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
-        }
-        const worker = caller.kind === "system_job" || caller.kind === "integration_event";
-        if (worker && definition.surfaces.length > 0) {
-          throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");
-        }
-        // A system action takes effect with no proposal or confirmation, so only Tiehall's own jobs and verified events run it.
-        if (definition.system === true && !worker) {
-          throw new Refusal("forbidden", "Only Tiehall's own jobs and verified integration events run a system action.");
-        }
-
-        // 5. The confirmation step, for a user signed in to the web UI only.
-        const confirmation = options.confirmation;
-        const confirmations = services.confirmations;
-        if (definition.confirm && (caller.kind !== "web_session" || confirmation === undefined || confirmations === undefined)) {
-          throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
-        }
+        const { input: parsedInput, member, sealed } = await authorize(context, "consume");
 
         // 6. and 7. The handler, in the install's org, and only output that passes its schema.
-        // An admin action runs only for an admin: never for a job or an integration event, which act for no admin.
-        const member = context.member;
-        assertRoleAllows(definition, member);
-        if (definition.confirm && caller.kind === "web_session" && confirmation !== undefined && confirmations !== undefined) {
-          const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
-          const claim = { nonce: confirmation.nonce, userId: caller.userId, sessionId: caller.sessionId, commandId, input: subject };
-          if (!(await confirmations.consume(context, claim))) {
-            throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
-          }
-        }
-        // The values entered on the review page, which no URL carries; a refusal names the field, never the value.
-        const sealed: Record<string, string> = {};
-        const sealedIssues: RefusalIssue[] = [];
-        for (const field of definition.sealed ?? []) {
-          const entered = field.schema.safeParse(options.sealed?.[field.name]);
-          if (entered.success) sealed[field.name] = entered.data;
-          else sealedIssues.push(...entered.error.issues.map((issue) => ({ path: [field.name], message: issue.message })));
-        }
-        if (sealedIssues.length > 0) {
-          throw new Refusal("invalid-input", `A value entered for ${commandId} does not match its schema.`, { issues: sealedIssues });
-        }
         // An agent token's call that writes is counted once, before its change, against the token's limit and the install's budget.
         const token = tokenKeyOf(caller);
         let counted = false;
@@ -289,6 +369,7 @@ export function createExecute(services: ExecuteServices): Execute {
           github: services.github,
           secrets: services.secrets,
           sealed,
+          prepared,
           write: (change, { teamId } = {}) =>
             writeIn(
               context,
@@ -309,7 +390,7 @@ export function createExecute(services: ExecuteServices): Execute {
           },
         };
         const run = async () => {
-          const result = await handler(parsed.data, handlerContext);
+          const result = await handler(parsedInput, handlerContext);
           // A commitment's call that made one answers with its proposal instead of the operation's output.
           const schema = definition.commitment && isProposalAnswer(result) ? proposalAnswer : definition.output;
           const output = schema.safeParse(result);
@@ -318,7 +399,7 @@ export function createExecute(services: ExecuteServices): Execute {
         };
         return options.around === undefined ? run() : options.around(context, run);
       },
-      { readOnly: options.readOnly === true, forUser: actsForUser(caller) ? caller.userId : undefined },
+      { readOnly: options.readOnly === true, forUser },
     );
   };
 }

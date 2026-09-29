@@ -1,9 +1,9 @@
 import { createInvite, listInvites, revokeInvite } from "@tiehall/catalog";
 import { inviteCreated, inviteRevoked, Refusal, type Role } from "@tiehall/core";
-import { invites, members } from "@tiehall/db";
+import { githubApp, invites, members } from "@tiehall/db";
 import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { defineHandler, definePreparedHandler, type Handlers } from "./execute.ts";
 import { anyConnectedInstallation } from "./github-installations.ts";
 import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 
@@ -13,8 +13,11 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // An admin invites a person by their GitHub username, in the web UI, with the
 // confirmation step. When the invite is created, Tiehall asks GitHub which
 // account the username names, with an installation token of a connected
-// installation of the install's App, and with none the invite gets 409; it
-// binds the invite to that account's numeric id: the invite follows
+// installation of the install's App, and with none the invite gets 409. It
+// asks outside any transaction, before the invite's write and the use of its
+// confirmation (execute.ts), and the write reads again what the answer rested
+// on: an App replaced meanwhile gets 409. It binds the invite to that
+// account's numeric id: the invite follows
 // a rename of the login and never passes to a new holder of the old one. A
 // username that names no person's GitHub account gets 404 and creates no
 // invite. The invite names a role, `member` unless it names `admin`, and
@@ -41,42 +44,55 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 export const INVITE_LIFETIME_DAYS = 7;
 
 export const INVITE_HANDLERS: Handlers = {
-  [createInvite.id]: defineHandler(createInvite, async ({ login, role }, context) => {
-    const app = await context.github?.app();
-    if (app === undefined) throw new Refusal("conflict", "The install has no GitHub App to look the username up through.");
-    const installationId = await anyConnectedInstallation(context, app.appId);
-    if (installationId === undefined) {
-      throw new Refusal(
-        "conflict",
-        "The install's GitHub App has no connected installation to look the username up through. Install it on your GitHub organization and connect that installation first.",
-      );
-    }
-    const account = await gitHubAccountNamed(app.client, installationId, login);
-    if (account?.type !== "User") throw new Refusal("record-not-found", "That GitHub username names no person's GitHub account.");
-    const userId = await userOfGitHubAccount(context, { id: account.id });
-    if (userId !== undefined) {
-      const [member] = await context.tx
-        .select({ userId: members.userId })
-        .from(members)
-        .where(and(eq(members.orgId, context.orgId), eq(members.userId, userId)));
-      if (member !== undefined) throw new Refusal("conflict", "That GitHub account's person is already a member of the install.");
-    }
-    return context.write(async (writer) => {
-      const [created] = await writer.tx
-        .insert(invites)
-        .values({
-          orgId: writer.orgId,
-          githubAccountId: account.id,
-          githubLogin: account.login,
-          role,
-          createdBy: context.member!.userId,
-          expiresAt: sql`now() + make_interval(days => ${INVITE_LIFETIME_DAYS})`,
-        })
-        .returning({ id: invites.id, expiresAt: invites.expiresAt });
-      await writer.record(inviteCreated, { inviteId: created!.id, role });
-      return { invite: { id: created!.id, githubLogin: account.login, role, expiresAt: created!.expiresAt.toISOString() } };
-    });
-  }),
+  [createInvite.id]: definePreparedHandler(
+    createInvite,
+    // GitHub is asked outside any transaction, before the invite's write and the use of its confirmation.
+    async ({ login }, context) => {
+      const app = await context.github?.app();
+      if (app === undefined) throw new Refusal("conflict", "The install has no GitHub App to look the username up through.");
+      const installationId = await context.read((orgContext) => anyConnectedInstallation(orgContext, app.appId));
+      if (installationId === undefined) {
+        throw new Refusal(
+          "conflict",
+          "The install's GitHub App has no connected installation to look the username up through. Install it on your GitHub organization and connect that installation first.",
+        );
+      }
+      const account = await gitHubAccountNamed(app.client, installationId, login);
+      if (account?.type !== "User") throw new Refusal("record-not-found", "That GitHub username names no person's GitHub account.");
+      return { appId: app.appId, account };
+    },
+    async ({ role }, context) => {
+      const { appId, account } = context.prepared;
+      // What the lookup rested on, read again now: the App it went through, and whether the person is a member.
+      const [app] = await context.tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, context.orgId));
+      if (app?.appId !== appId) {
+        throw new Refusal("conflict", "The install's GitHub App changed while GitHub named the account, so no invite was created. Confirm the invite again.");
+      }
+      const userId = await userOfGitHubAccount(context, { id: account.id });
+      if (userId !== undefined) {
+        const [member] = await context.tx
+          .select({ userId: members.userId })
+          .from(members)
+          .where(and(eq(members.orgId, context.orgId), eq(members.userId, userId)));
+        if (member !== undefined) throw new Refusal("conflict", "That GitHub account's person is already a member of the install.");
+      }
+      return context.write(async (writer) => {
+        const [created] = await writer.tx
+          .insert(invites)
+          .values({
+            orgId: writer.orgId,
+            githubAccountId: account.id,
+            githubLogin: account.login,
+            role,
+            createdBy: context.member!.userId,
+            expiresAt: sql`now() + make_interval(days => ${INVITE_LIFETIME_DAYS})`,
+          })
+          .returning({ id: invites.id, expiresAt: invites.expiresAt });
+        await writer.record(inviteCreated, { inviteId: created!.id, role });
+        return { invite: { id: created!.id, githubLogin: account.login, role, expiresAt: created!.expiresAt.toISOString() } };
+      });
+    },
+  ),
 
   [listInvites.id]: defineHandler(listInvites, async (_input, { tx, orgId }) => {
     const rows = await tx

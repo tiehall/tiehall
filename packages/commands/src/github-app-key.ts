@@ -4,7 +4,7 @@ import { githubPrivateKeyUploaded, Refusal } from "@tiehall/core";
 import { githubApp } from "@tiehall/db";
 import { eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { definePreparedHandler, type Handlers } from "./execute.ts";
 import { anyConnectedInstallation } from "./github-installations.ts";
 import { storeSecret } from "./integration-secrets.ts";
 
@@ -27,11 +27,13 @@ import { storeSecret } from "./integration-secrets.ts";
 // deleted on GitHub, get 400 and are not stored, and the key in use stays. A
 // key GitHub accepts is stored encrypted in place of the key in use, used for
 // the next call to GitHub, and recorded as a security event, in one write.
-// The key is never shown again. While GitHub checks the key, the App's stored
-// row is not locked, so a slow answer holds up no other write of it, such as
-// an admin's switch of GitHub's mode; it is locked only to store the key, and
-// a key checked for an App that a new one replaced meanwhile gets 409 and is
-// not stored.
+// The key is never shown again. GitHub checks the key outside any
+// transaction, before the upload's write and the use of its confirmation
+// (execute.ts), so a slow answer holds no connection in a transaction and no
+// lock, such as on the App's stored row, which an admin's switch of GitHub's
+// mode writes; a check GitHub does not answer leaves the confirmation unused.
+// The row is locked only to store the key, and a key checked for an App that
+// a new one replaced meanwhile gets 409 and is not stored.
 
 /** Whether the text is a private key in PEM form, as GitHub gives an App's key. */
 function isPrivateKey(pem: string): boolean {
@@ -48,36 +50,48 @@ function refused(message: string): Refusal {
 }
 
 export const GITHUB_APP_KEY_HANDLERS: Handlers = {
-  [uploadGitHubPrivateKey.id]: defineHandler(uploadGitHubPrivateKey, async (_input, context) => {
-    // The App's row is not locked while GitHub checks the key, so a slow answer holds up no other write of it.
-    const [row] = await context.tx.select({ appId: githubApp.appId, clientId: githubApp.clientId }).from(githubApp).where(eq(githubApp.orgId, context.orgId));
-    if (row === undefined) throw new Refusal("conflict", "The install has no GitHub App yet, so there is no key to replace.");
-    const { github, secrets } = context;
-    if (github === undefined || secrets === undefined) throw new Error("This process has no GitHub App access or TIEHALL_SECRET_KEY to check and store a key with.");
-    const privateKey = context.sealed["privateKey"];
-    if (privateKey === undefined) throw new Error("execute() gave no private key to upload.");
-    if (!isPrivateKey(privateKey)) throw refused("The file is not a private key in PEM form, such as the .pem file GitHub downloads.");
-    const installationId = await anyConnectedInstallation(context, row.appId);
-    if (installationId === undefined) {
-      throw new Refusal("conflict", "The install's GitHub App has no connected installation to check the key with. Connect one on the GitHub page first.");
-    }
-    if (!(await github.checkKey({ clientId: row.clientId, privateKey }, installationId))) {
-      throw refused("GitHub did not accept the key for the install's App: it belongs to another App, or it was deleted on GitHub.");
-    }
-    return context.write(async (writer) => {
-      const [current] = await writer.tx
-        .select({ appId: githubApp.appId, clientId: githubApp.clientId })
-        .from(githubApp)
-        .where(eq(githubApp.orgId, writer.orgId))
-        .for("update");
-      if (current?.appId !== row.appId || current.clientId !== row.clientId) {
-        throw new Refusal("conflict", "The install's GitHub App changed while GitHub checked the key, so the key is not stored. Upload a key of the App in use.");
+  [uploadGitHubPrivateKey.id]: definePreparedHandler(
+    uploadGitHubPrivateKey,
+    // GitHub checks the key outside any transaction, before the upload's write and the use of its confirmation.
+    async (_input, context) => {
+      const row = await context.read(async ({ tx, orgId }) => {
+        const [app] = await tx.select({ appId: githubApp.appId, clientId: githubApp.clientId }).from(githubApp).where(eq(githubApp.orgId, orgId));
+        return app;
+      });
+      if (row === undefined) throw new Refusal("conflict", "The install has no GitHub App yet, so there is no key to replace.");
+      const { github, secrets } = context;
+      if (github === undefined || secrets === undefined) throw new Error("This process has no GitHub App access or TIEHALL_SECRET_KEY to check and store a key with.");
+      const privateKey = context.sealed["privateKey"];
+      if (privateKey === undefined) throw new Error("execute() gave no private key to upload.");
+      if (!isPrivateKey(privateKey)) throw refused("The file is not a private key in PEM form, such as the .pem file GitHub downloads.");
+      const installationId = await context.read((orgContext) => anyConnectedInstallation(orgContext, row.appId));
+      if (installationId === undefined) {
+        throw new Refusal("conflict", "The install's GitHub App has no connected installation to check the key with. Connect one on the GitHub page first.");
       }
-      await storeSecret(writer, secrets(), "github_app.private_key", privateKey);
-      await writer.record(githubPrivateKeyUploaded, {});
-      return { uploaded: true as const };
-    });
-  }),
+      if (!(await github.checkKey({ clientId: row.clientId, privateKey }, installationId))) {
+        throw refused("GitHub did not accept the key for the install's App: it belongs to another App, or it was deleted on GitHub.");
+      }
+      return { appId: row.appId, clientId: row.clientId, privateKey };
+    },
+    async (_input, context) => {
+      const { secrets } = context;
+      const { appId, clientId, privateKey } = context.prepared;
+      if (secrets === undefined) throw new Error("This process has no TIEHALL_SECRET_KEY to store a key with.");
+      return context.write(async (writer) => {
+        const [current] = await writer.tx
+          .select({ appId: githubApp.appId, clientId: githubApp.clientId })
+          .from(githubApp)
+          .where(eq(githubApp.orgId, writer.orgId))
+          .for("update");
+        if (current?.appId !== appId || current.clientId !== clientId) {
+          throw new Refusal("conflict", "The install's GitHub App changed while GitHub checked the key, so the key is not stored. Upload a key of the App in use.");
+        }
+        await storeSecret(writer, secrets(), "github_app.private_key", privateKey);
+        await writer.record(githubPrivateKeyUploaded, {});
+        return { uploaded: true as const };
+      });
+    },
+  ),
 };
 
 /** The review page of an upload, which names the action and never the key. */
