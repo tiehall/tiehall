@@ -89,11 +89,15 @@ async function enterCode(install: AppServer): Promise<Browser> {
   return operator;
 }
 
-/** The operator enters the code, names the company and creates the App on acme through the manifest flow; returns the browser and the App. */
-async function createApp(install: AppServer): Promise<{ operator: Browser; app: StubApp }> {
+/**
+ * The operator enters the code, names the company and creates the App on acme
+ * through the manifest flow, under the default name unless they give one;
+ * returns the browser and the App.
+ */
+async function createApp(install: AppServer, name?: string): Promise<{ operator: Browser; app: StubApp }> {
   const operator = await enterCode(install);
   expect((await operator.post("/setup/company", { name: "Acme" })).status).toBe(303);
-  const html = await (await operator.get("/setup?org=acme")).text();
+  const html = await (await operator.get(`/setup?${new URLSearchParams({ org: "acme", ...(name === undefined ? {} : { name }) })}`)).text();
   const form = /<form method="post" action="([^"]+)">\s*<input type="hidden" name="manifest" value="([^"]*)">/.exec(html);
   const action = new URL(unescapeHtml(form?.[1] ?? ""));
   const state = action.searchParams.get("state") ?? "";
@@ -291,9 +295,10 @@ describe("the sign-in that completes setup", { timeout: 60_000 }, () => {
     await trial.close();
     server = undefined;
 
-    // At https://tiehall.example.com the App has a webhook: webhook mode, and no poll.
+    // At https://tiehall.example.com the App has a webhook: webhook mode, and no poll. App names are unique on GitHub,
+    // so this App, for a company named Acme too, takes a name of its own.
     const reachable = await start();
-    const created = await createApp(reachable);
+    const created = await createApp(reachable, "Tiehall Acme Cloud");
     expect(created.app.hook).not.toBeNull();
     expect((await reachable.owner.query("SELECT mode FROM github_app")).rows).toEqual([{ mode: "webhook" }]);
     expect((await signInFromSetup(created.operator, created.app, "omar")).status).toBe(302);

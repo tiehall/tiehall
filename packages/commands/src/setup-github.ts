@@ -23,6 +23,15 @@ import { isTrialUrl } from "./settings.ts";
 // to come back: open TIEHALL_URL/setup again in the same browser, whose setup
 // session stays valid until setup completes, and choose the option.
 //
+// The App's name is by default "Tiehall" and the company's name, which the
+// step before recorded, cut to GitHub's 34 characters (github-layer-hardening:
+// design.md, Decisions this change rests on: D50 (17); design.md, Technical
+// decisions: T9); the operator can edit it. App names are unique across
+// GitHub, so GitHub may refuse the name as taken on its own page, which keeps
+// the name editable beside its message; the step says beforehand that the
+// operator can change the name there, or come back to TIEHALL_URL/setup in the
+// same browser and change it on the step.
+//
 // The round trip carries a state bound to the browser's setup session: a
 // fresh random nonce and the time it was issued, with an HMAC of both keyed by
 // the session's token, which only that browser's cookie holds. GitHub sends
@@ -112,12 +121,12 @@ function stateMac(sessionToken: string, nonce: string, issuedAt: string): string
 }
 
 /**
- * The App's name unless the operator gives another: "Tiehall" and the
- * install's host, cut to the 34 characters GitHub takes, and with no space,
- * dot or hyphen left at its end.
+ * The App's name unless the operator gives another: "Tiehall", a space and
+ * the company's name, cut to the 34 characters GitHub takes, and with no
+ * blank, dot or hyphen left at its end.
  */
-export function defaultAppName(url: string): string {
-  return [...`Tiehall ${new URL(url).hostname}`]
+export function defaultAppName(company: string): string {
+  return [...`Tiehall ${company}`]
     .slice(0, APP_NAME_MAX_LENGTH)
     .join("")
     .replace(/[\s.-]+$/, "");
@@ -138,12 +147,12 @@ export interface AppStepSettings {
   unreachable: boolean;
 }
 
-export function appStepSettings(url: string, query: URLSearchParams): AppStepSettings {
+export function appStepSettings(url: string, query: URLSearchParams, company: string): AppStepSettings {
   // The default until the operator applies a name of their own, which is kept as they typed it, trimmed, to be checked.
   const name = query.get("name");
   return {
     org: (query.get("org") ?? "").trim(),
-    name: name === null ? defaultAppName(url) : name.trim(),
+    name: name === null ? defaultAppName(company) : name.trim(),
     unreachable: !isTrialUrl(url) && query.get("unreachable") === "1",
   };
 }
@@ -205,8 +214,12 @@ ${option}        <button type="submit">Apply</button>
         `In that case, open ${url}/setup again in this browser, where your setup session stays open, and choose "${UNREACHABLE_OPTION}".`
       : `${polling} An admin can move to webhook mode later from the admin page.`;
   const owner = settings.org === "" ? "your personal GitHub account" : `the GitHub organization ${settings.org}`;
+  const taken =
+    `App names are unique on GitHub, so GitHub may refuse the App's name as taken. If it does, change the name on GitHub's own page, ` +
+    `which keeps it editable beside GitHub's message, or open ${url}/setup again in this browser, and change the name here.`;
   return `${intro}${settingsForm}      <p>${escapeHtml(gets)}</p>
       <p>${escapeHtml(`The button creates the App "${settings.name}", owned by ${owner}. GitHub then sends you back to ${url}${MANIFEST_REDIRECT_PATH}.`)}</p>
+      <p>${escapeHtml(taken)}</p>
       <form method="post" action="${escapeHtml(newAppPage(webUrl, settings.org, state))}">
         <input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}">
         <button type="submit">Create the GitHub App</button>

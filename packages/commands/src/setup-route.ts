@@ -178,7 +178,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     if (app !== undefined) {
       return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error"), replaced })), toGitHub);
     }
-    const settings = appStepSettings(options.url, query);
+    const settings = appStepSettings(options.url, query, company);
     return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), company })), toGitHub);
   }
 

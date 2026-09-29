@@ -29,7 +29,12 @@ import {
 // session. GitHub sends the operator back with a code, which Tiehall converts
 // at once, within the hour GitHub allows, and stores the App's credentials
 // encrypted; a return whose state is missing or not bound to the browser's
-// setup session is refused and stores nothing. Every GitHub page here is the
+// setup session is refused and stores nothing. The App's default name is
+// "Tiehall" and the company's name, cut to GitHub's 34 characters; since App
+// names are unique on GitHub, the step says how to change a name GitHub
+// reports as taken, on GitHub's own page or back on the App step
+// (github-layer-hardening: design.md, Decisions this change rests on: D50
+// (17); design.md, Technical decisions: T9). Every GitHub page here is the
 // GitHub stub's, reached over HTTP as a browser would post its forms.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
@@ -121,6 +126,18 @@ async function setupSession(url: string): Promise<string> {
   return cookie;
 }
 
+/** Names the company anew from the browser with this cookie, as the operator may until setup completes. */
+async function nameCompany(url: string, cookie: string, name: string): Promise<void> {
+  const named = await route(url)(
+    browserRequest(url, "/setup/company", cookie, {
+      method: "POST",
+      headers: { origin: url, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ name }).toString(),
+    }),
+  );
+  expect(named.status).toBe(303);
+}
+
 /** The setup screen, as the browser with this cookie sees it, with the App step's settings in its query. */
 async function open(url: string, cookie: string | undefined, query: Record<string, string> = {}): Promise<{ status: number; html: string; headers: Headers }> {
   const search = new URLSearchParams(query).toString();
@@ -205,7 +222,7 @@ describe("the App step", () => {
     expect(form?.action.pathname).toBe("/organizations/acme/settings/apps/new");
     // A random nonce, the time it was issued, and an HMAC of both keyed by the setup session's token.
     expect(form?.action.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{22}\.\d+\.[A-Za-z0-9_-]{43}$/);
-    expect(form?.manifest).toEqual(buildAppManifest({ url: INSTALL, name: "Tiehall tiehall.example.com", unreachable: false }));
+    expect(form?.manifest).toEqual(buildAppManifest({ url: INSTALL, name: "Tiehall Acme", unreachable: false }));
   });
 
   it("posts to the operator's personal new-App page when they name no organization, and recommends naming one", async () => {
@@ -215,25 +232,49 @@ describe("the App step", () => {
     expect(createForm(html)?.action.pathname).toBe("/settings/apps/new");
   });
 
-  it('takes the App\'s default name from "Tiehall" and the host, and the name the operator edits', async () => {
+  it('takes the App\'s default name from "Tiehall" and the company\'s name, and keeps the name the operator edits', async () => {
     const cookie = await setupSession(INSTALL);
-    const edited = createForm((await open(INSTALL, cookie, { org: "acme", name: "Tiehall Acme" })).html);
-    expect(edited?.manifest["name"]).toBe("Tiehall Acme");
+    expect(createForm((await open(INSTALL, cookie, { org: "acme" })).html)?.manifest["name"]).toBe("Tiehall Acme");
+    const edited = createForm((await open(INSTALL, cookie, { org: "acme", name: "Tiehall Acme Platform" })).html);
+    expect(edited?.manifest["name"]).toBe("Tiehall Acme Platform");
+    // A trial URL's host no longer names the App.
     const trial = await setupSession(TRIAL);
-    expect(createForm((await open(TRIAL, trial)).html)?.manifest["name"]).toBe("Tiehall localhost");
+    expect(createForm((await open(TRIAL, trial)).html)?.manifest["name"]).toBe("Tiehall Acme");
+    // A long company name gives its first 34 characters.
+    await nameCompany(INSTALL, cookie, "Acme Industrial Robotics International");
+    expect(createForm((await open(INSTALL, cookie, { org: "acme" })).html)?.manifest["name"]).toBe("Tiehall Acme Industrial Robotics I");
   });
 
   // GitHub takes an App name of at most 34 characters, and a longer one would leave the operator on GitHub's own
   // error page, so no manifest carries one.
-  it("cuts the default name to 34 characters, GitHub's limit, on a long host", async () => {
-    const long = "https://tiehall.engineering.internal.acme-corporation.example.com";
-    expect(defaultAppName(long)).toBe("Tiehall tiehall.engineering.intern");
-    expect(defaultAppName(long)).toHaveLength(34);
-    expect(defaultAppName("https://tiehall.example.com")).toBe("Tiehall tiehall.example.com");
-    expect(defaultAppName("https://t.example.com-----------------------x.test")).not.toMatch(/[\s.-]$/);
-    const cookie = await setupSession(long);
-    const created = await createOnGitHub(createForm((await open(long, cookie, { org: "acme" })).html)!);
+  it("cuts the default name to 34 characters, GitHub's limit, with no blank, dot or hyphen left at its end", async () => {
+    expect(defaultAppName("Acme")).toBe("Tiehall Acme");
+    expect(defaultAppName("Acme Industrial Robotics International")).toBe("Tiehall Acme Industrial Robotics I");
+    // A cut that leaves a blank, a dot or a hyphen at the end drops them.
+    expect(defaultAppName("Acme Industrial Robotics - Worldwide")).toBe("Tiehall Acme Industrial Robotics");
+    expect(defaultAppName("Acme Industrial Robotics. Worldwide")).toBe("Tiehall Acme Industrial Robotics");
+    expect(defaultAppName("Acme Industrial Robotic -- Worldwide")).toBe("Tiehall Acme Industrial Robotic");
+    for (const company of ["Acme", "Acme Industrial Robotics International", "Acme Inc.", "x".repeat(100), "Acme Industrial Robotics - Worldwide", "Ünïcödé Ärger Gesellschaft mbH & Co. KG"]) {
+      const name = defaultAppName(company);
+      expect([...name].length, company).toBeLessThanOrEqual(34);
+      expect(name, company).not.toMatch(/[\s.-]$/);
+      expect(name.startsWith("Tiehall "), company).toBe(true);
+    }
+    const cookie = await setupSession(INSTALL);
+    await nameCompany(INSTALL, cookie, "Acme Industrial Robotics International");
+    const created = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
     expect(created.refusal).toBeUndefined();
+  });
+
+  it("says before its button that GitHub may refuse the App's name as taken, and how to change it then", async () => {
+    for (const url of [INSTALL, TRIAL]) {
+      const cookie = await setupSession(url);
+      const { html } = await open(url, cookie, { org: "acme" });
+      const before = unescapeHtml(html.slice(0, createForm(html)?.index));
+      expect(before, url).toContain("GitHub may refuse the App's name as taken");
+      expect(before, url).toContain("change the name on GitHub's own page, which keeps it editable beside GitHub's message");
+      expect(before, url).toContain(`open ${url}/setup again in this browser, and change the name here`);
+    }
   });
 
   it("offers no button for a name that is empty or longer than 34 characters once trimmed, and says so", async () => {
@@ -306,6 +347,65 @@ describe("what the App step says the App gets (github-app-reachability 1.3)", ()
   });
 });
 
+describe("a name GitHub reports as taken (github-layer-hardening 1.22)", () => {
+  /** Posts the manifest to GitHub's new-App page and confirms it there, as the browser does; returns GitHub's answer to the confirmation. */
+  async function confirmOnGitHub(form: { action: URL; manifest: Record<string, unknown> }): Promise<{ registration: string; answer: Response }> {
+    const page = await fetch(form.action, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ manifest: JSON.stringify(form.manifest) }).toString(),
+      redirect: "manual",
+    });
+    const registration = /name="registration" value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
+    return { registration, answer: await confirm(registration) };
+  }
+
+  /** GitHub's confirmation page's form, posted with the name it shows, or another. */
+  function confirm(registration: string, name?: string): Promise<Response> {
+    return fetch(`${stub.webUrl}/settings/apps/new/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ registration, ...(name === undefined ? {} : { name }) }).toString(),
+      redirect: "manual",
+    });
+  }
+
+  it("is changed on GitHub's own page, which keeps it editable beside GitHub's message, and the App is stored under the changed name", async () => {
+    // Another install of Tiehall named its App after another company called Acme.
+    stub.createApp({ owner: "omar", name: "Tiehall Acme" });
+    const cookie = await setupSession(INSTALL);
+    const form = createForm((await open(INSTALL, cookie, { org: "acme" })).html)!;
+    expect(form.manifest["name"]).toBe("Tiehall Acme");
+
+    const { registration, answer } = await confirmOnGitHub(form);
+    expect(answer.status).toBe(200);
+    const page = await answer.text();
+    expect(page).toContain("Name has already been taken");
+    expect(page).toContain('<input id="name" name="name" type="text" value="Tiehall Acme">');
+
+    const created = await confirm(registration, "Tiehall Acme Platform");
+    expect(created.status).toBe(302);
+    const location = new URL(created.headers.get("location") ?? "");
+    expect(location.searchParams.get("state")).toBe(form.action.searchParams.get("state"));
+    expect((await returnFromGitHub(INSTALL, location, cookie)).status).toBe(303);
+    expect(await storedApp()).toEqual([expect.objectContaining({ name: "Tiehall Acme Platform", owner_login: "acme" })]);
+  });
+
+  it("is changed on the App step when the operator comes back to /setup in the same browser, and the App is created under it", async () => {
+    stub.createApp({ owner: "omar", name: "Tiehall Acme" });
+    const cookie = await setupSession(INSTALL);
+    const { answer } = await confirmOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    expect(await answer.text()).toContain("Name has already been taken");
+
+    // The operator leaves GitHub's page, opens the setup screen again in the same browser and changes the name there.
+    const again = createForm((await open(INSTALL, cookie, { org: "acme", name: "Tiehall Acme Platform" })).html)!;
+    expect(again.manifest["name"]).toBe("Tiehall Acme Platform");
+    const { location } = await createOnGitHub(again);
+    expect((await returnFromGitHub(INSTALL, location!, cookie)).status).toBe(303);
+    expect(await storedApp()).toEqual([expect.objectContaining({ name: "Tiehall Acme Platform", owner_login: "acme" })]);
+  });
+});
+
 describe("GitHub's return with the code", () => {
   it("converts the code at once and stores the App's credentials encrypted, then sends the operator on to install the App", async () => {
     const cookie = await setupSession(INSTALL);
@@ -323,7 +423,7 @@ describe("GitHub's return with the code", () => {
 
     const [app] = stub.apps();
     expect(await storedApp()).toEqual([
-      { app_id: String(app!.id), slug: app!.slug, name: "Tiehall tiehall.example.com", client_id: app!.clientId, owner_login: "acme", owner_type: "Organization" },
+      { app_id: String(app!.id), slug: app!.slug, name: "Tiehall Acme", client_id: app!.clientId, owner_login: "acme", owner_type: "Organization" },
     ]);
     expect(await secret("github_app.client_secret")).toBe(app!.clientSecret);
     expect(await secret("github_app.private_key")).toBe(app!.pem);
@@ -370,7 +470,7 @@ describe("GitHub's return with the code", () => {
     expect(app?.webhookSecret).toBeNull();
     // Its id, slug, name, client id and owner, its client secret and its private key, and no webhook secret.
     expect(await storedApp()).toEqual([
-      { app_id: String(app!.id), slug: app!.slug, name: "Tiehall localhost", client_id: app!.clientId, owner_login: "omar", owner_type: "User" },
+      { app_id: String(app!.id), slug: app!.slug, name: "Tiehall Acme", client_id: app!.clientId, owner_login: "omar", owner_type: "User" },
     ]);
     expect(await storedSecretNames()).toEqual(["github_app.client_secret", "github_app.private_key"]);
     expect(await secret("github_app.client_secret")).toBe(app!.clientSecret);
