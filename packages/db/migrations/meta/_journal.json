@@ -274,6 +274,13 @@
       "when": 1790627445855,
       "tag": "0038_add_github_installations",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790680298368,
+      "tag": "0039_add_admission",
+      "breakpoints": true
     }
   ]
 }

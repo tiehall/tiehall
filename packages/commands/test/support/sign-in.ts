@@ -1,6 +1,17 @@
 import { randomBytes } from "node:crypto";
 import type { GitHubStub, StubApp } from "@tiehall/testing/github";
-import { createLogger, createSignInService, openSecretBox, storeGitHubApp, type SecretBox, type SignInService, type WebSessionCaller } from "../../src/index.ts";
+import {
+  createInstallGitHub,
+  createLogger,
+  createSignInService,
+  openSecretBox,
+  readInstallations,
+  storeGitHubApp,
+  type InstallGitHub,
+  type SecretBox,
+  type SignInService,
+  type WebSessionCaller,
+} from "../../src/index.ts";
 import { URL_OF_INSTALL, type TestInstall } from "./install.ts";
 
 // Signing in with GitHub against the GitHub stub, without a browser, for the
@@ -66,12 +77,25 @@ export interface SignInHarness {
   sessionOf(jar: CookieJar): Promise<WebSessionCaller | undefined>;
   /** Stores another client secret for the App, as a rotated one would be stored, in place of the one stored. */
   storeClientSecret(secret: string): Promise<void>;
+  /** The install's App, as the worker and the web role reach it, calling the stub. */
+  github: InstallGitHub;
+  /**
+   * Lists the App's installations as a sync does, and connects the ones on
+   * these GitHub accounts, as an admin's connection does; returns Tiehall's
+   * ids of those, by account login.
+   */
+  connect(...accounts: string[]): Promise<Record<string, string>>;
 }
 
 /** Creates the App on the stub, stores its credentials in the install, and builds the sign-in service against the stub. */
-export async function startSignIn(install: TestInstall, stub: GitHubStub, options: { owner?: string } = {}): Promise<SignInHarness> {
-  const app = stub.createApp({ owner: options.owner ?? "acme", callbackUrls: [`${URL_OF_INSTALL}/api/auth/callback/github`] });
-  const box = openSecretBox(randomBytes(32).toString("base64url"));
+export async function startSignIn(
+  install: TestInstall,
+  stub: GitHubStub,
+  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness } = {},
+): Promise<SignInHarness> {
+  // Another sign-in service for the App a harness stored, such as one whose fetch fails some calls, or a new App.
+  const app = options.sameAppAs?.app ?? stub.createApp({ owner: options.owner ?? "acme", callbackUrls: [`${URL_OF_INSTALL}/api/auth/callback/github`] });
+  const box = options.sameAppAs?.box ?? openSecretBox(randomBytes(32).toString("base64url"));
   const store = (clientSecret: string) =>
     install.db.transaction(async (tx) => {
       const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM orgs");
@@ -86,14 +110,14 @@ export async function startSignIn(install: TestInstall, stub: GitHubStub, option
         owner: { login: app.owner.login, type: app.owner.type },
       });
     });
-  await store(app.clientSecret);
+  if (options.sameAppAs === undefined) await store(app.clientSecret);
   const service = createSignInService({
     database: install.db,
     url: URL_OF_INSTALL,
     secret: () => install.authSecret,
     secrets: () => box,
     // The stub serves on local ports, which the service reaches with the plain fetch; at an install it reaches GitHub only.
-    github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch },
+    github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: options.fetch ?? fetch },
     logger: process.env["DEBUG_SIGN_IN"] === undefined ? install.logger : createLogger(),
   });
 
@@ -119,6 +143,26 @@ export async function startSignIn(install: TestInstall, stub: GitHubStub, option
     return { response, jar };
   }
 
+  const github = createInstallGitHub({ database: install.db, secrets: () => box, apiUrl: stub.apiUrl, fetch, logger: install.logger });
+
+  async function connect(...accounts: string[]): Promise<Record<string, string>> {
+    const access = await github.app();
+    if (access === undefined) throw new Error("the install stores no App");
+    await readInstallations({ database: install.db, app: access });
+    const ids: Record<string, string> = {};
+    for (const account of accounts) {
+      const { rows } = await install.owner.query<{ id: string }>(
+        `INSERT INTO github_connected_installations (org_id, installation_id)
+           SELECT org_id, id FROM github_installations WHERE account_login = $1 AND deleted_at IS NULL
+         ON CONFLICT DO NOTHING RETURNING installation_id AS id`,
+        [account],
+      );
+      const known = await install.owner.query<{ id: string }>("SELECT id FROM github_installations WHERE account_login = $1", [account]);
+      ids[account] = rows[0]?.id ?? known.rows[0]?.id ?? "";
+    }
+    return ids;
+  }
+
   return {
     service,
     app,
@@ -126,5 +170,7 @@ export async function startSignIn(install: TestInstall, stub: GitHubStub, option
     signIn,
     sessionOf: (jar) => service.session(new Headers({ cookie: jar.header() })),
     storeClientSecret: store,
+    github,
+    connect,
   };
 }

@@ -15,10 +15,10 @@ import { CookieJar, startSignIn, type SignInHarness } from "./support/sign-in.ts
 // install does not serve, and creates no session. The sign-in page offers
 // GitHub only.
 //
-// Who may sign in is the sign-in capability's rule; until task 7.10 adds
-// organization members and invites, and 7.9 the sign-in that completes setup,
-// only a person who is already a member of the install is admitted, and anyone
-// else is refused with 403.
+// Who may sign in is the sign-in capability's rule (sign-in-admission.test.ts):
+// here no installation is connected and no invite exists, so only a person who
+// is already a member of the install is admitted, and anyone else is refused
+// with 403.
 
 let install: TestInstall;
 let stub: GitHubStub;

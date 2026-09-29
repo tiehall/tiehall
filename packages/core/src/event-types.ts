@@ -268,6 +268,28 @@ export const memberRemoved = defineEventType({
 });
 
 /**
+ * A sign-in admitted a person who was not a member of the install, and they
+ * joined it (sign-in: Who may sign in; sign-in: New members join as members;
+ * activity-log: Which actions are security events): through a valid invite,
+ * which the sign-in accepted and which gives their role, or through
+ * membership of a GitHub organization whose installation an admin connected,
+ * as a member. It names the new member, their role, the way they came in and,
+ * for an invite, the invite; its provenance names their user, whose sign-in
+ * it was. It is recorded together with the membership, before the sign-in's
+ * own event.
+ */
+export const memberJoined = defineEventType({
+  type: "member.joined",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    role: { kind: "enum", values: ROLES },
+    through: { kind: "enum", values: ["invite", "organization"] },
+    inviteId: { kind: "id", of: "invite", optional: true },
+  },
+});
+
+/**
  * An admin changed the install's daily budget of agent writes (agent-safety:
  * Agent writes are limited per token and budgeted per install; activity-log:
  * Which actions are security events). It names the budget before and after;
@@ -408,6 +430,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   proposalEnded,
   memberRoleChanged,
   memberRemoved,
+  memberJoined,
   writeBudgetChanged,
   trustStateReconciled,
   activityLogExported,

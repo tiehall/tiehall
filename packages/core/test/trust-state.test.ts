@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkEventTypes,
+  memberJoined,
   memberRemoved,
   memberRoleChanged,
   recordedTrustState,
@@ -40,8 +41,8 @@ describe("the reconciled event", () => {
     expect(Object.keys(trustStateReconciled.fields).sort()).toEqual(["grantId", "present", "role", "subject", "userId"]);
   });
 
-  it("is among the event types the replay reads, with the role change, the removal and the completion of setup", () => {
-    expect(TRUST_STATE_EVENT_TYPES).toEqual([memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type, setupCompleted.type]);
+  it("is among the event types the replay reads, with the role change, the removal, the completion of setup and a join", () => {
+    expect(TRUST_STATE_EVENT_TYPES).toEqual([memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type, setupCompleted.type, memberJoined.type]);
   });
 });
 
@@ -60,6 +61,21 @@ describe("the state the security events record", () => {
     expect(recordedTrustState([{ type: setupCompleted.type, data: { userId: PIA } }])).toEqual({ members: [{ userId: PIA, role: "admin" }], grants: [] });
     expect(recordedTrustState([{ type: setupCompleted.type, data: { userId: PIA } }, roleChanged(PIA, "member", "admin")]).members).toEqual([
       { userId: PIA, role: "member" },
+    ]);
+  });
+
+  it("takes a join at sign-in as the new member's presence in the role their way in gave them", () => {
+    expect(memberJoined.class).toBe("security");
+    const joined = (userId: string, role: "admin" | "member", through: "invite" | "organization"): TrustEvent => ({
+      type: memberJoined.type,
+      data: { userId, role, through },
+    });
+    expect(recordedTrustState([joined(LEE, "member", "organization"), joined(BOB, "admin", "invite")]).members).toEqual([
+      { userId: LEE, role: "member" },
+      { userId: BOB, role: "admin" },
+    ]);
+    expect(recordedTrustState([joined(LEE, "member", "organization"), removed(LEE), joined(LEE, "admin", "invite")]).members).toEqual([
+      { userId: LEE, role: "admin" },
     ]);
   });
 

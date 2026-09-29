@@ -1,4 +1,4 @@
-import { memberRemoved, memberRoleChanged, setupCompleted, trustStateReconciled } from "./event-types.ts";
+import { memberJoined, memberRemoved, memberRoleChanged, setupCompleted, trustStateReconciled } from "./event-types.ts";
 import { UUID } from "./events.ts";
 import { isRole, type Role } from "./roles.ts";
 
@@ -49,7 +49,13 @@ export type TrustDifference =
   | { subject: "grant"; userId: string; grantId: string; present: boolean };
 
 /** The event types the replay reads, in the order the tasks added them. */
-export const TRUST_STATE_EVENT_TYPES: readonly string[] = [memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type, setupCompleted.type];
+export const TRUST_STATE_EVENT_TYPES: readonly string[] = [
+  memberRoleChanged.type,
+  memberRemoved.type,
+  trustStateReconciled.type,
+  setupCompleted.type,
+  memberJoined.type,
+];
 
 function idOf(data: Readonly<Record<string, unknown>>, field: string): string | undefined {
   const value = data[field];
@@ -72,6 +78,9 @@ export function recordedTrustState(events: readonly TrustEvent[]): TrustState {
     } else if (type === setupCompleted.type) {
       // The first admin joins with the completion of setup.
       members.set(userId, "admin");
+    } else if (type === memberJoined.type) {
+      // A sign-in admitted a new member, in the role their way in gave them.
+      if (isRole(data["role"])) members.set(userId, data["role"]);
     } else if (type === memberRemoved.type) {
       members.delete(userId);
     } else if (type === trustStateReconciled.type) {

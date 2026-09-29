@@ -511,6 +511,83 @@ export const signInBlocks = pgTable(
   ],
 );
 
+// Invites (teams-and-roles: Invites by GitHub username; teams-and-roles:
+// Revoking an invite; sign-in: Who may sign in). An invite is bound to one
+// GitHub account, by the numeric id Tiehall resolved from the username when
+// the invite was created, so it follows a login rename and never passes to a
+// new holder of the old login; the login it was created for is kept to show
+// it by. It names the role the invitee joins with and expires 7 days after it
+// was created. The invitee accepts it by signing in with that account while it
+// is valid: neither accepted, revoked nor expired.
+export const invites = pgTable(
+  "invites",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** The GitHub account the invite is bound to, by its numeric id. */
+    githubAccountId: bigint("github_account_id", { mode: "number" }).notNull(),
+    /** The GitHub login the invite was created for, as GitHub gave it then. */
+    githubLogin: text("github_login").notNull(),
+    role: text("role").notNull(),
+    /** The admin who created it. */
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** When the sign-in that accepted it admitted the invitee, and their user. */
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: uuid("accepted_by"),
+    /** When an admin revoked it, and who. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: uuid("revoked_by"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    foreignKey({ name: "invites_created_by_fk", columns: [table.orgId, table.createdBy], foreignColumns: [users.orgId, users.id] }),
+    foreignKey({ name: "invites_accepted_by_fk", columns: [table.orgId, table.acceptedBy], foreignColumns: [users.orgId, users.id] }),
+    foreignKey({ name: "invites_revoked_by_fk", columns: [table.orgId, table.revokedBy], foreignColumns: [users.orgId, users.id] }),
+    index("invites_github_account_id").on(table.orgId, table.githubAccountId),
+    check("invites_github_account_id_positive", sql`${table.githubAccountId} > 0`),
+    check("invites_role_known", sql`${table.role} IN ('admin', 'member')`),
+    check("invites_expire_after_creation", sql`${table.expiresAt} > ${table.createdAt}`),
+    check("invites_accepted_with_user", sql`(${table.acceptedAt} IS NULL) = (${table.acceptedBy} IS NULL)`),
+    check("invites_revoked_by_user", sql`(${table.revokedAt} IS NULL) = (${table.revokedBy} IS NULL)`),
+    check("invites_accepted_or_revoked", sql`${table.acceptedAt} IS NULL OR ${table.revokedAt} IS NULL`),
+  ],
+);
+
+// The GitHub organizations Tiehall has seen a member in (sign-in: Who may
+// sign in; sign-in: Leaving the GitHub organization ends access). A member
+// who joined through membership of a GitHub organization has a row for each
+// organization with a connected installation that reported them a member:
+// the one that admitted them, and any other a later check found them in. A
+// member who joined through an invite, or by completing setup, has none, so
+// leaving an organization never removes them. The rows go with the
+// membership.
+export const memberOrganizations = pgTable(
+  "member_organizations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    /** The GitHub organization, by its account's numeric id. */
+    githubOrganizationId: bigint("github_organization_id", { mode: "number" }).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.githubOrganizationId] }),
+    foreignKey({
+      name: "member_organizations_member_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [members.orgId, members.userId],
+    }).onDelete("cascade"),
+    check("member_organizations_github_organization_id_positive", sql`${table.githubOrganizationId} > 0`),
+  ],
+);
+
 // Web sessions (sign-in: GitHub is the only way to sign in; sign-in: Signing
 // out and ending sessions; design.md, Technical decisions: T7). The sign-in
 // service stores one row per browser that signed in with GitHub, found by the

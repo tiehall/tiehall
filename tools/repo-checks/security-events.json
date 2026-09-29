@@ -20,6 +20,14 @@
             "case": "appends a security event naming the GitHub account that was refused, and creates no session or user"
           }
         },
+        {
+          "action": "a sign-in that admits a new member, who joins with it",
+          "event": "member.joined",
+          "test": {
+            "file": "packages/commands/test/sign-in-admission.test.ts",
+            "case": "signs in, joins the install as a member, and the join and the sign-in are security events"
+          }
+        },
         { "action": "a sign-in that clears an admin removal's block", "pending": "9.9" }
       ]
     },

@@ -9,7 +9,6 @@ import { httpProblem, internalErrorProblem, Refusal, signInCompleted, signInRefu
 import {
   githubApp,
   integrationSecrets,
-  members,
   orgs,
   signInAccounts,
   signInRefusals,
@@ -29,6 +28,7 @@ import { createLogger, type Logger } from "./log.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession } from "./setup-code.ts";
+import { AdmissionWithdrawnError, applyAdmission, decideAdmission, type Admission } from "./sign-in-admission.ts";
 import { completeSetup, SetupCompletionError } from "./setup-completion.ts";
 import { SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
@@ -87,12 +87,16 @@ import { write, type Origin, type Store } from "./write.ts";
 // that record. Each keeps the client's address, the one the trusted proxies
 // yield, and user agent in the side table, apart from the event.
 //
-// Who may sign in (sign-in: Who may sign in): every sign-in is decided before
-// the service writes anything, and a refused one gets 403 sign-in-refused,
-// telling the person to ask an admin for an invite, and creates no session, no
-// user and no membership. For now a person is admitted when their user is
-// already a member of the install; organization members and invites (task
-// 7.10) join the rule when they are built.
+// Who may sign in (sign-in: Who may sign in; sign-in: New members join as
+// members): every sign-in is decided before the service writes anything
+// (sign-in-admission.ts), and a refused one gets 403 sign-in-refused, telling
+// the person to ask an admin for an invite, and creates no session, no user
+// and no membership. A person is admitted when their user is already a member
+// of the install, when they hold a valid invite, or when GitHub reports them a
+// member of the organization of an installation an admin connected. A person
+// who is not a member yet joins just before their web session is stored,
+// once the service has stored their user, in one transaction with the join's
+// security event; a join that no longer holds by then stores no session.
 //
 // The sign-in that completes setup (self-host-install: Setup names the company
 // and makes the first admin; sign-in: Who may sign in): while setup is
@@ -254,14 +258,19 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     return isSetupSession(options.database, cookieValue(headers, setupCookie));
   }
 
-  /** Whether this user may sign in: for now, whether they are a member of the install. */
-  async function admits(githubAccountId: number): Promise<boolean> {
-    const [row] = await options.database
-      .select({ role: members.role })
-      .from(users)
-      .innerJoin(members, and(eq(members.orgId, users.orgId), eq(members.userId, users.id)))
-      .where(eq(users.githubAccountId, githubAccountId));
-    return row !== undefined;
+  /**
+   * The admissions decided for sign-ins in progress, by the GitHub account's
+   * numeric id: the check of who may sign in decides before the service
+   * writes anything, and the person joins, if they are not a member yet, once
+   * the service has stored their user, just before their web session.
+   */
+  const admissions = new Map<number, Admission>();
+  const admissionServices = { database: options.database, github: installGitHub, logger };
+
+  /** The GitHub account of a user, by its numeric id. */
+  async function githubAccountOf(userId: string): Promise<number | undefined> {
+    const [row] = await options.database.select({ githubAccountId: users.githubAccountId }).from(users).where(eq(users.id, userId));
+    return row?.githubAccountId;
   }
 
   function authOptions(input: { orgId: string; clientId: string; clientSecret: string }, mode: Mode): BetterAuthOptions {
@@ -313,11 +322,18 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
             return { error: REFUSED_CODE, errorDescription: SETUP_SIGN_IN_REFUSED };
           }
           const githubAccountId = Number(user.githubAccountId);
-          if (Number.isSafeInteger(githubAccountId) && data.source.action !== "link-account" && (await admits(githubAccountId))) return;
+          const login = typeof user.name === "string" ? user.name : "";
+          if (Number.isSafeInteger(githubAccountId) && githubAccountId > 0 && data.source.action !== "link-account") {
+            const admission = await decideAdmission(admissionServices, { id: githubAccountId, login });
+            if (admission !== undefined) {
+              admissions.set(githubAccountId, admission);
+              return;
+            }
+          }
           // A known user, such as a removed member, is named too: the one a sign-in of an existing account would reach.
           const userId = data.source.action === "sign-in" && typeof user.id === "string" ? user.id : undefined;
           try {
-            await recordRefusal({ githubAccountId, login: typeof user.name === "string" ? user.name : "", userId }, whereFrom(context));
+            await recordRefusal({ githubAccountId, login, userId }, whereFrom(context));
           } catch (error) {
             // The refusal stands: nobody is signed in, and the log says the event is missing.
             logger.error("sign-in service: the security event of a refused sign-in could not be appended", { error });
@@ -339,7 +355,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       databaseHooks: {
         session: {
           create: {
-            // The sign-in from the setup screen completes setup before its session is stored, or stores none.
+            // The sign-in from the setup screen completes setup before its session is stored, or stores none; any other
+            // sign-in makes a person who is not a member yet join, as its admission says, or stores none.
             ...(setup
               ? {
                   async before(session: { userId: string }, context: Parameters<typeof whereFrom>[0]) {
@@ -355,7 +372,21 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                     }
                   },
                 }
-              : {}),
+              : {
+                  async before(session: { userId: string }, context: Parameters<typeof whereFrom>[0]) {
+                    const githubAccountId = await githubAccountOf(session.userId);
+                    const admission = githubAccountId === undefined ? undefined : admissions.get(githubAccountId);
+                    if (githubAccountId !== undefined) admissions.delete(githubAccountId);
+                    try {
+                      if (admission === undefined) throw new AdmissionWithdrawnError();
+                      await applyAdmission({ database: options.database }, { userId: session.userId, admission, origin: whereFrom(context) });
+                    } catch (error) {
+                      if (!(error instanceof AdmissionWithdrawnError)) throw error;
+                      logger.warn("sign-in service: a sign-in's admission no longer held when its session was to be stored", { userId: session.userId });
+                      throw new APIError("FORBIDDEN", { code: REFUSED_CODE, message: SIGN_IN_REFUSED });
+                    }
+                  },
+                }),
             async after(session, context) {
               await recordSignIn(session.userId, whereFrom(context));
             },
