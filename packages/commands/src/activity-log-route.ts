@@ -1,12 +1,9 @@
 import { exportActivityLog, listActivityLog, type activityEvent } from "@tiehall/catalog";
-import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { z } from "zod";
-import type { WebSessionCaller } from "./caller.ts";
-import type { Execute } from "./execute.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
-import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
-import { createLogger, type Logger } from "./log.ts";
+import { escapeHtml, htmlPage } from "./html.ts";
 import { userName } from "./members.ts";
+import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The activity log's page in the web UI, at /admin/activity-log
 // (activity-log: The admin view; activity-log: Security events are shown to
@@ -18,20 +15,20 @@ import { userName } from "./members.ts";
 // shows its number, time, class, type, the ids it carries, who caused it and
 // the request it concerns, and a security event its IP address and user
 // agent while they are kept. The page runs no script, loads nothing and
-// cannot be framed. It reads through execute(), in a read-only transaction,
-// so it takes the same path as every other operation and changes nothing:
-// 401 without a signed-in user, 403 for a member, 400 for a filter that
-// fails the operation's schema, as RFC 9457 problems (public-api: One error
-// model for Tiehall's own refusals).
+// cannot be framed. It is served like every other page of the web UI
+// (web-pages.ts): a browser without a session is sent to sign in first and
+// comes back to the page (agent-surfaces: A browser without a session is sent
+// to sign-in; design.md, Decisions this change rests on: D28 #66), and the
+// page has no form to post. It reads through execute(), in a read-only
+// transaction, so it takes the same path as every other operation and
+// changes nothing: 403 for a member, 400 for a filter that fails the
+// operation's schema, as RFC 9457 problems (public-api: One error model for
+// Tiehall's own refusals).
 
-export interface ActivityLogRouteOptions {
-  execute: Execute;
-  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
-  session(request: Request): Promise<WebSessionCaller | undefined>;
-  logger?: Logger;
-}
+/** What the page is built with, as every page of the web UI. */
+export type ActivityLogRouteOptions = PageRouteOptions;
 
-export type ActivityLogRoute = (request: Request) => Promise<Response>;
+export type ActivityLogRoute = PageRoute;
 
 /** Where the page lives. */
 export const ACTIVITY_LOG_PATH = "/admin/activity-log";
@@ -51,13 +48,10 @@ const FILTERS: readonly [query: string, input: string][] = [
 ];
 
 export function createActivityLogRoute(options: ActivityLogRouteOptions): ActivityLogRoute {
-  const logger = options.logger ?? createLogger();
-  return async function activityLog(request) {
-    try {
-      if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
-      const caller = await options.session(request);
-      if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to view the activity log.");
-      const query = new URL(request.url).searchParams;
+  return createPageRoute(options, {
+    path: ACTIVITY_LOG_PATH,
+    name: "activity log",
+    async get(query, calls) {
       const input: Record<string, unknown> = { limit: PAGE_SIZE };
       for (const [name, field] of FILTERS) {
         const value = query.get(name)?.trim();
@@ -65,19 +59,10 @@ export function createActivityLogRoute(options: ActivityLogRouteOptions): Activi
       }
       const before = query.get("before")?.trim();
       if (before !== undefined && before !== "") input["before"] = /^\d+$/.test(before) ? Number(before) : before;
-      const output = (await options.execute(listActivityLog.id, caller, input, { readOnly: true })) as { events: ActivityEvent[] };
-      return new Response(page(query, output.events), { headers: PAGE_HEADERS });
-    } catch (error) {
-      if (error instanceof Refusal) return problem(httpProblem(error));
-      logger.error("activity log: the page failed", { error });
-      return problem(internalErrorProblem());
-    }
-  };
-}
-
-function problem({ status, headers, body }: HttpProblem): Response {
-  // A refusal cannot be framed either.
-  return new Response(JSON.stringify(body), { status, headers: { ...headers, "content-security-policy": PAGE_HEADERS["content-security-policy"] } });
+      const output = await calls.read<{ events: ActivityEvent[] }>(listActivityLog.id, input);
+      return htmlAnswer(page(query, output.events));
+    },
+  });
 }
 
 /** The page: the filters as a form, the events as a table, and a link to the older ones. */

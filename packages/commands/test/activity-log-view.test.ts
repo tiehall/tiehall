@@ -182,7 +182,13 @@ describe("the admin view", () => {
 
 describe("the page at /admin/activity-log", () => {
   const route = (caller: WebSessionCaller | undefined) =>
-    createActivityLogRoute({ execute: install.execute, session: async () => caller, logger: { error() {} } as never });
+    createActivityLogRoute({
+      execute: install.execute,
+      session: async () => caller,
+      url: URL_OF_INSTALL,
+      secret: () => install.authSecret,
+      logger: { error() {} } as never,
+    });
 
   it("shows an admin the events, with the filters as a form, and cannot be framed", async () => {
     const answer = await route(pia)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?request=${fe1.key}`));
@@ -207,10 +213,15 @@ describe("the page at /admin/activity-log", () => {
     expect(html).toContain("canary browser");
   });
 
-  it("refuses a browser without a session with 401 and shows nothing, and a bad filter with 400", async () => {
-    const answer = await route(undefined)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}`));
-    expect(answer.status).toBe(401);
-    expect(await answer.text()).not.toContain("request.opened");
+  it("sends a browser without a session to sign in first, showing nothing, and refuses a bad filter with 400", async () => {
+    // agent-surfaces: A browser without a session is sent to sign-in (design.md, Decisions this change rests on: D28 #66).
+    const answer = await route(undefined)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?type=member.role_changed`));
+    expect(answer.status).toBe(303);
+    expect(answer.headers.get("location")).toBe(`/sign-in?return=${encodeURIComponent(ACTIVITY_LOG_PATH)}`);
+    expect(answer.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(await answer.text()).toBe("");
+    const post = await route(undefined)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}`, { method: "POST" }));
+    expect(post.status).toBe(404);
     const bad = await route(pia)(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?from=yesterday`));
     expect(bad.status).toBe(400);
   });

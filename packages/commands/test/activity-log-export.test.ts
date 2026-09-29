@@ -125,7 +125,7 @@ describe("an export with the confirmation step", () => {
   });
 
   it("is linked from the admin view's page", async () => {
-    const route = createActivityLogRoute({ execute: install.execute, session: async () => pia, logger: { error() {} } as never });
+    const route = createActivityLogRoute({ execute: install.execute, session: async () => pia, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: { error() {} } as never });
     const html = await (await route(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}`))).text();
     expect(html).toContain('href="/confirm/activity_log.export?input=%7B%7D"');
   });

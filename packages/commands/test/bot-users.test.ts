@@ -126,7 +126,7 @@ describe("an admin", () => {
         { actorKind: "integration", userId: bot, surface: "github" },
         (writer) => writer.record(signInCompleted, { userId: bot }),
       );
-      const route = createActivityLogRoute({ execute: install.execute, session: async () => ada, logger: install.logger });
+      const route = createActivityLogRoute({ execute: install.execute, session: async () => ada, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
       const page = await route(new Request(`${URL_OF_INSTALL}${ACTIVITY_LOG_PATH}?type=sign_in.completed`));
       expect(page.status).toBe(200);
       expect(await page.text()).toContain("integration github acme-ci-bot (a bot user)");

@@ -50,7 +50,8 @@ afterAll(async () => {
 
 const FORBIDDEN = "https://tiehall.com/problems/forbidden";
 
-const adminPage = (caller: WebSessionCaller) => createActivityLogRoute({ execute: install.execute, session: async () => caller, logger: { error() {} } as never });
+const adminPage = (caller: WebSessionCaller) =>
+  createActivityLogRoute({ execute: install.execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: { error() {} } as never });
 
 describe("the admin view", () => {
   it("refuses a member with 403 and an RFC 9457 problem, and shows nothing", async () => {

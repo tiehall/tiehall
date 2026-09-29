@@ -151,8 +151,7 @@ export function confirmRoute(env: Environment): ConfirmRoute {
 /** The activity log's page under /admin/activity-log, built once per process, for the signed-in admin's web session. */
 export function activityLogRoute(env: Environment): ActivityLogRoute {
   if (activityLog !== undefined) return activityLog;
-  const { execute, logger, signIn } = servicesOf(env);
-  activityLog = createActivityLogRoute({ execute, session: (request) => signIn.session(request.headers), logger });
+  activityLog = createActivityLogRoute(pageOptionsOf(env));
   return activityLog;
 }
 
