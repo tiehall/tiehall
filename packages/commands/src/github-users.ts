@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { users } from "@tiehall/db";
+import { members, users } from "@tiehall/db";
 import { gitHubUnavailable, type GitHubClient } from "./github-client.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -19,6 +19,26 @@ export async function userOfGitHubAccount({ tx, orgId }: Pick<OrgContext, "tx" |
   const [row] = await tx
     .select({ id: users.id })
     .from(users)
+    .where(and(eq(users.orgId, orgId), eq(users.githubAccountId, id)));
+  return row?.id;
+}
+
+/**
+ * The Tiehall user of the GitHub account with this numeric id, as GitHub's API
+ * gives it, only while that user is a member of the install; undefined when no
+ * user has it, and for a user who holds no membership, whether removed or
+ * never admitted. An integration event acts for this user, and for no user
+ * when there is none (agent-access: Six kinds of caller; github-layer-hardening:
+ * design.md, Technical decisions: T7). userOfGitHubAccount keeps meaning
+ * identity alone.
+ */
+export async function memberOfGitHubAccount({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, account: { id: number | bigint }): Promise<string | undefined> {
+  const id = Number(account.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return undefined;
+  const [row] = await tx
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(members, and(eq(members.orgId, users.orgId), eq(members.userId, users.id)))
     .where(and(eq(users.orgId, orgId), eq(users.githubAccountId, id)));
   return row?.id;
 }

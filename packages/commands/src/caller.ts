@@ -50,7 +50,12 @@ export interface SystemJobCaller {
   job: string;
 }
 
-/** A verified GitHub or Jira webhook, or a change read from them, acting for the mapped user if there is one. */
+/**
+ * A verified GitHub or Jira webhook, or a change read from them, acting for
+ * the mapped user if there is one and only while that user is a member of the
+ * install, as execute() reads it in the call's transaction; otherwise for no
+ * user.
+ */
 export interface IntegrationEventCaller {
   kind: "integration_event";
   source: "github" | "jira";

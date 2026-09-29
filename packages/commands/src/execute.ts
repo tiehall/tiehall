@@ -5,7 +5,7 @@ import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./call
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import type { SecretBox } from "./secret-box.ts";
-import { assertRoleAllows, type Member } from "./members.ts";
+import { assertRoleAllows, memberOf, type Member } from "./members.ts";
 import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
 import type { RequestRow } from "./request-views.ts";
 import { countTokenWrite, tokenKeyOf } from "./write-limits.ts";
@@ -26,8 +26,13 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    removed one with 403 before anything else about the call is judged or
 //    looked up, its input included (teams-and-roles: Membership is re-checked
 //    on every call; public-api: One error model for Tiehall's own refusals);
-//    a refusal the surface already found in the call itself, such as a REST
-//    body that is not JSON, is given next;
+//    an integration event that acts for a mapped user is not refused: it acts
+//    for that user only while they are a member, as read in the call's
+//    transaction, and for no user otherwise, such as a person removed after
+//    the event was mapped to them (agent-access: Six kinds of caller;
+//    github-layer-hardening: design.md, Technical decisions: T7); a refusal
+//    the surface already found in the call itself, such as a REST body that
+//    is not JSON, is given next;
 // 3. parses the input against the operation's input schema, refusing input
 //    that fails it with 400 before anything runs, and drops keys it does not
 //    know;
@@ -275,7 +280,6 @@ export function createExecute(services: ExecuteServices): Execute {
     if (surface !== undefined && !definition.surfaces.includes(surface)) throw notOffered();
 
     // 2. withOrg() has refused a removed member already; then what the surface found wrong with the call.
-    const provenance = provenanceOf(caller);
     const writeOptions = { ...(options.origin === undefined ? {} : { origin: options.origin }), now };
     const forUser = actsForUser(caller) ? caller.userId : undefined;
 
@@ -340,9 +344,13 @@ export function createExecute(services: ExecuteServices): Execute {
     // The handler's step before the transaction, once the call is authorized, with its nonce checked and not yet used.
     let prepared: unknown;
     if (handler.prepare !== undefined) {
-      const authorized = await withOrg(store.database, (context) => authorize(context, "check"), { readOnly: true, forUser });
+      const authorized = await withOrg(
+        store.database,
+        async (context) => ({ ...(await authorize(context, "check")), caller: await asMemberOrNoUser(context, caller) }),
+        { readOnly: true, forUser },
+      );
       prepared = await handler.prepare(authorized.input, {
-        caller,
+        caller: authorized.caller,
         member: authorized.member,
         github: services.github,
         secrets: services.secrets,
@@ -355,6 +363,9 @@ export function createExecute(services: ExecuteServices): Execute {
       store.database,
       async (context) => {
         const { input: parsedInput, member, sealed } = await authorize(context, "consume");
+        // Who the call acts for, as this transaction reads the membership, and the provenance stamped from it alone.
+        const acting = await asMemberOrNoUser(context, caller);
+        const provenance = provenanceOf(acting);
 
         // 6. and 7. The handler, in the install's org, and only output that passes its schema.
         // An agent token's call that writes is counted once, before its change, against the token's limit and the install's budget.
@@ -362,7 +373,7 @@ export function createExecute(services: ExecuteServices): Execute {
         let counted = false;
         const handlerContext: HandlerContext = {
           ...context,
-          caller,
+          caller: acting,
           member,
           provenance,
           now,
@@ -402,6 +413,21 @@ export function createExecute(services: ExecuteServices): Execute {
       { readOnly: options.readOnly === true, forUser },
     );
   };
+}
+
+/**
+ * The caller a call runs as, in the given transaction: an integration event
+ * acts for its mapped user only while that user is a member of the install,
+ * and for no user otherwise, rather than being refused, so the change it
+ * brings is not lost (agent-access: Six kinds of caller;
+ * github-layer-hardening: design.md, Technical decisions: T7). Every other
+ * caller is as it came; withOrg() re-checks the membership of one that acts
+ * for a user.
+ */
+async function asMemberOrNoUser(context: OrgContext, caller: Caller): Promise<Caller> {
+  if (caller.kind !== "integration_event" || caller.userId === undefined) return caller;
+  if ((await memberOf(context, caller.userId)) !== undefined) return caller;
+  return { kind: caller.kind, source: caller.source };
 }
 
 /** Where the input fails its schema, by path and by the schema's own message, never with the value. */

@@ -4,7 +4,7 @@ import type { IntegrationEventCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { readInstallations } from "./github-installations.ts";
-import { userOfGitHubAccount } from "./github-users.ts";
+import { memberOfGitHubAccount } from "./github-users.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { processOrganizationEvent } from "./organization-departures.ts";
@@ -29,9 +29,14 @@ import { withOrg } from "./with-org.ts";
 //   one, it goes to the processor of its event, which later tasks add (pull
 //   requests, issues, organization membership). A processor runs its changes
 //   as the integration-event caller, acting for the Tiehall user of the
-//   delivery's sender if there is one, through execute(), which lets that
-//   caller run only internal commands and records what it runs as an
-//   integration from GitHub.
+//   delivery's sender only while that user is a member of the install, and
+//   for no user otherwise, whether the user was removed, was never admitted
+//   or does not exist, through execute(), which lets that caller run only
+//   internal commands, records what it runs as an integration from GitHub,
+//   and checks again in the call's transaction that the user is still a
+//   member (agent-access: Six kinds of caller; github-layer-hardening:
+//   design.md, Technical decisions: T7). A change the poll stores names no
+//   sender, so it acts for no user.
 // A delivery is processed once: it is marked processed when its processing
 // ends, and a job that runs again for it afterwards does nothing. The poll of
 // polling mode stores each change it finds in the same form, less the
@@ -68,7 +73,7 @@ export interface GitHubEvent {
 
 /** What an event's processor works with. */
 export interface GitHubEventContext {
-  /** The caller the event's changes run as: an integration event from GitHub, acting for the sender's Tiehall user if there is one. */
+  /** The caller the event's changes run as: an integration event from GitHub, acting for the sender's Tiehall user if that user is a member. */
   readonly caller: IntegrationEventCaller;
   /** Runs an operation as that caller, through execute(), which lets it run only internal commands. */
   run(commandId: string, input: unknown): Promise<unknown>;
@@ -151,7 +156,7 @@ export async function processDelivery(services: DeliveryProcessingServices, deli
         .where(and(eq(githubInstallations.orgId, context.orgId), eq(githubInstallations.installationId, installationId)));
       if (connected === undefined) return undefined;
       const sender = idOf(objectOf(payload["sender"])?.["id"]);
-      const userId = sender === undefined ? undefined : await userOfGitHubAccount(context, { id: sender });
+      const userId = sender === undefined ? undefined : await memberOfGitHubAccount(context, { id: sender });
       return { id: connected.id, userId };
     });
     const processor = (services.processors ?? GITHUB_EVENT_PROCESSORS)[delivery.event];
