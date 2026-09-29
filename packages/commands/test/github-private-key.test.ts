@@ -4,6 +4,7 @@ import { startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing
 import {
   connectInstallations,
   createGitHubAdminRoute,
+  createInstallGitHub,
   csrfTokenFor,
   GITHUB_ADMIN_PATH,
   readInstallations,
@@ -28,7 +29,11 @@ import { sessionOf } from "./support/requests.ts";
 // stored, and the key in use stays. Like the webhook secret, the key is no
 // part of the action's input, which the review page's URL carries: it is a
 // file picked in a field of the review page's form, and travels only in the
-// body of the POST that applies the action.
+// body of the POST that applies the action. While GitHub checks the key, the
+// upload holds no lock on the App's stored row, so a slow answer holds up no
+// other write of it, such as an admin's switch of GitHub's mode; the row is
+// locked only to store the key, and a key checked for an App that another one
+// replaced meanwhile is not stored.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -192,5 +197,71 @@ describe("uploading a rotated private key", () => {
       logger: install.logger,
     })(new Request(`${URL_OF_INSTALL}${GITHUB_ADMIN_PATH}`));
     expect(await page.text()).toContain(`href="${reviewUrl}"`);
+  });
+});
+
+describe("an upload while GitHub checks the key slowly", () => {
+  /** Makes the install reach GitHub through a fetch that, once armed, answers token requests after a delay; resolves when one is asked. */
+  function slowTokens(delayMs: number): { arm: () => Promise<void>; disarm: () => void } {
+    let armed = false;
+    let asked: () => void = () => {};
+    install.useGitHub(
+      createInstallGitHub({
+        database: install.db,
+        secrets: () => install.box,
+        apiUrl: stub.apiUrl,
+        logger: install.logger,
+        fetch: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : String(input));
+          if (armed && /^\/app\/installations\/\d+\/access_tokens$/.test(url.pathname)) {
+            asked();
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+          return fetch(input, init);
+        },
+      }),
+    );
+    return {
+      arm: () => {
+        armed = true;
+        return new Promise<void>((resolve) => (asked = resolve));
+      },
+      disarm: () => void (armed = false),
+    };
+  }
+
+  it("does not hold the App's row, so an admin's mode switch meanwhile is not held up", { timeout: 30_000 }, async () => {
+    const slow = slowTokens(3_000);
+    const rotated = stub.addPrivateKey(app);
+    const asked = slow.arm();
+    const uploading = upload(ada, rotated);
+    await asked;
+
+    const started = Date.now();
+    const switched = await install.web(ada).write("github.set_mode", { mode: "polling" }, install.fromThePage(ada));
+    const waited = Date.now() - started;
+    slow.disarm();
+
+    expect(switched).toMatchObject({ ok: true });
+    expect(waited).toBeLessThan(1_500);
+    expect((await uploading).status).toBe(200);
+    expect(await storedKey()).toBe(rotated);
+  });
+
+  it("does not store a key checked for an App that another replaced meanwhile, with 409", { timeout: 30_000 }, async () => {
+    const slow = slowTokens(500);
+    const rotated = stub.addPrivateKey(app);
+    const asked = slow.arm();
+    const uploading = upload(ada, rotated);
+    await asked;
+    // A new App's credentials are stored while GitHub checks the key, as a step that setup reopen opened stores them.
+    await install.owner.query("UPDATE github_app SET app_id = app_id + 1, client_id = 'Iv23liAnotherApp'");
+    const answer = await uploading;
+    slow.disarm();
+
+    expect(answer.status).toBe(409);
+    expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/conflict" });
+    expect(await storedKey()).toBe(keyInUse);
+    expect(await keyEvents()).toEqual([]);
   });
 });
