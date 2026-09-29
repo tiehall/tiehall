@@ -51,6 +51,32 @@ describe("the page routes, as an answer before any route knows them", () => {
     expect(wayOnOfPageRoute(method, target)).toBeUndefined();
   });
 
+  // A review page's form posts to /confirm/<command> without the review page's query, which holds its input: the
+  // page whose form was refused is the one the browser posted from, which its Referer names on the install.
+  it("leads a refused form back to the page it was posted from, as its Referer names it, such as a review page with its input", () => {
+    const review = "http://localhost:3000/confirm/members.change_role?input=%7B%22role%22%3A%22admin%22%7D";
+    expect(wayOnOfPageRoute("POST", "/confirm/members.change_role", review)?.href).toBe("/confirm/members.change_role?input=%7B%22role%22%3A%22admin%22%7D");
+    expect(wayOnOfPageRoute("POST", "/admin/invites", "http://localhost:3000/admin/invites")?.href).toBe("/admin/invites");
+  });
+
+  it("leads a refused form back to its own target when the page it names is no page route, or names none", () => {
+    expect(wayOnOfPageRoute("POST", "/admin/invites", "http://localhost:3000/api/v1/requests")?.href).toBe("/admin/invites");
+    expect(wayOnOfPageRoute("POST", "/admin/invites", "not a URL")?.href).toBe("/admin/invites");
+    expect(wayOnOfPageRoute("POST", "/admin/invites", undefined)?.href).toBe("/admin/invites");
+  });
+
+  it("leads a refused page, which is asked for, not posted, to that page whatever page it was opened from", () => {
+    expect(wayOnOfPageRoute("GET", "/members", "http://localhost:3000/admin/invites")?.href).toBe("/members");
+  });
+
+  it("never leads on to another host from the page a form was posted from", () => {
+    for (const referrer of ["http://localhost:3000//evil.example/members", "http://localhost:3000/%2F%2Fevil.example"]) {
+      const href = wayOnOfPageRoute("POST", "/admin/invites", referrer)?.href;
+      expect(href, referrer).toMatch(/^\/(?![/\\])/);
+      expect(new URL(href!, "https://tiehall.example.com").origin, referrer).toBe("https://tiehall.example.com");
+    }
+  });
+
   it("never leads on to another host, whatever path the call names", () => {
     for (const target of ["//evil.example/members", "/.//evil.example/members", "///evil.example", "/%2F%2Fevil.example"]) {
       const href = wayOnOfPageRoute("GET", target)?.href;

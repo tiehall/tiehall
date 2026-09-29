@@ -56,7 +56,10 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // 503 or a 413 to a request whose Accept header names text/html is the
 // refusal's page, with the same status and headers and a link on, from the
 // one renderer the routes use; every other request, and every call to
-// /api/v1, /mcp and the other API paths, gets the problem.
+// /api/v1, /mcp and the other API paths, gets the problem. A refused form's
+// link leads back to the page it was posted from when its Referer names a
+// page on the host the form was sent to, as a review page's form, whose
+// target lacks the review page's input, needs.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
@@ -183,7 +186,7 @@ function shuttingDown(request: IncomingMessage, response: ServerResponse): void 
  * whose body is given.
  */
 function refuse(request: IncomingMessage, response: ServerResponse, problem: HttpProblem, problemBody: string): void {
-  const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/");
+  const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/", referrerOnInstall(request));
   const answer =
     wayOn === undefined
       ? { status: problem.status, headers: new Headers(problem.headers), body: problemBody }
@@ -194,6 +197,21 @@ function refuse(request: IncomingMessage, response: ServerResponse, problem: Htt
     connection: "close",
   });
   response.end(request.method === "HEAD" ? undefined : answer.body);
+}
+
+/**
+ * The page the request's Referer names, when it lies on the host the request
+ * was sent to, as a form posted from one of the install's pages does: pages
+ * send their Referer to the install's own origin only. Undefined otherwise.
+ */
+function referrerOnInstall(request: IncomingMessage): string | undefined {
+  const { referer, host } = request.headers;
+  if (referer === undefined || host === undefined) return undefined;
+  try {
+    return new URL(referer).host === host.toLowerCase() ? referer : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The path a request names, without its query; "/" for a target that is not a path. */

@@ -18,8 +18,14 @@ import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 // GitHub's return to the sign-in callback, to the sign-in page; for the
 // setup screen and its own sign-in, back to the setup screen; for the sign-out
 // form, back to the home page, whose form it is; and for every other page, to
-// the page that was asked for, or back to the page whose form was refused, at
-// the path and query the call named, which never leads to another host.
+// the page that was asked for, at the path and query the call named, or back to
+// the page whose form was refused. A form's call does not always name that
+// page: a review page's form posts to /confirm/<command> without the review
+// page's query, which holds its input. So a form leads back to the page the
+// browser posted it from, as its Referer names it, when the caller finds that
+// on the install and it is a page route, and to the form's own target
+// otherwise. The link is a path on the install, and never leads to another
+// host.
 
 /** Where a refusal of the sign-out form leads a browser on: back to the home page, whose form it is. */
 const TO_HOME: WayOn = { href: "/", text: "Back to Tiehall's home page" };
@@ -34,9 +40,11 @@ function under(pathname: string, prefix: string): boolean {
 /**
  * Where a refusal of a call with this method and request target (its path and
  * query) leads a browser on, when the call is to a page route; undefined for
- * every other call, whose refusal is always the problem.
+ * every other call, whose refusal is always the problem. For a form's call,
+ * `referrer` is the page the browser posted the form from, as its Referer
+ * header names it, which the caller gives only when it lies on the install.
  */
-export function wayOnOfPageRoute(method: string, target: string): WayOn | undefined {
+export function wayOnOfPageRoute(method: string, target: string, referrer?: string): WayOn | undefined {
   let url: URL;
   try {
     url = new URL(target, "http://localhost");
@@ -51,5 +59,18 @@ export function wayOnOfPageRoute(method: string, target: string): WayOn | undefi
   if (pathname === SIGN_OUT_PATH) return TO_HOME;
   // One slash first, so the link is a path on the install and never names another host.
   const href = `/${pathname.replace(/^[/\\]+/, "")}${search}`;
-  return method === "GET" || method === "HEAD" ? { href, text: "Open the page again" } : { href, text: "Back to the page" };
+  if (method === "GET" || method === "HEAD") return { href, text: "Open the page again" };
+  return { href: postedFrom(referrer) ?? href, text: "Back to the page" };
+}
+
+/** The path and query on the install of the page a form was posted from, when its Referer names a page route; else undefined. */
+function postedFrom(referrer: string | undefined): string | undefined {
+  if (referrer === undefined) return undefined;
+  let url: URL;
+  try {
+    url = new URL(referrer);
+  } catch {
+    return undefined;
+  }
+  return wayOnOfPageRoute("GET", `${url.pathname}${url.search}`)?.href;
 }

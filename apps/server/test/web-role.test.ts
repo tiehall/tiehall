@@ -549,6 +549,29 @@ describe("the web role's limit on request bodies", () => {
       expectPayloadTooLarge({ status: answer.status, headers: Object.fromEntries(answer.headers), body: await answer.text() });
     }
   });
+
+  // A review page's form posts to /confirm/<command> without the review page's query, which holds its input, so the
+  // page leads back to the page the browser posted the form from, as its Referer names it on the install; a Referer
+  // on another host leads to the form's own target.
+  it("leads a browser's review page form over 2 MiB back to the review page, with its input, as its Referer names it", async () => {
+    const web = await startWebRole();
+    const review = "/confirm/members.change_role?input=%7B%22role%22%3A%22admin%22%7D";
+    const post = (referer: string) =>
+      fetch(`http://127.0.0.1:${web.port}/confirm/members.change_role`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", accept: BROWSER, referer },
+        body: `confirmation=${"A".repeat(LIMIT)}`,
+      });
+
+    const page = await post(`http://127.0.0.1:${web.port}${review}`);
+    expect(page.status).toBe(413);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await page.text()).toContain(`<a href="${review}">`);
+
+    const elsewhere = await post(`https://elsewhere.example${review}`);
+    expect(elsewhere.status).toBe(413);
+    expect(await elsewhere.text()).toContain('<a href="/confirm/members.change_role">');
+  });
 });
 
 // self-host-install: The setup code guards the setup screen. While setup is incomplete, each start prints a new
