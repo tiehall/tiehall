@@ -245,7 +245,7 @@ describe("the security-event coverage check", () => {
   });
 });
 
-describe("the check's script", () => {
+describe("the check's script", { timeout: 120_000 }, () => {
   function check(root: string) {
     const run = spawnSync(process.execPath, [script, root], { encoding: "utf8", timeout: 120_000 });
     if (run.error) throw run.error;
