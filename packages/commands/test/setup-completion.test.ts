@@ -280,6 +280,36 @@ describe("the sign-in that completes setup", { timeout: 60_000 }, () => {
     expect(reachable.sentJobs.map(({ queue }) => queue)).not.toContain("github.poll.v1");
   });
 
+  // The setup screen's sign-in and GitHub's return to it are part of /setup, served only while setup is not complete
+  // (self-host-install: The setup code guards the setup screen; github-layer-hardening: D50 (8)).
+  it("answers GitHub's return to the setup screen's sign-in with 404 once setup has completed, and creates no session and no user", async () => {
+    const install = await start();
+    const { operator, app } = await createApp(install);
+    await stub.install(app, { account: "acme" });
+    // Another browser with a setup session starts the setup screen's sign-in, and Kim authorizes it on GitHub.
+    const other = await enterCode(install);
+    const started = await other.post("/setup/sign-in", {});
+    expect(started.status).toBe(303);
+    const authorize = new URL(started.headers.get("location") ?? "");
+    const redirectUri = authorize.searchParams.get("redirect_uri") ?? "";
+    const back = new URL(redirectUri);
+    expect(back.pathname).toBe("/setup/sign-in/callback/github");
+    back.searchParams.set("code", stub.authorize(app, "kim", { redirectUri, codeChallenge: authorize.searchParams.get("code_challenge") ?? "" }));
+    back.searchParams.set("state", authorize.searchParams.get("state") ?? "");
+    // Omar completes setup before GitHub's return reaches the install.
+    expect((await signInFromSetup(operator, app, "omar")).status).toBe(302);
+    const sessionsBefore = (await install.owner.query("SELECT id FROM web_sessions ORDER BY id")).rows;
+    expect(sessionsBefore).toHaveLength(1);
+
+    const answer = await other.get(back.href);
+
+    expect(answer.status).toBe(404);
+    expect((await install.owner.query("SELECT id FROM web_sessions ORDER BY id")).rows).toEqual(sessionsBefore);
+    expect(await install.signIn.session(new Headers({ cookie: other.jar.header() }))).toBeUndefined();
+    expect(await userRecords(install)).toEqual({ users: 1, accounts: 1 });
+    expect(await members(install)).toEqual([{ login: "omar", role: "admin" }]);
+  });
+
   it("completes with nothing connected when the App has no installation yet", async () => {
     const install = await start();
     const { operator, app } = await createApp(install);

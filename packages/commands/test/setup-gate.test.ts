@@ -123,6 +123,8 @@ describe.each([
     ["GET", "/.well-known/oauth-protected-resource"],
     ["GET", "/schemas/packet/v1-beta.json"],
     ["POST", "/api/auth/sign-in/social"],
+    // GitHub's return to the usual sign-in; the setup screen's sign-in returns under /setup instead.
+    ["GET", "/api/auth/callback/github?code=3584d83530557fdd1f46&state=Q2hvb3NlIGEgc3RhdGU"],
   ])("answers the API call %s %s with 503 setup-required", async (method, path) => {
     await arrange();
     expect(await ask(createSetupGate({ database: db, url: ORIGIN }), path, { method })).toEqual(setupRequired);
