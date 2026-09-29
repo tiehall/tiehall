@@ -157,13 +157,33 @@ describe("naming the company", { timeout: 60_000 }, () => {
   it("refuses an empty name, a name longer than 100 characters and one with a control character with 400, changing nothing", async () => {
     const install = await start();
     const operator = await enterCode(install);
-    for (const name of ["", "   ", "x".repeat(101), "Acme\u0007"]) {
+    for (const name of ["", "   ", "x".repeat(101), "Acme\u0007", "Acme\nCorp"]) {
       const answer = await operator.post("/setup/company", { name });
       expect(answer.status).toBe(400);
       expect(((await answer.json()) as { type: string }).type).toBe("https://tiehall.com/problems/invalid-input");
     }
+    // The org keeps the name it had, none yet.
+    expect((await install.owner.query("SELECT name FROM orgs")).rows).toEqual([{ name: null }]);
     expect((await operator.post("/setup/company", { name: "x".repeat(100) })).status).toBe(303);
     expect((await install.owner.query("SELECT length(name) AS length FROM orgs")).rows).toEqual([{ length: 100 }]);
+  });
+
+  // v1 offers no way to rename the company once setup has completed (self-host-install: Setup names the company and
+  // makes the first admin; teams-and-roles: One org per install; github-layer-hardening: D50 (9)).
+  it("answers a new name posted once setup has completed with 404, and the org keeps its name", async () => {
+    const install = await start();
+    const { operator, app } = await createApp(install);
+    // A second browser opened a setup session before setup completed.
+    const other = await enterCode(install);
+    await stub.install(app, { account: "acme" });
+    expect((await signInFromSetup(operator, app, "omar")).status).toBe(302);
+
+    for (const browserOf of [operator, other]) {
+      const answer = await browserOf.post("/setup/company", { name: "Acme Corp" });
+      expect(answer.status).toBe(404);
+      expect(((await answer.json()) as { type: string }).type).toBe("https://tiehall.com/problems/route-not-found");
+    }
+    expect((await install.owner.query("SELECT name FROM orgs")).rows).toEqual([{ name: "Acme" }]);
   });
 
   it("refuses a name from another origin, or from a browser without a setup session, with 403", async () => {
