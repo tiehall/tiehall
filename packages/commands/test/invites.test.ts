@@ -205,26 +205,26 @@ describe("creating an invite", () => {
 // up after the call is authorized and before its write transaction opens and its confirmation is used, so a
 // slow GitHub holds no connection in a transaction and no lock, and a GitHub that fails leaves the confirmation
 // unused, so the admin can post the same review page again.
-describe("creating an invite while GitHub answers slowly or fails", () => {
-  /** Makes the install reach GitHub through this fetch until the test ends, with the client's timeout lowered when a test gives one. */
-  async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>, timeoutMs?: number): Promise<void> {
-    install.useGitHub(
-      createInstallGitHub({
-        database: install.db,
-        secrets: () => install.box,
-        apiUrl: stub.apiUrl,
-        fetch: through,
-        logger: install.logger,
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-      }),
-    );
-    try {
-      await run();
-    } finally {
-      install.useGitHub(harness.github);
-    }
+/** Makes the install reach GitHub through this fetch until the test ends, with the client's timeout lowered when a test gives one. */
+async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>, timeoutMs?: number): Promise<void> {
+  install.useGitHub(
+    createInstallGitHub({
+      database: install.db,
+      secrets: () => install.box,
+      apiUrl: stub.apiUrl,
+      fetch: through,
+      logger: install.logger,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    }),
+  );
+  try {
+    await run();
+  } finally {
+    install.useGitHub(harness.github);
   }
+}
 
+describe("creating an invite while GitHub answers slowly or fails", () => {
   /** The other sessions of this database that are in a transaction and waiting for their client, such as for GitHub. */
   async function idleInTransaction(): Promise<string[]> {
     const { rows } = await install.owner.query<{ state: string }>(
@@ -326,11 +326,124 @@ function answerAfter(signal: AbortSignal | null | undefined, delayMs: number, an
   });
 }
 
+// One pending invite per account (teams-and-roles: Invites by GitHub username; teams-and-roles: Revoking an
+// invite; D50 (11)): a new invite for an account that has a pending invite, neither accepted, revoked nor
+// expired, replaces it. The older invite is revoked in the same write that creates the new one, and both are
+// security events; an invite that is no longer pending is left as it is.
+describe("a new invite for an account with a pending invite", () => {
+  let pia: WebSessionCaller;
+
+  beforeAll(async () => {
+    pia = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "pia" }), sessionId: randomUUID() };
+    for (const login of ["rae-dev", "rex-dev", "rio-dev"]) accounts.set(login, stub.addUser({ login }));
+  });
+
+  interface Invite {
+    id: string;
+    role: string;
+    created_at: Date;
+    revoked_at: Date | null;
+    revoked_by: string | null;
+    accepted_at: Date | null;
+  }
+
+  async function allInvitesFor(login: string): Promise<Invite[]> {
+    const { rows } = await install.owner.query<Invite>(
+      "SELECT id, role, created_at, revoked_at, revoked_by, accepted_at FROM invites WHERE github_account_id = $1 ORDER BY created_at, id",
+      [accounts.get(login)!.id],
+    );
+    return rows;
+  }
+
+  /** The account's invites that neither a sign-in accepted nor an admin revoked, and that have not expired. */
+  async function pendingFor(login: string): Promise<string[]> {
+    const { rows } = await install.owner.query<{ id: string }>(
+      "SELECT id FROM invites WHERE github_account_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()",
+      [accounts.get(login)!.id],
+    );
+    return rows.map(({ id }) => id);
+  }
+
+  it("revokes the pending invite in the same write, records both, lists one invite, and the sign-in accepts the new one with its role", async () => {
+    const first = await invited("rae-dev");
+    lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+
+    expect((await install.confirm(ada, "invites.create", { login: "rae-dev", role: "admin" })).status).toBe(200);
+
+    const [older, newer] = await allInvitesFor("rae-dev");
+    expect(older).toMatchObject({ id: first, role: "member", revoked_by: ada.userId, accepted_at: null });
+    expect(newer).toMatchObject({ role: "admin", revoked_at: null, accepted_at: null });
+    // In the same write: the revocation's time is the transaction's, the same as the new invite's creation.
+    expect(older!.revoked_at).toEqual(newer!.created_at);
+    expect(await eventsSince()).toEqual([
+      { type: "invite.revoked", class: "security", data: { inviteId: first }, actor_user_id: ada.userId },
+      { type: "invite.created", class: "security", data: { inviteId: newer!.id, role: "admin" }, actor_user_id: ada.userId },
+    ]);
+    const listed = await install.web(ada).read<{ invites: { id: string; githubLogin: string; role: string }[] }>("invites.list", {});
+    expect(listed.ok && listed.output.invites.filter(({ githubLogin }) => githubLogin === "rae-dev")).toEqual([
+      expect.objectContaining({ id: newer!.id, role: "admin" }),
+    ]);
+
+    expect((await harness.signIn("rae-dev")).response.status).toBe(302);
+    expect(await roleOf("rae-dev")).toBe("admin");
+    const [stillRevoked, accepted] = await allInvitesFor("rae-dev");
+    expect(accepted!.accepted_at).not.toBeNull();
+    expect(stillRevoked).toMatchObject({ revoked_by: ada.userId, accepted_at: null });
+  });
+
+  it("leaves exactly one pending invite when two admins confirm invites for the same account at once", { timeout: 30_000 }, async () => {
+    // Both look-ups are held until both are asked, so both writes start together.
+    let arrived = 0;
+    let bothAsked: () => void = () => {};
+    const together = new Promise<void>((resolve) => (bothAsked = resolve));
+    await reachingGitHubThrough(
+      async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (url.pathname === "/users/rex-dev") {
+          arrived += 1;
+          if (arrived === 2) bothAsked();
+          await together;
+        }
+        return fetch(input, init);
+      },
+      async () => {
+        const answers = await Promise.all([
+          install.confirm(ada, "invites.create", { login: "rex-dev", role: "member" }),
+          install.confirm(pia, "invites.create", { login: "rex-dev", role: "admin" }),
+        ]);
+        expect(answers.map(({ status }) => status)).toEqual([200, 200]);
+      },
+    );
+    const all = await allInvitesFor("rex-dev");
+    expect(all).toHaveLength(2);
+    expect(await pendingFor("rex-dev")).toHaveLength(1);
+    expect(all.filter(({ revoked_at }) => revoked_at !== null)).toHaveLength(1);
+    const types = (await eventsSince()).map(({ type }) => type).sort();
+    expect(types).toEqual(["invite.created", "invite.created", "invite.revoked"]);
+  });
+
+  it("leaves an invite that is revoked or expired as it is, and records no revocation for it", async () => {
+    const revoked = await invited("rio-dev");
+    expect(await revoke(ada, revoked)).toMatchObject({ ok: true });
+    const expired = await invited("rio-dev");
+    await install.owner.query("UPDATE invites SET created_at = now() - interval '8 days', expires_at = now() - interval '1 day' WHERE id = $1", [expired]);
+    const before = await allInvitesFor("rio-dev");
+    lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+
+    expect((await install.confirm(pia, "invites.create", { login: "rio-dev" })).status).toBe(200);
+
+    const after = await allInvitesFor("rio-dev");
+    expect(after).toHaveLength(3);
+    expect(after.slice(0, 2)).toEqual(before);
+    expect(after.find(({ id }) => id === expired)).toMatchObject({ revoked_at: null, revoked_by: null });
+    expect((await eventsSince()).map(({ type }) => type)).toEqual(["invite.created"]);
+  });
+});
+
 /** Creates an invite for this username as Ada, with the confirmation step; returns its id. */
 async function invited(login: string): Promise<string> {
   expect((await install.confirm(ada, "invites.create", { login })).status).toBe(200);
-  const [created] = await invitesFor(login);
-  return created!.id;
+  return (await invitesFor(login)).at(-1)!.id;
 }
 
 function revoke(caller: WebSessionCaller, inviteId: string) {

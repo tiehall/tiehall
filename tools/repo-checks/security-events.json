@@ -66,6 +66,14 @@
           }
         },
         {
+          "action": "the revocation of an invite that a new one replaces",
+          "event": "invite.revoked",
+          "test": {
+            "file": "packages/commands/test/invites.test.ts",
+            "case": "revokes the pending invite in the same write, records both, lists one invite, and the sign-in accepts the new one with its role"
+          }
+        },
+        {
           "action": "a member's removal by an admin, with the block it records",
           "event": "member.removed",
           "test": {

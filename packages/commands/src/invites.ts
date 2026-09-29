@@ -7,6 +7,7 @@ import { defineHandler, definePreparedHandler, type Handlers } from "./execute.t
 import { GitHubUnavailableError } from "./github-client.ts";
 import { anyConnectedInstallation } from "./github-installations.ts";
 import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
+import type { OrgContext } from "./with-org.ts";
 
 // Invites (teams-and-roles: Invites by GitHub username; sign-in: Who may sign
 // in; activity-log: Which actions are security events; agent-safety: Actions
@@ -31,6 +32,18 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // An invite for a person who is already a member would admit nobody, so it is
 // refused with 409. The invite and its security event commit together.
 //
+// One pending invite per account (github-layer-hardening: design.md,
+// Decisions this change rests on: D50 (11); Technical decisions: T6): a new
+// invite for an account that has a
+// pending invite, one neither accepted, revoked nor expired, replaces it. The
+// older invite is revoked, with its own invite.revoked event, in the write
+// that creates the new one and records invite.created, so the invites page
+// never lists two invites for one person and the sign-in never has to choose
+// between two roles. An invite that is accepted, revoked or expired is left
+// as it is. The write holds a lock on the account from its start, so two
+// admins inviting the same person at once leave one pending invite: the
+// second write waits, then replaces the first one's invite.
+//
 // Revoking an invite (teams-and-roles: Revoking an invite): an admin revokes
 // a pending invite in the web UI, without the confirmation step, because it
 // only narrows who may join; the web UI's write checks still apply. A revoked
@@ -47,6 +60,17 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 
 /** How long an invite stays valid after it is created. */
 export const INVITE_LIFETIME_DAYS = 7;
+
+/**
+ * Locks, until the transaction ends, the creation of invites for this GitHub
+ * account, by its numeric id: a lock on the account rather than on a row,
+ * because no row exists yet when neither admin's invite does. The write takes
+ * it before any other lock and before its first event, as the lock order has
+ * it (event-sequence.ts), and no other write takes it.
+ */
+async function lockInvitesOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAccountId: number): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId} invite account ${githubAccountId}`}, 0))`);
+}
 
 export const INVITE_HANDLERS: Handlers = {
   [createInvite.id]: definePreparedHandler(
@@ -77,6 +101,9 @@ export const INVITE_HANDLERS: Handlers = {
     },
     async ({ role }, context) => {
       const { appId, account } = context.prepared;
+      // Invites for one account are created one at a time, so two admins inviting the same person at once cannot
+      // both find no pending invite: the second waits here, then replaces the first one's.
+      await lockInvitesOf(context, account.id);
       // What the lookup rested on, read again now: the App it went through, and whether the person is a member.
       const [app] = await context.tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, context.orgId));
       if (app?.appId !== appId) {
@@ -91,6 +118,21 @@ export const INVITE_HANDLERS: Handlers = {
         if (member !== undefined) throw new Refusal("conflict", "That GitHub account's person is already a member of the install.");
       }
       return context.write(async (writer) => {
+        // The account's pending invite, if any, is revoked in the write that creates the new one.
+        const replaced = await writer.tx
+          .update(invites)
+          .set({ revokedAt: sql`now()`, revokedBy: context.member!.userId })
+          .where(
+            and(
+              eq(invites.orgId, writer.orgId),
+              eq(invites.githubAccountId, account.id),
+              isNull(invites.acceptedAt),
+              isNull(invites.revokedAt),
+              gt(invites.expiresAt, sql`now()`),
+            ),
+          )
+          .returning({ id: invites.id });
+        for (const { id } of replaced) await writer.record(inviteRevoked, { inviteId: id });
         const [created] = await writer.tx
           .insert(invites)
           .values({
