@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { createHomeRoute, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type CookieJar, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
 
@@ -178,7 +179,7 @@ describe("a member's sign-in that an admin removal races", () => {
     expect(events[1]!.data).toMatchObject({ userId: rae });
 
     // Pia invites Rae again, and Rae rejoins through it: only the new sign-in's session works.
-    expect((await install.confirm(pia, "invites.create", { login: "rae-acme" })).status).toBe(200);
+    expect((await invite(install, pia, "rae-acme")).status).toBe(200);
     const rejoined = await harness.signIn("rae-acme");
     expect(rejoined.response.status).toBe(302);
     expect(await sessionState(rejoined.jar)).toBe(rae);

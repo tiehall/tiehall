@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import {
+  createInstallGitHub,
   createInvitesRoute,
   createMembersRoute,
   createSignInPolicyRoute,
@@ -15,6 +17,7 @@ import {
 } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
+import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
 // The pages of the web UI for members, invites, teams and the sign-in policy
 // (teams-and-roles: What admins and members may do; teams-and-roles: Invites
@@ -26,8 +29,11 @@ import { addUser } from "./support/members.ts";
 // admin also finds there the links to the review pages that change a role or
 // remove a member, and the forms that set and clear the bot flag. The
 // invites, teams and sign-in policy pages are an admin's: an admin invites a
-// GitHub username through the invite's review page and revokes a waiting
-// invite with a form; creates, renames and rekeys teams and adds people to
+// GitHub username through a form that looks it up on GitHub at once and then
+// through the invite's review page, which names the account it found
+// (github-layer-hardening: design.md, Decisions this change rests on:
+// D50 (12)), and revokes a waiting invite with a form; creates, renames and
+// rekeys teams and adds people to
 // them and removes them with forms; and changes the sign-in policy through
 // its review page. The reads behind the pages are admin actions too, offered
 // on no agent surface. Every page runs its reads through execute() in a
@@ -36,17 +42,29 @@ import { addUser } from "./support/members.ts";
 // browser without a session is sent to sign in first (D28 #66).
 
 let install: TestInstall;
+let stub: GitHubStub;
+let harness: SignInHarness;
 let ada: WebSessionCaller;
 let dana: WebSessionCaller;
 let bot: string;
 let lee: string;
+/** The GitHub accounts the stub knows, by login. */
+const accounts = new Map<string, StubUser>();
 
 beforeAll(async () => {
   install = await startTestInstall();
+  // The GitHub the invite form looks usernames up on: the install's App, installed on acme and connected.
+  stub = await startGitHubStub();
+  for (const login of ["omar-acme", "lee-dev", "sam-dev", "zoe-dev", "kim-dev"]) accounts.set(login, stub.addUser({ login }));
+  stub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
+  harness = await startSignIn(install, stub);
+  await stub.install(harness.app, { account: "acme" });
+  await harness.connect("acme");
+  install.useGitHub(harness.github);
   ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
   dana = { kind: "web_session", userId: await addUser(install.owner, { role: "member", login: "dana" }), sessionId: randomUUID() };
   bot = await addUser(install.owner, { role: "member", login: "acme-ci-bot" });
-  lee = await addUser(install.owner, { role: "member", login: "lee-dev" });
+  lee = await addUser(install.owner, { role: "member", login: "lee-dev", githubAccountId: accounts.get("lee-dev")!.id });
   await install.owner.query("UPDATE users SET bot = true WHERE id = $1", [bot]);
   await install.owner.query("INSERT INTO teams (org_id, key, name) SELECT id, 'OPS', 'Operations' FROM orgs");
   await install.owner.query("INSERT INTO team_members (org_id, team_id, user_id) SELECT org_id, id, $1 FROM teams WHERE key = 'OPS'", [bot]);
@@ -54,7 +72,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await install.close();
+  await stub?.close();
+  await install?.close();
 });
 
 const options = (session: WebSessionCaller | undefined) => ({
@@ -198,13 +217,111 @@ describe("the invites page", () => {
     expect(html).toContain('<option value="member" selected>member</option>');
   });
 
-  it("sends the invite form to the invite's review page, with the username and the role as its input, and creates nothing", async () => {
-    const answer = await get(invitesPage(ada), `${INVITES_PATH}?login=lee-dev&role=admin`);
+  it("looks the invite form's username up at once and sends the admin to the invite's review page, with the account's numeric id and the role as its input, and creates nothing", async () => {
+    const from = stub.received.length;
+    const answer = await get(invitesPage(ada), `${INVITES_PATH}?login=sam-dev&role=admin`);
     expect(answer.status).toBe(303);
-    expect(answer.headers.get("location")).toBe(reviewLink("invites.create", { login: "lee-dev", role: "admin" }));
-    const trimmed = await get(invitesPage(ada), `${INVITES_PATH}?login=%20sam-dev%20&role=member`);
-    expect(trimmed.headers.get("location")).toBe(reviewLink("invites.create", { login: "sam-dev", role: "member" }));
+    expect(answer.headers.get("location")).toBe(reviewLink("invites.create", { accountId: accounts.get("sam-dev")!.id, role: "admin" }));
+    expect(stub.received.slice(from).map(({ method, path }) => `${method} ${path}`)).toContain("GET /users/sam-dev");
+    const trimmed = await get(invitesPage(ada), `${INVITES_PATH}?login=%20zoe-dev%20`);
+    expect(trimmed.headers.get("location")).toBe(reviewLink("invites.create", { accountId: accounts.get("zoe-dev")!.id, role: "member" }));
     expect((await install.owner.query("SELECT count(*)::int AS n FROM invites")).rows).toEqual([{ n: 0 }]);
+  });
+
+  // Each refusal of the form comes before any review page, as the error model's problem, and creates nothing.
+  describe("refuses the invite form, with no review page", () => {
+    async function refusal(answer: Response): Promise<{ status: number; type: unknown }> {
+      expect(answer.headers.get("location")).toBeNull();
+      return { status: answer.status, type: ((await answer.json()) as { type?: unknown }).type };
+    }
+
+    /** Makes the install reach GitHub through this fetch, with the client's timeout lowered when a test gives one, until the run ends. */
+    async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>, timeoutMs?: number): Promise<void> {
+      install.useGitHub(
+        createInstallGitHub({
+          database: install.db,
+          secrets: () => install.box,
+          apiUrl: stub.apiUrl,
+          fetch: through,
+          logger: install.logger,
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        }),
+      );
+      try {
+        await run();
+      } finally {
+        install.useGitHub(harness.github);
+      }
+    }
+
+    const lookUpOfKim = (input: string | URL | Request) => new URL(input instanceof Request ? input.url : String(input)).pathname === "/users/kim-dev";
+
+    afterEach(async () => {
+      expect((await install.owner.query("SELECT count(*)::int AS n FROM invites")).rows).toEqual([{ n: 0 }]);
+    });
+
+    it("with 404 for a login that names no GitHub account, or an organization", async () => {
+      for (const login of ["no-such-user-9f2", "acme"]) {
+        expect(await refusal(await get(invitesPage(ada), `${INVITES_PATH}?login=${login}`))).toEqual({
+          status: 404,
+          type: "https://tiehall.com/problems/record-not-found",
+        });
+      }
+    });
+
+    it("with 409 for an account whose person is already a member", async () => {
+      expect(await refusal(await get(invitesPage(ada), `${INVITES_PATH}?login=lee-dev`))).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+    });
+
+    it("with 409 when no installation of the App is connected", async () => {
+      const { rows } = await install.owner.query<{ org_id: string; installation_id: string; connected_at: Date }>(
+        "DELETE FROM github_connected_installations RETURNING org_id, installation_id, connected_at",
+      );
+      try {
+        expect(await refusal(await get(invitesPage(ada), `${INVITES_PATH}?login=kim-dev`))).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+      } finally {
+        for (const row of rows) {
+          await install.owner.query("INSERT INTO github_connected_installations (org_id, installation_id, connected_at) VALUES ($1, $2, $3)", [
+            row.org_id,
+            row.installation_id,
+            row.connected_at,
+          ]);
+        }
+      }
+    });
+
+    it("with 502 integration-unavailable when GitHub answers the look-up with 500", async () => {
+      await reachingGitHubThrough(
+        async (input, init) => (lookUpOfKim(input) ? new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } }) : fetch(input, init)),
+        async () => {
+          expect(await refusal(await get(invitesPage(ada), `${INVITES_PATH}?login=kim-dev`))).toEqual({
+            status: 502,
+            type: "https://tiehall.com/problems/integration-unavailable",
+          });
+        },
+      );
+    });
+
+    // Not answering within the client's timeout, lowered here from its 10 seconds.
+    it("with 502 integration-unavailable when GitHub does not answer the look-up in time", async () => {
+      await reachingGitHubThrough(
+        async (input, init) => {
+          if (!lookUpOfKim(input)) return fetch(input, init);
+          const signal = init?.signal;
+          return new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+            signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+          });
+        },
+        async () => {
+          expect(await refusal(await get(invitesPage(ada), `${INVITES_PATH}?login=kim-dev`))).toEqual({
+            status: 502,
+            type: "https://tiehall.com/problems/integration-unavailable",
+          });
+        },
+        200,
+      );
+    });
   });
 
   it("lets an admin revoke a waiting invite, with no confirmation step, as a security event", async () => {
@@ -225,13 +342,22 @@ describe("the invites page", () => {
     expect(refusedPage.status).toBe(403);
     // The refusal shows no invite.
     expect(await refusedPage.text()).not.toContain("sam-dev");
-    expect((await get(invitesPage(dana), `${INVITES_PATH}?login=lee-dev&role=admin`)).status).toBe(403);
+    expect((await get(invitesPage(dana), `${INVITES_PATH}?login=zoe-dev&role=admin`)).status).toBe(403);
     expect((await post(invitesPage(dana), INVITES_PATH, dana, { action: "revoke", invite: waiting })).status).toBe(403);
     expect((await post(invitesPage(ada), INVITES_PATH, ada, { action: "revoke", invite: waiting }, { origin: "https://evil.example", "sec-fetch-site": "cross-site" })).status).toBe(403);
     expect((await install.owner.query("SELECT revoked_at FROM invites WHERE id = $1", [waiting])).rows).toEqual([{ revoked_at: null }]);
     const anonymous = await get(invitesPage(undefined), INVITES_PATH);
     expect(anonymous.status).toBe(303);
     expect(anonymous.headers.get("location")).toBe(`/sign-in?return=${encodeURIComponent(INVITES_PATH)}`);
+  });
+
+  it("looks the username up through invites.find_account, which only admins run and no agent surface offers", async () => {
+    expect(await install.web(ada).read("invites.find_account", { login: "zoe-dev" })).toEqual({
+      ok: true,
+      output: { account: { id: accounts.get("zoe-dev")!.id, githubLogin: "zoe-dev" } },
+    });
+    expect(await install.web(dana).read("invites.find_account", { login: "zoe-dev" })).toMatchObject({ ok: false, problem: { status: 403 } });
+    await expect(install.execute("invites.find_account", adminsToken(), { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
   });
 
   it("reads the waiting invites through invites.list, which only admins run and no agent surface offers", async () => {

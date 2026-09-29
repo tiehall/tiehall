@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type CookieJar, type SignInHarness } from "./support/sign-in.ts";
 
@@ -101,7 +102,7 @@ describe("a removed organization member", () => {
   });
 
   it("is admitted by an invite created after the removal, which clears the block, and the sign-in's security events name the clearing", async () => {
-    expect((await install.confirm(ada, "invites.create", { login: "lee-acme" })).status).toBe(200);
+    expect((await invite(install, ada, "lee-acme")).status).toBe(200);
     const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM invites WHERE role = 'member' AND github_login = 'lee-acme'");
     const from = await lastEvent();
     const { response, jar } = await harness.signIn("lee-acme");

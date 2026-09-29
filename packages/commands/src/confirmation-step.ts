@@ -3,7 +3,8 @@ import { Refusal, type RefusalIssue, type Review } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationNonces } from "./confirmations.ts";
-import { assertRoleAllows } from "./members.ts";
+import type { InstallGitHub } from "./install-github.ts";
+import { assertRoleAllows, type Member } from "./members.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import type { Store } from "./write.ts";
 
@@ -28,14 +29,54 @@ import type { Store } from "./write.ts";
 //   session and the command with that exact input, or, for a proposal's
 //   confirmation, what the proposal proposes and the request it applies to,
 //   which stores nothing (agent-safety: One confirmation approves one action).
+//
+// A step before the review's transaction (github-layer-hardening: design.md,
+// Technical decisions: T6). No call to GitHub is made inside a transaction,
+// so a review that must ask GitHub, such as the invite's, which reads the
+// account it names by its id, gives the review a step, as definePreparedHandler
+// gives execution one (execute.ts): the review first authorizes the page, the
+// membership re-check, the input and the role, in a short read-only
+// transaction; then runs the step, outside any transaction, where it may read
+// in read-only transactions of its own and call GitHub; then reviews in its
+// read-only transaction with what the step returned. A step that fails, such
+// as when GitHub does not answer, refuses the page.
 
 /** What a review reads with: the call's read-only transaction, the install's org and the signed-in user. */
 export interface ReviewContext extends OrgContext {
   readonly caller: WebSessionCaller;
+  /** What the review's step before its transaction returned; undefined for a review without one. */
+  readonly prepared: unknown;
 }
 
-/** Says what a command that needs the confirmation step will do with this parsed input. */
-export type ReviewHandler = (input: unknown, context: ReviewContext) => Promise<Review>;
+/** What a review's step before its transaction gets besides the parsed input. */
+export interface ReviewPrepareContext {
+  readonly caller: WebSessionCaller;
+  /** The membership the authorization read. */
+  readonly member: Member | undefined;
+  /** The install's GitHub App, which the step may ask; undefined where the process has none. */
+  readonly github: InstallGitHub | undefined;
+  /** Reads, in a short read-only transaction of its own, as the install's org. */
+  read<T>(read: (context: OrgContext) => Promise<T>): Promise<T>;
+}
+
+/** Says what a command that needs the confirmation step will do with this parsed input; it may have a step before its transaction. */
+export type ReviewHandler = ((input: unknown, context: ReviewContext) => Promise<Review>) & {
+  readonly prepare?: (input: unknown, context: ReviewPrepareContext) => Promise<unknown>;
+};
+
+/**
+ * A review that must ask GitHub before it can say what the action will do:
+ * its step, `prepare`, runs outside any transaction, before the review's
+ * read-only transaction, and what it returns is the review's `prepared`.
+ */
+export function definePreparedReview<P>(
+  prepare: (input: unknown, context: ReviewPrepareContext) => Promise<P>,
+  review: (input: unknown, context: ReviewContext & { readonly prepared: P }) => Promise<Review>,
+): ReviewHandler {
+  return Object.assign((input: unknown, context: ReviewContext) => review(input, context as ReviewContext & { readonly prepared: P }), {
+    prepare: prepare as (input: unknown, context: ReviewPrepareContext) => Promise<unknown>,
+  });
+}
 
 /** One review per command of the catalog that needs the confirmation step, by the command's id. */
 export type Reviews = Readonly<Record<string, ReviewHandler>>;
@@ -76,6 +117,8 @@ export interface ConfirmationStepServices {
   subjects?: ConfirmationSubjects;
   store: Pick<Store, "database">;
   confirmations: ConfirmationNonces;
+  /** The install's GitHub App, which a review's step before its transaction may ask. */
+  github?: InstallGitHub;
 }
 
 export interface ConfirmationStep {
@@ -113,17 +156,36 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
       const handler = reviews[commandId];
       if (definition === undefined || !definition.confirm || handler === undefined) throw noReviewPage();
       if (caller.kind !== "web_session") throw noReviewPage();
+      /** The page's own refusal, the input and the role, in the given transaction; returns the parsed input. */
+      const authorize = (context: OrgContext): unknown => {
+        if (refusal !== undefined) throw refusal;
+        const parsed = definition.input.safeParse(input);
+        if (!parsed.success) {
+          throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+        }
+        assertRoleAllows(definition, context.member);
+        return parsed.data as unknown;
+      };
+      // The review's step before its transaction, once the page is authorized.
+      let prepared: unknown;
+      if (handler.prepare !== undefined) {
+        const authorized = await withOrg(services.store.database, async (context) => ({ input: authorize(context), member: context.member }), {
+          readOnly: true,
+          forUser: caller.userId,
+        });
+        prepared = await handler.prepare(authorized.input, {
+          caller,
+          member: authorized.member,
+          github: services.github,
+          read: (read) => withOrg(services.store.database, read, { readOnly: true }),
+        });
+      }
       const reviewed = await withOrg(
         services.store.database,
         async (context) => {
-          if (refusal !== undefined) throw refusal;
-          const parsed = definition.input.safeParse(input);
-          if (!parsed.success) {
-            throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
-          }
-          assertRoleAllows(definition, context.member);
-          const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
-          return { input: parsed.data as unknown, subject, review: await handler(parsed.data, { ...context, caller }) };
+          const parsed = authorize(context);
+          const subject = await confirmationSubjectOf(services.subjects, commandId, parsed, context);
+          return { input: parsed, subject, review: await handler(parsed, { ...context, caller, prepared }) };
         },
         { readOnly: true, forUser: caller.userId },
       );

@@ -5,10 +5,12 @@ import { GITHUB_LOGIN, role } from "./schemas.ts";
 // Invites (teams-and-roles: Invites by GitHub username; teams-and-roles: What
 // admins and members may do; agent-safety: Actions that need the confirmation
 // step). An admin invites a person by their GitHub username, in the web UI,
-// with the confirmation step, so no agent surface offers it. Tiehall resolves
-// the username to the GitHub account's numeric id when the invite is created,
-// and the invite is bound to that account; it names a role, `member` unless
-// it names `admin`, and expires 7 days after it is created. An admin revokes
+// with the confirmation step, so no agent surface offers it. The invite form
+// looks the username up first (invites.find_account), and the invite it leads
+// to names the GitHub account by its numeric id, the one the review page
+// shows, so the invite is bound to that account (github-layer-hardening:
+// design.md, Decisions this change rests on: D50 (12)); it names a role,
+// `member` unless it names `admin`, and expires 7 days after it is created. An admin revokes
 // a pending invite in the web UI without the confirmation step, because that
 // only narrows who may join (teams-and-roles: Revoking an invite). The web
 // UI's invites page lists the invites that wait to be accepted, for admins
@@ -27,11 +29,34 @@ export const invite = z.object({
   expiresAt: z.iso.datetime(),
 });
 
+/** A GitHub account's numeric id, which never changes, whatever its login becomes. */
+const githubAccountId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+
+export const findInviteAccount = defineCommand({
+  id: "invites.find_account",
+  summary:
+    "Look up which GitHub account a username names, before an invite for it is reviewed: a person's account, whose person is not a member of the install yet.",
+  input: z.object({ login: z.string().regex(GITHUB_LOGIN).meta({ description: "The GitHub username of the person to invite." }) }),
+  output: z.object({
+    account: z.object({
+      id: githubAccountId,
+      /** The account's login now, as GitHub gives it: a GitHub account's, not a Tiehall user's. */
+      githubLogin: z.string().regex(GITHUB_LOGIN),
+    }),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "members",
+  surfaces: [],
+  stability: "beta",
+});
+
 export const createInvite = defineCommand({
   id: "invites.create",
-  summary: "Invite a person to the install by their GitHub username, with the role member unless the invite names admin.",
+  summary: "Invite a person to the install by their GitHub account's numeric id, with the role member unless the invite names admin.",
   input: z.object({
-    login: z.string().regex(GITHUB_LOGIN).meta({ description: "The GitHub username of the person to invite." }),
+    accountId: githubAccountId.meta({ description: "The numeric id of the GitHub account to invite, as the invite form's look-up of its username found it." }),
     role: role.default("member"),
   }),
   output: z.object({ invite }),
@@ -69,4 +94,4 @@ export const listInvites = defineCommand({
   stability: "beta",
 });
 
-export const INVITE_COMMANDS = [createInvite, revokeInvite, listInvites];
+export const INVITE_COMMANDS = [findInviteAccount, createInvite, revokeInvite, listInvites];

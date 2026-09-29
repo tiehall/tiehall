@@ -4,6 +4,7 @@ import {
   changeTeamKey,
   createInvite,
   createTeam,
+  findInviteAccount,
   getSignInPolicy,
   listInvites,
   listMembers,
@@ -41,9 +42,12 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   the review page that removes them, and a form that sets or clears their
 //   bot flag, which needs no confirmation step.
 // - /admin/invites is an admin's: a form that names a GitHub username and a
-//   role leads to the invite's review page, where the invite is created with
-//   the confirmation step, and each invite that waits to be accepted has a
-//   form that revokes it, with no confirmation step.
+//   role looks the username up on GitHub at once, refusing a login that names
+//   no person's account (404) or a member's (409), and leads to the review
+//   page of an invite for the account it names, by its numeric id, where the
+//   invite is created with the confirmation step (github-layer-hardening:
+//   design.md, Decisions this change rests on: D50 (12)); each invite that
+//   waits to be accepted has a form that revokes it, with no confirmation step.
 // - /admin/teams is an admin's: forms that create a team, rename it, change
 //   its key, and add a member of the install to it or remove them. None of
 //   these needs the confirmation step (agent-safety: Actions that need the
@@ -173,9 +177,13 @@ export function createInvitesRoute(options: PageRouteOptions): PageRoute {
     async get(query, { read, csrf }) {
       // An admin's page: the read refuses a member with 403 before anything else.
       const { invites } = await read<{ invites: Invite[] }>(listInvites.id, {});
-      // The invite form leads to the invite's review page, which creates it with the confirmation step.
+      // The invite form looks the username up at once, and leads to the review page of an invite for the account it
+      // names, by its numeric id, which creates it with the confirmation step.
       const login = query.get("login")?.trim();
-      if (login !== undefined && login !== "") return seeOther(reviewPath(createInvite.id, { login, role: query.get("role") ?? "member" }));
+      if (login !== undefined && login !== "") {
+        const { account } = await read<{ account: { id: number } }>(findInviteAccount.id, { login });
+        return seeOther(reviewPath(createInvite.id, { accountId: account.id, role: query.get("role") ?? "member" }));
+      }
       return htmlAnswer(invitesPage(invites, csrf));
     },
     async post(form, { write }) {
@@ -201,7 +209,7 @@ function invitesPage(invites: readonly Invite[], csrf: string): string {
       "      <h1>Invites</h1>",
       adminNav(),
       "      <h2>Invite a person</h2>",
-      `      <p>An invite names a GitHub username and a role. When you confirm it, Tiehall binds it to that GitHub account, whatever its login becomes. The person joins by signing in with that account within ${INVITE_LIFETIME_DAYS} days; no email is sent.</p>`,
+      `      <p>An invite names a GitHub username and a role. Tiehall looks the username up on GitHub first, and the review page names the account it found; when you confirm, the invite is bound to that GitHub account, whatever its login becomes. The person joins by signing in with that account within ${INVITE_LIFETIME_DAYS} days; no email is sent.</p>`,
       `      <form method="get" action="${INVITES_PATH}">`,
       '        <p><label for="invite-login">GitHub username</label> <input type="text" id="invite-login" name="login" required></p>',
       '        <p><label for="invite-role">Role</label> <select id="invite-role" name="role"><option value="member" selected>member</option><option value="admin">admin</option></select></p>',

@@ -4,6 +4,7 @@ import { startGitHubStub, type GitHubStub, type StubDelivery, type StubInstallat
 import { processDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { storeDelivery } from "./support/github-app.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -270,7 +271,7 @@ describe("the reconciliation", () => {
   });
 
   it("leaves members who joined through an invite alone", async () => {
-    expect((await install.confirm(pia, "invites.create", { login: "jo-acme" })).status).toBe(200);
+    expect((await invite(install, pia, "jo-acme")).status).toBe(200);
     const jo = await join("jo-acme");
     await stub.removeMember("acme", "jo-acme", { delivery: "none" });
     await reconcile();

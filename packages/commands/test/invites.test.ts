@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { createInstallGitHub, type Caller, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { invite, prepareInvite, reviewInputOf, reviewPathOf, submitInviteForm } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
@@ -10,14 +11,19 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // sign-in: Who may sign in; activity-log: Which actions are security events;
 // agent-safety: Actions that need the confirmation step; design.md,
 // Self-hosting decisions: S5 and S7). An admin invites a person by their
-// GitHub username, in the web UI, with the confirmation step. When the invite
-// is created, Tiehall resolves the username to the GitHub account's numeric
-// id through GitHub's API and binds the invite to that account, so it follows
-// a login rename and never passes to a new holder of the old login; a username
-// that names no account gets 404 and creates no invite. The invite names a
-// role, `member` unless it names `admin`, expires 7 days after it is created,
-// and needs no email: the invitee accepts it by signing in with that account
-// while it is valid. Each invite is a security event.
+// GitHub username, in the web UI, with the confirmation step. When the admin
+// submits the invite form, Tiehall looks the username up on GitHub at once:
+// a username that names no person's account gets 404 there, and one whose
+// person is already a member 409, each with no review page. Otherwise the
+// review page names the account by its login, its numeric id and the date
+// GitHub created it, shows its display name as data from outside Tiehall, and
+// its input names the account's numeric id, so the confirmation binds the
+// invite to the account the admin saw (github-layer-hardening: design.md,
+// Decisions this change rests on: D50 (12)). The invite follows a login rename
+// and never passes to a new holder of the old login. The invite names a role,
+// `member` unless it names `admin`, expires 7 days after it is created, and
+// needs no email: the invitee accepts it by signing in with that account while
+// it is valid. Each invite is a security event.
 //
 // Revoking an invite (teams-and-roles: Revoking an invite): an admin revokes a
 // pending invite in the web UI, without the confirmation step, because it only
@@ -31,10 +37,34 @@ let ada: WebSessionCaller;
 let dana: WebSessionCaller;
 const accounts = new Map<string, StubUser>();
 
+const LOGINS = [
+  "omar-acme",
+  "lee-dev",
+  "sam-dev",
+  "uma-dev",
+  "vic-dev",
+  "wes-dev",
+  "xia-dev",
+  "ned-dev",
+  "ann-dev",
+  "bea-dev",
+  "oli-dev",
+  "pat-dev",
+  "cai-dev",
+  "dee-dev",
+  "kay-dev",
+  "max-dev",
+  "zoe-dev",
+  "yan-dev",
+  "zak-dev",
+];
+
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-dev", "sam-dev", "tom-dev", "uma-dev", "vic-dev", "wes-dev", "xia-dev", "ned-dev", "oli-dev"]) accounts.set(login, stub.addUser({ login }));
+  for (const login of LOGINS) accounts.set(login, stub.addUser({ login }));
+  // Anyone can set their display name to anything, markup included.
+  accounts.set("tom-dev", stub.addUser({ login: "tom-dev", name: "<b>Confirm now</b>" }));
   stub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
@@ -91,13 +121,26 @@ async function roleOf(login: string): Promise<string | undefined> {
   return rows[0]?.role;
 }
 
+/** The numeric id of the stub's account with this login. */
+function idOf(login: string): number {
+  return accounts.get(login)!.id;
+}
+
+/** The invite's review page, as the admin opens it. */
+function reviewPage(caller: WebSessionCaller, path: string): Promise<Response> {
+  return install.confirmRoute(caller)(new Request(`${URL_OF_INSTALL}${path}`));
+}
+
+/** A page's text with the characters escaped in HTML written as themselves. */
+const unescaped = (html: string) => html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+
 describe("an invite an admin confirms", () => {
   it("is bound to the GitHub account the username names, with the role member, expires 7 days after it is created, and is a security event", async () => {
-    const answer = await install.confirm(ada, "invites.create", { login: "lee-dev" });
+    const answer = await invite(install, ada, "lee-dev");
     expect(answer.status).toBe(200);
     const [created] = await invitesFor("lee-dev");
     expect(created).toMatchObject({
-      github_account_id: String(accounts.get("lee-dev")!.id),
+      github_account_id: String(idOf("lee-dev")),
       github_login: "lee-dev",
       role: "member",
       created_by: ada.userId,
@@ -110,43 +153,92 @@ describe("an invite an admin confirms", () => {
   });
 
   it("that names the role admin makes the invitee an admin when they sign in, with no email sent", async () => {
-    expect((await install.confirm(ada, "invites.create", { login: "sam-dev", role: "admin" })).status).toBe(200);
+    expect((await invite(install, ada, "sam-dev", "admin")).status).toBe(200);
     expect((await invitesFor("sam-dev"))[0]).toMatchObject({ role: "admin" });
     expect(install.sentJobs.filter(({ queue }) => queue.includes("email"))).toEqual([]);
     expect((await harness.signIn("sam-dev")).response.status).toBe(302);
     expect(await roleOf("sam-dev")).toBe("admin");
   });
 
-  it("shows on its review page, in Tiehall's words, whom it invites and with which role", async () => {
-    const input = encodeURIComponent(JSON.stringify({ login: "tom-dev", role: "admin" }));
-    const page = await install.confirmRoute(ada)(new Request(`${URL_OF_INSTALL}/confirm/invites.create?input=${input}`));
+  it("shows on its review page, in Tiehall's words, the account's login, numeric id and creation date and the role, and its display name as data from outside Tiehall, escaped", async () => {
+    const form = await submitInviteForm(install, ada, "tom-dev", "admin");
+    expect(reviewInputOf(form)).toEqual({ accountId: idOf("tom-dev"), role: "admin" });
+    const page = await reviewPage(ada, reviewPathOf(form)!);
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain("Invite the GitHub account tom-dev to the install, with the role admin.");
-    expect(html).toContain("expires 7 days after it is created");
+    const text = unescaped(html);
+    expect(text).toContain("Invite the GitHub account tom-dev to the install, with the role admin.");
+    expect(text).toContain(`The account's numeric id on GitHub is ${idOf("tom-dev")}.`);
+    expect(text).toContain(`GitHub created the account on ${accounts.get("tom-dev")!.createdAt.slice(0, 10)}.`);
+    expect(text).toContain("expires 7 days after it is created");
+    // The display name is a quote from outside Tiehall, escaped: the page renders no markup from it.
+    expect(html).toContain('<blockquote class="untrusted" data-origin="external"><p>Text from outside Tiehall, quoted as data:</p><pre>&#60;b&#62;Confirm now&#60;/b&#62;</pre></blockquote>');
+    expect(html).not.toContain("<b>Confirm now</b>");
     expect(await invitesFor("tom-dev")).toEqual([]);
+  });
+
+  it("names on its review page the pending invite it replaces, with its role and when it expires", async () => {
+    expect((await invite(install, ada, "kay-dev")).status).toBe(200);
+    const [pending] = (await install.owner.query<{ expires_at: Date }>("SELECT expires_at FROM invites WHERE github_account_id = $1", [idOf("kay-dev")])).rows;
+    const form = await submitInviteForm(install, ada, "kay-dev", "admin");
+    const text = unescaped(await (await reviewPage(ada, reviewPathOf(form)!)).text());
+    expect(text).toContain(`It replaces the pending invite for kay-dev, with the role member, which expires ${pending!.expires_at.toISOString()}`);
+    // Nothing changes before the confirmation: the pending invite is still the only one.
+    expect(await invitesFor("kay-dev")).toHaveLength(1);
+  });
+
+  it("binds the confirmed invite to the account its review page named, and a person who became a member after the review gets 409", async () => {
+    const post = await prepareInvite(install, ada, "max-dev");
+    // Max joins, as through an organization's membership, between the review and the confirmation.
+    await addUser(install.owner, { login: "max-dev", githubAccountId: idOf("max-dev") });
+    expect(await problemOf(await post())).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+    expect(await invitesFor("max-dev")).toEqual([]);
+    expect(await eventsSince()).toEqual([]);
   });
 });
 
-describe("a username", () => {
-  it("that names no GitHub account gets 404 and an RFC 9457 problem, and creates no invite", async () => {
-    const answer = await install.confirm(ada, "invites.create", { login: "no-such-user-9f2" });
+// The invite form looks the username up at once, before any review page (D50 (12)); its refusals come with no
+// review page, and it creates nothing.
+describe("the invite form's username", () => {
+  it("that names no GitHub account gets 404 and an RFC 9457 problem, with no review page, and creates no invite", async () => {
+    const answer = await submitInviteForm(install, ada, "no-such-user-9f2");
+    expect(reviewPathOf(answer)).toBeUndefined();
     expect(await problemOf(answer)).toEqual({ status: 404, type: "https://tiehall.com/problems/record-not-found" });
     expect(await invitesFor("no-such-user-9f2")).toEqual([]);
     expect(await eventsSince()).toEqual([]);
   });
 
   it("that names a GitHub organization, not a person's account, gets 404 and creates no invite", async () => {
-    const answer = await install.confirm(ada, "invites.create", { login: "acme" });
+    const answer = await submitInviteForm(install, ada, "acme");
+    expect(reviewPathOf(answer)).toBeUndefined();
     expect((await problemOf(answer)).status).toBe(404);
     expect(await invitesFor("acme")).toEqual([]);
   });
 
-  it("is looked up with an installation token of the install's App", async () => {
+  it("for a person who is already a member gets 409, and creates no invite", async () => {
+    const answer = await submitInviteForm(install, ada, "sam-dev");
+    expect(reviewPathOf(answer)).toBeUndefined();
+    expect(await problemOf(answer)).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+    expect(await invitesFor("sam-dev")).toHaveLength(1);
+  });
+
+  it("is looked up with an installation token of the install's App, and the account read by its id with one on the review page and at the confirmation", async () => {
     const from = stub.received.length;
-    expect((await install.confirm(ada, "invites.create", { login: "uma-dev" })).status).toBe(200);
-    const lookups = stub.received.slice(from).filter(({ path }) => path === "/users/uma-dev");
-    expect(lookups.map(({ token }) => token?.kind)).toEqual(["installation"]);
+    expect((await invite(install, ada, "uma-dev")).status).toBe(200);
+    const calls = stub.received.slice(from);
+    expect(calls.filter(({ path }) => path === "/users/uma-dev").map(({ token }) => token?.kind)).toEqual(["installation"]);
+    expect(calls.filter(({ path }) => path === `/user/${idOf("uma-dev")}`).map(({ token }) => token?.kind)).toEqual(["installation", "installation"]);
+  });
+
+  it("is looked up by an admin only, and on no agent surface: a member gets 403, and a token gets 404, even an admin's", async () => {
+    expect(await install.web(dana).read("invites.find_account", { login: "zoe-dev" })).toMatchObject({ ok: false, problem: { status: 403 } });
+    expect((await submitInviteForm(install, dana, "zoe-dev")).status).toBe(403);
+    const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:read"], surface: "api" };
+    await expect(install.execute("invites.find_account", token, { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
+    expect(await install.web(ada).read("invites.find_account", { login: "zoe-dev" })).toEqual({
+      ok: true,
+      output: { account: { id: idOf("zoe-dev"), githubLogin: "zoe-dev" } },
+    });
   });
 });
 
@@ -160,11 +252,11 @@ describe("the invite", () => {
   });
 
   it("gives a new holder of the old login nothing, and stays valid for its account until it expires", async () => {
-    expect((await install.confirm(ada, "invites.create", { login: "vic-dev" })).status).toBe(200);
+    expect((await invite(install, ada, "vic-dev")).status).toBe(200);
     stub.renameUser("vic-dev", "vic-k");
     stub.addUser({ login: "vic-dev" });
     expect((await harness.signIn("vic-dev")).response.status).toBe(403);
-    expect((await invitesFor("vic-dev"))[0]).toMatchObject({ github_account_id: String(accounts.get("vic-dev")!.id), accepted_at: null });
+    expect((await invitesFor("vic-dev"))[0]).toMatchObject({ github_account_id: String(idOf("vic-dev")), accepted_at: null });
     expect((await harness.signIn("vic-k")).response.status).toBe(302);
     expect(await roleOf("vic-k")).toBe("member");
   });
@@ -172,39 +264,34 @@ describe("the invite", () => {
 
 describe("creating an invite", () => {
   it("without the confirmation step gets 403, and creates no invite", async () => {
-    const result = await install.web(ada).write("invites.create", { login: "zed-dev" }, install.fromThePage(ada));
+    const result = await install.web(ada).write("invites.create", { accountId: idOf("zoe-dev") }, install.fromThePage(ada));
     expect(result).toMatchObject({ ok: false, problem: { status: 403, type: "https://tiehall.com/problems/confirmation-required" } });
-    expect(await invitesFor("zed-dev")).toEqual([]);
+    expect(await invitesFor("zoe-dev")).toEqual([]);
   });
 
   it("by a member gets 403, and creates no invite", async () => {
-    stub.addUser({ login: "zoe-dev" });
-    const answer = await install.confirm(dana, "invites.create", { login: "zoe-dev" });
+    const answer = await install.confirm(dana, "invites.create", { accountId: idOf("zoe-dev") });
     expect((await problemOf(answer)).status).toBe(403);
     expect(await invitesFor("zoe-dev")).toEqual([]);
   });
 
   it("that names the role owner gets 400", async () => {
-    const answer = await install.confirm(ada, "invites.create", { login: "zoe-dev", role: "owner" });
+    const answer = await install.confirm(ada, "invites.create", { accountId: idOf("zoe-dev"), role: "owner" });
     expect(await problemOf(answer)).toEqual({ status: 400, type: "https://tiehall.com/problems/invalid-input" });
   });
 
-  it("for a person who is already a member gets 409, and creates no invite", async () => {
-    const answer = await install.confirm(ada, "invites.create", { login: "sam-dev" });
-    expect(await problemOf(answer)).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
-    expect(await invitesFor("sam-dev")).toHaveLength(1);
+  it("for an account id GitHub knows no account by gets 404 on its review page, and creates no invite", async () => {
+    const answer = await install.confirm(ada, "invites.create", { accountId: 987_654_321 });
+    expect(await problemOf(answer)).toEqual({ status: 404, type: "https://tiehall.com/problems/record-not-found" });
+    expect(await eventsSince()).toEqual([]);
   });
 
   it("is offered on no agent surface: a token gets 404, even an admin's", async () => {
     const token: Caller = { kind: "personal_access_token", userId: ada.userId, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
-    await expect(install.execute("invites.create", token, { login: "zoe-dev" })).rejects.toMatchObject({ status: 404 });
+    await expect(install.execute("invites.create", token, { accountId: idOf("zoe-dev") })).rejects.toMatchObject({ status: 404 });
   });
 });
 
-// GitHub is asked outside any transaction (design.md, Technical decisions: T3 and T16): the username is looked
-// up after the call is authorized and before its write transaction opens and its confirmation is used, so a
-// slow GitHub holds no connection in a transaction and no lock, and a GitHub that fails leaves the confirmation
-// unused, so the admin can post the same review page again.
 /** Makes the install reach GitHub through this fetch until the test ends, with the client's timeout lowered when a test gives one. */
 async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<void>, timeoutMs?: number): Promise<void> {
   install.useGitHub(
@@ -224,88 +311,10 @@ async function reachingGitHubThrough(through: typeof fetch, run: () => Promise<v
   }
 }
 
-describe("creating an invite while GitHub answers slowly or fails", () => {
-  /** The other sessions of this database that are in a transaction and waiting for their client, such as for GitHub. */
-  async function idleInTransaction(): Promise<string[]> {
-    const { rows } = await install.owner.query<{ state: string }>(
-      "SELECT state FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'",
-    );
-    return rows.map(({ state }) => state);
-  }
-
-  it("holds no transaction open while GitHub names the account", { timeout: 30_000 }, async () => {
-    let asked: () => void = () => {};
-    const lookedUp = new Promise<void>((resolve) => (asked = resolve));
-    let release: () => void = () => {};
-    const released = new Promise<void>((resolve) => (release = resolve));
-    await reachingGitHubThrough(
-      async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
-        if (url.pathname === "/users/ned-dev") {
-          asked();
-          await released;
-        }
-        return fetch(input, init);
-      },
-      async () => {
-        const creating = install.confirm(ada, "invites.create", { login: "ned-dev" });
-        await lookedUp;
-        let open: string[];
-        try {
-          open = await idleInTransaction();
-        } finally {
-          release();
-        }
-        expect(open).toEqual([]);
-        expect((await creating).status).toBe(200);
-      },
-    );
-    expect(await invitesFor("ned-dev")).toHaveLength(1);
-  });
-
-  it("that GitHub fails leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
-    let failing = true;
-    await reachingGitHubThrough(
-      async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
-        if (failing && url.pathname === "/users/oli-dev") return new Response('{"message":"Server Error"}', { status: 500 });
-        return fetch(input, init);
-      },
-      async () => {
-        const post = await install.prepareConfirmation(ada, "invites.create", { login: "oli-dev" });
-        expect(await problemOf(await post())).toEqual({ status: 502, type: "https://tiehall.com/problems/integration-unavailable" });
-        expect(await invitesFor("oli-dev")).toEqual([]);
-        expect(await eventsSince()).toEqual([]);
-        failing = false;
-        expect((await post()).status).toBe(200);
-      },
-    );
-    expect(await invitesFor("oli-dev")).toHaveLength(1);
-  });
-
-  // D50 (3): not answering within the client's timeout, lowered here from its 10 seconds, is the same failure.
-  it("that GitHub does not answer in time leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
-    stub.addUser({ login: "pat-dev" });
-    let slow = true;
-    await reachingGitHubThrough(
-      async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
-        if (slow && url.pathname === "/users/pat-dev") return answerAfter(init?.signal, 2_000, () => fetch(input, init));
-        return fetch(input, init);
-      },
-      async () => {
-        const post = await install.prepareConfirmation(ada, "invites.create", { login: "pat-dev" });
-        expect(await problemOf(await post())).toEqual({ status: 502, type: "https://tiehall.com/problems/integration-unavailable" });
-        expect(await invitesFor("pat-dev")).toEqual([]);
-        expect(await eventsSince()).toEqual([]);
-        slow = false;
-        expect((await post()).status).toBe(200);
-      },
-      200,
-    );
-    expect(await invitesFor("pat-dev")).toHaveLength(1);
-  });
-});
+/** The path of a request to GitHub. */
+function pathOf(input: string | URL | Request): string {
+  return new URL(input instanceof Request ? input.url : String(input)).pathname;
+}
 
 /**
  * GitHub's answer, given only after this many milliseconds: the request's
@@ -325,6 +334,139 @@ function answerAfter(signal: AbortSignal | null | undefined, delayMs: number, an
     );
   });
 }
+
+const SERVER_ERROR = () => new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } });
+const UNAVAILABLE = { status: 502, type: "https://tiehall.com/problems/integration-unavailable" };
+
+// GitHub is asked outside any transaction (design.md, Technical decisions: T3 and T16): the form's look-up of
+// the username, the review page's read of the account and the confirmation's read of it again each run before
+// any transaction opens, and the confirmation's before its nonce is used, so a slow GitHub holds no connection
+// in a transaction and no lock, and a GitHub that fails leaves the confirmation unused, so the admin can post the
+// same review page again (github-layer-hardening: design.md, Technical decisions: T6).
+describe("inviting while GitHub answers slowly or fails", () => {
+  /** The other sessions of this database that are in a transaction and waiting for their client, such as for GitHub. */
+  async function idleInTransaction(): Promise<string[]> {
+    const { rows } = await install.owner.query<{ state: string }>(
+      "SELECT state FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'",
+    );
+    return rows.map(({ state }) => state);
+  }
+
+  /** Runs the call while GitHub holds the request to this path, and says which transactions were open while it held it. */
+  async function openWhileHeld<T>(path: string, call: () => Promise<T>): Promise<{ open: string[]; result: T }> {
+    let asked: () => void = () => {};
+    const held = new Promise<void>((resolve) => (asked = resolve));
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let outcome: { open: string[]; result: T } | undefined;
+    await reachingGitHubThrough(
+      async (input, init) => {
+        if (pathOf(input) === path) {
+          asked();
+          await released;
+        }
+        return fetch(input, init);
+      },
+      async () => {
+        const running = call();
+        await held;
+        let open: string[];
+        try {
+          open = await idleInTransaction();
+        } finally {
+          release();
+        }
+        outcome = { open, result: await running };
+      },
+    );
+    return outcome!;
+  }
+
+  it("holds no transaction open while GitHub names the account", { timeout: 30_000 }, async () => {
+    const post = await prepareInvite(install, ada, "ned-dev");
+    const { open, result } = await openWhileHeld(`/user/${idOf("ned-dev")}`, post);
+    expect(open).toEqual([]);
+    expect(result.status).toBe(200);
+    expect(await invitesFor("ned-dev")).toHaveLength(1);
+  });
+
+  it("holds no transaction open while GitHub looks the username up for the form", { timeout: 30_000 }, async () => {
+    const { open, result } = await openWhileHeld("/users/ann-dev", () => submitInviteForm(install, ada, "ann-dev"));
+    expect(open).toEqual([]);
+    expect(reviewInputOf(result)).toEqual({ accountId: idOf("ann-dev"), role: "member" });
+  });
+
+  it("holds no transaction open while GitHub reads the account for the review page", { timeout: 30_000 }, async () => {
+    const path = reviewPathOf(await submitInviteForm(install, ada, "bea-dev"))!;
+    const { open, result } = await openWhileHeld(`/user/${idOf("bea-dev")}`, () => reviewPage(ada, path));
+    expect(open).toEqual([]);
+    expect(result.status).toBe(200);
+  });
+
+  it("that GitHub fails leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
+    const post = await prepareInvite(install, ada, "oli-dev");
+    let failing = true;
+    await reachingGitHubThrough(
+      async (input, init) => (failing && pathOf(input) === `/user/${idOf("oli-dev")}` ? SERVER_ERROR() : fetch(input, init)),
+      async () => {
+        expect(await problemOf(await post())).toEqual(UNAVAILABLE);
+        expect(await invitesFor("oli-dev")).toEqual([]);
+        expect(await eventsSince()).toEqual([]);
+        failing = false;
+        expect((await post()).status).toBe(200);
+      },
+    );
+    expect(await invitesFor("oli-dev")).toHaveLength(1);
+  });
+
+  // D50 (3): not answering within the client's timeout, lowered here from its 10 seconds, is the same failure.
+  it("that GitHub does not answer in time leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
+    const post = await prepareInvite(install, ada, "pat-dev");
+    let slow = true;
+    await reachingGitHubThrough(
+      async (input, init) =>
+        slow && pathOf(input) === `/user/${idOf("pat-dev")}` ? answerAfter(init?.signal, 2_000, () => fetch(input, init)) : fetch(input, init),
+      async () => {
+        expect(await problemOf(await post())).toEqual(UNAVAILABLE);
+        expect(await invitesFor("pat-dev")).toEqual([]);
+        expect(await eventsSince()).toEqual([]);
+        slow = false;
+        expect((await post()).status).toBe(200);
+      },
+      200,
+    );
+    expect(await invitesFor("pat-dev")).toHaveLength(1);
+  });
+
+  it("that GitHub fails on the form gets 502 integration-unavailable, with no review page, and creates no invite", async () => {
+    await reachingGitHubThrough(
+      async (input, init) => (pathOf(input) === "/users/cai-dev" ? SERVER_ERROR() : fetch(input, init)),
+      async () => {
+        const answer = await submitInviteForm(install, ada, "cai-dev");
+        expect(reviewPathOf(answer)).toBeUndefined();
+        expect(await problemOf(answer)).toEqual(UNAVAILABLE);
+      },
+    );
+    expect(await invitesFor("cai-dev")).toEqual([]);
+    expect(await eventsSince()).toEqual([]);
+  });
+
+  it("that GitHub fails, or does not answer in time, on the review page gets 502 integration-unavailable, and creates no invite", async () => {
+    const path = reviewPathOf(await submitInviteForm(install, ada, "dee-dev"))!;
+    const read = `/user/${idOf("dee-dev")}`;
+    await reachingGitHubThrough(
+      async (input, init) => (pathOf(input) === read ? SERVER_ERROR() : fetch(input, init)),
+      async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
+    );
+    await reachingGitHubThrough(
+      async (input, init) => (pathOf(input) === read ? answerAfter(init?.signal, 2_000, () => fetch(input, init)) : fetch(input, init)),
+      async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
+      200,
+    );
+    expect(await invitesFor("dee-dev")).toEqual([]);
+    expect(await eventsSince()).toEqual([]);
+  });
+});
 
 // One pending invite per account (teams-and-roles: Invites by GitHub username; teams-and-roles: Revoking an
 // invite; D50 (11)): a new invite for an account that has a pending invite, neither accepted, revoked nor
@@ -350,7 +492,7 @@ describe("a new invite for an account with a pending invite", () => {
   async function allInvitesFor(login: string): Promise<Invite[]> {
     const { rows } = await install.owner.query<Invite>(
       "SELECT id, role, created_at, revoked_at, revoked_by, accepted_at FROM invites WHERE github_account_id = $1 ORDER BY created_at, id",
-      [accounts.get(login)!.id],
+      [idOf(login)],
     );
     return rows;
   }
@@ -359,7 +501,7 @@ describe("a new invite for an account with a pending invite", () => {
   async function pendingFor(login: string): Promise<string[]> {
     const { rows } = await install.owner.query<{ id: string }>(
       "SELECT id FROM invites WHERE github_account_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()",
-      [accounts.get(login)!.id],
+      [idOf(login)],
     );
     return rows.map(({ id }) => id);
   }
@@ -368,7 +510,7 @@ describe("a new invite for an account with a pending invite", () => {
     const first = await invited("rae-dev");
     lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
 
-    expect((await install.confirm(ada, "invites.create", { login: "rae-dev", role: "admin" })).status).toBe(200);
+    expect((await invite(install, ada, "rae-dev", "admin")).status).toBe(200);
 
     const [older, newer] = await allInvitesFor("rae-dev");
     expect(older).toMatchObject({ id: first, role: "member", revoked_by: ada.userId, accepted_at: null });
@@ -392,14 +534,14 @@ describe("a new invite for an account with a pending invite", () => {
   });
 
   it("leaves exactly one pending invite when two admins confirm invites for the same account at once", { timeout: 30_000 }, async () => {
-    // Both look-ups are held until both are asked, so both writes start together.
+    const posts = [await prepareInvite(install, ada, "rex-dev", "member"), await prepareInvite(install, pia, "rex-dev", "admin")];
+    // Both confirmations' reads of the account are held until both are asked, so both writes start together.
     let arrived = 0;
     let bothAsked: () => void = () => {};
     const together = new Promise<void>((resolve) => (bothAsked = resolve));
     await reachingGitHubThrough(
       async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
-        if (url.pathname === "/users/rex-dev") {
+        if (pathOf(input) === `/user/${idOf("rex-dev")}`) {
           arrived += 1;
           if (arrived === 2) bothAsked();
           await together;
@@ -407,10 +549,7 @@ describe("a new invite for an account with a pending invite", () => {
         return fetch(input, init);
       },
       async () => {
-        const answers = await Promise.all([
-          install.confirm(ada, "invites.create", { login: "rex-dev", role: "member" }),
-          install.confirm(pia, "invites.create", { login: "rex-dev", role: "admin" }),
-        ]);
+        const answers = await Promise.all(posts.map((post) => post()));
         expect(answers.map(({ status }) => status)).toEqual([200, 200]);
       },
     );
@@ -430,7 +569,7 @@ describe("a new invite for an account with a pending invite", () => {
     const before = await allInvitesFor("rio-dev");
     lastEvent = Number((await install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
 
-    expect((await install.confirm(pia, "invites.create", { login: "rio-dev" })).status).toBe(200);
+    expect((await invite(install, pia, "rio-dev")).status).toBe(200);
 
     const after = await allInvitesFor("rio-dev");
     expect(after).toHaveLength(3);
@@ -440,9 +579,9 @@ describe("a new invite for an account with a pending invite", () => {
   });
 });
 
-/** Creates an invite for this username as Ada, with the confirmation step; returns its id. */
+/** Creates an invite for this username as Ada does, through the form and the review page; returns its id. */
 async function invited(login: string): Promise<string> {
-  expect((await install.confirm(ada, "invites.create", { login })).status).toBe(200);
+  expect((await invite(install, ada, login)).status).toBe(200);
   return (await invitesFor(login)).at(-1)!.id;
 }
 
@@ -474,7 +613,6 @@ describe("revoking an invite", () => {
   });
 
   it("by a member gets 403, and the invite stays valid", async () => {
-    stub.addUser({ login: "yan-dev" });
     const inviteId = await invited("yan-dev");
     expect(await revoke(dana, inviteId)).toMatchObject({ ok: false, problem: { status: 403, type: "https://tiehall.com/problems/forbidden" } });
     expect((await harness.signIn("yan-dev")).response.status).toBe(302);
@@ -496,7 +634,6 @@ describe("revoking an invite", () => {
   });
 
   it("from another origin gets 403, as every web UI write does", async () => {
-    stub.addUser({ login: "zak-dev" });
     const inviteId = await invited("zak-dev");
     const result = await install.web(ada).write("invites.revoke", { invite: inviteId }, { ...install.fromThePage(ada), origin: "https://evil.example" });
     expect(result).toMatchObject({ ok: false, problem: { status: 403 } });

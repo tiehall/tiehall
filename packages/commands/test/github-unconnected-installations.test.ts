@@ -3,16 +3,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubInstallation } from "@tiehall/testing/github";
 import { readInstallations, readSecret, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { submitInviteForm } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
 // An installation nobody connected is only listed (tracker-mirrors: Admins
 // connect GitHub installations with the confirmation step: "Tiehall SHALL use
 // an installation that is not connected only to list it"). The App is public
-// and installed on acme-labs, which no admin connected: the invite's lookup of
-// a GitHub username, which asks GitHub through an installation, does not go
-// through it. With no connected installation to ask through, it is refused
-// with 409, as with no installation at all, and no installation token is
+// and installed on acme-labs, which no admin connected: the invite form's
+// look-up of a GitHub username, which asks GitHub through an installation,
+// does not go through it. With no connected installation to ask through, the
+// form is refused with 409, as with no installation at all, and no installation token is
 // requested for acme-labs. The check of a rotated private key asks GitHub for
 // the App itself and needs no installation (D50 (2)), so it works while none
 // is connected, and requests no installation token either.
@@ -58,9 +59,10 @@ describe("an installation that no admin connected", () => {
     expect(Number((await install.owner.query("SELECT count(*) AS n FROM github_connected_installations")).rows[0].n)).toBe(0);
   });
 
-  it("is not used to look an invite's username up: the invite gets 409, and no token is requested for it", async () => {
+  it("is not used to look an invite's username up: the invite form gets 409, with no review page, and no token is requested for it", async () => {
     const from = stub.received.length;
-    const answer = await install.confirm(ada, "invites.create", { login: "jo-contracts" });
+    const answer = await submitInviteForm(install, ada, "jo-contracts");
+    expect(answer.headers.get("location")).toBeNull();
     expect(await problemOf(answer)).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
     expect(Number((await install.owner.query("SELECT count(*) AS n FROM invites")).rows[0].n)).toBe(0);
     expect(tokensRequestedFor(labs, from)).toBe(0);

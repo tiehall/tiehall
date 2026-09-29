@@ -5,6 +5,7 @@ import { OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { callApi, tokenOf } from "./support/requests.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -109,7 +110,7 @@ describe("under invited people only", () => {
 
   it("an invited person still signs in, organization member or not", async () => {
     for (const login of ["kim-acme", "jo-contracts"]) {
-      expect((await install.confirm(pia, "invites.create", { login })).status).toBe(200);
+      expect((await invite(install, pia, login)).status).toBe(200);
       expect((await harness.signIn(login)).response.status, login).toBe(302);
       expect(await isMember(login), login).toBe(true);
     }

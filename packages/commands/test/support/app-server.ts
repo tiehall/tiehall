@@ -152,7 +152,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const installGitHub = createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch: github.fetch, logger });
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box });
   const confirm = createConfirmRoute({
-    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS }),
+    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub }),
     session: (request) => signIn.session(request.headers),
     write: { execute, url, secret: authSecret },
     logger,

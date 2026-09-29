@@ -137,7 +137,7 @@ export async function startTestInstall(
     secrets: () => box,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
-  const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects });
+  const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
     createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);

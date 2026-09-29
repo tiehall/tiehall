@@ -33,6 +33,20 @@ export interface GitHubAccount {
 const ACCOUNT = z.object({ id: z.number().int().positive(), login: z.string().min(1), type: z.string() });
 
 /**
+ * A GitHub account read by its id, with what its profile says of it besides:
+ * the display name its owner set, which anyone can set to anything, and when
+ * GitHub created it.
+ */
+export interface GitHubAccountProfile extends GitHubAccount {
+  /** The display name its owner set, or null when there is none; text Tiehall did not write. */
+  displayName: string | null;
+  /** When GitHub created the account, as GitHub gives it (ISO 8601), or undefined when GitHub gives none, as for an organization. */
+  createdAt: string | undefined;
+}
+
+const PROFILE = z.object({ name: z.string().nullish(), created_at: z.string().optional() });
+
+/**
  * The GitHub account a login names now, as GitHub's API gives it to one of
  * the App's installations, with that installation's token (teams-and-roles:
  * Invites by GitHub username); undefined when GitHub knows no account by
@@ -58,19 +72,29 @@ export async function gitHubAccountNamed(client: GitHubClient, installationId: n
  * The GitHub account with this numeric id as GitHub's API gives it now to one
  * of the App's installations, with that installation's token, by
  * `GET /user/{account_id}`: its login now, whatever login an older report
- * named it by; undefined when GitHub knows no account with that id, or one of
- * a kind that is neither a person's nor an organization's. It throws when
- * GitHub does not answer, within the client's timeout (github-client.ts).
+ * named it by, its display name and when GitHub created it (teams-and-roles:
+ * Invites by GitHub username); undefined when GitHub knows no account with
+ * that id, or one of a kind that is neither a person's nor an organization's.
+ * It throws GitHubUnavailableError when GitHub answers with any other error,
+ * or does not answer within the client's timeout (github-client.ts).
  */
-export async function gitHubAccountWithId(client: GitHubClient, installationId: number, id: number): Promise<GitHubAccount | undefined> {
+export async function gitHubAccountWithId(client: GitHubClient, installationId: number, id: number): Promise<GitHubAccountProfile | undefined> {
   let data: unknown;
   try {
     ({ data } = await client.installation(installationId).request("GET /user/{account_id}", { account_id: id }));
   } catch (error) {
     if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
-    throw error;
+    throw gitHubUnavailable("the read of the GitHub account", error);
   }
   const account = ACCOUNT.safeParse(data);
   if (!account.success || account.data.id !== id || (account.data.type !== "User" && account.data.type !== "Organization")) return undefined;
-  return { id: account.data.id, login: account.data.login, type: account.data.type };
+  const profile = PROFILE.safeParse(data);
+  const name = profile.success ? (profile.data.name ?? null) : null;
+  return {
+    id: account.data.id,
+    login: account.data.login,
+    type: account.data.type,
+    displayName: name === null || name.trim() === "" ? null : name,
+    createdAt: profile.success ? profile.data.created_at : undefined,
+  };
 }
