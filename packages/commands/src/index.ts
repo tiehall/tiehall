@@ -268,6 +268,8 @@ export {
   type StartSetupOptions,
 } from "./setup-code.ts";
 export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
+export { refusalAnswer, type RefusalAnswer, type WayOn } from "./html.ts";
+export { wayOnOfPageRoute } from "./page-routes.ts";
 export {
   AUTH_BASE_PATH,
   createSignInService,

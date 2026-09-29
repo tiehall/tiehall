@@ -19,6 +19,9 @@ import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres
 
 const fixture = fileURLToPath(new URL("./support/web-with-fixture-server.ts", import.meta.url));
 
+/** What a browser sends, which names text/html. */
+const BROWSER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
 interface Running {
   child: ChildProcess;
   port: number;
@@ -120,6 +123,55 @@ describe("the web role on SIGTERM", () => {
       "web: stopping; new calls get 503 until the 1 call in flight finishes",
       "web: stopped",
     ]);
+  });
+
+  // public-api: One error model for Tiehall's own refusals (github-layer-hardening: design.md, Decisions this
+  // change rests on: D50 (7)). On the routes that serve the web UI's pages, the setup screen, the review pages
+  // under /confirm/… and GitHub's return to either sign-in callback, a browser, whose Accept header names
+  // text/html, gets the 503 as a page with a link on; a client that asks for JSON there, and every call to
+  // /api/v1, /mcp and the sign-in service's other routes, whatever it accepts, gets the problem.
+  it("answers a browser that opens a page during shutdown with 503 as a page that leads on, and every other call with the problem", async () => {
+    // The slow call stays in flight while the test makes its calls.
+    const web = await startWebRole({ SLOW_MS: "5000" });
+    const slow = fetch(`http://127.0.0.1:${web.port}/slow`).then((response) => response.text());
+    // Awaited below; this only keeps a failure before then from counting as unhandled.
+    slow.catch(() => undefined);
+    await until("the slow call to start", () => web.output().includes("fixture: slow call started"));
+    web.child.kill("SIGTERM");
+    await until("the role to start stopping", () => web.output().includes("web: stopping"));
+    const open = (path: string, accept: string) => fetch(`http://127.0.0.1:${web.port}${path}`, { headers: { accept } });
+
+    for (const [path, wayOn] of [
+      ["/members", "/members"],
+      ["/confirm/members.change_role?input=%7B%7D", "/confirm/members.change_role?input=%7B%7D"],
+      ["/api/auth/callback/github?code=c&state=s", "/sign-in"],
+      ["/setup/sign-in/callback/github?code=c&state=s", "/setup"],
+    ] as const) {
+      const page = await open(path, BROWSER);
+      expect(page.status, path).toBe(503);
+      expect(page.headers.get("content-type"), path).toBe("text/html; charset=utf-8");
+      expect(page.headers.get("retry-after"), path).toBe("0");
+      expect(page.headers.get("connection"), path).toBe("close");
+      expect(page.headers.get("content-security-policy"), path).toContain("frame-ancestors 'none'");
+      const markup = await page.text();
+      expect(markup, path).toContain("<h1>Tiehall is shutting down</h1>");
+      expect(markup, path).toContain("<code>https://tiehall.com/problems/shutting-down</code>");
+      expect(markup, path).toContain(`<a href="${wayOn}">`);
+      expect(markup, path).not.toContain("<script");
+    }
+    for (const [path, accept] of [
+      ["/members", "application/json"],
+      ["/api/v1/requests", BROWSER],
+      ["/mcp", BROWSER],
+      ["/api/auth/get-session", BROWSER],
+    ] as const) {
+      const answer = await open(path, accept);
+      expect(answer.status, path).toBe(503);
+      expect(answer.headers.get("content-type"), path).toBe("application/problem+json");
+      expect(await answer.json(), path).toMatchObject({ type: "https://tiehall.com/problems/shutting-down", status: 503 });
+    }
+    expect(await slow).toBe("slow call done");
+    expect(await web.exited).toBe(0);
   });
 
   it("exits at once when no call is in flight", async () => {
@@ -461,6 +513,41 @@ describe("the web role's limit on request bodies", () => {
     const over = await post(LIMIT + 1);
     expectPayloadTooLarge({ status: over.status, headers: Object.fromEntries(over.headers), body: await over.text() });
     expect(web.output()).not.toContain(`fixture: /setup read ${LIMIT + 1} bytes`);
+  });
+
+  // public-api: One error model for Tiehall's own refusals (github-layer-hardening: design.md, Decisions this
+  // change rests on: D50 (7)): a browser whose form on one of the web UI's pages is over the limit gets the 413 as a
+  // page that leads back to the page whose form was refused; a client that asks for JSON there, and every call to
+  // the REST API whatever it accepts, gets the problem.
+  it("answers a browser's form over 2 MiB on a page with 413 as a page that leads back to the page, and every other call with the problem", async () => {
+    const web = await startWebRole();
+    const post = (path: string, accept: string) =>
+      fetch(`http://127.0.0.1:${web.port}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", accept },
+        body: `action=create&login=${"A".repeat(LIMIT)}`,
+      });
+
+    const page = await post("/admin/invites", BROWSER);
+    expect(page.status).toBe(413);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(page.headers.get("connection")).toBe("close");
+    expect(page.headers.get("retry-after")).toBeNull();
+    expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    const markup = await page.text();
+    expect(markup).toContain("<h1>Request body too large</h1>");
+    expect(markup).toContain("larger than 2 MiB");
+    expect(markup).toContain(`<code>${PAYLOAD_TOO_LARGE}</code>`);
+    expect(markup).toContain('<a href="/admin/invites">');
+    expect(markup).not.toContain("<script");
+
+    for (const [path, accept] of [
+      ["/admin/invites", "application/json"],
+      ["/api/v1/requests", BROWSER],
+    ] as const) {
+      const answer = await post(path, accept);
+      expectPayloadTooLarge({ status: answer.status, headers: Object.fromEntries(answer.headers), body: await answer.text() });
+    }
   });
 });
 

@@ -53,7 +53,9 @@ ${main}
 // and a link on. Every other request gets the RFC 9457 problem. Either answer
 // has the page headers' content security policy, so it cannot be framed, and
 // keeps the problem's own headers, such as Retry-After. One function decides
-// for every such route, as one function renders every page.
+// for every such route, as one function renders every page, and for the web
+// role's request guard, which refuses on those routes before any of them sees
+// the call (page-routes.ts).
 
 /** Where a refusal page leads on: back to the page whose form was refused, to the page that was asked for, or to the sign-in page. */
 export interface WayOn {
@@ -66,7 +68,12 @@ export const TO_SIGN_IN: WayOn = { href: "/sign-in", text: "Go to the sign-in pa
 
 /** Whether a request negotiates HTML on a page route: its Accept header names text/html, as browsers send. */
 export function acceptsHtml(request: Request): boolean {
-  return (request.headers.get("accept") ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
+  return namesHtml(request.headers.get("accept"));
+}
+
+/** Whether an Accept header names text/html. */
+function namesHtml(accept: string | null | undefined): boolean {
+  return (accept ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
 }
 
 /** The page of a refusal: its title, its detail, where the input fails its schema, the way on and the problem type. */
@@ -90,17 +97,33 @@ function refusalPage({ body }: HttpProblem, wayOn: WayOn): string {
   );
 }
 
+/** A refusal's answer on a page route, as its status, headers and body. */
+export interface RefusalAnswer {
+  status: number;
+  headers: Headers;
+  body: string;
+}
+
 /**
- * Answers a refusal on a page route: the refusal's page for a request that
- * negotiates HTML, the problem otherwise; with the problem's headers, any
- * headers given, such as the cookies a sign-in's answer clears, and the page
- * headers' content security policy.
+ * The answer to a refusal on a page route, for a request with this Accept
+ * header: the refusal's page when the header names text/html, the problem
+ * otherwise; with the problem's headers, any headers given, such as the
+ * cookies a sign-in's answer clears, and the page headers' content security
+ * policy. answerRefusal() gives it as a Response; a server that answers before
+ * any route sees the call, such as the web role's request guard, writes it
+ * itself.
  */
-export function answerRefusal(request: Request, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): Response {
+export function refusalAnswer(accept: string | null | undefined, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): RefusalAnswer {
   const answer = new Headers(problem.headers);
   for (const cookie of headers.getSetCookie()) answer.append("set-cookie", cookie);
   answer.set("content-security-policy", PAGE_HEADERS["content-security-policy"]);
-  if (!acceptsHtml(request)) return new Response(JSON.stringify(problem.body), { status: problem.status, headers: answer });
+  if (!namesHtml(accept)) return { status: problem.status, headers: answer, body: JSON.stringify(problem.body) };
   for (const [name, value] of Object.entries(PAGE_HEADERS)) answer.set(name, value);
-  return new Response(refusalPage(problem, wayOn), { status: problem.status, headers: answer });
+  return { status: problem.status, headers: answer, body: refusalPage(problem, wayOn) };
+}
+
+/** Answers a refusal on a page route: refusalAnswer() for the request's Accept header, as a Response. */
+export function answerRefusal(request: Request, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): Response {
+  const { status, headers: answer, body } = refusalAnswer(request.headers.get("accept"), problem, wayOn, headers);
+  return new Response(body, { status, headers: answer });
 }

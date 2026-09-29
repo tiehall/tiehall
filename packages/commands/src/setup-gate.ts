@@ -57,10 +57,15 @@ export interface SetupGateOptions {
 
 export const SETUP_PATH = "/setup";
 export const WEBHOOKS_GITHUB_PATH = "/webhooks/github";
-const HEALTH_PATH = "/healthz";
+export const HEALTH_PATH = "/healthz";
 
 /** The paths under which every call is an API call, never a page. */
 const API_PATHS = ["/api", "/mcp", "/.well-known", "/webhooks", "/schemas"];
+
+/** Whether a call to this path is an API call, never a page: one under /api, /mcp, /.well-known, /webhooks or /schemas. */
+export function isApiCall(pathname: string): boolean {
+  return API_PATHS.some((prefix) => under(pathname, prefix));
+}
 
 const SETUP_REQUIRED = httpProblem(
   new Refusal("setup-required", "Setup is not complete. The install's operator completes it on the setup screen at /setup."),
@@ -101,7 +106,7 @@ function alwaysServed(pathname: string): boolean {
 export function setupGateAnswer(method: string, pathname: string, state: SetupState, url: string): SetupGateAnswer {
   if (state.complete || alwaysServed(pathname)) return { kind: "serve" };
   if (pathname === WEBHOOKS_GITHUB_PATH && state.appCredentialsStored) return { kind: "serve" };
-  if (API_PATHS.some((prefix) => under(pathname, prefix))) return { kind: "refuse", problem: SETUP_REQUIRED };
+  if (isApiCall(pathname)) return { kind: "refuse", problem: SETUP_REQUIRED };
   // A page read is sent on as it is; a form posted to a page is sent to read the setup screen.
   return { kind: "redirect", status: method === "GET" || method === "HEAD" ? 307 : 303, location: `${url}${SETUP_PATH}` };
 }

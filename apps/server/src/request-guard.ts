@@ -2,7 +2,7 @@ import http, { type IncomingMessage, type RequestListener, type ServerResponse }
 import { syncBuiltinESMExports } from "node:module";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
-import { bodyLimitFor, declaredLength, payloadTooLarge } from "@tiehall/commands";
+import { bodyLimitFor, declaredLength, payloadTooLarge, refusalAnswer, wayOnOfPageRoute } from "@tiehall/commands";
 import { httpProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
@@ -49,6 +49,14 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 //   once the answer is sent the connection is ended, and it is closed after
 //   a short grace period in which it is still not read, so that the client
 //   reads the 413 before the reset its unread body causes.
+//
+// Refusals to browsers (public-api: One error model for Tiehall's own
+// refusals; github-layer-hardening: design.md, Decisions this change rests on:
+// D50 (7); Technical decisions: T5): on a page route (wayOnOfPageRoute), a
+// 503 or a 413 to a request whose Accept header names text/html is the
+// refusal's page, with the same status and headers and a link on, from the
+// one renderer the routes use; every other request, and every call to
+// /api/v1, /mcp and the other API paths, gets the problem.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
@@ -165,12 +173,27 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
 function shuttingDown(request: IncomingMessage, response: ServerResponse): void {
   // The call's body is not read; the connection closes after the answer.
   request.resume();
-  response.writeHead(SHUTTING_DOWN.status, {
-    ...SHUTTING_DOWN.headers,
-    "content-length": Buffer.byteLength(SHUTTING_DOWN_BODY),
+  refuse(request, response, SHUTTING_DOWN, SHUTTING_DOWN_BODY);
+}
+
+/**
+ * Writes a refusal of the guard, with `Connection: close`: on a page route,
+ * the refusal's page for a request whose Accept header names text/html and
+ * the problem for every other, as the routes answer; elsewhere the problem,
+ * whose body is given.
+ */
+function refuse(request: IncomingMessage, response: ServerResponse, problem: HttpProblem, problemBody: string): void {
+  const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/");
+  const answer =
+    wayOn === undefined
+      ? { status: problem.status, headers: new Headers(problem.headers), body: problemBody }
+      : refusalAnswer(request.headers.accept, problem, wayOn);
+  response.writeHead(answer.status, {
+    ...Object.fromEntries(answer.headers),
+    "content-length": Buffer.byteLength(answer.body),
     connection: "close",
   });
-  response.end(request.method === "HEAD" ? undefined : SHUTTING_DOWN_BODY);
+  response.end(request.method === "HEAD" ? undefined : answer.body);
 }
 
 /** The path a request names, without its query; "/" for a target that is not a path. */
@@ -238,12 +261,7 @@ function refuseBody(request: IncomingMessage, response: ServerResponse, limit: n
     refusal = { problem, body: JSON.stringify(problem.body) };
     refusals.set(limit, refusal);
   }
-  response.writeHead(refusal.problem.status, {
-    ...refusal.problem.headers,
-    "content-length": Buffer.byteLength(refusal.body),
-    connection: "close",
-  });
-  response.end(request.method === "HEAD" ? undefined : refusal.body);
+  refuse(request, response, refusal.problem, refusal.body);
 }
 
 /** Rewrites a request's forwarded headers to the client the install trusts. */
