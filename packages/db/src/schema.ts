@@ -232,6 +232,12 @@ export const setupSessions = pgTable(
     id: uuid("id").notNull().defaultRandom(),
     tokenHash: bytea("token_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The nonces of the manifest states whose return from GitHub stored an
+     * App (self-host-install: The GitHub App is created with GitHub's manifest
+     * flow): each state is used once, and a second return with it is refused.
+     */
+    usedManifestNonces: text("used_manifest_nonces").array().notNull().default(sql`'{}'::text[]`),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

@@ -24,10 +24,14 @@ import { isTrialUrl } from "./settings.ts";
 // session stays valid until setup completes, and choose the option.
 //
 // The round trip carries a state bound to the browser's setup session: a
-// fresh random nonce with an HMAC of it keyed by the session's token, which
-// only that browser's cookie holds. GitHub sends the state back with the code,
-// and a return whose state does not verify against the browser's session is
-// refused before anything is converted or stored.
+// fresh random nonce and the time it was issued, with an HMAC of both keyed by
+// the session's token, which only that browser's cookie holds. GitHub sends
+// the state back with the code, and a return whose state does not verify
+// against the browser's session is refused before anything is converted or
+// stored. A state outlives nothing it protects: GitHub converts a manifest's
+// code only within the hour, so a state issued more than 60 minutes before
+// the return is refused the same way; and a state is used once, so a second
+// return with a state that stored an App is refused too (setup-route.ts).
 
 /** GitHub's web pages, where the manifest is posted and the App is installed. */
 export const GITHUB_WEB_URL = "https://github.com";
@@ -74,23 +78,37 @@ const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 const STATE_CONTEXT = "tiehall setup: the GitHub App manifest's state\n";
 
-/** A new state for the manifest's round trip, bound to the setup session whose token the browser's cookie holds. */
-export function manifestState(sessionToken: string): string {
+/** How long a state is taken after it was issued: GitHub converts a manifest's code only within the hour. */
+export const MANIFEST_STATE_LIFETIME_SECONDS = 60 * 60;
+/** How far a state's time of issue may lie ahead of the clock that checks it, for clocks of two processes that differ. */
+const STATE_CLOCK_SKEW_SECONDS = 5 * 60;
+
+/** A new state for the manifest's round trip, bound to the setup session whose token the browser's cookie holds, and to the time now. */
+export function manifestState(sessionToken: string, now: Date = new Date()): string {
   const nonce = randomBytes(16).toString("base64url");
-  return `${nonce}.${stateMac(sessionToken, nonce)}`;
+  const issuedAt = String(Math.floor(now.getTime() / 1000));
+  return `${nonce}.${issuedAt}.${stateMac(sessionToken, nonce, issuedAt)}`;
 }
 
-/** Whether a state that came back from GitHub was made for the setup session with this token. */
-export function stateMatches(sessionToken: string, state: string | null): boolean {
-  const [nonce, mac, ...rest] = (state ?? "").split(".");
-  if (nonce === undefined || mac === undefined || rest.length > 0 || !/^[A-Za-z0-9_-]{22}$/.test(nonce)) return false;
-  const expected = Buffer.from(stateMac(sessionToken, nonce), "utf8");
+/**
+ * The nonce of a state that came back from GitHub, when it was made for the
+ * setup session with this token no more than 60 minutes ago; undefined for
+ * any other state, which is refused as foreign.
+ */
+export function manifestStateNonce(sessionToken: string, state: string | null, now: Date = new Date()): string | undefined {
+  const [nonce, issuedAt, mac, ...rest] = (state ?? "").split(".");
+  if (nonce === undefined || issuedAt === undefined || mac === undefined || rest.length > 0) return undefined;
+  if (!/^[A-Za-z0-9_-]{22}$/.test(nonce) || !/^\d{1,12}$/.test(issuedAt)) return undefined;
+  const expected = Buffer.from(stateMac(sessionToken, nonce, issuedAt), "utf8");
   const given = Buffer.from(mac, "utf8");
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return undefined;
+  const age = Math.floor(now.getTime() / 1000) - Number(issuedAt);
+  if (age < -STATE_CLOCK_SKEW_SECONDS || age > MANIFEST_STATE_LIFETIME_SECONDS) return undefined;
+  return nonce;
 }
 
-function stateMac(sessionToken: string, nonce: string): string {
-  return createHmac("sha256", sessionToken).update(`${STATE_CONTEXT}${nonce}`).digest("base64url");
+function stateMac(sessionToken: string, nonce: string, issuedAt: string): string {
+  return createHmac("sha256", sessionToken).update(`${STATE_CONTEXT}${nonce}\n${issuedAt}`).digest("base64url");
 }
 
 /** The App's name unless the operator gives another: "Tiehall" and the install's host. */

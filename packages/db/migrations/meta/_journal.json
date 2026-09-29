@@ -309,6 +309,13 @@
       "when": 1790684344896,
       "tag": "0043_add_github_polling",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790696572606,
+      "tag": "0044_add_used_manifest_nonces",
+      "breakpoints": true
     }
   ]
 }

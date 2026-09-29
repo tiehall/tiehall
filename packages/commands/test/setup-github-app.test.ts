@@ -63,6 +63,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  clock = () => new Date();
   stub = await startGitHubStub();
   stub.addUser({ login: "omar" });
   stub.addOrg({ login: "acme", members: { omar: "admin" } });
@@ -77,8 +78,11 @@ afterEach(async () => {
   );
 });
 
+/** The setup screen's clock, which a test moves on; the system clock otherwise. */
+let clock: () => Date = () => new Date();
+
 const route = (url: string) =>
-  createSetupRoute({ database: db, url, logger, secrets: () => box, github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl } });
+  createSetupRoute({ database: db, url, logger, secrets: () => box, github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl }, now: () => clock() });
 
 /** A browser's request to the install at this URL, as the web role's request guard hands it on, with the browser's cookie. */
 function browserRequest(url: string, path: string, cookie?: string, init: RequestInit = {}): Request {
@@ -191,7 +195,8 @@ describe("the App step", () => {
     const form = createForm((await open(INSTALL, cookie, { org: "acme" })).html);
     expect(form?.action.origin).toBe(stub.webUrl);
     expect(form?.action.pathname).toBe("/organizations/acme/settings/apps/new");
-    expect(form?.action.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{22,}\.[A-Za-z0-9_-]{43}$/);
+    // A random nonce, the time it was issued, and an HMAC of both keyed by the setup session's token.
+    expect(form?.action.searchParams.get("state")).toMatch(/^[A-Za-z0-9_-]{22}\.\d+\.[A-Za-z0-9_-]{43}$/);
     expect(form?.manifest).toEqual(buildAppManifest({ url: INSTALL, name: "Tiehall tiehall.example.com", unreachable: false }));
   });
 
@@ -357,6 +362,48 @@ describe("GitHub's return with the code", () => {
     expect(conversions()).toHaveLength(0);
     expect(await storedApp()).toEqual([]);
     expect(await storedSecretNames()).toEqual([]);
+  });
+
+  // A state outlives nothing it protects: GitHub converts a manifest's code only within the hour, so an older
+  // state is refused as foreign, before GitHub is asked; and a state that stored an App is used up.
+  it("refuses a state issued more than 60 minutes ago as foreign, before asking GitHub, and stores nothing", async () => {
+    const cookie = await setupSession(INSTALL);
+    const issued = Date.now();
+    clock = () => new Date(issued);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    clock = () => new Date(issued + 60 * 60 * 1000 + 1000);
+    const answer = await returnFromGitHub(INSTALL, location!, cookie);
+    expect(answer.status).toBe(403);
+    expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/forbidden" });
+    expect(conversions()).toHaveLength(0);
+    expect(await storedApp()).toEqual([]);
+  });
+
+  it("takes a state until 60 minutes after it was issued", async () => {
+    const cookie = await setupSession(INSTALL);
+    const issued = Date.now();
+    clock = () => new Date(issued);
+    const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
+    clock = () => new Date(issued + 59 * 60 * 1000);
+    expect((await returnFromGitHub(INSTALL, location!, cookie)).status).toBe(303);
+    expect(await storedApp()).toHaveLength(1);
+  });
+
+  it("refuses a second return with a state that stored an App already, before asking GitHub, and keeps the App", async () => {
+    const cookie = await setupSession(INSTALL);
+    const form = createForm((await open(INSTALL, cookie, { org: "acme" })).html)!;
+    const first = await createOnGitHub(form);
+    expect((await returnFromGitHub(INSTALL, first.location!, cookie)).status).toBe(303);
+    const stored = await storedApp();
+    expect(stored).toHaveLength(1);
+
+    // The same page's form, posted again, as from an older tab: GitHub creates another App and returns the same state.
+    const second = await createOnGitHub({ ...form, manifest: { ...form.manifest, name: "Tiehall second tab" } });
+    expect(second.location?.searchParams.get("state")).toBe(form.action.searchParams.get("state"));
+    const answer = await returnFromGitHub(INSTALL, second.location!, cookie);
+    expect(answer.status).toBe(403);
+    expect(conversions()).toHaveLength(1);
+    expect(await storedApp()).toEqual(stored);
   });
 
   it("stores nothing when GitHub no longer converts the code, and says to create the App again", async () => {

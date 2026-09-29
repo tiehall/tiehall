@@ -126,7 +126,17 @@ export {
   type GitHubWebhookRoute,
   type GitHubWebhookRouteOptions,
 } from "./github-webhooks.ts";
-export { COMPANY_NAME_MAX_LENGTH, COMPANY_PATH, companyName, defaultAppName, GITHUB_WEB_URL, manifestState, stateMatches, UNREACHABLE_OPTION } from "./setup-github.ts";
+export {
+  COMPANY_NAME_MAX_LENGTH,
+  COMPANY_PATH,
+  companyName,
+  defaultAppName,
+  GITHUB_WEB_URL,
+  MANIFEST_STATE_LIFETIME_SECONDS,
+  manifestState,
+  manifestStateNonce,
+  UNREACHABLE_OPTION,
+} from "./setup-github.ts";
 export { createInstallGitHub, type InstallGitHub, type InstallGitHubOptions } from "./install-github.ts";
 export { completeSetup, SetupCompletionError, type CompleteSetupOptions } from "./setup-completion.ts";
 export {

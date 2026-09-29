@@ -1,0 +1,1 @@
+ALTER TABLE "setup_sessions" ADD COLUMN "used_manifest_nonces" text[] DEFAULT '{}'::text[] NOT NULL;

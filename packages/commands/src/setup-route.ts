@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
-import { orgs, type Database } from "@tiehall/db";
-import { eq } from "drizzle-orm";
+import { orgs, setupSessions, type Database } from "@tiehall/db";
+import { and, eq, sql } from "drizzle-orm";
 import { readGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, ManifestConversionError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
@@ -18,7 +19,7 @@ import {
   GITHUB_WEB_URL,
   installStepBody,
   manifestState,
-  stateMatches,
+  manifestStateNonce,
 } from "./setup-github.ts";
 import type { SetupSignIn } from "./sign-in.ts";
 
@@ -42,7 +43,11 @@ import type { SetupSignIn } from "./sign-in.ts";
 // - GET /setup/github is where GitHub sends the operator back from the
 //   manifest flow, with a code and the state the App step made. A return with
 //   no setup session, or whose state was not made for the browser's setup
-//   session, is refused with 403 before anything is converted or stored.
+//   session, is refused with 403 before anything is converted or stored, and
+//   so is a return whose state was issued more than 60 minutes before, the
+//   hour in which GitHub converts the code, or whose state stored an App
+//   already: the state is recorded as used on the setup session's row in the
+//   transaction that stores the App.
 //   Otherwise Tiehall converts the code at once, well within the hour GitHub
 //   allows, stores the App's credentials encrypted, replacing any App stored
 //   before, and leads back to the setup screen, which then sends the operator
@@ -73,6 +78,8 @@ export interface SetupRouteOptions {
   /** The sign-in with GitHub that completes setup; without it, the setup screen offers none. */
   signIn?: SetupSignIn;
   logger?: Logger;
+  /** The clock the manifest's states are issued and checked by; the system clock unless a test controls it. */
+  now?: () => Date;
 }
 
 export type SetupRoute = (request: Request) => Promise<Response>;
@@ -111,6 +118,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   const logger = options.logger ?? createLogger();
   const cookieName = setupCookieName(options.url);
   const webUrl = options.github?.webUrl ?? GITHUB_WEB_URL;
+  const now = options.now ?? (() => new Date());
   return async function setup(request) {
     try {
       if ((await readSetupState(options.database)).complete) return problem(CLOSED);
@@ -149,7 +157,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error") })), toGitHub);
     }
     const settings = appStepSettings(options.url, query);
-    return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token), company })), toGitHub);
+    return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), company })), toGitHub);
   }
 
   /** Whether a request comes from a form of the install, TIEHALL_URL, in a browser that holds a setup session. */
@@ -209,9 +217,12 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   async function fromGitHub(request: Request): Promise<Response> {
     const token = cookieOf(request, cookieName);
     const query = new URL(request.url).searchParams;
-    if (token === undefined || !stateMatches(token, query.get("state")) || !(await isSetupSession(options.database, token))) {
+    const nonce = token === undefined ? undefined : manifestStateNonce(token, query.get("state"), now());
+    if (token === undefined || nonce === undefined || !(await isSetupSession(options.database, token))) {
       return problem(FOREIGN_RETURN);
     }
+    // A state that stored an App already is used up: GitHub is not asked again.
+    if (await manifestStateUsed(options.database, token, nonce)) return problem(FOREIGN_RETURN);
     const code = query.get("code");
     if (code === null || code === "") return problem(NO_CODE);
     // Opened before the code is used: GitHub converts a code only once.
@@ -235,11 +246,19 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
         .from(orgs)
         .limit(1)
         .for("update");
-      if (org === undefined || org.setupCompletedAt !== null) return false;
+      if (org === undefined || org.setupCompletedAt !== null) return "closed";
+      // The state is used once: recorded on the setup session's row, with the App it stored.
+      const used = await tx
+        .update(setupSessions)
+        .set({ usedManifestNonces: sql`array_append(${setupSessions.usedManifestNonces}, ${nonce})` })
+        .where(and(eq(setupSessions.orgId, org.id), eq(setupSessions.tokenHash, sha256(token)), sql`NOT (${nonce} = ANY(${setupSessions.usedManifestNonces}))`))
+        .returning({ id: setupSessions.id });
+      if (used.length === 0) return "used";
       await storeGitHubApp({ tx, orgId: org.id }, box, app);
-      return true;
+      return "stored";
     });
-    if (!stored) return problem(CLOSED);
+    if (stored === "closed") return problem(CLOSED);
+    if (stored === "used") return problem(FOREIGN_RETURN);
     logger.info("setup: the GitHub App's credentials are stored", { appId: app.id });
     return new Response(null, { status: 303, headers: { location: `${options.url}${SETUP_PATH}`, "cache-control": "no-store" } });
   }
@@ -259,6 +278,20 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       },
     });
   }
+}
+
+function sha256(text: string): Buffer {
+  return createHash("sha256").update(text, "utf8").digest();
+}
+
+/** Whether a return with this state's nonce stored an App already, for the setup session with this token. */
+async function manifestStateUsed(database: Database, token: string, nonce: string): Promise<boolean> {
+  const [session] = await database
+    .select({ id: setupSessions.id })
+    .from(setupSessions)
+    .where(and(eq(setupSessions.tokenHash, sha256(token)), sql`${nonce} = ANY(${setupSessions.usedManifestNonces})`))
+    .limit(1);
+  return session !== undefined;
 }
 
 /** The origin a URL or an Origin header names, in the form TIEHALL_URL is kept in; undefined for none. */
