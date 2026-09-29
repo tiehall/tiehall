@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubInstallation } from "@tiehall/testing/github";
-import { pollGitHub, processDelivery, processGitHubDelivery, WORKER_JOBS, type GitHubEvent, type WebSessionCaller } from "../src/index.ts";
+import { pollGitHub, processDelivery, processGitHubDelivery, pruneGitHubDeliveries, WORKER_JOBS, type GitHubEvent, type WebSessionCaller } from "../src/index.ts";
 import { serveWebhooks, type WebhookServer } from "./support/github-app.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -169,6 +169,43 @@ describe("the poll of polling mode", () => {
 
     expect(install.sentJobs).toEqual([]);
     expect(await processSent()).toEqual([]);
+  });
+
+  it("stores changes that the nightly pruning deletes as it deletes deliveries: 7 days after processing, or 30 days after storing when never processed (github-layer-hardening 1.19)", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    await stub.openPullRequest("acme/web", { title: "Fix the header", head: "fix-header", author: "omar" }, { delivery: "none" });
+    await stub.openPullRequest("acme/api", { title: "Fix the client", head: "fix-client", author: "omar" }, { delivery: "none" });
+    await poll();
+    install.sentJobs.length = 0;
+    const changes = async () =>
+      (
+        await install.owner.query<{ delivery_id: string; repository: string; received_at: Date; processed: boolean }>(
+          `SELECT delivery_id, payload->'repository'->>'full_name' AS repository, received_at, processed_at IS NOT NULL AS processed
+             FROM github_deliveries WHERE change_key IS NOT NULL ORDER BY repository`,
+        )
+      ).rows;
+    const [api, web] = await changes();
+    expect([api?.repository, web?.repository]).toEqual(["acme/api", "acme/web"]);
+    // The worker processes the change in acme/web now; the job of the one in acme/api fails for good.
+    const start = new Date();
+    await processDelivery({ database: install.db, github: harness.github, execute: install.execute, processors: {}, now: () => start }, web!.delivery_id);
+    const pruneAt = (now: Date) =>
+      pruneGitHubDeliveries.handle(
+        { id: randomUUID(), queue: pruneGitHubDeliveries.type.queue, data: {}, signal: new AbortController().signal },
+        { database: install.db, now: () => now },
+      );
+
+    await pruneAt(new Date(start.getTime() + 6 * DAY));
+    expect((await changes()).map(({ repository, processed }) => ({ repository, processed }))).toEqual([
+      { repository: "acme/api", processed: false },
+      { repository: "acme/web", processed: true },
+    ]);
+    await pruneAt(new Date(start.getTime() + 8 * DAY));
+    expect((await changes()).map(({ repository }) => repository)).toEqual(["acme/api"]);
+    await pruneAt(new Date(api!.received_at.getTime() + 29 * DAY));
+    expect((await changes()).map(({ repository }) => repository)).toEqual(["acme/api"]);
+    await pruneAt(new Date(api!.received_at.getTime() + 31 * DAY));
+    expect(await changes()).toEqual([]);
   });
 
   it("does nothing in webhook mode", async () => {

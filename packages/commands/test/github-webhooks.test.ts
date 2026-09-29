@@ -16,6 +16,8 @@ import {
   openDatabase,
   openSecretBox,
   processGitHubDelivery,
+  pruneGitHubDeliveries,
+  pruneSecurityEventOrigins,
   releaseHeldGitHubDeliveries,
   storeGitHubApp,
   WORKER_JOBS,
@@ -36,9 +38,12 @@ import {
 // App created without a webhook, and so does one whose signature does not
 // verify. Deliveries are accepted from the moment the App's credentials are
 // stored, before setup completes, and those that arrive before setup completes
-// are processed once it does. The deliveries here are the GitHub stub's own,
-// signed as GitHub signs them, sent to a local server that answers with the
-// route.
+// are processed once it does. A nightly job deletes a stored delivery, its
+// payload with it, 7 days after it was processed, and one never processed 30
+// days after it arrived, before setup completes too (github-layer-hardening:
+// design.md, Decisions this change rests on: D50 (4); design.md, Technical
+// decisions: T3). The deliveries here are the GitHub stub's own, signed as
+// GitHub signs them, sent to a local server that answers with the route.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
@@ -172,8 +177,8 @@ function post(body: string, signedWith: string | undefined, headers: Record<stri
 
 const INSTALLATION = JSON.stringify({ action: "created", installation: { id: 1 } });
 
-/** Runs the jobs sent so far that the worker would run, as the worker does, and forgets them. */
-async function runSentJobs(): Promise<void> {
+/** Runs the jobs sent so far that the worker would run, as the worker does with its clock, and forgets them. */
+async function runSentJobs(now: () => Date = () => new Date()): Promise<void> {
   const queued = sent.splice(0);
   for (const { queue, data } of queued) {
     expect(queue).toBe(processGitHubDelivery.type.queue);
@@ -181,7 +186,7 @@ async function runSentJobs(): Promise<void> {
       { id: randomUUID(), queue, data: data as { deliveryId: string }, signal: new AbortController().signal },
       {
         database: db,
-        now: () => new Date(),
+        now,
         // Processing an installation's delivery lists the App's installations, on the stub.
         github: createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch }),
         execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database: db, jobs } }),
@@ -385,5 +390,128 @@ describe("the worker's jobs", () => {
     expect(WORKER_JOBS).toContain(processGitHubDelivery);
     expect(WORKER_JOBS).toContain(releaseHeldGitHubDeliveries);
     expect(releaseHeldGitHubDeliveries.schedule).toBe("* * * * *");
+  });
+
+  it("include the pruning of stored deliveries, which runs daily, beside the pruning of IP addresses and user agents", () => {
+    expect(WORKER_JOBS).toContain(pruneGitHubDeliveries);
+    expect(WORKER_JOBS).toContain(pruneSecurityEventOrigins);
+    // Once a day, at a fixed minute and hour, every day of every month.
+    expect(pruneGitHubDeliveries.schedule).toMatch(/^[0-5]?\d (?:1?\d|2[0-3]) \* \* \*$/);
+  });
+});
+
+describe("the nightly pruning of stored deliveries (github-layer-hardening 1.19)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** Runs the pruning job once, as the daily schedule does, with the worker's clock at `now`. */
+  async function pruneAt(now: Date): Promise<void> {
+    await pruneGitHubDeliveries.handle(
+      { id: randomUUID(), queue: pruneGitHubDeliveries.type.queue, data: {}, signal: new AbortController().signal },
+      { database: db, now: () => now, jobs },
+    );
+  }
+
+  /** When the delivery arrived and was processed, as the database holds them. */
+  async function timesOf(deliveryId: string): Promise<{ receivedAt: Date; processedAt: Date | null }> {
+    const { rows } = await owner.query<{ received_at: Date; processed_at: Date | null }>(
+      "SELECT received_at, processed_at FROM github_deliveries WHERE delivery_id = $1",
+      [deliveryId],
+    );
+    if (rows[0] === undefined) throw new Error(`No delivery ${deliveryId} is stored.`);
+    return { receivedAt: rows[0].received_at, processedAt: rows[0].processed_at };
+  }
+
+  /** Whether any stored row, its payload included, holds the text. */
+  async function held(text: string): Promise<boolean> {
+    const { rows } = await owner.query<{ row: string }>("SELECT to_jsonb(d)::text AS row FROM github_deliveries d");
+    return rows.some(({ row }) => row.includes(text));
+  }
+
+  /** A verified delivery the route stores, about an installation on an account whose login it names; returns its id. */
+  async function deliver(secret: string, login: string): Promise<string> {
+    const deliveryId = randomUUID();
+    const body = JSON.stringify({ action: "created", installation: { id: 1, account: { login } } });
+    expect((await post(body, secret, { "x-github-delivery": deliveryId })).status).toBe(202);
+    return deliveryId;
+  }
+
+  it("deletes a delivery processed 8 days ago, its payload with it, and keeps one processed 6 days ago", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    await completeSetup();
+    const older = await deliver(app.webhookSecret!, "older-account");
+    const newer = await deliver(app.webhookSecret!, "newer-account");
+    const start = new Date();
+    // The worker processes the older delivery now, and the newer one 2 days later.
+    sent = sent.filter(({ data }) => (data as { deliveryId: string }).deliveryId === older);
+    await runSentJobs(() => start);
+    sent = [{ queue: processGitHubDelivery.type.queue, data: { deliveryId: newer } }];
+    await runSentJobs(() => new Date(start.getTime() + 2 * DAY));
+    expect((await timesOf(older)).processedAt).toEqual(start);
+
+    await pruneAt(new Date(start.getTime() + 8 * DAY));
+
+    expect(await stored()).toEqual([{ delivery_id: newer, event: "installation", processed: true }]);
+    expect(await held("older-account")).toBe(false);
+    expect(await held("newer-account")).toBe(true);
+  });
+
+  it("keeps a delivery never processed that arrived 29 days ago, and deletes one that arrived 31 days ago", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    await completeSetup();
+    // Neither is processed: their jobs failed, and wait in the dead-letter queue.
+    const earlier = await deliver(app.webhookSecret!, "earlier-account");
+    const later = await deliver(app.webhookSecret!, "later-account");
+    sent = [];
+    await owner.query("UPDATE github_deliveries SET received_at = received_at - interval '2 days' WHERE delivery_id = $1", [earlier]);
+    const { receivedAt } = await timesOf(later);
+
+    await pruneAt(new Date(receivedAt.getTime() + 29 * DAY));
+
+    expect(await stored()).toEqual([{ delivery_id: later, event: "installation", processed: false }]);
+    expect(await held("earlier-account")).toBe(false);
+  });
+
+  it("deletes a held delivery that arrived 31 days ago while setup is still incomplete, and keeps one that arrived 29 days ago, which is processed when setup completes", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    const earlier = await deliver(app.webhookSecret!, "earlier-account");
+    const later = await deliver(app.webhookSecret!, "later-account");
+    expect(sent).toEqual([]);
+    await owner.query("UPDATE github_deliveries SET received_at = received_at - interval '2 days' WHERE delivery_id = $1", [earlier]);
+    const { receivedAt } = await timesOf(later);
+
+    await pruneAt(new Date(receivedAt.getTime() + 29 * DAY));
+
+    expect(await stored()).toEqual([{ delivery_id: later, event: "installation", processed: false }]);
+    expect(await held("earlier-account")).toBe(false);
+    await completeSetup();
+    await releaseHeld();
+    expect(sent).toEqual([{ queue: processGitHubDelivery.type.queue, data: { deliveryId: later } }]);
+    await runSentJobs();
+    expect(await stored()).toEqual([{ delivery_id: later, event: "installation", processed: true }]);
+  });
+
+  it("deletes nothing, and fails nothing, before the setup screen has made the install's org", async () => {
+    await pruneAt(new Date(Date.now() + 400 * DAY));
+    expect(await stored()).toEqual([]);
+  });
+
+  it("keeps a delivery 2 days after it was processed, so GitHub sending it again then is answered 2xx and not processed again", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    await completeSetup();
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    const [delivery] = stub.deliveries(app).filter(({ event }) => event === "installation");
+    const start = new Date();
+    await runSentJobs(() => start);
+
+    await pruneAt(new Date(start.getTime() + 2 * DAY));
+    const again = await stub.redeliver(delivery!);
+
+    expect(again).toMatchObject({ guid: delivery?.guid, statusCode: 202 });
+    expect(sent).toEqual([]);
+    expect(await stored()).toEqual([{ delivery_id: delivery?.guid, event: "installation", processed: true }]);
   });
 });

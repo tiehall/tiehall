@@ -123,6 +123,7 @@ export {
 } from "./github-mode.ts";
 export { REDELIVERY_ASKS, redeliverFailedDeliveries, redeliverGitHubDeliveries, type RedeliveryOptions } from "./github-redelivery.ts";
 export { changeKeyOf, polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
+export { PROCESSED_DELIVERY_RETENTION_DAYS, pruneGitHubDeliveries, UNPROCESSED_DELIVERY_RETENTION_DAYS } from "./github-delivery-pruning.ts";
 export { pollGitHub, pollGitHubChanges, type PollOptions } from "./github-polling.ts";
 export { userOfGitHubAccount } from "./github-users.ts";
 export {
