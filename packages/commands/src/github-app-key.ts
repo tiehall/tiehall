@@ -5,7 +5,7 @@ import { githubApp } from "@tiehall/db";
 import { eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { anyLiveInstallation } from "./github-installations.ts";
+import { anyConnectedInstallation } from "./github-installations.ts";
 import { storeSecret } from "./integration-secrets.ts";
 
 // Uploading a rotated private key for the install's GitHub App
@@ -19,12 +19,15 @@ import { storeSecret } from "./integration-secrets.ts";
 // of the POST that applies the action, as the webhook secret does
 // (github-app-reachability: design.md, Design rules: Moving to webhook mode).
 // Before it is stored, Tiehall checks it by requesting an installation token
-// with it, through an installation of the App that is neither suspended nor
-// deleted. A file that is no private key, and a key GitHub does not accept,
-// such as one of another App or one deleted on GitHub, get 400 and are not
-// stored, and the key in use stays. A key GitHub accepts is stored encrypted
-// in place of the key in use, used for the next call to GitHub, and recorded
-// as a security event, in one write. The key is never shown again.
+// with it, through a connected installation of the App that is neither
+// suspended nor deleted, and with none the upload gets 409: an installation
+// that no admin connected is only listed (tracker-mirrors: Admins connect
+// GitHub installations with the confirmation step). A file that is no private
+// key, and a key GitHub does not accept, such as one of another App or one
+// deleted on GitHub, get 400 and are not stored, and the key in use stays. A
+// key GitHub accepts is stored encrypted in place of the key in use, used for
+// the next call to GitHub, and recorded as a security event, in one write.
+// The key is never shown again.
 
 /** Whether the text is a private key in PEM form, as GitHub gives an App's key. */
 function isPrivateKey(pem: string): boolean {
@@ -53,9 +56,9 @@ export const GITHUB_APP_KEY_HANDLERS: Handlers = {
     const privateKey = context.sealed["privateKey"];
     if (privateKey === undefined) throw new Error("execute() gave no private key to upload.");
     if (!isPrivateKey(privateKey)) throw refused("The file is not a private key in PEM form, such as the .pem file GitHub downloads.");
-    const installationId = await anyLiveInstallation(context, row.appId);
+    const installationId = await anyConnectedInstallation(context, row.appId);
     if (installationId === undefined) {
-      throw new Refusal("conflict", "The install's GitHub App has no installation to check the key with. Install the App on GitHub first.");
+      throw new Refusal("conflict", "The install's GitHub App has no connected installation to check the key with. Connect one on the GitHub page first.");
     }
     if (!(await github.checkKey({ clientId: row.clientId, privateKey }, installationId))) {
       throw refused("GitHub did not accept the key for the install's App: it belongs to another App, or it was deleted on GitHub.");

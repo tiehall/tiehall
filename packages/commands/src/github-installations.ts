@@ -266,19 +266,21 @@ export async function coveringInstallation(
 /**
  * An installation of the App to ask GitHub a question through that concerns
  * no organization in particular, such as which account a login names, by
- * GitHub's id: a connected one that is neither suspended nor deleted, or, when
- * none is, any other that is neither; undefined when the App has none.
+ * GitHub's id: a connected one that is neither suspended nor deleted;
+ * undefined when the App has none. An installation that no admin connected is
+ * never one: Tiehall uses it only to list it (tracker-mirrors: Admins connect
+ * GitHub installations with the confirmation step).
  */
-export async function anyLiveInstallation({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number): Promise<number | undefined> {
+export async function anyConnectedInstallation({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number): Promise<number | undefined> {
   const [row] = await tx
     .select({ installationId: githubInstallations.installationId })
     .from(githubInstallations)
-    .leftJoin(
+    .innerJoin(
       githubConnectedInstallations,
       and(eq(githubConnectedInstallations.orgId, githubInstallations.orgId), eq(githubConnectedInstallations.installationId, githubInstallations.id)),
     )
     .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.appId, appId), isNull(githubInstallations.suspendedAt), isNull(githubInstallations.deletedAt)))
-    .orderBy(sql`${githubConnectedInstallations.installationId} IS NULL`, asc(githubInstallations.installationId))
+    .orderBy(asc(githubInstallations.installationId))
     .limit(1);
   return row?.installationId;
 }

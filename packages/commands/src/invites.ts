@@ -4,7 +4,7 @@ import { invites, members } from "@tiehall/db";
 import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { anyLiveInstallation } from "./github-installations.ts";
+import { anyConnectedInstallation } from "./github-installations.ts";
 import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 
 // Invites (teams-and-roles: Invites by GitHub username; sign-in: Who may sign
@@ -12,8 +12,9 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // that need the confirmation step; design.md, Self-hosting decisions: S5).
 // An admin invites a person by their GitHub username, in the web UI, with the
 // confirmation step. When the invite is created, Tiehall asks GitHub which
-// account the username names, with an installation token of the install's
-// App, and binds the invite to that account's numeric id: the invite follows
+// account the username names, with an installation token of a connected
+// installation of the install's App, and with none the invite gets 409; it
+// binds the invite to that account's numeric id: the invite follows
 // a rename of the login and never passes to a new holder of the old one. A
 // username that names no person's GitHub account gets 404 and creates no
 // invite. The invite names a role, `member` unless it names `admin`, and
@@ -43,9 +44,12 @@ export const INVITE_HANDLERS: Handlers = {
   [createInvite.id]: defineHandler(createInvite, async ({ login, role }, context) => {
     const app = await context.github?.app();
     if (app === undefined) throw new Refusal("conflict", "The install has no GitHub App to look the username up through.");
-    const installationId = await anyLiveInstallation(context, app.appId);
+    const installationId = await anyConnectedInstallation(context, app.appId);
     if (installationId === undefined) {
-      throw new Refusal("conflict", "The install's GitHub App has no installation to look the username up through. Install it on your GitHub organization first.");
+      throw new Refusal(
+        "conflict",
+        "The install's GitHub App has no connected installation to look the username up through. Install it on your GitHub organization and connect that installation first.",
+      );
     }
     const account = await gitHubAccountNamed(app.client, installationId, login);
     if (account?.type !== "User") throw new Refusal("record-not-found", "That GitHub username names no person's GitHub account.");
