@@ -466,6 +466,7 @@ describe("GitHub's return with the code", () => {
     expect(html).toContain(`href="${stub.webUrl}/apps/${latest!.slug}/installations/new"`);
     expect(html).toContain(`href="${stub.webUrl}/organizations/acme/settings/apps/${replaced!.slug}"`);
     expect(unescapeHtml(html)).toContain(`The GitHub App "${replaced!.name}" that this setup created before is no longer used`);
+    expect(unescapeHtml(html)).toContain("It is still registered on GitHub, with a private key nobody uses, so delete it there");
     expect(logLines.map((line) => JSON.parse(line) as Record<string, unknown>)).toContainEqual(
       expect.objectContaining({ level: "warn", msg: "setup: a new GitHub App replaced the one stored before", appId: latest!.id, replacedAppId: replaced!.id }),
     );
