@@ -16,7 +16,9 @@ import { CookieJar } from "./support/sign-in.ts";
 // the setup session completes setup: its person becomes the first admin, the
 // App's installations, found by listing them, are connected, the deliveries
 // held during setup are released, and setup closes for good. setup-complete-
-// browser.test.ts runs the same in a real browser.
+// browser.test.ts runs the same in a real browser. Each test builds a fresh
+// install, migrations included, and one builds two, so the tests have a
+// timeout that holds on a slower runner.
 
 let stub: GitHubStub;
 let server: AppServer | undefined;
@@ -125,7 +127,7 @@ async function setupCompleted(install: AppServer): Promise<boolean> {
   return rows[0]?.completed ?? false;
 }
 
-describe("naming the company", () => {
+describe("naming the company", { timeout: 60_000 }, () => {
   it("names the install's org with the name the operator gives, trimmed, and lets them change it until setup completes", async () => {
     const install = await start();
     const operator = await enterCode(install);
@@ -164,7 +166,7 @@ describe("naming the company", () => {
   });
 });
 
-describe("the sign-in that completes setup", () => {
+describe("the sign-in that completes setup", { timeout: 60_000 }, () => {
   it("makes the person the first admin, connects every installation the listing holds, and records the completion naming them", async () => {
     // Also: each installation connected then is recorded as a security event, as an admin's connection is.
     const install = await start();
