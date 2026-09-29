@@ -78,7 +78,16 @@
     },
     {
       "item": "a change of the sign-in policy;",
-      "actions": [{ "action": "a change of the sign-in policy", "pending": "9.10" }]
+      "actions": [
+        {
+          "action": "a change of the sign-in policy",
+          "event": "settings.sign_in_policy_changed",
+          "test": {
+            "file": "packages/commands/test/sign-in-policy.test.ts",
+            "case": "to invited people only applies once confirmed, removes no member, and is a security event naming the admin and both settings"
+          }
+        }
+      ]
     },
     {
       "item": "an agent client's approval, and the revocation of an agent grant;",

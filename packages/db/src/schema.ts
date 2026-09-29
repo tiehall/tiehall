@@ -1180,7 +1180,8 @@ export const agentWriteDays = pgTable(
 // confirmation step (design.md, Self-hosting decisions: S2 and S7). One row
 // for the install's org, made by the first change; until then every setting
 // has its default. The daily write budget is 5,000 agent writes by default
-// (agent-safety: Agent writes are limited per token and budgeted per install).
+// (agent-safety: Agent writes are limited per token and budgeted per install),
+// and the sign-in policy admits organization members and invited people.
 export const installSettings = pgTable(
   "install_settings",
   {
@@ -1188,8 +1189,16 @@ export const installSettings = pgTable(
       .primaryKey()
       .references(() => orgs.id),
     dailyWriteBudget: integer("daily_write_budget").notNull().default(5000),
+    /**
+     * The sign-in policy (sign-in: The sign-in policy): whether membership of a
+     * GitHub organization admits new members, or only invites do.
+     */
+    signInPolicy: text("sign_in_policy").notNull().default("organization_members_and_invited"),
   },
-  (table) => [check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`)],
+  (table) => [
+    check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`),
+    check("install_settings_sign_in_policy_known", sql`${table.signInPolicy} IN ('organization_members_and_invited', 'invited_only')`),
+  ],
 );
 
 // The requests agents opened (agent-safety: Agent-opened requests are capped).

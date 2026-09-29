@@ -1,8 +1,9 @@
-import { memberJoined, type Role } from "@tiehall/core";
+import { admitsOrganizationMembers, memberJoined, type Role } from "@tiehall/core";
 import { invites, memberOrganizations, members, signInBlocks, users, type Database } from "@tiehall/db";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { organizationMembership, workingOrganizationInstallations } from "./github-organizations.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import { signInPolicyOf } from "./sign-in-policy.ts";
 import { LOGGABLE, type Logger } from "./log.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import { writeIn, type Origin } from "./write.ts";
@@ -16,7 +17,9 @@ import { writeIn, type Origin } from "./write.ts";
 //   accepted nor revoked, and not expired;
 // - GitHub reports, through a working installation of the App that an admin
 //   connected, that the account is a member of that installation's
-//   organization (github-organizations.ts), and no admin removal blocks it.
+//   organization (github-organizations.ts), the sign-in policy admits
+//   organization members (sign-in: The sign-in policy), and no admin removal
+//   blocks the account.
 // An admin removal blocks the account (sign-in: An admin removal blocks
 // rejoining through the organization): membership of an organization no longer
 // admits it, and neither does an invite created before the removal; only an
@@ -120,6 +123,7 @@ export async function decideAdmission(services: AdmissionServices, account: { id
         member: member !== undefined,
         invite: await validInvite(context, account.id, block),
         blocked: block !== undefined,
+        organizationsAdmit: admitsOrganizationMembers(await signInPolicyOf(context)),
         organizations: app === undefined ? [] : await workingOrganizationInstallations(context, app.appId),
       };
     },
@@ -127,7 +131,7 @@ export async function decideAdmission(services: AdmissionServices, account: { id
   );
   if (state.member) return { through: "member" };
   if (state.invite !== undefined) return { through: "invite", inviteId: state.invite.id, role: state.invite.role };
-  if (state.blocked) return undefined;
+  if (state.blocked || !state.organizationsAdmit) return undefined;
   if (app === undefined || state.organizations.length === 0) return undefined;
   const reporting: number[] = [];
   for (const installation of state.organizations) {
@@ -196,7 +200,7 @@ export async function applyAdmission(
           });
           return { blockCleared: block !== undefined };
         }
-        if (block !== undefined) throw new AdmissionWithdrawnError();
+        if (block !== undefined || !admitsOrganizationMembers(await signInPolicyOf(writer))) throw new AdmissionWithdrawnError();
         await writer.tx.insert(members).values({ orgId: writer.orgId, userId, role: "member" });
         await writer.tx
           .insert(memberOrganizations)

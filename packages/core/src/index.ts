@@ -14,6 +14,7 @@ export * from "./request-keys.ts";
 export * from "./request-sides.ts";
 export * from "./request-states.ts";
 export * from "./roles.ts";
+export * from "./sign-in-policy.ts";
 export * from "./teams.ts";
 export * from "./trust-state.ts";
 export * from "./write-limits.ts";

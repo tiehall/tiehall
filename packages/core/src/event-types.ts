@@ -2,6 +2,7 @@ import { defineEventType, type EventType } from "./events.ts";
 import { CANCEL_REASONS, COMMITMENT_KINDS, PROPOSAL_ENDINGS } from "./proposals.ts";
 import { REQUEST_STATES } from "./request-states.ts";
 import { ROLES } from "./roles.ts";
+import { SIGN_IN_POLICIES } from "./sign-in-policy.ts";
 
 // The event types Tiehall writes (requests: The event log; activity-log: Which
 // actions are security events). Each task that adds a change adds the type of
@@ -322,6 +323,20 @@ export const inviteRevoked = defineEventType({
 });
 
 /**
+ * An admin changed the install's sign-in policy (sign-in: The sign-in policy;
+ * activity-log: Which actions are security events). It names the setting
+ * before and after; its provenance names the admin.
+ */
+export const signInPolicyChanged = defineEventType({
+  type: "settings.sign_in_policy_changed",
+  class: "security",
+  fields: {
+    policy: { kind: "enum", values: SIGN_IN_POLICIES },
+    previousPolicy: { kind: "enum", values: SIGN_IN_POLICIES },
+  },
+});
+
+/**
  * An admin changed the install's daily budget of agent writes (agent-safety:
  * Agent writes are limited per token and budgeted per install; activity-log:
  * Which actions are security events). It names the budget before and after;
@@ -468,6 +483,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   memberJoined,
   inviteCreated,
   inviteRevoked,
+  signInPolicyChanged,
   writeBudgetChanged,
   trustStateReconciled,
   activityLogExported,

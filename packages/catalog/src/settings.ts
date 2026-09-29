@@ -1,11 +1,11 @@
-import { WRITE_LIMITS } from "@tiehall/core";
+import { SIGN_IN_POLICIES, WRITE_LIMITS } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 
 // The install settings an admin changes in the web UI (agent-safety: Agent
-// writes are limited per token and budgeted per install; agent-safety: Actions
-// that need the confirmation step; teams-and-roles: What admins and members
-// may do). Each needs the confirmation step for that exact change, so no agent
+// writes are limited per token and budgeted per install; sign-in: The sign-in
+// policy; agent-safety: Actions that need the confirmation step;
+// teams-and-roles: What admins and members may do). Each needs the confirmation step for that exact change, so no agent
 // surface offers it.
 
 /** A daily budget of agent writes: a whole number from 1 to 1,000,000. */
@@ -29,4 +29,22 @@ export const setWriteBudget = defineCommand({
   stability: "beta",
 });
 
-export const SETTINGS_COMMANDS = [setWriteBudget];
+/** The sign-in policy's two settings. */
+const signInPolicy = z.enum(SIGN_IN_POLICIES).meta({
+  description: "organization_members_and_invited admits members of the connected organizations and invited people; invited_only admits only invited people as new members.",
+});
+
+export const setSignInPolicy = defineCommand({
+  id: "settings.set_sign_in_policy",
+  summary: "Set who may join the install by signing in: members of the connected installations' GitHub accounts and invited people, or invited people only.",
+  input: z.object({ policy: signInPolicy }),
+  output: z.object({ policy: signInPolicy, previousPolicy: signInPolicy }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "sign_in_policy",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const SETTINGS_COMMANDS = [setWriteBudget, setSignInPolicy];

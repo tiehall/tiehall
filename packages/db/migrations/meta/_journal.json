@@ -281,6 +281,13 @@
       "when": 1790680298368,
       "tag": "0039_add_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790681591531,
+      "tag": "0040_add_sign_in_policy",
+      "breakpoints": true
     }
   ]
 }

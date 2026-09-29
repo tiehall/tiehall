@@ -38,7 +38,13 @@
     },
     {
       "item": "changing the sign-in policy;",
-      "actions": [{ "action": "changing the sign-in policy", "pending": "9.10" }]
+      "actions": [
+        {
+          "action": "changing the sign-in policy",
+          "command": "settings.set_sign_in_policy",
+          "input": { "policy": "invited_only" }
+        }
+      ]
     },
     {
       "item": "connecting a GitHub installation, uploading a new private key for the install's GitHub App, and connecting or changing the Jira connection;",

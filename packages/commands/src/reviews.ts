@@ -6,6 +6,7 @@ import { INVITE_REVIEWS } from "./invites.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
 import { UNDO_REVIEWS } from "./proposal-undo.ts";
+import { SIGN_IN_POLICY_REVIEWS } from "./sign-in-policy.ts";
 import { WRITE_LIMIT_REVIEWS } from "./write-limits.ts";
 
 // One review per command of the catalog that needs the confirmation step, by
@@ -16,6 +17,7 @@ export const REVIEWS: Reviews = {
   ...MEMBER_REVIEWS,
   ...INVITE_REVIEWS,
   ...WRITE_LIMIT_REVIEWS,
+  ...SIGN_IN_POLICY_REVIEWS,
   ...PROPOSAL_REVIEWS,
   ...UNDO_REVIEWS,
   ...ACTIVITY_LOG_REVIEWS,

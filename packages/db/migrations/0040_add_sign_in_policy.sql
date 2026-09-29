@@ -1,0 +1,2 @@
+ALTER TABLE "install_settings" ADD COLUMN "sign_in_policy" text DEFAULT 'organization_members_and_invited' NOT NULL;--> statement-breakpoint
+ALTER TABLE "install_settings" ADD CONSTRAINT "install_settings_sign_in_policy_known" CHECK ("install_settings"."sign_in_policy" IN ('organization_members_and_invited', 'invited_only'));

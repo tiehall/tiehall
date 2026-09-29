@@ -6,6 +6,7 @@ import { GITHUB_INSTALLATION_HANDLERS } from "./github-installation-changes.ts";
 import { INVITE_HANDLERS } from "./invites.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
+import { SIGN_IN_POLICY_HANDLERS } from "./sign-in-policy.ts";
 import { PACKET_HANDLERS } from "./packets.ts";
 import { PROPOSAL_CONFIRMATION_HANDLERS } from "./proposal-confirmations.ts";
 import { PROPOSAL_ENDING_HANDLERS } from "./proposal-endings.ts";
@@ -35,6 +36,7 @@ export const HANDLERS: Handlers = {
   ...PROPOSAL_WAITING_HANDLERS,
   ...EVENT_READ_HANDLERS,
   ...WRITE_LIMIT_HANDLERS,
+  ...SIGN_IN_POLICY_HANDLERS,
   ...ACTIVITY_LOG_HANDLERS,
   ...ACTIVITY_LOG_EXPORT_HANDLERS,
   ...GITHUB_INSTALLATION_HANDLERS,
