@@ -60,6 +60,8 @@ const LOGINS = [
   "gil-dev",
   "hal-dev",
   "ivy-dev",
+  "kit-dev",
+  "ray-dev",
 ];
 
 beforeAll(async () => {
@@ -468,6 +470,27 @@ describe("inviting while GitHub answers slowly or fails", () => {
     );
     expect(await invitesFor("dee-dev")).toEqual([]);
     expect(await eventsSince()).toEqual([]);
+  });
+
+  // GitHub answering 200 with a body that names no account, such as the page of a proxy that inspects TLS or an
+  // answer GitHub gives in an incident, failed the call: only its 404 says a username names no account.
+  it("that GitHub answers with 200 and no account gets 502 integration-unavailable, on the form and on the review page, not 404", async () => {
+    const PAGE = () => new Response("<html><body>Blocked by policy.</body></html>", { status: 200, headers: { "content-type": "text/html" } });
+    await reachingGitHubThrough(
+      async (input, init) => (pathOf(input) === "/users/kit-dev" ? PAGE() : fetch(input, init)),
+      async () => {
+        const answer = await submitInviteForm(install, ada, "kit-dev");
+        expect(reviewPathOf(answer)).toBeUndefined();
+        expect(await problemOf(answer)).toEqual(UNAVAILABLE);
+      },
+    );
+    const path = reviewPathOf(await submitInviteForm(install, ada, "ray-dev"))!;
+    await reachingGitHubThrough(
+      async (input, init) => (pathOf(input) === `/user/${idOf("ray-dev")}` ? PAGE() : fetch(input, init)),
+      async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
+    );
+    expect(await invitesFor("kit-dev")).toEqual([]);
+    expect(await invitesFor("ray-dev")).toEqual([]);
   });
 
   // GitHub answers 404 to the request for an installation token of an installation deleted on GitHub, whose

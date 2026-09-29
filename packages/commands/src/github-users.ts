@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { members, users } from "@tiehall/db";
-import { gitHubUnavailable, statusOfCall, type GitHubClient } from "./github-client.ts";
+import { gitHubUnavailable, GitHubUnavailableError, statusOfCall, type GitHubClient } from "./github-client.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // GitHub users as Tiehall users (sign-in: One Tiehall user per GitHub account;
@@ -72,10 +72,11 @@ const PROFILE = z.object({ name: z.string().nullish(), created_at: z.string().op
  * Invites by GitHub username); undefined when GitHub knows no account by
  * that login, or one of a kind that is neither a person's nor an
  * organization's. It throws GitHubUnavailableError when GitHub answers with
- * any other error, or does not answer within the client's timeout
- * (github-client.ts). Only GitHub's 404 to the look-up itself says that no
- * account has the login: a 404 to the request for the installation's token,
- * as for an installation deleted on GitHub, is GitHub failing the look-up.
+ * any other error, or with an answer that names no account, or does not
+ * answer within the client's timeout (github-client.ts). Only GitHub's 404 to
+ * the look-up itself says that no account has the login: a 404 to the request
+ * for the installation's token, as for an installation deleted on GitHub, is
+ * GitHub failing the look-up.
  */
 export async function gitHubAccountNamed(client: GitHubClient, installationId: number, login: string): Promise<GitHubAccount | undefined> {
   let data: unknown;
@@ -86,7 +87,9 @@ export async function gitHubAccountNamed(client: GitHubClient, installationId: n
     throw gitHubUnavailable("the look-up of the username", error);
   }
   const account = ACCOUNT.safeParse(data);
-  if (!account.success || (account.data.type !== "User" && account.data.type !== "Organization")) return undefined;
+  // An answer that names no account, such as a page a proxy answers for GitHub, is GitHub failing the look-up.
+  if (!account.success) throw new GitHubUnavailableError("GitHub's answer to the look-up of the username names no account.");
+  if (account.data.type !== "User" && account.data.type !== "Organization") return undefined;
   return { id: account.data.id, login: account.data.login, type: account.data.type };
 }
 
@@ -98,9 +101,9 @@ export async function gitHubAccountNamed(client: GitHubClient, installationId: n
  * Invites by GitHub username); undefined when GitHub knows no account with
  * that id, or one of a kind that is neither a person's nor an organization's.
  * It throws GitHubUnavailableError when GitHub answers with any other error,
- * or does not answer within the client's timeout (github-client.ts), and when
- * GitHub answers 404 to the request for the installation's token rather than
- * to the read.
+ * or with an answer that names no account with that id, or does not answer
+ * within the client's timeout (github-client.ts), and when GitHub answers 404
+ * to the request for the installation's token rather than to the read.
  */
 export async function gitHubAccountWithId(client: GitHubClient, installationId: number, id: number): Promise<GitHubAccountProfile | undefined> {
   let data: unknown;
@@ -111,7 +114,9 @@ export async function gitHubAccountWithId(client: GitHubClient, installationId: 
     throw gitHubUnavailable("the read of the GitHub account", error);
   }
   const account = ACCOUNT.safeParse(data);
-  if (!account.success || account.data.id !== id || (account.data.type !== "User" && account.data.type !== "Organization")) return undefined;
+  // An answer that names no account, or another one, is GitHub failing the read.
+  if (!account.success || account.data.id !== id) throw new GitHubUnavailableError("GitHub's answer to the read of the GitHub account names no account with its id.");
+  if (account.data.type !== "User" && account.data.type !== "Organization") return undefined;
   const profile = PROFILE.safeParse(data);
   const name = profile.success ? (profile.data.name ?? null) : null;
   return {
