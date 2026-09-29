@@ -9,7 +9,8 @@ import { CookieJar, startSignIn, type SignInHarness } from "./support/sign-in.ts
 // The home page (sign-in: GitHub is the only way to sign in; sign-in: Signing
 // out and ending sessions). A person who is not signed in is sent to the
 // sign-in page, which offers sign-in with GitHub only; a signed-in member gets
-// the web UI, with the sign-out form, which carries the session's CSRF token;
+// the web UI, with a link to the members page and the sign-out form, which
+// carries the session's CSRF token;
 // a browser whose session a removal ended gets 403 and no data.
 
 let install: TestInstall;
@@ -55,6 +56,8 @@ describe("the home page", () => {
     expect(html).toContain('<form method="post" action="/sign-out">');
     expect(html).toContain(`<input type="hidden" name="csrf" value="${csrfTokenFor(install.authSecret, session!.sessionId)}">`);
     expect(html).toContain(`<button type="submit">Sign out</button>`);
+    // The members page, which every member may open, and from which an admin reaches the admin pages.
+    expect(html).toContain('<a href="/members">Members</a>');
   });
 
   it("answers a browser whose session a removal ended with 403 and no data", async () => {

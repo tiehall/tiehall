@@ -4,7 +4,9 @@ import {
   ACTIVITY_LOG_PATH,
   CONFIRM_ROUTE_PATHS,
   GITHUB_ADMIN_PATH,
+  INVITES_PATH,
   MANIFEST_REDIRECT_PATH,
+  MEMBERS_PATH,
   PACKET_SCHEMA_PATH,
   COMPANY_PATH,
   SETUP_PATH,
@@ -12,7 +14,9 @@ import {
   SETUP_SIGN_IN_PATH,
   SIGN_IN_CALLBACK_PATH,
   SIGN_IN_PATH,
+  SIGN_IN_POLICY_PATH,
   SIGN_OUT_PATH,
+  TEAMS_PATH,
   WEBHOOKS_GITHUB_PATH,
 } from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
@@ -92,6 +96,18 @@ describe("the app", () => {
     expect(module?.["POST"]).toBeTypeOf("function");
   });
 
+  // The members page, which every member opens and whose forms set and clear
+  // the bot flag, and the admin UI's invites and teams pages, whose forms
+  // revoke invites and change teams (teams-and-roles: What admins and members
+  // may do).
+  it.each([MEMBERS_PATH, INVITES_PATH, TEAMS_PATH])("mounts its page on %s, for a GET and a POST", async (path) => {
+    const files = routesOf(path);
+    expect(files, `the route files ${path} reaches`).toHaveLength(1);
+    const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["GET"]).toBeTypeOf("function");
+    expect(module?.["POST"]).toBeTypeOf("function");
+  });
+
   it("mounts the sign-out on its path, for a POST", async () => {
     const files = routesOf(SIGN_OUT_PATH);
     expect(files, `the route files ${SIGN_OUT_PATH} reaches`).toHaveLength(1);
@@ -102,6 +118,7 @@ describe("the app", () => {
   it.each([
     { name: "the activity log's admin page", path: ACTIVITY_LOG_PATH },
     { name: "the packet schema", path: PACKET_SCHEMA_PATH },
+    { name: "the sign-in policy's admin page", path: SIGN_IN_POLICY_PATH },
   ])("mounts $name on $path, for a GET", async ({ path }) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);

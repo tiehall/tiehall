@@ -10,7 +10,9 @@ import { GITHUB_LOGIN, role } from "./schemas.ts";
 // and the invite is bound to that account; it names a role, `member` unless
 // it names `admin`, and expires 7 days after it is created. An admin revokes
 // a pending invite in the web UI without the confirmation step, because that
-// only narrows who may join (teams-and-roles: Revoking an invite).
+// only narrows who may join (teams-and-roles: Revoking an invite). The web
+// UI's invites page lists the invites that wait to be accepted, for admins
+// only, so they can revoke one.
 
 /** An invite as the operations return it: the GitHub login it was created for, the role it gives and when it expires. */
 export const invite = z.object({
@@ -54,4 +56,17 @@ export const revokeInvite = defineCommand({
   stability: "beta",
 });
 
-export const INVITE_COMMANDS = [createInvite, revokeInvite];
+export const listInvites = defineCommand({
+  id: "invites.list",
+  summary: "List the invites that wait to be accepted: neither accepted, revoked nor expired.",
+  input: z.object({}),
+  output: z.object({ invites: z.array(invite) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "members",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const INVITE_COMMANDS = [createInvite, revokeInvite, listInvites];

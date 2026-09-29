@@ -271,6 +271,17 @@ export { CONFIRM_PATH, CONFIRM_ROUTE_PATHS, createConfirmRoute, type ConfirmDown
 export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type GitHubAdminRouteOptions } from "./github-admin-route.ts";
+export {
+  createInvitesRoute,
+  createMembersRoute,
+  createSignInPolicyRoute,
+  createTeamsRoute,
+  INVITES_PATH,
+  MEMBERS_PATH,
+  SIGN_IN_POLICY_PATH,
+  TEAMS_PATH,
+} from "./admin-pages.ts";
+export { createPageRoute, type PageCalls, type PageHandlers, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 export { GITHUB_INSTALLATION_HANDLERS, GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
 export {
   actionDigest,

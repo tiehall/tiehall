@@ -17,12 +17,21 @@ import {
   createGitHubAdminRoute,
   createGitHubWebhookRoute,
   createHomeRoute,
+  createInstallGitHub,
+  createInvitesRoute,
   createLogger,
+  createMembersRoute,
   createRestHandler,
   createSetupGate,
   createSetupRoute,
+  createSignInPolicyRoute,
   createSignInService,
+  createTeamsRoute,
   HANDLERS,
+  INVITES_PATH,
+  MEMBERS_PATH,
+  SIGN_IN_POLICY_PATH,
+  TEAMS_PATH,
   migrate,
   openDatabase,
   openSecretBox,
@@ -39,8 +48,9 @@ import {
 // the first admin). A fresh database the migrations built, with no org yet,
 // and a local server that answers as the web role does: the setup gate first,
 // then the setup screen, the webhooks, the sign-in service's routes, the
-// sign-in page, the home page, the admin UI's GitHub page, the review pages
-// of the confirmation step and the REST API, each built as the web role
+// sign-in page, the home page, the members page, the admin UI's pages for
+// invites, teams, the sign-in policy and GitHub, the review pages of the
+// confirmation step and the REST API, each built as the web role
 // builds it, against the GitHub stub. An install whose URL is not a trial URL
 // is served over HTTPS with a test certificate the browser trusts by its key,
 // through a host-resolver rule, so the browser keeps the `__Host-` and
@@ -138,7 +148,9 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const home = createHomeRoute({ session: (request) => signIn.session(request.headers), secret: () => authSecret, logger });
   const confirmations = createConfirmationNonces({ secret: authSecret });
   const store = { database: db, jobs };
-  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, secrets: () => box });
+  // The operations that ask GitHub, such as creating an invite, reach the stub as the install's stored App.
+  const installGitHub = createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch: github.fetch, logger });
+  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box });
   const confirm = createConfirmRoute({
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS }),
     session: (request) => signIn.session(request.headers),
@@ -147,6 +159,13 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   });
   const rest = createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => undefined, logger });
   const githubAdmin = createGitHubAdminRoute({ execute, session: (request) => signIn.session(request.headers), url, secret: () => authSecret, logger });
+  const pageOptions = { execute, session: (request: Request) => signIn.session(request.headers), url, secret: () => authSecret, logger };
+  const pages: Readonly<Record<string, (request: Request) => Promise<Response>>> = {
+    [MEMBERS_PATH]: createMembersRoute(pageOptions),
+    [INVITES_PATH]: createInvitesRoute(pageOptions),
+    [TEAMS_PATH]: createTeamsRoute(pageOptions),
+    [SIGN_IN_POLICY_PATH]: createSignInPolicyRoute(pageOptions),
+  };
   handle = async (request) => {
     const refused = await gate(request);
     if (refused !== undefined) return refused;
@@ -158,6 +177,8 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     if (pathname.startsWith("/api/auth/")) return signIn.handler(request);
     if (pathname.startsWith("/api/v1/")) return rest(request);
     if (pathname === "/admin/github") return githubAdmin(request);
+    const page = Object.hasOwn(pages, pathname) ? pages[pathname] : undefined;
+    if (page !== undefined) return page(request);
     if (pathname.startsWith("/confirm/")) return confirm(request);
     return new Response("Not found", { status: 404 });
   };

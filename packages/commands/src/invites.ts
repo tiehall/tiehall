@@ -1,7 +1,7 @@
-import { createInvite, revokeInvite } from "@tiehall/catalog";
+import { createInvite, listInvites, revokeInvite } from "@tiehall/catalog";
 import { inviteCreated, inviteRevoked, Refusal, type Role } from "@tiehall/core";
 import { invites, members } from "@tiehall/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { anyLiveInstallation } from "./github-installations.ts";
@@ -29,6 +29,12 @@ import { gitHubAccountNamed, userOfGitHubAccount } from "./github-users.ts";
 // invite that a sign-in accepted can no longer be revoked (409): its person is
 // a member, whom only a removal ends. The revocation and its security event
 // commit together.
+//
+// The invites that wait (teams-and-roles: What admins and members may do):
+// an admin reads, on the web UI's invites page, every invite that is neither
+// accepted, revoked nor expired, oldest first, with the role it gives and when
+// it expires, so they can revoke one. It is an admin action, like creating
+// and revoking invites, and reads only.
 
 /** How long an invite stays valid after it is created. */
 export const INVITE_LIFETIME_DAYS = 7;
@@ -66,6 +72,15 @@ export const INVITE_HANDLERS: Handlers = {
       await writer.record(inviteCreated, { inviteId: created!.id, role });
       return { invite: { id: created!.id, githubLogin: account.login, role, expiresAt: created!.expiresAt.toISOString() } };
     });
+  }),
+
+  [listInvites.id]: defineHandler(listInvites, async (_input, { tx, orgId }) => {
+    const rows = await tx
+      .select({ id: invites.id, githubLogin: invites.githubLogin, role: invites.role, expiresAt: invites.expiresAt })
+      .from(invites)
+      .where(and(eq(invites.orgId, orgId), isNull(invites.acceptedAt), isNull(invites.revokedAt), gt(invites.expiresAt, sql`now()`)))
+      .orderBy(asc(invites.createdAt), asc(invites.id));
+    return { invites: rows.map(({ id, githubLogin, role, expiresAt }) => ({ id, githubLogin, role: role as Role, expiresAt: expiresAt.toISOString() })) };
   }),
 
   [revokeInvite.id]: defineHandler(revokeInvite, async ({ invite }, context) => {

@@ -6,7 +6,8 @@ import { defineCommand } from "./command.ts";
 // writes are limited per token and budgeted per install; sign-in: The sign-in
 // policy; agent-safety: Actions that need the confirmation step;
 // teams-and-roles: What admins and members may do). Each needs the confirmation step for that exact change, so no agent
-// surface offers it.
+// surface offers it. The web UI's sign-in policy page shows the policy in
+// force, to admins only.
 
 /** A daily budget of agent writes: a whole number from 1 to 1,000,000. */
 const dailyWriteBudget = z
@@ -47,4 +48,17 @@ export const setSignInPolicy = defineCommand({
   stability: "beta",
 });
 
-export const SETTINGS_COMMANDS = [setWriteBudget, setSignInPolicy];
+export const getSignInPolicy = defineCommand({
+  id: "settings.get_sign_in_policy",
+  summary: "Show who may join the install by signing in.",
+  input: z.object({}),
+  output: z.object({ policy: signInPolicy }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "sign_in_policy",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const SETTINGS_COMMANDS = [setWriteBudget, setSignInPolicy, getSignInPolicy];

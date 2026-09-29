@@ -1,4 +1,4 @@
-import { setSignInPolicy } from "@tiehall/catalog";
+import { getSignInPolicy, setSignInPolicy } from "@tiehall/catalog";
 import { DEFAULT_SIGN_IN_POLICY, isSignInPolicy, signInPolicyChanged, signInPolicyText, type SignInPolicy } from "@tiehall/core";
 import { installSettings } from "@tiehall/db";
 import { eq } from "drizzle-orm";
@@ -16,6 +16,8 @@ import type { OrgContext } from "./with-org.ts";
 // removes no member: under "invited people only", organization membership
 // admits nobody who is not a member yet, while invites and existing
 // memberships still admit. The change and its security event commit together.
+// The web UI's sign-in policy page shows an admin the policy in force; that
+// read is an admin action too.
 
 /** The install's sign-in policy, read in the caller's transaction; the default until an admin changes it. */
 export async function signInPolicyOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, lock = false): Promise<SignInPolicy> {
@@ -25,6 +27,8 @@ export async function signInPolicyOf({ tx, orgId }: Pick<OrgContext, "tx" | "org
 }
 
 export const SIGN_IN_POLICY_HANDLERS: Handlers = {
+  [getSignInPolicy.id]: defineHandler(getSignInPolicy, async (_input, context) => ({ policy: await signInPolicyOf(context) })),
+
   [setSignInPolicy.id]: defineHandler(setSignInPolicy, async ({ policy }, context) => {
     const previousPolicy = await signInPolicyOf(context, true);
     if (previousPolicy === policy) return { policy, previousPolicy };

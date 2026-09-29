@@ -22,7 +22,7 @@ export { CATALOG } from "./commands.ts";
 export { deprecationHeaders } from "./deprecation.ts";
 export { acknowledgeEvents, EVENT_COMMANDS, eventView, readEvents } from "./events.ts";
 export { changeMemberRole, listedMember, listMembers, MEMBER_COMMANDS, removeMember, setBotFlag } from "./members.ts";
-export { createInvite, invite, INVITE_COMMANDS, revokeInvite } from "./invites.ts";
+export { createInvite, invite, INVITE_COMMANDS, listInvites, revokeInvite } from "./invites.ts";
 export {
   claimRequest,
   createRequest,
@@ -89,8 +89,8 @@ export {
 } from "./proposals.ts";
 export { GITHUB_LOGIN, role, user } from "./schemas.ts";
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
-export { setSignInPolicy, setWriteBudget, SETTINGS_COMMANDS } from "./settings.ts";
-export { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
+export { getSignInPolicy, setSignInPolicy, setWriteBudget, SETTINGS_COMMANDS } from "./settings.ts";
+export { addTeamMember, changeTeamKey, createTeam, listedTeam, listTeams, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { JIRA_SITE_URL, jiraSiteUrl } from "./integrations.ts";
 export {
   connectGitHubInstallation,

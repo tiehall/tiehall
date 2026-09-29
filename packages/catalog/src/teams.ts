@@ -1,6 +1,7 @@
 import { TEAM_KEY } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
+import { user } from "./schemas.ts";
 
 // The team operations (teams-and-roles: Teams; teams-and-roles: What admins
 // and members may do; teams-and-roles: Team keys). Only admins manage teams,
@@ -8,7 +9,8 @@ import { defineCommand } from "./command.ts";
 // agent surface offers. A user can belong to several teams, and a team may
 // have no members. Team changes are not security events (design.md, Readings
 // to confirm with the founder: R21), and they change no request, so they
-// record no event.
+// record no event. The web UI's teams page lists the teams, for admins only,
+// with the keys each had before a rename and the people in each.
 
 /** A team, as the team operations return it. */
 export const team = z.object({
@@ -93,4 +95,23 @@ export const removeTeamMember = defineCommand({
   stability: "beta",
 });
 
-export const TEAM_COMMANDS = [createTeam, renameTeam, changeTeamKey, addTeamMember, removeTeamMember];
+/** A team as the teams page lists it: its key, the keys it had before, which still lead to it, its name and the people in it. */
+export const listedTeam = team.extend({
+  aliases: z.array(z.string()),
+  members: z.array(user),
+});
+
+export const listTeams = defineCommand({
+  id: "teams.list",
+  summary: "List the install's teams, each with its key, the keys it had before, its name and the people in it.",
+  input: z.object({}),
+  output: z.object({ teams: z.array(listedTeam) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "teams",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const TEAM_COMMANDS = [createTeam, renameTeam, changeTeamKey, addTeamMember, removeTeamMember, listTeams];

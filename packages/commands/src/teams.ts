@@ -1,7 +1,7 @@
-import { addTeamMember, changeTeamKey, createTeam, removeTeamMember, renameTeam } from "@tiehall/catalog";
+import { addTeamMember, changeTeamKey, createTeam, listTeams, removeTeamMember, renameTeam } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
-import { teamKeyAliases, teamMembers, teams } from "@tiehall/db";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { teamKeyAliases, teamMembers, teams, users } from "@tiehall/db";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { memberOf } from "./members.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -19,6 +19,11 @@ import type { OrgContext } from "./with-org.ts";
 // rename: a team's old key stays its alias, so no other team can take it, and
 // a key in use by another team gets 409 and changes nothing. The key's form is
 // the catalog schema's, and the database checks it again.
+//
+// The teams page of the web UI reads every team, in the order of their keys,
+// with the keys each had before a rename and the people in each, named by
+// their GitHub login with their bot mark (teams-and-roles: Bot users); that
+// read is an admin action too.
 
 /**
  * The advisory lock that serializes changes to team keys, so two changes can
@@ -59,6 +64,28 @@ async function teamOf({ tx, orgId }: OrgContext, teamId: string): Promise<{ id: 
 }
 
 export const TEAM_HANDLERS: Handlers = {
+  [listTeams.id]: defineHandler(listTeams, async (_input, { tx, orgId }) => {
+    const rows = await tx.select({ id: teams.id, key: teams.key, name: teams.name }).from(teams).where(eq(teams.orgId, orgId)).orderBy(asc(teams.key));
+    const aliases = await tx
+      .select({ teamId: teamKeyAliases.teamId, key: teamKeyAliases.key })
+      .from(teamKeyAliases)
+      .where(eq(teamKeyAliases.orgId, orgId))
+      .orderBy(asc(teamKeyAliases.key));
+    const people = await tx
+      .select({ teamId: teamMembers.teamId, id: users.id, login: users.githubLogin, bot: users.bot })
+      .from(teamMembers)
+      .innerJoin(users, and(eq(users.orgId, teamMembers.orgId), eq(users.id, teamMembers.userId)))
+      .where(eq(teamMembers.orgId, orgId))
+      .orderBy(asc(users.githubLogin));
+    return {
+      teams: rows.map((team) => ({
+        ...team,
+        aliases: aliases.filter(({ teamId }) => teamId === team.id).map(({ key }) => key),
+        members: people.filter(({ teamId }) => teamId === team.id).map(({ id, login, bot }) => ({ id, login, kind: "human" as const, bot })),
+      })),
+    };
+  }),
+
   [createTeam.id]: defineHandler(createTeam, async ({ key, name }, context) => {
     await context.tx.execute(TEAM_KEYS_LOCK);
     await assertKeyFree(context, key);

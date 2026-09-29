@@ -1,5 +1,6 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
+import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
@@ -19,6 +20,7 @@ import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Enviro
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
+import type { PageRoute, PageRouteOptions } from "./web-pages.ts";
 import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
@@ -168,6 +170,50 @@ export function githubAdminRoute(env: Environment): GitHubAdminRoute {
     logger,
   });
   return githubAdmin;
+}
+
+/** What every page of the web UI is built with: execute(), the signed-in session, the install's URL and the auth secret. */
+function pageOptionsOf(env: Environment): PageRouteOptions {
+  const { execute, logger, signIn } = servicesOf(env);
+  return {
+    execute,
+    session: (request) => signIn.session(request.headers),
+    url: installUrl(env["TIEHALL_URL"] ?? ""),
+    secret: () => readAuthSecret(env),
+    logger,
+  };
+}
+
+const pages = new Map<string, PageRoute>();
+
+/** A page of the web UI, built once per process. */
+function pageOf(name: string, env: Environment, create: (options: PageRouteOptions) => PageRoute): PageRoute {
+  let route = pages.get(name);
+  if (route === undefined) {
+    route = create(pageOptionsOf(env));
+    pages.set(name, route);
+  }
+  return route;
+}
+
+/** The members page at /members, which every member may open, for the signed-in user's web session. */
+export function membersRoute(env: Environment): PageRoute {
+  return pageOf("members", env, createMembersRoute);
+}
+
+/** The invites page of the admin UI under /admin/invites, for the signed-in admin's web session. */
+export function invitesRoute(env: Environment): PageRoute {
+  return pageOf("invites", env, createInvitesRoute);
+}
+
+/** The teams page of the admin UI under /admin/teams, for the signed-in admin's web session. */
+export function teamsRoute(env: Environment): PageRoute {
+  return pageOf("teams", env, createTeamsRoute);
+}
+
+/** The sign-in policy page of the admin UI under /admin/sign-in-policy, for the signed-in admin's web session. */
+export function signInPolicyRoute(env: Environment): PageRoute {
+  return pageOf("sign-in policy", env, createSignInPolicyRoute);
 }
 
 /**
