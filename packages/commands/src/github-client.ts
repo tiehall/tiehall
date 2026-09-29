@@ -309,8 +309,12 @@ export async function everyPage(octokit: Octokit, route: string, parameters: Rec
 export interface SignedInUser {
   id: number;
   login: string;
-  /** The primary verified email address; undefined when the account has none, or GitHub did not give it. */
-  primaryEmail: string | undefined;
+  /**
+   * The primary verified email address; null when the account has none;
+   * undefined when GitHub did not give the account's addresses, as when it
+   * fails the read, which reports nothing of them.
+   */
+  primaryEmail: string | null | undefined;
   profile: Record<string, unknown>;
 }
 
@@ -322,7 +326,9 @@ const USER_EMAILS = z.array(z.object({ email: z.string(), primary: z.boolean(), 
  * keeps no GitHub user token; sign-in: The email address comes from GitHub).
  * It is the one call Tiehall makes with a user's token, during the sign-in
  * that GitHub issued the token for, and the token is used for nothing else:
- * nothing keeps it. Undefined when GitHub does not say who signed in.
+ * nothing keeps it. Undefined when GitHub does not say who signed in. When
+ * GitHub fails the read of the account's email addresses, the primary email
+ * is undefined, and the sign-in still succeeds and keeps the address it has.
  */
 export async function readSignedInUser(accessToken: string, options: GitHubClientOptions = {}): Promise<SignedInUser | undefined> {
   const logger = (options.logger ?? createLogger()).child({ integration: "github" });
@@ -337,13 +343,15 @@ export async function readSignedInUser(accessToken: string, options: GitHubClien
   }
   const parsed = SIGNED_IN_USER.safeParse(profile);
   if (!parsed.success) return undefined;
-  let primaryEmail: string | undefined;
+  let primaryEmail: string | null | undefined;
   try {
     const { data } = await octokit.request("GET /user/emails");
     const emails = USER_EMAILS.safeParse(data);
-    primaryEmail = emails.success ? emails.data.find((email) => email.primary && email.verified)?.email : undefined;
-  } catch {
-    primaryEmail = undefined;
+    if (emails.success) primaryEmail = emails.data.find((email) => email.primary && email.verified)?.email ?? null;
+    else logger.warn("github: GitHub's answer to the read of the email addresses of who signed in lists none");
+  } catch (error) {
+    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined;
+    logger.warn("github: GitHub did not give the email addresses of who signed in", { status });
   }
   return { id: parsed.data.id, login: parsed.data.login, primaryEmail, profile: parsed.data };
 }

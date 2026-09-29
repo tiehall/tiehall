@@ -594,7 +594,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
    * Who signed in, from GitHub, with the user token of the sign-in, which is
    * used for this and nothing else, through the GitHub client: the account's
    * numeric id and login, and its primary verified email address, if it has
-   * one.
+   * one. When GitHub does not give the account's addresses, the user keeps the
+   * address it has: the field is left out, so the sign-in does not change it.
    */
   async function githubUser(accessToken: string | undefined) {
     if (accessToken === undefined) return null;
@@ -608,7 +609,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         email: `github:${id}`,
         emailVerified: true,
         githubAccountId: id,
-        primaryEmail: primaryEmail ?? null,
+        ...(primaryEmail === undefined ? {} : { primaryEmail }),
       },
       data: signedIn.profile as unknown as GithubProfile,
     };

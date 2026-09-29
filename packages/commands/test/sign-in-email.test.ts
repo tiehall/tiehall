@@ -72,6 +72,29 @@ describe("the email address Tiehall keeps", () => {
   });
 });
 
+describe("GitHub failing the read of the account's email addresses at a sign-in", () => {
+  // A failed read reports nothing of the account's addresses: the sign-in succeeds and keeps the address it has.
+  it("keeps the address Tiehall has, whether GitHub answers with an error or with a body that lists no addresses", async () => {
+    stub.setEmails("ana-k", [{ email: "ana@acme.example", primary: true, verified: true, visibility: "private" }]);
+    expect((await harness.signIn("ana-k")).response.status).toBe(302);
+    expect(await emailOf(anaUserId)).toBe("ana@acme.example");
+    const answers = [
+      () => new Response('{"message":"Server Error"}', { status: 502, headers: { "content-type": "application/json" } }),
+      () => new Response("<html><body>Blocked by policy.</body></html>", { status: 200, headers: { "content-type": "text/html" } }),
+    ];
+    for (const answer of answers) {
+      const failing = await startSignIn(install, stub, {
+        sameAppAs: harness,
+        fetch: async (input, init) => (new URL(input instanceof Request ? input.url : String(input)).pathname === "/user/emails" ? answer() : fetch(input, init)),
+      });
+      const { response, jar } = await failing.signIn("ana-k");
+      expect(response.status).toBe(302);
+      expect(await failing.sessionOf(jar)).toMatchObject({ userId: anaUserId });
+      expect(await emailOf(anaUserId)).toBe("ana@acme.example");
+    }
+  });
+});
+
 describe("an email address in the company's domain", () => {
   it("admits nobody who is not otherwise admitted", async () => {
     stub.addUser({ login: "kim-at-acme", email: "kim@acme.example" });
