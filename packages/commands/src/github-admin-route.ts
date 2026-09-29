@@ -16,6 +16,7 @@ import type { Execute } from "./execute.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
 import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { renewingSession } from "./session-renewal.ts";
 import { isTrialUrl } from "./settings.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
@@ -47,12 +48,18 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // is sent to sign in first (D28 #66). The page runs no script, loads nothing,
 // and cannot be framed; a refusal is a page for a browser, which leads back to
 // the page, or to sign in, and an RFC 9457 problem for every other client
-// (html.ts). The other admin pages come with later tasks.
+// (html.ts). Every answer carries the cookie that renews the session the page
+// read, when the read renewed it (sign-in: Signing out and ending sessions;
+// session-renewal.ts). The other admin pages come with later tasks.
 
 export interface GitHubAdminRouteOptions {
   execute: Execute;
-  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
-  session(request: Request): Promise<WebSessionCaller | undefined>;
+  /**
+   * The signed-in user's web session, from the request's session cookie;
+   * undefined when nobody is signed in. The read may renew the session, and
+   * adds to `renewal` the cookies the route's answer carries (session-renewal.ts).
+   */
+  session(request: Request, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** The install's URL (TIEHALL_URL), as its origin, which a write's Origin must equal. */
   url: string;
   /** The install's auth secret (TIEHALL_AUTH_SECRET), which signs the CSRF tokens; read when it is first needed. */
@@ -70,11 +77,13 @@ type Integration = z.output<typeof getGitHubIntegration.output>;
 
 export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHubAdminRoute {
   const logger = options.logger ?? createLogger();
-  return async function githubAdmin(request) {
+  return (request) => renewingSession((renewal) => githubAdmin(request, renewal));
+
+  async function githubAdmin(request: Request, renewal: Headers): Promise<Response> {
     try {
-      if (request.method === "POST") return await change(request);
+      if (request.method === "POST") return await change(request, renewal);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
-      const caller = await options.session(request);
+      const caller = await options.session(request, renewal);
       if (caller === undefined) {
         return new Response(null, {
           status: 303,
@@ -91,14 +100,14 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
       logger.error("github admin: the page failed", { error });
       return problem(internalErrorProblem());
     }
-  };
+  }
 
   /**
    * Disconnects the installation the page's form names, or switches GitHub's
    * mode, once the request passes the web UI's write checks.
    */
-  async function change(request: Request): Promise<Response> {
-    const caller = await options.session(request);
+  async function change(request: Request, renewal: Headers): Promise<Response> {
+    const caller = await options.session(request, renewal);
     if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to change the GitHub integration.");
     const form = new URLSearchParams(await request.text());
     assertWebWrite(

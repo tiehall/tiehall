@@ -1,7 +1,7 @@
 "use server";
 
-import { headers } from "next/headers";
-import { webCommands, type WebResult } from "@tiehall/commands/web";
+import { cookies, headers } from "next/headers";
+import { sessionCookiesOf, webCommands, type WebResult } from "@tiehall/commands/web";
 
 // How a server action writes through an operation (public-api: One definition
 // per operation, the same on every surface; agent-safety: One confirmation
@@ -11,16 +11,27 @@ import { webCommands, type WebResult } from "@tiehall/commands/web";
 // Sec-Fetch-Site is same-origin, and then through execute(), in this process,
 // as the user's web session, so the web UI has no rights the same user lacks
 // over /api/v1. It gets back the output or the same RFC 9457 problem. An action
-// that needs the confirmation step is applied only from its review page.
+// that needs the confirmation step is applied only from its review page. Its
+// read of the session may renew it, and it sets the cookies that renew the
+// browser's, as a route handler's answer carries them (sign-in: Signing out
+// and ending sessions; github-layer-hardening: design.md, Technical
+// decisions: T4); a server component's read renews nothing.
 
 export async function writeCommand<Output = unknown>(commandId: string, input: unknown, csrfToken: string): Promise<WebResult<Output>> {
   const request = await headers();
   const ipAddress = request.get("x-forwarded-for") ?? undefined;
   const userAgent = request.get("user-agent") ?? undefined;
-  return webCommands(process.env, async () => new Headers(await headers())).write<Output>(
+  const renewal = new Headers();
+  const result = await webCommands(process.env, async () => new Headers(await headers())).write<Output>(
     commandId,
     input,
     { origin: request.get("origin"), fetchSite: request.get("sec-fetch-site"), csrfToken },
-    { origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) } },
+    { origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) }, renewal },
   );
+  const jar = sessionCookiesOf(renewal);
+  if (jar.length > 0) {
+    const set = await cookies();
+    for (const cookie of jar) set.set(cookie);
+  }
+  return result;
 }

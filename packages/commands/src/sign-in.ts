@@ -103,6 +103,22 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // link to the GitHub account, and the refusal is recorded with its security
 // event.
 //
+// How long a web session lasts (sign-in: Signing out and ending sessions;
+// github-layer-hardening: design.md, Decisions this change rests on: D50 (6);
+// design.md, Technical decisions: T4): the service expires a session 7 days
+// after it was created or last extended, and a read of the session that is
+// allowed to renew it extends it to 7 days after the read once a day or more
+// has passed since then, with a cookie that renews the browser's. A route
+// handler or a server action passes a Headers to session() and carries the
+// cookies it collects on its answer; a server component, which cannot set a
+// cookie, passes none, and its read renews nothing. Whatever its uses, a
+// session ends 30 days after the sign-in that created it: session() deletes
+// it then and reads it as none, so the browser is sent to sign in, which runs
+// the checks of who may sign in again, rather than refused as a removed
+// member's, which is what an ended session means. The library has no such cap,
+// so it is Tiehall's own check. The session the setup screen's sign-in creates
+// follows the same rules.
+//
 // The rate limit (design.md, Technical decisions: T7): the service's own
 // limiter is on in every environment, with the library's window and limits,
 // in this process's memory, which one web process per install needs; it is
@@ -157,6 +173,15 @@ const NO_USER_TOKEN = {
 /** The code Better Auth carries a refusal under, from the admission check to the callback's answer. */
 const REFUSED_CODE = "sign_in_refused";
 
+/** How many days a web session lasts after it was created or last extended, when it is not used. */
+export const SESSION_IDLE_DAYS = 7;
+/** How many days must pass since a web session was created or last extended before a use extends it again. */
+export const SESSION_UPDATE_AGE_DAYS = 1;
+/** How many days after the sign-in that created it a web session ends at the latest, however often it is used. */
+export const SESSION_LIFETIME_DAYS = 30;
+
+const DAY_SECONDS = 24 * 60 * 60;
+
 /** The sign-in service's rate limit: at most this many calls to one route from one client address in each window. */
 export const RATE_LIMIT_MAX = 100;
 /** The window of the sign-in service's rate limit, in seconds. */
@@ -206,10 +231,15 @@ export interface SignInService {
   signOut(request: Request): Promise<Response>;
   /**
    * The web session a request's cookie names, or undefined when it names
-   * none. A session that a removal ended, or whose user is not a member of
-   * the install, is refused with 403 removed-member.
+   * none, has expired or has reached its 30 days, which deletes it. A session
+   * that a removal ended, or whose user is not a member of the install, is
+   * refused with 403 removed-member. Given `renewal`, as a route handler or a
+   * server action gives it, the read extends a session due for it and adds
+   * there the Set-Cookie values that renew the browser's cookie, or expire
+   * it for a session that is gone, which the caller's answer carries; without
+   * it, as for a server component, the read renews nothing.
    */
-  session(headers: Headers): Promise<WebSessionCaller | undefined>;
+  session(headers: Headers, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
   routes(): Promise<string[]>;
   /** The sign-in that completes setup, under /setup/sign-in. */
@@ -379,9 +409,13 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           return { error: REFUSED_CODE, errorDescription: SIGN_IN_REFUSED };
         },
       },
+      // Both instances store sessions of the same lengths: 7 days from their creation or last extension, extended at
+      // most once a day; the 30-day cap is session()'s own.
       session: {
         modelName: "webSessions",
         additionalFields: { orgId, endedAt: { type: "date", required: false, input: false } },
+        expiresIn: SESSION_IDLE_DAYS * DAY_SECONDS,
+        updateAge: SESSION_UPDATE_AGE_DAYS * DAY_SECONDS,
       },
       account: {
         modelName: "signInAccounts",
@@ -770,20 +804,52 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
     },
 
-    async session(headers) {
+    async session(headers, renewal) {
       if (!cookieNames(headers).includes(sessionCookie)) return undefined;
       const auth = await current();
       if (auth === undefined) return undefined;
-      const found = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true } });
+      // First a read that renews nothing: an ended session, a capped one or a removed member's is not extended.
+      const read = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
+      // A session that has expired is gone now, and the service's answer expires the browser's cookie.
+      passOn(read.headers, renewal);
+      const found = read.response;
       if (found === null) return undefined;
       const session = found.session as typeof found.session & { endedAt?: Date | null };
       if (session.endedAt !== undefined && session.endedAt !== null) throw new RemovedMemberError();
+      // 30 days after its sign-in, the session goes, and the browser is sent to sign in again.
+      if (Date.now() - new Date(session.createdAt).getTime() >= SESSION_LIFETIME_DAYS * DAY_SECONDS * 1000) {
+        await options.database.delete(webSessions).where(eq(webSessions.id, session.id));
+        const gone = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
+        passOn(gone.headers, renewal);
+        return undefined;
+      }
       // Only a member's session serves anything, whatever ended or did not end it.
       const [member] = await options.database.select({ userId: members.userId }).from(members).where(eq(members.userId, session.userId)).limit(1);
       if (member === undefined) throw new RemovedMemberError();
+      // A day or more after its creation or last extension, a read that may renew it extends it, as the service does.
+      if (renewal !== undefined && dueForExtension(new Date(session.expiresAt))) {
+        const renewed = await auth.api.getSession({ headers, query: { disableCookieCache: true }, returnHeaders: true });
+        passOn(renewed.headers, renewal);
+        if (renewed.response === null) return undefined;
+      }
       return { kind: "web_session", userId: session.userId, sessionId: session.id };
     },
   };
+}
+
+/**
+ * Whether a session that expires then is due to be extended by a use now: a
+ * day or more has passed since it was created or last extended, which set its
+ * expiry 7 days after that, by the service's own rule.
+ */
+function dueForExtension(expiresAt: Date): boolean {
+  return expiresAt.getTime() - (SESSION_IDLE_DAYS - SESSION_UPDATE_AGE_DAYS) * DAY_SECONDS * 1000 <= Date.now();
+}
+
+/** Adds the Set-Cookie values of the service's answer to the ones a route handler or a server action carries on. */
+function passOn(answer: Headers, renewal: Headers | undefined): void {
+  if (renewal === undefined) return;
+  for (const cookie of answer.getSetCookie()) renewal.append("set-cookie", cookie);
 }
 
 /**

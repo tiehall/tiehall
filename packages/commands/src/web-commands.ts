@@ -24,14 +24,25 @@ import { assertWebWrite, csrfTokenFor, type WebWriteRequest } from "./web-writes
 // problem the REST route answers with: a refusal as the error model gives it,
 // 401 without a signed-in user, and for any other failure a 500 that says
 // nothing about it, logged by its name and stack, never its message.
+// A server action's write may renew the web session it reads, and hands the
+// cookies that renew it to the server action, which sets them; a server
+// component's read, and the CSRF token it puts in its forms, renew nothing,
+// because a server component cannot set a cookie (sign-in: Signing out and
+// ending sessions; github-layer-hardening: design.md, Technical decisions:
+// T4; session-renewal.ts).
 
 /** An operation's outcome, as a server action or a server component gets it. */
 export type WebResult<Output = unknown> = { ok: true; output: Output } | { ok: false; problem: ProblemDetails };
 
 export interface WebCommandOptions {
   execute: Execute;
-  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
-  session(): Promise<WebSessionCaller | undefined>;
+  /**
+   * The signed-in user's web session, from the request's session cookie;
+   * undefined when nobody is signed in. Given `renewal`, the read may renew
+   * the session, and adds there the cookies that renew it; without it, the
+   * read renews nothing.
+   */
+  session(renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** The install's URL (TIEHALL_URL), as its origin, which a write's Origin must equal. */
   url: string;
   /** The install's auth secret (TIEHALL_AUTH_SECRET), which signs the CSRF tokens; read when it is first needed. */
@@ -42,12 +53,16 @@ export interface WebCommandOptions {
 export interface WebCommands {
   /** Runs an operation for a server component, as the signed-in user's web session, in a read-only transaction. */
   read<Output = unknown>(commandId: string, input: unknown): Promise<WebResult<Output>>;
-  /** Runs an operation for a server action, once the request has passed the web UI's write checks. */
+  /**
+   * Runs an operation for a server action, once the request has passed the
+   * web UI's write checks; the read of the session may renew it, and adds to
+   * `renewal` the cookies the server action sets.
+   */
   write<Output = unknown>(
     commandId: string,
     input: unknown,
     request: WebWriteRequest,
-    options?: Pick<ExecuteOptions, "origin">,
+    options?: Pick<ExecuteOptions, "origin"> & { renewal?: Headers },
   ): Promise<WebResult<Output>>;
   /** The CSRF token a page puts in its forms, for the signed-in user's web session; undefined when nobody is signed in. */
   csrfToken(): Promise<string | undefined>;
@@ -56,8 +71,8 @@ export interface WebCommands {
 export function createWebCommands(options: WebCommandOptions): WebCommands {
   const logger = options.logger ?? createLogger();
 
-  async function signedIn(): Promise<WebSessionCaller> {
-    const caller = await options.session();
+  async function signedIn(renewal?: Headers): Promise<WebSessionCaller> {
+    const caller = await options.session(renewal);
     if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to do this.");
     return caller;
   }
@@ -76,9 +91,9 @@ export function createWebCommands(options: WebCommandOptions): WebCommands {
     read(commandId, input) {
       return outcome(commandId, async () => options.execute(commandId, await signedIn(), input, { readOnly: true }));
     },
-    write(commandId, input, request, runOptions = {}) {
+    write(commandId, input, request, { renewal, ...runOptions } = {}) {
       return outcome(commandId, async () => {
-        const caller = await signedIn();
+        const caller = await signedIn(renewal);
         assertWebWrite(request, { url: options.url, secret: options.secret(), sessionId: caller.sessionId, confirm: false });
         return options.execute(commandId, caller, input, runOptions);
       });

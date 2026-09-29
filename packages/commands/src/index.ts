@@ -271,6 +271,9 @@ export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOpti
 export {
   AUTH_BASE_PATH,
   createSignInService,
+  SESSION_IDLE_DAYS,
+  SESSION_LIFETIME_DAYS,
+  SESSION_UPDATE_AGE_DAYS,
   SETUP_SIGN_IN_REFUSED,
   SIGN_IN_PATH,
   SIGN_IN_REFUSED,
@@ -279,6 +282,7 @@ export {
   type SignInService,
   type SignInServiceOptions,
 } from "./sign-in.ts";
+export { renewingSession, sessionCookiesOf, withSessionCookies, type SessionCookie } from "./session-renewal.ts";
 export { routeInventory, servedOverHttp, SIGN_IN_ROUTES, unclassifiedRoutes, type SignInRouteClass } from "./sign-in-routes.ts";
 export {
   createConfirmationStep,

@@ -3,6 +3,7 @@ import type { WebSessionCaller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
 import { answerRefusal, escapeHtml, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { renewingSession } from "./session-renewal.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 
@@ -22,12 +23,18 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // cannot be framed; a refusal is a page for a browser, which leads back to
 // the page, or to sign in, and an RFC 9457 problem for every other client
 // (public-api: One error model for Tiehall's own refusals; html.ts), and any
-// other failure is a 500 that says nothing about it.
+// other failure is a 500 that says nothing about it. Every answer carries the
+// cookie that renews the session the page read, when the read renewed it
+// (sign-in: Signing out and ending sessions; session-renewal.ts).
 
 export interface PageRouteOptions {
   execute: Execute;
-  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
-  session(request: Request): Promise<WebSessionCaller | undefined>;
+  /**
+   * The signed-in user's web session, from the request's session cookie;
+   * undefined when nobody is signed in. The read may renew the session, and
+   * adds to `renewal` the cookies the route's answer carries (session-renewal.ts).
+   */
+  session(request: Request, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** The install's URL (TIEHALL_URL), as its origin, which a write's Origin must equal. */
   url: string;
   /** The install's auth secret (TIEHALL_AUTH_SECRET), which signs the CSRF tokens; read when it is first needed. */
@@ -63,12 +70,14 @@ export interface PageHandlers {
 /** A page of the web UI at a fixed path, with its GET and, if it has forms, its POST. */
 export function createPageRoute(options: PageRouteOptions, handlers: PageHandlers): PageRoute {
   const logger = options.logger ?? createLogger();
-  return async function pageRoute(request) {
+  return (request) => renewingSession((renewal) => pageAnswer(request, renewal));
+
+  async function pageAnswer(request: Request, renewal: Headers): Promise<Response> {
     try {
       const post = handlers.post;
       const isGet = request.method === "GET" || request.method === "HEAD";
       if (!isGet && (request.method !== "POST" || post === undefined)) throw new Refusal("route-not-found", "There is no such page here.");
-      const caller = await options.session(request);
+      const caller = await options.session(request, renewal);
       if (caller === undefined) {
         if (isGet) return signInFirst(handlers.path);
         throw new Refusal("unauthenticated", "Sign in to Tiehall to do this.");
@@ -92,7 +101,7 @@ export function createPageRoute(options: PageRouteOptions, handlers: PageHandler
       logger.error(`${handlers.name}: the page failed`, { error });
       return problem(internalErrorProblem());
     }
-  };
+  }
 }
 
 /** Where a page's refusal leads a browser on: to sign in when it is not signed in, and otherwise back to the page, whose form it was. */

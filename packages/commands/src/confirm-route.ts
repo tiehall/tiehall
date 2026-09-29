@@ -5,6 +5,7 @@ import type { ConfirmationStep } from "./confirmation-step.ts";
 import type { Execute } from "./execute.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { renewingSession } from "./session-renewal.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 
 // The review pages of the confirmation step, under /confirm/<command id>
@@ -47,7 +48,9 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // a POST without a signed-in user, 404 for an action with no review page, 403
 // removed-member for a user who is no longer a member, whatever they send, 400
 // for input that fails its schema or is not JSON, 403 for a failed check or a
-// missing or invalid nonce.
+// missing or invalid nonce. Every answer, a refusal's and a file's included,
+// carries the cookie that renews the session the route read, when the read
+// renewed it (sign-in: Signing out and ending sessions; session-renewal.ts).
 //
 // A proposal's confirm page is /confirm/{proposal} (requests: The proposal's
 // confirm page; design.md, Self-hosting decisions: S15): the review page of
@@ -76,8 +79,12 @@ export interface ConfirmRouteOptions {
   step: ConfirmationStep;
   /** The commands whose confirmation answers with a file instead of the "Confirmed" page. */
   downloads?: ConfirmDownloads;
-  /** The signed-in user's web session, from the request's session cookie; undefined when nobody is signed in. */
-  session(request: Request): Promise<WebSessionCaller | undefined>;
+  /**
+   * The signed-in user's web session, from the request's session cookie;
+   * undefined when nobody is signed in. The read may renew the session, and
+   * adds to `renewal` the cookies the route's answer carries (session-renewal.ts).
+   */
+  session(request: Request, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** How a confirmation is applied and checked. */
   write: {
     execute: Execute;
@@ -104,16 +111,18 @@ export const CONFIRM_ROUTE_PATHS: readonly string[] = [`${CONFIRM_PATH}{command}
 export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   const logger = options.logger ?? createLogger();
   const secret = () => (typeof options.write.secret === "string" ? options.write.secret : options.write.secret());
-  return async function confirm(request) {
+  return (request) => renewingSession((renewal) => confirm(request, renewal));
+
+  async function confirm(request: Request, renewal: Headers): Promise<Response> {
     const url = new URL(request.url);
     const { proposal, undo } = proposalPageOf(url.pathname);
     const commandId = proposal === undefined ? commandIdOf(url.pathname) : undo ? undoCommitment.id : confirmProposal.id;
     // Where a refusal leads a browser on: back to the review page it asked for, or whose form it posted.
     const back = { path: `${url.pathname}${url.search}` };
     try {
-      if (request.method === "POST") return await apply(request, commandId, proposal, undo, back);
+      if (request.method === "POST") return await apply(request, renewal, commandId, proposal, undo, back);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
-      const caller = await options.session(request);
+      const caller = await options.session(request, renewal);
       // A browser without a session signs in first, and comes back to this page (agent-surfaces: A browser without a session is sent to sign-in).
       if (caller === undefined) return signInFirst(`${url.pathname}${url.search}`);
       const { input, refusal } = proposal === undefined ? parseInput(url.searchParams.get("input")) : { input: { proposal }, refusal: undefined };
@@ -129,17 +138,24 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       logger.error("confirm: the review page failed", { operationId: commandId, error });
       return problem(internalErrorProblem());
     }
-  };
+  }
 
-  async function signedIn(request: Request): Promise<WebSessionCaller> {
-    const caller = await options.session(request);
+  async function signedIn(request: Request, renewal: Headers): Promise<WebSessionCaller> {
+    const caller = await options.session(request, renewal);
     if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to confirm an action.");
     return caller;
   }
 
   /** Applies the action the review page's form posted: the action it reviewed, or, on a proposal's page, a rejection. */
-  async function apply(request: Request, commandId: string, proposal: string | undefined, undo: boolean, back: { path: string }): Promise<Response> {
-    const caller = await signedIn(request);
+  async function apply(
+    request: Request,
+    renewal: Headers,
+    commandId: string,
+    proposal: string | undefined,
+    undo: boolean,
+    back: { path: string },
+  ): Promise<Response> {
+    const caller = await signedIn(request, renewal);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
     const form = await formOf(request);
     // A proposal's page is its own path; a command's review page is its path with the input its form posted.

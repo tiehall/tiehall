@@ -38,6 +38,7 @@ import {
   REVIEWS,
   startSetup,
   type Database,
+  type Execute,
   type JobData,
   type JobSender,
   type SignInService,
@@ -65,6 +66,10 @@ export interface AppServer {
   /** The app's database, as the app role. */
   db: Database;
   signIn: SignInService;
+  /** execute(), as the web role builds it. */
+  execute: Execute;
+  /** The install's auth secret, TIEHALL_AUTH_SECRET, which signs the CSRF tokens and the sign-in service's cookies. */
+  authSecret: string;
   /** The jobs the install's writes sent, in order. */
   sentJobs: { queue: string; data: JobData }[];
   /** The browser's launch arguments that send the install's host to this server and trust its certificate. */
@@ -145,7 +150,8 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const gate = createSetupGate({ database: db, url, logger });
   const setup = createSetupRoute({ database: db, url, secrets: () => box, github, signIn: signIn.setup, logger });
   const webhooks = createGitHubWebhookRoute({ database: db, secrets: () => box, jobs, logger });
-  const home = createHomeRoute({ session: (request) => signIn.session(request.headers), secret: () => authSecret, logger });
+  // Each route reads the session as the web role's does: it may renew it, and the route's answer carries the cookie.
+  const home = createHomeRoute({ session: (request, renewal) => signIn.session(request.headers, renewal), secret: () => authSecret, logger });
   const confirmations = createConfirmationNonces({ secret: authSecret });
   const store = { database: db, jobs };
   // The operations that ask GitHub, such as creating an invite, reach the stub as the install's stored App.
@@ -153,13 +159,19 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box });
   const confirm = createConfirmRoute({
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub }),
-    session: (request) => signIn.session(request.headers),
+    session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url, secret: authSecret },
     logger,
   });
   const rest = createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => undefined, logger });
-  const githubAdmin = createGitHubAdminRoute({ execute, session: (request) => signIn.session(request.headers), url, secret: () => authSecret, logger });
-  const pageOptions = { execute, session: (request: Request) => signIn.session(request.headers), url, secret: () => authSecret, logger };
+  const githubAdmin = createGitHubAdminRoute({
+    execute,
+    session: (request, renewal) => signIn.session(request.headers, renewal),
+    url,
+    secret: () => authSecret,
+    logger,
+  });
+  const pageOptions = { execute, session: (request: Request, renewal?: Headers) => signIn.session(request.headers, renewal), url, secret: () => authSecret, logger };
   const pages: Readonly<Record<string, (request: Request) => Promise<Response>>> = {
     [MEMBERS_PATH]: createMembersRoute(pageOptions),
     [INVITES_PATH]: createInvitesRoute(pageOptions),
@@ -188,6 +200,8 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     owner,
     db,
     signIn,
+    execute,
+    authSecret,
     sentJobs,
     browserArgs:
       certificate === undefined

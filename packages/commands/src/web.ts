@@ -24,6 +24,7 @@ import type { PageRoute, PageRouteOptions } from "./web-pages.ts";
 import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
+export { sessionCookiesOf, type SessionCookie } from "./session-renewal.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 export { AUTH_BASE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 import { WORKER_JOBS } from "./worker-jobs.ts";
@@ -116,14 +117,16 @@ export function restRoute(env: Environment): RestHandler {
 /**
  * What the web UI's server actions and server components run operations
  * through, as the signed-in user's web session, which the headers of the
- * request they answer name; built once per process.
+ * request they answer name; built once per process. A server action's write
+ * may renew the session and hands back the cookies that renew it; a server
+ * component's read renews nothing.
  */
 export function webCommands(env: Environment, requestHeaders: () => Promise<Headers>): WebCommands {
   if (web !== undefined) return web;
   const { execute, logger, signIn } = servicesOf(env);
   web = createWebCommands({
     execute,
-    session: async () => signIn.session(await requestHeaders()),
+    session: async (renewal) => signIn.session(await requestHeaders(), renewal),
     url: installUrl(env["TIEHALL_URL"] ?? ""),
     secret: () => readAuthSecret(env),
     logger,
@@ -141,7 +144,7 @@ export function confirmRoute(env: Environment): ConfirmRoute {
   confirm = createConfirmRoute({
     step,
     downloads: CONFIRM_DOWNLOADS,
-    session: (request) => signIn.session(request.headers),
+    session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
     logger,
   });
@@ -163,7 +166,7 @@ export function githubAdminRoute(env: Environment): GitHubAdminRoute {
   const { execute, logger, signIn } = servicesOf(env);
   githubAdmin = createGitHubAdminRoute({
     execute,
-    session: (request) => signIn.session(request.headers),
+    session: (request, renewal) => signIn.session(request.headers, renewal),
     url: installUrl(env["TIEHALL_URL"] ?? ""),
     secret: () => readAuthSecret(env),
     logger,
@@ -176,7 +179,7 @@ function pageOptionsOf(env: Environment): PageRouteOptions {
   const { execute, logger, signIn } = servicesOf(env);
   return {
     execute,
-    session: (request) => signIn.session(request.headers),
+    session: (request, renewal) => signIn.session(request.headers, renewal),
     url: installUrl(env["TIEHALL_URL"] ?? ""),
     secret: () => readAuthSecret(env),
     logger,
@@ -251,7 +254,7 @@ let homePage: HomeRoute | undefined;
 export function homeRoute(env: Environment): HomeRoute {
   if (homePage !== undefined) return homePage;
   const { logger } = servicesOf(env);
-  homePage = createHomeRoute({ session: (request) => webSession(env, request.headers), secret: () => readAuthSecret(env), logger });
+  homePage = createHomeRoute({ session: (request, renewal) => webSession(env, request.headers, renewal), secret: () => readAuthSecret(env), logger });
   return homePage;
 }
 
@@ -263,10 +266,12 @@ export function signOutRoute(env: Environment): (request: Request) => Promise<Re
 
 /**
  * The web session the request's cookie names, or undefined when it names
- * none; a session a removal ended is refused with 403 removed-member.
+ * none; a session a removal ended is refused with 403 removed-member. Given
+ * `renewal`, as a route handler gives it, the read may renew the session and
+ * adds there the cookies the route's answer carries.
  */
-export function webSession(env: Environment, headers: Headers): Promise<WebSessionCaller | undefined> {
+export function webSession(env: Environment, headers: Headers, renewal?: Headers): Promise<WebSessionCaller | undefined> {
   // A request without a session cookie reaches neither the database nor the settings.
   if (!/(?:^|;\s*)(?:__Secure-)?tiehall\.session_token=/.test(headers.get("cookie") ?? "")) return Promise.resolve(undefined);
-  return servicesOf(env).signIn.session(headers);
+  return servicesOf(env).signIn.session(headers, renewal);
 }
