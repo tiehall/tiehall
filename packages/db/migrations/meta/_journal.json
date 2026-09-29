@@ -302,6 +302,13 @@
       "when": 1790683833247,
       "tag": "0042_add_github_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790684344896,
+      "tag": "0043_add_github_polling",
+      "breakpoints": true
     }
   ]
 }

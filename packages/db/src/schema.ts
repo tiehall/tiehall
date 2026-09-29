@@ -286,6 +286,12 @@ export const githubApp = pgTable(
      * has yet to run.
      */
     modeSettledAt: timestamp("mode_settled_at", { withTimezone: true }),
+    /**
+     * When the poll of polling mode last read what changed on GitHub; the next
+     * poll reads the changes made since shortly before then. Null until the
+     * first poll for this App.
+     */
+    polledAt: timestamp("polled_at", { withTimezone: true }),
   },
   (table) => [
     check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`),
@@ -323,7 +329,10 @@ export const githubRedeliveries = pgTable(
 // deduplicated and processed in the background; design.md, Technical
 // decisions: T16). One row per delivery whose signature verified, stored once
 // by the delivery id GitHub gives it and keeps on a redelivery, with its event
-// and payload for the job that processes it. A delivery's job is sent in the
+// and payload for the job that processes it. The poll of polling mode stores
+// each change it finds here too, in the same form, with a delivery id of its
+// own, so both feed the same processing (design.md, Self-hosting decisions:
+// S9). A delivery's job is sent in the
 // transaction that stores it once setup is complete; a delivery that arrives
 // before is held, with no job, until setup completes.
 export const githubDeliveries = pgTable(
@@ -341,10 +350,19 @@ export const githubDeliveries = pgTable(
     /** When its processing job was sent; null while it is held until setup completes. */
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }),
     processedAt: timestamp("processed_at", { withTimezone: true }),
+    /**
+     * The change it reports, such as a pull request in a given state, which a
+     * delivery and the poll of polling mode name alike (tracker-mirrors:
+     * GitHub and Jira each run in webhook mode or polling mode): a change that
+     * both see is stored, and so handled, once. Null for a delivery whose
+     * change Tiehall does not compare, such as one about an installation.
+     */
+    changeKey: text("change_key"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.deliveryId] }),
     index("github_deliveries_held").on(table.orgId).where(sql`${table.enqueuedAt} IS NULL`),
+    uniqueIndex("github_deliveries_change_key").on(table.orgId, table.changeKey).where(sql`${table.changeKey} IS NOT NULL`),
     check("github_deliveries_delivery_id_format", sql`${table.deliveryId} ~ '^[A-Za-z0-9-]{1,100}$'`),
     check("github_deliveries_event_format", sql`${table.event} ~ '^[a-z_]{1,100}$'`),
     check("github_deliveries_payload_is_object", sql`jsonb_typeof(${table.payload}) = 'object'`),

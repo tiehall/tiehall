@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { githubDeliveries, orgs, type Database } from "@tiehall/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { changeKeyOf } from "./github-changes.ts";
 import { processDelivery } from "./github-delivery-processing.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
@@ -28,7 +29,10 @@ import type { WorkerJob } from "./worker.ts";
 //
 // The setup gate serves this route from the moment the setup screen has stored
 // the App's credentials, before setup completes, so the delivery for the
-// installation made during setup is not lost. A delivery that arrives before
+// installation made during setup is not lost. A delivery about a change that
+// the poll of polling mode stored already, such as a pull request in the same
+// state, is answered with 202 and not stored again (github-changes.ts), so the
+// change is handled once. A delivery that arrives before
 // setup completes is stored and held, with no job; once setup completes, a job
 // that runs every minute sends a processing job for each held delivery. The
 // row lock the route takes on the org keeps the two apart: a delivery either
@@ -167,9 +171,11 @@ export function createGitHubWebhookRoute(options: GitHubWebhookRouteOptions): Gi
         }
 
         const complete = org.setupCompletedAt !== null;
+        const changeKey = changeKeyOf(event, payload as Record<string, unknown>);
+        // A delivery id seen before, or a change a poll stored already, is not stored again.
         const stored = await tx
           .insert(githubDeliveries)
-          .values({ orgId: org.id, deliveryId, event, payload, ...(complete ? { enqueuedAt: sql`now()` } : {}) })
+          .values({ orgId: org.id, deliveryId, event, payload, changeKey, ...(complete ? { enqueuedAt: sql`now()` } : {}) })
           .onConflictDoNothing()
           .returning({ deliveryId: githubDeliveries.deliveryId });
         if (stored.length > 0 && complete) await options.jobs.send(tx, processGitHubDelivery.type.queue, { deliveryId });

@@ -1,6 +1,7 @@
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
 import { syncGitHubInstallations } from "./github-installations.ts";
 import { checkGitHubDeliveryLog } from "./github-mode.ts";
+import { pollGitHub } from "./github-polling.ts";
 import { reconcileGitHub } from "./github-reconciliation.ts";
 import { redeliverGitHubDeliveries } from "./github-redelivery.ts";
 import { processGitHubDelivery, releaseHeldGitHubDeliveries } from "./github-webhooks.ts";
@@ -28,4 +29,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   reconcileGitHub,
   redeliverGitHubDeliveries,
   checkGitHubDeliveryLog,
+  pollGitHub,
 ];

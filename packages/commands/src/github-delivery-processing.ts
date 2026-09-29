@@ -33,8 +33,10 @@ import { withOrg } from "./with-org.ts";
 //   caller run only internal commands and records what it runs as an
 //   integration from GitHub.
 // A delivery is processed once: it is marked processed when its processing
-// ends, and a job that runs again for it afterwards does nothing. Polling
-// mode feeds the same processors with the same normalized input (task 10.8).
+// ends, and a job that runs again for it afterwards does nothing. The poll of
+// polling mode stores each change it finds in the same form, less the
+// delivery's action, and feeds it to the same processing (github-polling.ts),
+// so a processor reads the state of what changed, not the action.
 
 /** A delivery from a connected installation, as its event's processor gets it. */
 export interface GitHubEvent {

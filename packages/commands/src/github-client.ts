@@ -22,6 +22,15 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 // GitHub's manifest flow returns into the new App's credentials
 // (self-host-install: The GitHub App is created with GitHub's manifest flow).
 //
+// Conditional requests (tracker-mirrors: GitHub and Jira each run in webhook
+// mode or polling mode; design.md, Self-hosting decisions: S9): each Octokit
+// of the client remembers its latest GET answers with their entity tags, in
+// memory, and asks for the same URL again with If-None-Match. GitHub answers
+// an unchanged resource with 304, which does not count against its rate
+// limit, and the client gives the remembered answer back. So the poll of
+// polling mode, which reads the same listings every 60 seconds, costs GitHub's
+// rate limit only when something changed.
+//
 // Every call Tiehall makes to GitHub's API goes through this module, on
 // Octokit (tracker-mirrors: GitHub writes appear as the App's bot;
 // agent-access: Outbound calls use Tiehall's own credentials): no other module
@@ -73,10 +82,48 @@ function octokitBase(options: GitHubClientOptions) {
   };
 }
 
+/** How many GET answers each Octokit remembers for conditional requests; the one used longest ago goes first. */
+const CONDITIONAL_ANSWERS = 500;
+
+/** The HTTP status of a failed call to GitHub, or undefined when GitHub gave none. */
+function statusOf(error: unknown): number | undefined {
+  const status = (error as { status?: unknown } | undefined)?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/** Makes every GET of this Octokit a conditional request, and serves GitHub's 304 from the answer it remembers. */
+function conditionalRequests(octokit: Octokit): Octokit {
+  const answers = new Map<string, { etag: string; response: Awaited<ReturnType<Octokit["request"]>> }>();
+  octokit.hook.wrap("request", async (request, options) => {
+    if (String(options.method).toUpperCase() !== "GET") return request(options);
+    const url = octokit.request.endpoint.parse(options).url;
+    const remembered = answers.get(url);
+    // The hooks inside this one read the options this request was made with, so the header goes on them; each request has its own.
+    if (remembered !== undefined) options.headers = { ...options.headers, "if-none-match": remembered.etag };
+    try {
+      const response = await request(options);
+      const etag = response.headers.etag;
+      answers.delete(url);
+      if (typeof etag === "string" && etag !== "") {
+        answers.set(url, { etag, response });
+        if (answers.size > CONDITIONAL_ANSWERS) answers.delete(answers.keys().next().value!);
+      }
+      return response;
+    } catch (error) {
+      if (remembered === undefined || statusOf(error) !== 304) throw error;
+      // Not modified: the remembered answer stands, and is now the one used last.
+      answers.delete(url);
+      answers.set(url, remembered);
+      return remembered.response;
+    }
+  });
+  return octokit;
+}
+
 export function createGitHubClient(credentials: GitHubAppCredentials, options: GitHubClientOptions = {}): GitHubClient {
   const base = octokitBase(options);
   const auth = { appId: credentials.clientId, privateKey: credentials.privateKey, log: base.log };
-  const app = new Octokit({ ...base, authStrategy: createAppAuth, auth });
+  const app = conditionalRequests(new Octokit({ ...base, authStrategy: createAppAuth, auth }));
   // One Octokit per installation, so each keeps its installation token in its own memory cache.
   const installations = new Map<number, Octokit>();
   return {
@@ -84,7 +131,7 @@ export function createGitHubClient(credentials: GitHubAppCredentials, options: G
     installation(installationId) {
       let octokit = installations.get(installationId);
       if (octokit === undefined) {
-        octokit = new Octokit({ ...base, authStrategy: createAppAuth, auth: { ...auth, installationId } });
+        octokit = conditionalRequests(new Octokit({ ...base, authStrategy: createAppAuth, auth: { ...auth, installationId } }));
         installations.set(installationId, octokit);
       }
       return octokit;

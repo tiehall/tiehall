@@ -27,8 +27,8 @@ import type { WorkerJob } from "./worker.ts";
 // connects an installation (a job, which reads that installation's
 // repositories at once), when a delivery about an installation arrives in
 // webhook mode, and on each run of the 15-minute reconciliation, in either
-// mode (github-reconciliation.ts); the poll of polling mode runs it too, once
-// it is built (task 10.8 of add-tiehall-oss-v1).
+// mode (github-reconciliation.ts), and on each 60-second poll in polling mode
+// (github-polling.ts).
 
 /** One installation of the App, as GitHub's listing gives it. */
 export interface ListedInstallation {

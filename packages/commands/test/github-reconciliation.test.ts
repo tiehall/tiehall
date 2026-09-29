@@ -17,7 +17,7 @@ import { sessionOf } from "./support/requests.ts";
 // repositories, whose delivery GitHub dropped counts within 15 minutes; and a
 // connected installation GitHub suspended or deleted with no delivery stops
 // covering its repositories. Polling mode's 60-second poll does the same
-// within 2 minutes (task 10.8 of add-tiehall-oss-v1).
+// within 2 minutes (github-polling.test.ts).
 
 let install: TestInstall;
 let stub: GitHubStub;

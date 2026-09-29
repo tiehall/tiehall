@@ -70,6 +70,29 @@ describe("installation tokens of any length", () => {
   });
 });
 
+describe("conditional requests (tracker-mirrors: GitHub and Jira each run in webhook mode or polling mode)", () => {
+  it("asks for a URL it read before with If-None-Match, and gives GitHub's 304 back as the answer it read before", async () => {
+    const client = createGitHubClient({ clientId: app.clientId, privateKey: app.pem }, { apiUrl: stub.apiUrl });
+    const octokit = client.installation(installation.id);
+
+    const first = await octokit.request("GET /installation/repositories", { per_page: 100 });
+    const second = await octokit.request("GET /installation/repositories", { per_page: 100 });
+    stub.addRepo("acme/tools");
+    await stub.addRepositories(installation, ["acme/tools"], { delivery: "none" });
+    const third = await octokit.request("GET /installation/repositories", { per_page: 100 });
+
+    expect(second.status).toBe(200);
+    expect(second.data).toEqual(first.data);
+    expect(third.data.repositories.map((repository) => repository.full_name).sort()).toEqual(["acme/api", "acme/tools", "acme/web"]);
+    const reads = stub.received.filter(({ host, path }) => host === "api" && path === "/installation/repositories");
+    expect(reads.map(({ status, headers }) => ({ status, conditional: headers["if-none-match"] !== undefined }))).toEqual([
+      { status: 200, conditional: false },
+      { status: 304, conditional: true },
+      { status: 200, conditional: true },
+    ]);
+  });
+});
+
 describe("where installation tokens are kept", () => {
   const root = fileURLToPath(new URL("../../../", import.meta.url));
   const read = (path: string): string => readFileSync(join(root, path), "utf8");
