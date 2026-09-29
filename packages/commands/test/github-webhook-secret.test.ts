@@ -178,6 +178,19 @@ describe("storing the webhook secret", () => {
     expect(await secretEvents()).toEqual([]);
   });
 
+  it("stores a secret of 1,024 characters, and refuses one of 1,025 with 400, storing nothing", async () => {
+    const tooLong = await storeSecret(ada, "s".repeat(1025));
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", errors: [{ path: ["secret"] }] });
+    expect(await storedSecret()).toBeUndefined();
+    expect(await secretEvents()).toEqual([]);
+
+    const longest = "t".repeat(1024);
+    expect((await storeSecret(ada, longest)).status).toBe(200);
+    expect(await storedSecret()).toBe(longest);
+    expect(await secretEvents()).toHaveLength(1);
+  });
+
   it("refuses a member who is not an admin with 403, and stores nothing", async () => {
     const answer = await storeSecret(mehmet, "a-secret-of-mehmet");
     expect(answer.status).toBe(403);

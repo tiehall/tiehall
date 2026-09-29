@@ -98,6 +98,21 @@ function upload(session: WebSessionCaller, pem: string): Promise<Response> {
 
 const reviewUrl = `/confirm/${UPLOAD}?input=${encodeURIComponent("{}")}`;
 
+/** Uploads a file as a browser does: the review page, then its form posted as a multipart form with the file picked. */
+async function uploadFile(session: WebSessionCaller, content: string): Promise<Response> {
+  const html = await (await install.confirmRoute(session)(new Request(`${URL_OF_INSTALL}${reviewUrl}`))).text();
+  const field = (name: string) =>
+    (new RegExp(`<input type="hidden" name="${name}" value="([^"]*)">`).exec(html)?.[1] ?? "").replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCharCode(Number(code)),
+    );
+  const form = new FormData();
+  for (const name of ["input", "nonce", "csrf"]) form.set(name, field(name));
+  form.set("privateKey", new File([content], "tiehall.private-key.pem", { type: "application/x-pem-file" }));
+  return install.confirmRoute(session)(
+    new Request(`${URL_OF_INSTALL}/confirm/${UPLOAD}`, { method: "POST", headers: { origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" }, body: form }),
+  );
+}
+
 describe("uploading a rotated private key", () => {
   it("checks a valid key by requesting an installation token, stores it encrypted, uses it for the next call, and records a security event", async () => {
     const rotated = stub.addPrivateKey(app);
@@ -139,6 +154,41 @@ describe("uploading a rotated private key", () => {
       expect(answer.status, file).toBe(400);
       expect(stub.received.slice(from)).toEqual([]);
     }
+    expect(await storedKey()).toBe(keyInUse);
+    expect(await keyEvents()).toEqual([]);
+  });
+
+  it("refuses a key file of 16,385 characters with 400 naming the 16,384-character bound, before asking GitHub, and stores nothing", async () => {
+    const from = stub.received.length;
+    const answer = await upload(ada, `${stub.addPrivateKey(app)}\n`.padEnd(16_385, "\n"));
+
+    expect(answer.status).toBe(400);
+    expect(await answer.json()).toMatchObject({
+      type: "https://tiehall.com/problems/invalid-input",
+      errors: [{ path: ["privateKey"], message: "A private key file has at most 16384 characters." }],
+    });
+    expect(stub.received.slice(from)).toEqual([]);
+    expect(await storedKey()).toBe(keyInUse);
+    expect(await keyEvents()).toEqual([]);
+  });
+
+  // A review page takes a file of at most 64 KB (65,536 bytes): a larger one is dropped unread, so the upload
+  // carries no key at all, rather than one over the key's own bound of 16,384 characters.
+  it("drops a file of 65,537 bytes picked on the review page as too large, so its 400 names the missing key, before asking GitHub, and stores nothing", async () => {
+    const from = stub.received.length;
+    const atTheBound = await uploadFile(ada, "k".repeat(65_536));
+    expect(atTheBound.status).toBe(400);
+    expect(await atTheBound.json()).toMatchObject({ errors: [{ path: ["privateKey"], message: "A private key file has at most 16384 characters." }] });
+
+    const tooLarge = await uploadFile(ada, "k".repeat(65_537));
+
+    expect(tooLarge.status).toBe(400);
+    const problem = (await tooLarge.json()) as { type: string; errors: { path: string[]; message: string }[] };
+    expect(problem).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", errors: [{ path: ["privateKey"] }] });
+    // No key arrived: the schema names a missing value, not the key's bound.
+    expect(problem.errors[0]!.message).toMatch(/received undefined/);
+    expect(problem.errors[0]!.message).not.toContain("16384");
+    expect(stub.received.slice(from)).toEqual([]);
     expect(await storedKey()).toBe(keyInUse);
     expect(await keyEvents()).toEqual([]);
   });
