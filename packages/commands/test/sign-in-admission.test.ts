@@ -179,7 +179,13 @@ describe("a suspended installation", () => {
       await expectRefused(await harness.signIn("lou-acme"), "lou-acme");
       // Once the listing knows, Tiehall asks GitHub nothing through it.
       await readInstallations({ database: install.db, app: (await harness.github.app())! });
+      const from = stub.received.length;
       await expectRefused(await harness.signIn("lou-acme"), "lou-acme");
+      const throughAcme = stub.received
+        .slice(from)
+        .filter(({ path }) => path.startsWith("/orgs/acme/") || path === `/app/installations/${acme.id}/access_tokens`)
+        .map(({ method, path }) => `${method} ${path}`);
+      expect(throughAcme).toEqual([]);
       const { response, jar } = await harness.signIn("ana-k");
       expect(response.status).toBe(302);
       expect(await harness.sessionOf(jar)).toMatchObject({ userId: anaUserId });
