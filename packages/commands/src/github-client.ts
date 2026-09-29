@@ -139,6 +139,27 @@ export function createGitHubClient(credentials: GitHubAppCredentials, options: G
   };
 }
 
+/**
+ * Whether GitHub issues an installation token to the App with these
+ * credentials, such as a rotated private key before it is stored
+ * (self-host-install: A rotated App key can be uploaded): true when GitHub
+ * issued one, false when GitHub refused the App's JSON web token, as it does
+ * one signed with a key of another App or a deleted one. It throws when GitHub
+ * does not answer, or answers anything else. The token is used for nothing
+ * else, and nothing keeps it.
+ */
+export async function requestInstallationToken(credentials: GitHubAppCredentials, installationId: number, options: GitHubClientOptions = {}): Promise<boolean> {
+  const base = octokitBase(options);
+  const octokit = new Octokit({ ...base, authStrategy: createAppAuth, auth: { appId: credentials.clientId, privateKey: credentials.privateKey, installationId, log: base.log } });
+  try {
+    await octokit.auth({ type: "installation" });
+    return true;
+  } catch (error) {
+    if (statusOf(error) === 401) return false;
+    throw error;
+  }
+}
+
 /** The URL GitHub's Link header names as the next page, or undefined on the last page. */
 function nextPage(link: string | undefined): string | undefined {
   for (const part of (link ?? "").split(",")) {

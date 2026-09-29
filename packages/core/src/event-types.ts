@@ -501,6 +501,18 @@ export const githubWebhookSecretStored = defineEventType({
   },
 });
 
+/**
+ * An admin uploaded a new private key for the install's GitHub App, with the
+ * confirmation step, and GitHub accepted it (self-host-install: A rotated App
+ * key can be uploaded; activity-log: Which actions are security events). It
+ * never holds the key; its provenance names the admin.
+ */
+export const githubPrivateKeyUploaded = defineEventType({
+  type: "github.private_key_uploaded",
+  class: "security",
+  fields: {},
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -533,4 +545,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   githubInstallationDisconnected,
   githubModeChanged,
   githubWebhookSecretStored,
+  githubPrivateKeyUploaded,
 ];

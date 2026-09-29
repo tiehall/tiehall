@@ -156,7 +156,14 @@
         { "action": "the Jira connection connected", "pending": "25.1" },
         { "action": "the Jira connection changed", "pending": "25.2" },
         { "action": "the Jira connection disconnected", "pending": "25.2" },
-        { "action": "a new private key uploaded for the install's GitHub App", "pending": "10.10" }
+        {
+          "action": "a new private key uploaded for the install's GitHub App",
+          "event": "github.private_key_uploaded",
+          "test": {
+            "file": "packages/commands/test/github-private-key.test.ts",
+            "case": "checks a valid key by requesting an installation token, stores it encrypted, uses it for the next call, and records a security event"
+          }
+        }
       ]
     },
     {

@@ -209,6 +209,20 @@ describe("the App JWT", () => {
       expect(((await response.json()) as { message: string }).message).toBeTruthy();
     }
   });
+
+  it("accepts a JWT signed with each key the App has, until the key is deleted, as its settings page rotates keys", async () => {
+    const app = stub.createApp({ owner: "acme" });
+    const first = app.pem;
+    const second = stub.addPrivateKey(app);
+    expect(second).not.toBe(first);
+    for (const key of [first, second]) expect((await api("/app", signAppJwt({ privateKey: key, issuer: app.clientId }))).status).toBe(200);
+
+    stub.deletePrivateKey(app, first);
+
+    expect((await api("/app", signAppJwt({ privateKey: first, issuer: app.clientId }))).status).toBe(401);
+    expect((await api("/app", signAppJwt({ privateKey: second, issuer: app.clientId }))).status).toBe(200);
+    expect(() => stub.deletePrivateKey(app, first)).toThrow();
+  });
 });
 
 describe("installations", () => {

@@ -5,6 +5,7 @@ import {
   listGitHubInstallations,
   setGitHubMode,
   storeGitHubWebhookSecret,
+  uploadGitHubPrivateKey,
   type githubInstallation,
 } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
@@ -138,6 +139,20 @@ function stateText(installation: Installation): string {
 /** The review page that stores the App's webhook secret; the secret itself is entered on that page. */
 const STORE_WEBHOOK_SECRET = `${CONFIRM_PATH}${storeGitHubWebhookSecret.id}?input=${encodeURIComponent("{}")}`;
 
+/** The review page that uploads a rotated private key for the App; the key file itself is picked on that page. */
+const UPLOAD_PRIVATE_KEY = `${CONFIRM_PATH}${uploadGitHubPrivateKey.id}?input=${encodeURIComponent("{}")}`;
+
+/** The App, and the upload of a new private key after it was rotated on GitHub. */
+function appSection(integration: Integration): string[] {
+  const app = integration.app;
+  if (app === null) return [];
+  return [
+    "      <h2>The GitHub App</h2>",
+    `      <p>${escapeHtml(`The install's GitHub App is ${app.name}, owned by ${app.ownerType === "Organization" ? "the organization" : "the personal account"} ${app.owner}.`)}</p>`,
+    `      <p>After you generate a new private key in <a href="${escapeHtml(appSettingsUrl(app))}">the App's settings on GitHub</a>, <a href="${escapeHtml(UPLOAD_PRIVATE_KEY)}">upload the new private key</a>, with a confirmation. Tiehall checks it with GitHub before it stores it.</p>`,
+  ];
+}
+
 /** The App's settings on GitHub, where its webhook and events are set: under its owner, an organization or a person. */
 function appSettingsUrl(app: NonNullable<Integration["app"]>): string {
   const owner = encodeURIComponent(app.owner);
@@ -218,6 +233,7 @@ function page(integration: Integration, installations: readonly Installation[], 
     "GitHub",
     [
       "      <h1>GitHub</h1>",
+      ...appSection(integration),
       ...modeSection(integration, csrf, url),
       "      <h2>Connected installations</h2>",
       "      <p>Tiehall acts on these installations of the install's GitHub App: the repositories they cover count as covered. Disconnecting one needs no confirmation and removes no member.</p>",

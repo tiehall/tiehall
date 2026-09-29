@@ -1,3 +1,4 @@
+import { createPublicKey } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { Urls } from "./json.ts";
@@ -118,6 +119,8 @@ export interface GitHubStub {
   updateApp(app: StubApp, changes: { hook?: { url: string; active?: boolean } | null; webhookSecret?: string | null; events?: string[]; public?: boolean }): void;
   addClientSecret(app: StubApp): string;
   addPrivateKey(app: StubApp): string;
+  /** Deletes one of the App's private keys, as its settings page does: a JWT it signs is refused from then on. */
+  deletePrivateKey(app: StubApp, pem: string): void;
 
   /** The live installations, of one App or of every App. */
   installations(app?: StubApp): StubInstallation[];
@@ -353,6 +356,12 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
     },
     addClientSecret: (app) => world.addClientSecret(app),
     addPrivateKey: (app) => world.addPrivateKey(app),
+    deletePrivateKey(app, pem) {
+      const deleted = createPublicKey(pem).export({ type: "spki", format: "pem" }).toString();
+      const kept = app.publicKeys.filter((key) => key.export({ type: "spki", format: "pem" }).toString() !== deleted);
+      if (kept.length === app.publicKeys.length) throw new Error(`${app.name} has no such private key`);
+      app.publicKeys.splice(0, app.publicKeys.length, ...kept);
+    },
 
     installations: (app) =>
       app === undefined ? [...world.installations.values()].filter((installation) => !installation.deleted) : world.installationsOf(app),

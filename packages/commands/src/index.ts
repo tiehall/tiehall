@@ -59,6 +59,7 @@ export {
   GITHUB_API_URL,
   ManifestConversionError,
   readSignedInUser,
+  requestInstallationToken,
   type SignedInUser,
   type ConvertedApp,
   type GitHubAppCredentials,
@@ -66,6 +67,7 @@ export {
   type GitHubClientOptions,
 } from "./github-client.ts";
 export { readGitHubApp, storeGitHubApp, type StoredGitHubApp } from "./github-app.ts";
+export { GITHUB_APP_KEY_HANDLERS, GITHUB_APP_KEY_REVIEWS } from "./github-app-key.ts";
 export {
   GITHUB_EVENT_PROCESSORS,
   processDelivery,

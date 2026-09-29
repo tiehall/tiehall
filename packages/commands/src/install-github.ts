@@ -1,6 +1,6 @@
 import { githubApp, integrationSecrets, orgs, type Database } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
-import { createGitHubClient, GITHUB_API_URL } from "./github-client.ts";
+import { createGitHubClient, GITHUB_API_URL, requestInstallationToken, type GitHubAppCredentials } from "./github-client.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -35,6 +35,12 @@ export interface InstallGitHubOptions {
 export interface InstallGitHub {
   /** The install's App as stored now, with a client that calls GitHub as it; undefined while none is stored. */
   app(): Promise<GitHubAppAccess | undefined>;
+  /**
+   * Whether GitHub issues an installation token of this installation to the
+   * App with these credentials, such as a rotated private key before it is
+   * stored; it throws when GitHub does not answer.
+   */
+  checkKey(credentials: GitHubAppCredentials, installationId: number): Promise<boolean>;
 }
 
 export function createInstallGitHub(options: InstallGitHubOptions): InstallGitHub {
@@ -42,6 +48,8 @@ export function createInstallGitHub(options: InstallGitHubOptions): InstallGitHu
   const fetchImpl = options.fetch ?? (createGitHubFetch(fetch) as typeof fetch);
   let built: { key: string; access: GitHubAppAccess } | undefined;
   return {
+    checkKey: (credentials, installationId) =>
+      requestInstallationToken(credentials, installationId, { apiUrl: options.apiUrl ?? GITHUB_API_URL, fetch: fetchImpl, logger }),
     async app() {
       const stored = await options.database.transaction(async (tx) => {
         const [row] = await tx

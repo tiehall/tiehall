@@ -54,7 +54,11 @@
           "command": "github.connect_installation",
           "input": { "installation": "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" }
         },
-        { "action": "uploading a new private key for the install's GitHub App", "pending": "10.10" },
+        {
+          "action": "uploading a new private key for the install's GitHub App",
+          "command": "github.upload_private_key",
+          "input": {}
+        },
         {
           "action": "storing a webhook secret for the install's GitHub App",
           "command": "github.store_webhook_secret",

@@ -101,6 +101,7 @@ export {
   listGitHubInstallations,
   setGitHubMode,
   storeGitHubWebhookSecret,
+  uploadGitHubPrivateKey,
 } from "./github.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";

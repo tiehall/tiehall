@@ -138,6 +138,34 @@ export const storeGitHubWebhookSecret = defineCommand({
   ],
 });
 
+/** The largest private key file Tiehall takes; GitHub's keys are PEM files of a few kilobytes. */
+const PRIVATE_KEY_MAX_LENGTH = 16_384;
+
+export const uploadGitHubPrivateKey = defineCommand({
+  id: "github.upload_private_key",
+  summary: "Upload a new private key for the install's GitHub App, after rotating it on GitHub; GitHub must accept it before it is stored.",
+  // The key is no part of the input, which the review page's URL carries: the admin picks its file on the review page itself.
+  input: z.object({}),
+  output: z.object({ uploaded: z.literal(true) }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "integrations",
+  surfaces: [],
+  stability: "beta",
+  sealed: [
+    {
+      name: "privateKey",
+      label: "The App's new private key: the .pem file GitHub downloaded when you generated it",
+      kind: "file",
+      schema: z
+        .string()
+        .min(1, "The private key file is not empty.")
+        .max(PRIVATE_KEY_MAX_LENGTH, `A private key file has at most ${PRIVATE_KEY_MAX_LENGTH} characters.`),
+    },
+  ],
+});
+
 export const GITHUB_COMMANDS = [
   listGitHubInstallations,
   connectGitHubInstallation,
@@ -145,4 +173,5 @@ export const GITHUB_COMMANDS = [
   getGitHubIntegration,
   setGitHubMode,
   storeGitHubWebhookSecret,
+  uploadGitHubPrivateKey,
 ];
