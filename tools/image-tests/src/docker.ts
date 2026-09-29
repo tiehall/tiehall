@@ -64,6 +64,13 @@ export function existingVolumes(volumes: string[]): string[] {
 }
 
 /** The effective uid of a running container's first process. */
+/** The environment the container's main process started with, as KEY=value entries. */
+export function processEnvironment(name: string): string[] {
+  return dockerOk(["exec", name, "cat", "/proc/1/environ"])
+    .split("\0")
+    .filter((entry) => entry !== "");
+}
+
 export function processUid(name: string): number {
   const status = dockerOk(["exec", name, "cat", "/proc/1/status"]);
   const uid = /^Uid:\s+(\d+)/m.exec(status)?.[1];

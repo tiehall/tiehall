@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-import { containerState, docker, dockerOk, existingVolumes, processUid, uniqueName, volumesOf, waitFor } from "../src/docker.ts";
+import { containerState, docker, dockerOk, existingVolumes, processEnvironment, processUid, uniqueName, volumesOf, waitFor } from "../src/docker.ts";
 
 // Container tests for the image (task 2.6; self-host-install: Tiehall's
 // containers are confined). Every role starts the way an install runs it: a
@@ -207,24 +207,18 @@ describe("the image", () => {
     expect(JSON.parse(env)).toContain(`TIEHALL_VERSION=${label}`);
   });
 
-  // self-host-install: No telemetry and a documented list of outbound connections.
+  // self-host-install: No telemetry and a documented list of outbound connections. Next.js's switch is in the image's
+  // environment; the sign-in library's, whose name BuildKit's check for secrets in ENV would flag, is set by the
+  // entrypoint, before node starts, for every role. The running roles below show it in their process's environment.
   it("switches framework telemetry off in the environment every role runs with", () => {
     const env = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image])) as string[];
     expect(env).toContain("NEXT_TELEMETRY_DISABLED=1");
-    expect(env).toContain("BETTER_AUTH_TELEMETRY=0");
-    const run = docker([
-      "run",
-      "--rm",
-      ...confined,
-      "--network",
-      "none",
-      "--entrypoint",
-      "node",
-      image,
-      "--eval",
-      "process.stdout.write(`${process.env.NEXT_TELEMETRY_DISABLED} ${process.env.BETTER_AUTH_TELEMETRY}`)",
-    ]);
-    expect(run.stdout).toBe("1 0");
+    expect(env.filter((entry) => entry.startsWith("BETTER_AUTH_TELEMETRY="))).toEqual([]);
+    const entrypoint = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Entrypoint}}", image])) as string[];
+    expect(entrypoint.slice(0, 3)).toEqual(["/usr/bin/env", "BETTER_AUTH_TELEMETRY=0", "/usr/local/bin/node"]);
+    // The init role runs through the entrypoint too, and prints its .env.
+    const init = docker(["run", "--rm", ...confined, "--network", "none", image, "init", "--url", "https://tiehall.example.com"]);
+    expect(init.status).toBe(0);
   });
 
   it("carries node but no package manager, so nothing at run time can install code", () => {
@@ -397,6 +391,10 @@ describe.each(["web", "all"])("the %s role", (role) => {
   it("runs as a non-root uid", () => {
     expect(processUid(name)).not.toBe(0);
     expect(dockerOk(["logs", name])).toMatch(new RegExp(`tiehall ${role}: starting as uid [1-9]\\d*`));
+  });
+
+  it("runs with framework telemetry off, the sign-in library's set by the entrypoint", () => {
+    expect(processEnvironment(name)).toEqual(expect.arrayContaining(["NEXT_TELEMETRY_DISABLED=1", "BETTER_AUTH_TELEMETRY=0"]));
   });
 
   // self-host-install: Logs carry ids, never message text or credentials. Next.js prints its version, its
@@ -751,6 +749,10 @@ describe("the worker role", () => {
 
   it("runs as a non-root uid", () => {
     expect(processUid(name)).not.toBe(0);
+  });
+
+  it("runs with framework telemetry off, the sign-in library's set by the entrypoint", () => {
+    expect(processEnvironment(name)).toEqual(expect.arrayContaining(["NEXT_TELEMETRY_DISABLED=1", "BETTER_AUTH_TELEMETRY=0"]));
   });
 
   it("cannot write outside /tmp", () => {

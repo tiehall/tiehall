@@ -13,8 +13,10 @@ FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584
 
 FROM base AS build
 # No framework telemetry at build time, and none at run time below (self-host-install: No telemetry and a
-# documented list of outbound connections): neither Next.js's nor the sign-in library's.
-ENV CI=true NEXT_TELEMETRY_DISABLED=1 BETTER_AUTH_TELEMETRY=0
+# documented list of outbound connections): neither Next.js's nor the sign-in library's. The sign-in library's
+# switch, BETTER_AUTH_TELEMETRY, is set on the step that runs the builds and by the entrypoint rather than with
+# ENV: its name holds AUTH, which BuildKit's check for secrets in ARG and ENV would flag on every build.
+ENV CI=true NEXT_TELEMETRY_DISABLED=1
 WORKDIR /repo
 # pnpm, at the version in package.json "packageManager", without install scripts.
 COPY package.json ./
@@ -29,7 +31,7 @@ RUN pnpm install --frozen-lockfile --offline --filter "@tiehall/web..." --filter
 # release reloads instead of mixing versions during a rolling release.
 ARG TIEHALL_COMMIT_SHA
 RUN test -n "$TIEHALL_COMMIT_SHA" || { echo "Build with --build-arg TIEHALL_COMMIT_SHA=<commit>" >&2; exit 1; }
-RUN pnpm --filter @tiehall/web build && pnpm --filter @tiehall/server build
+RUN export BETTER_AUTH_TELEMETRY=0 && pnpm --filter @tiehall/web build && pnpm --filter @tiehall/server build
 
 FROM base
 # The app needs only node at run time: remove the package managers the base
@@ -45,7 +47,6 @@ ARG TIEHALL_VERSION=0.0.0-dev
 ARG TIEHALL_IMAGE_NAME=tiehall
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    BETTER_AUTH_TELEMETRY=0 \
     TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA} \
     TIEHALL_VERSION=${TIEHALL_VERSION} \
     TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME}
@@ -64,4 +65,5 @@ COPY --from=build /repo/packages/db/migrations/ ./packages/db/migrations/
 # The base image's unprivileged "node" user, by number.
 USER 1000:1000
 EXPOSE 3000
-ENTRYPOINT ["/usr/local/bin/node", "--enable-source-maps", "/app/apps/server/dist/main.mjs"]
+# Every role runs with the sign-in library's telemetry off, set here rather than with ENV (see the build stage).
+ENTRYPOINT ["/usr/bin/env", "BETTER_AUTH_TELEMETRY=0", "/usr/local/bin/node", "--enable-source-maps", "/app/apps/server/dist/main.mjs"]

@@ -26,6 +26,23 @@ describe("framework telemetry", () => {
     }
   });
 
+  // The sign-in library reads BETTER_AUTH_TELEMETRY, and the auth options switch its telemetry off as well. The name
+  // holds AUTH, so BuildKit's check for secrets in ARG and ENV (SecretsUsedInArgOrEnv) warns on every build when an ENV
+  // sets it: it is set on the build step that runs the builds instead, and by the image's entrypoint for every role.
+  it("keeps the sign-in library's telemetry off without an ENV that BuildKit takes for a secret", () => {
+    const dockerfile = read("Dockerfile");
+    const instructions = dockerfile.replace(/\\\n/g, " ").split("\n");
+    const declared = instructions.filter((line) => /^(ENV|ARG) /.test(line));
+    expect(declared.filter((line) => /BETTER_AUTH_TELEMETRY/.test(line))).toEqual([]);
+    const names = declared.flatMap((line) => [...line.slice(4).matchAll(/(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)(?==|\s|$)/g)].map((match) => match[1] ?? ""));
+    expect(names.filter((name) => /apikey|auth|credential|key|pass|pwd|secret|token/i.test(name))).toEqual([]);
+
+    const build = instructions.find((line) => /^RUN .*pnpm --filter @tiehall\/web build/.test(line));
+    expect(build).toMatch(/^RUN export BETTER_AUTH_TELEMETRY=0 && /);
+    const entrypoint = instructions.filter((line) => line.startsWith("ENTRYPOINT ")).at(-1) ?? "";
+    expect(JSON.parse(entrypoint.slice("ENTRYPOINT ".length)).slice(0, 3)).toEqual(["/usr/bin/env", "BETTER_AUTH_TELEMETRY=0", "/usr/local/bin/node"]);
+  });
+
   it("is off in every script of the web app that runs Next.js", () => {
     const { scripts } = JSON.parse(read("apps/web/package.json")) as { scripts: Record<string, string> };
     const nextScripts = Object.entries(scripts).filter(([, command]) => /\bnext\b/.test(command));
