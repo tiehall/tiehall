@@ -22,6 +22,8 @@ let stub: GitHubStub;
 let server: AppServer;
 let browser: Browser;
 
+// The hooks start the GitHub stub for each test and close it, the install and Chrome after it, so they get timeouts that
+// hold on a CI runner, not Vitest's 10-second default for hooks.
 beforeEach(async () => {
   stub = await startGitHubStub();
   stub.addUser({ login: "omar" });
@@ -31,13 +33,13 @@ beforeEach(async () => {
   stub.addRepo("acme/private-notes");
   // The browser that follows the setup screen to GitHub is signed in to GitHub as Omar.
   stub.signIn("omar");
-});
+}, 60_000);
 
 afterEach(async () => {
   await browser?.close();
   await server?.close();
   await stub?.close();
-});
+}, 60_000);
 
 async function launch(): Promise<Browser> {
   const executablePath = process.env["TIEHALL_TEST_CHROME"];

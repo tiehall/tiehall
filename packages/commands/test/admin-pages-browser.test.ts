@@ -21,6 +21,8 @@ let stub: GitHubStub;
 let server: AppServer;
 let browser: Browser;
 
+// The hooks start and close an install and Chrome for each test, so they get timeouts that hold on a CI runner, where
+// Vitest's 10-second default for hooks ran out.
 beforeEach(async () => {
   stub = await startGitHubStub();
   stub.addUser({ login: "omar" });
@@ -32,13 +34,13 @@ beforeEach(async () => {
   server = await startAppServer(stub);
   const executablePath = process.env["TIEHALL_TEST_CHROME"];
   browser = await chromium.launch({ ...(executablePath === undefined ? { channel: "chrome" } : { executablePath }), args: server.browserArgs });
-});
+}, 120_000);
 
 afterEach(async () => {
   await browser?.close();
   await server?.close();
   await stub?.close();
-});
+}, 60_000);
 
 /** The operator's way through the setup screen and GitHub's pages, which makes them the install's first admin. */
 async function completeSetup(page: Page): Promise<void> {

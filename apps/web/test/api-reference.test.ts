@@ -55,7 +55,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   await new Promise((resolve) => server?.close(resolve));
-});
+}, 60_000);
 
 interface Visit {
   page: Page;
@@ -179,7 +179,7 @@ async function sendingControls(page: Page): Promise<string[]> {
   ];
 }
 
-describe("the page's scripts", () => {
+describe("the page's scripts", { timeout: 30_000 }, () => {
   it("are served by the install itself, as JavaScript", async () => {
     const page = await (await fetch(`${origin}${REFERENCE_PATH}`)).text();
     const sources = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map(([, source]) => source);

@@ -78,7 +78,7 @@ afterAll(async () => {
   await owner?.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
   await owner?.end();
   await database?.drop();
-});
+}, 60_000);
 
 /** Answers the browser with the setup screen, as the install at https://tiehall.example.com. */
 async function answer(route: SetupRoute, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {

@@ -28,7 +28,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   await install?.close();
-});
+}, 60_000);
 
 describe("a review page in a browser", { timeout: 60_000 }, () => {
   it("confirms its action from the person's own browser, which sends the install's origin", async () => {

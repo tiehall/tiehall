@@ -33,7 +33,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   await install?.close();
-});
+}, 60_000);
 
 /** Opens a page in the person's own browser and confirms what it reviews; returns the page after the confirmation's answer. */
 async function confirmOnPage(userId: string, path: string): Promise<Page> {

@@ -24,6 +24,7 @@ describe("install scripts under the repository's pnpm settings", { timeout: 60_0
   /** The dependency spec, relative to each workspace, as pnpm records it and allowBuilds names it. */
   let spec: string;
 
+  // npm pack runs as a child process: the hook gets the tests' timeout, not Vitest's 10-second default for hooks.
   beforeAll(() => {
     scratch = mkdtempSync(join(tmpdir(), "tiehall-install-scripts-"));
     const packed = run("npm", ["pack", "--silent", "--pack-destination", scratch, packageSource], scratch);
@@ -31,7 +32,7 @@ describe("install scripts under the repository's pnpm settings", { timeout: 60_0
     const file = readdirSync(scratch).find((name) => name.endsWith(".tgz"));
     if (file === undefined) throw new Error("npm pack wrote no tarball");
     spec = `file:../${file}`;
-  });
+  }, 60_000);
 
   afterAll(() => {
     rmSync(scratch, { recursive: true, force: true });

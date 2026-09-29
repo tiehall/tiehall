@@ -38,13 +38,15 @@ function values(text: string): Map<string, string> {
   );
 }
 
+// Runs the init role as a child process, which takes longer on a CI runner than Vitest's 10-second default for hooks
+// allows for.
 beforeAll(() => {
   folder = mkdtempSync(join(tmpdir(), "tiehall-compose-"));
   envFile = join(folder, ".env");
   const text = init("https://tiehall.example.com");
   writeFileSync(envFile, text);
   env = values(text);
-});
+}, 60_000);
 
 afterAll(() => {
   rmSync(folder, { recursive: true, force: true });

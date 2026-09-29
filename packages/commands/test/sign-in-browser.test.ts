@@ -65,7 +65,7 @@ afterAll(async () => {
   await new Promise((resolve) => server?.close(resolve));
   await stub?.close();
   await install?.close();
-});
+}, 60_000);
 
 /** Answers the browser with the install's routes, as the install at https://tiehall.example.com. */
 async function answer(route: (request: Request) => Promise<Response>, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
