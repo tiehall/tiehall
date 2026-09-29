@@ -207,7 +207,7 @@ describe("a setup session", () => {
     const first = await start();
     const cookie = cookieOf(await enter(first));
     await start();
-    expect(await (await open(cookie)).text()).toContain("The setup code is accepted.");
+    expect(await (await open(cookie)).text()).toContain("Name the company"); // the next step, as the test below checks
     expect((await enter(first)).status).toBe(403);
     expect(await sessions()).toBe(1);
   });
@@ -215,7 +215,7 @@ describe("a setup session", () => {
   it("does not expire with time: one opened 30 days ago still shows the next step", async () => {
     const cookie = cookieOf(await enter(await start()));
     await owner.query("UPDATE setup_sessions SET created_at = created_at - interval '30 days'");
-    expect(await (await open(cookie)).text()).toContain("The setup code is accepted.");
+    expect(await (await open(cookie)).text()).toContain("Name the company"); // the next step, as the test below checks
   });
 });
 
