@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { githubDeliveries, orgs, type Database } from "@tiehall/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { GITHUB_WEBHOOK_BODY_LIMIT, readBoundedBody } from "./body-limit.ts";
 import { changeKeyOf } from "./github-changes.ts";
 import { processDelivery } from "./github-delivery-processing.ts";
 import { readSecret } from "./integration-secrets.ts";
@@ -17,9 +18,15 @@ import type { WorkerJob } from "./worker.ts";
 // Technical decisions: T16; github-app-reachability: design.md, Design rules:
 // An App without a webhook).
 //
-// A delivery is verified first: its X-Hub-Signature-256 must be the HMAC-SHA256
-// of its body under the App's webhook secret. One that does not verify gets
-// 401 and is neither stored nor processed. While no webhook secret is stored,
+// A delivery's body is read up to 25 MiB, which covers GitHub's own maximum of
+// 25 MB, and a larger one is refused with the error model's 413 before more
+// of it is read (public-api: Request bodies have a size limit; body-limit.ts);
+// the web role's request guard refuses it first where it is installed. The
+// delivery is then verified, against the webhook secret read in a short
+// read-only query, before any write transaction opens: its
+// X-Hub-Signature-256 must be the HMAC-SHA256 of its body under the App's
+// webhook secret. One that does not verify gets 401 and is neither stored nor
+// processed, and takes no lock, so a flood of unsigned posts holds up nothing. While no webhook secret is stored,
 // as for an App created without a webhook until an admin stores one, every
 // delivery fails verification, whatever it carries. A verified delivery is
 // stored once by its delivery id, which GitHub keeps on a redelivery, and
@@ -148,13 +155,27 @@ export function createGitHubWebhookRoute(options: GitHubWebhookRouteOptions): Gi
   return async function webhooks(request) {
     if (request.method !== "POST") return answer(NO_SUCH_ROUTE);
     try {
-      const body = Buffer.from(await request.arrayBuffer());
+      let body: Buffer;
+      try {
+        body = Buffer.from(await readBoundedBody(request, GITHUB_WEBHOOK_BODY_LIMIT));
+      } catch (error) {
+        if (error instanceof Refusal) return answer(httpProblem(error));
+        throw error;
+      }
+      // The secret, read in a short read-only query that locks nothing: a delivery that does not verify opens no write.
+      const secret = await options.database.transaction(
+        async (tx) => {
+          const [org] = await tx.select({ id: orgs.id }).from(orgs).limit(1);
+          return org === undefined ? undefined : readSecret({ tx, orgId: org.id }, options.secrets(), "github_app.webhook_secret");
+        },
+        { accessMode: "read only" },
+      );
+      if (secret === undefined || !verifies(secret, body, request.headers.get("x-hub-signature-256"))) return answer(NOT_VERIFIED);
+
       return await options.database.transaction(async (tx) => {
         // Shared with every other delivery; setup completing waits for it, and it for setup completing.
         const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1).for("share");
         if (org === undefined) return answer(NOT_VERIFIED);
-        const secret = await readSecret({ tx, orgId: org.id }, options.secrets(), "github_app.webhook_secret");
-        if (secret === undefined || !verifies(secret, body, request.headers.get("x-hub-signature-256"))) return answer(NOT_VERIFIED);
 
         const deliveryId = request.headers.get("x-github-delivery") ?? "";
         const event = request.headers.get("x-github-event") ?? "";

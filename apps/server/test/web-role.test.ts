@@ -410,6 +410,41 @@ describe("the web role's limit on request bodies", () => {
     expect(web.output()).not.toContain("fixture: /api/v1/requests");
   });
 
+  // GitHub caps a webhook delivery at 25 MB, so /webhooks/github takes up to 25 MiB, and no more.
+  it("passes a GitHub delivery over 2 MiB on to /webhooks/github, and answers one that declares more than 25 MiB with 413 before its body is sent", async () => {
+    const web = await startWebRole();
+    const delivery = await fetch(`http://127.0.0.1:${web.port}/webhooks/github`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "synchronize", padding: " ".repeat(3 * MiB) }),
+    });
+    expect(delivery.status).toBe(200);
+    expect(await delivery.text()).toMatch(/^delivery of \d+ bytes$/);
+
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path: "/webhooks/github",
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": String(25 * MiB + 1) },
+    });
+    try {
+      const answered = new Promise<Answer>((resolve, reject) => {
+        request.on("response", (response) => void collect(response).then(resolve, reject));
+        request.on("error", reject);
+      });
+      request.flushHeaders();
+      const answer = await answered;
+      expect(answer.status).toBe(413);
+      expect(answer.headers["connection"]).toBe("close");
+      expect(JSON.parse(answer.body)).toMatchObject({ type: PAYLOAD_TOO_LARGE, status: 413, detail: expect.stringContaining("25 MiB") });
+    } finally {
+      request.destroy();
+    }
+    expect(web.output()).not.toContain(`fixture: /webhooks/github read ${25 * MiB + 1} bytes`);
+  });
+
   it("passes a form of the web UI of up to 2 MiB on to its page, and answers one byte more with 413", async () => {
     const web = await startWebRole();
     const post = (bytes: number) =>

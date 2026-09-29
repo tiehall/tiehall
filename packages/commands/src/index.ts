@@ -5,10 +5,11 @@ export {
   bodyLimitFor,
   CONTRACT_REPORT_BODY_LIMIT,
   declaredLength,
+  GITHUB_WEBHOOK_BODY_LIMIT,
   MIB,
   payloadTooLarge,
   readBoundedBody,
-  UNLIMITED_BODY_PATHS,
+  WEBHOOK_BODY_LIMITS,
 } from "./body-limit.ts";
 export {
   actsForUser,

@@ -20,8 +20,14 @@ const nextConfig: NextConfig = {
   // so the framework's own cap, 1 MB by default and refused with an error of its own shape, never answers before
   // the guard's 413 (public-api: Request bodies have a size limit). The limit is BODY_LIMIT in @tiehall/commands,
   // which a test holds this to.
+  // The proxy (proxy.ts) runs on every route and copies each request body, cut at its own cap, 10 MiB by default.
+  // A GitHub webhook delivery may be up to 25 MB, and the guard lets up to 25 MiB through on /webhooks/github, so
+  // the cap is the same 25 MiB, the largest limit the guard applies: the proxy never cuts a delivery GitHub may send,
+  // whose signature would then fail. The limit is GITHUB_WEBHOOK_BODY_LIMIT in @tiehall/commands, which a test holds
+  // this to.
   experimental: {
     serverActions: { bodySizeLimit: 2 * 1024 * 1024 },
+    proxyClientMaxBodySize: 25 * 1024 * 1024,
   },
 };
 

@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, defineCatalog, defineCommand } from "@tiehall/catalog";
 import { httpProblem, PROBLEM_TYPE_BASE, Refusal } from "@tiehall/core";
-import { BODY_LIMIT, bodyLimitFor, CONTRACT_REPORT_BODY_LIMIT, payloadTooLarge, readBoundedBody, WEBHOOKS_GITHUB_PATH } from "../src/index.ts";
+import {
+  BODY_LIMIT,
+  bodyLimitFor,
+  CONTRACT_REPORT_BODY_LIMIT,
+  GITHUB_WEBHOOK_BODY_LIMIT,
+  payloadTooLarge,
+  readBoundedBody,
+  WEBHOOKS_GITHUB_PATH,
+} from "../src/index.ts";
 
 // The limits on request bodies and the bounded reader that applies them
 // (public-api: Request bodies have a size limit; request-body-limit's
@@ -54,9 +62,11 @@ describe("the limits", () => {
     }
   });
 
-  it("set no limit on the GitHub webhook, whose limit is an open question", () => {
+  it("give the GitHub webhook 25 MiB, which covers GitHub's own maximum of 25 MB under either reading of MB", () => {
     expect(WEBHOOKS_GITHUB_PATH).toBe("/webhooks/github");
-    expect(bodyLimitFor("POST", "/webhooks/github")).toBeUndefined();
+    expect(GITHUB_WEBHOOK_BODY_LIMIT).toBe(26_214_400);
+    expect(GITHUB_WEBHOOK_BODY_LIMIT).toBeGreaterThanOrEqual(25_000_000);
+    expect(bodyLimitFor("POST", "/webhooks/github")).toBe(GITHUB_WEBHOOK_BODY_LIMIT);
     expect(bodyLimitFor("POST", "/webhooks/github/more")).toBe(BODY_LIMIT);
   });
 

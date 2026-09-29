@@ -34,8 +34,8 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // the size limit to every request, before any route, the setup gate or a
 // token check sees it, so a body over the limit is answered 413 before any
 // other refusal the call would get, a shutdown's 503 included. The limit is
-// 2 MiB, or 16 MiB for contract.report, and none for the webhook paths, from
-// the one module that holds them (bodyLimitFor):
+// 2 MiB, 16 MiB for contract.report, and 25 MiB for a GitHub webhook
+// delivery, from the one module that holds them (bodyLimitFor):
 // - a request that declares a length above its limit is refused at once,
 //   before any byte of its body is read; one that declares a length within
 //   it is passed on as it is, since it cannot carry more than it declares;
@@ -114,7 +114,6 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
       listener(request, response);
     };
     const limit = bodyLimitFor(request.method ?? "GET", pathOf(request.url));
-    if (limit === undefined) return serve();
     const declared = declaredLength(request.headers["content-length"]);
     if (declared !== undefined) return declared > limit ? refuseBody(request, response, limit) : serve();
     // A request with neither a declared length nor chunks has no body.

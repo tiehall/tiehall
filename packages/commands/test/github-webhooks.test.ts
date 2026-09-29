@@ -306,6 +306,74 @@ describe("/webhooks/github with the App's webhook secret stored", () => {
     expect(sent).toEqual([]);
   });
 
+  // GitHub caps a delivery at 25 MB, and the route takes at most 25 MiB, so it reads no body of any size before
+  // it checks the signature (public-api: Request bodies have a size limit). The web role's request guard refuses
+  // such a body first; the route refuses it too, where the guard is not installed.
+  it("refuses a delivery over 25 MiB with 413 before reading it past the limit, and stores nothing", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    await completeSetup();
+    const route = createGitHubWebhookRoute({ database: db, secrets: () => box, jobs });
+    const MiB = 1024 * 1024;
+    let pulled = 0;
+    const chunk = new Uint8Array(MiB).fill(0x20);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        if (pulled > 40 * MiB) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const delivery = (streamed: ReadableStream<Uint8Array>, headers: Record<string, string> = {}) =>
+      new Request(hook.replace(/^http:\/\/[^/]+/, "https://tiehall.example.com"), {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-github-event": "installation", "x-github-delivery": randomUUID(), ...headers },
+        body: streamed,
+        duplex: "half",
+      } as RequestInit);
+    const answer = await route(delivery(body));
+    expect(answer.status).toBe(413);
+    expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/payload-too-large", detail: expect.stringContaining("25 MiB") });
+    expect(pulled).toBeLessThanOrEqual(27 * MiB);
+
+    let declaredPulls = 0;
+    const declared = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        declaredPulls += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    expect((await route(delivery(declared, { "content-length": String(25 * MiB + 1) }))).status).toBe(413);
+    expect(declaredPulls).toBeLessThanOrEqual(1);
+    expect(await stored()).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  // A delivery is verified against the stored secret, read in a short read-only query, before any write
+  // transaction opens: an unsigned or forged delivery takes no lock on the org's row, so a flood of them holds
+  // up nothing, such as the sign-in that completes setup, which locks that row.
+  it("answers an unsigned delivery with 401 while another transaction holds the org's row, taking no lock on it", async () => {
+    const app = await appWithAWebhook();
+    await installWith(app);
+    await completeSetup();
+    const holder = new pg.Client({ connectionString: database.url });
+    await holder.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM orgs FOR UPDATE");
+      const answer = await Promise.race([
+        post(INSTALLATION, undefined),
+        post(INSTALLATION, "another secret"),
+        new Promise<"held">((resolve) => setTimeout(() => resolve("held"), 3_000)),
+      ]);
+      expect(answer === "held" ? answer : answer.status).toBe(401);
+    } finally {
+      await holder.query("ROLLBACK");
+      await holder.end();
+    }
+    expect(await stored()).toEqual([]);
+  });
+
   it("offers nothing but POST", async () => {
     await installWith(await appWithAWebhook());
     expect((await fetch(hook)).status).toBe(404);

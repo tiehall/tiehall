@@ -6,7 +6,7 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 // limit; public-api: One error model for Tiehall's own refusals;
 // contract-changes: One report operation that never takes a whole spec;
 // request-body-limit's design.md, Decisions this change rests on: D43, and
-// Technical decisions: T1). This module holds the two limits and everything
+// Technical decisions: T1). This module holds the limits and everything
 // that applies them, so the web role's request guard, the REST route and,
 // once it is built, the /mcp route refuse with the same numbers and the same
 // problem:
@@ -16,9 +16,11 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 //   gets 2 MiB. A MiB is 1,048,576 bytes, and a body of exactly the limit is
 //   not refused for its size. The two numbers are defined in the catalog
 //   package, whose OpenAPI document states them, and are re-exported here;
-// - the webhook deliveries get no limit here, which is an open question
-//   (design.md, Readings to confirm: R1; Open Questions): today that is
-//   /webhooks/github;
+// - a GitHub webhook delivery at /webhooks/github may be 25 MiB, which covers
+//   GitHub's own documented maximum of 25 MB under either reading of MB, so
+//   no delivery GitHub can send is refused, and no body of any size is read
+//   before its signature is checked (the change github-layer-hardening
+//   settles request-body-limit's open question on webhook deliveries so);
 // - a body over the limit is refused with the error model's
 //   payload-too-large, 413, whose detail names the limit in MiB;
 // - the bounded reader refuses a declared length above the limit before it
@@ -28,8 +30,11 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 
 export { BODY_LIMIT, CONTRACT_REPORT_BODY_LIMIT, MIB };
 
-/** The paths whose bodies get no limit here: the webhook deliveries, whose limit is an open question. */
-export const UNLIMITED_BODY_PATHS: readonly string[] = [WEBHOOKS_GITHUB_PATH];
+/** The most bytes a GitHub webhook delivery may carry: 25 MiB, 26,214,400 bytes, at least GitHub's own 25 MB. */
+export const GITHUB_WEBHOOK_BODY_LIMIT = 25 * MIB;
+
+/** The webhook paths and the limit of each, which is not the 2 MiB of every other path. */
+export const WEBHOOK_BODY_LIMITS: Readonly<Record<string, number>> = { [WEBHOOKS_GITHUB_PATH]: GITHUB_WEBHOOK_BODY_LIMIT };
 
 interface ReportRoute {
   method: string;
@@ -60,12 +65,10 @@ function reportRouteOf(catalog: Catalog): ReportRoute | undefined {
   return route ?? undefined;
 }
 
-/**
- * The most bytes a request with this method and path may carry in its body,
- * or undefined for a path whose body gets no limit here.
- */
-export function bodyLimitFor(method: string, pathname: string, catalog: Catalog = CATALOG): number | undefined {
-  if (UNLIMITED_BODY_PATHS.includes(pathname)) return undefined;
+/** The most bytes a request with this method and path may carry in its body. */
+export function bodyLimitFor(method: string, pathname: string, catalog: Catalog = CATALOG): number {
+  const webhook = Object.hasOwn(WEBHOOK_BODY_LIMITS, pathname) ? WEBHOOK_BODY_LIMITS[pathname] : undefined;
+  if (webhook !== undefined) return webhook;
   const report = reportRouteOf(catalog);
   if (report !== undefined && method.toUpperCase() === report.method && report.pattern.test(pathname)) return CONTRACT_REPORT_BODY_LIMIT;
   return BODY_LIMIT;
