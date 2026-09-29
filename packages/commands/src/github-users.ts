@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { members, users } from "@tiehall/db";
-import { gitHubUnavailable, type GitHubClient } from "./github-client.ts";
+import { gitHubUnavailable, statusOfCall, type GitHubClient } from "./github-client.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // GitHub users as Tiehall users (sign-in: One Tiehall user per GitHub account;
@@ -73,14 +73,16 @@ const PROFILE = z.object({ name: z.string().nullish(), created_at: z.string().op
  * that login, or one of a kind that is neither a person's nor an
  * organization's. It throws GitHubUnavailableError when GitHub answers with
  * any other error, or does not answer within the client's timeout
- * (github-client.ts).
+ * (github-client.ts). Only GitHub's 404 to the look-up itself says that no
+ * account has the login: a 404 to the request for the installation's token,
+ * as for an installation deleted on GitHub, is GitHub failing the look-up.
  */
 export async function gitHubAccountNamed(client: GitHubClient, installationId: number, login: string): Promise<GitHubAccount | undefined> {
   let data: unknown;
   try {
     ({ data } = await client.installation(installationId).request("GET /users/{username}", { username: login }));
   } catch (error) {
-    if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
+    if (statusOfCall(error) === 404) return undefined;
     throw gitHubUnavailable("the look-up of the username", error);
   }
   const account = ACCOUNT.safeParse(data);
@@ -96,14 +98,16 @@ export async function gitHubAccountNamed(client: GitHubClient, installationId: n
  * Invites by GitHub username); undefined when GitHub knows no account with
  * that id, or one of a kind that is neither a person's nor an organization's.
  * It throws GitHubUnavailableError when GitHub answers with any other error,
- * or does not answer within the client's timeout (github-client.ts).
+ * or does not answer within the client's timeout (github-client.ts), and when
+ * GitHub answers 404 to the request for the installation's token rather than
+ * to the read.
  */
 export async function gitHubAccountWithId(client: GitHubClient, installationId: number, id: number): Promise<GitHubAccountProfile | undefined> {
   let data: unknown;
   try {
     ({ data } = await client.installation(installationId).request("GET /user/{account_id}", { account_id: id }));
   } catch (error) {
-    if ((error as { status?: unknown } | undefined)?.status === 404) return undefined;
+    if (statusOfCall(error) === 404) return undefined;
     throw gitHubUnavailable("the read of the GitHub account", error);
   }
   const account = ACCOUNT.safeParse(data);

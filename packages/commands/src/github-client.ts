@@ -42,14 +42,17 @@ import { createLogger, LOGGABLE, type Logger } from "./log.ts";
 //
 // GitHub unavailable (public-api: One error model for Tiehall's own refusals;
 // github-layer-hardening: design.md, Technical decisions: T2): a call that
-// GitHub answers with a
-// status its caller gives no answer of its own for, such as a 5xx, a
-// rate-limit refusal or a refused manifest code, or does not answer within its
-// wait, throws one error, GitHubUnavailableError, whose message names the call
-// and GitHub's status in Tiehall's own words. An action that asked GitHub,
-// such as the look-up of an invite's username or the setup screen's exchange
-// of the manifest's code, turns it into 502 integration-unavailable, having
-// changed nothing.
+// GitHub answers with a status its caller gives no answer of its own for,
+// such as a 5xx, a rate-limit refusal or a refused manifest code, or does not
+// answer within its wait, throws one error, GitHubUnavailableError, whose
+// message names the call and GitHub's status in Tiehall's own words. An action
+// that asked GitHub, such as the look-up of an invite's username or the setup
+// screen's exchange of the manifest's code, turns it into 502
+// integration-unavailable, having changed nothing. A status a caller answers
+// itself, such as GitHub's 404 for an account that does not exist, is the one
+// GitHub gave the call, never the one it gave the request for an installation
+// token made before it (statusOfCall): GitHub's 404 there, for an installation
+// deleted on GitHub, is GitHub failing the call.
 //
 // Every call Tiehall makes to GitHub's API goes through this module, on
 // Octokit (tracker-mirrors: GitHub writes appear as the App's bot;
@@ -121,6 +124,24 @@ const CONDITIONAL_ANSWERS = 500;
 function statusOf(error: unknown): number | undefined {
   const status = (error as { status?: unknown } | undefined)?.status;
   return typeof status === "number" ? status : undefined;
+}
+
+/** The request for an installation token, which the client makes before a call as an installation when it holds no valid token. */
+const INSTALLATION_TOKEN_REQUEST = /\/app\/installations\/[^/?#]+\/access_tokens$/;
+
+/**
+ * The HTTP status GitHub answered a failed call with, the call itself and not
+ * the request for an installation token that the client made before it; else
+ * undefined, as when GitHub did not answer. GitHub answers that token request
+ * with 404 for an installation deleted on GitHub, which says nothing of what
+ * the call asked for, so a caller that answers GitHub's 404 as a record that
+ * does not exist reads this status, never the error's own.
+ */
+export function statusOfCall(error: unknown): number | undefined {
+  if ((error as { response?: unknown } | undefined)?.response === undefined) return undefined;
+  const url = (error as { request?: { url?: unknown } }).request?.url;
+  if (typeof url === "string" && INSTALLATION_TOKEN_REQUEST.test(url.split(/[?#]/, 1)[0]!)) return undefined;
+  return statusOf(error);
 }
 
 /**

@@ -57,6 +57,9 @@ const LOGINS = [
   "zoe-dev",
   "yan-dev",
   "zak-dev",
+  "gil-dev",
+  "hal-dev",
+  "ivy-dev",
 ];
 
 beforeAll(async () => {
@@ -465,6 +468,97 @@ describe("inviting while GitHub answers slowly or fails", () => {
     );
     expect(await invitesFor("dee-dev")).toEqual([]);
     expect(await eventsSince()).toEqual([]);
+  });
+
+  // GitHub answers 404 to the request for an installation token of an installation deleted on GitHub, whose
+  // delivery may never reach the install. Asked through a client that holds no token of it yet, as after a restart,
+  // GitHub then fails the call that the look-up or the read needs: that 404 says nothing of the account, so it is
+  // 502, not the 404 of a username that names no account.
+  describe("when GitHub refuses the connected installation a token with 404, as for one deleted on GitHub", () => {
+    const TOKEN_REQUEST = /^\/app\/installations\/\d+\/access_tokens$/;
+    const NOT_FOUND = () => new Response('{"message":"Not Found"}', { status: 404, headers: { "content-type": "application/json" } });
+
+    /** The install reaching GitHub through a new client, with no installation token cached, while GitHub refuses one when `refusing` says so. */
+    function refusingTokens(refusing: () => boolean, run: () => Promise<void>): Promise<void> {
+      return reachingGitHubThrough(async (input, init) => (refusing() && TOKEN_REQUEST.test(pathOf(input)) ? NOT_FOUND() : fetch(input, init)), run);
+    }
+
+    it("gets 502 integration-unavailable on the invite form, not 404, with no review page, and creates no invite", async () => {
+      await refusingTokens(
+        () => true,
+        async () => {
+          const answer = await submitInviteForm(install, ada, "gil-dev");
+          expect(reviewPathOf(answer)).toBeUndefined();
+          expect(await problemOf(answer)).toEqual(UNAVAILABLE);
+        },
+      );
+      expect(await invitesFor("gil-dev")).toEqual([]);
+      expect(await eventsSince()).toEqual([]);
+    });
+
+    it("gets 502 integration-unavailable on the review page, not 404", async () => {
+      const path = reviewPathOf(await submitInviteForm(install, ada, "hal-dev"))!;
+      await refusingTokens(
+        () => true,
+        async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
+      );
+      expect(await invitesFor("hal-dev")).toEqual([]);
+    });
+
+    it("gets 502 integration-unavailable at the confirmation, not 404, and leaves it unused, so the same review page's form creates the invite once GitHub gives a token", async () => {
+      const post = await prepareInvite(install, ada, "ivy-dev");
+      let refusing = true;
+      await refusingTokens(
+        () => refusing,
+        async () => {
+          expect(await problemOf(await post())).toEqual(UNAVAILABLE);
+          expect(await invitesFor("ivy-dev")).toEqual([]);
+          expect(await eventsSince()).toEqual([]);
+          refusing = false;
+          expect((await post()).status).toBe(200);
+        },
+      );
+      expect(await invitesFor("ivy-dev")).toHaveLength(1);
+    });
+  });
+});
+
+// The same case against the GitHub stub's own answers: the connected installation is deleted on GitHub, its
+// delivery never reaches the install, and a web process that started since holds no token of it.
+describe("inviting through a connected installation deleted on GitHub", () => {
+  let gone: TestInstall;
+  let goneStub: GitHubStub;
+  let goneHarness: SignInHarness;
+  let admin: WebSessionCaller;
+  let reviewPath: string;
+
+  beforeAll(async () => {
+    gone = await startTestInstall();
+    goneStub = await startGitHubStub();
+    goneStub.addUser({ login: "omar-acme" });
+    goneStub.addUser({ login: "lee-dev", name: "Lee" });
+    goneStub.addOrg({ login: "acme", members: { "omar-acme": "admin" } });
+    goneHarness = await startSignIn(gone, goneStub);
+    await goneStub.install(goneHarness.app, { account: "acme" });
+    await goneHarness.connect("acme");
+    gone.useGitHub(goneHarness.github);
+    admin = { kind: "web_session", userId: await addUser(gone.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
+    // The username resolves while the installation exists.
+    reviewPath = reviewPathOf(await submitInviteForm(gone, admin, "lee-dev"))!;
+    const [installation] = goneStub.installations(goneHarness.app);
+    await goneStub.uninstall(installation!, { delivery: "none" });
+    gone.useGitHub(createInstallGitHub({ database: gone.db, secrets: () => gone.box, apiUrl: goneStub.apiUrl, logger: gone.logger, fetch }));
+  }, 60_000);
+
+  afterAll(async () => {
+    await goneStub?.close();
+    await gone?.close();
+  });
+
+  it("answers the invite form with 502 integration-unavailable, not 404, and the review page too", async () => {
+    expect(await problemOf(await submitInviteForm(gone, admin, "lee-dev"))).toEqual(UNAVAILABLE);
+    expect(await problemOf(await gone.confirmRoute(admin)(new Request(`${URL_OF_INSTALL}${reviewPath}`)))).toEqual(UNAVAILABLE);
+    expect((await gone.owner.query("SELECT id FROM invites")).rows).toEqual([]);
   });
 });
 
