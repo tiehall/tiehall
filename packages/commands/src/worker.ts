@@ -114,7 +114,14 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     now,
     jobs: queue,
     // The worker's own execute(), for the changes jobs and integration events make.
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs: queue }, now, ...(github === undefined ? {} : { github }) }),
+    execute: createExecute({
+      catalog: CATALOG,
+      handlers: HANDLERS,
+      store: { database, jobs: queue },
+      now,
+      ...(github === undefined ? {} : { github }),
+      ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
+    }),
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
     ...(github === undefined ? {} : { github }),

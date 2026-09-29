@@ -1,9 +1,11 @@
-import { getGitHubIntegration, setGitHubMode } from "@tiehall/catalog";
-import { GITHUB_MODES, githubModeChanged, Refusal } from "@tiehall/core";
+import { getGitHubIntegration, setGitHubMode, storeGitHubWebhookSecret } from "@tiehall/catalog";
+import { GITHUB_MODES, githubModeChanged, githubWebhookSecretStored, Refusal } from "@tiehall/core";
 import { githubApp, githubInstallations, integrationSecrets, type Database } from "@tiehall/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { attemptFailed, madeAfter, readDeliveryLog } from "./github-delivery-log.ts";
+import { storeSecret } from "./integration-secrets.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -36,6 +38,18 @@ import { writeIn } from "./write.ts";
 // settles the mode too, so the check never undoes it. Each change of the mode
 // is a security event for a changed integration, naming the admin or the
 // system, and why.
+//
+// Moving to webhook mode (github-app-reachability: design.md, Design rules:
+// Moving to webhook mode): an App without a webhook moves to webhook mode once
+// an admin has added the webhook on GitHub and stored the same secret in
+// Tiehall. Storing it is an admin action with the confirmation step; the
+// secret is no part of the action's input, which the review page's URL
+// carries, but a value the admin types into a password field of the review
+// page's form, so it travels only in the body of the POST that applies the
+// action. It is stored encrypted, replaces any stored secret, is never shown
+// again, and is a security event for a changed integration. A switch to
+// webhook mode is refused with 409 while no webhook secret is stored, because
+// in webhook mode Tiehall stops polling and would refuse every delivery.
 
 export { GITHUB_MODES };
 export type GitHubMode = (typeof GITHUB_MODES)[number];
@@ -81,6 +95,9 @@ export const GITHUB_MODE_HANDLERS: Handlers = {
     const previousMode: GitHubMode = row.mode === "polling" ? "polling" : "webhook";
     // A switch to the mode GitHub runs in already changes nothing.
     if (previousMode === mode) return { mode, previousMode };
+    if (mode === "webhook" && !(await hasWebhookSecret(context))) {
+      throw new Refusal("conflict", "No webhook secret is stored, so every delivery would be refused: store the App's webhook secret first.");
+    }
     return context.write(async (writer) => {
       // An admin's switch settles the mode, so the check of the delivery log never undoes it.
       await writer.tx
@@ -89,6 +106,55 @@ export const GITHUB_MODE_HANDLERS: Handlers = {
         .where(eq(githubApp.orgId, writer.orgId));
       await writer.record(githubModeChanged, { mode, previousMode, cause: "admin_switch" });
       return { mode, previousMode };
+    });
+  }),
+};
+
+/** The review page of storing the App's webhook secret, which names the action and never the secret. */
+export const GITHUB_MODE_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
+  [storeGitHubWebhookSecret.id]: async (_input, context) => {
+    const title = "Store the GitHub App's webhook secret";
+    const [row] = await context.tx.select({ name: githubApp.name, mode: githubApp.mode }).from(githubApp).where(eq(githubApp.orgId, context.orgId));
+    if (row === undefined) return { title, lines: [{ text: "The install has no GitHub App yet, so there is no webhook secret to store." }] };
+    const replacing = await hasWebhookSecret(context);
+    return {
+      title,
+      lines: [
+        {
+          text: replacing
+            ? `Store a new webhook secret for the install's GitHub App, ${row.name}, in place of the one stored now.`
+            : `Store the webhook secret of the install's GitHub App, ${row.name}.`,
+        },
+        {
+          text:
+            "Enter the secret you set under Webhook in the App's settings on GitHub. Tiehall verifies every delivery from GitHub with it: " +
+            "a delivery signed with any other secret is refused. Tiehall stores it encrypted and never shows it again.",
+        },
+        {
+          text:
+            row.mode === "polling"
+              ? "GitHub keeps running in polling mode until you switch it to webhook mode on the GitHub page."
+              : "GitHub runs in webhook mode, so deliveries are verified with the new secret as soon as you confirm.",
+        },
+      ],
+    };
+  },
+};
+
+/** Storing the App's webhook secret, which the admin entered on the review page. */
+export const GITHUB_WEBHOOK_SECRET_HANDLERS: Handlers = {
+  [storeGitHubWebhookSecret.id]: defineHandler(storeGitHubWebhookSecret, async (_input, context) => {
+    const [row] = await context.tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, context.orgId)).for("update");
+    if (row === undefined) throw new Refusal("conflict", "The install has no GitHub App yet, so there is no webhook secret to store.");
+    const secrets = context.secrets;
+    if (secrets === undefined) throw new Error("This process has no TIEHALL_SECRET_KEY to encrypt the webhook secret with.");
+    const secret = context.sealed["secret"];
+    if (secret === undefined) throw new Error("execute() gave no webhook secret to store.");
+    const replaced = await hasWebhookSecret(context);
+    return context.write(async (writer) => {
+      await storeSecret(writer, secrets(), "github_app.webhook_secret", secret);
+      await writer.record(githubWebhookSecretStored, { replaced });
+      return { stored: true as const, replaced };
     });
   }),
 };

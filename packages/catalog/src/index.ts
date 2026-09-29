@@ -12,6 +12,7 @@ export {
   type Deprecation,
   type HttpMethod,
   type Scope,
+  type SealedField,
   type StabilityLevel,
 } from "./command.ts";
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
@@ -99,6 +100,7 @@ export {
   githubInstallation,
   listGitHubInstallations,
   setGitHubMode,
+  storeGitHubWebhookSecret,
 } from "./github.ts";
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";

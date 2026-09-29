@@ -4,6 +4,7 @@ import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import type { SecretBox } from "./secret-box.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
 import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
 import type { RequestRow } from "./request-views.ts";
@@ -41,7 +42,10 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    with this exact input, or, for a proposal's confirmation, what the
 //    proposal proposes and the request it applies to, is checked and consumed
 //    in the call's transaction (agent-safety: One confirmation approves one
-//    action);
+//    action); then it parses the values the person entered on the review
+//    page, such as a secret, which are no part of the input, against their
+//    schemas, refusing one that fails with 400 that names the field and never
+//    the value;
 // 6. runs the handler in that transaction, so its change, its events and its
 //    jobs commit together or not at all, with the provenance it stamps from
 //    the caller, never from the payload, whose keys for it the schema drops
@@ -80,6 +84,13 @@ export interface HandlerContext extends OrgContext {
    * undefined where the process has none.
    */
   readonly github: InstallGitHub | undefined;
+  /**
+   * TIEHALL_SECRET_KEY's box, which encrypts the integration secrets an
+   * operation stores; undefined where the process has none.
+   */
+  readonly secrets: (() => SecretBox) | undefined;
+  /** The values the person entered on the review page, parsed, by field name; empty for a command that takes none. */
+  readonly sealed: Readonly<Record<string, string>>;
   /**
    * Runs a change in the call's transaction, with the event that records it
    * and the caller's provenance, to which the handler adds the team the user
@@ -143,11 +154,19 @@ export interface ExecuteServices {
   now?: () => Date;
   /** The install's GitHub App, which the operations that ask GitHub call it as. */
   github?: InstallGitHub;
+  /** TIEHALL_SECRET_KEY's box, which the operations that store an integration secret encrypt it with. */
+  secrets?: () => SecretBox;
 }
 
 export interface ExecuteOptions {
   /** The confirmation step's nonce, which a `confirm` command needs. */
   confirmation?: { nonce: string };
+  /**
+   * The values the person entered on the review page of a `confirm` command
+   * that takes some, such as a secret, by field name: sent only in the body
+   * of the POST that applies the action, never in its input.
+   */
+  sealed?: Readonly<Record<string, string>>;
   /** Where the call came from, kept for the security events it appends. */
   origin?: Origin;
   /**
@@ -247,6 +266,17 @@ export function createExecute(services: ExecuteServices): Execute {
             throw new Refusal("confirmation-required", "This action needs a confirmation in the web UI.");
           }
         }
+        // The values entered on the review page, which no URL carries; a refusal names the field, never the value.
+        const sealed: Record<string, string> = {};
+        const sealedIssues: RefusalIssue[] = [];
+        for (const field of definition.sealed ?? []) {
+          const entered = field.schema.safeParse(options.sealed?.[field.name]);
+          if (entered.success) sealed[field.name] = entered.data;
+          else sealedIssues.push(...entered.error.issues.map((issue) => ({ path: [field.name], message: issue.message })));
+        }
+        if (sealedIssues.length > 0) {
+          throw new Refusal("invalid-input", `A value entered for ${commandId} does not match its schema.`, { issues: sealedIssues });
+        }
         // An agent token's call that writes is counted once, before its change, against the token's limit and the install's budget.
         const token = tokenKeyOf(caller);
         let counted = false;
@@ -257,6 +287,8 @@ export function createExecute(services: ExecuteServices): Execute {
           provenance,
           now,
           github: services.github,
+          secrets: services.secrets,
+          sealed,
           write: (change, { teamId } = {}) =>
             writeIn(
               context,

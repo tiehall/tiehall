@@ -1,10 +1,8 @@
-import { randomBytes } from "node:crypto";
 import type { GitHubStub, StubApp } from "@tiehall/testing/github";
 import {
   createInstallGitHub,
   createLogger,
   createSignInService,
-  openSecretBox,
   readInstallations,
   storeGitHubApp,
   type InstallGitHub,
@@ -102,7 +100,7 @@ export async function startSignIn(
       // An App with a webhook, whose deliveries the stub logs with what GitHub sent, for a test to store.
       ...(options.hook === undefined ? {} : { hook: options.hook }),
     });
-  const box = options.sameAppAs?.box ?? openSecretBox(randomBytes(32).toString("base64url"));
+  const box = options.sameAppAs?.box ?? install.box;
   const store = (clientSecret: string) =>
     install.db.transaction(async (tx) => {
       const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM orgs");

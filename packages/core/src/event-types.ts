@@ -486,6 +486,21 @@ export const githubModeChanged = defineEventType({
   },
 });
 
+/**
+ * An admin stored the webhook secret of the install's GitHub App, with the
+ * confirmation step (tracker-mirrors: GitHub and Jira each run in webhook mode
+ * or polling mode; activity-log: Which actions are security events): a change
+ * of the integration. It says whether it replaced a stored secret, and never
+ * holds the secret; its provenance names the admin.
+ */
+export const githubWebhookSecretStored = defineEventType({
+  type: "github.webhook_secret_stored",
+  class: "security",
+  fields: {
+    replaced: { kind: "boolean" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -517,4 +532,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   githubInstallationConnected,
   githubInstallationDisconnected,
   githubModeChanged,
+  githubWebhookSecretStored,
 ];

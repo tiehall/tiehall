@@ -40,6 +40,27 @@ export interface Deprecation {
   sunset?: string;
 }
 
+/**
+ * A value the person enters on the review page of an action that needs the
+ * confirmation step, such as a secret (agent-safety: The review page of the
+ * confirmation step; github-app-reachability: design.md, Design rules: Moving
+ * to webhook mode). It is not part of the action's input: the review page
+ * takes the input from its URL and renders it, so a value that must stay out
+ * of URLs and pages travels only in the body of the POST that applies the
+ * action. It is in no review, no confirmation digest and no URL, and no page
+ * shows it.
+ */
+export interface SealedField {
+  /** The form field's name, which the handler reads the value by. */
+  readonly name: string;
+  /** The field's label on the review page, in Tiehall's own words. */
+  readonly label: string;
+  /** password: typed or pasted, and never shown; file: a file the person picks, read as text, such as a PEM key. */
+  readonly kind: "password" | "file";
+  /** The value's schema; a value that fails it gets 400, and the refusal names the field, never the value. */
+  readonly schema: z.ZodType<string>;
+}
+
 export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output extends z.ZodType = z.ZodType> {
   /** A dotted lower-case name, such as requests.create; the OpenAPI operationId. */
   readonly id: string;
@@ -90,6 +111,8 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   readonly ifMatch?: string;
   /** The output field whose value is the answer's ETag, which REST sends as the ETag header, such as a packet's revision. */
   readonly etag?: string;
+  /** The values the person enters on the action's review page, for a command that needs the confirmation step. */
+  readonly sealed?: readonly SealedField[];
 }
 
 /** A definition, typed by its schemas; the catalog checks it when it registers it. */

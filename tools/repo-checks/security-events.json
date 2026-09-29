@@ -145,6 +145,14 @@
             "case": "puts GitHub in polling mode on a failed delivery after the first installation, which the admin page shows and the activity log records"
           }
         },
+        {
+          "action": "the GitHub App's webhook secret stored",
+          "event": "github.webhook_secret_stored",
+          "test": {
+            "file": "packages/commands/test/github-webhook-secret.test.ts",
+            "case": "stores the secret encrypted once an admin confirms it, replacing any stored one, and records a security event for the changed integration"
+          }
+        },
         { "action": "the Jira connection connected", "pending": "25.1" },
         { "action": "the Jira connection changed", "pending": "25.2" },
         { "action": "the Jira connection disconnected", "pending": "25.2" },

@@ -15,6 +15,7 @@ import {
   HANDLERS,
   migrate,
   openDatabase,
+  openSecretBox,
   REVIEWS,
   CONFIRM_DOWNLOADS,
   CONFIRMATION_SUBJECTS,
@@ -26,6 +27,7 @@ import {
   type InstallGitHub,
   type JobData,
   type RestHandler,
+  type SecretBox,
   type WebCommands,
   type WebSessionCaller,
   type WebWriteRequest,
@@ -47,6 +49,8 @@ export interface TestInstall {
   authSecret: string;
   /** The install's logger, which writes nowhere. */
   logger: Logger;
+  /** TIEHALL_SECRET_KEY's box, which encrypts the stored integration secrets, for the operations that store one. */
+  box: SecretBox;
   /** The app's database, as the app role. */
   db: Database;
   execute: Execute;
@@ -69,15 +73,22 @@ export interface TestInstall {
   /**
    * Opens the action's review page and posts its form, as a person confirming
    * it does, with any further headers of the browser's request, such as its
-   * X-Forwarded-For and User-Agent; returns the answer.
+   * X-Forwarded-For and User-Agent, and the values the person enters in the
+   * form's own fields, such as a secret; returns the answer.
    */
-  confirm(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<Response>;
+  confirm(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>, entered?: Record<string, string>): Promise<Response>;
   /**
    * Opens the action's review page now and returns a function that posts its
    * form, so a test can post it at a moment of its choosing, such as beside
    * another call; a page that is refused is answered as it was.
    */
-  prepareConfirmation(caller: WebSessionCaller, commandId: string, input: unknown, headers?: Record<string, string>): Promise<() => Promise<Response>>;
+  prepareConfirmation(
+    caller: WebSessionCaller,
+    commandId: string,
+    input: unknown,
+    headers?: Record<string, string>,
+    entered?: Record<string, string>,
+  ): Promise<() => Promise<Response>>;
   /**
    * Makes the operations that call GitHub, such as creating an invite, reach
    * it as this App, such as one a test stored from the GitHub stub; until
@@ -104,6 +115,7 @@ export async function startTestInstall(
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 
   const secret = randomBytes(32).toString("base64url");
+  const box = openSecretBox(randomBytes(32).toString("base64url"));
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
   const sentJobs: { queue: string; data: JobData }[] = [];
@@ -118,13 +130,14 @@ export async function startTestInstall(
     confirmations,
     subjects,
     github,
+    secrets: () => box,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
     createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
-  const prepareConfirmation: TestInstall["prepareConfirmation"] = async (caller, commandId, input, headers = {}) => {
+  const prepareConfirmation: TestInstall["prepareConfirmation"] = async (caller, commandId, input, headers = {}, entered = {}) => {
     const route = confirmRoute(caller);
     const page = await route(new Request(`${URL_OF_INSTALL}/confirm/${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`));
     const html = await page.text();
@@ -138,7 +151,7 @@ export async function startTestInstall(
         new Request(`${URL_OF_INSTALL}/confirm/${commandId}`, {
           method: "POST",
           headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
-          body: new URLSearchParams({ input: field("input"), nonce: field("nonce"), csrf: field("csrf") }).toString(),
+          body: new URLSearchParams({ input: field("input"), nonce: field("nonce"), csrf: field("csrf"), ...entered }).toString(),
         }),
       );
   };
@@ -148,6 +161,7 @@ export async function startTestInstall(
     databaseUrl: database.url,
     authSecret: secret,
     logger,
+    box,
     db,
     execute,
     sentJobs,
@@ -156,7 +170,7 @@ export async function startTestInstall(
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,
     confirmRouteFor,
-    confirm: async (caller, commandId, input, headers) => (await prepareConfirmation(caller, commandId, input, headers))(),
+    confirm: async (caller, commandId, input, headers, entered) => (await prepareConfirmation(caller, commandId, input, headers, entered))(),
     prepareConfirmation,
     useGitHub(value) {
       installGitHub = value;

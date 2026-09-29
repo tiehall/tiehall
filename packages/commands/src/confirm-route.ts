@@ -1,4 +1,4 @@
-import { confirmProposal, rejectProposal, undoCommitment } from "@tiehall/catalog";
+import { confirmProposal, rejectProposal, undoCommitment, type SealedField } from "@tiehall/catalog";
 import { canonicalJson, httpProblem, internalErrorProblem, quotePreamble, Refusal, type HttpProblem, type Review } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
@@ -19,6 +19,12 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 //   to the same path, with the page's confirmation nonce and the session's
 //   CSRF token;
 // - changes no state: the review runs in a read-only transaction.
+// A few actions ask the person to enter a value on the review page itself,
+// such as a secret (github-app-reachability: design.md, Design rules: Moving
+// to webhook mode): the form holds a password field, or a file field for a
+// key, which the page renders empty. Such a value is no part of the action's
+// input, which the page's URL carries: it travels only in the body of the
+// POST that applies the action, and no page or URL ever shows it.
 // The POST applies the action (agent-safety: One confirmation approves one
 // action): only for the signed-in user, only once it passes the checks every
 // web UI write passes (the session's CSRF token, an Origin equal to
@@ -110,7 +116,8 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       const reviewed = await options.step.review(commandId, caller, input, refusal);
       const csrf = csrfTokenFor(secret(), caller.sessionId);
       const path = proposal === undefined ? `${CONFIRM_PATH}${commandId}` : `${CONFIRM_PATH}${proposal}${undo ? "/undo" : ""}`;
-      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo));
+      const fields = options.step.sealedFields(commandId);
+      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo, fields));
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("confirm: the review page failed", { operationId: commandId, error });
@@ -128,7 +135,7 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
   async function apply(request: Request, commandId: string, proposal: string | undefined, undo: boolean): Promise<Response> {
     const caller = await signedIn(request);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
-    const form = new URLSearchParams(await request.text());
+    const form = await formOf(request);
     const rejecting = proposal !== undefined && !undo && form.get("action") === "reject";
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
@@ -145,15 +152,57 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     // A proposal's page confirms the proposal its path names, whatever else the form sends.
     const { input, refusal } = proposal === undefined ? parseInput(form.get("input")) : { input: { proposal }, refusal: undefined };
     const nonce = form.get("nonce");
+    const sealed: Record<string, string> = {};
+    for (const { name } of options.step.sealedFields(commandId)) {
+      const value = form.sealed(name);
+      if (value !== undefined) sealed[name] = value;
+    }
     const output = await options.write.execute(commandId, caller, input, {
       ...(refusal === undefined ? {} : { refusal }),
       ...(nonce === null || nonce === "" ? {} : { confirmation: { nonce } }),
+      sealed,
       origin,
     });
     const download = options.downloads?.[commandId];
     if (download !== undefined) return file(download(output));
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
+}
+
+/** The largest value a file field of a review page takes, such as a PEM key of a few kilobytes. */
+const SEALED_FILE_MAX_BYTES = 64 * 1024;
+
+/** A review page's form as it was posted: its fields, and the values entered in its own fields, text or file. */
+interface PostedForm {
+  get(name: string): string | null;
+  /** A value entered in one of the page's own fields: its text, or a file's text; undefined when none was sent. */
+  sealed(name: string): string | undefined;
+}
+
+/**
+ * Reads the posted form: URL-encoded, or multipart when the page asked for a
+ * file. A file larger than a review page takes counts as no value, which the
+ * command's schema then refuses; a body that is no multipart form counts as an
+ * empty form, which the write checks then refuse.
+ */
+async function formOf(request: Request): Promise<PostedForm> {
+  if (!/^multipart\/form-data\b/i.test(request.headers.get("content-type") ?? "")) {
+    const fields = new URLSearchParams(await request.text());
+    return { get: (name) => fields.get(name), sealed: (name) => fields.get(name) ?? undefined };
+  }
+  let data: FormData;
+  try {
+    data = await request.formData();
+  } catch {
+    data = new FormData();
+  }
+  const texts = new Map<string, string>();
+  for (const [name, value] of data) {
+    if (texts.has(name)) continue;
+    if (typeof value === "string") texts.set(name, value);
+    else if (value.size <= SEALED_FILE_MAX_BYTES) texts.set(name, await value.text());
+  }
+  return { get: (name) => texts.get(name) ?? null, sealed: (name) => texts.get(name) };
 }
 
 const PROPOSAL_PAGE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/undo)?$/;
@@ -226,8 +275,19 @@ function file({ filename, contentType, body }: Download): Response {
   });
 }
 
+/** One of the page's own fields, which the page renders empty and the person fills in. */
+function sealedField(field: SealedField): string[] {
+  const id = `sealed-${field.name}`;
+  const control =
+    field.kind === "password"
+      ? `<input type="password" id="${id}" name="${escapeHtml(field.name)}" autocomplete="off" required>`
+      : `<input type="file" id="${id}" name="${escapeHtml(field.name)}" required>`;
+  return [`        <p><label for="${id}">${escapeHtml(field.label)}</label></p>`, `        <p>${control}</p>`];
+}
+
 /** The review page: what will happen, and the form that applies it, with a form that rejects it on a proposal's page. */
-function reviewPage(path: string, review: Review, input: string, nonce: string, csrf: string, rejectable: boolean): string {
+function reviewPage(path: string, review: Review, input: string, nonce: string, csrf: string, rejectable: boolean, fields: readonly SealedField[] = []): string {
+  const multipart = fields.some(({ kind }) => kind === "file");
   const lines = review.lines.map((line) =>
     "text" in line
       ? `      <p>${escapeHtml(line.text)}</p>`
@@ -238,10 +298,11 @@ function reviewPage(path: string, review: Review, input: string, nonce: string, 
     [
       `      <h1>${escapeHtml(review.title)}</h1>`,
       ...lines,
-      `      <form method="post" action="${escapeHtml(path)}">`,
+      `      <form method="post" action="${escapeHtml(path)}"${multipart ? ' enctype="multipart/form-data"' : ""}>`,
       `        <input type="hidden" name="input" value="${escapeHtml(input)}">`,
       `        <input type="hidden" name="nonce" value="${escapeHtml(nonce)}">`,
       `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+      ...fields.flatMap(sealedField),
       `        <button type="submit">Confirm</button>`,
       `      </form>`,
       ...(rejectable

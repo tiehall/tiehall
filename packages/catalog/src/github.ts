@@ -110,4 +110,39 @@ export const setGitHubMode = defineCommand({
   stability: "beta",
 });
 
-export const GITHUB_COMMANDS = [listGitHubInstallations, connectGitHubInstallation, disconnectGitHubInstallation, getGitHubIntegration, setGitHubMode];
+/** The longest webhook secret Tiehall stores. GitHub names no limit; this one keeps a pasted value within reason. */
+const WEBHOOK_SECRET_MAX_LENGTH = 1024;
+
+export const storeGitHubWebhookSecret = defineCommand({
+  id: "github.store_webhook_secret",
+  summary: "Store the webhook secret of the install's GitHub App, replacing any stored one, so that GitHub's deliveries can be verified.",
+  // The secret is no part of the input, which the review page's URL carries: the admin enters it on the review page itself.
+  input: z.object({}),
+  output: z.object({ stored: z.literal(true), replaced: z.boolean() }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "integrations",
+  surfaces: [],
+  stability: "beta",
+  sealed: [
+    {
+      name: "secret",
+      label: "The webhook secret, as set in the App's settings on GitHub",
+      kind: "password",
+      schema: z
+        .string()
+        .min(1, "A webhook secret is not empty.")
+        .max(WEBHOOK_SECRET_MAX_LENGTH, `A webhook secret has at most ${WEBHOOK_SECRET_MAX_LENGTH} characters.`),
+    },
+  ],
+});
+
+export const GITHUB_COMMANDS = [
+  listGitHubInstallations,
+  connectGitHubInstallation,
+  disconnectGitHubInstallation,
+  getGitHubIntegration,
+  setGitHubMode,
+  storeGitHubWebhookSecret,
+];

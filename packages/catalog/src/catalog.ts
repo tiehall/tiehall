@@ -91,6 +91,20 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
     if (definition.confirm && offered) {
       problem("it needs the confirmation step, which runs only in the web UI, so no agent surface offers it.");
     }
+    if (definition.sealed !== undefined && definition.sealed.length > 0) {
+      // Values entered on a review page exist only for an action that has one.
+      if (!definition.confirm) problem("it takes values entered on a review page, which only an action that needs the confirmation step has.");
+      const names = definition.sealed.map(({ name }) => name);
+      if (new Set(names).size !== names.length) problem("two of the values entered on its review page share a name.");
+      for (const { name } of definition.sealed) {
+        if (!/^[a-z][A-Za-z0-9]*$/.test(name) || ["input", "nonce", "csrf", "action"].includes(name)) {
+          problem(`the value ${name} entered on its review page needs a camelCase name that the page's form does not use itself.`);
+        }
+        if (definition.input instanceof z.ZodObject && Object.hasOwn(definition.input.shape, name)) {
+          problem(`the value ${name} entered on its review page is also a field of its input, which the review page's URL carries.`);
+        }
+      }
+    }
     if (definition.admin !== undefined) {
       if (!(ADMIN_ACTIONS as readonly string[]).includes(definition.admin)) {
         problem(`the admin action ${definition.admin} is not one of ${ADMIN_ACTIONS.join(", ")}.`);

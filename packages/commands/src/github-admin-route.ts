@@ -4,6 +4,7 @@ import {
   getGitHubIntegration,
   listGitHubInstallations,
   setGitHubMode,
+  storeGitHubWebhookSecret,
   type githubInstallation,
 } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
@@ -12,7 +13,10 @@ import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import type { Execute } from "./execute.ts";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { isTrialUrl } from "./settings.ts";
+import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 
@@ -27,7 +31,14 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // installation that is not connected, so leaving it there is how an admin
 // ignores it. The page also shows GitHub's mode, webhook or polling, with a
 // form that switches it (tracker-mirrors: GitHub and Jira each run in webhook
-// mode or polling mode). A POST disconnects an installation or switches the
+// mode or polling mode). While no webhook secret is stored, the switch to
+// webhook mode is not offered: on an install whose URL is not a trial URL the
+// page shows the steps to webhook mode instead, with the install's own
+// webhook URL, the three events and a link to the App's settings on GitHub,
+// and on a trial URL it says that GitHub cannot deliver webhooks there
+// (github-app-reachability: design.md, Design rules: Moving to webhook mode).
+// Storing the secret, or another one, goes through its review page, with the
+// confirmation step. A POST disconnects an installation or switches the
 // mode: neither needs the confirmation step, but each passes the checks every
 // web UI write passes (the session's CSRF token, an Origin equal to
 // TIEHALL_URL and Sec-Fetch-Site: same-origin), and leads back to the page.
@@ -70,7 +81,7 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
       }
       const integration = (await options.execute(getGitHubIntegration.id, caller, {}, { readOnly: true })) as Integration;
       const output = (await options.execute(listGitHubInstallations.id, caller, {}, { readOnly: true })) as { installations: Installation[] };
-      return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId)), { headers: PAGE_HEADERS });
+      return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId), options.url), { headers: PAGE_HEADERS });
     } catch (error) {
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error("github admin: the page failed", { error });
@@ -124,27 +135,64 @@ function stateText(installation: Installation): string {
   return installation.repositorySelection === "all" ? "Covers every repository of the account." : "Covers the repositories chosen on GitHub.";
 }
 
-/** GitHub's mode, what it means, and the form that switches it. */
-function modeSection(integration: Integration, csrf: string): string[] {
-  const app = integration.app;
-  if (app === null) return ["      <h2>How GitHub's changes reach Tiehall</h2>", "      <p>The install has no GitHub App yet.</p>"];
-  const other = app.mode === "webhook" ? "polling" : "webhook";
+/** The review page that stores the App's webhook secret; the secret itself is entered on that page. */
+const STORE_WEBHOOK_SECRET = `${CONFIRM_PATH}${storeGitHubWebhookSecret.id}?input=${encodeURIComponent("{}")}`;
+
+/** The App's settings on GitHub, where its webhook and events are set: under its owner, an organization or a person. */
+function appSettingsUrl(app: NonNullable<Integration["app"]>): string {
+  const owner = encodeURIComponent(app.owner);
+  const slug = encodeURIComponent(app.slug);
+  return app.ownerType === "Organization" ? `${GITHUB_WEB_URL}/organizations/${owner}/settings/apps/${slug}` : `${GITHUB_WEB_URL}/settings/apps/${slug}`;
+}
+
+/** The form that switches GitHub to the other mode. */
+function switchForm(target: "webhook" | "polling", csrf: string): string[] {
   return [
-    "      <h2>How GitHub's changes reach Tiehall</h2>",
-    app.mode === "webhook"
-      ? "      <p>GitHub runs in webhook mode: GitHub delivers each change to the install as it happens, and Tiehall asks GitHub to redeliver deliveries that failed.</p>"
-      : "      <p>GitHub runs in polling mode: Tiehall asks GitHub for changes every 60 seconds, so a change reaches it within 2 minutes.</p>",
-    "      <p>A reconciliation every 15 minutes finds what either mode missed.</p>",
     `      <form method="post" action="${GITHUB_ADMIN_PATH}">`,
     '        <input type="hidden" name="action" value="set_mode">',
-    `        <input type="hidden" name="mode" value="${other}">`,
+    `        <input type="hidden" name="mode" value="${target}">`,
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `        <button type="submit">Switch to ${other} mode</button>`,
+    `        <button type="submit">Switch to ${target} mode</button>`,
     "      </form>",
   ];
 }
 
-function page(integration: Integration, installations: readonly Installation[], csrf: string): string {
+/** GitHub's mode, what it means, and what moves it: the switch, or the steps to webhook mode. */
+function modeSection(integration: Integration, csrf: string, url: string): string[] {
+  const app = integration.app;
+  const heading = "      <h2>How GitHub's changes reach Tiehall</h2>";
+  if (app === null) return [heading, "      <p>The install has no GitHub App yet.</p>"];
+  const lines = [
+    heading,
+    app.mode === "webhook"
+      ? "      <p>GitHub runs in webhook mode: GitHub delivers each change to the install as it happens, and Tiehall asks GitHub to redeliver deliveries that failed.</p>"
+      : "      <p>GitHub runs in polling mode: Tiehall asks GitHub for changes every 60 seconds, so a change reaches it within 2 minutes.</p>",
+    "      <p>A reconciliation every 15 minutes finds what either mode missed.</p>",
+  ];
+  if (app.webhookSecret) {
+    return [
+      ...lines,
+      ...switchForm(app.mode === "webhook" ? "polling" : "webhook", csrf),
+      `      <p>A webhook secret is stored, and verifies every delivery. <a href="${escapeHtml(STORE_WEBHOOK_SECRET)}">Store another webhook secret</a>, with a confirmation, after you change it in the App's settings on GitHub.</p>`,
+    ];
+  }
+  if (isTrialUrl(url)) {
+    return [...lines, `      <p>${escapeHtml(`GitHub cannot deliver webhooks to ${url}: it reaches no address on localhost, so GitHub stays in polling mode.`)}</p>`];
+  }
+  const hook = `${url}${WEBHOOK_PATH}`;
+  return [
+    ...lines,
+    "      <p>The App has no webhook, so GitHub delivers nothing to the install. Once GitHub can reach the install, these steps move GitHub to webhook mode:</p>",
+    "      <ol>",
+    `        <li>In <a href="${escapeHtml(appSettingsUrl(app))}">the App's settings on GitHub</a>, under Webhook, make the webhook active, set its URL to ${escapeHtml(hook)}, and set a webhook secret.</li>`,
+    "        <li>Under Permissions and events, subscribe to the events pull_request, issues and organization (Pull request, Issues and Organization). No permission changes.</li>",
+    `        <li><a href="${escapeHtml(STORE_WEBHOOK_SECRET)}">Store the same secret in Tiehall</a>, and confirm it on its review page.</li>`,
+    "        <li>Switch GitHub to webhook mode here, then check on the App's Advanced tab on GitHub that the next delivery succeeded.</li>",
+    "      </ol>",
+  ];
+}
+
+function page(integration: Integration, installations: readonly Installation[], csrf: string, url: string): string {
   const connected = installations.filter(({ connected: isConnected }) => isConnected);
   const others = installations.filter(({ connected: isConnected, deleted }) => !isConnected && !deleted);
   const connectedRows = connected.map(
@@ -170,7 +218,7 @@ function page(integration: Integration, installations: readonly Installation[], 
     "GitHub",
     [
       "      <h1>GitHub</h1>",
-      ...modeSection(integration, csrf),
+      ...modeSection(integration, csrf, url),
       "      <h2>Connected installations</h2>",
       "      <p>Tiehall acts on these installations of the install's GitHub App: the repositories they cover count as covered. Disconnecting one needs no confirmation and removes no member.</p>",
       connectedRows.length === 0 ? "      <p>No installation is connected.</p>" : `      <ul>\n${connectedRows.join("\n")}\n      </ul>`,

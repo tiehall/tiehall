@@ -1,8 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { GitHubStub, StubApp, StubDelivery } from "@tiehall/testing/github";
-import { createGitHubWebhookRoute, createInstallGitHub, openSecretBox, storeGitHubApp, type InstallGitHub, type SecretBox } from "../../src/index.ts";
+import { createGitHubWebhookRoute, createInstallGitHub, storeGitHubApp, type InstallGitHub, type SecretBox } from "../../src/index.ts";
 import type { TestInstall } from "./install.ts";
 
 // The install's GitHub App for the tests of what Tiehall does with GitHub: an
@@ -16,9 +15,9 @@ export interface StoredStubApp {
   github: InstallGitHub;
 }
 
-/** Stores the stub's App in the install, with its credentials encrypted, and returns what calls GitHub as it. */
+/** Stores the stub's App in the install, with its credentials encrypted with the install's box, and returns what calls GitHub as it. */
 export async function storeStubApp(install: TestInstall, stub: GitHubStub, app: StubApp): Promise<StoredStubApp> {
-  const box = openSecretBox(randomBytes(32).toString("base64url"));
+  const box = install.box;
   await install.db.transaction(async (tx) => {
     const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM orgs");
     await storeGitHubApp({ tx, orgId: rows[0]?.id ?? "" }, box, {

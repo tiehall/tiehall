@@ -1,4 +1,4 @@
-import type { Catalog } from "@tiehall/catalog";
+import type { Catalog, SealedField } from "@tiehall/catalog";
 import { Refusal, type RefusalIssue, type Review } from "@tiehall/core";
 import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
@@ -87,6 +87,8 @@ export interface ConfirmationStep {
   review(commandId: string, caller: WebSessionCaller, input: unknown, refusal?: Refusal): Promise<ReviewedAction>;
   /** Whether a command needs the confirmation step, and so has a review page to be confirmed from. */
   needsConfirmation(commandId: string): boolean;
+  /** The values a command's review page asks the person to enter in its form, such as a secret; none for most. */
+  sealedFields(commandId: string): readonly SealedField[];
 }
 
 /** A command with no review page: an unknown one, or one that needs no confirmation step. */
@@ -105,6 +107,7 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
 
   return {
     needsConfirmation: (commandId) => confirmIds.includes(commandId),
+    sealedFields: (commandId) => (confirmIds.includes(commandId) ? (catalog.get(commandId)?.sealed ?? []) : []),
     async review(commandId, caller, input, refusal) {
       const definition = catalog.get(commandId);
       const handler = reviews[commandId];

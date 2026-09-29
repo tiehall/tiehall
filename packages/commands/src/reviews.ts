@@ -2,6 +2,7 @@ import { ACTIVITY_LOG_DOWNLOADS, ACTIVITY_LOG_REVIEWS } from "./activity-log-exp
 import type { ConfirmDownloads } from "./confirm-route.ts";
 import type { ConfirmationSubjects, Reviews } from "./confirmation-step.ts";
 import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
+import { GITHUB_MODE_REVIEWS } from "./github-mode.ts";
 import { INVITE_REVIEWS } from "./invites.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
@@ -22,6 +23,7 @@ export const REVIEWS: Reviews = {
   ...UNDO_REVIEWS,
   ...ACTIVITY_LOG_REVIEWS,
   ...GITHUB_INSTALLATION_REVIEWS,
+  ...GITHUB_MODE_REVIEWS,
 };
 
 // What a command's confirmation nonce is bound to, where it is not the

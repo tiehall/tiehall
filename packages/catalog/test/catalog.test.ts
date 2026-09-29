@@ -125,6 +125,26 @@ describe("a catalog", () => {
     }
   });
 
+  // github-app-reachability: design.md, Design rules: Moving to webhook mode. A value such as a secret is
+  // entered on the review page of an action that needs the confirmation step, and is never part of its input,
+  // which the review page's URL carries.
+  it("refuses values entered on a review page for a command that needs no confirmation step, or that clash with the form or the input", () => {
+    const secret = { name: "secret", label: "The secret", kind: "password", schema: z.string().min(1) } as const;
+    expect(catalogProblems(withChanged("changeRole", { sealed: [secret] }))).toEqual([]);
+    expect(catalogProblems(withChanged("changeRole", { sealed: [secret], confirm: false }))).toEqual([
+      "members.change_role: it takes values entered on a review page, which only an action that needs the confirmation step has.",
+    ]);
+    expect(catalogProblems(withChanged("changeRole", { sealed: [secret, secret] }))).toEqual([
+      "members.change_role: two of the values entered on its review page share a name.",
+    ]);
+    expect(catalogProblems(withChanged("changeRole", { sealed: [{ ...secret, name: "nonce" }] }))).toEqual([
+      "members.change_role: the value nonce entered on its review page needs a camelCase name that the page's form does not use itself.",
+    ]);
+    expect(catalogProblems(withChanged("changeRole", { sealed: [{ ...secret, name: "role" }] }))).toEqual([
+      "members.change_role: the value role entered on its review page is also a field of its input, which the review page's URL carries.",
+    ]);
+  });
+
   // teams-and-roles: What admins and members may do. Admin actions run only in the web UI, so an admin's agent
   // gets the same tools and commands as a member's (agent-surfaces: Admin actions and trust changes are on no
   // agent surface).
