@@ -508,11 +508,11 @@ describe("GitHub's return with the code", () => {
   it("answers a conversion GitHub does not answer in time with the same page, and stores nothing", async () => {
     const cookie = await setupSession(INSTALL);
     const { location } = await createOnGitHub(createForm((await open(INSTALL, cookie, { org: "acme" })).html)!);
-    // GitHub answers the conversion only after the client's timeout, lowered here from its 10 seconds, has passed.
+    // GitHub answers the conversion only after the client's timeout, lowered here from its 10 seconds to 1, has passed.
     const slow = (async (input: string | URL | Request, init?: RequestInit) => {
       const signal = init?.signal;
       return new Promise<Response>((resolve, reject) => {
-        const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+        const timer = setTimeout(() => resolve(fetch(input, init)), 10_000);
         signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
       });
     }) as typeof fetch;
@@ -521,7 +521,7 @@ describe("GitHub's return with the code", () => {
       url: INSTALL,
       logger,
       secrets: () => box,
-      github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: slow, timeoutMs: 200 },
+      github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: slow, timeoutMs: 1_000 },
       now: () => clock(),
     });
     const answer = await slowRoute(browserRequest(INSTALL, `${location!.pathname}${location!.search}`, cookie, { headers: AS_BROWSER }));

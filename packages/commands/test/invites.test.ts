@@ -419,13 +419,13 @@ describe("inviting while GitHub answers slowly or fails", () => {
     expect(await invitesFor("oli-dev")).toHaveLength(1);
   });
 
-  // D50 (3): not answering within the client's timeout, lowered here from its 10 seconds, is the same failure.
+  // D50 (3): not answering within the client's timeout, lowered here from its 10 seconds to 1, is the same failure.
   it("that GitHub does not answer in time leaves the confirmation unused, so the same review page's form creates the invite once GitHub answers", async () => {
     const post = await prepareInvite(install, ada, "pat-dev");
     let slow = true;
     await reachingGitHubThrough(
       async (input, init) =>
-        slow && pathOf(input) === `/user/${idOf("pat-dev")}` ? answerAfter(init?.signal, 2_000, () => fetch(input, init)) : fetch(input, init),
+        slow && pathOf(input) === `/user/${idOf("pat-dev")}` ? answerAfter(init?.signal, 10_000, () => fetch(input, init)) : fetch(input, init),
       async () => {
         expect(await problemOf(await post())).toEqual(UNAVAILABLE);
         expect(await invitesFor("pat-dev")).toEqual([]);
@@ -433,7 +433,7 @@ describe("inviting while GitHub answers slowly or fails", () => {
         slow = false;
         expect((await post()).status).toBe(200);
       },
-      200,
+      1_000,
     );
     expect(await invitesFor("pat-dev")).toHaveLength(1);
   });
@@ -459,9 +459,9 @@ describe("inviting while GitHub answers slowly or fails", () => {
       async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
     );
     await reachingGitHubThrough(
-      async (input, init) => (pathOf(input) === read ? answerAfter(init?.signal, 2_000, () => fetch(input, init)) : fetch(input, init)),
+      async (input, init) => (pathOf(input) === read ? answerAfter(init?.signal, 10_000, () => fetch(input, init)) : fetch(input, init)),
       async () => expect(await problemOf(await reviewPage(ada, path))).toEqual(UNAVAILABLE),
-      200,
+      1_000,
     );
     expect(await invitesFor("dee-dev")).toEqual([]);
     expect(await eventsSince()).toEqual([]);

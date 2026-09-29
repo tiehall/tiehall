@@ -302,14 +302,14 @@ describe("the invites page", () => {
       );
     });
 
-    // Not answering within the client's timeout, lowered here from its 10 seconds.
+    // Not answering within the client's timeout, lowered here from its 10 seconds to 1.
     it("with 502 integration-unavailable when GitHub does not answer the look-up in time", async () => {
       await reachingGitHubThrough(
         async (input, init) => {
           if (!lookUpOfKim(input)) return fetch(input, init);
           const signal = init?.signal;
           return new Promise<Response>((resolve, reject) => {
-            const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+            const timer = setTimeout(() => resolve(fetch(input, init)), 10_000);
             signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
           });
         },
@@ -319,7 +319,7 @@ describe("the invites page", () => {
             type: "https://tiehall.com/problems/integration-unavailable",
           });
         },
-        200,
+        1_000,
       );
     });
   });

@@ -207,11 +207,11 @@ describe("uploading a rotated private key", () => {
   });
 
   // D50 (3): GitHub failing the check, or not answering it within the client's timeout, lowered here from its
-  // 10 seconds, is 502 integration-unavailable; nothing is stored, and the confirmation stays unused, so posting
+  // 10 seconds to 1, is 502 integration-unavailable; nothing is stored, and the confirmation stays unused, so posting
   // the same review page again once GitHub answers stores the key.
   for (const [failure, answering, timeoutMs] of [
     ["answers 500 to the check", async () => new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } }), undefined],
-    ["does not answer the check in time", undefined, 200],
+    ["does not answer the check in time", undefined, 1_000],
   ] as const) {
     it(`gets 502 integration-unavailable when GitHub ${failure}, stores nothing, and leaves the confirmation unused`, async () => {
       let failing = true;
@@ -220,7 +220,7 @@ describe("uploading a rotated private key", () => {
           if (answering !== undefined) return answering();
           const signal = init?.signal;
           return new Promise<Response>((resolve, reject) => {
-            const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+            const timer = setTimeout(() => resolve(fetch(input, init)), 10_000);
             signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
           });
         }
