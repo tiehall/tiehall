@@ -267,8 +267,41 @@ export const githubApp = pgTable(
     ownerType: text("owner_type").notNull(),
     /** When the setup screen stored these credentials, from which the App's webhook deliveries count. */
     storedAt: timestamp("stored_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When the redelivery job last read the App's delivery log to the end of
+     * what it had to read (tracker-mirrors: Failed GitHub deliveries are
+     * redelivered); its next run reads from shortly before then. Null until
+     * its first run for this App.
+     */
+    redeliveryCheckedAt: timestamp("redelivery_checked_at", { withTimezone: true }),
   },
   (table) => [check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`)],
+);
+
+// The deliveries Tiehall asked GitHub to redeliver (tracker-mirrors: Failed
+// GitHub deliveries are redelivered; design.md, Self-hosting decisions: S9),
+// by the delivery id GitHub keeps on every attempt, with how often it asked.
+// Tiehall asks again at each run while the delivery's last attempt failed and
+// it is not stored, up to a few times, so a delivery that can never succeed
+// does not cost a call every run. Rows older than GitHub's redelivery window
+// are deleted by the job.
+export const githubRedeliveries = pgTable(
+  "github_redeliveries",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** GitHub's X-GitHub-Delivery of the delivery, the same on each of its attempts. */
+    deliveryId: text("delivery_id").notNull(),
+    /** How many times Tiehall asked GitHub to redeliver it. */
+    asks: integer("asks").notNull().default(1),
+    lastAskedAt: timestamp("last_asked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.deliveryId] }),
+    check("github_redeliveries_delivery_id_format", sql`${table.deliveryId} ~ '^[A-Za-z0-9-]{1,100}$'`),
+    check("github_redeliveries_asks_positive", sql`${table.asks} > 0`),
+  ],
 );
 
 // GitHub's webhook deliveries (tracker-mirrors: GitHub webhooks are verified,

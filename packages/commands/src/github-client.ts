@@ -102,18 +102,24 @@ function nextPage(link: string | undefined): string | undefined {
 }
 
 /**
- * Every page of a GitHub listing, as the client calls it: the first page asked
- * for with these parameters, and each next one by the URL GitHub's Link header
- * names.
+ * The pages of a GitHub listing, one at a time, as the client calls them: the
+ * first page asked for with these parameters, and each next one by the URL
+ * GitHub's Link header names, which may page by number or by cursor. A caller
+ * that has read enough stops, and no further page is asked for.
  */
-export async function everyPage(octokit: Octokit, route: string, parameters: Record<string, unknown>): Promise<unknown[]> {
-  const pages: unknown[] = [];
+export async function* pagesOf(octokit: Octokit, route: string, parameters: Record<string, unknown>): AsyncGenerator<unknown> {
   let response = await octokit.request(route, parameters);
-  pages.push(response.data);
+  yield response.data;
   for (let next = nextPage(response.headers.link); next !== undefined; next = nextPage(response.headers.link)) {
     response = await octokit.request(`GET ${next}`);
-    pages.push(response.data);
+    yield response.data;
   }
+}
+
+/** Every page of a GitHub listing, as pagesOf() reads them. */
+export async function everyPage(octokit: Octokit, route: string, parameters: Record<string, unknown>): Promise<unknown[]> {
+  const pages: unknown[] = [];
+  for await (const page of pagesOf(octokit, route, parameters)) pages.push(page);
   return pages;
 }
 

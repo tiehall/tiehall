@@ -59,7 +59,8 @@ export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: C
   await tx
     .insert(githubApp)
     .values({ orgId, ...identity })
-    .onConflictDoUpdate({ target: githubApp.orgId, set: { ...identity, storedAt: sql`now()` } });
+    // A new App's delivery log starts afresh, so the redelivery job reads it from when it was stored.
+    .onConflictDoUpdate({ target: githubApp.orgId, set: { ...identity, storedAt: sql`now()`, redeliveryCheckedAt: null } });
   await storeSecret(context, box, "github_app.client_secret", app.clientSecret);
   await storeSecret(context, box, "github_app.private_key", app.privateKey);
   if (app.webhookSecret === null) {
