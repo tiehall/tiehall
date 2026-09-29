@@ -9,6 +9,7 @@ import { httpProblem, internalErrorProblem, Refusal, signInCompleted, signInRefu
 import {
   githubApp,
   integrationSecrets,
+  members,
   orgs,
   signInAccounts,
   signInRefusals,
@@ -28,7 +29,7 @@ import { createLogger, type Logger } from "./log.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession } from "./setup-code.ts";
-import { AdmissionWithdrawnError, applyAdmission, decideAdmission, type Admission } from "./sign-in-admission.ts";
+import { AdmissionWithdrawnError, applyAdmission, decideAdmission, isMemberNow, type Admission } from "./sign-in-admission.ts";
 import { completeSetup, SetupCompletionError } from "./setup-completion.ts";
 import { SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
@@ -183,7 +184,8 @@ export interface SignInService {
   signOut(request: Request): Promise<Response>;
   /**
    * The web session a request's cookie names, or undefined when it names
-   * none. A session that a removal ended is refused with 403 removed-member.
+   * none. A session that a removal ended, or whose user is not a member of
+   * the install, is refused with 403 removed-member.
    */
   session(headers: Headers): Promise<WebSessionCaller | undefined>;
   /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
@@ -394,7 +396,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                       if (!(error instanceof AdmissionWithdrawnError)) throw error;
                       logger.warn("sign-in service: a sign-in's admission no longer held when its session was to be stored", { userId: session.userId });
                       try {
-                        await refuseWithdrawn(session.userId, created, whereFrom(context));
+                        await refuseWithdrawn(session.userId, { created }, whereFrom(context));
                       } catch (failure) {
                         // The refusal stands: nobody is signed in, and the log says what is missing.
                         logger.error("sign-in service: a sign-in refused before its session was stored could not be recorded", { error: failure });
@@ -405,6 +407,17 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                 }),
             async after(session, context) {
               const blockCleared = clearedBlocks.delete(session.userId);
+              // A removal that committed while the session was stored, too early to end it: the session goes, and the sign-in is refused.
+              if (!setup && !(await isMemberNow({ database: options.database }, session.userId))) {
+                logger.warn("sign-in service: a removal ended the membership while the sign-in's session was stored", { userId: session.userId });
+                try {
+                  await refuseWithdrawn(session.userId, { created: false, sessionId: session.id }, whereFrom(context));
+                } catch (failure) {
+                  logger.error("sign-in service: a sign-in refused as its session was stored could not be recorded", { error: failure });
+                  await options.database.delete(webSessions).where(eq(webSessions.id, session.id));
+                }
+                throw new APIError("FORBIDDEN", { code: REFUSED_CODE, message: SIGN_IN_REFUSED });
+              }
               await recordSignIn(session.userId, whereFrom(context), blockCleared);
             },
           },
@@ -455,12 +468,14 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
 
   /**
    * Refuses a sign-in whose admission no longer held when its web session was
-   * to be stored, in one write: a user this sign-in created goes, with its
-   * link to the GitHub account, so the refusal leaves no Tiehall user behind,
-   * and the refused GitHub account is recorded with the refusal's event, which
-   * names the user only when it stays.
+   * to be stored, or once it was, in one write: the session it stored goes,
+   * and so does a user this sign-in created, with its link to the GitHub
+   * account, so the refusal leaves no session and no Tiehall user behind; the
+   * refused GitHub account is recorded with the refusal's event, which names
+   * the user only when it stays.
    */
-  async function refuseWithdrawn(userId: string, created: boolean, origin: Origin): Promise<void> {
+  async function refuseWithdrawn(userId: string, what: { created: boolean; sessionId?: string }, origin: Origin): Promise<void> {
+    const { created, sessionId } = what;
     await write(
       store,
       { actorKind: "system", surface: "web" },
@@ -470,6 +485,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           .from(users)
           .where(and(eq(users.orgId, writer.orgId), eq(users.id, userId)));
         if (user === undefined) throw new Error("the refused sign-in's user is gone");
+        if (sessionId !== undefined) await writer.tx.delete(webSessions).where(and(eq(webSessions.orgId, writer.orgId), eq(webSessions.id, sessionId)));
         if (created) {
           await writer.tx.delete(signInAccounts).where(and(eq(signInAccounts.orgId, writer.orgId), eq(signInAccounts.userId, userId)));
           await writer.tx.delete(users).where(and(eq(users.orgId, writer.orgId), eq(users.id, userId)));
@@ -685,6 +701,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       if (found === null) return undefined;
       const session = found.session as typeof found.session & { endedAt?: Date | null };
       if (session.endedAt !== undefined && session.endedAt !== null) throw new RemovedMemberError();
+      // Only a member's session serves anything, whatever ended or did not end it.
+      const [member] = await options.database.select({ userId: members.userId }).from(members).where(eq(members.userId, session.userId)).limit(1);
+      if (member === undefined) throw new RemovedMemberError();
       return { kind: "web_session", userId: session.userId, sessionId: session.id };
     },
   };

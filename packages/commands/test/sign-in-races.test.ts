@@ -1,37 +1,49 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
-import { SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
-import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { createHomeRoute, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
+import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { startSignIn, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
+import { startSignIn, type CookieJar, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
 
-// Sign-ins that race an admin's change (sign-in: Who may sign in; activity-log:
-// Which actions are security events). Who may sign in is decided before the
-// sign-in service writes anything, and GitHub is asked outside any
-// transaction, so an admin's change can commit while GitHub answers: here the
-// admin sets the sign-in policy to "invited people only" while GitHub answers
-// the sign-in's lookup of the person's organization membership. The join, just
-// before the web session is stored, checks the admission again and no longer
-// finds it. The sign-in is then refused like any other: 403 with the text that
-// says to ask an admin for an invite, no session, no membership, no Tiehall
-// user it created, and a security event for the refused sign-in.
+// Sign-ins that race an admin's change (sign-in: Who may sign in; sign-in:
+// Signing out and ending sessions; teams-and-roles: Removing a member;
+// activity-log: Which actions are security events). Who may sign in is
+// decided before the sign-in service writes anything, and GitHub is asked
+// outside any transaction, so an admin's change can commit while GitHub
+// answers: here the admin sets the sign-in policy to "invited people only",
+// or removes the person, while GitHub answers the sign-in's lookup of the
+// person's organization membership. The join, just before the web session is
+// stored, checks the admission again, and a member's sign-in checks that they
+// are still a member; once the session is stored, the sign-in checks the
+// membership once more, waiting for a removal that is committing, so a
+// removal either ends the new session or refuses the sign-in. A sign-in that
+// no longer holds is refused like any other: 403 with the text that says to
+// ask an admin for an invite, no session, no membership, no Tiehall user it
+// created, and a security event for the refused sign-in. And a web session
+// whose user is not a member serves nothing, nor again after they rejoin.
 
 let install: TestInstall;
 let stub: GitHubStub;
 let harness: SignInHarness;
 let ada: WebSessionCaller;
+let pia: WebSessionCaller;
 const accounts = new Map<string, StubUser>();
 
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-acme", "lou-acme"]) accounts.set(login, stub.addUser({ login }));
-  stub.addOrg({ login: "acme", members: { "omar-acme": "admin", "lee-acme": "member", "lou-acme": "member" } });
+  for (const login of ["omar-acme", "lee-acme", "lou-acme", "rae-acme", "sam-acme", "kim-acme"]) accounts.set(login, stub.addUser({ login }));
+  stub.addOrg({
+    login: "acme",
+    members: { "omar-acme": "admin", "lee-acme": "member", "lou-acme": "member", "rae-acme": "member", "sam-acme": "member", "kim-acme": "member" },
+  });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
   await harness.connect("acme");
+  install.useGitHub(harness.github);
   ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
+  pia = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "pia" }), sessionId: randomUUID() };
 }, 60_000);
 
 afterAll(async () => {
@@ -110,5 +122,119 @@ describe("a sign-in whose admission is withdrawn before its session is stored", 
     const events = await eventsSince(from);
     expect(events.map(({ type }) => type)).toEqual(["settings.sign_in_policy_changed", "sign_in.refused"]);
     expect(events[1]!.data).toMatchObject({ userId: lou });
+  });
+});
+
+async function liveSessionsOf(userId: string): Promise<number> {
+  return Number((await install.owner.query("SELECT count(*) AS n FROM web_sessions WHERE user_id = $1 AND ended_at IS NULL", [userId])).rows[0].n);
+}
+
+function home(jar: CookieJar): Promise<Response> {
+  const route = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger });
+  return route(new Request(`${URL_OF_INSTALL}/`, { headers: { cookie: jar.header() } }));
+}
+
+/** What a browser's session gets: the user it signs in, "none" when it holds none, or "refused" with 403. */
+async function sessionState(jar: CookieJar): Promise<string> {
+  try {
+    return (await harness.sessionOf(jar))?.userId ?? "none";
+  } catch (error) {
+    return (error as { status?: number }).status === 403 ? "refused" : String(error);
+  }
+}
+
+describe("a member's sign-in that an admin removal races", () => {
+  it("committing while GitHub answers is refused with 403, stores no session, and none works after the person rejoins", async () => {
+    // Rae joins through membership of acme.
+    const joined = await harness.signIn("rae-acme");
+    expect(joined.response.status).toBe(302);
+    const rae = (await harness.sessionOf(joined.jar))!.userId;
+
+    // Rae signs in again in a second browser; while GitHub answers the membership lookup, Pia removes Rae with the confirmation step.
+    let removed = false;
+    const racing = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (!removed && url.pathname === "/orgs/acme/members/rae-acme") {
+          removed = true;
+          expect((await install.confirm(pia, "members.remove", { userId: rae })).status).toBe(200);
+        }
+        return fetch(input, init);
+      },
+    });
+    const from = await lastEvent();
+    const raced = await racing.signIn("rae-acme");
+    expect(removed).toBe(true);
+
+    expect(raced.response.status).toBe(403);
+    expect(((await raced.response.json()) as { detail: string }).detail).toBe(SIGN_IN_REFUSED);
+    expect(await liveSessionsOf(rae)).toBe(0);
+    expect((await home(raced.jar)).status).toBe(303);
+    expect(await sessionState(raced.jar)).toBe("none");
+    expect(await sessionState(joined.jar)).toBe("refused");
+    const events = await eventsSince(from);
+    expect(events.map(({ type }) => type)).toEqual(["member.removed", "sign_in.refused"]);
+    expect(events[1]!.data).toMatchObject({ userId: rae });
+
+    // Pia invites Rae again, and Rae rejoins through it: only the new sign-in's session works.
+    expect((await install.confirm(pia, "invites.create", { login: "rae-acme" })).status).toBe(200);
+    const rejoined = await harness.signIn("rae-acme");
+    expect(rejoined.response.status).toBe(302);
+    expect(await sessionState(rejoined.jar)).toBe(rae);
+    expect(await sessionState(raced.jar)).toBe("none");
+    expect(await sessionState(joined.jar)).toBe("refused");
+    expect(await liveSessionsOf(rae)).toBe(1);
+  });
+
+  it("committing while the session is stored ends that session, and the sign-in is refused with 403", async () => {
+    // Sam is a member. A removal that commits between the sign-in's last check and its stored session, whose
+    // own end of Sam's sessions came too early to see it, is played by a trigger that ends Sam's membership
+    // as the session row is written.
+    const sam = await addUser(install.owner, { login: "sam-acme", githubAccountId: accounts.get("sam-acme")!.id });
+    await install.owner.query(
+      `CREATE FUNCTION remove_while_stored() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN DELETE FROM members WHERE org_id = NEW.org_id AND user_id = NEW.user_id; RETURN NEW; END $$`,
+    );
+    await install.owner.query(
+      `CREATE TRIGGER remove_while_stored BEFORE INSERT ON web_sessions FOR EACH ROW WHEN (NEW.user_id = '${sam}') EXECUTE FUNCTION remove_while_stored()`,
+    );
+    try {
+      const from = await lastEvent();
+      const raced = await harness.signIn("sam-acme");
+
+      expect(raced.response.status).toBe(403);
+      expect(((await raced.response.json()) as { detail: string }).detail).toBe(SIGN_IN_REFUSED);
+      expect(Number((await install.owner.query("SELECT count(*) AS n FROM web_sessions WHERE user_id = $1", [sam])).rows[0].n)).toBe(0);
+      expect(await sessionState(raced.jar)).toBe("none");
+      const events = await eventsSince(from);
+      expect(events.map(({ type }) => type)).toEqual(["sign_in.refused"]);
+      expect(events[0]!.data).toMatchObject({ userId: sam });
+    } finally {
+      await install.owner.query("DROP TRIGGER remove_while_stored ON web_sessions; DROP FUNCTION remove_while_stored()");
+    }
+  });
+});
+
+describe("a web session whose user is not a member, which no removal ended", () => {
+  it("serves nothing, the home page included, and still nothing after the person rejoins", async () => {
+    const first = await harness.signIn("kim-acme");
+    expect(first.response.status).toBe(302);
+    const kim = (await harness.sessionOf(first.jar))!.userId;
+    // Kim's membership goes without the end of Kim's sessions that a removal makes.
+    await install.owner.query("DELETE FROM members WHERE user_id = $1", [kim]);
+
+    expect(await sessionState(first.jar)).toBe("refused");
+    const page = await home(first.jar);
+    expect(page.status).toBe(403);
+    expect(await page.json()).toMatchObject({ type: "https://tiehall.com/problems/removed-member" });
+
+    // Kim joins again through membership of acme: the session from before stays refused.
+    const again = await harness.signIn("kim-acme");
+    expect(again.response.status).toBe(302);
+    expect(await sessionState(again.jar)).toBe(kim);
+    expect(await sessionState(first.jar)).toBe("refused");
+    expect((await home(first.jar)).status).toBe(403);
+    expect(await liveSessionsOf(kim)).toBe(1);
   });
 });

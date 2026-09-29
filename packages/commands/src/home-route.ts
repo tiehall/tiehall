@@ -11,8 +11,8 @@ import { csrfTokenFor } from "./web-writes.ts";
 // the sign-in page, which offers sign-in with GitHub only. A signed-in member
 // gets the web UI, with a link to the members page, from which an admin
 // reaches the admin pages, and the sign-out form, which carries the session's
-// CSRF token, as every web UI write does. A browser whose session a removal ended
-// gets 403 removed-member and no data. The page is plain HTML: no script, no
+// CSRF token, as every web UI write does. A browser whose session a removal ended,
+// or whose user is not a member, gets 403 removed-member and no data. The page is plain HTML: no script, no
 // style from anywhere, no framing, and forms that post only to the install.
 
 export interface HomeRouteOptions {

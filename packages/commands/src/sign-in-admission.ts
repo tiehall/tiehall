@@ -3,6 +3,7 @@ import { invites, memberOrganizations, members, signInBlocks, users, type Databa
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { organizationMembership, workingOrganizationInstallations } from "./github-organizations.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import { endWebSessionsOf } from "./member-changes.ts";
 import { checkDepartures } from "./organization-departures.ts";
 import { signInPolicyOf } from "./sign-in-policy.ts";
 import { LOGGABLE, type Logger } from "./log.ts";
@@ -44,7 +45,11 @@ import { writeIn, type Origin } from "./write.ts";
 // organization, and kept as seen in each organization that reported them a
 // member, so that leaving it can end their access. The join is checked again
 // in that transaction, so an invite revoked or accepted meanwhile admits no
-// one.
+// one; and a member's sign-in checks there that they are still a member, so a
+// removal that committed while GitHub answered admits no one either. A join
+// ends every web session the person still holds from before it, so none that
+// a removal missed works again once they rejoin (sign-in: Signing out and
+// ending sessions).
 
 /** How a sign-in admits a GitHub account. */
 export type Admission =
@@ -171,7 +176,10 @@ export async function applyAdmission(
   input: { userId: string; admission: Admission; origin: Origin },
 ): Promise<AppliedAdmission> {
   const { userId, admission } = input;
-  if (admission.through === "member") return { blockCleared: false };
+  if (admission.through === "member") {
+    if (!(await isMemberNow(services, userId))) throw new AdmissionWithdrawnError();
+    return { blockCleared: false };
+  }
   return withOrg(services.database, async (context): Promise<AppliedAdmission> => {
     // One join per person at a time: their user's row is held until the transaction ends.
     const [user] = await context.tx
@@ -185,6 +193,8 @@ export async function applyAdmission(
       .from(members)
       .where(and(eq(members.orgId, context.orgId), eq(members.userId, userId)));
     if (already !== undefined) return { blockCleared: false };
+    // A person who is not a member holds no web session that may serve them, and none from before works once they join.
+    await endWebSessionsOf(context, userId);
     const jobs = { send: () => Promise.reject(new Error("A join sends no job.")) };
     return writeIn(
       context,
@@ -223,5 +233,22 @@ export async function applyAdmission(
       },
       { origin: input.origin },
     );
+  });
+}
+
+/**
+ * Whether the user is a member of the install now. It takes a key-share lock
+ * on their membership, so a removal that holds it is waited for and what it
+ * decided is seen; and a removal that comes later waits for this read, then
+ * ends the sessions stored before it.
+ */
+export async function isMemberNow(services: Pick<AdmissionServices, "database">, userId: string): Promise<boolean> {
+  return withOrg(services.database, async ({ tx, orgId }) => {
+    const [row] = await tx
+      .select({ userId: members.userId })
+      .from(members)
+      .where(and(eq(members.orgId, orgId), eq(members.userId, userId)))
+      .for("key share");
+    return row !== undefined;
   });
 }
