@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { CATALOG } from "./commands.ts";
-import { COMMITTED_TOOL_SNAPSHOT, toolSnapshotDrift, toolSnapshotProblems } from "./tool-schemas.ts";
+import { committedToolSnapshotPath } from "./committed-files.ts";
+import { toolSnapshotDrift, toolSnapshotProblems } from "./tool-schemas.ts";
 
 // CI's check of mcp/tools.json (public-api: MCP tools follow the same
 // compatibility rules; agent-surfaces: Tool schemas that current clients
@@ -9,7 +10,7 @@ import { COMMITTED_TOOL_SNAPSHOT, toolSnapshotDrift, toolSnapshotProblems } from
 // fails when the snapshot differs from the tools the catalog generates, so a
 // removed tool or a new required argument shows as a reviewed diff.
 
-const committed = readFileSync(COMMITTED_TOOL_SNAPSHOT, "utf8");
+const committed = readFileSync(committedToolSnapshotPath(), "utf8");
 let failed = false;
 let tools: { name: string; inputSchema: unknown; outputSchema: unknown }[] = [];
 try {

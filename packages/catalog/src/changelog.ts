@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 
 // The API changelog (public-api: The `api-breaking` label for urgent security
 // fixes; public-api: The changelog page and the release notes; D28 #28).
@@ -98,8 +97,6 @@ export class ChangelogError extends Error {
   override name = "ChangelogError";
 }
 
-/** openapi/changelog.json, next to the document it describes. */
-export const COMMITTED_CHANGELOG = fileURLToPath(new URL("../../../openapi/changelog.json", import.meta.url));
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const RELEASE_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;

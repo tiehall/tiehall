@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, defineCatalog } from "../src/index.ts";
-import { COMMITTED_DOCUMENT, documentDrift } from "../src/openapi-drift.ts";
+import { committedDocumentPath } from "../src/committed-files.ts";
+import { documentDrift } from "../src/openapi-drift.ts";
 import { openRequest } from "./support/drift-catalog.ts";
 
 // Every API change is reviewed as a document diff (public-api: Every API
@@ -40,6 +41,6 @@ describe("the drift check", () => {
 
 describe("openapi/v1.json", () => {
   it("is the document the catalog generates", () => {
-    expect(documentDrift(CATALOG, readFileSync(COMMITTED_DOCUMENT, "utf8"))).toBeUndefined();
+    expect(documentDrift(CATALOG, readFileSync(committedDocumentPath(), "utf8"))).toBeUndefined();
   });
 });

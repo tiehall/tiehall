@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { catalogProblems, CATALOG, defineCatalog, defineCommand, type CommandDefinition } from "../src/index.ts";
+import { committedToolSnapshotPath } from "../src/committed-files.ts";
 import {
-  COMMITTED_TOOL_SNAPSHOT,
   lowerToolSchema,
   serializeToolSnapshot,
   ToolSchemaError,
@@ -158,8 +158,8 @@ describe("the snapshot lint", () => {
   });
 
   it("passes the committed snapshot, which is what the catalog generates", () => {
-    const committed = readFileSync(COMMITTED_TOOL_SNAPSHOT, "utf8");
-    expect(COMMITTED_TOOL_SNAPSHOT.endsWith("mcp/tools.json")).toBe(true);
+    const committed = readFileSync(committedToolSnapshotPath(), "utf8");
+    expect(committedToolSnapshotPath().endsWith("mcp/tools.json")).toBe(true);
     expect(toolSnapshotProblems((JSON.parse(committed) as { tools: never[] }).tools)).toEqual([]);
     expect(toolSnapshotDrift(CATALOG, committed)).toBeUndefined();
   });

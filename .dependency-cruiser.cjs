@@ -127,8 +127,9 @@ module.exports = {
     // Record imports of npm packages, but never read inside them.
     doNotFollow: { path: "(^|/)node_modules/" },
     // Not code, or not ours: agent state, spikes, the OpenSpec plan, build
-    // output (Next.js and the bundled entrypoint) and the fixtures that break
-    // these rules on purpose.
+    // output (Next.js and the bundled entrypoint), the fixtures that break
+    // these rules on purpose, and the other test fixtures, such as the
+    // Next.js app a web test builds.
     exclude: {
       path: [
         "^\\.claude/",
@@ -137,6 +138,7 @@ module.exports = {
         "(^|/)\\.next/",
         "^(apps|packages|actions|tools)/[^/]+/dist/",
         "^tools/repo-checks/test/fixtures/",
+        "^(apps|packages|actions|tools)/[^/]+/test/fixtures/",
       ],
     },
     // Type-only imports count too.

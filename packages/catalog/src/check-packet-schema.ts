@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { COMMITTED_DOCUMENT } from "./openapi-drift.ts";
-import { COMMITTED_PACKET_SCHEMA, packetSchemaDrift, packetSchemaProblems } from "./packet-schema.ts";
+import { committedDocumentPath, committedPacketSchemaPath } from "./committed-files.ts";
+import { packetSchemaDrift, packetSchemaProblems } from "./packet-schema.ts";
 
 // CI's check of the packet schema (handoff-packet: One definition for the
 // schema and the API; handoff-packet: Open objects, strict server): `pnpm
@@ -10,11 +10,11 @@ import { COMMITTED_PACKET_SCHEMA, packetSchemaDrift, packetSchemaProblems } from
 // schema forbids additional properties; and every operation that takes or
 // returns a packet uses the one component Packet.
 
-const committed = readFileSync(COMMITTED_PACKET_SCHEMA, "utf8");
+const committed = readFileSync(committedPacketSchemaPath(), "utf8");
 const drift = packetSchemaDrift(committed);
 const problems = [
   ...(drift === undefined ? [] : [drift]),
-  ...packetSchemaProblems(JSON.parse(committed) as Record<string, unknown>, JSON.parse(readFileSync(COMMITTED_DOCUMENT, "utf8")) as Record<string, unknown>),
+  ...packetSchemaProblems(JSON.parse(committed) as Record<string, unknown>, JSON.parse(readFileSync(committedDocumentPath(), "utf8")) as Record<string, unknown>),
 ];
 if (problems.length > 0) {
   for (const problem of problems) console.error(problem);

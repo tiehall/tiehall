@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import type { Catalog } from "./catalog.ts";
 import { openApiDocument, serializeDocument } from "./openapi.ts";
 
@@ -8,9 +7,6 @@ import { openApiDocument, serializeDocument } from "./openapi.ts";
 // every pull request: a change to an operation that leaves the file as it was,
 // or a hand edit of the file, fails, so the reviewed diff of the file shows
 // every change to the API.
-
-/** The committed document, at the repository's root. */
-export const COMMITTED_DOCUMENT = fileURLToPath(new URL("../../../openapi/v1.json", import.meta.url));
 
 /** What differs between the committed document and the one the catalog generates; undefined when nothing does. */
 export function documentDrift(catalog: Catalog, committed: string): string | undefined {

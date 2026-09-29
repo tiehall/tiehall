@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { CATALOG } from "./commands.ts";
-import { COMMITTED_TOOL_SNAPSHOT, serializeToolSnapshot, toolDescriptions } from "./tool-schemas.ts";
+import { committedToolSnapshotPath } from "./committed-files.ts";
+import { serializeToolSnapshot, toolDescriptions } from "./tool-schemas.ts";
 
 // Writes mcp/tools.json, the committed snapshot of the MCP tools' names,
 // descriptions and lowered schemas, from the catalog (public-api: MCP tools
@@ -10,6 +11,7 @@ import { COMMITTED_TOOL_SNAPSHOT, serializeToolSnapshot, toolDescriptions } from
 // reviewed as a diff of this file.
 
 const tools = toolDescriptions(CATALOG);
-mkdirSync(dirname(COMMITTED_TOOL_SNAPSHOT), { recursive: true });
-writeFileSync(COMMITTED_TOOL_SNAPSHOT, serializeToolSnapshot(tools));
-console.log(`Wrote ${COMMITTED_TOOL_SNAPSHOT} with the catalog's ${tools.length} tools.`);
+const path = committedToolSnapshotPath();
+mkdirSync(dirname(path), { recursive: true });
+writeFileSync(path, serializeToolSnapshot(tools));
+console.log(`Wrote ${path} with the catalog's ${tools.length} tools.`);

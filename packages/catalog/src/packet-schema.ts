@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { serializeDocument } from "./openapi.ts";
 import { packet, PACKET_COMPONENT, PACKET_SCHEMA_ID } from "./packet.ts";
@@ -22,7 +21,6 @@ import { packet, PACKET_COMPONENT, PACKET_SCHEMA_ID } from "./packet.ts";
 type Json = Record<string, unknown>;
 
 /** The committed schema file, in the Apache-2.0 schema directory. */
-export const COMMITTED_PACKET_SCHEMA = fileURLToPath(new URL("../../packet/schema/v1-beta.json", import.meta.url));
 const COMMITTED_NAME = "packages/packet/schema/v1-beta.json";
 
 /** The packet JSON Schema, draft 2020-12, with the beta $id, generated from the packet definition. */

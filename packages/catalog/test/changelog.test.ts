@@ -5,11 +5,11 @@ import {
   addedEntries,
   API_BREAKING_LABEL,
   ChangelogError,
-  COMMITTED_CHANGELOG,
   parseChangelog,
   releaseItems,
   type ChangelogRelease,
 } from "../src/changelog.ts";
+import { committedChangelogPath } from "../src/committed-files.ts";
 
 // The API changelog (public-api: The `api-breaking` label for urgent security
 // fixes; public-api: The changelog page and the release notes). The
@@ -36,12 +36,12 @@ function changelog(unreleased: unknown[], releases: unknown[] = []): string {
 
 describe("the changelog file", () => {
   it("is committed as openapi/changelog.json, and parses", () => {
-    expect(COMMITTED_CHANGELOG.endsWith("openapi/changelog.json")).toBe(true);
-    expect(() => parseChangelog(readFileSync(COMMITTED_CHANGELOG, "utf8"))).not.toThrow();
+    expect(committedChangelogPath().endsWith("openapi/changelog.json")).toBe(true);
+    expect(() => parseChangelog(readFileSync(committedChangelogPath(), "utf8"))).not.toThrow();
   });
 
   it("is what the catalog package carries for the changelog page", () => {
-    expect(API_CHANGELOG).toEqual(parseChangelog(readFileSync(COMMITTED_CHANGELOG, "utf8")));
+    expect(API_CHANGELOG).toEqual(parseChangelog(readFileSync(committedChangelogPath(), "utf8")));
   });
 
   it("names the label a pull request carries for an urgent security fix", () => {

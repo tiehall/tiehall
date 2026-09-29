@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { Catalog } from "./catalog.ts";
 
@@ -35,9 +34,6 @@ export interface ToolDescription {
   inputSchema: JsonSchema;
   outputSchema: JsonSchema;
 }
-
-/** The committed snapshot of the tools, at the repository's root. */
-export const COMMITTED_TOOL_SNAPSHOT = fileURLToPath(new URL("../../../mcp/tools.json", import.meta.url));
 
 const COMPOSITION = ["anyOf", "oneOf", "allOf"] as const;
 
