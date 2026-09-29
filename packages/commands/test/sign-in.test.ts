@@ -172,6 +172,58 @@ describe("the sign-in service's rate limit", () => {
     expect(await limited.json()).toMatchObject({ type: "https://tiehall.com/problems/rate-limited", status: 429 });
     expect((await callback("198.51.100.78")).status).not.toBe(429);
   });
+
+  // A refused call creates nothing (sign-in: GitHub is the only way to sign in; github-layer-hardening: D50 (20)):
+  // the 101st call is a real return from GitHub of a person an invite admits, which the same call from another
+  // address then completes, so the limit alone kept it from signing them in.
+  it("creates no session and no user with the 101st call, which the same call from another address then signs in", { timeout: 30_000 }, async () => {
+    const neo = stub.addUser({ login: "neo-invited", email: "neo@acme.example" });
+    await install.owner.query(
+      "INSERT INTO invites (org_id, github_account_id, github_login, role, created_by, expires_at) SELECT id, $1, 'neo-invited', 'member', $2, now() + interval '7 days' FROM orgs",
+      [neo.id, anaUserId],
+    );
+    // Neo starts a sign-in on the sign-in page and authorizes it on GitHub, which sends them back with a code.
+    const jar = new CookieJar();
+    const started = await harness.service.page(
+      new Request(`${URL_OF_INSTALL}/sign-in`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "x-forwarded-for": "198.51.100.80" },
+        body: new URLSearchParams({ return: "/" }).toString(),
+      }),
+    );
+    expect(started.status).toBe(303);
+    jar.take(started);
+    const authorize = new URL(started.headers.get("location") ?? "");
+    const redirectUri = authorize.searchParams.get("redirect_uri") ?? "";
+    const codeChallenge = authorize.searchParams.get("code_challenge") ?? undefined;
+    const back = new URL(redirectUri);
+    back.searchParams.set("code", stub.authorize(harness.app, "neo-invited", { redirectUri, ...(codeChallenge === undefined ? {} : { codeChallenge }) }));
+    back.searchParams.set("state", authorize.searchParams.get("state") ?? "");
+    const returnFrom = (address: string) => harness.service.handler(new Request(back, { headers: { "x-forwarded-for": address, cookie: jar.header() } }));
+    // 100 calls from one address come first.
+    for (let call = 0; call < 100; call += 1) {
+      const other = await harness.service.handler(
+        new Request(`${URL_OF_INSTALL}/api/auth/callback/github?code=not-a-code&state=not-a-state`, { headers: { "x-forwarded-for": "198.51.100.79" } }),
+      );
+      expect(other.status, `call ${call + 1}`).not.toBe(429);
+    }
+    const sessions = await allSessions();
+
+    const limited = await returnFrom("198.51.100.79");
+
+    expect(limited.status).toBe(429);
+    expect(limited.headers.getSetCookie()).toEqual([]);
+    expect(await allSessions()).toBe(sessions);
+    expect((await install.owner.query("SELECT 1 FROM users WHERE github_login = 'neo-invited'")).rows).toEqual([]);
+    expect((await install.owner.query("SELECT 1 FROM sign_in_accounts WHERE account_id = $1", [String(neo.id)])).rows).toEqual([]);
+    expect((await install.owner.query("SELECT accepted_at FROM invites WHERE github_login = 'neo-invited'")).rows).toEqual([{ accepted_at: null }]);
+
+    const signedIn = await returnFrom("198.51.100.81");
+    expect(signedIn.status).toBe(302);
+    jar.take(signedIn);
+    expect(await harness.sessionOf(jar)).toMatchObject({ kind: "web_session" });
+    expect(await allSessions()).toBe(sessions + 1);
+  });
 });
 
 describe("a person who may not sign in", () => {
