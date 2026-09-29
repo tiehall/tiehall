@@ -124,8 +124,8 @@ export async function startTestInstall(
   let installGitHub: InstallGitHub | undefined;
   const github: InstallGitHub = {
     app: () => installGitHub?.app() ?? Promise.resolve(undefined),
-    checkKey: (credentials, installationId) =>
-      installGitHub?.checkKey(credentials, installationId) ?? Promise.reject(new Error("The install has no GitHub App to check a key with.")),
+    checkKey: (credentials, appId) =>
+      installGitHub?.checkKey(credentials, appId) ?? Promise.reject(new Error("The install has no GitHub App to check a key with.")),
   };
   const execute = createExecute({
     catalog: CATALOG,

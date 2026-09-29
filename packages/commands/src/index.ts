@@ -56,6 +56,7 @@ export {
   type AppManifestInput,
 } from "./github-manifest.ts";
 export {
+  checkAppKey,
   convertManifestCode,
   createGitHubClient,
   everyPage,
@@ -64,7 +65,6 @@ export {
   GITHUB_REQUEST_TIMEOUT_MS,
   GitHubUnavailableError,
   readSignedInUser,
-  requestInstallationToken,
   type SignedInUser,
   type ConvertedApp,
   type GitHubAppCredentials,

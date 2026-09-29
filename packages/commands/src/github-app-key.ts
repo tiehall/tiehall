@@ -5,7 +5,7 @@ import { githubApp } from "@tiehall/db";
 import { eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { definePreparedHandler, type Handlers } from "./execute.ts";
-import { anyConnectedInstallation } from "./github-installations.ts";
+import { GitHubUnavailableError } from "./github-client.ts";
 import { storeSecret } from "./integration-secrets.ts";
 
 // Uploading a rotated private key for the install's GitHub App
@@ -18,22 +18,24 @@ import { storeSecret } from "./integration-secrets.ts";
 // file in a field of the review page's form, and it travels only in the body
 // of the POST that applies the action, as the webhook secret does
 // (github-app-reachability: design.md, Design rules: Moving to webhook mode).
-// Before it is stored, Tiehall checks it by requesting an installation token
-// with it, through a connected installation of the App that is neither
-// suspended nor deleted, and with none the upload gets 409: an installation
-// that no admin connected is only listed (tracker-mirrors: Admins connect
-// GitHub installations with the confirmation step). A file that is no private
-// key, and a key GitHub does not accept, such as one of another App or one
-// deleted on GitHub, get 400 and are not stored, and the key in use stays. A
-// key GitHub accepts is stored encrypted in place of the key in use, used for
-// the next call to GitHub, and recorded as a security event, in one write.
-// The key is never shown again. GitHub checks the key outside any
-// transaction, before the upload's write and the use of its confirmation
-// (execute.ts), so a slow answer holds no connection in a transaction and no
-// lock, such as on the App's stored row, which an admin's switch of GitHub's
-// mode writes; a check GitHub does not answer leaves the confirmation unused.
-// The row is locked only to store the key, and a key checked for an App that
-// a new one replaced meanwhile gets 409 and is not stored.
+// Before it is stored, Tiehall checks it by asking GitHub for the App itself,
+// GET /app, with a JSON web token signed with the new key and issued by the
+// stored client id (design.md, Technical decisions: T1): the check needs no
+// installation and uses none, so a key can be replaced while no installation
+// is connected. A file that is no private key, and a key GitHub does not
+// accept, such as one of another App or one deleted on GitHub, get 400 and are
+// not stored, and the key in use stays. A key GitHub accepts is stored
+// encrypted in place of the key in use, used for the next call to GitHub, and
+// recorded as a security event, in one write. The key is never shown again.
+// GitHub checks the key outside any transaction, before the upload's write and
+// the use of its confirmation (execute.ts), so a slow answer holds no
+// connection in a transaction and no lock, such as on the App's stored row,
+// which an admin's switch of GitHub's mode writes. A check GitHub fails, or
+// does not answer within the client's 10 seconds, gets 502
+// integration-unavailable, stores nothing and leaves the confirmation unused
+// (public-api: One error model for Tiehall's own refusals). The row is locked
+// only to store the key, and a key checked for an App that a new one replaced
+// meanwhile gets 409 and is not stored.
 
 /** Whether the text is a private key in PEM form, as GitHub gives an App's key. */
 function isPrivateKey(pem: string): boolean {
@@ -64,13 +66,17 @@ export const GITHUB_APP_KEY_HANDLERS: Handlers = {
       const privateKey = context.sealed["privateKey"];
       if (privateKey === undefined) throw new Error("execute() gave no private key to upload.");
       if (!isPrivateKey(privateKey)) throw refused("The file is not a private key in PEM form, such as the .pem file GitHub downloads.");
-      const installationId = await context.read((orgContext) => anyConnectedInstallation(orgContext, row.appId));
-      if (installationId === undefined) {
-        throw new Refusal("conflict", "The install's GitHub App has no connected installation to check the key with. Connect one on the GitHub page first.");
+      let accepted: boolean;
+      try {
+        accepted = await github.checkKey({ clientId: row.clientId, privateKey }, row.appId);
+      } catch (error) {
+        if (!(error instanceof GitHubUnavailableError)) throw error;
+        throw new Refusal(
+          "integration-unavailable",
+          `${error.message} The key was not stored, and your confirmation is still unused: confirm the same review page again, while it is valid, once GitHub answers.`,
+        );
       }
-      if (!(await github.checkKey({ clientId: row.clientId, privateKey }, installationId))) {
-        throw refused("GitHub did not accept the key for the install's App: it belongs to another App, or it was deleted on GitHub.");
-      }
+      if (!accepted) throw refused("GitHub did not accept the key for the install's App: it belongs to another App, or it was deleted on GitHub.");
       return { appId: row.appId, clientId: row.clientId, privateKey };
     },
     async (_input, context) => {
@@ -106,7 +112,7 @@ export const GITHUB_APP_KEY_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
         { text: `Upload a new private key for the install's GitHub App, ${row.name}, in place of the key in use.` },
         {
           text:
-            "Before storing it, Tiehall asks GitHub for an installation token with it. A key GitHub does not accept is not stored, " +
+            "Before storing it, Tiehall asks GitHub for the install's App with the new key, which needs no installation. A key GitHub does not accept is not stored, " +
             "and Tiehall keeps calling GitHub with the key in use.",
         },
         {

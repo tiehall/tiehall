@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubInstallation } from "@tiehall/testing/github";
-import { readInstallations, type WebSessionCaller } from "../src/index.ts";
+import { readInstallations, readSecret, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -10,10 +10,12 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // connect GitHub installations with the confirmation step: "Tiehall SHALL use
 // an installation that is not connected only to list it"). The App is public
 // and installed on acme-labs, which no admin connected: the invite's lookup of
-// a GitHub username and the check of a rotated private key, which each ask
-// GitHub through an installation, do not go through it. With no connected
-// installation to ask through, each is refused with 409, as with no
-// installation at all, and no installation token is requested for acme-labs.
+// a GitHub username, which asks GitHub through an installation, does not go
+// through it. With no connected installation to ask through, it is refused
+// with 409, as with no installation at all, and no installation token is
+// requested for acme-labs. The check of a rotated private key asks GitHub for
+// the App itself and needs no installation (D50 (2)), so it works while none
+// is connected, and requests no installation token either.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -64,12 +66,18 @@ describe("an installation that no admin connected", () => {
     expect(tokensRequestedFor(labs, from)).toBe(0);
   });
 
-  it("is not used to check a rotated private key: the upload gets 409, the key in use stays, and no token is requested for it", async () => {
+  // D50 (2): the key check asks GitHub for the App itself, which needs no installation, so an admin can replace
+  // a key while no installation is connected, and none is asked through.
+  it("is not needed to check a rotated private key: with no installation connected the upload succeeds, and no installation token is requested", async () => {
     const pem = stub.addPrivateKey(harness.app);
     const from = stub.received.length;
     const answer = await install.confirm(ada, "github.upload_private_key", {}, {}, { privateKey: pem });
-    expect(await problemOf(answer)).toEqual({ status: 409, type: "https://tiehall.com/problems/conflict" });
+    expect(answer.status).toBe(200);
     expect(tokensRequestedFor(labs, from)).toBe(0);
-    expect((await install.owner.query("SELECT type FROM events WHERE type = 'github.private_key_uploaded'")).rows).toEqual([]);
+    expect(stub.received.slice(from).filter(({ method, path }) => method === "POST" && path.endsWith("/access_tokens"))).toEqual([]);
+    expect(stub.received.slice(from).map(({ method, path, status }) => `${method} ${path} ${status}`)).toEqual(["GET /app 200"]);
+    const orgId = (await install.owner.query<{ id: string }>("SELECT id FROM orgs")).rows[0]!.id;
+    expect(await install.db.transaction((tx) => readSecret({ tx, orgId }, install.box, "github_app.private_key"))).toBe(pem);
+    expect((await install.owner.query("SELECT type FROM events WHERE type = 'github.private_key_uploaded'")).rows).toEqual([{ type: "github.private_key_uploaded" }]);
   });
 });

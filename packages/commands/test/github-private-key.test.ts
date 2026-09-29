@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createPublicKey, createVerify, generateKeyPairSync } from "node:crypto";
 import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing/github";
@@ -24,10 +24,14 @@ import { sessionOf } from "./support/requests.ts";
 // activity-log: Which actions are security events; design.md, Self-hosting
 // decisions: S4). After an admin generates a new private key in the App's
 // settings on GitHub, they upload it in the web UI, with the confirmation step.
-// Tiehall checks it before storing it, by requesting an installation token
-// with it: a key GitHub accepts is stored encrypted, used for the next call to
-// GitHub, and recorded as a security event; a key that fails the check is not
-// stored, and the key in use stays. Like the webhook secret, the key is no
+// Tiehall checks it before storing it by asking GitHub for the App itself,
+// GET /app, with a JSON web token signed with the new key and issued by the
+// stored client id, which needs no installation (D50 (2)): a key GitHub
+// accepts is stored encrypted, used for the next call to GitHub, and recorded
+// as a security event; a key GitHub refuses is not stored, and the key in use
+// stays; a GitHub that fails the check, or does not answer it in time, gets
+// 502 integration-unavailable and leaves the confirmation unused (D50 (3)).
+// Like the webhook secret, the key is no
 // part of the action's input, which the review page's URL carries: it is a
 // file picked in a field of the review page's form, and travels only in the
 // body of the POST that applies the action. While GitHub checks the key, the
@@ -91,6 +95,45 @@ async function callsGitHub(): Promise<boolean> {
   }
 }
 
+/** What a JSON web token's claims say, and whether this private key's public half verifies its signature. */
+function jwtOf(token: string, privateKey: string): { issuer: unknown; signedWithKey: boolean } {
+  const [header = "", claims = "", signature = ""] = token.split(".");
+  const verifier = createVerify("RSA-SHA256");
+  verifier.update(`${header}.${claims}`);
+  return {
+    issuer: (JSON.parse(Buffer.from(claims, "base64url").toString("utf8")) as { iss?: unknown }).iss,
+    signedWithKey: verifier.verify(createPublicKey(privateKey), Buffer.from(signature, "base64url")),
+  };
+}
+
+/** The installation tokens requested since this point of the stub's record. */
+function tokenRequestsSince(from: number): string[] {
+  return stub.received
+    .slice(from)
+    .filter(({ method, path }) => method === "POST" && /^\/app\/installations\/\d+\/access_tokens$/.test(path))
+    .map(({ path }) => path);
+}
+
+/** Makes the install reach GitHub through this fetch, with the client's timeout lowered when a test gives one. */
+function reachingGitHubThrough(through: typeof fetch, timeoutMs?: number): void {
+  install.useGitHub(
+    createInstallGitHub({
+      database: install.db,
+      secrets: () => install.box,
+      apiUrl: stub.apiUrl,
+      logger: install.logger,
+      fetch: through,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    }),
+  );
+}
+
+/** Whether a request to GitHub asks for the App itself, the key check. */
+function asksForTheApp(input: string | URL | Request, init?: RequestInit): boolean {
+  const method = (input instanceof Request ? input.method : (init?.method ?? "GET")).toUpperCase();
+  return method === "GET" && new URL(input instanceof Request ? input.url : String(input)).pathname === "/app";
+}
+
 /** Uploads a key as an admin does: the review page, the key file picked in its form, and the confirmation. */
 function upload(session: WebSessionCaller, pem: string): Promise<Response> {
   return install.confirm(session, UPLOAD, {}, {}, { privateKey: pem });
@@ -114,16 +157,18 @@ async function uploadFile(session: WebSessionCaller, content: string): Promise<R
 }
 
 describe("uploading a rotated private key", () => {
-  it("checks a valid key by requesting an installation token, stores it encrypted, uses it for the next call, and records a security event", async () => {
+  it("checks a valid key with GET /app under a JWT signed with it and issued by the stored client id, requests no installation token, stores it encrypted, uses it for the next call, and records a security event", async () => {
     const rotated = stub.addPrivateKey(app);
     const from = stub.received.length;
 
     const answer = await upload(ada, rotated);
 
     expect(answer.status).toBe(200);
-    expect(stub.received.slice(from).map(({ method, path, status }) => `${method} ${path} ${status}`)).toContain(
-      `POST /app/installations/${stub.installations(app)[0]!.id}/access_tokens 201`,
-    );
+    const checks = stub.received.slice(from).filter(({ method, path }) => method === "GET" && path === "/app");
+    expect(checks.map(({ status, token }) => ({ status, kind: token?.kind }))).toEqual([{ status: 200, kind: "app-jwt" }]);
+    expect(jwtOf(checks[0]!.token!.value, rotated)).toEqual({ issuer: app.clientId, signedWithKey: true });
+    expect(jwtOf(checks[0]!.token!.value, keyInUse).signedWithKey).toBe(false);
+    expect(tokenRequestsSince(from)).toEqual([]);
     expect(await storedKey()).toBe(rotated);
     const { rows } = await install.owner.query<{ ciphertext: Buffer }>("SELECT ciphertext FROM integration_secrets WHERE name = 'github_app.private_key'");
     expect(rows[0]?.ciphertext.toString("utf8")).not.toContain("PRIVATE KEY");
@@ -145,6 +190,58 @@ describe("uploading a rotated private key", () => {
     expect(await keyEvents()).toEqual([]);
     expect(await callsGitHub()).toBe(true);
   });
+
+  it("does not store a key deleted from the App on GitHub, and keeps calling GitHub with the key in use", async () => {
+    const deleted = stub.addPrivateKey(app);
+    stub.deletePrivateKey(app, deleted);
+    const from = stub.received.length;
+
+    const answer = await upload(ada, deleted);
+
+    expect(answer.status).toBe(400);
+    expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/invalid-input", errors: [{ path: ["privateKey"] }] });
+    expect(stub.received.slice(from).map(({ method, path, status }) => `${method} ${path} ${status}`)).toEqual(["GET /app 401"]);
+    expect(await storedKey()).toBe(keyInUse);
+    expect(await keyEvents()).toEqual([]);
+    expect(await callsGitHub()).toBe(true);
+  });
+
+  // D50 (3): GitHub failing the check, or not answering it within the client's timeout, lowered here from its
+  // 10 seconds, is 502 integration-unavailable; nothing is stored, and the confirmation stays unused, so posting
+  // the same review page again once GitHub answers stores the key.
+  for (const [failure, answering, timeoutMs] of [
+    ["answers 500 to the check", async () => new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } }), undefined],
+    ["does not answer the check in time", undefined, 200],
+  ] as const) {
+    it(`gets 502 integration-unavailable when GitHub ${failure}, stores nothing, and leaves the confirmation unused`, async () => {
+      let failing = true;
+      reachingGitHubThrough(async (input, init) => {
+        if (failing && asksForTheApp(input, init)) {
+          if (answering !== undefined) return answering();
+          const signal = init?.signal;
+          return new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(fetch(input, init)), 2_000);
+            signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+          });
+        }
+        return fetch(input, init);
+      }, timeoutMs);
+      const rotated = stub.addPrivateKey(app);
+      const post = await install.prepareConfirmation(ada, UPLOAD, {}, {}, { privateKey: rotated });
+
+      const answer = await post();
+
+      expect(answer.status).toBe(502);
+      expect(await answer.json()).toMatchObject({ type: "https://tiehall.com/problems/integration-unavailable", status: 502 });
+      expect(await storedKey()).toBe(keyInUse);
+      expect(await keyEvents()).toEqual([]);
+
+      failing = false;
+      expect((await post()).status).toBe(200);
+      expect(await storedKey()).toBe(rotated);
+      expect(await keyEvents()).toEqual([{ actor_kind: "web_session", actor_user_id: ada.userId }]);
+    });
+  }
 
   it("refuses a file that is no private key, or an empty one, with 400, before asking GitHub, and stores nothing", async () => {
     const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -219,6 +316,9 @@ describe("uploading a rotated private key", () => {
     expect(html).toMatch(/<input type="file" id="[^"]+" name="privateKey" required>/);
     expect(html).toContain('<input type="hidden" name="input" value="{}">');
     expect(html).not.toContain("PRIVATE KEY");
+    // It says how the key is checked: GitHub is asked for the App, with the new key, and no installation is needed.
+    expect(html.replace(/&#39;/g, "'")).toContain("Before storing it, Tiehall asks GitHub for the install's App with the new key");
+    expect(html).not.toContain("installation token");
 
     // The browser posts the picked file with the page's fields.
     const field = (name: string) =>
@@ -253,31 +353,22 @@ describe("uploading a rotated private key", () => {
 
 describe("an upload while GitHub checks the key slowly", () => {
   /**
-   * Makes the install reach GitHub through a fetch that, once armed, holds the next token request open until it
-   * is released; arm() resolves when that request is asked.
+   * Makes the install reach GitHub through a fetch that, once armed, holds the next key check, GET /app, open
+   * until it is released; arm() resolves when that request is asked.
    */
   function heldTokens(): { arm: () => Promise<void>; release: () => void } {
     let armed = false;
     let asked: () => void = () => {};
     let release: () => void = () => {};
     const released = new Promise<void>((resolve) => (release = resolve));
-    install.useGitHub(
-      createInstallGitHub({
-        database: install.db,
-        secrets: () => install.box,
-        apiUrl: stub.apiUrl,
-        logger: install.logger,
-        fetch: async (input, init) => {
-          const url = new URL(input instanceof Request ? input.url : String(input));
-          if (armed && /^\/app\/installations\/\d+\/access_tokens$/.test(url.pathname)) {
-            armed = false;
-            asked();
-            await released;
-          }
-          return fetch(input, init);
-        },
-      }),
-    );
+    reachingGitHubThrough(async (input, init) => {
+      if (armed && asksForTheApp(input, init)) {
+        armed = false;
+        asked();
+        await released;
+      }
+      return fetch(input, init);
+    });
     return {
       arm: () => {
         armed = true;

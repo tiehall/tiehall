@@ -206,25 +206,34 @@ export function createGitHubClient(credentials: GitHubAppCredentials, options: G
   };
 }
 
+const APP = z.looseObject({ id: z.number().int().positive() });
+
 /**
- * Whether GitHub issues an installation token to the App with these
- * credentials, such as a rotated private key before it is stored
- * (self-host-install: A rotated App key can be uploaded): true when GitHub
- * issued one, false when GitHub refused the App's JSON web token, as it does
- * one signed with a key of another App or a deleted one. It throws when GitHub
- * does not answer, or answers anything else. The token is used for nothing
- * else, and nothing keeps it.
+ * Whether GitHub accepts these credentials as those of the App with this id,
+ * such as a rotated private key before it is stored (self-host-install: A
+ * rotated App key can be uploaded; design.md, Technical decisions: T1):
+ * Tiehall asks GitHub for the App itself, `GET /app`, with a JSON web token
+ * signed with the key and issued by the client id. True when GitHub answers
+ * with the App of this id; false when GitHub refuses the token with 401, as it
+ * does one signed with a key of another App or with a deleted one, or names
+ * another App. The check needs no installation and uses none. It throws
+ * GitHubUnavailableError when GitHub answers anything else, or does not answer
+ * within the client's wait.
  */
-export async function requestInstallationToken(credentials: GitHubAppCredentials, installationId: number, options: GitHubClientOptions = {}): Promise<boolean> {
+export async function checkAppKey(credentials: GitHubAppCredentials, appId: number, options: GitHubClientOptions = {}): Promise<boolean> {
   const base = octokitBase(options);
-  const octokit = new Octokit({ ...base, authStrategy: createAppAuth, auth: { appId: credentials.clientId, privateKey: credentials.privateKey, installationId, log: base.log } });
+  const octokit = new Octokit({ ...base, authStrategy: createAppAuth, auth: { appId: credentials.clientId, privateKey: credentials.privateKey, log: base.log } });
+  let data: unknown;
   try {
-    await octokit.auth({ type: "installation" });
-    return true;
+    ({ data } = await octokit.request("GET /app"));
   } catch (error) {
-    if (statusOf(error) === 401) return false;
-    throw error;
+    const answered = (error as { response?: unknown } | undefined)?.response !== undefined;
+    if (answered && statusOf(error) === 401) return false;
+    throw gitHubUnavailable("the check of the App's key", error);
   }
+  const app = APP.safeParse(data);
+  if (!app.success) throw new GitHubUnavailableError("GitHub's answer to the check of the App's key names no App.");
+  return app.data.id === appId;
 }
 
 /** The URL GitHub's Link header names as the next page, or undefined on the last page. */

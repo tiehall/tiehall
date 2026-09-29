@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp, type StubInstallation } from "@tiehall/testing/github";
 import { Refusal } from "@tiehall/core";
 import {
+  checkAppKey,
   convertManifestCode,
   createGitHubClient,
   GITHUB_REQUEST_TIMEOUT_MS,
   GitHubUnavailableError,
   LOGGABLE,
   readSignedInUser,
-  requestInstallationToken,
 } from "../src/index.ts";
 
 // The GitHub client assumes no length for installation tokens
@@ -158,7 +158,9 @@ describe("a GitHub that does not answer", () => {
   });
 
   it("gives up on the key check, the manifest conversion and the sign-in's read of who signed in", async () => {
-    await expect(requestInstallationToken({ clientId: app.clientId, privateKey: app.pem }, installation.id, options)).rejects.toThrow();
+    const check = checkAppKey({ clientId: app.clientId, privateKey: app.pem }, app.id, options);
+    await expect(check).rejects.toBeInstanceOf(GitHubUnavailableError);
+    await expect(check).rejects.toMatchObject({ status: undefined });
     // Not answering is GitHub being unavailable (D50 (3)): the error gives no status, since GitHub gave none.
     const conversion = convertManifestCode("a-manifest-code", options);
     await expect(conversion).rejects.toBeInstanceOf(GitHubUnavailableError);
@@ -203,6 +205,27 @@ describe("a GitHub that fails a call", () => {
       name: "GitHubUnavailableError",
       status: 500,
     });
+  });
+
+  // D50 (2): the key check asks GitHub for the App itself, GET /app, with no installation; a key GitHub refuses
+  // is not accepted, and any other failure is GitHub unavailable.
+  it("that checks an App's key: accepts the App's own key, refuses another App's or a deleted one, and fails as unavailable otherwise", async () => {
+    const credentials = (privateKey: string) => ({ clientId: app.clientId, privateKey });
+    expect(await checkAppKey(credentials(app.pem), app.id, { apiUrl: stub.apiUrl })).toBe(true);
+    // The key signs for this App, but GitHub names another App than the one stored.
+    expect(await checkAppKey(credentials(app.pem), app.id + 1, { apiUrl: stub.apiUrl })).toBe(false);
+    expect(await checkAppKey(credentials(stub.createApp({ owner: "acme", name: "Another App" }).pem), app.id, { apiUrl: stub.apiUrl })).toBe(false);
+    const deleted = stub.addPrivateKey(app);
+    stub.deletePrivateKey(app, deleted);
+    expect(await checkAppKey(credentials(deleted), app.id, { apiUrl: stub.apiUrl })).toBe(false);
+
+    const failing = (async () => new Response('{"message":"Server Error"}', { status: 500, headers: { "content-type": "application/json" } })) as typeof fetch;
+    await expect(checkAppKey(credentials(app.pem), app.id, { apiUrl: stub.apiUrl, fetch: failing })).rejects.toMatchObject({
+      name: "GitHubUnavailableError",
+      status: 500,
+    });
+    // Only GET /app was asked, never an installation token.
+    expect(stub.received.filter(({ path }) => path.endsWith("/access_tokens"))).toEqual([]);
   });
 
   it("that converts a code not in the form GitHub issues: refused as invalid input, before GitHub is asked", async () => {
