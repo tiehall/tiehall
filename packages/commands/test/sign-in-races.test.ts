@@ -33,10 +33,10 @@ const accounts = new Map<string, StubUser>();
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  for (const login of ["omar-acme", "lee-acme", "lou-acme", "rae-acme", "sam-acme", "kim-acme"]) accounts.set(login, stub.addUser({ login }));
+  for (const login of ["omar-acme", "lee-acme", "lou-acme", "rae-acme", "sam-acme", "kim-acme", "ivy-acme"]) accounts.set(login, stub.addUser({ login }));
   stub.addOrg({
     login: "acme",
-    members: { "omar-acme": "admin", "lee-acme": "member", "lou-acme": "member", "rae-acme": "member", "sam-acme": "member", "kim-acme": "member" },
+    members: { "omar-acme": "admin", "lee-acme": "member", "lou-acme": "member", "rae-acme": "member", "sam-acme": "member", "kim-acme": "member", "ivy-acme": "member" },
   });
   harness = await startSignIn(install, stub);
   await stub.install(harness.app, { account: "acme" });
@@ -185,6 +185,49 @@ describe("a member's sign-in that an admin removal races", () => {
     expect(await sessionState(raced.jar)).toBe("none");
     expect(await sessionState(joined.jar)).toBe("refused");
     expect(await liveSessionsOf(rae)).toBe(1);
+  });
+
+  it("committing between the admission and the session hook stores no session at all: the check before the session is written refuses it", async () => {
+    // Ivy is a member. Pia's removal commits while GitHub answers the sign-in's lookup, after the admission was
+    // decided and before the sign-in service writes the session. The check made just before the session is stored
+    // refuses the sign-in there, so no web_sessions row is ever inserted; the check once it is stored would only
+    // end a session already written. A trigger counts every row inserted for Ivy on a sequence, which no rollback
+    // takes back, as the database owner, since the app role may not use it.
+    const joined = await harness.signIn("ivy-acme");
+    expect(joined.response.status).toBe(302);
+    const ivy = (await harness.sessionOf(joined.jar))!.userId;
+    await install.owner.query("CREATE SEQUENCE ivy_session_inserts");
+    await install.owner.query(
+      `CREATE FUNCTION count_ivy_session() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+         BEGIN PERFORM nextval('ivy_session_inserts'); RETURN NEW; END $$`,
+    );
+    await install.owner.query(
+      `CREATE TRIGGER count_ivy_session BEFORE INSERT ON web_sessions FOR EACH ROW WHEN (NEW.user_id = '${ivy}') EXECUTE FUNCTION count_ivy_session()`,
+    );
+    try {
+      let removed = false;
+      const racing = await startSignIn(install, stub, {
+        sameAppAs: harness,
+        fetch: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : String(input));
+          if (!removed && url.pathname === "/orgs/acme/members/ivy-acme") {
+            removed = true;
+            expect((await install.confirm(pia, "members.remove", { userId: ivy })).status).toBe(200);
+          }
+          return fetch(input, init);
+        },
+      });
+      const raced = await racing.signIn("ivy-acme");
+      expect(removed).toBe(true);
+
+      expect(raced.response.status).toBe(403);
+      expect(((await raced.response.json()) as { detail: string }).detail).toBe(SIGN_IN_REFUSED);
+      const { rows } = await install.owner.query("SELECT CASE WHEN is_called THEN last_value ELSE 0 END::int AS inserted FROM ivy_session_inserts");
+      expect(rows).toEqual([{ inserted: 0 }]);
+      expect(await liveSessionsOf(ivy)).toBe(0);
+    } finally {
+      await install.owner.query("DROP TRIGGER count_ivy_session ON web_sessions; DROP FUNCTION count_ivy_session(); DROP SEQUENCE ivy_session_inserts");
+    }
   });
 
   it("committing while the session is stored ends that session, and the sign-in is refused with 403", async () => {
