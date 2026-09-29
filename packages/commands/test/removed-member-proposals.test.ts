@@ -10,7 +10,9 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // they are is cancelled, each with its own event that names it cancelled, in
 // the removal's transaction; their claims stay, and any call they make later is
 // refused with 403. Proposals of other people, their confirmations by the
-// removed member included, stay pending.
+// removed member included, stay pending. A removal because the member left
+// the GitHub organization cancels them the same way
+// (organization-departures.test.ts).
 
 let install: TestInstall;
 let alice: string;

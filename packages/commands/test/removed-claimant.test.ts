@@ -11,10 +11,11 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // any member of the target team, and only such a member, may release the claim
 // without a proposal, and another member can then claim the request. A request
 // that waits on a blocking question stays needs_info with no claimant after the
-// release, until the answer returns it to open (design.md, Decisions: D46 (1)). Cancelling
-// the removed member's pending proposals comes with the proposals (task 14.12),
-// and a removal because a member left the GitHub organization with the
-// organization checks (group 10).
+// release, until the answer returns it to open (design.md, Decisions: D46 (1)).
+// Cancelling the removed member's pending proposals is tested in
+// removed-member-proposals.test.ts, and a removal because a member left the
+// GitHub organization, which keeps their claims and cancels their proposals
+// the same way, in organization-departures.test.ts.
 
 let install: TestInstall;
 const team: Record<string, string> = {};
