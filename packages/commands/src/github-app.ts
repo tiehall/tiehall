@@ -66,10 +66,19 @@ export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: C
   await tx
     .insert(githubApp)
     .values({ orgId, ...identity })
-    // A new App starts afresh: its mode is unsettled, and the redelivery job and the poll read from when it was stored.
+    // A new App starts afresh: its mode is unsettled and set by Tiehall, which forgets an admin's switch and a
+    // given-up delivery, and the redelivery job and the poll read from when it was stored.
     .onConflictDoUpdate({
       target: githubApp.orgId,
-      set: { ...identity, storedAt: sql`now()`, redeliveryCheckedAt: null, modeSettledAt: null, polledAt: null },
+      set: {
+        ...identity,
+        storedAt: sql`now()`,
+        redeliveryCheckedAt: null,
+        modeSettledAt: null,
+        polledAt: null,
+        modeSetBy: "tiehall",
+        webhookGivenUpAt: null,
+      },
     });
   await storeSecret(context, box, "github_app.client_secret", app.clientSecret);
   await storeSecret(context, box, "github_app.private_key", app.privateKey);

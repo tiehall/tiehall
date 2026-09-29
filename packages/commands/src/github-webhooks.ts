@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
-import { githubDeliveries, orgs, type Database } from "@tiehall/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { githubApp, githubDeliveries, orgs, type Database } from "@tiehall/db";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { GITHUB_WEBHOOK_BODY_LIMIT, readBoundedBody } from "./body-limit.ts";
 import { changeKeyOf } from "./github-changes.ts";
 import { processDelivery } from "./github-delivery-processing.ts";
@@ -45,6 +45,11 @@ import type { WorkerJob } from "./worker.ts";
 // row lock the route takes on the org keeps the two apart: a delivery either
 // sees setup complete and gets its job at once, or is held and committed
 // before setup can complete, so the next run finds it.
+//
+// A delivery that verifies and is stored shows that GitHub's webhook reaches
+// the install, so it clears a delivery the redelivery job gave up, and with it
+// the banner about GitHub's webhook (tracker-mirrors: Broken integrations are
+// surfaced; github-layer-hardening: design.md, Technical decisions: T8).
 //
 // The job processes the delivery through the table of connected
 // installations, as the integration-event caller (github-delivery-
@@ -200,6 +205,13 @@ export function createGitHubWebhookRoute(options: GitHubWebhookRouteOptions): Gi
           .onConflictDoNothing()
           .returning({ deliveryId: githubDeliveries.deliveryId });
         if (stored.length > 0 && complete) await options.jobs.send(tx, processGitHubDelivery.type.queue, { deliveryId });
+        // The webhook works again: a give-up is cleared. The update touches no row while none is recorded.
+        if (stored.length > 0) {
+          await tx
+            .update(githubApp)
+            .set({ webhookGivenUpAt: null })
+            .where(and(eq(githubApp.orgId, org.id), isNotNull(githubApp.webhookGivenUpAt)));
+        }
         return new Response(null, { status: 202, headers: { "cache-control": "no-store" } });
       });
     } catch (error) {

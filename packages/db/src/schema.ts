@@ -298,10 +298,28 @@ export const githubApp = pgTable(
      * first poll for this App.
      */
     polledAt: timestamp("polled_at", { withTimezone: true }),
+    /**
+     * Who last set GitHub's mode (github-layer-hardening: design.md, Technical
+     * decisions: T8): `admin` for an admin's switch in the web UI, and
+     * `tiehall` for the storing of the App's credentials, the check of the
+     * delivery log after the first installation and the fallback to polling
+     * when a delivery is given up, which does not undo an admin's switch to
+     * webhook mode.
+     */
+    modeSetBy: text("mode_set_by").notNull().default("tiehall"),
+    /**
+     * When the redelivery job gave up a delivery (tracker-mirrors: Failed
+     * GitHub deliveries are redelivered; tracker-mirrors: Broken integrations
+     * are surfaced), which the banner about GitHub's webhook reads; null while
+     * none is given up, and again once an admin switches the mode, a delivery
+     * stored after the give-up verifies, or the App's credentials are stored.
+     */
+    webhookGivenUpAt: timestamp("webhook_given_up_at", { withTimezone: true }),
   },
   (table) => [
     check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`),
     check("github_app_mode_known", sql`${table.mode} IN ('webhook', 'polling')`),
+    check("github_app_mode_set_by_known", sql`${table.modeSetBy} IN ('admin', 'tiehall')`),
   ],
 );
 
@@ -335,8 +353,10 @@ export const githubReplacedApps = pgTable(
 // by the delivery id GitHub keeps on every attempt, with how often it asked.
 // Tiehall asks again at each run while the delivery's last attempt failed and
 // it is not stored, up to a few times, so a delivery that can never succeed
-// does not cost a call every run. Rows older than GitHub's redelivery window
-// are deleted by the job.
+// does not cost a call every run; a delivery still failed after the last
+// request is given up once (github-layer-hardening: design.md, Technical
+// decisions: T8). Rows older than GitHub's redelivery window are deleted by
+// the job.
 export const githubRedeliveries = pgTable(
   "github_redeliveries",
   {
@@ -348,6 +368,8 @@ export const githubRedeliveries = pgTable(
     /** How many times Tiehall asked GitHub to redeliver it. */
     asks: integer("asks").notNull().default(1),
     lastAskedAt: timestamp("last_asked_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When Tiehall gave it up, after its last request, so later runs record nothing more for it; null until then. */
+    givenUpAt: timestamp("given_up_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.deliveryId] }),

@@ -39,6 +39,21 @@ import { writeIn } from "./write.ts";
 // is a security event for a changed integration, naming the admin or the
 // system, and why.
 //
+// A delivery given up (tracker-mirrors: Failed GitHub deliveries are
+// redelivered; tracker-mirrors: Broken integrations are surfaced;
+// github-layer-hardening: design.md, Decisions this change rests on: D50
+// (15); design.md, Technical decisions: T8): when the redelivery job gives up
+// a delivery (github-redelivery.ts), the App's row records the give-up, which
+// the banner about GitHub's webhook reads, and GitHub moves to polling mode,
+// as the check after the first installation would move it, in the same
+// write, with a security event that names no user. It does not undo an
+// admin's switch to webhook mode: the row records who last set the mode, an
+// admin or Tiehall, and when an admin's switch to webhook mode was the latest
+// change, the mode stays. The give-up is cleared by an admin's next switch of
+// the mode, by a delivery that /webhooks/github verifies and stores after it
+// (github-webhooks.ts), and by storing the App's credentials, which also sets
+// the mode as Tiehall's again (github-app.ts).
+//
 // Moving to webhook mode (github-app-reachability: design.md, Design rules:
 // Moving to webhook mode): an App without a webhook moves to webhook mode once
 // an admin has added the webhook on GitHub and stored the same secret in
@@ -99,10 +114,11 @@ export const GITHUB_MODE_HANDLERS: Handlers = {
       throw new Refusal("conflict", "No webhook secret is stored, so every delivery would be refused: store the App's webhook secret first.");
     }
     return context.write(async (writer) => {
-      // An admin's switch settles the mode, so the check of the delivery log never undoes it.
+      // An admin's switch settles the mode, so the check of the delivery log never undoes it, nor does a delivery
+      // given up later undo a switch to webhook mode; it clears a give-up, and with it the banner.
       await writer.tx
         .update(githubApp)
-        .set({ mode, modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())` })
+        .set({ mode, modeSetBy: "admin", webhookGivenUpAt: null, modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())` })
         .where(eq(githubApp.orgId, writer.orgId));
       await writer.record(githubModeChanged, { mode, previousMode, cause: "admin_switch" });
       return { mode, previousMode };
@@ -223,7 +239,7 @@ export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions
     // Settled once, for the App the log was read for; an admin's switch meanwhile wins.
     const updated = await context.tx
       .update(githubApp)
-      .set({ mode: settled, modeSettledAt: sql`now()` })
+      .set({ mode: settled, modeSetBy: "tiehall", modeSettledAt: sql`now()` })
       .where(and(eq(githubApp.orgId, context.orgId), eq(githubApp.appId, app.appId), isNull(githubApp.modeSettledAt), eq(githubApp.mode, "webhook")))
       .returning({ appId: githubApp.appId });
     if (updated.length === 0) return undefined;
@@ -236,6 +252,37 @@ export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions
   });
   if (changed === "polling") logger.info("github: a failed delivery put GitHub in polling mode");
   return changed;
+}
+
+/**
+ * Records, in the caller's transaction, that the redelivery job gave up a
+ * delivery of the App with this id: the App's row records the give-up, when
+ * it has none yet, and GitHub moves to polling mode with a security event
+ * that names no user, unless an admin's switch to webhook mode was the latest
+ * change of the mode. Returns whether it moved the mode; it records nothing
+ * when the App's credentials were replaced meanwhile.
+ */
+export async function recordGivenUpDelivery(context: OrgContext, jobs: JobSender, appId: number): Promise<boolean> {
+  const [row] = await context.tx
+    .select({ appId: githubApp.appId, mode: githubApp.mode, modeSetBy: githubApp.modeSetBy })
+    .from(githubApp)
+    .where(eq(githubApp.orgId, context.orgId))
+    .for("update");
+  if (row === undefined || row.appId !== appId) return false;
+  await context.tx
+    .update(githubApp)
+    .set({ webhookGivenUpAt: sql`coalesce(${githubApp.webhookGivenUpAt}, now())` })
+    .where(eq(githubApp.orgId, context.orgId));
+  // An admin who chose webhook mode may be fixing the webhook at this moment: their choice stands.
+  if (row.mode !== "webhook" || row.modeSetBy === "admin") return false;
+  await context.tx
+    .update(githubApp)
+    .set({ mode: "polling", modeSetBy: "tiehall", modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())` })
+    .where(eq(githubApp.orgId, context.orgId));
+  await writeIn(context, jobs, { actorKind: "system" }, (writer) =>
+    writer.record(githubModeChanged, { mode: "polling", previousMode: "webhook", cause: "given_up_delivery" }),
+  );
+  return true;
 }
 
 /** The job that checks the App's delivery log after its first installation, every minute until the mode is settled. */

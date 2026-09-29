@@ -1,9 +1,9 @@
 import { githubApp, githubDeliveries, githubRedeliveries, type Database } from "@tiehall/db";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { askRedelivery, attemptFailed, madeAfter, readDeliveryLog, type DeliveryAttempt } from "./github-delivery-log.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
-import { githubModeOf } from "./github-mode.ts";
-import { defineJobType } from "./jobs.ts";
+import { githubModeOf, recordGivenUpDelivery } from "./github-mode.ts";
+import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SetupRequiredError, withOrg } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -19,13 +19,24 @@ import type { WorkerJob } from "./worker.ts";
 // last attempt failed and that Tiehall has not stored, asks GitHub to
 // redeliver that attempt. The redelivery keeps the delivery id, so
 // /webhooks/github stores it once and it is processed once. A redelivery that
-// fails too is asked for again at the next run, up to a few times, so a
+// fails too is asked for again at the next run, 5 times at most, so a
 // delivery that can never succeed does not cost a call every run; one that
 // Tiehall stored although GitHub logged it as failed, such as when the answer
 // came too late for GitHub, is never asked for. Only deliveries made after the
 // App's credentials were stored count, because the install accepts deliveries
 // from then on (design.md, Readings to confirm: R6). In polling mode nothing
 // is asked for.
+//
+// A delivery given up (tracker-mirrors: Failed GitHub deliveries are
+// redelivered; github-layer-hardening: design.md, Decisions this change rests
+// on: D50 (15); design.md, Technical decisions: T8): a run that finds a
+// delivery asked for 5 times, whose latest attempt in the log still failed
+// and that Tiehall does not hold, gives it up, once: in one write it marks the
+// delivery given up, so later runs record nothing more for it, and records the
+// give-up on the App's row, which moves GitHub to polling mode unless an
+// admin chose webhook mode (github-mode.ts). The parameters are the design's:
+// 5 requests, a log read back at most 3 days, GitHub's redelivery window, and
+// from 15 minutes before the previous run.
 
 /** How many times Tiehall asks GitHub to redeliver one delivery before it gives up on it. */
 export const REDELIVERY_ASKS = 5;
@@ -41,6 +52,8 @@ export interface RedeliveryOptions {
   database: Database;
   app: GitHubAppAccess;
   now: () => Date;
+  /** Where the security event of a move to polling mode would send jobs; it sends none. */
+  jobs?: JobSender;
   logger?: Logger;
 }
 
@@ -75,8 +88,8 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
   }
   const failed = [...last.values()].filter(attemptFailed).sort((a, b) => a.id - b.id);
 
-  const toAsk = await withOrg(database, async ({ tx, orgId }) => {
-    if (failed.length === 0) return [];
+  const { toAsk, toGiveUp } = await withOrg(database, async ({ tx, orgId }) => {
+    if (failed.length === 0) return { toAsk: [], toGiveUp: [] };
     const ids = failed.map(({ deliveryId }) => deliveryId);
     const stored = new Set(
       (
@@ -86,15 +99,23 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
           .where(and(eq(githubDeliveries.orgId, orgId), inArray(githubDeliveries.deliveryId, ids)))
       ).map(({ deliveryId }) => deliveryId),
     );
-    const asks = new Map(
+    const asked = new Map(
       (
         await tx
-          .select({ deliveryId: githubRedeliveries.deliveryId, asks: githubRedeliveries.asks })
+          .select({ deliveryId: githubRedeliveries.deliveryId, asks: githubRedeliveries.asks, givenUpAt: githubRedeliveries.givenUpAt })
           .from(githubRedeliveries)
           .where(and(eq(githubRedeliveries.orgId, orgId), inArray(githubRedeliveries.deliveryId, ids)))
-      ).map(({ deliveryId, asks: count }) => [deliveryId, count]),
+      ).map(({ deliveryId, asks, givenUpAt }) => [deliveryId, { asks, givenUp: givenUpAt !== null }]),
     );
-    return failed.filter(({ deliveryId }) => !stored.has(deliveryId) && (asks.get(deliveryId) ?? 0) < REDELIVERY_ASKS);
+    const missing = failed.filter(({ deliveryId }) => !stored.has(deliveryId));
+    return {
+      toAsk: missing.filter(({ deliveryId }) => (asked.get(deliveryId)?.asks ?? 0) < REDELIVERY_ASKS),
+      // Asked for 5 times, and still failed: given up, once.
+      toGiveUp: missing.filter(({ deliveryId }) => {
+        const seen = asked.get(deliveryId);
+        return seen !== undefined && seen.asks >= REDELIVERY_ASKS && !seen.givenUp;
+      }),
+    };
   });
 
   for (const attempt of toAsk) {
@@ -108,6 +129,29 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
           set: { asks: sql`${githubRedeliveries.asks} + 1`, lastAskedAt: sql`now()` },
         }),
     );
+  }
+
+  if (toGiveUp.length > 0) {
+    const jobs = options.jobs ?? { send: () => Promise.reject(new Error("Giving up a GitHub delivery sends no job.")) };
+    const polling = await withOrg(database, async (context) => {
+      const marked = await context.tx
+        .update(githubRedeliveries)
+        .set({ givenUpAt: sql`now()` })
+        .where(
+          and(
+            eq(githubRedeliveries.orgId, context.orgId),
+            inArray(
+              githubRedeliveries.deliveryId,
+              toGiveUp.map(({ deliveryId }) => deliveryId),
+            ),
+            isNull(githubRedeliveries.givenUpAt),
+          ),
+        )
+        .returning({ deliveryId: githubRedeliveries.deliveryId });
+      return marked.length > 0 && (await recordGivenUpDelivery(context, jobs, app.appId));
+    });
+    logger.warn("github: gave up failed deliveries that GitHub could not redeliver", { givenUp: toGiveUp.length });
+    if (polling) logger.info("github: a given-up delivery put GitHub in polling mode");
   }
 
   await withOrg(database, async ({ tx, orgId }) => {
@@ -134,12 +178,12 @@ export const redeliverGitHubDeliveries: WorkerJob<Record<string, never>> = {
     expireInSeconds: 300,
   }),
   schedule: "*/10 * * * *",
-  async handle(_job, { database, github, now }) {
+  async handle(_job, { database, github, now, jobs }) {
     if (github === undefined) throw new Error("The worker gives this job no GitHub App to ask for redeliveries as.");
     const app = await github.app();
     if (app === undefined) return;
     try {
-      await redeliverFailedDeliveries({ database, app, now });
+      await redeliverFailedDeliveries({ database, app, now, ...(jobs === undefined ? {} : { jobs }) });
     } catch (error) {
       // Before setup completes nothing is redelivered; the first run after it reads back to when the credentials were stored.
       if (!(error instanceof SetupRequiredError)) throw error;

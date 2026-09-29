@@ -154,6 +154,14 @@
           }
         },
         {
+          "action": "GitHub put in polling mode by a given-up delivery",
+          "event": "github.mode_changed",
+          "test": {
+            "file": "packages/commands/test/github-redelivery.test.ts",
+            "case": "is given up once it still fails after the fifth request: in one write the App's row records it and GitHub moves to polling mode, which the admin page shows, with a security event that names no user"
+          }
+        },
+        {
           "action": "the GitHub App's webhook secret stored",
           "event": "github.webhook_secret_stored",
           "test": {
