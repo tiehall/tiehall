@@ -7,6 +7,7 @@ import type { Execute } from "./execute.ts";
 import { refusalAnswerAs, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { MEDIA_TYPES, NEGOTIATED_VARY, negotiate, requestUrlOf, type Representation } from "./negotiation.ts";
+import { readRequestPage, requestPageFacts, type RequestWithThreadView } from "./request-page-data.ts";
 import { withSessionCookies } from "./session-renewal.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
 
@@ -25,7 +26,8 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 //   with every string Tiehall did not generate fenced with its origin as the
 //   reader's teams make it;
 // - HTML is the web UI's request page, which the app renders once the proxy
-//   has let the call through, with the headers the proxy gives it.
+//   has let the call through, with the headers the proxy gives it: those of
+//   every answer of a request URL, and those of every page of the web UI.
 // Who calls: HTML is the web UI, for a browser signed in with its web
 // session; markdown and JSON take an agent's access token from the
 // Authorization header alone, never from the query string, or a browser's web
@@ -48,7 +50,8 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 //
 // Every answer sends Vary: Accept, Authorization, Cache-Control: private,
 // no-store and an ETag: a JSON body's is strong, from its bytes; markdown's
-// and the page's are weak, from the request as the caller reads it, since
+// and the page's are weak, from the request as the caller reads it, the
+// page's from its packet and its proposals too (request-page-data.ts), since
 // each markdown answer fences with a nonce of its own and the page's forms
 // carry the caller's own tokens; a refusal's and a redirect's are from what
 // they answer. A read of the web session may renew it, and every answer then
@@ -85,6 +88,16 @@ const URL_HEADERS = {
   vary: NEGOTIATED_VARY.join(", "),
   "cache-control": "private, no-store",
   "x-content-type-options": "nosniff",
+} as const;
+
+/**
+ * The headers the web UI's page of a request gets besides, as every page of
+ * the web UI has them: no other site frames it, and its URL goes to no other
+ * site as a referrer.
+ */
+const PAGE_HEADERS = {
+  "content-security-policy": "frame-ancestors 'none'",
+  "referrer-policy": "same-origin",
 } as const;
 
 /** The content type each representation is answered with. */
@@ -147,14 +160,16 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
           { challenge: { scope: ["requests:read"] } },
         );
       }
-      const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson;
+      const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson & RequestWithThreadView;
       if (read.key !== path.key) {
         // A key written with a team's earlier key, or from before a reassignment: the canonical URL, in the same representation.
         const suffix = path.suffix === "markdown" ? ".md" : path.suffix === "json" ? ".json" : "";
         return answer(redirect(307, new URL(`/${read.key}${suffix}`, options.url)));
       }
       if (representation === "html") {
-        const headers = new Headers({ ...URL_HEADERS, etag: requestEtag("html", caller, JSON.stringify(read)) });
+        // The page's ETag follows everything the page shows of the request: its thread, its packet and its proposals.
+        const page = await readRequestPage((commandId, input) => options.execute(commandId, caller, input, { readOnly: true }) as never, read.key, read);
+        const headers = new Headers({ ...URL_HEADERS, ...PAGE_HEADERS, etag: requestEtag("html", caller, ...requestPageFacts(page)) });
         for (const cookie of renewal.getSetCookie()) headers.append("set-cookie", cookie);
         return { page: { key: read.key, headers } };
       }

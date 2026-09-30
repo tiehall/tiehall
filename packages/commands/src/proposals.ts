@@ -1,4 +1,4 @@
-import { getProposal, type Packet, type proposal } from "@tiehall/catalog";
+import { getProposal, listRequestProposals, type Packet, type proposal } from "@tiehall/catalog";
 import {
   Refusal,
   accountableSideOf,
@@ -14,12 +14,13 @@ import {
   type SecondConfirmer,
 } from "@tiehall/core";
 import { proposalConfirmations, proposals, requests, teams, users } from "@tiehall/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
 import { actingUserOf, partiesOf, stampOf, teamActedFor } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
+import { resolveRequestKey } from "./request-keys.ts";
 import { requestView } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
@@ -293,4 +294,18 @@ export async function proposalView(context: OrgContext, proposalId: string): Pro
 
 export const PROPOSAL_HANDLERS: Handlers = {
   [getProposal.id]: defineHandler(getProposal, async ({ proposal }, context) => proposalView(context, proposal)),
+
+  // A request's proposals, newest first, for the web UI's page of the request (requests: What a proposal records and shows).
+  [listRequestProposals.id]: defineHandler(listRequestProposals, async ({ key }, context) => {
+    const { requestId } = await resolveRequestKey(context, key);
+    const rows = await context.tx
+      .select({ id: proposals.id })
+      .from(proposals)
+      .where(and(eq(proposals.orgId, context.orgId), eq(proposals.requestId, requestId)))
+      .orderBy(desc(proposals.createdAt), desc(proposals.id));
+    const listed: ProposalView[] = [];
+    for (const { id } of rows) listed.push(await proposalView(context, id));
+    // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+    return { "proposals": listed };
+  }),
 };

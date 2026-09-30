@@ -2,7 +2,7 @@ import { CANCEL_REASONS, COMMITMENT_KINDS, PROPOSAL_STATES, SECOND_CONFIRMERS, S
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { packet } from "./packet.ts";
-import { requestRef, teamRef } from "./requests.ts";
+import { requestKey, requestRef, teamRef } from "./requests.ts";
 import { user } from "./schemas.ts";
 
 // Proposals as the operations return them (requests: Commitments become
@@ -109,6 +109,20 @@ export const getProposal = defineCommand({
   stability: "alpha",
 });
 
+export const listRequestProposals = defineCommand({
+  id: "proposals.list",
+  summary:
+    "List a request's proposals, newest first, pending or ended, each as proposals.get returns it, for the web UI's page of the request. Every member can read every request's proposals.",
+  input: z.object({ key: requestKey }),
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  output: z.object({ "proposals": z.array(proposal) }),
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
 export const confirmProposal = defineCommand({
   id: "proposals.confirm",
   summary:
@@ -160,4 +174,4 @@ export const undoCommitment = defineCommand({
   stability: "alpha",
 });
 
-export const PROPOSAL_COMMANDS = [getProposal, confirmProposal, rejectProposal, withdrawProposal, undoCommitment];
+export const PROPOSAL_COMMANDS = [getProposal, listRequestProposals, confirmProposal, rejectProposal, withdrawProposal, undoCommitment];

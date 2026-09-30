@@ -366,6 +366,7 @@ export {
 } from "./negotiation.ts";
 export { createRequestUrlRoute, requestEtag, type RequestUrlAnswer, type RequestUrlOptions, type RequestUrlRoute } from "./request-urls.ts";
 export { createNewRequestRoute, NEW_REQUEST_PATH } from "./new-request.ts";
+export { readRequestPage, readRequestPageAs, requestPageFacts, type PageRead, type RequestPageData, type RequestWithThreadView } from "./request-page-data.ts";
 export {
   AUTH_BASE_PATH,
   createSignInService,

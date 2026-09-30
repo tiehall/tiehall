@@ -103,6 +103,7 @@ export {
   confirmProposal,
   getProposal,
   isProposalAnswer,
+  listRequestProposals,
   proposal,
   proposalAnswer,
   PROPOSAL_COMMANDS,
