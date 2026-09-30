@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { setupGate } from "@tiehall/commands/setup";
-import { pageContentSecurityPolicy, requestUrlOf, requestUrlRoute } from "@tiehall/commands/web";
+import { negotiatedUrlOf, pageContentSecurityPolicy, requestUrlRoute } from "@tiehall/commands/web";
 
 // Runs before every route (self-host-install: The setup code guards the setup
 // screen; design.md, Self-hosting decisions: S3). Until setup is complete, the
@@ -8,12 +8,14 @@ import { pageContentSecurityPolicy, requestUrlOf, requestUrlRoute } from "@tieha
 // screen has stored the GitHub App's credentials, with or without a webhook
 // secret, /webhooks/github: a page leads to /setup and an API call gets 503
 // setup-required. Afterwards every call goes on to its route, except a call to
-// a request's URL, /<KEY> with or without .md or .json, which is negotiated
-// here (agent-surfaces: Negotiated request URLs; design.md, Technical
-// decisions: T3): markdown, JSON, a redirect or a refusal is answered here, and
-// HTML goes on to the web UI's request page with the headers every answer of a
-// request URL carries, and the cookie that renews the session, which a server
-// component cannot set. The page's content security policy, whose script
+// a request's URL, /<KEY> with or without .md or .json, or to a team's intake
+// page, /<TEAM> with or without them, which is negotiated here
+// (agent-surfaces: Negotiated request URLs; agent-surfaces: Team intake pages;
+// design.md, Technical decisions: T3): markdown, JSON, a redirect or a refusal
+// is answered here, and HTML goes on to the web UI's page with the headers
+// every answer of a negotiated URL carries, and the cookie that renews the
+// session, which a server component cannot set. The page's content security
+// policy, whose script
 // nonce is made for each answer, goes to Next.js with the call too, which then
 // puts the nonce on the page's scripts (agent-safety: The web UI renders no
 // raw HTML and no remote images); so does the policy of a form's post to the
@@ -31,7 +33,7 @@ function withPolicy(request: Request, policy: string): NextResponse {
 export async function proxy(request: Request): Promise<Response> {
   const gated = await setupGate(process.env)(request);
   if (gated !== undefined) return gated;
-  if (requestUrlOf(new URL(request.url).pathname) === undefined) return NextResponse.next();
+  if (negotiatedUrlOf(new URL(request.url).pathname) === undefined) return NextResponse.next();
   const answer = await requestUrlRoute(process.env)(request);
   // A form's post to the page, which runs the page's server action.
   if (answer === undefined) return withPolicy(request, pageContentSecurityPolicy());

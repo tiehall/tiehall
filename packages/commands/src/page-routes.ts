@@ -14,9 +14,9 @@ import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 // a page (html.ts): every path but an API call, as the setup gate names them
 // (/api, /mcp, /.well-known, /webhooks and /schemas), and /healthz, with
 // GitHub's return to the sign-in callback, which lies under /api. The consent
-// screen, the device approval page and request URLs are among them; intake
-// pages join when they are built. A call negotiates HTML on a request URL as
-// its own negotiation decides (negotiation.ts), so a call without an Accept
+// screen, the device approval page, request URLs and team intake pages are
+// among them. A call negotiates HTML on a request URL or an intake page as
+// their own negotiation decides (negotiation.ts), so a call without an Accept
 // header, or one that accepts any type, gets a page there, while a call to
 // its .md or .json form gets the problem; on every other page route, a call
 // negotiates HTML when its Accept header names text/html, as browsers send

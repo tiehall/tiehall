@@ -172,11 +172,19 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
   return requestUrls;
 }
 
-export { requestUrlOf } from "./negotiation.ts";
+export { negotiatedUrlOf, requestUrlOf, teamUrlOf } from "./negotiation.ts";
 export { pageContentSecurityPolicy } from "./request-urls.ts";
 export { readRequestPageAs, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
 export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";
 export { packetLinesOf } from "./new-request.ts";
+
+/** A team as its intake page shows it, as teams.get reads it (agent-surfaces: Team intake pages). */
+export interface TeamIntakeView {
+  id: string;
+  key: string;
+  requiredFields: string[];
+  untrusted: { name: string; intakeNotes: string };
+}
 
 let mcp: McpRoute | undefined;
 

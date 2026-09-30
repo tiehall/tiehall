@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
-import { requestWithThreadText, type RequestWithThreadJson } from "@tiehall/packet/tool-text";
+import { requestWithThreadText, teamIntakeText, type RequestWithThreadJson, type TeamIntakeJson } from "@tiehall/packet/tool-text";
 import type { Caller, WebSessionCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
 import { refusalAnswerAs, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
-import { MEDIA_TYPES, NEGOTIATED_VARY, negotiate, requestUrlOf, type Representation } from "./negotiation.ts";
+import { MEDIA_TYPES, NEGOTIATED_VARY, negotiate, negotiatedUrlOf, type Representation, type RequestUrlPath } from "./negotiation.ts";
 import { readRequestPage, requestPageFacts, type RequestWithThreadView } from "./request-page-data.ts";
 import { withSessionCookies } from "./session-renewal.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
@@ -50,6 +50,17 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 // keys that use a renamed team key keep resolving). Since an undo can lead a
 // key back again, the redirect is temporary. Since the canonical key is data
 // of the request, only a caller who may read it is led there.
+//
+// Team intake pages, /<TEAM> with or without .md or .json, are answered the
+// same way (agent-surfaces: Team intake pages; design.md, Decisions this
+// change rests on: D28 #64): they read the team through teams.get, whose
+// /api/v1 body the JSON is, byte for byte; the markdown renders the team's
+// name and intake notes, fenced, and the fields it requires, in Tiehall's
+// words; HTML is the web UI's intake page. Without credentials, HTML is sent
+// to sign in and markdown and JSON get 401, which names the MCP tool
+// directory; a removed member gets 403, and a key no team has or had 404. A
+// team's earlier key leads with 307 to its current key, with the same
+// suffix.
 //
 // Every answer sends Vary: Accept, Authorization, Cache-Control: private,
 // no-store and an ETag: a JSON body's is strong, from its bytes; markdown's
@@ -169,10 +180,41 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     return resourceMetadata === undefined || !CHALLENGED.has(refusal.reason) ? refusal : refusal.withChallenge({ resourceMetadata });
   }
 
+  /** Answers a team's intake page for a caller who may read it. */
+  async function intakePage(
+    caller: Caller,
+    path: RequestUrlPath,
+    representation: Representation,
+    head: boolean,
+    renewal: Headers,
+    answer: (response: Response) => RequestUrlAnswer,
+  ): Promise<RequestUrlAnswer> {
+    const team = (await options.execute("teams.get", caller, { key: path.key }, { readOnly: true })) as TeamIntakeJson;
+    if (team.key !== path.key) {
+      // A team's earlier key: its current key, in the same representation.
+      const suffix = path.suffix === "markdown" ? ".md" : path.suffix === "json" ? ".json" : "";
+      return answer(redirect(307, new URL(`/${team.key}${suffix}`, options.url)));
+    }
+    if (representation === "html") {
+      const headers = new Headers({ ...URL_HEADERS, ...pageHeaders(), etag: requestEtag("html", caller, JSON.stringify(team)) });
+      for (const cookie of renewal.getSetCookie()) headers.append("set-cookie", cookie);
+      return { page: { key: team.key, headers } };
+    }
+    if (representation === "json") {
+      const body = JSON.stringify(agentJson(team));
+      return answer(represented("json", head ? null : body, `"${digest("json", body)}"`));
+    }
+    // The reader's teams decide whether the team's text is fenced as their own team's or another team's.
+    const whoami = (await options.execute("users.whoami", caller, {}, { readOnly: true })) as { teams: { key: string }[] };
+    const teams = whoami.teams.map(({ key }) => key);
+    const markdown = `${createAgentView().markdown(teamIntakeText(team, { teams }))}\n`;
+    return answer(represented("markdown", head ? null : markdown, requestEtag("markdown", caller, JSON.stringify(team), teams.join(","))));
+  }
+
   return async function requestUrl(request) {
     if (request.method !== "GET" && request.method !== "HEAD") return undefined;
     const url = new URL(request.url);
-    const path = requestUrlOf(url.pathname);
+    const path = negotiatedUrlOf(url.pathname);
     if (path === undefined) return undefined;
     const representation = negotiate(request.headers.get("accept"), path.suffix);
     const head = request.method === "HEAD";
@@ -181,14 +223,17 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     try {
       const caller = await callerOf(request, representation, renewal);
       if (caller === undefined) {
-        // A browser signs in and comes back; an agent is told what reads a request for it.
+        // A browser signs in and comes back; an agent is told what reads a request, or the install's teams, for it.
         if (representation === "html") return answer(redirect(303, new URL(`${SIGN_IN_PATH}?return=${encodeURIComponent(url.pathname)}`, options.url)));
         throw new Refusal(
           "unauthenticated",
-          "A request URL answers only members of this install. Read the request with `tiehall get <url>`, once `tiehall login` has signed you in, or with the MCP tool get_request; or send your access token in the Authorization header.",
+          path.kind === "team"
+            ? "A team's intake page answers only members of this install. Read the install's teams with the MCP tool directory, or send your access token in the Authorization header."
+            : "A request URL answers only members of this install. Read the request with `tiehall get <url>`, once `tiehall login` has signed you in, or with the MCP tool get_request; or send your access token in the Authorization header.",
           { challenge: { scope: ["requests:read"] } },
         );
       }
+      if (path.kind === "team") return await intakePage(caller, path, representation, head, renewal, answer);
       const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson & RequestWithThreadView;
       if (read.key !== path.key) {
         // A key written with a team's earlier key, or from before a reassignment: the canonical URL, in the same representation.

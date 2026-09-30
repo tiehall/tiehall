@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-// Content negotiation of request URLs (agent-surfaces: Negotiated request
-// URLs; agent-surfaces: A browser without a session is sent to sign-in;
+// Content negotiation of request URLs and team intake pages (agent-surfaces:
+// Negotiated request URLs; agent-surfaces: Team intake pages; agent-surfaces:
+// A browser without a session is sent to sign-in;
 // agent-surfaces: Request URL response headers; design.md, Design rules: Agent
 // surfaces; design.md, Self-hosting decisions: S15; design.md, Readings to
 // confirm with the founder: R17). A request's URL is the install's URL, a
@@ -17,8 +18,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 // specific that Tiehall serves, such as */*; and a header that names none of
 // the three, such as image/png, gets HTML too, the default.
 //
-// Every answer of a request URL varies with its Accept and Authorization
-// headers. A route that answers itself sends Vary: Accept, Authorization; the
+// A team's intake page, /<TEAM>, such as /FE, is negotiated the same way.
+//
+// Every answer of a request URL or an intake page varies with its Accept and
+// Authorization headers. A route that answers itself sends Vary: Accept, Authorization; the
 // web UI's page, which the Next.js app renders, gets Next.js's own Vary, which
 // it sets as the page renders, after the proxy ran. So the web role adds
 // Accept and Authorization to the Vary of every answer of a request URL as its
@@ -40,6 +43,9 @@ const SERVED: readonly Representation[] = ["html", "markdown", "json"];
 /** A request URL's path: a key, such as FE-142, and the .md or .json suffix. */
 const REQUEST_URL_PATH = /^\/([A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,9})(\.md|\.json)?$/;
 
+/** A team intake page's path: a team key, such as FE, and the .md or .json suffix. */
+const TEAM_URL_PATH = /^\/([A-Z][A-Z0-9]{1,9})(\.md|\.json)?$/;
+
 /** What a request URL's path names: the key, and the representation its suffix asks for, if it has one. */
 export interface RequestUrlPath {
   key: string;
@@ -47,12 +53,35 @@ export interface RequestUrlPath {
   suffix: Exclude<Representation, "html"> | undefined;
 }
 
-/** The request URL a path is, or undefined for any other path. */
-export function requestUrlOf(pathname: string): RequestUrlPath | undefined {
-  const match = REQUEST_URL_PATH.exec(pathname);
+/** What a path matched by one of the patterns names: the key, and the suffix's representation. */
+function pathOf(match: RegExpExecArray | null): RequestUrlPath | undefined {
   if (match === null) return undefined;
   const suffix = match[2] === ".md" ? "markdown" : match[2] === ".json" ? "json" : undefined;
   return { key: match[1] ?? "", suffix };
+}
+
+/** The request URL a path is, or undefined for any other path. */
+export function requestUrlOf(pathname: string): RequestUrlPath | undefined {
+  return pathOf(REQUEST_URL_PATH.exec(pathname));
+}
+
+/**
+ * The team intake page a path is, /<TEAM> with or without .md or .json, or
+ * undefined for any other path (agent-surfaces: Team intake pages). A team
+ * key is upper case, and every app path lower case, so no intake page takes
+ * an app path's place: /API is the intake page of a team keyed API, and /api
+ * stays the app's.
+ */
+export function teamUrlOf(pathname: string): RequestUrlPath | undefined {
+  return pathOf(TEAM_URL_PATH.exec(pathname));
+}
+
+/** A path that is negotiated: a request URL or a team intake page, with what it names; undefined for any other path. */
+export function negotiatedUrlOf(pathname: string): (RequestUrlPath & { kind: "request" | "team" }) | undefined {
+  const request = requestUrlOf(pathname);
+  if (request !== undefined) return { kind: "request", ...request };
+  const team = teamUrlOf(pathname);
+  return team === undefined ? undefined : { kind: "team", ...team };
 }
 
 /** One media range of an Accept header: its type, its subtype and its quality. */
@@ -108,7 +137,7 @@ export function negotiate(accept: string | null | undefined, suffix?: Exclude<Re
   return best?.representation ?? "html";
 }
 
-/** Whether a call to this path and query negotiates HTML, given its Accept header; undefined when it is no request URL. */
+/** Whether a call to this path and query negotiates HTML, given its Accept header; undefined when it is no request URL or intake page. */
 export function requestUrlNegotiatesHtml(target: string, accept: string | null | undefined): boolean | undefined {
   let pathname: string;
   try {
@@ -116,7 +145,7 @@ export function requestUrlNegotiatesHtml(target: string, accept: string | null |
   } catch {
     return undefined;
   }
-  const path = requestUrlOf(pathname);
+  const path = negotiatedUrlOf(pathname);
   return path === undefined ? undefined : negotiate(accept, path.suffix) === "html";
 }
 
@@ -150,7 +179,7 @@ export function varyOnNegotiatedUrls(request: IncomingMessage, response: ServerR
   } catch {
     return;
   }
-  if (requestUrlOf(pathname) === undefined) return;
+  if (negotiatedUrlOf(pathname) === undefined) return;
   const writeHead = response.writeHead;
   response.writeHead = function (this: ServerResponse, statusCode: number, ...rest: unknown[]) {
     // writeHead(status, [statusMessage], [headers]): headers given here win over those set before, so their Vary is merged first.

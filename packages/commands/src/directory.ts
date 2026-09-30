@@ -1,10 +1,11 @@
-import { readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
-import { compareVersions, MINIMUM_SKILL_VERSION } from "@tiehall/core";
+import { getTeam, readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
+import { compareVersions, MINIMUM_SKILL_VERSION, Refusal } from "@tiehall/core";
 import { teams, users } from "@tiehall/db";
 import { and, asc, eq } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
 import { actingUserOf } from "./request-changes.ts";
+import { teamOfKey } from "./request-keys.ts";
 
 // whoami and directory (agent-surfaces: The MCP tools; teams-and-roles: Bot
 // users; design.md, Decisions this change rests on: D28 #56, #94). whoami
@@ -15,7 +16,10 @@ import { actingUserOf } from "./request-changes.ts";
 // with their names, their intake notes and the fields they require (agent-surfaces: Admins set a team's intake
 // notes and required fields), and the registered APIs with the teams declared as their
 // consumers: none yet, since registering an API comes with the contract-change
-// flow. Both only read, and every member may run them.
+// flow. teams.get reads one team as directory lists it, by its current key or
+// an earlier one, for its intake page (agent-surfaces: Team intake pages); a
+// key no team has or had gets 404. All three only read, and every member may
+// run them.
 
 export const DIRECTORY_HANDLERS: Handlers = {
   [whoami.id]: defineHandler(whoami, async ({ skillVersion }, context) => {
@@ -33,6 +37,17 @@ export const DIRECTORY_HANDLERS: Handlers = {
         ? [{ kind: "skill_outdated" as const, skillVersion, minimum: MINIMUM_SKILL_VERSION }]
         : [];
     return { user: { id: row.id, login: row.login, kind: "human" as const, bot: row.bot }, teams: memberOf, install: { url: context.url }, warnings };
+  }),
+
+  [getTeam.id]: defineHandler(getTeam, async ({ key }, context) => {
+    const found = await teamOfKey(context, key);
+    if (found === undefined) throw new Refusal("record-not-found", "There is no such team.");
+    const [row] = await context.tx
+      .select({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields })
+      .from(teams)
+      .where(and(eq(teams.orgId, context.orgId), eq(teams.id, found.id)));
+    if (row === undefined) throw new Refusal("record-not-found", "There is no such team.");
+    return { id: row.id, key: row.key, requiredFields: row.requiredFields as IntakeField[], untrusted: { name: row.name, intakeNotes: row.intakeNotes } };
   }),
 
   [readDirectory.id]: defineHandler(readDirectory, async (_input, context) => {

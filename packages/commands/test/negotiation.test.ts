@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { negotiate, requestUrlNegotiatesHtml, requestUrlOf, varyOnNegotiatedUrls, withNegotiatedVary } from "../src/index.ts";
+import { negotiate, negotiatedUrlOf, requestUrlNegotiatesHtml, requestUrlOf, teamUrlOf, varyOnNegotiatedUrls, withNegotiatedVary } from "../src/index.ts";
 
 // Content negotiation of request URLs (agent-surfaces: Negotiated request URLs;
 // agent-surfaces: A browser without a session is sent to sign-in;
@@ -31,6 +31,28 @@ describe("a request URL's path", () => {
       expect(requestUrlOf(path)).toBeUndefined();
     },
   );
+});
+
+// agent-surfaces: Team intake pages.
+describe("a team intake page's path", () => {
+  it.each([
+    ["/FE", { key: "FE", suffix: undefined }],
+    ["/FE.md", { key: "FE", suffix: "markdown" }],
+    ["/API.json", { key: "API", suffix: "json" }],
+    ["/PAY2", { key: "PAY2", suffix: undefined }],
+  ])("%s names a team", (path, named) => {
+    expect(teamUrlOf(path)).toEqual(named);
+    expect(negotiatedUrlOf(path)).toEqual({ kind: "team", ...named });
+  });
+
+  it.each(["/api", "/Fe", "/F", "/ABCDEFGHIJK", "/FE-142", "/FE/", "/FE.txt", "/1FE", "/members", "/setup"])("%s names none", (path) => {
+    expect(teamUrlOf(path)).toBeUndefined();
+  });
+
+  it("tells a request URL from an intake page", () => {
+    expect(negotiatedUrlOf("/FE-142.md")).toEqual({ kind: "request", key: "FE-142", suffix: "markdown" });
+    expect(negotiatedUrlOf("/api/v1/openapi.json")).toBeUndefined();
+  });
 });
 
 describe("the representation a call negotiates", () => {
@@ -68,6 +90,13 @@ describe("the representation a call negotiates", () => {
     expect(requestUrlNegotiatesHtml("/FE-142?x=1", "text/markdown")).toBe(false);
     expect(requestUrlNegotiatesHtml("/FE-142.json", BROWSER)).toBe(false);
     expect(requestUrlNegotiatesHtml("/members", BROWSER)).toBeUndefined();
+  });
+
+  it("decides the same for a team's intake page", () => {
+    expect(requestUrlNegotiatesHtml("/FE", "*/*")).toBe(true);
+    expect(requestUrlNegotiatesHtml("/FE", undefined)).toBe(true);
+    expect(requestUrlNegotiatesHtml("/FE", "application/json")).toBe(false);
+    expect(requestUrlNegotiatesHtml("/FE.md", BROWSER)).toBe(false);
   });
 });
 
@@ -118,6 +147,7 @@ describe("the Vary of a request URL's answers", () => {
     expect((await get("/FE-142"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
     expect((await get("/FE-142.json?writeHead"))["vary"]).toBe("rsc, Accept, Authorization");
     expect((await get("/FE-142", "HEAD"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect((await get("/FE"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
   });
 
   it("leaves every other answer as it is", async () => {

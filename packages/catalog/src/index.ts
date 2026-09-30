@@ -113,7 +113,7 @@ export {
   withdrawProposal,
 } from "./proposals.ts";
 export { GITHUB_LOGIN, INSTALL_URL, role, user } from "./schemas.ts";
-export { DIRECTORY_COMMANDS, readDirectory, whoami } from "./directory.ts";
+export { DIRECTORY_COMMANDS, getTeam, readDirectory, whoami } from "./directory.ts";
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
 export {
   getPersonalAccessTokenAdminSettings,

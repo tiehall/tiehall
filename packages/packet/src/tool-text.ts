@@ -397,6 +397,36 @@ export function requiredFieldsText(fields: readonly string[]): string {
   );
 }
 
+/** A team as its intake page gives it: its key, its name, its intake notes and the fields it requires. */
+export type TeamIntakeJson = DirectoryJson["teams"][number];
+
+/**
+ * A team's intake page, for agents (agent-surfaces: Team intake pages): the
+ * team's key, its name and the notes in which it says how it wants requests
+ * filed, fenced as the reader's own team's text or another team's, and the
+ * fields it requires of the requests opened to it, in Tiehall's words.
+ */
+export function teamIntakeText(team: TeamIntakeJson, reader: Reader): AgentText[] {
+  const key = checked(team.key, TEAM_KEY, "team key");
+  const texts: AgentText[] = [
+    { origin: "tiehall", text: `This is the intake page of team ${key}: how it wants requests filed, and the fields it requires.` },
+    { origin: "tiehall", text: `Team ${key} is named:` },
+    { origin: originOf(team, reader), text: team.untrusted.name },
+  ];
+  const notes = team.untrusted.intakeNotes ?? "";
+  if (notes === "") texts.push({ origin: "tiehall", text: `Team ${key} gives no notes on how it wants requests filed.` });
+  else texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed:` }, { origin: originOf(team, reader), text: notes });
+  const required = team.requiredFields ?? [];
+  texts.push({
+    origin: "tiehall",
+    text:
+      required.length === 0
+        ? `Team ${key} requires no field beyond the need, which every packet has.`
+        : `Team ${key} requires ${requiredFieldsText(required)} of the requests opened to it.`,
+  });
+  return texts;
+}
+
 /**
  * The install's teams by their keys, each with its name, fenced as the
  * reader's own team's or another team's, with the intake notes an admin

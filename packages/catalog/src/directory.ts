@@ -2,7 +2,7 @@ import { SEMANTIC_VERSION, TEAM_KEY } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { teamRef } from "./requests.ts";
-import { requiredFields } from "./teams.ts";
+import { requiredFields, teamKey } from "./teams.ts";
 import { INSTALL_URL, user } from "./schemas.ts";
 
 // Who an agent acts for, and whom it can address (agent-surfaces: The MCP
@@ -19,7 +19,10 @@ import { INSTALL_URL, user } from "./schemas.ts";
 // requests, its name and its intake notes, which an admin wrote and so sit
 // under `untrusted`, and the packet fields it requires, and the registered APIs, each with its provider team and the teams declared
 // as its consumers (contract-changes), none until APIs can be registered.
-// Every member may read both, whatever their role; neither changes anything.
+// teams.get reads one team as directory lists it, by its key or an earlier
+// key, which is what the team's intake page shows, and the JSON of that page
+// is its body (agent-surfaces: Team intake pages). Every member may read them,
+// whatever their role; none changes anything.
 
 /** A warning whoami gives: the skill in use is older than the oldest the install supports. */
 const skillOutdated = z.object({
@@ -97,4 +100,19 @@ export const readDirectory = defineCommand({
   stability: "alpha",
 });
 
-export const DIRECTORY_COMMANDS = [whoami, readDirectory];
+export const getTeam = defineCommand({
+  id: "teams.get",
+  summary:
+    "Read a team by its key, as its intake page shows it: its key, its name, the notes in which it says how it wants requests filed, and the packet fields it requires of the requests opened to it. A team's earlier key names the same team, which comes back under its current key.",
+  input: z.object({ key: teamKey.meta({ description: "The team's key, such as FE, or one it had before." }) }),
+  output: directoryTeam,
+  method: "GET",
+  path: "/api/v1/teams/{key}",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const DIRECTORY_COMMANDS = [whoami, readDirectory, getTeam];

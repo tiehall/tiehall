@@ -98,6 +98,13 @@ describe("whether a refusal on a page route is a page", () => {
     for (const accept of [BROWSER, "*/*", undefined, null]) expect(pageRouteNegotiatesHtml("/FE-142", accept), String(accept)).toBe(true);
   });
 
+  it("is a page for a team's intake page whose call negotiates HTML, and the problem for its markdown and JSON", () => {
+    expect(wayOnOfPageRoute("GET", "/FE")?.href).toBe("/FE");
+    for (const accept of [BROWSER, "*/*", undefined, null]) expect(pageRouteNegotiatesHtml("/FE", accept), String(accept)).toBe(true);
+    expect(pageRouteNegotiatesHtml("/FE", "text/markdown")).toBe(false);
+    expect(pageRouteNegotiatesHtml("/FE.json", BROWSER)).toBe(false);
+  });
+
   it("is the problem for a request URL whose call negotiates markdown or JSON", () => {
     expect(pageRouteNegotiatesHtml("/FE-142", "text/markdown")).toBe(false);
     expect(pageRouteNegotiatesHtml("/FE-142", "application/json")).toBe(false);
