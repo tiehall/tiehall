@@ -247,6 +247,7 @@ export {
   readAppDatabase,
   readAppSettings,
   readAuthSecret,
+  readClientMetadataFetch,
   readMigrateSettings,
   readSecretKey,
   SETTINGS,

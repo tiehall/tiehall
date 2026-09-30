@@ -1,7 +1,7 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
-import { resourceMetadataUrlOf } from "./authorization-server.ts";
+import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
 import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -18,7 +18,7 @@ import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
-import { installUrl, readAppDatabase, readAuthSecret, readSecretKey, type Environment } from "./settings.ts";
+import { installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
@@ -88,6 +88,8 @@ function servicesOf(env: Environment): Services {
     secrets,
     // The sign-in that completes setup releases the deliveries held during setup.
     jobs,
+    // Its authorization server fetches Client ID Metadata Documents unless TIEHALL_CLIENT_METADATA_FETCH is off.
+    agentClients: agentClientsOf(env),
     logger,
   });
   services = {
@@ -99,6 +101,16 @@ function servicesOf(env: Environment): Services {
     logger,
   };
   return services;
+}
+
+/**
+ * How the web role's authorization server takes agent clients: it fetches
+ * their Client ID Metadata Documents, through the install's outbound fetcher,
+ * unless TIEHALL_CLIENT_METADATA_FETCH is off (agent-access: The operator can
+ * switch metadata-document fetching off).
+ */
+export function agentClientsOf(env: Environment): AgentClientOptions {
+  return { metadataDocuments: readClientMetadataFetch(env) };
 }
 
 /** The REST route under /api/v1, built once per process from the install's settings. */

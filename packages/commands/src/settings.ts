@@ -361,7 +361,8 @@ function isProxyEntry(entry: string): boolean {
   return Number(prefix) <= (family === 4 ? 32 : 128);
 }
 
-function readClientMetadataFetch(env: Environment): boolean {
+/** Whether Client ID Metadata Documents are fetched: TIEHALL_CLIENT_METADATA_FETCH, on unless it is off. */
+export function readClientMetadataFetch(env: Environment): boolean {
   const value = optional(env, "TIEHALL_CLIENT_METADATA_FETCH") ?? "on";
   if (value !== "on" && value !== "off") throw new SettingsError("TIEHALL_CLIENT_METADATA_FETCH must be on or off.");
   return value === "on";
