@@ -77,8 +77,8 @@ function isNativeRedirect(uri: unknown): boolean {
   }
 }
 
-/** Whether a registration's metadata holds a NUL character in any text, however deep. */
-function holdsNul(value: unknown): boolean {
+/** Whether a client's metadata, registered or in its document, holds a NUL character in any text, however deep. */
+export function holdsNul(value: unknown): boolean {
   if (typeof value === "string") return value.includes("\u0000");
   if (Array.isArray(value)) return value.some(holdsNul);
   if (typeof value === "object" && value !== null) return Object.entries(value).some(([key, each]) => key.includes("\u0000") || holdsNul(each));

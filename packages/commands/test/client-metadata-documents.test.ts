@@ -59,6 +59,9 @@ beforeAll(async () => {
     if (request.url === "/oauth/mismatched.json") {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor("https://vendor.example/oauth/client.json"));
     }
+    if (request.url === "/oauth/nul.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Vendor\u0000agent" }));
+    }
     if (request.url === "/oauth/moved.json") return response.writeHead(302, { location: "https://vendor.example/oauth/client.json" }).end();
     return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url));
   });
@@ -130,6 +133,17 @@ describe("a client identified by a Client ID Metadata Document", () => {
     expect(answer.headers.get("location")).toBeNull();
     expect(connections).toEqual([]);
     expect(fetched).toEqual([]);
+    expect(await clientRow(clientId)).toBeUndefined();
+  });
+
+  it("is refused with 400 invalid_client when its document holds a NUL character, which no text Tiehall stores may hold", async () => {
+    const clientId = "https://vendor.example/oauth/nul.json";
+    const answer = await authorizeAs(clientId);
+    expect(answer.status).toBe(400);
+    const body = (await answer.json()) as { error?: string; error_description?: string };
+    expect(body.error).toBe("invalid_client");
+    expect(body.error_description).toMatch(/NUL/);
+    expect(answer.headers.get("location")).toBeNull();
     expect(await clientRow(clientId)).toBeUndefined();
   });
 

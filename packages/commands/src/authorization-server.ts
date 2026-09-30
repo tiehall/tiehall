@@ -5,6 +5,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { SCOPES } from "@tiehall/catalog";
+import { holdsNul } from "./agent-clients.ts";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
 import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
@@ -34,10 +35,12 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   fetcher (outbound.ts), which resolves the host itself, refuses an internal
 //   address without connecting to it, and here follows no redirect; the
 //   client counts as identified only when the document's client_id equals the
-//   URL exactly. At most 60 documents a minute are fetched from one host, on
-//   whatever port its URL names, and an authorization request that cannot be
-//   checked because its host's limit is used up gets 429 with Retry-After; no
-//   other limit on the fetches applies.
+//   URL exactly, and a document whose texts hold a NUL character, which no
+//   text Tiehall stores may hold, is refused with invalid_client like one the
+//   plugin cannot read. At most 60 documents a minute are fetched from one
+//   host, on whatever port its URL names, and an authorization request that
+//   cannot be checked because its host's limit is used up gets 429 with
+//   Retry-After; no other limit on the fetches applies.
 // - Tiehall offers exactly three scopes, requests:read, requests:write and
 //   contracts:report, and no admin scope (agent-access: OAuth scopes are
 //   coarse): a scope an authorization request asks for that is not one of
@@ -180,6 +183,15 @@ export function authorizationServerPlugins({ url, orgId, clients = {} }: Authori
   return plugins;
 }
 
+/** A document's JSON, or undefined for a body that is not JSON, which the plugin refuses itself. */
+function parsedJson(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /** How long the fetches of a host are counted for: a minute. */
 const FETCH_WINDOW_MS = 60_000;
 
@@ -214,10 +226,14 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
     // The document's own answer, as the outbound fetcher gives it; a refused fetch fails the resolution of the client.
     fetchClientMetadataResource: async (input) => {
       const document = await fetchDocument(input instanceof Request ? input.url : input.toString());
-      return new Response(document.body, {
-        status: document.status,
-        headers: document.contentType === undefined ? {} : { "content-type": document.contentType },
-      });
+      const headers = document.contentType === undefined ? {} : { "content-type": document.contentType };
+      // No text Tiehall stores may hold a NUL character: a document with one is refused as the client's, as the
+      // plugin refuses a body it cannot read, and no client is stored.
+      if (document.status === 200 && holdsNul(parsedJson(document.body))) {
+        const refused = new APIError("BAD_REQUEST", { error: "invalid_client", error_description: "The metadata document's texts hold a NUL character." });
+        return new Response(new ReadableStream({ start: (stream) => stream.error(refused) }), { status: 200, headers });
+      }
+      return new Response(document.body, { status: document.status, headers });
     },
     // The one limit agent-access names: 60 fetches a minute from one host, which the plugin would count per origin, a
     // host and a port, so a client could name another port for each fetch. It is counted per host just before each
