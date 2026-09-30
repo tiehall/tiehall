@@ -1,4 +1,5 @@
 import { COMMAND_TABLE, type CommandEntry } from "@tiehall/client";
+import { forgetAnnounced } from "./announced.ts";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { HOOK_COMMANDS, hookSessionEnd, hookSessionStart, hookWait } from "./hooks.ts";
@@ -122,7 +123,10 @@ async function login(environment: CliEnvironment, globals: Globals, rest: readon
   const [raw, ...others] = rest;
   if (raw === undefined || others.length > 0 || raw.startsWith("-")) throw new CliError("tiehall login takes one argument, the install's URL: tiehall login <url>.");
   const url = installUrlOf(raw);
-  await logIn(environment, configDirOf(environment.env), url);
+  const configDir = configDirOf(environment.env);
+  await logIn(environment, configDir, url);
+  // The hooks' mark of the news announced starts anew, since this login may be another user's (requester-loop: News is announced once).
+  await forgetAnnounced(configDir, url);
   environment.stdout(`Signed in to ${url}.\n`);
   return 0;
 }

@@ -208,6 +208,9 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
         cliVersion: request.headers.get("tiehall-cli-version"),
         at: clock.elapsed(),
       });
+      if (address.pathname === "/api/auth/device/code") {
+        return json({ device_code: "the-device-code", user_code: "WDJB-MJHT", verification_uri: `${url}/device`, expires_in: 600, interval: 5 });
+      }
       if (address.pathname === "/api/auth/oauth2/token") {
         tokens += 1;
         stub.issued.push(`access-${tokens}`);

@@ -291,14 +291,19 @@ describe("the lock of a Claude Code session", () => {
     expect(await second.done).toEqual({ code: 2, stdout: "", stderr: REMINDER });
   });
 
-  it("is one per session: the waiters of two sessions wait side by side, and each wakes its own Claude", async () => {
+  it("is one per session: the waiters of two sessions wait side by side, and news, announced once, wakes one of them", async () => {
     const one = waiter("session-1");
     await install.untilHolding(1);
     const two = waiter("session-2");
     await install.untilHolding(2);
     install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
-    expect(await one.done).toEqual({ code: 2, stdout: "", stderr: REMINDER });
-    expect(await two.done).toEqual({ code: 2, stdout: "", stderr: REMINDER });
+    await settle();
+    const [woken, waiting] = one.ended() ? [one, two] : [two, one];
+    expect(await woken.done).toEqual({ code: 2, stdout: "", stderr: REMINDER });
+    await install.untilHolding(1);
+    expect(waiting.ended()).toBe(false);
+    install.post({ type: "request.message_posted", key: "FE-143", team: "FE" });
+    expect((await waiting.done).stderr).toContain("FE-143 request.message_posted (team FE)");
   });
 
   it("is released when the waiter exits", async () => {

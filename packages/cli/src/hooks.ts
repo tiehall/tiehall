@@ -1,4 +1,5 @@
 import { hookLine, noticeEventType, noticeKey, noticeTeam, noticeUrl, type Notice } from "@tiehall/packet/notices";
+import { announce, announcedThrough } from "./announced.ts";
 import { sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf } from "./logins.ts";
 import { sessionFor, type Answer, type Session } from "./session.ts";
@@ -17,17 +18,19 @@ import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
 //
 // `tiehall hook session-start`, which the SessionStart hook runs, prints a
 // digest that is added to Claude's context: a line of Tiehall's words and one
-// line per update after the CLI client's cursor, the request key, the event
-// type, the team and the request URL, read without acknowledging anything; it
-// prints nothing when nothing is new.
+// line per update after the CLI client's cursor that has not been announced,
+// the request key, the event type, the team and the request URL, read without
+// acknowledging anything; it prints nothing when nothing is new. The digest
+// and the waiter share the mark of the news announced (announced.ts): neither
+// announces an update the mark holds, and each adds to it what it announces.
 //
 // `tiehall hook wait`, which the Stop hook runs with asyncRewake at the end
 // of every turn, waits for news on the user's requests. It long-polls the wait
-// endpoint, GET /api/v1/events/wait, with the CLI client's cursor, calling
-// again after an empty answer, and after a 503 while the install restarts,
+// endpoint, GET /api/v1/events/wait, with the CLI client's cursor, and then
+// past what the mark holds, calling again after an empty answer, and after a 503 while the install restarts,
 // within a cap of 30 minutes from when it started, which the CLI enforces.
-// When news comes, it exits with code 2 and writes a reminder to its error
-// output, which wakes Claude: a line of Tiehall's words and one line per
+// When news the mark does not hold comes, it exits with code 2 and writes a
+// reminder to its error output, which wakes Claude: a line of Tiehall's words and one line per
 // update, the request key, the event type, the team and the request URL, and
 // nothing anyone wrote. It holds the lock of its Claude Code session
 // (session-lock.ts), which a waiter armed at the end of a later turn, or the
@@ -193,6 +196,7 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
  */
 async function waitForNews(environment: CliEnvironment, session: Session, stop: AbortSignal): Promise<{ seq: number; notice: Notice }[]> {
   const sleep = sleepOf(environment);
+  const configDir = configDirOf(environment.env);
   let cursor: number | undefined;
   let failures = 0;
   while (!stop.aborted) {
@@ -200,9 +204,10 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
     switch (waited.kind) {
       case "answered": {
         failures = 0;
-        const notices = noticesOf(session.url, waited.entries);
-        if (notices.length > 0) return notices;
-        cursor = waited.cursor;
+        const fresh = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor);
+        if (fresh !== undefined) return fresh;
+        // Everything it answered was announced already: the next call waits past it, and past what the mark holds.
+        cursor = Math.max(waited.cursor, announcedThrough(configDir, session.url));
         break;
       }
       case "again":
@@ -220,6 +225,24 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
     }
   }
   return [];
+}
+
+/**
+ * The notices the mark does not hold, which the mark then holds, up to `through`
+ * when it is given, such as the cursor of the answer they came in; undefined
+ * when the mark holds them all.
+ */
+function announceFresh(
+  configDir: string,
+  url: string,
+  notices: readonly { seq: number; notice: Notice }[],
+  through?: number,
+): Promise<{ seq: number; notice: Notice }[] | undefined> {
+  return announce(configDir, url, (announced) => {
+    const fresh = notices.filter(({ seq }) => seq > announced);
+    if (fresh.length === 0) return undefined;
+    return { through: Math.max(through ?? 0, ...fresh.map(({ seq }) => seq)), picked: fresh };
+  });
 }
 
 /** Stops the waiter when the process that started it, the Claude Code of its session, no longer runs. */
@@ -274,8 +297,8 @@ interface UpdateEntry {
 
 /**
  * `tiehall hook session-start`: prints the digest of the updates after the
- * CLI client's cursor, read without acknowledging anything, or nothing; 0
- * whatever happens.
+ * CLI client's cursor that have not been announced, read without
+ * acknowledging anything, or nothing; 0 whatever happens.
  */
 export async function hookSessionStart(environment: CliEnvironment, install: string | undefined): Promise<number> {
   const stop = new AbortController();
@@ -295,8 +318,8 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
       team_key: request?.targetTeam?.key,
       url: request?.url,
     }));
-    const notices = noticesOf(session.url, entries);
-    if (notices.length === 0) return 0;
+    const notices = await announceFresh(configDirOf(environment.env), session.url, noticesOf(session.url, entries));
+    if (notices === undefined) return 0;
     const lines = [DIGEST_HEADING, ...notices.map(({ notice }) => hookLine(notice)), ...(page.more === true ? [DIGEST_MORE] : [])];
     environment.stdout(`${lines.join("\n")}\n`);
     return 0;

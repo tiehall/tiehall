@@ -161,12 +161,20 @@ function originOf(value: string): string | undefined {
 /**
  * Runs `work` while this process holds the lock of the saved logins, so two
  * CLIs, such as a hook and an agent's command, never use one refresh token
- * twice: a refresh token is good for one refresh. A lock left by a process
- * that stopped is taken over after 30 seconds.
+ * twice: a refresh token is good for one refresh.
  */
-export async function withLoginsLock<T>(configDir: string, sleep: (milliseconds: number) => Promise<void>, work: () => Promise<T>): Promise<T> {
+export function withLoginsLock<T>(configDir: string, sleep: (milliseconds: number) => Promise<void>, work: () => Promise<T>): Promise<T> {
+  return withFileLock(configDir, "logins.lock", sleep, work);
+}
+
+/**
+ * Runs `work` while this process holds the lock of this name in the CLI's
+ * configuration folder, a file only one process can create. A lock left by a
+ * process that stopped is taken over after 30 seconds.
+ */
+export async function withFileLock<T>(configDir: string, name: string, sleep: (milliseconds: number) => Promise<void>, work: () => Promise<T>): Promise<T> {
   mkdirSync(configDir, { recursive: true, mode: 0o700 });
-  const lock = join(configDir, "logins.lock");
+  const lock = join(configDir, name);
   for (let attempt = 0; ; attempt += 1) {
     try {
       closeSync(openSync(lock, "wx", 0o600));
@@ -175,7 +183,7 @@ export async function withLoginsLock<T>(configDir: string, sleep: (milliseconds:
       if ((error as { code?: unknown }).code !== "EEXIST") throw error;
       const since = statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
       if (since !== undefined && Date.now() - since > 30_000) rmSync(lock, { force: true });
-      else if (attempt >= 100) throw new CliError(`Another tiehall command is refreshing the saved login; if none is running, remove ${lock}.`);
+      else if (attempt >= 100) throw new CliError(`Another tiehall command holds ${lock}; if none is running, remove it.`);
       else await sleep(100);
     }
   }
