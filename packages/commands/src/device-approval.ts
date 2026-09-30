@@ -15,7 +15,7 @@ import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN, type Way
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
-import type { OrgContext } from "./with-org.ts";
+import { lockMembership, type OrgContext } from "./with-org.ts";
 
 // The device approval page, at /device (agent-access: The device approval page
 // cannot be prefilled; agent-access: The CLI signs in through a restricted
@@ -152,6 +152,8 @@ export const DEVICE_APPROVAL_HANDLERS: Handlers = {
     const userId = memberOf(context.caller);
     const at = context.now();
     return context.write(async (writer) => {
+      // A removal of the member under way commits first, and this one is refused, or waits for this one and revokes the grant.
+      await lockMembership(writer, userId);
       const code = await waitingCodeIn(writer, normalizeUserCode(userCode), at, true);
       const client = await readAgentClient(writer, CLI_CLIENT_ID);
       if (client === undefined) throw new Error("The tiehall CLI is not a registered client of the install.");

@@ -17,7 +17,11 @@ import type { OrgContext } from "./with-org.ts";
 // counter: a deadlock, and a 500 for one of them. So a write takes every row
 // lock it needs before its first record(), and every write takes its locks in
 // this one order, so that two at once wait in a line and never on each other:
-// 1. the members' rows a change to who is a member locks (member-changes.ts);
+// 1. the members' rows a change to who is a member locks (member-changes.ts),
+//    and the member's own row, FOR KEY SHARE, that a write giving them a
+//    credential, a personal access token or an agent grant, locks first
+//    (with-org.ts), so a removal of that member waits for it or it for the
+//    removal;
 // 2. the records of the GitHub organizations Tiehall saw those members in
 //    (member_organizations), which every writer changes only once it holds
 //    the member's row, and not at all once the member is gone: a departure

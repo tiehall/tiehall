@@ -32,7 +32,7 @@ import { SCOPE_TEXTS } from "./consent.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
-import { withOrg, type OrgContext } from "./with-org.ts";
+import { lockMembership, withOrg, type OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
 
 // Personal access tokens (agent-access: Personal access tokens are scoped,
@@ -147,6 +147,8 @@ export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
     const expiresAt = new Date(createdAt.getTime() + expiresInDays * DAY_MS);
     const token = newPersonalAccessToken();
     return context.write(async (writer) => {
+      // A removal of the user under way commits first, and this one is refused, or waits for this one and revokes the token.
+      await lockMembership(writer, userId);
       const [row] = await writer.tx
         .insert(personalAccessTokens)
         .values({ orgId: writer.orgId, userId, name, scopes: SCOPES.filter((scope) => scopes.includes(scope)), tokenHash: personalAccessTokenHash(token), createdAt, expiresAt })

@@ -1,6 +1,6 @@
 import { Refusal } from "@tiehall/core";
-import { installSettings, orgs, type Database, type Transaction } from "@tiehall/db";
-import { eq } from "drizzle-orm";
+import { installSettings, members, orgs, type Database, type Transaction } from "@tiehall/db";
+import { and, eq } from "drizzle-orm";
 import { memberOf, type Member } from "./members.ts";
 
 // withOrg() (teams-and-roles: One org per install; design.md, Technical
@@ -29,6 +29,13 @@ import { memberOf, type Member } from "./members.ts";
 // one is revoked however long it still has to live, 10 minutes at most, when
 // the user rejoins within them (teams-and-roles: Removing a member). A
 // personal access token is revoked in the removal's own write.
+//
+// A write that gives the user a credential, a personal access token or an
+// agent grant, first locks the user's own membership row (lockMembership()):
+// a removal locks that row to delete it, so the two wait in a line. A removal
+// that comes second finds the credential and revokes it; a write that comes
+// second finds the user gone and is refused with 403 removed-member. So no
+// credential made as a removal commits outlives it.
 //
 // For a call made with a personal access token, it then reads the install's
 // PAT switch at the time of the call, and refuses the call with 403
@@ -97,6 +104,22 @@ export class RemovedMemberError extends Refusal {
   constructor() {
     super("removed-member", "You are not a member of this install.");
   }
+}
+
+/**
+ * Locks the user's own membership row in the caller's transaction, FOR KEY
+ * SHARE, which a removal's lock of the row waits for and which makes this
+ * transaction wait for a removal under way; refuses with 403 removed-member
+ * when the user is not a member once the lock is held. A write that gives the
+ * user a credential takes it before any other lock (event-sequence.ts).
+ */
+export async function lockMembership({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string): Promise<void> {
+  const [row] = await tx
+    .select({ userId: members.userId })
+    .from(members)
+    .where(and(eq(members.orgId, orgId), eq(members.userId, userId)))
+    .for("key share");
+  if (row === undefined) throw new RemovedMemberError();
 }
 
 export async function withOrg<T>(

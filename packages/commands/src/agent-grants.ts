@@ -13,7 +13,7 @@ import type { AgentClient } from "./agent-clients.ts";
 import { authorizationRequestOf, consentReview, consentViewIn, continuePathOf } from "./consent.ts";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { withOrg } from "./with-org.ts";
+import { lockMembership, withOrg } from "./with-org.ts";
 import type { Writer } from "./write.ts";
 
 // A member's grants to agent clients (agent-access: Approving an agent client
@@ -63,7 +63,8 @@ import type { Writer } from "./write.ts";
  * Stores a member's grant to an agent client, in the approval's write, with
  * the scopes and resources it approved, and appends the approval's security
  * event with it: one grant per client and member, which a later approval
- * updates. Returns the grant's id.
+ * updates. Returns the grant's id. The write has locked the member's own
+ * membership row first (with-org.ts), so a removal cannot miss the grant.
  */
 export async function storeGrant(
   writer: Writer,
@@ -114,6 +115,8 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     const resources = request.parameters.getAll("resource");
     const at = context.now();
     return context.write(async (writer) => {
+      // A removal of the member under way commits first, and this one is refused, or waits for this one and revokes the grant.
+      await lockMembership(writer, userId);
       const grantId = await storeGrant(writer, { client, userId, scopes, resources, at });
       return { grantId, continue: continuePathOf(new URLSearchParams(authorization)) };
     });
