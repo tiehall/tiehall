@@ -32,6 +32,7 @@ const APP = fileURLToPath(new URL("../../../apps/web/app/", import.meta.url));
 /** The pages of the web UI, by their route file under apps/web/app, and the paths a signed-in admin opens to see them. */
 const PAGES: Readonly<Record<string, readonly string[]>> = {
   "route.ts": ["/"],
+  "inbox/route.ts": ["/inbox"],
   "members/route.ts": ["/members"],
   "requests/route.ts": ["/requests", "/requests?list=opened", "/requests?list=all"],
   "requests/new/route.ts": ["/requests/new", "/requests/new?team=FE"],

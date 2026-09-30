@@ -533,10 +533,17 @@ function whole(value: unknown, what: string): number {
   return value;
 }
 
-/** What an update says, in Tiehall's words, from the ids and fixed values its event carries; undefined for a type it does not know. */
-function updateDetail({ type, data }: UpdateJson): string | undefined {
+/**
+ * What an update says, in Tiehall's words, from the ids and fixed values its
+ * event carries; undefined for a type it does not know. For an agent, it names
+ * the message or the proposal by its id, which the agent reads it by; for a
+ * person in the web inbox, it leaves the ids out.
+ */
+export function updateDescription({ type, data }: Pick<UpdateJson, "type" | "data">, { ids = true }: { ids?: boolean } = {}): string | undefined {
   const id = (name: string) => checked(data[name], UUID, "id");
   const word = (name: string) => checked(data[name], WORD, name);
+  /** The proposal the update is about: by its id for an agent, else as the proposal. */
+  const proposal = (article: "a" | "the") => (ids ? `proposal ${id("proposalId")}` : `${article} proposal`);
   switch (type) {
     case "request.opened":
       return "it was opened";
@@ -554,14 +561,16 @@ function updateDetail({ type, data }: UpdateJson): string | undefined {
             ? "a blocking question"
             : "a question"
           : kind === "answer"
-            ? `an answer to question ${id("questionId")}`
+            ? ids
+              ? `an answer to question ${id("questionId")}`
+              : "an answer"
             : kind === "comment"
               ? "a comment"
               : "a message";
-      return `${what}, message ${id("messageId")}`;
+      return ids ? `${what}, message ${id("messageId")}` : `${what} was posted`;
     }
     case "request.message_edited":
-      return `message ${id("messageId")} was edited, now at version ${count(data["version"], "version")}`;
+      return `${ids ? `message ${id("messageId")}` : "a message"} was edited, now at version ${count(data["version"], "version")}`;
     case "request.packet_revised":
       return `its packet is at revision ${count(data["revision"], "revision")}`;
     case "request.pull_request_linked":
@@ -578,25 +587,24 @@ function updateDetail({ type, data }: UpdateJson): string | undefined {
       const kind = word("kind");
       const what = Object.hasOwn(COMMITMENTS, kind) ? COMMITMENTS[kind] : undefined;
       if (what === undefined) throw new ToolTextError("A proposal's kind is not one of the kinds of commitment.");
-      return `proposal ${id("proposalId")} to ${what} was made; it waits for confirmation in the web UI`;
+      return `${proposal("a")} to ${what} was made; it waits for confirmation in the web UI`;
     }
     case "proposal.confirmed": {
-      const proposal = id("proposalId");
       const step = word("step");
       const applied = data["applied"] === true;
       if (step === "accountable_human") {
         return applied
-          ? `proposal ${proposal} was confirmed and took effect`
-          : `proposal ${proposal} was confirmed by its accountable human and waits for the other side's confirmation`;
+          ? `${proposal("the")} was confirmed and took effect`
+          : `${proposal("the")} was confirmed by its accountable human and waits for the other side's confirmation`;
       }
-      if (step === "other_side") return `the other side confirmed proposal ${proposal}${applied ? ", which took effect" : ""}`;
+      if (step === "other_side") return `the other side confirmed ${proposal("the")}${applied ? ", which took effect" : ""}`;
       throw new ToolTextError("A confirmation's step is not one Tiehall records.");
     }
     case "proposal.undone":
-      return `proposal ${id("proposalId")} was undone`;
+      return `${proposal("the")} was undone`;
     case "proposal.ended": {
       const reason = data["reason"] === undefined ? "" : ` (${word("reason")})`;
-      return `proposal ${id("proposalId")} ended without taking effect: ${word("how")}${reason}`;
+      return `${proposal("the")} ended without taking effect: ${word("how")}${reason}`;
     }
     default:
       return undefined;
@@ -612,7 +620,7 @@ function updateLine(update: UpdateJson): string {
   const at = checked(update.occurredAt, DATE_TIME, "date");
   const url = checked(update.request.url, REQUEST_URL, "request URL");
   checked(update.data["requestId"], UUID, "request id");
-  const detail = updateDetail(update);
+  const detail = updateDescription(update);
   return `Update ${number}: ${key} ${type} (team ${team}), ${at}${detail === undefined ? "" : `: ${detail}`}. ${url}`;
 }
 

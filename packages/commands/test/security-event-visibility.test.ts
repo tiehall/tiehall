@@ -129,5 +129,13 @@ describe("security events", () => {
     expect(JSON.stringify(body)).not.toMatch(/member\.role_changed|activity_log\.reconciled|"security"/);
   });
 
-  it.todo("reach no web inbox update feed, an admin's included");
+  it.each([
+    ["Pia's, an admin's", () => pia, []],
+    ["Bob's, which lists the new request to his team", () => sessionOf(bob), ["request.opened"]],
+  ])("reach no web inbox update feed: %s", async (_name, session, expected) => {
+    const result = await install.web(session()).read<{ events: { type: string }[] }>("inbox.updates", {});
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.output.events.map(({ type }) => type)).toEqual(expected);
+    expect(JSON.stringify(result)).not.toMatch(/member\.role_changed|activity_log\.reconciled|"security"/);
+  });
 });

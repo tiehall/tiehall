@@ -1,4 +1,4 @@
-import { readUpdates, type update, type updatesPage } from "@tiehall/catalog";
+import { readInboxUpdates, readUpdates, type update, type updatesPage } from "@tiehall/catalog";
 import { requests } from "@tiehall/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
@@ -148,4 +148,6 @@ export async function readUpdatesFor(
 
 export const UPDATE_HANDLERS: Handlers = {
   [readUpdates.id]: defineHandler(readUpdates, (input, context) => readUpdatesFor(context, "whats_new", input)),
+  // The web UI reads as the web session, whose client is the web inbox, so it reads and moves the web inbox's own cursor.
+  [readInboxUpdates.id]: defineHandler(readInboxUpdates, (input, context) => readUpdatesFor(context, "web_inbox", input)),
 };

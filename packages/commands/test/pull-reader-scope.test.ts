@@ -24,8 +24,8 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sendApi, sessio
 // is at the start, and read on to the last page by acknowledging each page, so
 // every update in scope is read and nothing else is moved; and the web inbox's
 // update feed through the web UI's commands, as the signed-in user. They were
-// written first, as expected failures: whats_new waited for task 19.2, which
-// turned its tests into plain tests, and the web inbox's update feed for 19.6.
+// written first, as expected failures: whats_new waited for task 19.2 and the
+// web inbox's update feed for 19.6, which turned them into plain tests.
 
 let install: TestInstall;
 let clock = new Date("2026-10-01T09:00:00Z");
@@ -217,7 +217,7 @@ describe("whats_new (task 19.2)", () => {
 
 describe("the web inbox's update feed (task 19.6)", () => {
   // requester-loop: What whats_new covers, "The web inbox shows the user's updates".
-  it.fails("lists an answer on a request the user claimed", async () => {
+  it("lists an answer on a request the user claimed", async () => {
     const request = await open("sam", "FE");
     await claim("dana", request.key);
     const question = await post("dana", request.key, { kind: "question", body: "Which browsers?" });
@@ -226,7 +226,7 @@ describe("the web inbox's update feed (task 19.6)", () => {
   });
 
   // requester-loop: What whats_new covers, "The web inbox adds requests whose requester is the user's team".
-  it.fails("adds the events on a request whose requesting team is one of the user's teams, which whats_new leaves out", async () => {
+  it("adds the events on a request whose requesting team is one of the user's teams, which whats_new leaves out", async () => {
     const request = await open("lee", "OPS");
     await post("oli", request.key, { kind: "question", body: "Which region?" });
     expect(on(await webInbox("kim"), request.id)).toContain("request.message_posted:question");
@@ -234,7 +234,7 @@ describe("the web inbox's update feed (task 19.6)", () => {
   });
 
   // requester-loop: What whats_new covers, "A request the user has no part in".
-  it.fails("lists no event on a request the user has no part in, though the user can open it", async () => {
+  it("lists no event on a request the user has no part in, though the user can open it", async () => {
     const request = await open("lee", "OPS");
     await post("oli", request.key, { kind: "question", body: "Which region?" });
     expect(on(await webInbox("dana"), request.id)).toEqual([]);

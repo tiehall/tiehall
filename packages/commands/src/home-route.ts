@@ -1,5 +1,6 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { MEMBERS_PATH } from "./admin-pages.ts";
+import { INBOX_PATH } from "./inbox-page.ts";
 import { NEW_REQUEST_PATH } from "./new-request.ts";
 import { REQUEST_LISTS_PATH } from "./request-lists.ts";
 import type { WebSessionCaller } from "./caller.ts";
@@ -12,16 +13,17 @@ import { csrfTokenFor } from "./web-writes.ts";
 // The home page at / (sign-in: GitHub is the only way to sign in; sign-in:
 // Signing out and ending sessions). A person who is not signed in is sent to
 // the sign-in page, which offers sign-in with GitHub only. A signed-in member
-// gets the web UI, with links to the request lists (requests: Every member
-// sees every request), the form that opens a request and the members page,
-// from which an admin reaches the admin pages, and the sign-out form, which carries the session's
-// CSRF token, as every web UI write does. A browser whose session a removal ended,
-// or whose user is not a member, gets 403 removed-member and no data, as a page for a browser and a problem
-// for every other client (html.ts). The page is plain HTML: no script, no
-// style from anywhere, no framing, and forms that post only to the install.
-// Every answer carries the cookie that renews the session it read, when the
-// read renewed it (sign-in: Signing out and ending sessions;
-// session-renewal.ts).
+// gets the web UI, with links to their web inbox (requester-loop: The web
+// inbox), the request lists (requests: Every member sees every request), the
+// form that opens a request and the members page, from which an admin reaches
+// the admin pages, and the sign-out form, which carries the session's CSRF
+// token, as every web UI write does. A browser whose session a removal ended,
+// or whose user is not a member, gets 403 removed-member and no data, as a
+// page for a browser and a problem for every other client (html.ts). The page
+// is plain HTML: no script, no style from anywhere, no framing, and forms that
+// post only to the install. Every answer carries the cookie that renews the
+// session it read, when the read renewed it (sign-in: Signing out and ending
+// sessions; session-renewal.ts).
 
 export interface HomeRouteOptions {
   /**
@@ -53,6 +55,7 @@ export function createHomeRoute(options: HomeRouteOptions): HomeRoute {
           "Tiehall",
           `      <h1>Tiehall</h1>
       <p>You are signed in.</p>
+      <p><a href="${INBOX_PATH}">Inbox</a></p>
       <p><a href="${REQUEST_LISTS_PATH}">Requests</a></p>
       <p><a href="${NEW_REQUEST_PATH}">Open a request</a></p>
       <p><a href="${MEMBERS_PATH}">Members</a></p>

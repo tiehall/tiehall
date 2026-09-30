@@ -120,4 +120,24 @@ export const waitForEvents = defineCommand({
   stability: "alpha",
 });
 
-export const UPDATE_COMMANDS = [readUpdates, waitForEvents];
+/**
+ * The update feed of the web inbox (requester-loop: The web inbox;
+ * requester-loop: What whats_new covers; design.md, Decisions this change
+ * rests on: D29 (5)): whats_new's scope, plus the events on the requests
+ * whose requesting team is one of the user's teams, read with the web inbox's
+ * own cursor. Only the web UI reads it.
+ */
+export const readInboxUpdates = defineCommand({
+  id: "inbox.updates",
+  summary:
+    "The update feed of your web inbox: the updates whats_new returns, plus those on the requests your teams requested, after the web inbox's own cursor, oldest first; pass the number of the last update you handled to acknowledge it first.",
+  input: updatesInput,
+  output: updatesPage,
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const UPDATE_COMMANDS = [readUpdates, waitForEvents, readInboxUpdates];

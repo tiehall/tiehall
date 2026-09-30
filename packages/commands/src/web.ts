@@ -13,6 +13,7 @@ import { createEventWakeups } from "./event-wakeups.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
+import { createInboxRoute } from "./inbox-page.ts";
 import { HANDLERS } from "./handlers.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
@@ -317,6 +318,11 @@ export function newRequestRoute(env: Environment): PageRoute {
 /** The request lists at /requests, which every member may open, for the signed-in user's web session. */
 export function requestListsRoute(env: Environment): PageRoute {
   return pageOf("request lists", env, createRequestListsRoute);
+}
+
+/** The web inbox at /inbox, which every member may open, for the signed-in user's web session. */
+export function inboxRoute(env: Environment): PageRoute {
+  return pageOf("inbox", env, createInboxRoute);
 }
 
 /** The invites page of the admin UI under /admin/invites, for the signed-in admin's web session. */

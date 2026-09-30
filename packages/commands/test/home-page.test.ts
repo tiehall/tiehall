@@ -60,6 +60,7 @@ describe("the home page", () => {
     // The members page, which every member may open, and from which an admin reaches the admin pages.
     expect(html).toContain('<a href="/members">Members</a>');
     // The request lists, and the form that opens a request.
+    expect(html).toContain('<a href="/inbox">Inbox</a>');
     expect(html).toContain('<a href="/requests">Requests</a>');
     expect(html).toContain('<a href="/requests/new">Open a request</a>');
   });

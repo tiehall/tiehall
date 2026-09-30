@@ -138,7 +138,7 @@ describe("a key that spells an app path", () => {
     expect((await create("API")).key).toBe("API");
     // The app's own paths (design.md, Self-hosting decisions: S15), and every route the web app serves at its top
     // level. A dynamic segment, such as [key], names no path of its own: it serves the keys, as request URLs.
-    const appPaths = ["api", "mcp", "docs", "confirm", "consent", "device", "setup", "webhooks", "schemas", ".well-known", "healthz", "admin", "members", "requests", "sign-in", "sign-out", "tokens"];
+    const appPaths = ["api", "mcp", "docs", "confirm", "consent", "device", "setup", "webhooks", "schemas", ".well-known", "healthz", "admin", "inbox", "members", "requests", "sign-in", "sign-out", "tokens"];
     const routes = readdirSync(webApp, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith("["))
       .map(({ name }) => name);
