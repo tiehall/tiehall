@@ -17,13 +17,14 @@ import { defineCommand, SCOPES } from "./command.ts";
 /** The prefix of every personal access token's value. */
 export const PERSONAL_ACCESS_TOKEN_PREFIX = "th_pat_";
 
-/** The label a user gives a token, to tell their tokens apart: their own words, 1 to 100 characters. */
+/** The label a user gives a token, to tell their tokens apart: their own words, 1 to 100 characters, with no NUL character. */
 const tokenName = z
   .string()
   .trim()
   .min(1)
   .max(100)
-  .meta({ description: "A label for the token, such as what uses it, to tell your tokens apart: 1 to 100 characters." });
+  .regex(/^[^\u0000]*$/, "A label holds no NUL character.")
+  .meta({ description: "A label for the token, such as what uses it, to tell your tokens apart: 1 to 100 characters, with no NUL character." });
 
 export const createPersonalAccessToken = defineCommand({
   id: "personal_access_tokens.create",

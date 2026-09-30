@@ -251,6 +251,17 @@ describe("a token's lifetime", () => {
   });
 });
 
+describe("a token's label", () => {
+  it("with a NUL character, which no text Tiehall stores may hold, is refused with 400, and nothing is created", async () => {
+    const before = await tokenCount();
+    const answer = await reviewPage(ana, { name: "script\u0000one", scopes: ["requests:read"], expiresInDays: 10 });
+    expect(answer.status).toBe(400);
+    expect(((await answer.json()) as { type: string }).type).toBe("https://tiehall.com/problems/invalid-input");
+    await expect(harness.personalAccessToken(ana, { name: "script\u0000two" })).rejects.toThrow(/answered 400/);
+    expect(await tokenCount()).toBe(before);
+  });
+});
+
 describe("a creation", () => {
   it("through a token gets 404 on /api/v1, whatever its scopes, and creates nothing", async () => {
     const before = await tokenCount();
