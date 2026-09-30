@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -224,6 +224,34 @@ describe("the hook commands, as Claude Code runs them", () => {
       server.closeAllConnections();
       server.close();
       rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  // requester-loop: Claude Code Stop-hook waiter: everything the waiter writes to its error output reaches Claude,
+  // so a hook command that cannot start writes nothing there, and ends as one that cannot do its work does.
+  it("end without a word on a Node.js older than the CLI needs, while other commands still say which it needs", () => {
+    for (const hook of ["wait", "session-start", "session-end"]) {
+      const child = tiehall(["hook", hook], "20.11.0");
+      expect({ hook, status: child.status, stdout: child.stdout, stderr: child.stderr }).toEqual({ hook, status: 0, stdout: "", stderr: "" });
+    }
+    expect(tiehall(["updates"], "20.11.0").stderr).toContain("tiehall needs Node.js 22 or later");
+  });
+
+  it("end without a word when the CLI cannot load, while other commands still say why", () => {
+    // The command without its bundle, as a broken install of the package leaves it.
+    const broken = mkdtempSync(join(tmpdir(), "tiehall-broken-"));
+    try {
+      mkdirSync(join(broken, "bin"));
+      copyFileSync(launcher, join(broken, "bin/tiehall.mjs"));
+      const start = (args: readonly string[]) =>
+        spawnSync(process.execPath, [join(broken, "bin/tiehall.mjs"), ...args], { encoding: "utf8", env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: scratch } });
+      const hook = start(["hook", "wait"]);
+      expect({ status: hook.status, stdout: hook.stdout, stderr: hook.stderr }).toEqual({ status: 0, stdout: "", stderr: "" });
+      const other = start(["updates"]);
+      expect(other.status).toBe(1);
+      expect(other.stderr).toMatch(/^tiehall could not start: /);
+    } finally {
+      rmSync(broken, { recursive: true, force: true });
     }
   });
 
