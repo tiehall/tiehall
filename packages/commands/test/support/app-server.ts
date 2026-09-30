@@ -9,6 +9,7 @@ import type { GitHubStub } from "@tiehall/testing/github";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import { createTestCertificate } from "@tiehall/testing/tls";
 import {
+  CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
   createAgentTokenCheck,
   createConfirmationNonces,
@@ -161,8 +162,10 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   // The operations that ask GitHub, such as creating an invite, reach the stub as the install's stored App.
   const installGitHub = createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch: github.fetch, logger });
   const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box });
+  const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub });
   const confirm = createConfirmRoute({
-    step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub }),
+    step,
+    redirects: CONFIRM_REDIRECTS,
     session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url, secret: authSecret },
     logger,
@@ -183,7 +186,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     logger,
   });
   const pageOptions = { execute, session: (request: Request, renewal?: Headers) => signIn.session(request.headers, renewal), url, secret: () => authSecret, logger };
-  const consent = createConsentRoute({ database: db, session: (request, renewal) => signIn.session(request.headers, renewal), logger });
+  const consent = createConsentRoute({ step, session: (request, renewal) => signIn.session(request.headers, renewal), secret: authSecret, logger });
   const pages: Readonly<Record<string, (request: Request) => Promise<Response>>> = {
     "/consent": consent,
     [MEMBERS_PATH]: createMembersRoute(pageOptions),

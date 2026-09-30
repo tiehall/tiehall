@@ -1,5 +1,5 @@
 import { recordedTrustState, TRUST_STATE_EVENT_TYPES, trustDifferences, trustStateReconciled, type Role, type TrustEvent, type TrustState } from "@tiehall/core";
-import { events, eventSequence, members } from "@tiehall/db";
+import { events, eventSequence, members, oauthConsents } from "@tiehall/db";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { defineJobType } from "./jobs.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -24,9 +24,9 @@ import { writeIn } from "./write.ts";
 // and no event can take a number between the comparison and the events it
 // appends.
 //
-// The agent-client grants join the current state once the sign-in service
-// stores them (group 15); until then the install has none, and the replay
-// already reads the `reconciled` events that record one.
+// The agent-client grants are the grants a member's approval stores
+// (agent-grants.ts), which the replay reads from their approval and
+// revocation events and from the `reconciled` events that record one.
 
 export const reconcileTrustState: WorkerJob<Record<string, never>> = {
   type: defineJobType<Record<string, never>>("activity_log.reconcile", 1, {
@@ -63,10 +63,18 @@ async function holdEventSequence({ tx, orgId }: OrgContext): Promise<void> {
   await tx.select({ lastNumber: eventSequence.lastNumber }).from(eventSequence).where(eq(eventSequence.orgId, orgId)).for("update");
 }
 
-/** The install's members in their roles now, and its agent-client grants. */
+/** The install's members in their roles now, and its agent-client grants, each for the member who approved it. */
 export async function currentTrustState({ tx, orgId }: OrgContext): Promise<TrustState> {
   const rows = await tx.select({ userId: members.userId, role: members.role }).from(members).where(eq(members.orgId, orgId)).orderBy(asc(members.userId));
-  return { members: rows.map(({ userId, role }) => ({ userId, role: role as Role })), grants: [] };
+  const grants = await tx
+    .select({ grantId: oauthConsents.id, userId: oauthConsents.userId })
+    .from(oauthConsents)
+    .where(eq(oauthConsents.orgId, orgId))
+    .orderBy(asc(oauthConsents.id));
+  return {
+    members: rows.map(({ userId, role }) => ({ userId, role: role as Role })),
+    grants: grants.flatMap(({ grantId, userId }) => (userId === null ? [] : [{ grantId, userId }])),
+  };
 }
 
 /** The security events the replay reads, oldest first. */

@@ -21,8 +21,8 @@ import { startSignIn, type SignInHarness } from "./sign-in.ts";
 // service's routes under /api/auth and the discovery documents under
 // /.well-known go to the sign-in service, which is the install's OAuth
 // authorization server, /api/v1 to the REST route, which checks the access
-// token a call carries, and the sign-in page and the consent screen to their
-// pages. An agent client plays its part through plain
+// token a call carries, and the sign-in page, the consent screen and the
+// review pages of the confirmation step to their pages. An agent client plays its part through plain
 // HTTP: it registers, sends the person's browser to the authorization
 // endpoint with PKCE and a resource, and exchanges the code it gets back.
 
@@ -145,17 +145,17 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     logger: install.logger,
   });
 
-  const consent = createConsentRoute({
-    database: install.db,
-    session: (request, renewal) => signIn.service.session(request.headers, renewal),
-    logger: install.logger,
-  });
+  const session = (request: Request, renewal?: Headers) => signIn.service.session(request.headers, renewal);
+  const consent = createConsentRoute({ step: install.step, session, secret: install.authSecret, logger: install.logger });
+  // The review pages of the confirmation step, for whoever the browser's session names.
+  const confirm = install.confirmRouteFor(session);
 
   const handle = async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith("/api/auth/") || pathname.startsWith("/.well-known/")) return signIn.service.handler(request);
     if (pathname.startsWith("/api/v1/")) return rest(request);
     if (pathname === "/consent") return consent(request);
+    if (pathname.startsWith("/confirm/")) return confirm(request);
     if (pathname === "/sign-in") return signIn.service.page(request);
     return new Response("Not found", { status: 404 });
   };

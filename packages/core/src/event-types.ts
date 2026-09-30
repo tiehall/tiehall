@@ -515,6 +515,41 @@ export const githubPrivateKeyUploaded = defineEventType({
   fields: {},
 });
 
+/**
+ * A member approved an agent client on the consent screen, with the
+ * confirmation step (agent-access: Approving an agent client uses the
+ * confirmation step; activity-log: Which actions are security events): the
+ * grant that lets the client act for them. It names the member, the client, by
+ * Tiehall's own record of it, and the grant; its provenance names the member,
+ * whose web session confirmed it. Approving the same client again names the
+ * same grant.
+ */
+export const agentClientApproved = defineEventType({
+  type: "agent_client.approved",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    clientId: { kind: "id", of: "client" },
+    grantId: { kind: "id", of: "grant" },
+  },
+});
+
+/**
+ * An agent grant was revoked, so its client acts for the member no more
+ * (agent-access: Users list and revoke their own agent grants and tokens;
+ * activity-log: Which actions are security events). It names the member whose
+ * grant it was, the client and the grant.
+ */
+export const agentGrantRevoked = defineEventType({
+  type: "agent_grant.revoked",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    clientId: { kind: "id", of: "client" },
+    grantId: { kind: "id", of: "grant" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -548,4 +583,6 @@ export const EVENT_TYPES: readonly EventType[] = [
   githubModeChanged,
   githubWebhookSecretStored,
   githubPrivateKeyUploaded,
+  agentClientApproved,
+  agentGrantRevoked,
 ];

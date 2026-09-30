@@ -18,7 +18,9 @@ import {
   openSecretBox,
   REVIEWS,
   CONFIRM_DOWNLOADS,
+  CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
+  type ConfirmationStep,
   type Caller,
   type ConfirmRoute,
   type Database,
@@ -62,6 +64,8 @@ export interface TestInstall {
   web(caller: WebSessionCaller | undefined): WebCommands;
   /** A form posted from a page of the install, with the session's CSRF token. */
   fromThePage(caller: WebSessionCaller): WebWriteRequest;
+  /** The confirmation step: the review pages' reviews and nonces. */
+  step: ConfirmationStep;
   /** The review pages of the confirmation step, for the given signed-in session. */
   confirmRoute(caller: WebSessionCaller): ConfirmRoute;
   /**
@@ -139,7 +143,7 @@ export async function startTestInstall(
   });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
-    createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, session, write: { execute, url, secret }, logger });
+    createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, redirects: CONFIRM_REDIRECTS, session, write: { execute, url, secret }, logger });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
   const prepareConfirmation: TestInstall["prepareConfirmation"] = async (caller, commandId, input, headers = {}, entered = {}) => {
     const route = confirmRoute(caller);
@@ -169,6 +173,7 @@ export async function startTestInstall(
     db,
     execute,
     sentJobs,
+    step,
     api: (caller) => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger }),
     web: (caller) => createWebCommands({ execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => secret, logger }),
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),

@@ -1,4 +1,4 @@
-import { memberJoined, memberRemoved, memberRoleChanged, setupCompleted, trustStateReconciled } from "./event-types.ts";
+import { agentClientApproved, agentGrantRevoked, memberJoined, memberRemoved, memberRoleChanged, setupCompleted, trustStateReconciled } from "./event-types.ts";
 import { UUID } from "./events.ts";
 import { isRole, type Role } from "./roles.ts";
 
@@ -55,6 +55,8 @@ export const TRUST_STATE_EVENT_TYPES: readonly string[] = [
   trustStateReconciled.type,
   setupCompleted.type,
   memberJoined.type,
+  agentClientApproved.type,
+  agentGrantRevoked.type,
 ];
 
 function idOf(data: Readonly<Record<string, unknown>>, field: string): string | undefined {
@@ -83,6 +85,12 @@ export function recordedTrustState(events: readonly TrustEvent[]): TrustState {
       if (isRole(data["role"])) members.set(userId, data["role"]);
     } else if (type === memberRemoved.type) {
       members.delete(userId);
+    } else if (type === agentClientApproved.type || type === agentGrantRevoked.type) {
+      // A member's approval of an agent client is its grant; a revocation ends it.
+      const grantId = idOf(data, "grantId");
+      if (grantId === undefined) continue;
+      if (type === agentClientApproved.type) grants.set(grantId, userId);
+      else grants.delete(grantId);
     } else if (type === trustStateReconciled.type) {
       if (data["subject"] === "member") {
         if (data["present"] === false) members.delete(userId);

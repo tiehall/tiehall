@@ -1,5 +1,6 @@
 import { ACTIVITY_LOG_DOWNLOADS, ACTIVITY_LOG_REVIEWS } from "./activity-log-export.ts";
-import type { ConfirmDownloads } from "./confirm-route.ts";
+import { AGENT_GRANT_REDIRECTS, AGENT_GRANT_REVIEWS } from "./agent-grants.ts";
+import type { ConfirmDownloads, ConfirmRedirects } from "./confirm-route.ts";
 import type { ConfirmationSubjects, Reviews } from "./confirmation-step.ts";
 import { GITHUB_APP_KEY_REVIEWS } from "./github-app-key.ts";
 import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
@@ -26,6 +27,7 @@ export const REVIEWS: Reviews = {
   ...GITHUB_INSTALLATION_REVIEWS,
   ...GITHUB_MODE_REVIEWS,
   ...GITHUB_APP_KEY_REVIEWS,
+  ...AGENT_GRANT_REVIEWS,
 };
 
 // What a command's confirmation nonce is bound to, where it is not the
@@ -38,3 +40,9 @@ export const CONFIRMATION_SUBJECTS: ConfirmationSubjects = { ...PROPOSAL_CONFIRM
 // output instead of the "Confirmed" page (activity-log: Exporting the activity
 // log): the activity log's export gives its JSONL file.
 export const CONFIRM_DOWNLOADS: ConfirmDownloads = { ...ACTIVITY_LOG_DOWNLOADS };
+
+// The commands whose confirmation sends the browser on to a path on the
+// install instead of the "Confirmed" page (agent-access: Approving an agent
+// client uses the confirmation step): an agent client's approval goes back to
+// the authorization, which gives the client its code.
+export const CONFIRM_REDIRECTS: ConfirmRedirects = { ...AGENT_GRANT_REDIRECTS };

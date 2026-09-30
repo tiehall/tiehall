@@ -107,8 +107,22 @@
     {
       "item": "an agent client's approval, and the revocation of an agent grant;",
       "actions": [
-        { "action": "an agent client's approval", "pending": "15.10" },
-        { "action": "the revocation of an agent grant", "pending": "15.17" }
+        {
+          "action": "an agent client's approval",
+          "event": "agent_client.approved",
+          "test": {
+            "file": "packages/commands/test/agent-client-approval.test.ts",
+            "case": "is a security event naming the member and the client, with the address and user agent kept apart"
+          }
+        },
+        {
+          "action": "the revocation of an agent grant",
+          "event": "agent_grant.revoked",
+          "test": {
+            "file": "packages/commands/test/agent-client-approval.test.ts",
+            "case": "is a security event, removes the grant and stops its refresh token at once"
+          }
+        }
       ]
     },
     {

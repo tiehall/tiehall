@@ -1,12 +1,15 @@
-import { httpProblem, internalErrorProblem, quotePreamble, Refusal, type HttpProblem, type Review, type ReviewLine } from "@tiehall/core";
-import type { Database } from "@tiehall/db";
+import { approveAgentClient } from "@tiehall/catalog";
+import { canonicalJson, httpProblem, internalErrorProblem, Refusal, type HttpProblem, type Review, type ReviewLine } from "@tiehall/core";
 import { readAgentClient, type AgentClient } from "./agent-clients.ts";
 import { AUTHORIZATION_ENDPOINT_PATH, CONSENT_PATH, REFRESH_SCOPE } from "./authorization-server.ts";
 import type { WebSessionCaller } from "./caller.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { CONFIRM_PATH, renderReviewPage } from "./confirm-route.ts";
+import type { ConfirmationStep } from "./confirmation-step.ts";
+import { answerRefusal, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
-import { withOrg } from "./with-org.ts";
+import { csrfTokenFor } from "./web-writes.ts";
+import type { OrgContext } from "./with-org.ts";
 
 // The consent screen, at /consent (agent-access: The consent screen shows who
 // is asking; design.md, Design rules: Agent access; design.md, Self-hosting
@@ -26,6 +29,13 @@ import { withOrg } from "./with-org.ts";
 // session is sent to sign in first, and comes back to the page. The page runs
 // no script, loads nothing and cannot be framed; a refusal is a page for a
 // browser and a problem for any other client (html.ts).
+//
+// The consent screen is the review page of the approval (agent-access:
+// Approving an agent client uses the confirmation step; agent-grants.ts): the
+// confirmation step reviews the approval of this authorization request for
+// the signed-in member, and the page's form posts it to the confirmation
+// step, /confirm/agent_clients.approve, with a nonce bound to the member,
+// their web session and this approval, and the session's CSRF token.
 //
 // An authorization started before its person signed in reaches the sign-in
 // page, which brings the browser back to the authorization once it has signed
@@ -138,25 +148,25 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
   return { title: "Approve an agent client", lines };
 }
 
-/** The consent screen's view of an authorization request, read as the signed-in member; 404 for a client the install does not know. */
-export async function readConsentView(database: Database, caller: WebSessionCaller, request: AuthorizationRequest): Promise<ConsentView> {
-  return withOrg(
-    database,
-    async (context) => {
-      const client = await readAgentClient(context, request.clientId);
-      if (client === undefined || client.disabled) throw new Refusal("record-not-found", "The install knows no agent client with this id.");
-      if (!client.redirectUris.includes(request.redirectUri)) {
-        throw new Refusal("invalid-input", "The client did not register the address this request would send you back to.");
-      }
-      return { client, redirectUri: request.redirectUri, scopes: request.scopes };
-    },
-    { readOnly: true, forUser: caller.userId },
-  );
+/**
+ * The consent screen's view of an authorization request, read in the caller's
+ * transaction: 404 for a client the install does not know, 400 for a return
+ * address the client did not register.
+ */
+export async function consentViewIn(context: Pick<OrgContext, "tx" | "orgId">, request: AuthorizationRequest): Promise<ConsentView & { client: AgentClient }> {
+  const client = await readAgentClient(context, request.clientId);
+  if (client === undefined || client.disabled) throw new Refusal("record-not-found", "The install knows no agent client with this id.");
+  if (!client.redirectUris.includes(request.redirectUri)) {
+    throw new Refusal("invalid-input", "The client did not register the address this request would send you back to.");
+  }
+  return { client, redirectUri: request.redirectUri, scopes: request.scopes };
 }
 
 export interface ConsentRouteOptions {
-  /** The app's database, as the app role. */
-  database: Database;
+  /** The confirmation step, whose review of the approval the page shows, with its nonce. */
+  step: ConfirmationStep;
+  /** The install's auth secret (TIEHALL_AUTH_SECRET), which signs the CSRF tokens; read when it is first needed. */
+  secret: string | (() => string);
   /**
    * The web session the request's cookie names; undefined when nobody is
    * signed in, a refusal for an ended session. The read may renew the
@@ -170,6 +180,7 @@ export type ConsentRoute = (request: Request) => Promise<Response>;
 
 export function createConsentRoute(options: ConsentRouteOptions): ConsentRoute {
   const logger = options.logger ?? createLogger();
+  const secret = () => (typeof options.secret === "string" ? options.secret : options.secret());
   return (request) => renewingSession((renewal) => consent(request, renewal));
 
   async function consent(request: Request, renewal: Headers): Promise<Response> {
@@ -181,24 +192,22 @@ export function createConsentRoute(options: ConsentRouteOptions): ConsentRoute {
       // A browser without a session signs in first, and comes back to this page.
       if (caller === undefined) return signInFirst(`${url.pathname}${url.search}`);
       const authorization = authorizationRequestOf(url.searchParams);
-      const view = await readConsentView(options.database, caller, authorization);
-      return new Response(consentPage(consentReview(view)), { headers: PAGE_HEADERS });
+      // The approval's review, with the nonce for this one approval, as the confirmation step gives it.
+      const reviewed = await options.step.review(approveAgentClient.id, caller, { authorization: authorization.parameters.toString() });
+      const page = renderReviewPage(
+        `${CONFIRM_PATH}${approveAgentClient.id}`,
+        reviewed.review,
+        canonicalJson(reviewed.input),
+        reviewed.nonce,
+        csrfTokenFor(secret(), caller.sessionId),
+      );
+      return new Response(page, { headers: PAGE_HEADERS });
     } catch (error) {
       if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), back);
       logger.error("consent: the consent screen failed", { error });
       return problem(internalErrorProblem());
     }
   }
-}
-
-/** The consent screen's page. */
-function consentPage(review: Review): string {
-  const lines = review.lines.map((line) =>
-    "text" in line
-      ? `      <p>${escapeHtml(line.text)}</p>`
-      : `      <blockquote class="untrusted" data-origin="${escapeHtml(line.origin)}"><p>${escapeHtml(quotePreamble(line.origin))}</p><pre>${escapeHtml(line.quote)}</pre></blockquote>`,
-  );
-  return htmlPage(review.title, [`      <h1>${escapeHtml(review.title)}</h1>`, ...lines].join("\n"));
 }
 
 function problem({ status, headers, body }: HttpProblem): Response {

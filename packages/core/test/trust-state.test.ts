@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentClientApproved,
+  agentGrantRevoked,
   checkEventTypes,
   memberJoined,
   memberRemoved,
@@ -41,8 +43,38 @@ describe("the reconciled event", () => {
     expect(Object.keys(trustStateReconciled.fields).sort()).toEqual(["grantId", "present", "role", "subject", "userId"]);
   });
 
-  it("is among the event types the replay reads, with the role change, the removal, the completion of setup and a join", () => {
-    expect(TRUST_STATE_EVENT_TYPES).toEqual([memberRoleChanged.type, memberRemoved.type, trustStateReconciled.type, setupCompleted.type, memberJoined.type]);
+  it("is among the event types the replay reads, with the role change, the removal, the completion of setup, a join, and a grant's approval and revocation", () => {
+    expect(TRUST_STATE_EVENT_TYPES).toEqual([
+      memberRoleChanged.type,
+      memberRemoved.type,
+      trustStateReconciled.type,
+      setupCompleted.type,
+      memberJoined.type,
+      agentClientApproved.type,
+      agentGrantRevoked.type,
+    ]);
+  });
+});
+
+describe("the events of agent grants", () => {
+  const CLIENT = "5f1d2c3b-8a9e-4b7c-9d0e-1f2a3b4c5d65";
+
+  it("are security events that name the member, the client and the grant, and nothing else", () => {
+    for (const type of [agentClientApproved, agentGrantRevoked]) {
+      expect(type.class).toBe("security");
+      expect(checkEventTypes([type])).toEqual([]);
+      expect(type.fields).toEqual({ userId: { kind: "id", of: "user" }, clientId: { kind: "id", of: "client" }, grantId: { kind: "id", of: "grant" } });
+    }
+    expect([agentClientApproved.type, agentGrantRevoked.type]).toEqual(["agent_client.approved", "agent_grant.revoked"]);
+  });
+
+  it("record a grant present from its approval, and gone from its revocation", () => {
+    const approved: TrustEvent = { type: agentClientApproved.type, data: { userId: LEE, clientId: CLIENT, grantId: GRANT } };
+    const revoked: TrustEvent = { type: agentGrantRevoked.type, data: { userId: LEE, clientId: CLIENT, grantId: GRANT } };
+    expect(recordedTrustState([approved])).toEqual({ members: [], grants: [{ grantId: GRANT, userId: LEE }] });
+    expect(recordedTrustState([approved, revoked])).toEqual({ members: [], grants: [] });
+    // Approving the same client again keeps the one grant.
+    expect(recordedTrustState([approved, approved])).toEqual({ members: [], grants: [{ grantId: GRANT, userId: LEE }] });
   });
 });
 

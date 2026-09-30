@@ -35,7 +35,10 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // nothing, so the session and the CSRF token alone never apply an action. An
 // applied action answers with a "Confirmed" page, or, for a command listed
 // under downloads, such as the activity log's export, with the file made from
-// its output (activity-log: Exporting the activity log).
+// its output (activity-log: Exporting the activity log), or, for one listed
+// under redirects, such as an agent client's approval, by sending the browser
+// on to the path on the install its output names (agent-access: Approving an
+// agent client uses the confirmation step).
 // A GET from a browser without a session shows nothing of the action: it is
 // sent to the sign-in page, which brings it back to the same page once it has
 // signed in (D28 #66; requests: The proposal's confirm page).
@@ -75,10 +78,20 @@ export interface Download {
 /** The commands whose confirmation answers with a file made from the command's output, by the command's id. */
 export type ConfirmDownloads = Readonly<Record<string, (output: unknown) => Download>>;
 
+/**
+ * The commands whose confirmation sends the browser on, to a path on the
+ * install that the command's output names, instead of the "Confirmed" page,
+ * by the command's id: an agent client's approval goes back to the
+ * authorization, which gives the client its code.
+ */
+export type ConfirmRedirects = Readonly<Record<string, (output: unknown) => string>>;
+
 export interface ConfirmRouteOptions {
   step: ConfirmationStep;
   /** The commands whose confirmation answers with a file instead of the "Confirmed" page. */
   downloads?: ConfirmDownloads;
+  /** The commands whose confirmation sends the browser on to a path on the install instead of the "Confirmed" page. */
+  redirects?: ConfirmRedirects;
   /**
    * The signed-in user's web session, from the request's session cookie;
    * undefined when nobody is signed in. The read may renew the session, and
@@ -130,7 +143,7 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       const csrf = csrfTokenFor(secret(), caller.sessionId);
       const path = proposal === undefined ? `${CONFIRM_PATH}${commandId}` : `${CONFIRM_PATH}${proposal}${undo ? "/undo" : ""}`;
       const fields = options.step.sealedFields(commandId);
-      return page(reviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo, fields));
+      return page(renderReviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo, fields));
     } catch (error) {
       if (error instanceof Refusal) {
         return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : { href: back.path, text: "Back to the review page" });
@@ -189,6 +202,8 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     });
     const download = options.downloads?.[commandId];
     if (download !== undefined) return file(download(output));
+    const redirect = options.redirects?.[commandId];
+    if (redirect !== undefined) return onTo(redirect(output));
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
 }
@@ -288,6 +303,15 @@ function signInFirst(path: string): Response {
   });
 }
 
+/** Sends the browser on to a path on the install; anything that is not a path on the install is refused as a bug. */
+function onTo(path: string): Response {
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) throw new Error("A confirmation sends the browser on only to a path on the install.");
+  return new Response(null, {
+    status: 303,
+    headers: { location: path, "cache-control": "no-store", "content-security-policy": PAGE_HEADERS["content-security-policy"] },
+  });
+}
+
 /** The file a confirmed action answers with: sent as an attachment, never cached, and, like a page, not framed. */
 function file({ filename, contentType, body }: Download): Response {
   return new Response(body, {
@@ -309,8 +333,20 @@ function sealedField(field: SealedField): string[] {
   return [`        <p><label for="${id}">${escapeHtml(field.label)}</label></p>`, `        <p>${control}</p>`];
 }
 
-/** The review page: what will happen, and the form that applies it, with a form that rejects it on a proposal's page. */
-function reviewPage(path: string, review: Review, input: string, nonce: string, csrf: string, rejectable: boolean, fields: readonly SealedField[] = []): string {
+/**
+ * The review page: what will happen, and the form that applies it, posted to
+ * this path, with a form that rejects it on a proposal's page. The consent
+ * screen renders its review with it too.
+ */
+export function renderReviewPage(
+  path: string,
+  review: Review,
+  input: string,
+  nonce: string,
+  csrf: string,
+  rejectable = false,
+  fields: readonly SealedField[] = [],
+): string {
   const multipart = fields.some(({ kind }) => kind === "file");
   const lines = review.lines.map((line) =>
     "text" in line

@@ -1,4 +1,5 @@
 import { ACTIVITY_LOG_COMMANDS } from "./activity-log.ts";
+import { AGENT_CLIENT_COMMANDS } from "./agent-clients.ts";
 import { defineCatalog } from "./catalog.ts";
 import { EVENT_COMMANDS } from "./events.ts";
 import { GITHUB_COMMANDS } from "./github.ts";
@@ -15,4 +16,4 @@ import { TEAM_COMMANDS } from "./teams.ts";
 // Tiehall's operations, one definition each (public-api: One definition per
 // operation, the same on every surface). Each task that builds an operation
 // adds its definition here, and registering the catalog checks it.
-export const CATALOG = defineCatalog([...MEMBER_COMMANDS, ...INVITE_COMMANDS, ...TEAM_COMMANDS, ...REQUEST_COMMANDS, ...MESSAGE_COMMANDS, ...PACKET_COMMANDS, ...PROPOSAL_COMMANDS, ...INBOX_COMMANDS, ...EVENT_COMMANDS, ...SETTINGS_COMMANDS, ...ACTIVITY_LOG_COMMANDS, ...GITHUB_COMMANDS]);
+export const CATALOG = defineCatalog([...MEMBER_COMMANDS, ...INVITE_COMMANDS, ...TEAM_COMMANDS, ...REQUEST_COMMANDS, ...MESSAGE_COMMANDS, ...PACKET_COMMANDS, ...PROPOSAL_COMMANDS, ...INBOX_COMMANDS, ...EVENT_COMMANDS, ...SETTINGS_COMMANDS, ...ACTIVITY_LOG_COMMANDS, ...GITHUB_COMMANDS, ...AGENT_CLIENT_COMMANDS]);

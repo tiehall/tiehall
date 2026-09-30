@@ -157,14 +157,14 @@ const CASES: Case[] = [
   },
   {
     name: "the consent screen for a request that names no client",
-    route: () => createConsentRoute({ database: install.db, session: async () => dana, logger: install.logger }),
+    route: () => createConsentRoute({ step: install.step, session: async () => dana, secret: install.authSecret, logger: install.logger }),
     request: () => ({ path: "/consent?response_type=code" }),
     status: 400,
     wayOn: () => "/consent?response_type=code",
   },
   {
     name: "the consent screen for a client the install does not know",
-    route: () => createConsentRoute({ database: install.db, session: async () => dana, logger: install.logger }),
+    route: () => createConsentRoute({ step: install.step, session: async () => dana, secret: install.authSecret, logger: install.logger }),
     request: () => ({ path: "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback" }),
     status: 404,
     wayOn: () => "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback",

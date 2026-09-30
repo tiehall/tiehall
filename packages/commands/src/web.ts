@@ -17,7 +17,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
-import { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+import { CONFIRM_DOWNLOADS, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
@@ -162,6 +162,7 @@ export function confirmRoute(env: Environment): ConfirmRoute {
   confirm = createConfirmRoute({
     step,
     downloads: CONFIRM_DOWNLOADS,
+    redirects: CONFIRM_REDIRECTS,
     session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
     logger,
@@ -265,8 +266,13 @@ let consent: ConsentRoute | undefined;
  */
 export function consentRoute(env: Environment): ConsentRoute {
   if (consent !== undefined) return consent;
-  const { database, logger, signIn } = servicesOf(env);
-  consent = createConsentRoute({ database, session: (request, renewal) => signIn.session(request.headers, renewal), logger });
+  const { step, logger, signIn } = servicesOf(env);
+  consent = createConsentRoute({
+    step,
+    session: (request, renewal) => signIn.session(request.headers, renewal),
+    secret: () => readAuthSecret(env),
+    logger,
+  });
   return consent;
 }
 

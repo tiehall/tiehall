@@ -14,10 +14,10 @@ export {
   authorizationRequestOf,
   clientParametersOf,
   consentReview,
+  consentViewIn,
   continuePathOf,
   createConsentRoute,
   isAuthorizationRequest,
-  readConsentView,
   type AuthorizationRequest,
   type ConsentRoute,
   type ConsentRouteOptions,
@@ -335,7 +335,17 @@ export {
   type ReviewHandler,
   type Reviews,
 } from "./confirmation-step.ts";
-export { CONFIRM_PATH, CONFIRM_ROUTE_PATHS, createConfirmRoute, type ConfirmDownloads, type ConfirmRoute, type ConfirmRouteOptions, type Download } from "./confirm-route.ts";
+export {
+  CONFIRM_PATH,
+  CONFIRM_ROUTE_PATHS,
+  createConfirmRoute,
+  renderReviewPage,
+  type ConfirmDownloads,
+  type ConfirmRedirects,
+  type ConfirmRoute,
+  type ConfirmRouteOptions,
+  type Download,
+} from "./confirm-route.ts";
 export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type GitHubAdminRouteOptions } from "./github-admin-route.ts";
@@ -368,7 +378,8 @@ export {
   type ConfirmationNoncesOptions,
   type GatedRouteClaim,
 } from "./confirmations.ts";
-export { CONFIRM_DOWNLOADS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+export { CONFIRM_DOWNLOADS, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+export { AGENT_GRANT_HANDLERS, AGENT_GRANT_REDIRECTS, AGENT_GRANT_REVIEWS } from "./agent-grants.ts";
 export { expireProposals } from "./proposal-endings.ts";
 export { notifyWaitingProposals, waitingByProposal } from "./proposal-waiting.ts";
 export { emailReceipts } from "./receipts.ts";
