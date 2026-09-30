@@ -357,6 +357,8 @@ describe("the lock of a Claude Code session", () => {
     const markLock = join(configDir, "announced.lock");
     writeFileSync(markLock, "");
     install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    // The install has answered the waiter with the news, which it now waits to record.
+    while (install.holding() > 0) await new Promise((resolve) => setTimeout(resolve, 2));
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(wait.ended()).toBe(false);
     const end = startCli(["hook", "session-end"], { configDir, clock, fetch: install.fetch, stdin: hookInput("session-1", "SessionEnd") });
