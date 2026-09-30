@@ -163,6 +163,7 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
     execute,
     session: (request, renewal) => webSession(env, request.headers, renewal),
     authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
+    url,
     resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });

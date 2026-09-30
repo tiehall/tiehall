@@ -239,13 +239,13 @@ const ROWS: Row[] = [
   { name: ".json with a token gets the /api/v1 read", path: "/FE-1.json", as: "token:bob", check: isJsonOfFe1 },
   { name: ".json wins over Accept: text/html", path: "/FE-1.json", as: "token:bob", accept: "text/html", check: isJsonOfFe1 },
   // Without credentials.
-  { name: "a browser without a session is sent to sign-in", path: "/FE-1", as: "none", accept: BROWSER, check: isSentToSignIn("/FE-1"), waitsFor: "18.4" },
-  { name: "a call without credentials or Accept is sent to sign-in", path: "/FE-1", as: "none", check: isSentToSignIn("/FE-1"), waitsFor: "18.4" },
-  { name: "a call without credentials that accepts */* is sent to sign-in", path: "/FE-1", as: "none", accept: "*/*", check: isSentToSignIn("/FE-1"), waitsFor: "18.4" },
-  { name: "Accept: text/markdown without credentials gets 401", path: "/FE-1", as: "none", accept: "text/markdown", check: isToldWhatToUse, waitsFor: "18.4" },
-  { name: ".md without credentials gets 401", path: "/FE-1.md", as: "none", check: isToldWhatToUse, waitsFor: "18.4" },
-  { name: "Accept: application/json without credentials gets 401", path: "/FE-1", as: "none", accept: "application/json", check: isToldWhatToUse, waitsFor: "18.4" },
-  { name: ".json without credentials that accepts */* gets 401", path: "/FE-1.json", as: "none", accept: "*/*", check: isToldWhatToUse, waitsFor: "18.4" },
+  { name: "a browser without a session is sent to sign-in", path: "/FE-1", as: "none", accept: BROWSER, check: isSentToSignIn("/FE-1") },
+  { name: "a call without credentials or Accept is sent to sign-in", path: "/FE-1", as: "none", check: isSentToSignIn("/FE-1") },
+  { name: "a call without credentials that accepts */* is sent to sign-in", path: "/FE-1", as: "none", accept: "*/*", check: isSentToSignIn("/FE-1") },
+  { name: "Accept: text/markdown without credentials gets 401", path: "/FE-1", as: "none", accept: "text/markdown", check: isToldWhatToUse },
+  { name: ".md without credentials gets 401", path: "/FE-1.md", as: "none", check: isToldWhatToUse },
+  { name: "Accept: application/json without credentials gets 401", path: "/FE-1", as: "none", accept: "application/json", check: isToldWhatToUse },
+  { name: ".json without credentials that accepts */* gets 401", path: "/FE-1.json", as: "none", accept: "*/*", check: isToldWhatToUse },
   // No secret links: a token only in the query string names nobody.
   { name: "a token in the query string is ignored", path: `/FE-1.json?access_token=TOKEN`, as: "none", check: isRefusedUnauthenticated },
   // A member who was removed.
@@ -282,7 +282,7 @@ const ROWS: Row[] = [
   { name: "a reassigned request's old key leads a browser to its new key", path: "/FE-2", as: "session:bob", accept: BROWSER, check: leadsTo("/MOB-1"), waitsFor: "18.5" },
   { name: "a reassigned request's old key leads markdown to its new key", path: "/FE-2.md", as: "token:bob", check: leadsTo("/MOB-1.md"), waitsFor: "18.5" },
   { name: "a reassigned request's old key leads JSON to its new key", path: "/FE-2.json", as: "token:bob", check: leadsTo("/MOB-1.json"), waitsFor: "18.5" },
-  { name: "an old key leads nobody without credentials anywhere", path: "/FE-2.json", as: "none", check: isToldWhatToUse, waitsFor: "18.4" },
+  { name: "an old key leads nobody without credentials anywhere", path: "/FE-2.json", as: "none", check: isToldWhatToUse },
 ];
 
 describe("the negotiation matrix of /<KEY>", () => {
@@ -315,7 +315,7 @@ const ANSWERS: { name: string; path: string; as: string; accept?: string; status
   { name: "JSON by suffix", path: "/FE-1.json", as: "token:bob", status: 200 },
   { name: "JSON by Accept", path: "/FE-1", as: "token:bob", accept: "application/json", status: 200 },
   { name: "a removed member's 403", path: "/FE-1.json", as: "token:dana", status: 403 },
-  { name: "the redirect to sign-in", path: "/FE-1", as: "none", accept: BROWSER, status: 303, waitsFor: "18.4" },
+  { name: "the redirect to sign-in", path: "/FE-1", as: "none", accept: BROWSER, status: 303 },
   { name: "the 401 without credentials", path: "/FE-1.md", as: "none", status: 401 },
   { name: "the redirect from an old key", path: "/FE-2.json", as: "token:bob", status: 307, waitsFor: "18.5" },
 ];

@@ -8,6 +8,7 @@ import { refusalAnswerAs, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { MEDIA_TYPES, NEGOTIATED_VARY, negotiate, requestUrlOf, type Representation } from "./negotiation.ts";
 import { withSessionCookies } from "./session-renewal.ts";
+import { SIGN_IN_PATH } from "./sign-in.ts";
 
 // Request URLs (agent-surfaces: Negotiated request URLs; agent-surfaces:
 // Request URL response headers; agent-surfaces: No secret links;
@@ -28,17 +29,22 @@ import { withSessionCookies } from "./session-renewal.ts";
 // Who calls: HTML is the web UI, for a browser signed in with its web
 // session; markdown and JSON take an agent's access token from the
 // Authorization header alone, never from the query string, or a browser's web
-// session. Without either, a call gets 401 and nothing of the request. A
-// member who was removed gets 403, and a key that names no request 404: to a
-// call that negotiates HTML as a page with a link on, to any other as the RFC
-// 9457 problem (public-api: One error model for Tiehall's own refusals;
+// session. Without either, a call that negotiates HTML is sent to sign in and
+// comes back to the URL, and one that negotiates markdown or JSON gets 401,
+// whose problem says to read the request with `tiehall get <url>` or the MCP
+// tool get_request; neither answer holds anything of the request (D28 #66;
+// design.md, Readings to confirm with the founder: R17). A member who was
+// removed gets 403, and a key that names no request 404: to a call that
+// negotiates HTML as a page with a link on, to any other as the RFC 9457
+// problem (public-api: One error model for Tiehall's own refusals;
 // github-layer-hardening: design.md, Decisions this change rests on: D50 (7)).
 //
 // Every answer sends Vary: Accept, Authorization, Cache-Control: private,
 // no-store and an ETag: a JSON body's is strong, from its bytes; markdown's
 // and the page's are weak, from the request as the caller reads it, since
 // each markdown answer fences with a nonce of its own and the page's forms
-// carry the caller's own tokens; a refusal's is from what it answers. A read of the web session may renew it, and every answer then
+// carry the caller's own tokens; a refusal's and a redirect's are from what
+// they answer. A read of the web session may renew it, and every answer then
 // carries the cookie that renews it, the page's included (sign-in: Signing out
 // and ending sessions; github-layer-hardening: design.md, Technical decisions:
 // T4).
@@ -54,6 +60,8 @@ export interface RequestUrlOptions {
   session(request: Request, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** Who a call's access token acts for, from its Authorization header alone; undefined without one, a refusal for a token that is not valid. */
   authenticate(request: Request): Promise<Caller | undefined>;
+  /** The install's URL (TIEHALL_URL), as its origin, on which a redirect's Location lies. */
+  url: string;
   /** The URL of the protected resource metadata, which the challenge of a 401 points to. */
   resourceMetadata?: string;
   logger?: Logger;
@@ -124,9 +132,13 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     try {
       const caller = await callerOf(request, representation, renewal);
       if (caller === undefined) {
-        throw new Refusal("unauthenticated", "A request URL answers only members of this install: sign in, or send your access token in the Authorization header.", {
-          challenge: { scope: ["requests:read"] },
-        });
+        // A browser signs in and comes back; an agent is told what reads a request for it.
+        if (representation === "html") return answer(redirect(303, new URL(`${SIGN_IN_PATH}?return=${encodeURIComponent(url.pathname)}`, options.url)));
+        throw new Refusal(
+          "unauthenticated",
+          "A request URL answers only members of this install. Read the request with `tiehall get <url>`, once `tiehall login` has signed you in, or with the MCP tool get_request; or send your access token in the Authorization header.",
+          { challenge: { scope: ["requests:read"] } },
+        );
       }
       const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson;
       if (representation === "html") {
@@ -154,6 +166,16 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
 /** A representation's answer, with the headers of every answer of a request URL. */
 function represented(representation: Exclude<Representation, "html">, body: string | null, etag: string): Response {
   return new Response(body, { status: 200, headers: { ...URL_HEADERS, "content-type": CONTENT_TYPES[representation], etag } });
+}
+
+/**
+ * A redirect, to sign-in or to the canonical URL, on the install's URL, with
+ * the headers of every answer of a request URL. Its Location is absolute, as
+ * Next.js needs a proxy's redirect to be; Next.js writes it as a path when it
+ * lies on the host the call was made to.
+ */
+function redirect(status: 303 | 307, location: URL): Response {
+  return new Response(null, { status, headers: { ...URL_HEADERS, location: location.toString(), etag: `"${digest(String(status), location.toString())}"` } });
 }
 
 /** A refusal: a page for a call that negotiates HTML, the problem for any other, with the headers of every answer of a request URL. */
