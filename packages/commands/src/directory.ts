@@ -1,4 +1,4 @@
-import { readDirectory, whoami } from "@tiehall/catalog";
+import { readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
 import { compareVersions, MINIMUM_SKILL_VERSION } from "@tiehall/core";
 import { teams, users } from "@tiehall/db";
 import { and, asc, eq } from "drizzle-orm";
@@ -12,7 +12,8 @@ import { actingUserOf } from "./request-changes.ts";
 // they belong to, by key, and the install by its URL, TIEHALL_URL, and warns
 // when the version of the Tiehall skill the call names is older than
 // MINIMUM_SKILL_VERSION (agent-surfaces: The Claude Code plugin). directory lists the install's teams by key,
-// with their names, and the registered APIs with the teams declared as their
+// with their names, their intake notes and the fields they require (agent-surfaces: Admins set a team's intake
+// notes and required fields), and the registered APIs with the teams declared as their
 // consumers: none yet, since registering an API comes with the contract-change
 // flow. Both only read, and every member may run them.
 
@@ -36,10 +37,18 @@ export const DIRECTORY_HANDLERS: Handlers = {
 
   [readDirectory.id]: defineHandler(readDirectory, async (_input, context) => {
     const rows = await context.tx
-      .select({ id: teams.id, key: teams.key, name: teams.name })
+      .select({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields })
       .from(teams)
       .where(eq(teams.orgId, context.orgId))
       .orderBy(asc(teams.key));
-    return { teams: rows.map(({ id, key, name }) => ({ id, key, untrusted: { name } })), apis: [] };
+    return {
+      teams: rows.map(({ id, key, name, intakeNotes, requiredFields }) => ({
+        id,
+        key,
+        requiredFields: requiredFields as IntakeField[],
+        untrusted: { name, intakeNotes },
+      })),
+      apis: [],
+    };
   }),
 };

@@ -18,6 +18,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createMcpRoute, type McpRoute } from "./mcp.ts";
+import { createNewRequestRoute } from "./new-request.ts";
 import { createRequestUrlRoute, type RequestUrlRoute } from "./request-urls.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
@@ -289,6 +290,11 @@ function pageOf(name: string, env: Environment, create: (options: PageRouteOptio
 /** The members page at /members, which every member may open, for the signed-in user's web session. */
 export function membersRoute(env: Environment): PageRoute {
   return pageOf("members", env, createMembersRoute);
+}
+
+/** The web form that opens a request, at /requests/new, which every member of a team may use, for the signed-in user's web session. */
+export function newRequestRoute(env: Environment): PageRoute {
+  return pageOf("new request", env, createNewRequestRoute);
 }
 
 /** The invites page of the admin UI under /admin/invites, for the signed-in admin's web session. */

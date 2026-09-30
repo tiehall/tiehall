@@ -122,7 +122,24 @@ export {
   setWriteBudget,
   SETTINGS_COMMANDS,
 } from "./settings.ts";
-export { addTeamMember, changeTeamKey, createTeam, listedTeam, listTeams, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
+export {
+  addTeamMember,
+  changeTeamKey,
+  createTeam,
+  INTAKE_FIELDS,
+  intakeNotes,
+  listedTeam,
+  listTeams,
+  removeTeamMember,
+  renameTeam,
+  requiredFields,
+  setTeamIntake,
+  team,
+  TEAM_COMMANDS,
+  teamIntake,
+  teamKey,
+  type IntakeField,
+} from "./teams.ts";
 export { JIRA_SITE_URL, jiraSiteUrl } from "./integrations.ts";
 export {
   connectGitHubInstallation,

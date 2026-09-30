@@ -1307,12 +1307,21 @@ export const teams = pgTable(
     key: text("key").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** How the team wants requests filed, as an admin wrote it; empty when it says nothing (agent-surfaces: Admins set a team's intake notes and required fields). */
+    intakeNotes: text("intake_notes").notNull().default(""),
+    /** The packet fields the team requires of the requests people and agents open to it, each once. */
+    requiredFields: text("required_fields").array().notNull().default(sql`'{}'::text[]`),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
     uniqueIndex("teams_key").on(table.orgId, table.key),
     check("teams_key_format", sql`${table.key} ~ '^[A-Z][A-Z0-9]{1,9}$'`),
     check("teams_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 100`),
+    check("teams_intake_notes_length", sql`char_length(${table.intakeNotes}) <= 20000`),
+    check(
+      "teams_required_fields_known",
+      sql`${table.requiredFields} <@ ARRAY['acceptance_criteria', 'code_refs', 'links', 'due_date']::text[] AND cardinality(${table.requiredFields}) <= 4`,
+    ),
   ],
 );
 

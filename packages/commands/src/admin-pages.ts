@@ -18,6 +18,8 @@ import {
   setPersonalAccessTokenMaxLifetime,
   setPersonalAccessTokens,
   setSignInPolicy,
+  setTeamIntake,
+  INTAKE_FIELDS,
   type invite,
   type listedMember,
   type listedTeam,
@@ -52,9 +54,11 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   design.md, Decisions this change rests on: D50 (12)); each invite that
 //   waits to be accepted has a form that revokes it, with no confirmation step.
 // - /admin/teams is an admin's: forms that create a team, rename it, change
-//   its key, and add a member of the install to it or remove them. None of
-//   these needs the confirmation step (agent-safety: Actions that need the
-//   confirmation step).
+//   its key, add a member of the install to it or remove them, and set its
+//   intake settings: the notes that say how it wants requests filed and the
+//   packet fields it requires (agent-surfaces: Admins set a team's intake
+//   notes and required fields). None of these needs the confirmation step
+//   (agent-safety: Actions that need the confirmation step).
 // - /admin/sign-in-policy is an admin's: the policy in force, and a link to
 //   the review page that changes it, with the confirmation step.
 // - /admin/personal-access-tokens is an admin's (agent-access: An admin sets
@@ -236,13 +240,46 @@ function invitesPage(invites: readonly Invite[], csrf: string): string {
 // The teams page.
 
 /** The operation each of the teams page's forms runs, and its input from the form's fields. */
-const TEAM_ACTIONS: Readonly<Record<string, { commandId: string; input: (form: URLSearchParams) => Record<string, string> }>> = {
+const TEAM_ACTIONS: Readonly<Record<string, { commandId: string; input: (form: URLSearchParams) => Record<string, unknown> }>> = {
   create: { commandId: createTeam.id, input: (form) => ({ key: field(form, "key"), name: field(form, "name") }) },
   rename: { commandId: renameTeam.id, input: (form) => ({ teamId: field(form, "teamId"), name: field(form, "name") }) },
   change_key: { commandId: changeTeamKey.id, input: (form) => ({ teamId: field(form, "teamId"), key: field(form, "key") }) },
   add_member: { commandId: addTeamMember.id, input: (form) => ({ teamId: field(form, "teamId"), userId: field(form, "userId") }) },
   remove_member: { commandId: removeTeamMember.id, input: (form) => ({ teamId: field(form, "teamId"), userId: field(form, "userId") }) },
+  intake: {
+    commandId: setTeamIntake.id,
+    input: (form) => ({ teamId: field(form, "teamId"), notes: field(form, "notes"), requiredFields: form.getAll("requiredField") }),
+  },
 };
+
+/** How the teams page names each field a team may require. */
+const INTAKE_FIELD_LABELS: Readonly<Record<(typeof INTAKE_FIELDS)[number], string>> = {
+  acceptance_criteria: "Acceptance criteria",
+  code_refs: "Code refs",
+  links: "Links",
+  due_date: "Due date",
+};
+
+/** The form that sets a team's intake settings: its notes and the fields it requires, as the team has them now. */
+function intakeForm(team: ListedTeam, csrf: string): string {
+  const required = new Set<string>(team.intake.requiredFields);
+  return [
+    `      <form method="post" action="${TEAMS_PATH}">`,
+    '        <input type="hidden" name="action" value="intake">',
+    `        <input type="hidden" name="teamId" value="${escapeHtml(team.id)}">`,
+    `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    `        <p><label for="notes-${escapeHtml(team.id)}">${escapeHtml(`How ${team.key} wants requests filed, which agents read as data`)}</label></p>`,
+    `        <p><textarea id="notes-${escapeHtml(team.id)}" name="notes">${escapeHtml(team.intake.untrusted.notes)}</textarea></p>`,
+    `        <fieldset><legend>${escapeHtml(`The fields ${team.key} requires, besides the need`)}</legend>`,
+    ...INTAKE_FIELDS.map(
+      (name) =>
+        `          <label><input type="checkbox" name="requiredField" value="${name}"${required.has(name) ? " checked" : ""}> ${escapeHtml(INTAKE_FIELD_LABELS[name])}</label>`,
+    ),
+    "        </fieldset>",
+    `        <button type="submit">${escapeHtml(`Save the intake settings of ${team.key}`)}</button>`,
+    "      </form>",
+  ].join("\n");
+}
 
 export function createTeamsRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
@@ -274,7 +311,7 @@ function labelledForm(fields: Readonly<Record<string, string>>, csrf: string, id
   ].join("\n");
 }
 
-/** One team: its people, and the forms that add people, rename it and change its key. */
+/** One team: its people, and the forms that add people, rename it, change its key and set its intake settings. */
 function teamSection(team: ListedTeam, members: readonly ListedMember[], csrf: string): string {
   const inTeam = new Set(team.members.map(({ id }) => id));
   const candidates = members.filter(({ id }) => !inTeam.has(id));
@@ -317,6 +354,7 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], csrf: s
       `<input type="text" id="key-${escapeHtml(team.id)}" name="key" required>`,
       `Change the key of ${team.key}`,
     ),
+    intakeForm(team, csrf),
   ].join("\n");
 }
 

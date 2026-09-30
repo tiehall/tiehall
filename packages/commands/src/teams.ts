@@ -1,4 +1,4 @@
-import { addTeamMember, changeTeamKey, createTeam, listTeams, removeTeamMember, renameTeam } from "@tiehall/catalog";
+import { addTeamMember, changeTeamKey, createTeam, listTeams, removeTeamMember, renameTeam, setTeamIntake, type IntakeField } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { teamKeyAliases, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
@@ -21,9 +21,14 @@ import type { OrgContext } from "./with-org.ts";
 // the catalog schema's, and the database checks it again.
 //
 // The teams page of the web UI reads every team, in the order of their keys,
-// with the keys each had before a rename and the people in each, named by
-// their GitHub login with their bot mark (teams-and-roles: Bot users); that
-// read is an admin action too.
+// with the keys each had before a rename, the people in each, named by their
+// GitHub login with their bot mark (teams-and-roles: Bot users), and its
+// intake settings; that read is an admin action too.
+//
+// A team's intake settings (agent-surfaces: Admins set a team's intake notes
+// and required fields): an admin sets its intake notes and the packet fields
+// it requires, which replace what it had; like every team change, they record
+// no event (design.md, Readings to confirm with the founder: R21).
 
 /**
  * The advisory lock that serializes changes to team keys, so two changes can
@@ -65,7 +70,11 @@ async function teamOf({ tx, orgId }: OrgContext, teamId: string): Promise<{ id: 
 
 export const TEAM_HANDLERS: Handlers = {
   [listTeams.id]: defineHandler(listTeams, async (_input, { tx, orgId }) => {
-    const rows = await tx.select({ id: teams.id, key: teams.key, name: teams.name }).from(teams).where(eq(teams.orgId, orgId)).orderBy(asc(teams.key));
+    const rows = await tx
+      .select({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields })
+      .from(teams)
+      .where(eq(teams.orgId, orgId))
+      .orderBy(asc(teams.key));
     const aliases = await tx
       .select({ teamId: teamKeyAliases.teamId, key: teamKeyAliases.key })
       .from(teamKeyAliases)
@@ -78,8 +87,9 @@ export const TEAM_HANDLERS: Handlers = {
       .where(eq(teamMembers.orgId, orgId))
       .orderBy(asc(users.githubLogin));
     return {
-      teams: rows.map((team) => ({
+      teams: rows.map(({ intakeNotes, requiredFields, ...team }) => ({
         ...team,
+        intake: { requiredFields: requiredFields as IntakeField[], untrusted: { notes: intakeNotes } },
         aliases: aliases.filter(({ teamId }) => teamId === team.id).map(({ key }) => key),
         members: people.filter(({ teamId }) => teamId === team.id).map(({ id, login, bot }) => ({ id, login, kind: "human" as const, bot })),
       })),
@@ -95,6 +105,18 @@ export const TEAM_HANDLERS: Handlers = {
       .returning({ id: teams.id, key: teams.key, name: teams.name });
     if (row === undefined) throw new Error("The new team was not returned.");
     return row;
+  }),
+
+  [setTeamIntake.id]: defineHandler(setTeamIntake, async ({ teamId, notes, requiredFields }, context) => {
+    await teamOf(context, teamId);
+    const [row] = await context.tx
+      .update(teams)
+      .set({ intakeNotes: notes, requiredFields })
+      .where(and(eq(teams.orgId, context.orgId), eq(teams.id, teamId)))
+      .returning({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields });
+    if (row === undefined) throw new Refusal("record-not-found", "There is no such team.");
+    const { intakeNotes, requiredFields: fields, ...team } = row;
+    return { ...team, intake: { requiredFields: fields as IntakeField[], untrusted: { notes: intakeNotes } } };
   }),
 
   [renameTeam.id]: defineHandler(renameTeam, async ({ teamId, name }, context) => {

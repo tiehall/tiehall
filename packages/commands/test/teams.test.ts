@@ -221,6 +221,9 @@ describe("a change to a team in GitHub", () => {
       "teams.key",
       "teams.name",
       "teams.created_at",
+      // The intake settings an admin sets (agent-surfaces: Admins set a team's intake notes and required fields).
+      "teams.intake_notes",
+      "teams.required_fields",
     ]);
     const sources = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "apps", "packages"], {
       cwd: repoRoot,

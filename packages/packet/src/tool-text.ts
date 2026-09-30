@@ -369,7 +369,7 @@ export function whoamiText(whoami: WhoamiJson): AgentText[] {
 
 /** The install's teams and registered APIs, as directory returns them. */
 export interface DirectoryJson {
-  teams: { id: string; key: string; untrusted: { name: string } }[];
+  teams: { id: string; key: string; requiredFields?: readonly string[]; untrusted: { name: string; intakeNotes?: string } }[];
   apis: { id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } }[];
 }
 
@@ -378,11 +378,32 @@ function listed(keys: readonly string[]): string {
   return keys.length <= 2 ? keys.join(" and ") : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1) ?? ""}`;
 }
 
+/** How Tiehall names each field a team may require in a packet (agent-surfaces: Admins set a team's intake notes and required fields). */
+const REQUIRED_FIELD_WORDS: Readonly<Record<string, string>> = {
+  acceptance_criteria: "the acceptance criteria",
+  code_refs: "code refs",
+  links: "links",
+  due_date: "a due date",
+};
+
+/** The fields a team requires, in Tiehall's words, such as "the acceptance criteria and a due date"; a field Tiehall does not know is refused, never quoted. */
+export function requiredFieldsText(fields: readonly string[]): string {
+  return listed(
+    fields.map((field) => {
+      const words = Object.hasOwn(REQUIRED_FIELD_WORDS, field) ? REQUIRED_FIELD_WORDS[field] : undefined;
+      if (words === undefined) throw new ToolTextError("A required field is not one a team may require.");
+      return words;
+    }),
+  );
+}
+
 /**
  * The install's teams by their keys, each with its name, fenced as the
- * reader's own team's or another team's, and the registered APIs, each with
- * its provider team and the teams declared as its consumers, and its name,
- * fenced as its provider team's.
+ * reader's own team's or another team's, with the intake notes an admin
+ * wrote for it, which say how it wants requests filed, fenced the same way,
+ * and the fields it requires, in Tiehall's words; and the registered APIs,
+ * each with its provider team and the teams declared as its consumers, and
+ * its name, fenced as its provider team's.
  */
 export function directoryText(directory: DirectoryJson, reader: Reader): AgentText[] {
   const keys = directory.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
@@ -390,8 +411,16 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
     { origin: "tiehall", text: keys.length === 0 ? "The install has no team yet." : `The install has ${keys.length} team${keys.length === 1 ? "" : "s"}: ${listed(keys)}.` },
   ];
   for (const team of directory.teams) {
-    texts.push({ origin: "tiehall", text: `Team ${checked(team.key, TEAM_KEY, "team key")} is named:` });
+    const key = checked(team.key, TEAM_KEY, "team key");
+    texts.push({ origin: "tiehall", text: `Team ${key} is named:` });
     texts.push({ origin: originOf(team, reader), text: team.untrusted.name });
+    const notes = team.untrusted.intakeNotes ?? "";
+    if (notes !== "") {
+      texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed:` });
+      texts.push({ origin: originOf(team, reader), text: notes });
+    }
+    const required = team.requiredFields ?? [];
+    if (required.length > 0) texts.push({ origin: "tiehall", text: `Team ${key} requires ${requiredFieldsText(required)}.` });
   }
   if (directory.apis.length === 0) {
     texts.push({ origin: "tiehall", text: "No API is registered yet." });
