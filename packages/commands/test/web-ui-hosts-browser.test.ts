@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
-import { startSetup } from "../src/index.ts";
+import { CLI_CLIENT_ID, startSetup } from "../src/index.ts";
+import { CLIENT_REDIRECT_URI, pkcePair } from "./support/agent-access.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -44,8 +45,10 @@ const PAGES: Readonly<Record<string, readonly string[]>> = {
   "admin/activity-log/route.ts": ["/admin/activity-log"],
   // A proposal's confirm page and an admin action's review page; the paths are filled in once they exist.
   "confirm/[...command]/route.ts": [],
-  // Reached from an agent client's authorization request; without one, it answers with a page that says so.
+  // Reached from an agent client's authorization request, which the admin's browser starts once the client has
+  // registered; without one, it answers with a page that says so.
   "consent/route.ts": ["/consent"],
+  // Where a member types the code `tiehall login` printed; the test also types a code and opens its review.
   "device/route.ts": ["/device"],
   "docs/api/route.ts": ["/docs/api"],
   "docs/api/changelog/route.ts": ["/docs/api/changelog"],
@@ -178,6 +181,37 @@ function toOtherHosts(app: WebApp, requested: readonly string[]): string[] {
   return requested.filter((url) => !url.startsWith("data:") && new URL(url).host !== host);
 }
 
+/** Registers a native agent client with the web app, as an MCP client does, and returns its id. */
+async function registerClient(app: WebApp): Promise<string> {
+  const answer = await app.fetch("/api/auth/oauth2/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_name: "Test agent",
+      redirect_uris: [CLIENT_REDIRECT_URI],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+      application_type: "native",
+    }),
+  });
+  const body = (await answer.json()) as { client_id?: string };
+  expect(answer.status, JSON.stringify(body)).toBe(201);
+  return body.client_id ?? "";
+}
+
+/** Starts the device flow of the tiehall CLI with the web app, as `tiehall login` does, and returns the code it would print. */
+async function startDeviceFlow(app: WebApp): Promise<string> {
+  const answer = await app.fetch("/api/auth/device/code", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: CLI_CLIENT_ID, resource: `${app.url}/mcp`, scope: "requests:read requests:write" }).toString(),
+  });
+  const body = (await answer.json()) as { user_code?: string };
+  expect(answer.status, JSON.stringify(body)).toBe(200);
+  return body.user_code ?? "";
+}
+
 describe("the web UI's pages and the hosts they load from", () => {
   it("names every route of the web app as a page it visits or as no page, with why", () => {
     const named = [...Object.keys(PAGES), ...Object.keys(SIGNED_OUT_PAGES), SETUP, ...Object.keys(NOT_PAGES)].sort();
@@ -208,6 +242,37 @@ describe("the web UI's pages and the hosts they load from", () => {
     await visit(page, web, "/no-such-page");
     expect(visited).toEqual(expect.arrayContaining(["/FE-1", "/FE", ...confirmPaths]));
     expect(requested.length).toBeGreaterThan(visited.length);
+    expect(toOtherHosts(web, requested)).toEqual([]);
+    await context.close();
+  });
+
+  // The consent screen and the device approval's review are pages only an agent client's authorization request and a
+  // code the CLI printed lead to (agent-access: The consent screen shows who is asking; agent-access: The CLI signs in
+  // through a restricted device flow); the admin's browser reaches both as a member does.
+  it("makes no request to another host on an agent client's consent screen and a device code's review", { timeout: 120_000 }, async () => {
+    const clientId = await registerClient(web);
+    const userCode = await startDeviceFlow(web);
+    const { context, requested } = await loggedContext(web, await cookieOf("pia"));
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    const authorization = new URLSearchParams({
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: CLIENT_REDIRECT_URI,
+      code_challenge: pkcePair().challenge,
+      code_challenge_method: "S256",
+      state: "state-1",
+      resource: `${web.url}/mcp`,
+      scope: "requests:read requests:write",
+    });
+    await visit(page, web, `/api/auth/oauth2/authorize?${authorization.toString()}`);
+    expect(new URL(page.url()).pathname).toBe("/consent");
+    await page.getByRole("heading", { name: "Approve an agent client" }).waitFor();
+    await visit(page, web, "/device");
+    await page.getByLabel("The code tiehall login printed").fill(userCode);
+    await Promise.all([page.waitForURL(`${web.url}/device`), page.getByRole("button", { name: "Continue" }).click()]);
+    await page.waitForLoadState("networkidle");
+    await page.getByText("The tiehall CLI asks to act for you in Tiehall.").waitFor();
     expect(toOtherHosts(web, requested)).toEqual([]);
     await context.close();
   });
