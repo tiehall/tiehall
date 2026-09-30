@@ -17,6 +17,7 @@ import { createInstallGitHub } from "./install-github.ts";
 import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { createMcpRoute, type McpRoute } from "./mcp.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { createTokensRoute } from "./personal-access-tokens.ts";
@@ -133,6 +134,28 @@ export function restRoute(env: Environment): RestHandler {
     logger,
   });
   return rest;
+}
+
+let mcp: McpRoute | undefined;
+
+/**
+ * The MCP endpoint at /mcp, built once per process from the install's
+ * settings: it checks a call's token as /api/v1 does, and runs every tool
+ * through the same execute().
+ */
+export function mcpRoute(env: Environment): McpRoute {
+  if (mcp !== undefined) return mcp;
+  const { execute, logger, signIn, database } = servicesOf(env);
+  const url = installUrl(env["TIEHALL_URL"] ?? "");
+  mcp = createMcpRoute({
+    catalog: CATALOG,
+    execute,
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
+    resourceMetadata: resourceMetadataUrlOf(url),
+    ...(env["TIEHALL_VERSION"] === undefined ? {} : { version: env["TIEHALL_VERSION"] }),
+    logger,
+  });
+  return mcp;
 }
 
 /**

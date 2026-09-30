@@ -6,6 +6,7 @@ import {
   createAgentTokenCheck,
   createConsentRoute,
   createDeviceApprovalRoute,
+  createMcpRoute,
   createRestHandler,
   createTokensRoute,
   DEVICE_CODE_GRANT_TYPE,
@@ -13,6 +14,7 @@ import {
   TOKENS_PATH,
   type AgentClientOptions,
   type AgentTokenCheck,
+  type McpRoute,
   type RestHandler,
 } from "../../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./install.ts";
@@ -25,8 +27,8 @@ import { startSignIn, type SignInHarness } from "./sign-in.ts";
 // one handler that answers as the web role routes a call: the sign-in
 // service's routes under /api/auth and the discovery documents under
 // /.well-known go to the sign-in service, which is the install's OAuth
-// authorization server, /api/v1 to the REST route, which checks the access
-// token a call carries, and the sign-in page, the consent screen, the device
+// authorization server, /api/v1 to the REST route and /mcp to the MCP route,
+// each of which checks the access token a call carries, and the sign-in page, the consent screen, the device
 // approval page, the Connected agents and tokens page and the review pages of
 // the confirmation step to their pages.
 // An agent client plays its part through plain HTTP: it registers, sends the
@@ -73,7 +75,7 @@ export interface AgentAccessHarness {
   stub: GitHubStub;
   signIn: SignInHarness;
   clock: TestClock;
-  /** Answers a call as the web role routes it: /api/auth and /.well-known to the sign-in service, /api/v1 to REST. */
+  /** Answers a call as the web role routes it: /api/auth and /.well-known to the sign-in service, /api/v1 to REST, /mcp to MCP. */
   handle(request: Request): Promise<Response>;
   /** A member of the install, signed in to the web UI with GitHub. */
   member(login: string): Promise<SignedIn>;
@@ -173,6 +175,15 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     logger: install.logger,
   });
 
+  // /mcp checks access tokens the same way, and runs every tool through the same execute().
+  const mcp: McpRoute = createMcpRoute({
+    catalog: CATALOG,
+    execute: install.execute,
+    authenticate: freshTokenCheck(),
+    resourceMetadata: resourceMetadataUrlOf(URL_OF_INSTALL),
+    logger: install.logger,
+  });
+
   const session = (request: Request, renewal?: Headers) => signIn.service.session(request.headers, renewal);
   const consent = createConsentRoute({ step: install.step, session, secret: install.authSecret, logger: install.logger });
   // The review pages of the confirmation step, for whoever the browser's session names.
@@ -186,6 +197,7 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     const { pathname } = new URL(request.url);
     if (pathname.startsWith("/api/auth/") || pathname.startsWith("/.well-known/")) return signIn.service.handler(request);
     if (pathname.startsWith("/api/v1/")) return rest(request);
+    if (pathname === "/mcp") return mcp(request);
     if (pathname === "/consent") return consent(request);
     if (pathname === "/device") return device(request);
     if (pathname === TOKENS_PATH) return tokens(request);

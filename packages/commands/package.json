@@ -23,6 +23,7 @@
     "@better-auth/cimd": "1.7.5",
     "@better-auth/mcp": "1.7.5",
     "@better-auth/oauth-provider": "1.7.5",
+    "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "8.3.1",
     "@octokit/core": "7.0.8",
     "@tiehall/catalog": "workspace:*",

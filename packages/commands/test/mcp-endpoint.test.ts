@@ -9,9 +9,9 @@ import { connectMcp, LEGACY, MODERN, mcpPerson, PROTOCOL_VERSIONS, type McpExcha
 // 2025-11-25 without holding a protocol session between calls. The server
 // offers tools only: no resources and no prompts. The contract tests use the
 // official MCP SDK client on both protocol versions, with an access token from
-// the install's real authorization code flow. They wait as expected failures
-// until the tasks that build /mcp and its tools turn them into plain tests:
-// the endpoint in 16.2, and a tool to call in 16.5.
+// the install's real authorization code flow. The endpoint's tests became
+// plain tests when 16.2 built /mcp; calling a tool waits as an expected
+// failure until 16.5 builds one to call.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
@@ -26,7 +26,7 @@ afterAll(async () => {
 });
 
 describe.each(PROTOCOL_VERSIONS)("a client on protocol version %s", (version) => {
-  it.fails("reads the server's capabilities: tools, and neither resources nor prompts", async () => {
+  it("reads the server's capabilities: tools, and neither resources nor prompts", async () => {
     const client = await connectMcp(harness, { token: dana.token, version });
     try {
       const capabilities = client.getServerCapabilities();
@@ -38,7 +38,7 @@ describe.each(PROTOCOL_VERSIONS)("a client on protocol version %s", (version) =>
     }
   });
 
-  it.fails("uses the protocol version it speaks", async () => {
+  it("uses the protocol version it speaks", async () => {
     const client = await connectMcp(harness, { token: dana.token, version });
     try {
       expect(client.getNegotiatedProtocolVersion()).toBe(version);
@@ -47,7 +47,7 @@ describe.each(PROTOCOL_VERSIONS)("a client on protocol version %s", (version) =>
     }
   });
 
-  it.fails("lists the tools, with calls that carry no session and get none back", async () => {
+  it("lists the tools, with calls that carry no session and get none back", async () => {
     const log: McpExchange[] = [];
     const client = await connectMcp(harness, { token: dana.token, version, log });
     try {
@@ -88,7 +88,7 @@ describe.each(PROTOCOL_VERSIONS)("a client on protocol version %s", (version) =>
 });
 
 describe("the one endpoint", () => {
-  it.fails("serves a 2026-07-28 client and a 2025-11-25 client at the same URL, one after the other", async () => {
+  it("serves a 2026-07-28 client and a 2025-11-25 client at the same URL, one after the other", async () => {
     const modern = await connectMcp(harness, { token: dana.token, version: MODERN });
     const legacy = await connectMcp(harness, { token: dana.token, version: LEGACY });
     try {

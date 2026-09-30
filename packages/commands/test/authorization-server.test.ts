@@ -13,8 +13,8 @@ import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn 
 // with refresh tokens, the device grant that only the CLI may use
 // (device-flow.test.ts), and never the client credentials grant. Its access
 // tokens are JWTs that live 600 seconds, signed with the install's own keys,
-// and /api/v1 accepts them. Checking one reads the install's signing keys in
-// the same process, so it makes no outbound call.
+// and /api/v1 and /mcp accept them. Checking one reads the install's signing
+// keys in the same process, so it makes no outbound call.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
@@ -78,6 +78,32 @@ describe("the install's authorization server", () => {
     expect(answer.status).toBe(200);
     // The key is quoted, so the source-citation check does not take the name and its colon for a citation.
     expect(await answer.json()).toMatchObject({ "requests": [] });
+  });
+
+  it("accepts the same access token at /mcp, for the same user", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    const answer = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "0.0.0" } } }),
+      }),
+    );
+    expect(answer.status).toBe(200);
+  });
+
+  it("answers a call to /mcp with a valid access token without any outbound call", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    const outbound = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.reject(new Error("an outbound call")));
+    const answer = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "0.0.0" } } }),
+      }),
+    );
+    expect(answer.status).toBe(200);
+    expect(outbound).not.toHaveBeenCalled();
   });
 
   it("checks an access token without any outbound call, the first check after the keys are read included", async () => {

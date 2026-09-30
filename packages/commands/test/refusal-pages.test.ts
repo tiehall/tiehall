@@ -10,6 +10,7 @@ import {
   createGitHubAdminRoute,
   createHomeRoute,
   createInvitesRoute,
+  createMcpRoute,
   createMembersRoute,
   createRestHandler,
   createSetupGate,
@@ -332,5 +333,12 @@ describe("the API surfaces", () => {
     expect(page?.headers.get("location")).toBe(`${URL_OF_INSTALL}/setup`);
   });
 
-  it.todo("answer /mcp with the problem, whatever the call accepts, once the main change's group 16 builds it");
+  it("answer /mcp with the problem, whatever the call accepts", async () => {
+    const mcp = createMcpRoute({ catalog: CATALOG, execute: install.execute, authenticate: async () => undefined, logger: install.logger });
+    for (const accept of [BROWSER, JSON_CLIENT]) {
+      const answer = await mcp(new Request(`${URL_OF_INSTALL}/mcp`, { method: "POST", headers: { accept, "content-type": "application/json" }, body: "{}" }));
+      expect(answer.status, accept).toBe(401);
+      expect(answer.headers.get("content-type"), accept).toBe("application/problem+json");
+    }
+  });
 });

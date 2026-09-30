@@ -123,3 +123,4 @@ export {
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
+export { lowerToolSchema, toolDescriptions, type JsonSchema, type ToolDescription } from "./tool-schemas.ts";

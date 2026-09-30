@@ -13,8 +13,9 @@ import { MCP_RESOURCE, pkcePair, startAgentAccess, type AgentAccessHarness, type
 // signed-in person has approved it, and the client runs the authorization
 // code flow with PKCE and the install's MCP resource, then calls /api/v1 with
 // the access token. The cases waited as expected failures until the tasks that
-// build each rule turned them into plain tests; the /mcp cases join when the
-// MCP endpoint is built (16.2).
+// build each rule turned them into plain tests. The same rules hold on /mcp,
+// whose cases joined when the MCP endpoint was built (16.2): a client calls it
+// as MCP clients do, with a JSON-RPC request in a POST.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
@@ -154,5 +155,84 @@ describe("Access tokens live 10 minutes and refresh tokens rotate", () => {
     const again = await harness.refresh(client, refreshToken ?? "");
     expect(again.status).toBe(400);
     expect(again.body["error"]).toBe("invalid_grant");
+  });
+});
+
+/** A JSON-RPC request to /mcp, as a 2025-11-25 client opens its connection, with these headers. */
+function initialize(headers: Record<string, string> = {}, query = ""): Request {
+  return new Request(`${URL_OF_INSTALL}/mcp${query}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "conformance", version: "0.0.0" } },
+    }),
+  });
+}
+
+/** A tools/call to /mcp with these headers. */
+function toolCall(name: string, args: Record<string, unknown>, headers: Record<string, string>): Request {
+  return new Request(`${URL_OF_INSTALL}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25", ...headers },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } }),
+  });
+}
+
+describe("the same rules on /mcp", () => {
+  it("accepts a valid access token", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    const answer = await harness.handle(initialize({ authorization: `Bearer ${accessToken}` }));
+    expect(answer.status).toBe(200);
+  });
+
+  it("answers a call without a token with 401 and a challenge that points to the protected resource metadata and carries a scope hint", async () => {
+    const answer = await harness.handle(initialize());
+    expect(answer.status).toBe(401);
+    const challenge = answer.headers.get("www-authenticate") ?? "";
+    expect(challenge).toMatch(/^Bearer /);
+    expect(challenge).toContain(`resource_metadata="${URL_OF_INSTALL}/.well-known/oauth-protected-resource/mcp"`);
+    expect(challenge).toContain('scope="requests:read requests:write"');
+    expect(answer.headers.get("content-type")).toBe("application/problem+json");
+  });
+
+  it("answers a token whose signature does not verify with 401 and invalid_token", async () => {
+    const answer = await harness.handle(initialize({ authorization: `Bearer ${forgedToken(ana.userId)}` }));
+    expect(answer.status).toBe(401);
+    expect(answer.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    expect(answer.headers.get("www-authenticate")).toContain(`resource_metadata="${URL_OF_INSTALL}/.well-known/oauth-protected-resource/mcp"`);
+  });
+
+  // A tool call that needs a scope the token lacks is refused over HTTP before it runs, which 16.4 builds for the tools 16.3 registers.
+  it.fails("answers a token without the scope a tool needs with 403 insufficient_scope naming that scope, and runs nothing", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    const before = Number((await harness.install.owner.query("SELECT count(*) FROM events")).rows[0].count);
+    const answer = await harness.handle(toolCall("claim", { key: "FE-1" }, { authorization: `Bearer ${accessToken}` }));
+    expect(answer.status).toBe(403);
+    const challenge = answer.headers.get("www-authenticate") ?? "";
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="requests:write"');
+    expect(Number((await harness.install.owner.query("SELECT count(*) FROM events")).rows[0].count)).toBe(before);
+  });
+
+  it("ignores a valid token in the query string: the call answers 401", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    const answer = await harness.handle(initialize({}, `?access_token=${encodeURIComponent(accessToken)}`));
+    expect(answer.status).toBe(401);
+  });
+
+  it("refuses an access token issued 11 minutes earlier with 401", async () => {
+    const { accessToken } = await harness.tokens(ana, ["requests:read"]);
+    expect((await harness.handle(initialize({ authorization: `Bearer ${accessToken}` }))).status).toBe(200);
+    harness.clock.advance(11 * 60 * 1000);
+    try {
+      const answer = await harness.handle(initialize({ authorization: `Bearer ${accessToken}` }));
+      expect(answer.status).toBe(401);
+      expect(answer.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    } finally {
+      harness.clock.advance(-11 * 60 * 1000);
+    }
   });
 });
