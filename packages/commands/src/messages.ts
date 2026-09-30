@@ -15,6 +15,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { appendEvent } from "./append-event.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { recordHumanAction } from "./loop-limit.ts";
+import { emailQuestion } from "./question-emails.ts";
 import {
   actingUserOf,
   assertSideAllows,
@@ -159,6 +160,8 @@ export const MESSAGE_HANDLERS: Handlers = {
         blocking,
         ...(questionId === undefined ? {} : { questionId }),
       });
+      // A question is emailed at once to the person it is asked of, when SMTP is set (question-emails.ts).
+      if (input.kind === "question") await writer.enqueue(emailQuestion.type, { messageId: posted.id });
       if (overFlipLimit) await addFlipNotice(writer, row.id, row.targetTeamId, row.number);
       if (next.state !== current.state) {
         await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: current.state });

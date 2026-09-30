@@ -301,6 +301,7 @@ export { readerOf } from "./event-reads.ts";
 export { createEventWakeups, EVENTS_CHANNEL, type EventWakeups, type WakeUp } from "./event-wakeups.ts";
 export { WAIT_HOLD_MS } from "./events-wait.ts";
 export { createInboxRoute, INBOX_PAGE_SIZE, INBOX_PATH } from "./inbox-page.ts";
+export { emailQuestion, type QuestionEmailData } from "./question-emails.ts";
 export { shutdownSignal, startShutdown } from "./shutdown.ts";
 export { readUpdatesFor, UPDATES_PAGE_SIZE, updatesAfter, updatesPageOf, type UpdateScope, type UpdatesPage, type UpdateView } from "./updates.ts";
 export { takeRequestNumber } from "./request-numbers.ts";

@@ -2099,6 +2099,36 @@ export const proposalNotices = pgTable(
   ],
 );
 
+// The question notices sent by email (requester-loop: Email for people, only
+// when SMTP is set; design.md, Self-hosting decisions: S10). One row per
+// question and the person it was asked of who got the email about it right
+// away, so the email goes out once, and the daily digest leaves out what was
+// emailed already.
+export const questionNotices = pgTable(
+  "question_notices",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    messageId: uuid("message_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.messageId, table.userId] }),
+    foreignKey({
+      name: "question_notices_message_fk",
+      columns: [table.orgId, table.messageId],
+      foreignColumns: [messages.orgId, messages.id],
+    }),
+    foreignKey({
+      name: "question_notices_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+  ],
+);
+
 // Receipts (requests: Receipts; requester-loop: The web inbox). One row per
 // receipt a person gets for a confirmation: that they confirmed a commitment
 // that now waits for the other side, or that it took effect with their

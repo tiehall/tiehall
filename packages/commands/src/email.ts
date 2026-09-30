@@ -1,3 +1,4 @@
+import { emailSubject, noticeEventType, noticeKey, noticeTeam, noticeUrl } from "@tiehall/packet/notices";
 import { createTransport } from "nodemailer";
 import type { SmtpSettings, SmtpTls } from "./settings.ts";
 
@@ -101,6 +102,42 @@ export const PROPOSAL_NOTICE: EmailTemplate<{ key: ServerText; what: ServerText;
       "",
       `Review it, then confirm or reject it on its page: ${page}`,
       "It is also listed in the standing list of your web inbox.",
+      "",
+    ].join("\n"),
+};
+
+/** A team's key, such as FE, which a notice names a request's target team or a side of it by. */
+export function teamKey(key: string): ServerText {
+  if (!/^[A-Z][A-Z0-9]{1,9}$/.test(key)) throw new TypeError("A team key is 2 to 10 capital letters and digits, such as FE.");
+  return key as ServerText;
+}
+
+/**
+ * The subject of a notification email about an update (agent-safety: Notices
+ * that can reach a model carry only server text): the request's key, the
+ * event's type and the request's target team, as the notice templates write
+ * it for every email subject.
+ */
+export function updateSubject({ installUrl, key, eventType, team }: { installUrl: string; key: string; eventType: string; team: string }): ServerText {
+  const notice = noticeKey(key);
+  return emailSubject({ key: notice, eventType: noticeEventType(eventType), team: noticeTeam(team), url: noticeUrl(installUrl, notice) }) as ServerText;
+}
+
+/**
+ * The email that a question waits for its reader's answer (requester-loop:
+ * Email for people, only when SMTP is set): which request, which side asked,
+ * and the request's page, where the reader reads the question and answers it.
+ * It holds nothing anyone wrote: not the question, not the title.
+ */
+export const QUESTION_NOTICE: EmailTemplate<{ subject: ServerText; key: ServerText; asker: ServerText; page: ServerText }> = {
+  id: "email.question_notice",
+  subject: ({ subject }) => subject,
+  text: ({ key, asker, page }) =>
+    [
+      `Team ${asker} asked a question on ${key} that waits for your answer.`,
+      "",
+      `Read it and answer it on the request's page: ${page}`,
+      "It is also listed in the update feed of your web inbox.",
       "",
     ].join("\n"),
 };
