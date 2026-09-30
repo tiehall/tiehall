@@ -62,6 +62,12 @@ function launch(hook: string, path: string, env: Record<string, string> = {}): P
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     child.on("error", reject);
+    // A hook may exit before it reads its input, as the launcher does without
+    // the CLI, and writing the input then fails with EPIPE; that says nothing
+    // about the hook. Any other failure to write the input fails the test.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") reject(error);
+    });
     child.on("close", (code) => resolve({ code, stdout, stderr }));
     child.stdin.end(INPUT);
   });
