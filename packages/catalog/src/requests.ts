@@ -173,6 +173,24 @@ export const listInbox = defineCommand({
   stability: "alpha",
 });
 
+export const listOpenedRequests = defineCommand({
+  id: "requests.list_opened",
+  summary:
+    "List the requests you opened, newest first, optionally only those in one state, for the web UI's request lists. Offered on no agent surface.",
+  input: z.object({
+    state: z.enum(REQUEST_STATES).optional().meta({ description: "Only the requests in this state." }),
+    limit: z.coerce.number().int().min(1).max(200).optional().meta({ description: "How many requests to return, 1 to 200; 50 unless given." }),
+    offset: z.coerce.number().int().min(0).optional().meta({ description: "How many of the newest requests to skip; 0 unless given." }),
+  }),
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  output: z.object({ "requests": z.array(request) }),
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
 export const claimRequest = defineCommand({
   id: "requests.claim",
   summary: "Claim an open request of one of your teams for yourself; it needs no confirmation.",
@@ -242,4 +260,4 @@ export const proposeCommitment = defineCommand({
   stability: "alpha",
 });
 
-export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, listInbox, claimRequest, setRequestStatus, proposeCommitment];
+export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, listInbox, listOpenedRequests, claimRequest, setRequestStatus, proposeCommitment];

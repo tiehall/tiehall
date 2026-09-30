@@ -1,4 +1,4 @@
-import { claimRequest, createRequest, getRequest, listInbox, listRequests, proposeCommitment, setRequestStatus } from "@tiehall/catalog";
+import { claimRequest, createRequest, getRequest, listInbox, listOpenedRequests, listRequests, proposeCommitment, setRequestStatus } from "@tiehall/catalog";
 import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted } from "@tiehall/core";
 import { requests } from "@tiehall/db";
 import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
@@ -40,7 +40,10 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // The inbox (agent-surfaces: The MCP tools; design.md, Decisions this change
 // rests on: D28 #56): list_inbox lists the requests addressed to the caller's
 // teams, newest first, in every state unless it names one; a member of no team
-// has none.
+// has none. The web UI's request lists read it too, beside every request of
+// the install and the requests the caller's user opened, newest first, which
+// an internal read lists for them and no agent surface offers (requests: Every
+// member sees every request).
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -176,6 +179,20 @@ export const REQUEST_HANDLERS: Handlers = {
       .where(and(...where))
       .orderBy(desc(requests.createdAt), desc(requests.id))
       .limit(limit ?? 20)
+      .offset(offset ?? 0);
+    return { "requests": await requestViews(context, rows) };
+  }),
+
+  // The requests the caller's user opened, newest first, for the web UI's request lists.
+  [listOpenedRequests.id]: defineHandler(listOpenedRequests, async ({ state, limit, offset }, context) => {
+    const where: SQL[] = [eq(requests.orgId, context.orgId), eq(requests.requestingUserId, actingUserOf(context))];
+    if (state !== undefined) where.push(eq(requests.state, state));
+    const rows = await context.tx
+      .select()
+      .from(requests)
+      .where(and(...where))
+      .orderBy(desc(requests.createdAt), desc(requests.id))
+      .limit(limit ?? 50)
       .offset(offset ?? 0);
     return { "requests": await requestViews(context, rows) };
   }),
