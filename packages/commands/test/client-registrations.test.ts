@@ -114,6 +114,16 @@ describe("a registration", () => {
     expect(await answer.json()).toMatchObject({ application_type: "native" });
   });
 
+  it("with a NUL character in any of its texts, which no text Tiehall stores may hold, gets 400 invalid_client_metadata and stores no client", async () => {
+    const before = await clientCount();
+    for (const metadata of [{ client_name: "agent\u0000one" }, { redirect_uris: ["http://127.0.0.1:33418/call\u0000back"] }, { contacts: ["ops\u0000@vendor.example"] }]) {
+      const answer = await harness.register(metadata);
+      expect(answer.status, JSON.stringify(metadata)).toBe(400);
+      expect(((await answer.json()) as { error?: string }).error).toBe("invalid_client_metadata");
+    }
+    expect(await clientCount()).toBe(before);
+  });
+
   it("of a web client with an https redirect URI stays a web client's", async () => {
     const answer = await harness.register({ application_type: undefined, redirect_uris: ["https://agent.vendor.example/callback"] });
     expect(answer.status).toBe(201);

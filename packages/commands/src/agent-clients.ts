@@ -26,6 +26,10 @@ import type { WorkerJob } from "./worker.ts";
 // its own computer, often does not say it is one; the registration is taken
 // as a native client's then, as the loopback redirect URIs show it is.
 //
+// A registration whose metadata holds a NUL character in any text, which no
+// text Tiehall stores may hold, is refused with 400 invalid_client_metadata,
+// and still counts.
+//
 // A registered client that has never completed an authorization, so that no
 // grant and no token of it exists, is removed 7 days after it registered, by a
 // job that runs every hour; a later authorization request with its id is
@@ -71,6 +75,14 @@ function isNativeRedirect(uri: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+/** Whether a registration's metadata holds a NUL character in any text, however deep. */
+function holdsNul(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\u0000");
+  if (Array.isArray(value)) return value.some(holdsNul);
+  if (typeof value === "object" && value !== null) return Object.entries(value).some(([key, each]) => key.includes("\u0000") || holdsNul(each));
+  return false;
 }
 
 /**
@@ -126,8 +138,12 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
               );
             }
             recorded.set(request, decided.id);
-            // A registration whose every redirect URI is native is a native client's, whether or not it says so.
             const body = (context.body ?? {}) as Record<string, unknown>;
+            // No text Tiehall stores may hold a NUL character: a registration with one is refused as metadata it cannot take.
+            if (holdsNul(body)) {
+              throw new APIError("BAD_REQUEST", { error: "invalid_client_metadata", error_description: "A registration's texts hold no NUL character." });
+            }
+            // A registration whose every redirect URI is native is a native client's, whether or not it says so.
             const redirects = body["redirect_uris"];
             if (body["application_type"] === undefined && Array.isArray(redirects) && redirects.length > 0 && redirects.every(isNativeRedirect)) {
               return { context: { body: { ...body, application_type: "native" } } };
