@@ -15,7 +15,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@tiehall/packet": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "files": [
     ".claude-plugin",
