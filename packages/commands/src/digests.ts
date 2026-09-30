@@ -30,8 +30,11 @@ import type { WorkerJob } from "./worker.ts";
 // day, those whats_new returns, from the needs_human events to how proposals
 // ended: every update except a question that was emailed to them at once. The
 // email goes to the primary verified address of their GitHub account, and the
-// worker records that it went, so each day's digest goes out at most once; a
-// day with nothing in it sends nothing. Its subject names the day, and its
+// worker records that it went in the transaction that sends it, so each day's
+// digest goes out at most once: a record already there sends nothing, a send
+// that fails leaves no record, so the job sends it when it runs again, and a
+// run that cannot reach the database once the email went out has recorded it
+// already; a day with nothing in it sends nothing. Its subject names the day, and its
 // text only Tiehall's words and each request's key, target team and URL,
 // nothing anyone wrote. Without SMTP, nothing is sent, and a day whose digest
 // could not go out then still goes out within the hour SMTP is set.
@@ -129,18 +132,26 @@ export const emailDigests: WorkerJob<Record<string, never>> = {
     }
     for (const digest of digests) {
       const dayText = serverDay(from);
-      await mailer.send(digest.email, DIGEST, {
-        day: dayText,
-        text: digestText({
-          day: dayText,
-          byRequest: digest.byRequest,
-          more: digest.more,
-          inbox: installLink(installUrl, INBOX_PATH),
-          settings: installLink(installUrl, EMAIL_SETTINGS_PATH),
-        }),
-      });
       const { userId, updates } = digest;
-      await withOrg(database, ({ tx, orgId }) => tx.insert(digestRecords).values({ orgId, userId, day, sentAt: now(), updates }).onConflictDoNothing());
+      await withOrg(database, async ({ tx, orgId }) => {
+        const recorded = await tx
+          .insert(digestRecords)
+          .values({ orgId, userId, day, sentAt: now(), updates })
+          .onConflictDoNothing()
+          .returning({ userId: digestRecords.userId });
+        // Another run recorded it first, and sends it.
+        if (recorded.length === 0) return;
+        await mailer.send(digest.email, DIGEST, {
+          day: dayText,
+          text: digestText({
+            day: dayText,
+            byRequest: digest.byRequest,
+            more: digest.more,
+            inbox: installLink(installUrl, INBOX_PATH),
+            settings: installLink(installUrl, EMAIL_SETTINGS_PATH),
+          }),
+        });
+      });
     }
   },
 };

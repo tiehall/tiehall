@@ -18,8 +18,11 @@ import type { WorkerJob } from "./worker.ts";
 // the requester side's question is asked of no one person, and is emailed to
 // nobody right away. With SMTP set, that person gets the email, whatever their
 // digest setting, since it is transactional, at the primary verified address
-// of their GitHub account, once: the job records whom it emailed, which the
-// daily digest reads to leave the question out. The subject carries only the
+// of their GitHub account, once: the job records whom it emailed in the
+// transaction that sends the email, so a send that fails leaves no record and
+// is tried again, and a job that cannot reach the database once the email went
+// out has recorded it already; the daily digest reads the record to leave the
+// question out. The subject carries only the
 // request's key, the event's type and the request's target team, and the text
 // only Tiehall's words and the request's URL. Without SMTP, or without an
 // address, nothing is sent, and the question waits in the web inbox. A request
@@ -92,15 +95,21 @@ export const emailQuestion: WorkerJob<QuestionEmailData> = {
       throw error;
     }
     if (notice === undefined) return;
-    await mailer.send(notice.email, QUESTION_NOTICE, {
-      subject: updateSubject({ installUrl, key: notice.key, eventType: "request.message_posted", team: notice.targetTeam }),
-      key: requestKey(notice.key),
-      asker: teamKey(notice.asker),
-      page: installLink(installUrl, `/${notice.key}`),
+    const { userId, email, key, targetTeam, asker } = notice;
+    await withOrg(database, async ({ tx, orgId }) => {
+      const recorded = await tx
+        .insert(questionNotices)
+        .values({ orgId, messageId: job.data.messageId, userId, sentAt: now() })
+        .onConflictDoNothing()
+        .returning({ userId: questionNotices.userId });
+      // Another run recorded it first, and sends it.
+      if (recorded.length === 0) return;
+      await mailer.send(email, QUESTION_NOTICE, {
+        subject: updateSubject({ installUrl, key, eventType: "request.message_posted", team: targetTeam }),
+        key: requestKey(key),
+        asker: teamKey(asker),
+        page: installLink(installUrl, `/${key}`),
+      });
     });
-    const { userId } = notice;
-    await withOrg(database, ({ tx, orgId }) =>
-      tx.insert(questionNotices).values({ orgId, messageId: job.data.messageId, userId, sentAt: now() }).onConflictDoNothing(),
-    );
   },
 };

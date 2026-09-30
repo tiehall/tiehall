@@ -49,6 +49,7 @@ beforeAll(async () => {
     ["kim", be],
     ["ann", be],
     ["ned", be],
+    ["joe", be],
     ["dana", fe],
     ["bob", fe],
   ] as const) {
@@ -198,6 +199,52 @@ describe("with SMTP set", () => {
     const { day, after } = await dayOf(request.id);
     await runJob(emailDigests, after);
     expect(emailsTo("ann").map(({ subject }) => subject)).not.toContain(digestSubject(day));
+  });
+});
+
+// requester-loop: Email for people, only when SMTP is set: a day's digest is sent at most once. It is recorded in the
+// transaction that sends it, so a run that cannot reach the database after sending it does not send it again.
+describe("a day's digest, sent at most once", () => {
+  /** The number of digests of the day each user got, by login, for the users who got any. */
+  function digestsOfTheDay(day: string): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const login of Object.keys(person)) {
+      const count = emailsTo(login).filter(({ subject }) => subject === digestSubject(day)).length;
+      if (count > 0) counts[login] = count;
+    }
+    return counts;
+  }
+
+  it("is not sent again when the database cannot be reached just after it went out, and the job runs again", async () => {
+    const request = await openRequest(install, tokenOf(id("joe")), { targetTeam: "FE" });
+    await post("bob", request.key, { kind: "comment", body: "Looking into it." });
+    const { day, after } = await dayOf(request.id);
+    // Once an email goes out, no new transaction can start, as when the database goes away.
+    let away = false;
+    const database = new Proxy(install.db, {
+      get(target, name) {
+        if (name === "transaction" && away) return () => Promise.reject(new Error("The database cannot be reached."));
+        const value: unknown = Reflect.get(target, name);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const goesAway: Mailer = {
+      configured: true,
+      async send(to, template, values) {
+        const sent = await mailer.send(to, template, values);
+        away = true;
+        return sent;
+      },
+      close: () => undefined,
+    };
+    await emailDigests
+      .handle({ id: randomUUID(), queue: emailDigests.type.queue, data: {}, signal: new AbortController().signal }, { database, now: () => after, mailer: goesAway, installUrl: URL_OF_INSTALL })
+      .catch(() => undefined);
+    // The job runs again once the database is back, and sends what did not go out.
+    for (let run = 0; run < 3; run += 1) await runJob(emailDigests, after);
+    const counts = digestsOfTheDay(day);
+    expect(counts["joe"]).toBe(1);
+    expect(Object.values(counts).every((count) => count === 1)).toBe(true);
   });
 });
 

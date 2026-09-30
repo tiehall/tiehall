@@ -144,6 +144,42 @@ describe("with SMTP set", () => {
     expect(sent().map(({ to }) => to)).toEqual(["sam@example.com"]);
   });
 
+  it("emails the question once when the database cannot be reached just after the email went out, and its job runs again", async () => {
+    const request = await openRequest(install, tokenOf(id("sam")), { targetTeam: "FE" });
+    await post("bob", request.key, { kind: "question", body: "Which browsers?" });
+    const jobs = install.sentJobs.splice(0).filter(({ queue }) => queue === emailQuestion.type.queue);
+    // Once the email goes out, no new transaction can start, as when the database goes away.
+    let away = false;
+    const database = new Proxy(install.db, {
+      get(target, name) {
+        if (name === "transaction" && away) return () => Promise.reject(new Error("The database cannot be reached."));
+        const value: unknown = Reflect.get(target, name);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const goesAway: Mailer = {
+      configured: true,
+      async send(to, template, values) {
+        const result = await mailer.send(to, template, values);
+        away = true;
+        return result;
+      },
+      close: () => undefined,
+    };
+    for (const { data } of jobs) {
+      await emailQuestion
+        .handle(
+          { id: randomUUID(), queue: emailQuestion.type.queue, data: data as { messageId: string }, signal: new AbortController().signal },
+          { database, now: () => new Date(), mailer: goesAway, installUrl: URL_OF_INSTALL },
+        )
+        .catch(() => undefined);
+    }
+    // The job runs again once the database is back.
+    install.sentJobs.push(...jobs);
+    await runQuestionJobs();
+    expect(sent().map(({ to }) => to)).toEqual(["sam@example.com"]);
+  });
+
   it("emails nobody when the person it is asked of has no address", async () => {
     await install.owner.query("UPDATE users SET email = NULL WHERE id = $1", [id("sam")]);
     try {
