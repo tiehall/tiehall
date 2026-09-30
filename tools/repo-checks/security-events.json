@@ -261,7 +261,22 @@
     {
       "item": "an operator command run on the host, `admin grant` or `setup reopen`, as the self-host-install capability defines, naming the command and what it changed, and no user;",
       "actions": [
-        { "action": "admin grant run on the host", "pending": "21.1" },
+        {
+          "action": "admin grant run on the host, making a member an admin",
+          "event": "member.role_changed",
+          "test": {
+            "file": "packages/commands/test/operator-commands.test.ts",
+            "case": "makes the member whose login is given an admin, recorded as a security event member.role_changed that names the command and no user"
+          }
+        },
+        {
+          "action": "admin grant run on the host, changing nothing",
+          "event": "operator.command_run",
+          "test": {
+            "file": "packages/commands/test/operator-commands.test.ts",
+            "case": "changes nothing for a login that belongs to no member and says so, recording the run as a security event operator.command_run that names the command and no user"
+          }
+        },
         { "action": "setup reopen run on the host", "pending": "21.2" }
       ]
     },

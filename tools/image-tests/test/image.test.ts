@@ -270,7 +270,7 @@ describe("the image", () => {
   it("exits non-zero on an unknown role, and names the roles it knows", () => {
     const run = docker(["run", "--rm", ...confined, image, "api"]);
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate, all or init.');
+    expect(run.stderr).toContain('Unknown role "api". Usage: main.mjs <role>, where role is web, worker, migrate, all, init or admin.');
   });
 
   it("exits non-zero without a role", () => {
@@ -793,6 +793,47 @@ describe("the worker role", () => {
       expect.stringMatching(/^worker: started, working \d+ queues?$/),
       "worker: stopped",
     ]);
+  });
+});
+
+// self-host-install: Operator commands on the host; self-host-install: Only the migrate step holds the database
+// owner's credentials.
+describe("the admin role", () => {
+  const dana = "7d0bb1a1-8e61-4d53-9a3c-2f0d5b0c1a01";
+
+  beforeAll(() => {
+    ownerQuery(
+      rolesPostgres,
+      `INSERT INTO users (org_id, id, github_account_id, github_login, sign_in_key) SELECT id, '${dana}', 4242, 'dana-gh', 'github:4242' FROM orgs;
+       INSERT INTO members (org_id, user_id, role) SELECT id, '${dana}', 'member' FROM orgs;`,
+    );
+  });
+
+  it("runs admin grant confined, as a non-root uid and as the app role, with the app's settings alone", () => {
+    // The owner's credentials are not given: Compose hands the app service none.
+    const run = docker(["run", "--rm", ...confined, ...connected, image, "admin", "grant", "dana-gh"]);
+    expect(run).toMatchObject({ status: 0, stdout: "dana-gh is now an admin of this install.\n", stderr: "" });
+    expect(ownerQuery(rolesPostgres, `SELECT role FROM members WHERE user_id = '${dana}'`)).toBe("admin");
+    expect(
+      ownerQuery(rolesPostgres, "SELECT actor_kind || ' ' || operator_command FROM events WHERE type = 'member.role_changed' ORDER BY number DESC LIMIT 1"),
+    ).toBe("operator admin grant");
+    // The image's user is not root, and the command wrote nothing outside the database.
+    expect(dockerOk(["image", "inspect", "--format", "{{.Config.User}}", image])).toBe("1000:1000");
+  });
+
+  it("says that no member has a login, and exits 1", () => {
+    const run = docker(["run", "--rm", ...confined, ...connected, image, "admin", "grant", "no-such-member"]);
+    expect(run).toMatchObject({
+      status: 1,
+      stdout: "",
+      stderr: "tiehall admin grant: no member of this install has the GitHub login no-such-member, so nothing changed.\n",
+    });
+  });
+
+  it("prints its usage for an unknown command and exits 2", () => {
+    const run = docker(["run", "--rm", ...confined, image, "admin", "revoke", "dana-gh"]);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("Usage: main.mjs admin grant <github-login>");
   });
 });
 

@@ -10,7 +10,9 @@
 //   beside this bundle, and installs the job queue's schema;
 // - all starts web and worker as two child processes, forwards SIGTERM and
 //   SIGINT to them, and stops the other when one of them ends;
-// - init prints a complete `.env` on standard output, and reads no settings.
+// - init prints a complete `.env` on standard output, and reads no settings;
+// - admin runs an operator command, such as `admin grant <github-login>`, with
+//   the app's settings, as the app role (admin-role.ts).
 // Each role reads its settings from the environment (self-host-install: One
 // `.env` holds the install settings): migrate the database owner's and the app
 // role's, the others the install URL, the app role's connection and the keys.
@@ -20,8 +22,9 @@
 // a failed role, and 0 for a clean stop.
 // Every role logs JSON lines on standard output (self-host-install: Logs carry
 // ids, never message text or credentials), except init, whose standard output
-// is the `.env` file; the usage line for a missing or unknown role, printed
-// before any role runs, and init's refusals are plain text on standard error.
+// is the `.env` file, and admin, whose output is for the operator who runs it;
+// the usage line for a missing or unknown role, printed before any role runs,
+// and the refusals of init and admin are plain text on standard error.
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -34,6 +37,7 @@ import {
   type AppSettings,
   type MigrateSettings,
 } from "@tiehall/commands";
+import { runAdminRole } from "./admin-role.ts";
 import { runInitRole } from "./init-role.ts";
 import { migrationsFolderFor, runMigrateRole } from "./migrate-role.ts";
 import { parseRole, usage, type Role } from "./roles.ts";
@@ -56,7 +60,7 @@ if (role === undefined) {
 const logger = createLogger().child({ role });
 
 /** A role with the settings it reads: migrate reads the owner's, and the others the app's. */
-type RoleSettings = { role: "migrate"; migrate: MigrateSettings } | { role: Exclude<Role, "migrate" | "init">; app: AppSettings };
+type RoleSettings = { role: "migrate"; migrate: MigrateSettings } | { role: Exclude<Role, "migrate" | "init" | "admin">; app: AppSettings };
 
 if (role === "init") {
   process.exitCode = runInitRole(
@@ -68,11 +72,16 @@ if (role === "init") {
     },
     { stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text) },
   );
+} else if (role === "admin") {
+  process.exitCode = await runAdminRole(process.argv.slice(3), process.env, {
+    stdout: (text) => process.stdout.write(text),
+    stderr: (text) => process.stderr.write(text),
+  });
 } else {
   await run(readSettings(role));
 }
 
-function readSettings(role: Exclude<Role, "init">): RoleSettings {
+function readSettings(role: Exclude<Role, "init" | "admin">): RoleSettings {
   try {
     return role === "migrate" ? { role, migrate: readMigrateSettings(process.env) } : { role, app: readAppSettings(process.env) };
   } catch (error) {

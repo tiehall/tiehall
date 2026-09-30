@@ -1,4 +1,4 @@
-# The Tiehall image: one image with the roles web, worker, migrate, all and init
+# The Tiehall image: one image with the roles web, worker, migrate, all, init and admin
 # (design.md, Technical decisions: T1; self-host-install: Tiehall's containers
 # are confined). Build it from the repository root:
 #   docker build --build-arg TIEHALL_COMMIT_SHA="$(git rev-parse HEAD)" --tag tiehall .
@@ -67,7 +67,7 @@ ENV NODE_ENV=production \
     TIEHALL_VERSION=${TIEHALL_VERSION} \
     TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME}
 LABEL org.opencontainers.image.title="tiehall" \
-      org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate, all and init" \
+      org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate, all, init and admin" \
       org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}" \
       org.opencontainers.image.version="${TIEHALL_VERSION}"
 WORKDIR /app

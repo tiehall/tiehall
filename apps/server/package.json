@@ -2,7 +2,7 @@
   "name": "@tiehall/server",
   "version": "0.0.0",
   "private": true,
-  "description": "The image's one entrypoint: `main.mjs <role>` starts web, worker, migrate or all, with configuration read only from environment variables and *_FILE secrets.",
+  "description": "The image's one entrypoint: `main.mjs <role>` starts web, worker, migrate or all, prints a .env with init, or runs an operator command with admin, with configuration read only from environment variables and *_FILE secrets.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {

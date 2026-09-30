@@ -483,6 +483,24 @@ export const setupCompleted = defineEventType({
 });
 
 /**
+ * An operator command run on the host changed nothing (self-host-install:
+ * Operator commands on the host; activity-log: Which actions are security
+ * events): `admin grant` for a login that belongs to no member of the install,
+ * or for a member who is an admin already, whom it names. Every run of an
+ * operator command is a security event: one that changes something is recorded
+ * as that change's own event, such as the role change `admin grant` makes. Its
+ * provenance names the command and no user.
+ */
+export const operatorCommandRun = defineEventType({
+  type: "operator.command_run",
+  class: "security",
+  fields: {
+    outcome: { kind: "enum", values: ["no_member", "already_admin"] },
+    userId: { kind: "id", of: "user", optional: true },
+  },
+});
+
+/**
  * An installation of the install's GitHub App was connected (tracker-mirrors:
  * Admins connect GitHub installations with the confirmation step;
  * activity-log: Which actions are security events): by an admin, with the
@@ -657,6 +675,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   signInCompleted,
   signInRefused,
   setupCompleted,
+  operatorCommandRun,
   githubInstallationConnected,
   githubInstallationDisconnected,
   githubModeChanged,
