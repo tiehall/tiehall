@@ -10,8 +10,7 @@ import { connectMcp, LEGACY, MODERN, mcpPerson, PROTOCOL_VERSIONS, type McpExcha
 // offers tools only: no resources and no prompts. The contract tests use the
 // official MCP SDK client on both protocol versions, with an access token from
 // the install's real authorization code flow. The endpoint's tests became
-// plain tests when 16.2 built /mcp; calling a tool waits as an expected
-// failure until 16.5 builds one to call.
+// plain tests when 16.2 built /mcp, and calling a tool when 16.5 built whoami.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
@@ -65,8 +64,7 @@ describe.each(PROTOCOL_VERSIONS)("a client on protocol version %s", (version) =>
     }
   });
 
-  // Calling a tool needs one, which 16.5 builds: whoami.
-  it.fails("calls a tool without a session: each call is answered on its own", async () => {
+  it("calls a tool without a session: each call is answered on its own", async () => {
     const log: McpExchange[] = [];
     const client = await connectMcp(harness, { token: dana.token, version, log });
     try {

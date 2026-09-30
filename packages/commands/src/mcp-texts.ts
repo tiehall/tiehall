@@ -1,7 +1,17 @@
-import { claimRequest, isProposalAnswer, readRequest } from "@tiehall/catalog";
+import { claimRequest, isProposalAnswer, readDirectory, readRequest, whoami } from "@tiehall/catalog";
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import type { AgentText } from "@tiehall/packet/render";
-import { requestPageText, requestText, type Reader, type RequestJson, type RequestPageJson } from "@tiehall/packet/tool-text";
+import {
+  directoryText,
+  requestPageText,
+  requestText,
+  whoamiText,
+  type DirectoryJson,
+  type Reader,
+  type RequestJson,
+  type RequestPageJson,
+  type WhoamiJson,
+} from "@tiehall/packet/tool-text";
 
 // The markdown of each MCP tool's result (agent-surfaces: Tool results carry
 // structured content and fenced markdown; agent-safety: Every string shown to
@@ -19,6 +29,8 @@ export type ToolText = (output: unknown, reader: Reader) => AgentText[];
 export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [claimRequest.id]: (output, reader) => requestText(output as RequestJson, reader),
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
+  [whoami.id]: (output) => whoamiText(output as WhoamiJson),
+  [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),
 };
 
 /** The texts of a tool's result: the proposal a commitment created, or the operation's output through its renderer. */

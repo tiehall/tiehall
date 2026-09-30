@@ -188,6 +188,126 @@
       }
     },
     {
+      "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "directory",
+      "outputSchema": {
+        "properties": {
+          "apis": {
+            "items": {
+              "properties": {
+                "consumers": {
+                  "items": {
+                    "properties": {
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "key": {
+                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "key"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "provider": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key"
+                  ],
+                  "type": "object"
+                },
+                "untrusted": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "provider",
+                "consumers",
+                "untrusted"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "teams": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "The team's key, such as FE, which open_request addresses it by.",
+                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                  "type": "string"
+                },
+                "untrusted": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "key",
+                "untrusted"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams",
+          "apis"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "description": "Read a request by its key, such as FE-142, with its packet and its thread, as a page that shows whether the request waits for a person (needs_human). Every member of the install can read every request.",
       "inputSchema": {
         "properties": {
@@ -767,6 +887,63 @@
           "pages",
           "next",
           "parts"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, and the Tiehall install, by its URL.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "whoami",
+      "outputSchema": {
+        "properties": {
+          "install": {
+            "properties": {
+              "url": {
+                "description": "The install's URL, such as https://tiehall.example.com, where its requests live.",
+                "pattern": "^https?:\\/\\/(?:[A-Za-z0-9\\.-]+|\\[[0-9A-Fa-f:\\.]+\\])(?::\\d{1,5})?$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          },
+          "user": {
+            "properties": {
+              "bot": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "kind": {
+                "const": "human",
+                "type": "string"
+              },
+              "login": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "login",
+              "kind",
+              "bot"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "user",
+          "install"
         ],
         "type": "object"
       }

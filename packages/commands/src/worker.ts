@@ -121,6 +121,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       now,
       ...(github === undefined ? {} : { github }),
       ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
+      ...(options.installUrl === undefined ? {} : { url: options.installUrl }),
     }),
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),

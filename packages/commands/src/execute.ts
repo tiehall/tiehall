@@ -136,6 +136,8 @@ export interface HandlerContext extends OrgContext {
   readonly secrets: (() => SecretBox) | undefined;
   /** The values the person entered on the review page, parsed, by field name; empty for a command that takes none. */
   readonly sealed: Readonly<Record<string, string>>;
+  /** The install's URL, TIEHALL_URL, as its origin, such as whoami names; undefined where the process has none. */
+  readonly url: string | undefined;
   /** What the handler's step before the transaction returned; undefined for a handler without one. */
   readonly prepared: unknown;
   /**
@@ -221,6 +223,8 @@ export interface ExecuteServices {
   github?: InstallGitHub;
   /** TIEHALL_SECRET_KEY's box, which the operations that store an integration secret encrypt it with. */
   secrets?: () => SecretBox;
+  /** The install's URL, TIEHALL_URL, as its origin, which the operations that name the install, such as whoami, give. */
+  url?: string;
 }
 
 export interface ExecuteOptions {
@@ -400,6 +404,7 @@ export function createExecute(services: ExecuteServices): Execute {
           github: services.github,
           secrets: services.secrets,
           sealed,
+          url: services.url,
           prepared,
           write: (change, { teamId } = {}) =>
             writeIn(

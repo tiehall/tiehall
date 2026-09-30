@@ -141,6 +141,7 @@ export async function startTestInstall(
     subjects,
     github,
     secrets: () => box,
+    url: URL_OF_INSTALL,
     ...(options.now === undefined ? {} : { now: options.now }),
   });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });

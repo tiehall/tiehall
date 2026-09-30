@@ -100,7 +100,16 @@ function servicesOf(env: Environment): Services {
     database,
     secrets,
     signIn,
-    execute: createExecute({ catalog: CATALOG, handlers: HANDLERS, store: { database, jobs }, confirmations, subjects: CONFIRMATION_SUBJECTS, github, secrets }),
+    execute: createExecute({
+      catalog: CATALOG,
+      handlers: HANDLERS,
+      store: { database, jobs },
+      confirmations,
+      subjects: CONFIRMATION_SUBJECTS,
+      github,
+      secrets,
+      url: installUrl(env["TIEHALL_URL"] ?? ""),
+    }),
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS, github }),
     logger,
   };

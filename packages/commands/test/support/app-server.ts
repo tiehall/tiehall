@@ -166,7 +166,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const store = { database: db, jobs };
   // The operations that ask GitHub, such as creating an invite, reach the stub as the install's stored App.
   const installGitHub = createInstallGitHub({ database: db, secrets: () => box, apiUrl: stub.apiUrl, fetch: github.fetch, logger });
-  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box });
+  const execute = createExecute({ catalog: CATALOG, handlers: HANDLERS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub, secrets: () => box, url });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects: CONFIRMATION_SUBJECTS, github: installGitHub });
   const confirm = createConfirmRoute({
     step,

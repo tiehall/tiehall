@@ -219,3 +219,60 @@ export function requestPageText(page: RequestPageJson, reader: Reader): AgentTex
   }
   return texts;
 }
+
+/** The origin of an install, as TIEHALL_URL gives it: a scheme, a host and a port, and no path. */
+const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;
+
+/** Who a connection acts for, as whoami returns it. */
+export interface WhoamiJson {
+  user: UserJson;
+  install: { url: string };
+}
+
+/** Who a connection acts for and on which install, in Tiehall's words. */
+export function whoamiText(whoami: WhoamiJson): AgentText[] {
+  const url = checked(whoami.install.url, INSTALL_URL, "install URL");
+  return [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}.` }];
+}
+
+/** The install's teams and registered APIs, as directory returns them. */
+export interface DirectoryJson {
+  teams: { id: string; key: string; untrusted: { name: string } }[];
+  apis: { id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } }[];
+}
+
+/** "FE", "FE and QA", or "BE, FE and QA". */
+function listed(keys: readonly string[]): string {
+  return keys.length <= 2 ? keys.join(" and ") : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1) ?? ""}`;
+}
+
+/**
+ * The install's teams by their keys, each with its name, fenced as the
+ * reader's own team's or another team's, and the registered APIs, each with
+ * its provider team and the teams declared as its consumers, and its name,
+ * fenced as its provider team's.
+ */
+export function directoryText(directory: DirectoryJson, reader: Reader): AgentText[] {
+  const keys = directory.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
+  const texts: AgentText[] = [
+    { origin: "tiehall", text: keys.length === 0 ? "The install has no team yet." : `The install has ${keys.length} team${keys.length === 1 ? "" : "s"}: ${listed(keys)}.` },
+  ];
+  for (const team of directory.teams) {
+    texts.push({ origin: "tiehall", text: `Team ${checked(team.key, TEAM_KEY, "team key")} is named:` });
+    texts.push({ origin: originOf(team, reader), text: team.untrusted.name });
+  }
+  if (directory.apis.length === 0) {
+    texts.push({ origin: "tiehall", text: "No API is registered yet." });
+  }
+  for (const api of directory.apis) {
+    const consumers = api.consumers.map(({ key }) => checked(key, TEAM_KEY, "team key"));
+    const consumed =
+      consumers.length === 0 ? "which no team consumes yet" : `which team${consumers.length === 1 ? "" : "s"} ${listed(consumers)} consume${consumers.length === 1 ? "s" : ""}`;
+    texts.push({
+      origin: "tiehall",
+      text: `API ${checked(api.id, UUID, "API id")} of team ${checked(api.provider.key, TEAM_KEY, "team key")}, ${consumed}, is named:`,
+    });
+    texts.push({ origin: originOf(api.provider, reader), text: api.untrusted.name });
+  }
+  return texts;
+}

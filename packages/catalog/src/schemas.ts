@@ -31,3 +31,11 @@ export const user = z.object({
   kind: z.literal("human"),
   bot: z.boolean(),
 });
+
+/**
+ * The form of the install's URL, TIEHALL_URL, as an origin: a scheme, a host
+ * and a port, with no path. It holds no space, so an output may name the
+ * install by it outside an untrusted object (agent-safety: User text in JSON
+ * sits under untrusted objects).
+ */
+export const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;

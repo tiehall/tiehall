@@ -7,7 +7,7 @@ import { CATALOG } from "../src/commands.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
 import { proposalAnswer } from "../src/proposals.ts";
 import { getRequest } from "../src/requests.ts";
-import { GITHUB_LOGIN } from "../src/schemas.ts";
+import { GITHUB_LOGIN, INSTALL_URL } from "../src/schemas.ts";
 import { agentOutputSchemas, outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
 
 // User text in JSON sits under untrusted objects (agent-safety: User text in
@@ -21,6 +21,7 @@ const IDENTIFIERS: readonly RegExp[] = [
   REQUEST_KEY,
   TEAM_KEY,
   GITHUB_LOGIN,
+  INSTALL_URL,
   EVENT_TYPE_NAME,
   EVENT_FIELD_NAME,
   EVENT_STRING_VALUE,

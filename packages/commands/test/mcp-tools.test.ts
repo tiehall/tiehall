@@ -137,7 +137,7 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
 });
 
 describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => {
-  it.fails("names the user the connection acts for and the install by its URL, and whether the user is a bot", async () => {
+  it("names the user the connection acts for and the install by its URL, and whether the user is a bot", async () => {
     const result = await call(dana, version, "whoami");
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toEqual({
@@ -149,7 +149,7 @@ describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => 
     expect(text).toContain(URL_OF_INSTALL);
   });
 
-  it.fails("says so when the user is a bot", async () => {
+  it("says so when the user is a bot", async () => {
     await harness.install.owner.query("UPDATE users SET bot = true WHERE id = $1", [kim.userId]);
     try {
       const result = await call(kim, version, "whoami");
@@ -162,7 +162,7 @@ describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => 
 });
 
 describe.each(PROTOCOL_VERSIONS)("directory, on protocol version %s", (version) => {
-  it.fails("lists each team of the install with its key, and the registered APIs, none yet", async () => {
+  it("lists each team of the install with its key, and the registered APIs, none yet", async () => {
     const result = await call(dana, version, "directory");
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as { teams: { key: string; untrusted: { name: string } }[]; apis: unknown[] };
