@@ -19,7 +19,10 @@ jobs:
   test:
     name: Typecheck and test
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The whole suite runs here on a 2-core runner, where the test files run
+    # almost one at a time: it outgrew 20 minutes once group 15's tests landed
+    # (the job needed about 22). The limit only stops a job that hangs.
+    timeout-minutes: 40
     permissions:
       contents: read
     env:
