@@ -18,6 +18,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createMcpRoute, type McpRoute } from "./mcp.ts";
+import { createRequestUrlRoute, type RequestUrlRoute } from "./request-urls.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { createTokensRoute } from "./personal-access-tokens.ts";
@@ -144,6 +145,31 @@ export function restRoute(env: Environment): RestHandler {
   });
   return rest;
 }
+
+let requestUrls: RequestUrlRoute | undefined;
+
+/**
+ * Request URLs, /<KEY> with or without .md or .json, which the proxy answers
+ * before any route, built once per process from the install's settings
+ * (agent-surfaces: Negotiated request URLs): they read a request through the
+ * same execute() as /api/v1, for a web session or an access token checked as
+ * /api/v1 checks it, and let the web UI's request page render the HTML.
+ */
+export function requestUrlRoute(env: Environment): RequestUrlRoute {
+  if (requestUrls !== undefined) return requestUrls;
+  const { execute, logger, signIn, database } = servicesOf(env);
+  const url = installUrl(env["TIEHALL_URL"] ?? "");
+  requestUrls = createRequestUrlRoute({
+    execute,
+    session: (request, renewal) => webSession(env, request.headers, renewal),
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
+    resourceMetadata: resourceMetadataUrlOf(url),
+    logger,
+  });
+  return requestUrls;
+}
+
+export { requestUrlOf } from "./negotiation.ts";
 
 let mcp: McpRoute | undefined;
 

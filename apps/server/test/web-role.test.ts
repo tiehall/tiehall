@@ -170,6 +170,25 @@ describe("the web role on SIGTERM", () => {
       expect(answer.headers.get("content-type"), path).toBe("application/problem+json");
       expect(await answer.json(), path).toMatchObject({ type: "https://tiehall.com/problems/shutting-down", status: 503 });
     }
+    // A request URL negotiates HTML by its own rule (agent-surfaces: Negotiated request URLs): a call without an
+    // Accept header, or one that accepts any type, gets the page there, and its .md and .json forms the problem;
+    // each answer names Accept and Authorization in its Vary (agent-surfaces: Request URL response headers).
+    for (const accept of [BROWSER, "*/*"]) {
+      const page = await open("/FE-142", accept);
+      expect(page.status, accept).toBe(503);
+      expect(page.headers.get("content-type"), accept).toBe("text/html; charset=utf-8");
+      expect(page.headers.get("vary"), accept).toBe("Accept, Authorization");
+      expect(await page.text(), accept).toContain('<a href="/FE-142">');
+    }
+    for (const [path, accept] of [
+      ["/FE-142.json", BROWSER],
+      ["/FE-142", "text/markdown"],
+    ] as const) {
+      const answer = await open(path, accept);
+      expect(answer.status, path).toBe(503);
+      expect(answer.headers.get("content-type"), path).toBe("application/problem+json");
+      expect(answer.headers.get("vary"), path).toBe("Accept, Authorization");
+    }
     expect(await slow).toBe("slow call done");
     expect(await web.exited).toBe(0);
   });
@@ -195,6 +214,19 @@ describe("the web role on SIGTERM", () => {
 
 // self-host-install: Logs carry ids, never message text or credentials. The logs are JSON on standard output,
 // what the server the role loads prints to the console included.
+// agent-surfaces: Request URL response headers. Next.js sets its own Vary as it renders the web UI's page of a
+// request, after the proxy ran; the web role adds Accept and Authorization to the Vary of every answer of a request
+// URL as its head goes out, and leaves every other answer as it is.
+describe("the web role's answers of request URLs", () => {
+  it("name Accept and Authorization in their Vary, besides what the page set, and leave other answers as they are", async () => {
+    const web = await startWebRole();
+    const vary = async (path: string) => (await fetch(`http://127.0.0.1:${web.port}${path}`)).headers.get("vary");
+    expect(await vary("/FE-142")).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect(await vary("/FE-142.md")).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect(await vary("/members/page")).toBe("rsc, next-router-state-tree");
+  });
+});
+
 describe("the web role's log", () => {
   it("is only JSON lines on standard output, with what the server prints to the console redacted like any line", async () => {
     const web = await startWebRole();

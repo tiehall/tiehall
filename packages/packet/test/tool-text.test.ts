@@ -7,12 +7,14 @@ import {
   postedMessageText,
   pullRequestLinkText,
   requestPageText,
+  requestWithThreadText,
   revisedPacketText,
   requestText,
   ToolTextError,
   whoamiText,
   type RequestJson,
   type RequestPageJson,
+  type RequestWithThreadJson,
 } from "../src/tool-text.ts";
 
 // What agents read of a request, as markdown (agent-surfaces: Tool results
@@ -166,6 +168,39 @@ describe("a page of a request", () => {
     expect(markdown).toContain("FE-142, page 1 of 1 of its thread");
     // Every page states the request and its packet revision, whichever section it reads.
     expect(markdown).toContain("Packet revision 2 of a request, due 2026-10-15.");
+  });
+});
+
+// agent-surfaces: Negotiated request URLs. The markdown of a request's URL renders the request with its thread, the
+// same data as the JSON of the /api/v1 read, and says how to read the packet too.
+describe("a request with its thread", () => {
+  function withThread(messages: RequestWithThreadJson["messages"]): RequestWithThreadJson {
+    return { ...request, messages };
+  }
+  const posted = (overrides: Parameters<typeof message>[0] = {}) => {
+    const { message: facts, untrusted } = message(overrides);
+    return { ...facts, untrusted: { body: untrusted.text, client: untrusted.client } };
+  };
+
+  it("states the request in Tiehall's words, fences its title and each message with its origin, oldest first, and says how to read the packet", () => {
+    const agentView = createAgentView();
+    const markdown = agentView.markdown(
+      requestWithThreadText(withThread([posted(), posted({ team: QA, actorKind: "agent", body: "Chrome and Firefox." })]), { teams: ["FE"] }),
+    );
+    expect(markdown).toContain("FE-142 is claimed, addressed to team FE.");
+    expect(markdown).toContain(fenced(agentView.nonce, "other team", "Add a dark mode"));
+    expect(markdown).toContain("The thread:");
+    expect(markdown).toContain(fenced(agentView.nonce, "same team", "Which browsers must it support?"));
+    expect(markdown).toContain(fenced(agentView.nonce, "other team", "Chrome and Firefox."));
+    expect(markdown.indexOf("Which browsers")).toBeLessThan(markdown.indexOf("Chrome and Firefox."));
+    expect(markdown).toContain('For its packet too, run tiehall get FE-142 or call get_request with request "FE-142".');
+  });
+
+  it("says when the thread has no message, and leaves a system message outside any fence", () => {
+    expect(view(requestWithThreadText(withThread([]), { teams: [] }))).toContain("Its thread has no message yet.");
+    const markdown = view(requestWithThreadText(withThread([posted({ actorKind: "system", team: null, body: "diff updated: 2 → 3 breaking" })]), { teams: [] }));
+    expect(markdown).toMatch(/\ndiff updated: 2 → 3 breaking\n/);
+    expect(markdown).not.toContain("Origin: external.");
   });
 });
 

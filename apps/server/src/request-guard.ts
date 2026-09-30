@@ -2,7 +2,7 @@ import http, { type IncomingMessage, type RequestListener, type ServerResponse }
 import { syncBuiltinESMExports } from "node:module";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
-import { bodyLimitFor, declaredLength, payloadTooLarge, refusalAnswer, wayOnOfPageRoute } from "@tiehall/commands";
+import { bodyLimitFor, declaredLength, pageRouteNegotiatesHtml, payloadTooLarge, refusalAnswerAs, varyOnNegotiatedUrls, wayOnOfPageRoute } from "@tiehall/commands";
 import { httpProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
@@ -53,13 +53,22 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // Refusals to browsers (public-api: One error model for Tiehall's own
 // refusals; github-layer-hardening: design.md, Decisions this change rests on:
 // D50 (7); Technical decisions: T5): on a page route (wayOnOfPageRoute), a
-// 503 or a 413 to a request whose Accept header names text/html is the
-// refusal's page, with the same status and headers and a link on, from the
-// one renderer the routes use; every other request, and every call to
-// /api/v1, /mcp and the other API paths, gets the problem. A refused form's
+// 503 or a 413 to a request that negotiates HTML there is the refusal's page,
+// with the same status and headers and a link on, from the one renderer the
+// routes use; every other request, and every call to /api/v1, /mcp and the
+// other API paths, gets the problem. A request negotiates HTML on a request
+// URL by that URL's own rule, and on every other page route when its Accept
+// header names text/html (pageRouteNegotiatesHtml). A refused form's
 // link leads back to the page it was posted from when its Referer names a
 // page on the host the form was sent to, as a review page's form, whose
 // target lacks the review page's input, needs.
+//
+// Request URLs (agent-surfaces: Request URL response headers): every answer
+// of a request URL, /<KEY> with or without .md or .json, names Accept and
+// Authorization in its Vary, which the guard adds as the answer's head goes
+// out, since Next.js sets its own Vary as it renders the web UI's page of a
+// request, after the proxy that negotiates the URL has run
+// (varyOnNegotiatedUrls). The guard's own refusals get it too.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
@@ -114,6 +123,7 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
   const guard = (listener: RequestListener): RequestListener => (request: IncomingMessage, response: ServerResponse) => {
     // Decided when the head arrives, not when a held body is complete.
     const newDuringShutdown = stopping;
+    varyOnNegotiatedUrls(request, response);
     inFlight += 1;
     response.once("close", () => {
       inFlight -= 1;
@@ -181,16 +191,16 @@ function shuttingDown(request: IncomingMessage, response: ServerResponse): void 
 
 /**
  * Writes a refusal of the guard, with `Connection: close`: on a page route,
- * the refusal's page for a request whose Accept header names text/html and
- * the problem for every other, as the routes answer; elsewhere the problem,
- * whose body is given.
+ * the refusal's page for a request that negotiates HTML there and the problem
+ * for every other, as the routes answer; elsewhere the problem, whose body is
+ * given.
  */
 function refuse(request: IncomingMessage, response: ServerResponse, problem: HttpProblem, problemBody: string): void {
   const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/", referrerOnInstall(request));
   const answer =
     wayOn === undefined
       ? { status: problem.status, headers: new Headers(problem.headers), body: problemBody }
-      : refusalAnswer(request.headers.accept, problem, wayOn);
+      : refusalAnswerAs(pageRouteNegotiatesHtml(request.url ?? "/", request.headers.accept), problem, wayOn);
   response.writeHead(answer.status, {
     ...Object.fromEntries(answer.headers),
     "content-length": Buffer.byteLength(answer.body),

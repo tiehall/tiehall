@@ -15,7 +15,8 @@ import type { TestInstall } from "./install.ts";
 // server components and server actions (design.md, Technical decisions: T1 and
 // T3). The app in apps/web is built with `next build`, once per run of this
 // project between the test files that start it (web-app-run.ts), and its
-// standalone server is started as its own process with the settings of a test
+// standalone server is started as its own process, as the web role starts it
+// as far as a request URL's answers go (web-app-server.ts), with the settings of a test
 // install: its database, as the app role, its keys and a trial URL,
 // http://localhost and a free port, where it listens on 127.0.0.1. A browser
 // reaches it at that URL through a host-resolver rule; a test's own calls go
@@ -26,6 +27,8 @@ const WEB = fileURLToPath(new URL("../../../../apps/web/", import.meta.url));
 const NEXT_BIN = createRequire(join(WEB, "package.json")).resolve("next/dist/bin/next");
 /** The standalone server `next build` writes, as the image copies it. */
 const STANDALONE = join(WEB, ".next", "standalone", "apps", "web");
+/** Starts the standalone server as the web role does, as far as a request URL's answers go (web-app-server.ts). */
+const LAUNCHER = fileURLToPath(new URL("./web-app-server.ts", import.meta.url));
 /** The file that names the run whose build .next holds. */
 const BUILT_FOR = join(WEB, ".next", "tiehall-test-run");
 /** Held while one test file builds the app, so no other builds it at once; one per checkout. */
@@ -111,7 +114,7 @@ export async function startWebApp(install: TestInstall): Promise<WebApp> {
   const port = await freePort();
   const url = `http://localhost:${port}`;
   const origin = `http://127.0.0.1:${port}`;
-  const child: ChildProcess = spawn(process.execPath, [server], {
+  const child: ChildProcess = spawn(process.execPath, [LAUNCHER, server], {
     env: {
       PATH: process.env["PATH"] ?? "",
       ...QUIET,

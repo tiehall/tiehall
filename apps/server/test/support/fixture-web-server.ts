@@ -10,7 +10,8 @@
 // /setup is read and answered 200; and a delivery posted to /webhooks/github is read and answered 202. With LOG_CONNECTIONS=on it also prints how many bytes each connection read
 // from its socket when it closes. With LOG_HEADS=on it prints each call's method and path as soon as the server
 // has its head, from a listener of its own that the request guard does not wrap, so a test knows the server
-// holds a call whose body is still arriving.
+// holds a call whose body is still arriving. A request URL, /FE-142 with or without .md or .json, and
+// /members/page answer as Next.js answers a page, with its own Vary.
 import http from "node:http";
 import process from "node:process";
 
@@ -60,6 +61,12 @@ const server = http.createServer((request, response) => {
   }
   if (request.url === "/setup" && request.method === "POST") {
     readThenAnswer(request, response, "text/plain", (bytes) => `form of ${bytes} bytes`);
+    return;
+  }
+  if (/^\/(FE-142(\.md|\.json)?|members\/page)$/.test(request.url ?? "")) {
+    // As Next.js answers a page: its own Vary, set while it renders.
+    response.setHeader("Vary", "rsc, next-router-state-tree");
+    response.end("page");
     return;
   }
   response.end("ok");

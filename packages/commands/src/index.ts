@@ -351,8 +351,20 @@ export {
   type StartSetupOptions,
 } from "./setup-code.ts";
 export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
-export { refusalAnswer, type RefusalAnswer, type WayOn } from "./html.ts";
-export { wayOnOfPageRoute } from "./page-routes.ts";
+export { refusalAnswer, refusalAnswerAs, type RefusalAnswer, type WayOn } from "./html.ts";
+export { pageRouteNegotiatesHtml, wayOnOfPageRoute } from "./page-routes.ts";
+export {
+  MEDIA_TYPES,
+  NEGOTIATED_VARY,
+  negotiate,
+  requestUrlNegotiatesHtml,
+  requestUrlOf,
+  varyOnNegotiatedUrls,
+  withNegotiatedVary,
+  type Representation,
+  type RequestUrlPath,
+} from "./negotiation.ts";
+export { createRequestUrlRoute, requestEtag, type RequestUrlAnswer, type RequestUrlOptions, type RequestUrlRoute } from "./request-urls.ts";
 export {
   AUTH_BASE_PATH,
   createSignInService,

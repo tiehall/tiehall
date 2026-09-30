@@ -71,8 +71,8 @@ export function acceptsHtml(request: Request): boolean {
   return namesHtml(request.headers.get("accept"));
 }
 
-/** Whether an Accept header names text/html. */
-function namesHtml(accept: string | null | undefined): boolean {
+/** Whether an Accept header names text/html, as browsers send; a request URL negotiates HTML by its own rule (negotiation.ts). */
+export function namesHtml(accept: string | null | undefined): boolean {
   return (accept ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
 }
 
@@ -114,10 +114,21 @@ export interface RefusalAnswer {
  * itself.
  */
 export function refusalAnswer(accept: string | null | undefined, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): RefusalAnswer {
+  return refusalAnswerAs(namesHtml(accept), problem, wayOn, headers);
+}
+
+/**
+ * The answer to a refusal on a page route whose call negotiates HTML, or
+ * does not, as the route decides it: a request URL by its own negotiation,
+ * which takes a call with no Accept header, or one that accepts any type, for
+ * HTML too (negotiation.ts), and every other page route by refusalAnswer()'s
+ * Accept header.
+ */
+export function refusalAnswerAs(html: boolean, problem: HttpProblem, wayOn: WayOn, headers: Headers = new Headers()): RefusalAnswer {
   const answer = new Headers(problem.headers);
   for (const cookie of headers.getSetCookie()) answer.append("set-cookie", cookie);
   answer.set("content-security-policy", PAGE_HEADERS["content-security-policy"]);
-  if (!namesHtml(accept)) return { status: problem.status, headers: answer, body: JSON.stringify(problem.body) };
+  if (!html) return { status: problem.status, headers: answer, body: JSON.stringify(problem.body) };
   for (const [name, value] of Object.entries(PAGE_HEADERS)) answer.set(name, value);
   return { status: problem.status, headers: answer, body: refusalPage(problem, wayOn) };
 }

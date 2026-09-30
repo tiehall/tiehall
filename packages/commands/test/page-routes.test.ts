@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wayOnOfPageRoute } from "../src/index.ts";
+import { pageRouteNegotiatesHtml, wayOnOfPageRoute } from "../src/index.ts";
 
 // The page routes, for an answer given before any route sees the call, such as
 // the web role's request guard's 413 and 503 (public-api: One error model for
@@ -83,5 +83,31 @@ describe("the page routes, as an answer before any route knows them", () => {
       expect(href, target).toMatch(/^\/(?![/\\])/);
       expect(new URL(href!, "https://tiehall.example.com").origin, target).toBe("https://tiehall.example.com");
     }
+  });
+});
+
+// A request URL is a page route, whose refusals follow its own negotiation (agent-surfaces: Negotiated request URLs;
+// agent-surfaces: A browser without a session is sent to sign-in): a call without an Accept header, or one that
+// accepts any type, negotiates HTML there and gets a page; its .md and .json forms, and a call that asks for markdown
+// or JSON, get the problem. Every other page route gives a page to a call whose Accept header names text/html.
+describe("whether a refusal on a page route is a page", () => {
+  const BROWSER = "text/html,application/xhtml+xml,*/*;q=0.8";
+
+  it("is a page for a request URL whose call negotiates HTML, and leads on to the URL", () => {
+    expect(wayOnOfPageRoute("GET", "/FE-142")?.href).toBe("/FE-142");
+    for (const accept of [BROWSER, "*/*", undefined, null]) expect(pageRouteNegotiatesHtml("/FE-142", accept), String(accept)).toBe(true);
+  });
+
+  it("is the problem for a request URL whose call negotiates markdown or JSON", () => {
+    expect(pageRouteNegotiatesHtml("/FE-142", "text/markdown")).toBe(false);
+    expect(pageRouteNegotiatesHtml("/FE-142", "application/json")).toBe(false);
+    expect(pageRouteNegotiatesHtml("/FE-142.json", BROWSER)).toBe(false);
+    expect(pageRouteNegotiatesHtml("/FE-142.md", "*/*")).toBe(false);
+  });
+
+  it("is a page on every other page route only when the Accept header names text/html", () => {
+    expect(pageRouteNegotiatesHtml("/members", BROWSER)).toBe(true);
+    expect(pageRouteNegotiatesHtml("/members", "*/*")).toBe(false);
+    expect(pageRouteNegotiatesHtml("/members", undefined)).toBe(false);
   });
 });

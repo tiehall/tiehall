@@ -1,5 +1,6 @@
 import { SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
-import { TO_SIGN_IN, type WayOn } from "./html.ts";
+import { namesHtml, TO_SIGN_IN, type WayOn } from "./html.ts";
+import { requestUrlNegotiatesHtml } from "./negotiation.ts";
 import { HEALTH_PATH, isApiCall, SETUP_PATH } from "./setup-gate.ts";
 import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 
@@ -13,8 +14,13 @@ import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 // a page (html.ts): every path but an API call, as the setup gate names them
 // (/api, /mcp, /.well-known, /webhooks and /schemas), and /healthz, with
 // GitHub's return to the sign-in callback, which lies under /api. The consent
-// screen and the device approval page are among them; the request URL and
-// intake pages join when they are built. The page's link leads on as the routes' own refusals do: for the sign-in page and
+// screen, the device approval page and request URLs are among them; intake
+// pages join when they are built. A call negotiates HTML on a request URL as
+// its own negotiation decides (negotiation.ts), so a call without an Accept
+// header, or one that accepts any type, gets a page there, while a call to
+// its .md or .json form gets the problem; on every other page route, a call
+// negotiates HTML when its Accept header names text/html, as browsers send
+// (pageRouteNegotiatesHtml). The page's link leads on as the routes' own refusals do: for the sign-in page and
 // GitHub's return to the sign-in callback, to the sign-in page; for the
 // setup screen and its own sign-in, back to the setup screen; for the sign-out
 // form, back to the home page, whose form it is; and for every other page, to
@@ -73,4 +79,14 @@ function postedFrom(referrer: string | undefined): string | undefined {
     return undefined;
   }
   return wayOnOfPageRoute("GET", `${url.pathname}${url.search}`)?.href;
+}
+
+/**
+ * Whether a refusal of a call to this page route, a path and query, with this
+ * Accept header is a page: on a request URL when the call negotiates HTML
+ * there, and on every other page route when its Accept header names
+ * text/html.
+ */
+export function pageRouteNegotiatesHtml(target: string, accept: string | null | undefined): boolean {
+  return requestUrlNegotiatesHtml(target, accept) ?? namesHtml(accept);
 }

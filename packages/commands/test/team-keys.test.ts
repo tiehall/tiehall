@@ -136,10 +136,11 @@ describe("a key that spells an app path", () => {
   it("such as MCP is accepted, while every app path stays lowercase and so is never a key", async () => {
     expect((await create("MCP")).key).toBe("MCP");
     expect((await create("API")).key).toBe("API");
-    // The app's own paths (design.md, Self-hosting decisions: S15), and every route the web app serves at its top level.
+    // The app's own paths (design.md, Self-hosting decisions: S15), and every route the web app serves at its top
+    // level. A dynamic segment, such as [key], names no path of its own: it serves the keys, as request URLs.
     const appPaths = ["api", "mcp", "docs", "confirm", "consent", "device", "setup", "webhooks", "schemas", ".well-known", "healthz", "admin", "members", "sign-in", "sign-out", "tokens"];
     const routes = readdirSync(webApp, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("["))
       .map(({ name }) => name);
     expect(routes.length).toBeGreaterThan(0);
     for (const segment of [...appPaths, ...routes]) {

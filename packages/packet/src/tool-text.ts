@@ -224,6 +224,34 @@ export function requestPageText(page: RequestPageJson, reader: Reader, surface: 
   return texts;
 }
 
+/** A request with its thread, oldest message first, as the /api/v1 read and the JSON of its URL return it. */
+export interface RequestWithThreadJson extends RequestJson {
+  messages: (MessageFactsJson & { untrusted: { body: string; client: string | null } })[];
+}
+
+/**
+ * A request with its thread, as the markdown of its URL shows it: the same
+ * data as its JSON. The request in Tiehall's words, its title fenced, then
+ * each message, oldest first, with what it is and who posted it in Tiehall's
+ * words and its latest text fenced with its origin, and how to read the
+ * packet too, which the thread leaves out.
+ */
+export function requestWithThreadText(request: RequestWithThreadJson, reader: Reader): AgentText[] {
+  const key = checked(request.key, REQUEST_KEY, "request key");
+  const texts: AgentText[] = [...requestText(request, reader)];
+  if (request.messages.length === 0) {
+    texts.push({ origin: "tiehall", text: "Its thread has no message yet." });
+  } else {
+    texts.push({ origin: "tiehall", text: "The thread:" });
+    for (const message of request.messages) {
+      texts.push({ origin: "tiehall", text: messageLine(message, 1, 1) });
+      texts.push({ origin: messageOrigin(message, reader), text: message.untrusted.body });
+    }
+  }
+  texts.push({ origin: "tiehall", text: `For its packet too, run tiehall get ${key} or call get_request with request "${key}".` });
+  return texts;
+}
+
 /** A message as post_message returns it, with the text of its latest version. */
 export interface PostedMessageJson extends MessageFactsJson {
   untrusted: { body: string; client: string | null };
