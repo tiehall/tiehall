@@ -2,7 +2,7 @@ import { COMMAND_TABLE, createTiehallClient, type CommandEntry, type TiehallClie
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf, installUrlOf, type SavedLogin } from "./logins.ts";
-import { expiresSoon, logIn, refreshLogin } from "./oauth.ts";
+import { expiresSoon, isRedirect, logIn, redirectRefusal, refreshLogin } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
 import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
@@ -147,7 +147,8 @@ function clientFor(environment: CliEnvironment, login: SavedLogin): TiehallClien
   return createTiehallClient({
     baseUrl: login.url,
     headers: { authorization: `Bearer ${login.accessToken}`, "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
-    fetch: (request) => (environment.fetch ?? fetch)(request),
+    // Redirects are not followed (isRedirect()): the call is answered with the redirect itself.
+    fetch: (request) => (environment.fetch ?? fetch)(new Request(request, { redirect: "manual" })),
   });
 }
 
@@ -178,6 +179,7 @@ function sessionFor(environment: CliEnvironment, saved: SavedLogin): Session {
       throw new CliError(`The CLI could not reach ${login.url}: ${why}`);
     }
     const { response } = answered;
+    if (isRedirect(response)) throw redirectRefusal(login.url);
     return { ok: response.ok, status: response.status, body: response.ok ? answered.data : answered.error };
   };
   return {

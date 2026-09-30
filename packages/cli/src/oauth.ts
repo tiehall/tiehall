@@ -26,6 +26,21 @@ const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 /** The scopes the CLI asks for: reading and writing requests. */
 const SCOPES = "requests:read requests:write";
 
+/**
+ * Whether an answer is a redirect, which the CLI does not follow: its tokens,
+ * and its sign-in's codes, go to the install at its URL and nowhere else, so a
+ * redirect to another origin, from the install or a proxy in front of it,
+ * gets nothing sent on. Every request of the CLI asks for the redirect itself.
+ */
+export function isRedirect(response: Response): boolean {
+  return response.status >= 300 && response.status < 400;
+}
+
+/** The refusal of a command whose install answered with a redirect. */
+export function redirectRefusal(url: string): CliError {
+  return new CliError(`${url} answered with a redirect, which the CLI does not follow, so nothing was sent on: check that ${url} is your install's own URL.`);
+}
+
 /** A form posted to the install's sign-in service, and its JSON answer. */
 async function post(environment: CliEnvironment, url: string, path: string, fields: Record<string, string>): Promise<{ status: number; body: Record<string, unknown> }> {
   let response: Response;
@@ -35,11 +50,13 @@ async function post(environment: CliEnvironment, url: string, path: string, fiel
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
         body: new URLSearchParams(fields).toString(),
+        redirect: "manual",
       }),
     );
   } catch (error) {
     throw new CliError(`The CLI could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  if (isRedirect(response)) throw redirectRefusal(url);
   let body: unknown;
   try {
     body = await response.json();

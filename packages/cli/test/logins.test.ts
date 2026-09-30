@@ -1,4 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -256,5 +258,64 @@ describe("an expired access token", () => {
     const result = await tiehall(["inbox"], { [COM]: refusing }, () => new Date(Date.now() + 3_600_000));
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(`The saved login for ${COM} no longer works: run tiehall login ${COM} again.`);
+  });
+});
+
+// agent-surfaces: CLI request commands. The CLI sends its tokens and its
+// sign-in's codes to its install only: it follows no redirect, so an install,
+// or a proxy in front of it, that answers with one to another origin gets the
+// command refused, and nothing reaches that origin.
+describe("a redirect", () => {
+  it("is not followed: a refresh token, a device code and a call's token never reach the origin it points to", async () => {
+    const reached: { method: string | undefined; path: string | undefined; authorization: string | null; body: string }[] = [];
+    const other = createServer((request, response) => {
+      let body = "";
+      request.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      request.on("end", () => {
+        reached.push({ method: request.method, path: request.url, authorization: request.headers.authorization ?? null, body });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ access_token: "stolen", refresh_token: "stolen", expires_in: 600, "requests": [] }));
+      });
+    });
+    let status = 307;
+    const redirecting = createServer((request, response) => {
+      request.resume();
+      response.writeHead(status, { location: `http://127.0.0.1:${(other.address() as AddressInfo).port}${request.url ?? "/"}` });
+      response.end();
+    });
+    await new Promise<void>((resolve) => other.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => redirecting.listen(0, "127.0.0.1", resolve));
+    const url = `http://localhost:${(redirecting.address() as AddressInfo).port}`;
+    /** Runs the CLI with the global fetch, which a real install's answers reach. */
+    const real = async (args: readonly string[]) => {
+      let stderr = "";
+      const code = await run({ argv: args, env: { TIEHALL_CONFIG_DIR: configDir }, stdout: () => {}, stderr: (text) => void (stderr += text), sleep: async () => {} });
+      return { code, stderr };
+    };
+    const savedLogin = (expiresAt: Date) => {
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(file(), JSON.stringify({ logins: { [url]: { accessToken: "ACCESS-SECRET", refreshToken: "REFRESH-SECRET", expiresAt: expiresAt.toISOString() } } }), { mode: 0o600 });
+    };
+    try {
+      for (const redirect of [307, 308, 302]) {
+        status = redirect;
+        savedLogin(new Date(Date.now() - 60_000));
+        const refresh = await real(["inbox"]);
+        expect(refresh.code, `refresh, ${redirect}`).toBe(1);
+        expect(refresh.stderr).toContain(`${url} answered with a redirect, which the CLI does not follow`);
+        savedLogin(new Date(Date.now() + 3_600_000));
+        const call = await real(["inbox"]);
+        expect(call.code, `call, ${redirect}`).toBe(1);
+        expect(call.stderr).toContain(`${url} answered with a redirect, which the CLI does not follow`);
+        const login = await real(["login", url]);
+        expect(login.code, `login, ${redirect}`).toBe(1);
+        expect(login.stderr).toContain(`${url} answered with a redirect, which the CLI does not follow`);
+      }
+      expect(reached).toEqual([]);
+      expect(saved()[url]).toMatchObject({ accessToken: "ACCESS-SECRET", refreshToken: "REFRESH-SECRET" });
+    } finally {
+      await new Promise((resolve) => redirecting.close(resolve));
+      await new Promise((resolve) => other.close(resolve));
+    }
   });
 });
