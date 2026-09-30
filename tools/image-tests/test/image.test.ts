@@ -453,6 +453,15 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(confirmation.status).toBe(401);
   });
 
+  // self-host-install: The running version links to its source.
+  it("shows the running version in every page's footer, with a link to the source of the commit it was built from", async () => {
+    const html = await (await fetch(`http://127.0.0.1:${port}/sign-in`)).text();
+    const footer = /<footer>([\s\S]*?)<\/footer>/.exec(html)?.[1] ?? "";
+    // A build that names no release is a development build, whose source is its commit.
+    expect(footer).toContain("Tiehall 0.0.0-dev");
+    expect(footer).toMatch(new RegExp(`href="https://github\\.com/[^/"]+/[^/"]+/tree/${revision()}"`));
+  });
+
   it("tags its pages with the commit as the deployment id", async () => {
     // A page Next.js renders itself, such as the one for a path no route serves.
     const html = await (await fetch(`http://127.0.0.1:${port}/no-such-page`)).text();

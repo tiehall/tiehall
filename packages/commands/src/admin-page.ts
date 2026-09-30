@@ -2,7 +2,8 @@ import { getInstallStatus } from "@tiehall/catalog";
 import type { z } from "zod";
 import { escapeHtml, htmlPage } from "./html.ts";
 import { ADMIN_PATH, adminNav } from "./admin-pages.ts";
-import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import type { RunningVersion } from "./running-version.ts";
+import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The admin page at /admin, the first page of the admin UI (self-host-install:
 // The admin page warns about missing backups; design.md, Self-hosting
@@ -11,7 +12,14 @@ import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } fr
 // none in the last 7 days, with what to do about it. It reads through
 // execute(), as the signed-in user's web session, in a read-only transaction,
 // and changes nothing; a browser without a session is sent to sign in first
-// (D28 #66).
+// (D28 #66). It also shows the running version with a link to its source
+// (self-host-install: The running version links to its source;
+// running-version.ts).
+
+export interface AdminRouteOptions extends PageRouteOptions {
+  /** The running version and the link to its source; the page shows no version without it. */
+  version?: RunningVersion;
+}
 
 type InstallStatus = z.output<typeof getInstallStatus.output>;
 
@@ -42,13 +50,23 @@ function backupsSection({ lastBackup, backupWarning }: InstallStatus): string[] 
   return lines;
 }
 
-export function createAdminRoute(options: PageRouteOptions): PageRoute {
+/** The version section: which version runs, and where its source is. */
+function versionSection(version: RunningVersion | undefined): string[] {
+  if (version === undefined) return [];
+  return [
+    "      <h2>Version</h2>",
+    `      <p>${escapeHtml(`Tiehall ${version.version} is running.`)} Its source: ${link(version.sourceUrl, version.sourceUrl)}</p>`,
+    `      <p>${escapeHtml("To upgrade, back up, set the new TIEHALL_IMAGE in .env and run docker compose pull && docker compose up -d; the release notes of each release say what it changes.")}</p>`,
+  ];
+}
+
+export function createAdminRoute(options: AdminRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: ADMIN_PATH,
     name: "admin",
     async get(_query, { read }) {
       const status = await read<InstallStatus>(getInstallStatus.id, {});
-      return htmlAnswer(htmlPage("Admin", ["      <h1>Admin</h1>", adminNav(), ...backupsSection(status)].join("\n")));
+      return htmlAnswer(htmlPage("Admin", ["      <h1>Admin</h1>", adminNav(), ...versionSection(options.version), ...backupsSection(status)].join("\n")));
     },
   });
 }

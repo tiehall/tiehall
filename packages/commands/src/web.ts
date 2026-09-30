@@ -3,6 +3,8 @@ import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-ro
 import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
 import { createAdminRoute } from "./admin-page.ts";
+import { showRunningVersion } from "./html.ts";
+import { runningVersion } from "./running-version.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -37,6 +39,7 @@ import type { PageRoute, PageRouteOptions } from "./web-pages.ts";
 import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
+export { runningVersion, type RunningVersion } from "./running-version.ts";
 export { sessionCookiesOf, type SessionCookie } from "./session-renewal.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 export { AUTH_BASE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
@@ -67,6 +70,8 @@ let activityLog: ActivityLogRoute | undefined;
 /** The process's one execute(), confirmation step and sign-in service, built from the install's settings on first use. */
 function servicesOf(env: Environment): Services {
   if (services !== undefined) return services;
+  // Every page's footer shows the running version and the link to its source (html.ts).
+  showRunningVersion(runningVersion(env));
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
   const database = openAppDatabase(connection, { applicationName: "tiehall web", logger, role: "web" });
@@ -314,7 +319,7 @@ export function membersRoute(env: Environment): PageRoute {
 
 /** The admin page at /admin, the first page of the admin UI, for the signed-in user's web session. */
 export function adminRoute(env: Environment): PageRoute {
-  return pageOf("admin", env, createAdminRoute);
+  return pageOf("admin", env, (options) => createAdminRoute({ ...options, version: runningVersion(env) }));
 }
 
 /** The web form that opens a request, at /requests/new, which every member of a team may use, for the signed-in user's web session. */

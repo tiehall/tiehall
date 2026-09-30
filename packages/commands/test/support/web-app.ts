@@ -108,8 +108,12 @@ export interface WebApp {
   close(): Promise<void>;
 }
 
-/** Builds the web app for this run if it is not built yet, and starts its standalone server for the test install. */
-export async function startWebApp(install: TestInstall): Promise<WebApp> {
+/**
+ * Builds the web app for this run if it is not built yet, and starts its
+ * standalone server for the test install, with any further settings given,
+ * such as the release the image carries or TIEHALL_SOURCE_URL.
+ */
+export async function startWebApp(install: TestInstall, options: { env?: Readonly<Record<string, string>> } = {}): Promise<WebApp> {
   const server = await buildWebApp();
   const port = await freePort();
   const url = `http://localhost:${port}`;
@@ -125,6 +129,7 @@ export async function startWebApp(install: TestInstall): Promise<WebApp> {
       TIEHALL_DATABASE_APP_PASSWORD: install.appDatabase.password,
       TIEHALL_SECRET_KEY: install.secretKey,
       TIEHALL_AUTH_SECRET: install.authSecret,
+      ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

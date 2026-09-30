@@ -361,7 +361,7 @@ export {
   type StartSetupOptions,
 } from "./setup-code.ts";
 export { createSetupRoute, setupCookieName, type SetupRoute, type SetupRouteOptions } from "./setup-route.ts";
-export { refusalAnswer, refusalAnswerAs, type RefusalAnswer, type WayOn } from "./html.ts";
+export { footerHtml, refusalAnswer, refusalAnswerAs, showRunningVersion, type RefusalAnswer, type WayOn } from "./html.ts";
 export { pageRouteNegotiatesHtml, wayOnOfPageRoute } from "./page-routes.ts";
 export {
   MEDIA_TYPES,
@@ -450,7 +450,8 @@ export {
 export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type GitHubAdminRouteOptions } from "./github-admin-route.ts";
-export { createAdminRoute } from "./admin-page.ts";
+export { createAdminRoute, type AdminRouteOptions } from "./admin-page.ts";
+export { DEFAULT_SOURCE_REPOSITORY, runningVersion, type RunningVersion } from "./running-version.ts";
 export {
   ADMIN_PATH,
   createInvitesRoute,

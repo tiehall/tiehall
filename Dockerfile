@@ -61,11 +61,17 @@ ARG TIEHALL_VERSION=0.0.0-dev
 # The repository the image is pushed to, which the init role names in the .env it prints, tagged with the
 # release, or with sha-<commit> for a development build, as the build workflow tags it.
 ARG TIEHALL_IMAGE_NAME=tiehall
+# The public repository the image is built from, whose source of this release, or of this commit for a
+# development build, the web UI's footer and the admin page link to (self-host-install: The running version
+# links to its source); the build workflow sets it from the repository it runs in. Without it they link to the
+# public Tiehall repository, and an operator who runs a modified server sets TIEHALL_SOURCE_URL in .env instead.
+ARG TIEHALL_SOURCE_REPOSITORY=
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     TIEHALL_COMMIT_SHA=${TIEHALL_COMMIT_SHA} \
     TIEHALL_VERSION=${TIEHALL_VERSION} \
-    TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME}
+    TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME} \
+    TIEHALL_SOURCE_REPOSITORY=${TIEHALL_SOURCE_REPOSITORY}
 LABEL org.opencontainers.image.title="tiehall" \
       org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate, all, init and admin" \
       org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}" \

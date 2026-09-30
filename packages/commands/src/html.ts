@@ -1,4 +1,5 @@
 import type { HttpProblem } from "@tiehall/core";
+import type { RunningVersion } from "./running-version.ts";
 
 // The web role's own HTML pages, such as the setup screen and the review pages
 // of the confirmation step, render no raw HTML from anyone (design.md, Design
@@ -24,7 +25,29 @@ export const PAGE_HEADERS = {
   "content-security-policy": "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 } as const;
 
-/** A page of the web role, with its title and the HTML of its main content. */
+// The footer of every page (self-host-install: The running version links to
+// its source; design.md, Self-hosting decisions: S16): the running version and
+// a link to its source. The process that serves the pages sets it once, from
+// its settings, when it starts serving them (web.ts, and the web role's
+// request guard); a page rendered before, such as in a test that sets none,
+// has no footer.
+let footer: RunningVersion | undefined;
+
+/** Sets the running version, which the footer of every page shows from then on, with the link to its source. */
+export function showRunningVersion(version: RunningVersion | undefined): void {
+  footer = version;
+}
+
+/** The footer's HTML: the running version and the link to its source; empty until a version is set. */
+export function footerHtml(version: RunningVersion | undefined = footer): string {
+  if (version === undefined) return "";
+  return `    <footer>
+      <p>${escapeHtml(`Tiehall ${version.version}`)} · <a href="${escapeHtml(version.sourceUrl)}">Source code</a></p>
+    </footer>
+`;
+}
+
+/** A page of the web role, with its title and the HTML of its main content, and the footer. */
 export function htmlPage(title: string, main: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -37,7 +60,7 @@ export function htmlPage(title: string, main: string): string {
     <main>
 ${main}
     </main>
-  </body>
+${footerHtml()}  </body>
 </html>
 `;
 }
