@@ -186,8 +186,10 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
   stop.addEventListener("abort", onStop, { once: true });
   void sleepOf(environment)(CALL_LIMIT_MS, call.signal).then(() => call.abort());
   try {
-    const answer = await session.send((client) =>
-      client.GET("/api/v1/events/wait", { params: { query: cursor === undefined ? {} : { cursor } }, signal: call.signal }),
+    // A refresh of the access token is given up only when the waiter stops, such as at its cap, not when one call runs long.
+    const answer = await session.send(
+      (client) => client.GET("/api/v1/events/wait", { params: { query: cursor === undefined ? {} : { cursor } }, signal: call.signal }),
+      stop,
     );
     if (answer.ok) {
       const body = answer.body as { events?: unknown; cursor?: unknown } | undefined;
@@ -363,7 +365,7 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
     const login = chooseLogin(configDirOf(environment.env), { install });
     const session = sessionFor(environment, login);
     void sleepOf(environment)(DIGEST_READ_MS, stop.signal).then(() => stop.abort());
-    const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT }, signal: stop.signal }));
+    const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT }, signal: stop.signal }), stop.signal);
     if (!answer.ok) return 0;
     const page = answer.body as { events?: unknown; more?: unknown } | undefined;
     if (!Array.isArray(page?.events)) return 0;

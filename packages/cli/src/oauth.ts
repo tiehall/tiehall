@@ -41,8 +41,14 @@ export function redirectRefusal(url: string): CliError {
   return new CliError(`${url} answered with a redirect, which the CLI does not follow, so nothing was sent on: check that ${url} is your install's own URL.`);
 }
 
-/** A form posted to the install's sign-in service, and its JSON answer. */
-async function post(environment: CliEnvironment, url: string, path: string, fields: Record<string, string>): Promise<{ status: number; body: Record<string, unknown> }> {
+/** A form posted to the install's sign-in service, and its JSON answer; given up when `signal` aborts. */
+async function post(
+  environment: CliEnvironment,
+  url: string,
+  path: string,
+  fields: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   let response: Response;
   try {
     response = await (environment.fetch ?? fetch)(
@@ -51,6 +57,7 @@ async function post(environment: CliEnvironment, url: string, path: string, fiel
         headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
         body: new URLSearchParams(fields).toString(),
         redirect: "manual",
+        ...(signal === undefined ? {} : { signal }),
       }),
     );
   } catch (error) {
@@ -132,19 +139,26 @@ export function expiresSoon(environment: CliEnvironment, login: SavedLogin): boo
 /**
  * The saved login with new tokens, from its refresh token, saved in place of
  * the old ones. Another command may have refreshed it meanwhile: then its
- * tokens, as saved, are used.
+ * tokens, as saved, are used. The refresh is given up when `signal` aborts,
+ * as a hook's time runs out while the install does not answer.
  */
-export async function refreshLogin(environment: CliEnvironment, configDir: string, login: SavedLogin): Promise<SavedLogin> {
+export async function refreshLogin(environment: CliEnvironment, configDir: string, login: SavedLogin, signal?: AbortSignal): Promise<SavedLogin> {
   const sleep = sleepOf(environment);
   return withLoginsLock(configDir, sleep, async () => {
     const current = chooseLogin(configDir, { install: login.url });
     if (current.accessToken !== login.accessToken && !expiresSoon(environment, current)) return current;
-    const refreshed = await post(environment, login.url, "/api/auth/oauth2/token", {
-      grant_type: "refresh_token",
-      refresh_token: current.refreshToken,
-      client_id: CLI_CLIENT_ID,
-      resource: `${login.url}/mcp`,
-    });
+    const refreshed = await post(
+      environment,
+      login.url,
+      "/api/auth/oauth2/token",
+      {
+        grant_type: "refresh_token",
+        refresh_token: current.refreshToken,
+        client_id: CLI_CLIENT_ID,
+        resource: `${login.url}/mcp`,
+      },
+      signal,
+    );
     // An install that cannot answer for now, such as one that restarts, may take the refresh token once it is back.
     if (refreshed.status >= 500) throw new UnreachableError(`${login.url} could not refresh the saved login for now (HTTP ${refreshed.status}): try again once it is back.`);
     if (refreshed.status !== 200) throw new CliError(`The saved login for ${login.url} no longer works: run tiehall login ${login.url} again.`);

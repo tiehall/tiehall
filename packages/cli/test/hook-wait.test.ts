@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionLockPath } from "../src/session-lock.ts";
 import {
+  hangingRefresh,
   HOLD_MS,
   hookInput,
   INSTALL,
@@ -167,6 +168,18 @@ describe("the 30-minute cap", () => {
     expect(await wait.done).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(install.holding()).toBe(0);
     expect(clock.elapsed()).toBe(CAP_MS);
+  });
+
+  it("cuts short a refresh of the access token that the install has not answered at the cap", async () => {
+    // The access token has expired by the time the Stop hook runs, as it has after 10 idle minutes, and the install hangs.
+    saveLogin(configDir, clock, INSTALL, -MINUTE);
+    const wait = startCli(["hook", "wait"], { configDir, clock, fetch: hangingRefresh(install), stdin: hookInput("session-1") });
+    running.push(wait);
+    await install.untilCalls(1);
+    expect(install.calls.map(({ path }) => path)).toEqual(["/api/auth/oauth2/token"]);
+    await minutes(30);
+    expect(await wait.done).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(existsSync(join(configDir, "logins.lock"))).toBe(false);
   });
 });
 

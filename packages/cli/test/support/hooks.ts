@@ -284,6 +284,28 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
   return stub;
 }
 
+/** The stub install's calls, except that its token endpoint takes a refresh and never answers it, as a hung install does. */
+export function hangingRefresh(install: StubInstall): (request: Request) => Promise<Response> {
+  return (request) => {
+    const address = new URL(request.url);
+    if (address.pathname !== "/api/auth/oauth2/token") return install.fetch(request);
+    install.calls.push({
+      method: request.method,
+      path: address.pathname,
+      query: {},
+      body: undefined,
+      authorization: request.headers.get("authorization"),
+      cliVersion: request.headers.get("tiehall-cli-version"),
+      at: Number.NaN,
+    });
+    return new Promise((_resolve, reject) => {
+      const onAbort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      if (request.signal.aborted) onAbort();
+      else request.signal.addEventListener("abort", onAbort, { once: true });
+    });
+  };
+}
+
 /** Claude Code's input to a hook of this session, as it writes it to the hook's standard input. */
 export function hookInput(sessionId: string, event = "Stop"): string {
   return JSON.stringify({ session_id: sessionId, transcript_path: `/home/sam/.claude/projects/app/${sessionId}.jsonl`, cwd: "/home/sam/app", hook_event_name: event });

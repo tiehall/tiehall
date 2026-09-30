@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  hangingRefresh,
   hookInput,
   INSTALL,
   manualClock,
@@ -139,6 +140,16 @@ describe("a digest that cannot read", () => {
     install.answerEveryCall(UPGRADE_REQUIRED);
     expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(install.calls.map(({ path }) => path)).toEqual(["/api/v1/updates"]);
+  });
+
+  it("prints nothing once 10 seconds pass while the install does not answer the refresh of an expired access token", async () => {
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    saveLogin(configDir, clock, INSTALL, -60_000);
+    const run = startCli(["hook", "session-start"], { configDir, clock, fetch: hangingRefresh(install), stdin: hookInput("session-1", "SessionStart") });
+    await install.untilCalls(1);
+    await clock.advance(10_000);
+    expect(await run.done).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(install.calls.map(({ path }) => path)).toEqual(["/api/auth/oauth2/token"]);
   });
 
   it("reads from the install --install names, as the plugin's launcher passes it", async () => {

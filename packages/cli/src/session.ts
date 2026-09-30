@@ -40,7 +40,8 @@ export type Call = (client: TiehallClient) => Promise<{ data?: unknown; error?: 
 export interface Session {
   /** The install's URL. */
   readonly url: string;
-  send(call: Call): Promise<Answer>;
+  /** Sends the call, after a refresh of the access token when it needs one, which is given up when `signal` aborts. */
+  send(call: Call, signal?: AbortSignal): Promise<Answer>;
 }
 
 export function sessionFor(environment: CliEnvironment, saved: SavedLogin, { longRunning = false }: { longRunning?: boolean } = {}): Session {
@@ -61,16 +62,16 @@ export function sessionFor(environment: CliEnvironment, saved: SavedLogin, { lon
   };
   return {
     url: saved.url,
-    async send(call) {
+    async send(call, signal) {
       let refreshedNow = false;
       if ((longRunning || !refreshed) && expiresSoon(environment, login)) {
-        login = await refreshLogin(environment, configDir, login);
+        login = await refreshLogin(environment, configDir, login, signal);
         refreshed = refreshedNow = true;
       }
       const answer = await once(call);
       // An access token the install no longer takes, such as one it refused before it expired, is refreshed once.
       if (answer.status !== 401 || (longRunning ? refreshedNow : refreshed)) return answer;
-      login = await refreshLogin(environment, configDir, login);
+      login = await refreshLogin(environment, configDir, login, signal);
       refreshed = true;
       return once(call);
     },
