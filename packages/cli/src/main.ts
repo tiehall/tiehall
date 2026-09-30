@@ -36,6 +36,23 @@ function parentAlive(parent: number): () => boolean {
   };
 }
 
+/**
+ * A signal that aborts when the process is asked to stop, by Ctrl-C, SIGTERM
+ * or SIGHUP; only a command that asks for it takes those signals over, and a
+ * second one stops the process as usual.
+ */
+function interruptions(): () => AbortSignal {
+  let interruption: AbortController | undefined;
+  return () => {
+    if (interruption === undefined) {
+      const controller = new AbortController();
+      for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(name, () => controller.abort());
+      interruption = controller;
+    }
+    return interruption.signal;
+  };
+}
+
 export async function main(): Promise<void> {
   process.exitCode = await run({
     argv: process.argv.slice(2),
@@ -46,6 +63,7 @@ export async function main(): Promise<void> {
     fetch: (request) => fetch(request),
     sleep: sleepOf({ argv: [], env: {}, stdout: () => {}, stderr: () => {} }),
     parentAlive: parentAlive(process.ppid),
+    interrupted: interruptions(),
   });
   // A hook that stopped reading an input that never ended leaves nothing open behind it.
   if (readingStdin) process.stdin.destroy();

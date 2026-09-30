@@ -7,6 +7,7 @@ import { chooseLogin, configDirOf, installUrlOf } from "./logins.ts";
 import { logIn } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
 import { sessionFor, type Session } from "./session.ts";
+import { watch } from "./watch.ts";
 import { CLI_VERSION } from "./version.ts";
 
 // The tiehall CLI (agent-surfaces: The CLI package; agent-surfaces: CLI
@@ -33,6 +34,15 @@ interface Globals {
 /** The commands the CLI has besides the request commands of the command table, with their usage and what they do. */
 const OWN_COMMANDS: readonly { usage: string; summary: string }[] = [
   { usage: "tiehall login <url>", summary: "Sign in to the Tiehall install at this URL, through its approval page, and keep the login: one per install." },
+];
+
+/** The commands that run until they are stopped, with their usage and what they do. */
+const RUNNING: readonly { usage: string; summary: string }[] = [
+  {
+    usage: "tiehall watch",
+    summary:
+      "Print a line for each new update on your requests, with its request key, event type, team and URL, until you stop it; it acknowledges nothing. The Claude Code plugin can run it as a monitor.",
+  },
 ];
 
 /** The commands that serve the Claude Code plugin's hooks, which `tiehall hook` lists. */
@@ -66,6 +76,14 @@ async function dispatch(environment: CliEnvironment): Promise<number> {
   }
   if (words.join(" ") === "login") return login(environment, globals, rest);
   if (words[0] === "hook") return hook(environment, globals, words.join(" "));
+  if (words.join(" ") === "watch") {
+    if (globals.help) {
+      environment.stdout(listing("Usage: tiehall watch [--install <url>]\n", RUNNING));
+      return 0;
+    }
+    if (rest.length > 0) throw new CliError("tiehall watch takes no arguments: tiehall watch [--install <url>].");
+    return watch(environment, globals.install);
+  }
   const entry = COMMAND_TABLE.find(({ command }) => command === words.join(" "));
   if (entry === undefined) throw new CliError(`tiehall has no command ${words.join(" ")}. Run tiehall --help for its commands.`);
   if (globals.help) {
@@ -202,7 +220,7 @@ function usageOf(entry: CommandEntry): string {
 
 /** `tiehall --help`: every command, with what it does. */
 function overview(): string {
-  const commands = [...OWN_COMMANDS, ...COMMAND_TABLE.map((entry) => ({ usage: usageOf(entry), summary: entry.summary })), ...HOOKS];
+  const commands = [...OWN_COMMANDS, ...COMMAND_TABLE.map((entry) => ({ usage: usageOf(entry), summary: entry.summary })), ...RUNNING, ...HOOKS];
   const width = Math.max(...commands.map(({ usage }) => usage.length)) + 2;
   return [
     `tiehall ${CLI_VERSION}: the command line of Tiehall, for people and their agents.`,

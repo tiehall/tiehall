@@ -66,6 +66,17 @@ function backoffAfter(failures: number): number {
   return BACKOFF_MS[Math.min(failures, BACKOFF_MS.length - 1)] ?? 30_000;
 }
 
+/**
+ * How long to wait before calling the wait endpoint again after a call that
+ * failed or was answered with a 503, when this many came before it in a row: a
+ * restart's Retry-After: 0 is taken at its word the first time, and a failure
+ * that comes again waits longer each time.
+ */
+export function retryDelay(waited: Extract<Waited, { kind: "again" | "failed" }>, failures: number): number {
+  if (waited.kind === "failed") return backoffAfter(failures);
+  return failures === 0 ? (waited.afterMs ?? backoffAfter(0)) : Math.max(waited.afterMs ?? 0, backoffAfter(failures));
+}
+
 /** How long a hook waits for Claude Code's input on its standard input, in real time. */
 const INPUT_MS = 2_000;
 
@@ -145,11 +156,12 @@ export function noticesOf(installUrl: string, entries: readonly WaitEntry[]): { 
 }
 
 /** What one call to the wait endpoint came to. */
-type Waited =
+export type Waited =
   | { kind: "answered"; entries: WaitEntry[]; cursor: number }
   | { kind: "again"; afterMs: number | undefined }
   | { kind: "failed" }
-  | { kind: "refused" }
+  /** The install refused the call, with this problem, or the CLI could not make it, for this reason. */
+  | { kind: "refused"; problem?: unknown; error?: Error }
   | { kind: "stopped" };
 
 /** How long a 503's Retry-After says to wait; undefined when it says nothing the CLI reads. */
@@ -177,12 +189,12 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
     }
     if (answer.status === 503 || answer.status === 429) return { kind: "again", afterMs: retryAfterMs(answer) };
     if (answer.status >= 500) return { kind: "failed" };
-    return { kind: "refused" };
+    return { kind: "refused", problem: answer.body };
   } catch (error) {
     if (stop.aborted) return { kind: "stopped" };
     // A call that did not reach the install, or that it held longer than it holds one, is tried again later.
     if (error instanceof UnreachableError) return { kind: "failed" };
-    return { kind: "refused" };
+    return { kind: "refused", error: error instanceof Error ? error : new Error(String(error)) };
   } finally {
     call.abort();
     stop.removeEventListener("abort", onStop);
@@ -211,12 +223,8 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
         break;
       }
       case "again":
-        // A restart's Retry-After: 0 is taken at its word the first time; a 503 that comes again waits longer each time.
-        await sleep(failures === 0 ? (waited.afterMs ?? backoffAfter(0)) : Math.max(waited.afterMs ?? 0, backoffAfter(failures)), stop);
-        failures += 1;
-        break;
       case "failed":
-        await sleep(backoffAfter(failures), stop);
+        await sleep(retryDelay(waited, failures), stop);
         failures += 1;
         break;
       case "refused":
@@ -232,7 +240,7 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
  * when it is given, such as the cursor of the answer they came in; undefined
  * when the mark holds them all.
  */
-function announceFresh(
+export function announceFresh(
   configDir: string,
   url: string,
   notices: readonly { seq: number; notice: Notice }[],
@@ -273,6 +281,7 @@ export async function hookWait(environment: CliEnvironment, install: string | un
     if (lock === undefined) return 0;
     release = () => lock.close();
     lock.released.addEventListener("abort", () => stop.abort(), { once: true });
+    environment.interrupted?.().addEventListener("abort", () => stop.abort(), { once: true });
     void sleepOf(environment)(waiterCapOf(environment.env), stop.signal).then(() => stop.abort());
     void watchParent(environment, stop);
     const notices = await waitForNews(environment, sessionFor(environment, login, { longRunning: true }), stop.signal);

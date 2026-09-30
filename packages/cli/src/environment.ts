@@ -1,9 +1,10 @@
 // What one run of the CLI is given in place of its process's (agent-surfaces:
 // The CLI package): its arguments, its environment variables, where it writes
 // its output, its standard input, how it reaches the network, how it waits and
-// tells the time, and whether the process that started it still runs. The
-// `tiehall` command gives it the process's own; a test gives it its own, such
-// as a fetch that reaches a test install or a clock it moves by hand.
+// tells the time, whether the process that started it still runs, and when it
+// is asked to stop. The `tiehall` command gives it the process's own; a test
+// gives it its own, such as a fetch that reaches a test install or a clock it
+// moves by hand.
 
 export interface CliEnvironment {
   /** The arguments after `tiehall`. */
@@ -21,6 +22,12 @@ export interface CliEnvironment {
   now?(): Date;
   /** Whether the process that started this one still runs, such as the Claude Code that runs a hook; true unless given. */
   parentAlive?(): boolean;
+  /**
+   * A signal that aborts when the run is asked to stop, as Ctrl-C or a
+   * SIGTERM asks the tiehall command, for a command that runs until then, such
+   * as `tiehall watch`; asking for it is what lets that command stop cleanly.
+   */
+  interrupted?(): AbortSignal;
 }
 
 /** A refusal of the CLI's own, before or instead of a call: its message says why and what to do, and the run exits with 1. */

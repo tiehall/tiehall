@@ -325,6 +325,8 @@ export function startCli(
     stdin?: string;
     parentAlive?(): boolean;
     env?: Record<string, string>;
+    /** Aborts as an interrupt, such as Ctrl-C, stops the tiehall command. */
+    interrupt?: AbortSignal;
   },
 ): Running {
   let stdout = "";
@@ -340,6 +342,7 @@ export function startCli(
     sleep: options.clock.sleep,
     now: options.clock.now,
     ...(options.parentAlive === undefined ? {} : { parentAlive: options.parentAlive }),
+    ...(options.interrupt === undefined ? {} : { interrupted: () => options.interrupt! }),
   };
   const done = run(environment).then((code) => {
     ended = true;

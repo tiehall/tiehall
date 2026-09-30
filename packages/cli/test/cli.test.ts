@@ -190,6 +190,43 @@ describe("the hook commands, as Claude Code runs them", () => {
     }
   });
 
+  it("stop cleanly when asked to, as tiehall watch does: with 0, without a word", async () => {
+    const waits: string[] = [];
+    const server = createServer((request) => void waits.push(request.url ?? ""));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://localhost:${(server.address() as AddressInfo).port}`;
+    const configDir = mkdtempSync(join(tmpdir(), "tiehall-stop-"));
+    writeFileSync(
+      join(configDir, "logins.json"),
+      JSON.stringify({ logins: { [url]: { accessToken: "a", refreshToken: "r", expiresAt: new Date(Date.now() + 600_000).toISOString() } } }),
+      { mode: 0o600 },
+    );
+    try {
+      for (const [args, signal] of [
+        [["watch"], "SIGTERM"],
+        [["watch"], "SIGINT"],
+        [["hook", "wait"], "SIGTERM"],
+      ] as const) {
+        const before = waits.length;
+        const child = spawn(process.execPath, [launcher, ...args], { env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: configDir }, stdio: ["pipe", "pipe", "pipe"] });
+        child.stdin.end(JSON.stringify({ session_id: "session-stop", hook_event_name: "Stop" }));
+        let output = "";
+        child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
+        child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
+        const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
+        const until = Date.now() + 10_000;
+        while (waits.length === before && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
+        child.kill(signal);
+        expect({ args, signal, code: await exited, output }).toEqual({ args, signal, code: 0, output: "" });
+      }
+      expect(existsSync(sessionLockPath(configDir, "session-stop"))).toBe(false);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it("end when their standard input never does", async () => {
     const child = spawn(process.execPath, [launcher, "hook", "wait"], { env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: scratch }, stdio: ["pipe", "pipe", "pipe"] });
     let output = "";
