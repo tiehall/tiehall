@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { signInCompleted } from "@tiehall/core";
+import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import {
   ACTIVITY_LOG_PATH,
   createActivityLogRoute,
+  createAgentTokenCheck,
+  createRestHandler,
   createMembersRoute,
   createTeamsRoute,
   MEMBERS_PATH,
@@ -23,7 +26,9 @@ import { addUser } from "./support/members.ts";
 // only effect is that it is shown wherever a user is listed or named. A
 // member's attempt to set or clear it gets 403 and changes nothing. Every
 // member sees the members list in the web UI, ordered by GitHub login, and no
-// agent surface offers it (design.md, Decisions: D45 (3)).
+// agent surface offers it (design.md, Decisions: D45 (3)). A flagged user
+// holds personal access tokens like anyone (agent-access: Machine access is a
+// PAT held by a bot user).
 
 let install: TestInstall;
 let ada: WebSessionCaller;
@@ -137,8 +142,33 @@ describe("an admin", () => {
 
   // whoami is built by task 16.5, which names the bot flag among what it returns.
   it.todo("sees whoami, called with the user's personal access token, say that its user is a bot");
-  // Personal access tokens come with task 15.14, and task 15.18 tests a bot user's token acting for it.
-  it.todo("sees a flagged user hold personal access tokens, which keep acting for them when the flag changes");
+  it("sees a flagged user hold personal access tokens, which keep acting for them when the flag changes", async () => {
+    const botSession: WebSessionCaller = { kind: "web_session", userId: bot, sessionId: randomUUID() };
+    // A REST route that checks personal access tokens as the web role's does.
+    const rest = createRestHandler({
+      catalog: CATALOG,
+      document: OPENAPI_JSON,
+      execute: install.execute,
+      authenticate: createAgentTokenCheck({ url: URL_OF_INSTALL, signingKeys: async () => undefined, database: install.db }),
+      logger: install.logger,
+    });
+    const call = (token: string) => rest(new Request(`${URL_OF_INSTALL}/api/v1/requests`, { headers: { authorization: `Bearer ${token}` } }));
+    await setFlag(ada, bot, true);
+    try {
+      const created = await install.confirm(botSession, "personal_access_tokens.create", { name: "CI", scopes: ["requests:read"], expiresInDays: 30 });
+      expect(created.status).toBe(200);
+      const token = /<pre><code>(th_pat_[A-Za-z0-9_-]+)<\/code><\/pre>/.exec(await created.text())?.[1] ?? "";
+      expect((await call(token)).status).toBe(200);
+      await setFlag(ada, bot, false);
+      expect((await call(token)).status).toBe(200);
+      await setFlag(ada, bot, true);
+      expect((await call(token)).status).toBe(200);
+      const { rows } = await install.owner.query("SELECT user_id, revoked_at FROM personal_access_tokens WHERE name = 'CI'");
+      expect(rows).toEqual([{ user_id: bot, revoked_at: null }]);
+    } finally {
+      await setFlag(ada, bot, false);
+    }
+  });
 });
 
 describe("a member", () => {
