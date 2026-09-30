@@ -7,7 +7,7 @@ COPY . .
 RUN npm ci && npm run build
 
 FROM base
-RUN apt-get update \
+RUN apt-get update --error-on=any \
     && apt-get upgrade --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

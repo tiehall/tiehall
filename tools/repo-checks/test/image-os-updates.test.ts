@@ -5,7 +5,8 @@ import { osUpdateProblems } from "../src/dockerfile.ts";
 
 // The Dockerfile's part of self-host-install: Release pipeline integrity (D53): the runtime stage applies the
 // operating system's security updates when the image is built, in one step that runs without asking, installs no
-// recommended package, fails the build when a command fails and leaves no package index, before the package
+// recommended package, fails the build when a command fails or an archive cannot be fetched and leaves no package
+// index, before the package
 // managers are removed and before the image switches to its non-root user. The check runs on committed fixtures,
 // one for each problem, and on the repository's Dockerfile; `pnpm test` runs it in CI.
 
@@ -30,6 +31,7 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
     ["interactive", "interactive"],
     ["recommends", "recommends"],
     ["not-chained", "not-chained"],
+    ["update-warns", "not-chained"],
     ["index-left", "index-left"],
     ["after-package-managers-removed", "after-package-managers-removed"],
     ["after-user", "after-user"],
@@ -48,14 +50,17 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
       { rule: "index-left", line: 10, detail: expect.stringMatching(/\/var\/lib\/apt\/lists.*apt's caches/) },
     ]);
     expect(osUpdateProblems(fixture("after-user"))).toEqual([{ rule: "after-user", line: 13, detail: expect.stringContaining("line 12") }]);
+    expect(osUpdateProblems(fixture("update-warns"))).toEqual([
+      { rule: "not-chained", line: 11, detail: expect.stringContaining("--error-on=any") },
+    ]);
   });
 
   it("reads the other spellings of the same step", () => {
     for (const step of [
-      "RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade -o APT::Install-Recommends=false && rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists",
-      "RUN export DEBIAN_FRONTEND=noninteractive && apt-get -q update && apt-get upgrade -qy --no-install-recommends -o Dpkg::Options::=--force-confold && apt-get clean && rm -fr /var/lib/apt/lists/*",
-      "RUN export LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get --assume-yes --no-install-recommends upgrade && apt-get clean && rm --recursive --force /var/lib/apt/lists/*",
-      'RUN export DEBIAN_FRONTEND=noninteractive && apt-get update > /dev/null 2>&1 && apt-get upgrade -y --no-install-recommends -o "Dpkg::Options::=--force-confold" && apt-get clean && rm -rf /var/lib/apt/lists/*',
+      "RUN DEBIAN_FRONTEND=noninteractive apt-get update --error-on=any && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade -o APT::Install-Recommends=false && rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists",
+      "RUN export DEBIAN_FRONTEND=noninteractive && apt-get -q update --error-on any && apt-get upgrade -qy --no-install-recommends -o Dpkg::Options::=--force-confold && apt-get clean && rm -fr /var/lib/apt/lists/*",
+      "RUN export LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive && apt-get -o APT::Update::Error-Mode=any update && apt-get --assume-yes --no-install-recommends upgrade && apt-get clean && rm --recursive --force /var/lib/apt/lists/*",
+      'RUN export DEBIAN_FRONTEND=noninteractive && apt-get update --error-on=any > /dev/null 2>&1 && apt-get upgrade -y --no-install-recommends -o "Dpkg::Options::=--force-confold" && apt-get clean && rm -rf /var/lib/apt/lists/*',
     ]) {
       expect(osUpdateProblems(withRuntime(step, "USER 1000:1000")), step).toEqual([]);
     }
@@ -78,7 +83,7 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
 
   it("fails any other step of the runtime stage that updates the package lists and leaves them in the image", () => {
     const step =
-      "RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get upgrade --yes --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*";
+      "RUN export DEBIAN_FRONTEND=noninteractive && apt-get update --error-on=any && apt-get upgrade --yes --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*";
     expect(osUpdateProblems(withRuntime(step, "RUN apt-get update && apt-get install --yes --no-install-recommends curl", "USER 1000:1000"))).toEqual([
       { rule: "index-left", line: 6, detail: expect.stringContaining("/var/lib/apt/lists") },
     ]);
@@ -88,7 +93,7 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
     expect(
       rulesOf(
         withRuntime(
-          "RUN export DEBIAN_FRONTEND=noninteractive && rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update && apt-get upgrade --yes --no-install-recommends",
+          "RUN export DEBIAN_FRONTEND=noninteractive && rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update --error-on=any && apt-get upgrade --yes --no-install-recommends",
         ),
       ),
     ).toEqual(["index-left"]);
@@ -101,10 +106,28 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
     ).toEqual(["not-chained"]);
   });
 
+  it("fails a step whose apt-get update only warns when an archive cannot be fetched or verified", () => {
+    // Without --error-on=any, apt-get update exits 0 when Debian's archives cannot be reached or their signatures
+    // do not check out, and the upgrade then finds nothing to upgrade: the build would ship an unpatched image.
+    const step = (update: string) =>
+      `RUN export DEBIAN_FRONTEND=noninteractive && ${update} && apt-get upgrade --yes --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*`;
+    for (const update of ["apt-get update", "apt-get update --error-on=never", "apt-get -o APT::Update::Error-Mode=persistent update"]) {
+      expect(osUpdateProblems(withRuntime(step(update), "USER 1000:1000")), update).toEqual([
+        { rule: "not-chained", line: 5, detail: expect.stringContaining("--error-on=any") },
+      ]);
+    }
+    // A second update in the step fetches too, so it needs the flag as well.
+    expect(rulesOf(withRuntime(step("apt-get update --error-on=any && apt-get update"), "USER 1000:1000"))).toEqual(["not-chained"]);
+    // A step joined with ";" that also only warns reports the one rule, naming both.
+    expect(osUpdateProblems(withRuntime(step("apt-get update").replace("&& apt-get clean", "; apt-get clean"), "USER 1000:1000"))).toEqual([
+      { rule: "not-chained", line: 5, detail: expect.stringMatching(/";".*--error-on=any/) },
+    ]);
+  });
+
   it("ignores comment lines inside a continued instruction, as Docker does", () => {
     const dockerfile = withRuntime(
       "RUN export DEBIAN_FRONTEND=noninteractive \\",
-      "    && apt-get update \\",
+      "    && apt-get update --error-on=any \\",
       "# The upgrade keeps the package set.",
       "    && apt-get upgrade --yes --no-install-recommends \\",
       "    && apt-get clean && rm -rf /var/lib/apt/lists/*",

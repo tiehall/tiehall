@@ -3,7 +3,7 @@ FROM node:24.21.0-trixie-slim AS base
 
 FROM base AS build
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && apt-get upgrade --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

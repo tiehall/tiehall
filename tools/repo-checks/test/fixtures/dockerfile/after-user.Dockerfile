@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=build /repo/dist/ ./
 USER 1000:1000
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && apt-get upgrade --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

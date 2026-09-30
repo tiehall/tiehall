@@ -9,7 +9,7 @@ RUN npm ci && npm run build
 FROM base
 RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && apt-get upgrade --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

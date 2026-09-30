@@ -1,9 +1,10 @@
 // The Dockerfile's part of self-host-install: Release pipeline integrity (D53): the operating system's security
 // patches are applied when the image is built. The last stage of the Dockerfile, which becomes the image, must hold
 // one RUN that updates the package lists and runs `apt-get upgrade` without asking anything and without recommended
-// packages, joins its commands with `&&` so that any failure fails the build, and removes the package lists and
-// apt's caches before it ends, so that no layer holds a package index; and that RUN must come before the step that
-// removes the package managers and before the image switches to its non-root user.
+// packages, joins its commands with `&&` and updates with `--error-on=any` so that any failure fails the build,
+// including an archive apt cannot fetch or verify, which apt-get update otherwise only warns about, and removes the
+// package lists and apt's caches before it ends, so that no layer holds a package index; and that RUN must come
+// before the step that removes the package managers and before the image switches to its non-root user.
 
 export type OsUpdateRule =
   | "missing"
@@ -80,7 +81,16 @@ function words(command: string): string[] {
 }
 
 /** The options of apt-get that take a value as the next word. */
-const APT_OPTIONS_WITH_VALUE = new Set(["-o", "-c", "-t", "--option", "--config-file", "--target-release", "--default-release"]);
+const APT_OPTIONS_WITH_VALUE = new Set([
+  "-o",
+  "-c",
+  "-t",
+  "--option",
+  "--config-file",
+  "--target-release",
+  "--default-release",
+  "--error-on",
+]);
 
 /** An apt-get command: its subcommand and its options; undefined for any other command. */
 function aptGet(command: string): { subcommand: string; options: string[] } | undefined {
@@ -159,6 +169,13 @@ const answersYes = (option: string) => /^-[A-Za-z]*y[A-Za-z]*$/.test(option) || 
 const leavesOutRecommends = (option: string) =>
   option === "--no-install-recommends" || /^(?:-o|--option) APT::Install-Recommends=(?:false|0)$/.test(option);
 
+/**
+ * Whether an option of apt-get update makes it fail when an archive cannot be fetched or verified; by default it
+ * only warns and exits 0, and the upgrade then finds nothing to upgrade.
+ */
+const failsOnAnyError = (option: string) =>
+  /^--error-on(?:=| )any$/.test(option) || /^(?:-o|--option) APT::Update::Error-Mode=any$/.test(option);
+
 /** The problems with the operating-system updates in a Dockerfile's last stage; empty when it follows the rule. */
 export function osUpdateProblems(dockerfile: string): OsUpdateProblem[] {
   const stage = lastStage(dockerfile);
@@ -191,10 +208,12 @@ export function osUpdateProblems(dockerfile: string): OsUpdateProblem[] {
       add("recommends", step.line, "apt-get upgrade can install recommended packages: the step lacks --no-install-recommends");
     }
 
+    const failures: string[] = [];
     const others = [...new Set(separators(step))].map((separator) => `"${separator}"`);
-    if (others.length > 0) {
-      add("not-chained", step.line, `a failed command must fail the build: the step joins commands with ${others.join(", ")}, not only "&&"`);
-    }
+    if (others.length > 0) failures.push(`the step joins commands with ${others.join(", ")}, not only "&&"`);
+    const warnsOnly = list.filter(isApt("update")).some((command) => !(aptGet(command)?.options ?? []).some(failsOnAnyError));
+    if (warnsOnly) failures.push("its apt-get update lacks --error-on=any, so an archive it cannot fetch or verify is only a warning");
+    if (failures.length > 0) add("not-chained", step.line, `a failed command must fail the build: ${failures.join(", and ")}`);
   }
 
   // Every RUN of the stage that fetches package lists removes them, and apt's caches, after its last update.

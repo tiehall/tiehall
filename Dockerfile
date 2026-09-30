@@ -39,11 +39,13 @@ FROM base
 # archives the base image names, whose signatures it checks with the keyring the
 # base image carries, and upgrades only the packages the base image has, installing
 # and removing none. They do not wait for the 7-day release age; the base image
-# does, pinned by digest above. One step, which removes the package lists and apt's
-# caches before it ends, so the image holds no package index. It runs first, as
-# root, before the package managers are removed; tools/repo-checks checks it.
+# does, pinned by digest above. An archive apt cannot fetch or verify fails the
+# build (--error-on=any; by default apt-get update only warns, and the upgrade then
+# finds nothing to do). One step, which removes the package lists and apt's caches
+# before it ends, so the image holds no package index. It runs first, as root,
+# before the package managers are removed; tools/repo-checks checks it.
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && apt-get upgrade --yes --no-install-recommends \
        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     && apt-get clean \

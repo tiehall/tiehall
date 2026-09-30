@@ -8,7 +8,7 @@ RUN npm ci && npm run build
 
 FROM base
 RUN export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
+    && apt-get update --error-on=any \
     && apt-get upgrade --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
