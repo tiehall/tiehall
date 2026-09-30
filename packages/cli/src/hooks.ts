@@ -23,6 +23,10 @@ import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
 // acknowledging anything; it prints nothing when nothing is new. The digest
 // and the waiter share the mark of the news announced (announced.ts): neither
 // announces an update the mark holds, and each adds to it what it announces.
+// The agent acknowledges through whats_new, whose cursor is its own, so the
+// CLI client's cursor can stay behind more announced updates than the
+// digest's page holds; then the digest reads past the mark with the wait
+// endpoint, as the waiter does, without holding the session's start.
 //
 // `tiehall hook wait`, which the Stop hook runs with asyncRewake at the end
 // of every turn, waits for news on the user's requests. It long-polls the wait
@@ -85,6 +89,9 @@ const DIGEST_LIMIT = 50;
 
 /** How long the digest's read may take, so that a session starts without waiting on an install that does not answer. */
 const DIGEST_READ_MS = 10_000;
+
+/** How long the digest's read past the mark may take, which the install answers at once unless nothing it can list is there. */
+const PAST_MARK_MS = 3_000;
 
 /** The digest's first line, in Tiehall's words, before one line per update. */
 export const DIGEST_HEADING =
@@ -304,6 +311,42 @@ interface UpdateEntry {
   request?: { key?: unknown; url?: unknown; targetTeam?: { key?: unknown } };
 }
 
+/** The updates of a digest: the notices to list, and whether more updates wait after them. */
+interface DigestNews {
+  notices: { seq: number; notice: Notice }[];
+  more: boolean;
+}
+
+/**
+ * The updates past the mark, which the mark does not hold, and which it then
+ * holds; undefined when there are none, or the install does not answer in a
+ * moment. The digest reads them once every update of its page was announced
+ * and more wait after it. The wait endpoint answers at once when updates come
+ * after the cursor it is given, and otherwise holds the call: given the number
+ * just before the mark's, it answers at once with the update the mark ends at,
+ * which a hook announced as one of the user's, and those after it. Should
+ * that update no longer be one of the user's, and nothing come after it, the
+ * install holds the read, and the digest gives it up after a moment rather
+ * than hold the session's start; the waiter announces what comes next.
+ */
+async function newsPastTheMark(environment: CliEnvironment, session: Session, stop: AbortSignal): Promise<DigestNews | undefined> {
+  const configDir = configDirOf(environment.env);
+  const read = new AbortController();
+  const onStop = () => read.abort();
+  stop.addEventListener("abort", onStop, { once: true });
+  void sleepOf(environment)(PAST_MARK_MS, read.signal).then(() => read.abort());
+  try {
+    const waited = await waitOnce(environment, session, Math.max(announcedThrough(configDir, session.url) - 1, 0), read.signal);
+    if (waited.kind !== "answered") return undefined;
+    const notices = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor);
+    // One answer of the wait lists a page of updates at most, as whats_new does: a full one may have more after it.
+    return notices === undefined ? undefined : { notices, more: waited.entries.length >= DIGEST_LIMIT };
+  } finally {
+    read.abort();
+    stop.removeEventListener("abort", onStop);
+  }
+}
+
 /**
  * `tiehall hook session-start`: prints the digest of the updates after the
  * CLI client's cursor that have not been announced, read without
@@ -327,9 +370,11 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
       team_key: request?.targetTeam?.key,
       url: request?.url,
     }));
-    const notices = await announceFresh(configDirOf(environment.env), session.url, noticesOf(session.url, entries));
-    if (notices === undefined) return 0;
-    const lines = [DIGEST_HEADING, ...notices.map(({ notice }) => hookLine(notice)), ...(page.more === true ? [DIGEST_MORE] : [])];
+    const onPage = await announceFresh(configDirOf(environment.env), session.url, noticesOf(session.url, entries));
+    const news: DigestNews | undefined =
+      onPage !== undefined ? { notices: onPage, more: page.more === true } : page.more === true ? await newsPastTheMark(environment, session, stop.signal) : undefined;
+    if (news === undefined) return 0;
+    const lines = [DIGEST_HEADING, ...news.notices.map(({ notice }) => hookLine(notice)), ...(news.more ? [DIGEST_MORE] : [])];
     environment.stdout(`${lines.join("\n")}\n`);
     return 0;
   } catch {

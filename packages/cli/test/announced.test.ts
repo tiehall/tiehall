@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { announce } from "../src/announced.ts";
 import { hookInput, INSTALL, manualClock, saveLogin, startCli, stubInstall, type ManualClock, type Running, type StubInstall } from "./support/hooks.ts";
 
 // News is announced once (requester-loop: News is announced once;
@@ -121,6 +122,71 @@ describe("the digest", () => {
     const second = await digest("session-b");
     expect(second.stdout).not.toContain("FE-142");
     expect(second.stdout).toContain("FE-143");
+  });
+});
+
+// requester-loop: Claude Code SessionStart digest; requester-loop: News is announced once. The agent acknowledges
+// through whats_new, whose cursor is its own, so the CLI client's cursor can stay behind more announced updates than
+// the digest's page of 50 holds; the digest still lists the updates past the mark, reading them with the wait
+// endpoint, which answers at once when updates come after the cursor it is given, and acknowledges nothing.
+describe("the digest behind more announced updates than a page holds", () => {
+  /** Posts this many updates, one per request, FE-1 onwards, and returns them. */
+  function postMany(count: number) {
+    return Array.from({ length: count }, (_, index) => install.post({ type: "request.message_posted", key: `FE-${index + 1}`, team: "FE" }));
+  }
+
+  /** Moves the mark to this number, as earlier hooks announcing up to it did. */
+  async function announcedUpTo(through: number): Promise<void> {
+    await announce(configDir, INSTALL, () => ({ through, picked: true }));
+  }
+
+  /** The lines of a digest that name an update. */
+  const entries = (stdout: string) => stdout.split("\n").filter((line) => line.startsWith("FE-"));
+
+  /** Resolves with the run's result, or "held" when it has not ended after a moment of real time. */
+  function unlessHeld<T>(done: Promise<T>): Promise<T | "held"> {
+    return Promise.race([done, new Promise<"held">((resolve) => setTimeout(() => resolve("held"), 1_000))]);
+  }
+
+  it("lists the updates past the mark, and acknowledges nothing", async () => {
+    const posted = postMany(55);
+    await announcedUpTo(posted[51]!.seq);
+    const printed = await digest();
+    expect(printed.code).toBe(0);
+    expect(entries(printed.stdout)).toEqual([53, 54, 55].map((number) => `FE-${number} request.message_posted (team FE) ${INSTALL}/FE-${number}`));
+    expect(marks()).toEqual({ [INSTALL]: { through: posted[54]!.seq } });
+    expect(install.cursor).toBe(0);
+    expect(install.calls.filter(({ body }) => typeof body === "object" && body !== null && "acknowledge" in body)).toEqual([]);
+  });
+
+  it("lists, in the next session, the updates the first session's digest had no room for", async () => {
+    postMany(55);
+    const first = await digest("session-a");
+    expect(entries(first.stdout)).toHaveLength(50);
+    expect(first.stdout).toContain("More updates wait after these");
+    const second = await digest("session-b");
+    expect(entries(second.stdout)).toEqual([51, 52, 53, 54, 55].map((number) => `FE-${number} request.message_posted (team FE) ${INSTALL}/FE-${number}`));
+    expect(second.stdout).not.toContain("More updates wait after these");
+    expect(await digest("session-c")).toEqual({ code: 0, stdout: "", stderr: "" });
+  });
+
+  it("prints nothing, without holding the session's start, when nothing is new past the mark", async () => {
+    const posted = postMany(55);
+    await announcedUpTo(posted[54]!.seq);
+    expect(await unlessHeld(digest())).toEqual({ code: 0, stdout: "", stderr: "" });
+    const waits = install.calls.filter(({ path }) => path === "/api/v1/events/wait");
+    expect(waits.map(({ query }) => query)).toEqual([{ cursor: String(posted[54]!.seq - 1) }]);
+  });
+
+  it("gives up after a moment, printing nothing, when the install holds its read past the mark", async () => {
+    // The update the mark ends at is no longer one of the user's, as after they left a team, and nothing came after it.
+    const posted = postMany(55);
+    await announcedUpTo(posted[54]!.seq + 10);
+    const run = startCli(["hook", "session-start"], { configDir, clock, fetch: install.fetch, stdin: hookInput("session-held", "SessionStart") });
+    await install.untilHolding();
+    await clock.advance(3_000);
+    expect(await unlessHeld(run.done)).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(install.holding()).toBe(0);
   });
 });
 

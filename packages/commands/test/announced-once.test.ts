@@ -127,3 +127,41 @@ describe("news the waiter announced", () => {
     expect(await listedByTheCli(request.key)).toEqual([]);
   }, 60_000);
 });
+
+// requester-loop: Claude Code SessionStart digest; requester-loop: News is announced once. The agent acknowledges
+// through whats_new, whose cursor is its own, so the CLI client's cursor stays behind every update the hooks
+// announced; once more of them wait after it than the digest's page of 50 holds, the next session's digest still
+// lists the updates that were never announced.
+describe("a digest behind more announced updates than a page holds", () => {
+  it("lists, in the next session, the updates the first session's digest had no room for", async () => {
+    await acknowledgeEverything(samCli);
+    const keys: string[] = [];
+    for (let index = 0; index < 55; index += 1) {
+      keys.push((await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" })).key);
+    }
+    const entries = (stdout: string) => stdout.split("\n").filter((line) => /^[A-Z][A-Z0-9]*-\d+ /.test(line));
+    const first = await samCli.run(["hook", "session-start"], hook("SessionStart", "session-page-1"));
+    expect(entries(first.stdout)).toHaveLength(50);
+    expect(first.stdout).toContain("More updates wait after these");
+    // The agent reads and acknowledges every update through whats_new, which leaves the CLI's cursor where it was.
+    const client = await connectMcp(harness, { token: sam.token, version: MODERN });
+    try {
+      let args: Record<string, unknown> = { limit: 50 };
+      for (;;) {
+        const read = await client.callTool({ name: "whats_new", arguments: args });
+        const events = (read.structuredContent as { events: { number: number }[] }).events;
+        if (events.length === 0) break;
+        args = { limit: 50, acknowledge: Math.max(...events.map(({ number }) => number)) };
+      }
+    } finally {
+      await client.close();
+    }
+    const second = await samCli.run(["hook", "session-start"], hook("SessionStart", "session-page-2"));
+    expect(second.code).toBe(0);
+    const listed = [...entries(first.stdout), ...entries(second.stdout)];
+    expect(new Set(listed).size).toBe(listed.length);
+    for (const key of keys) expect(listed.some((line) => line.startsWith(`${key} request.opened (team FE) ${URL_OF_INSTALL}/${key}`)), key).toBe(true);
+    expect(entries(second.stdout).at(-1)).toContain(keys.at(-1));
+    expect(await samCli.run(["hook", "session-start"], hook("SessionStart", "session-page-3"))).toEqual({ code: 0, stdout: "", stderr: "" });
+  }, 120_000);
+});
