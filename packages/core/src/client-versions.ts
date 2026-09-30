@@ -52,11 +52,38 @@ export function compareVersions(a: string, b: string): number {
     const difference = (x.numbers[index] ?? 0) - (y.numbers[index] ?? 0);
     if (difference !== 0) return difference;
   }
-  // A pre-release comes before its release; two pre-releases compare as text.
+  // A pre-release comes before its release; two pre-releases compare identifier by identifier.
   if (x.preRelease === y.preRelease) return 0;
   if (x.preRelease === undefined) return 1;
   if (y.preRelease === undefined) return -1;
-  return x.preRelease < y.preRelease ? -1 : 1;
+  return comparePreReleases(x.preRelease.split("."), y.preRelease.split("."));
+}
+
+const NUMERIC = /^\d+$/;
+
+/**
+ * Two pre-releases in the order of Semantic Versioning 2.0.0, item 11: their
+ * dot-separated identifiers from the left, numbers by their value, below any
+ * identifier with a letter or hyphen, which compare in ASCII order; when every
+ * identifier of one is the same as the other's, the one with fewer comes first.
+ */
+function comparePreReleases(a: readonly string[], b: readonly string[]): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const [x, y] = [a[index] ?? "", b[index] ?? ""];
+    if (x === y) continue;
+    const [xNumber, yNumber] = [NUMERIC.test(x), NUMERIC.test(y)];
+    if (xNumber && yNumber) {
+      // Numbers of any length compare by value: without leading zeros, the longer is the larger.
+      const [p, q] = [x.replace(/^0+(?=\d)/, ""), y.replace(/^0+(?=\d)/, "")];
+      if (p.length !== q.length) return p.length - q.length;
+      if (p !== q) return p < q ? -1 : 1;
+      continue;
+    }
+    if (xNumber) return -1;
+    if (yNumber) return 1;
+    return x < y ? -1 : 1;
+  }
+  return a.length - b.length;
 }
 
 /** The refusal of a call that names this CLI version, or none; a call that names no version is not the CLI's. */

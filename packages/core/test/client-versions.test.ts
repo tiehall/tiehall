@@ -18,6 +18,21 @@ describe("CLI versions", () => {
     expect(compareVersions("0.1.1", "0.1.0-rc.1")).toBeGreaterThan(0);
   });
 
+  // Semantic Versioning 2.0.0, item 11: pre-releases compare identifier by identifier.
+  it("order pre-releases as semantic versions do, not as text", () => {
+    expect(compareVersions("1.0.0-rc.9", "1.0.0-rc.10")).toBeLessThan(0);
+    expect(compareVersions("1.0.0-rc.10", "1.0.0-rc.9")).toBeGreaterThan(0);
+    const ordered = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0"];
+    for (let index = 1; index < ordered.length; index += 1) {
+      expect(compareVersions(ordered[index - 1] ?? "", ordered[index] ?? ""), `${ordered[index - 1]} < ${ordered[index]}`).toBeLessThan(0);
+      expect(compareVersions(ordered[index] ?? "", ordered[index - 1] ?? ""), `${ordered[index]} > ${ordered[index - 1]}`).toBeGreaterThan(0);
+    }
+    expect(compareVersions("1.0.0-rc.1+build.5", "1.0.0-rc.1")).toBe(0);
+    expect(compareVersions("1.0.0-99999999999999999999", "1.0.0-100000000000000000000")).toBeLessThan(0);
+    expect(cliVersionRefusal("1.0.0-rc.9", "1.0.0-rc.10")).toMatchObject({ reason: "upgrade-required" });
+    expect(cliVersionRefusal("1.0.0-rc.10", "1.0.0-rc.9")).toBeUndefined();
+  });
+
   it("are sent in the Tiehall-CLI-Version header, and the minimum is a version", () => {
     expect(CLI_VERSION_HEADER).toBe("tiehall-cli-version");
     expect(compareVersions(MINIMUM_CLI_VERSION, MINIMUM_CLI_VERSION)).toBe(0);
