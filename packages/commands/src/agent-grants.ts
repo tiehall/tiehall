@@ -157,14 +157,15 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     return context.write(async (writer) => {
       const [grant] = await lockGrants(writer, userId, grantId);
       if (grant === undefined) throw new Refusal("record-not-found", "You hold no agent grant with this id.");
-      await revokeGrant(writer, userId, grant, at);
+      await removeGrant(writer, userId, grant, at);
+      await recordGrantRevocations(writer, userId, [grant]);
       return { grantId };
     });
   }),
 };
 
 /** A grant as a revocation locks it: its id, the client id it is for and Tiehall's own record of that client. */
-interface LockedGrant {
+export interface LockedGrant {
   grantId: string;
   clientId: string;
   clientRecord: string;
@@ -192,9 +193,10 @@ function lockGrants(writer: Writer, userId: string, grantId?: string): Promise<L
  * refresh token of its client for the user revoked, so the next refresh gets
  * invalid_grant, removes their stored access tokens, denies the device codes
  * the user approved for the client and removes the authorization codes issued
- * to it for them that were not exchanged yet, and appends the security event.
+ * to it for them that were not exchanged yet. Its security event follows,
+ * once the write has changed every row it changes (recordGrantRevocations()).
  */
-async function revokeGrant(writer: Writer, userId: string, grant: LockedGrant, at: Date): Promise<void> {
+async function removeGrant(writer: Writer, userId: string, grant: LockedGrant, at: Date): Promise<void> {
   await writer.tx.delete(oauthConsents).where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grant.grantId)));
   await writer.tx
     .update(oauthRefreshTokens)
@@ -222,7 +224,11 @@ async function revokeGrant(writer: Writer, userId: string, grant: LockedGrant, a
       ),
     );
   await deleteUnexchangedCodes(writer, userId, grant.clientId);
-  await writer.record(agentGrantRevoked, { userId, clientId: grant.clientRecord, grantId: grant.grantId });
+}
+
+/** Appends the security event of each grant the write revoked, in the order it locked them. */
+export async function recordGrantRevocations(writer: Writer, userId: string, grants: readonly LockedGrant[]): Promise<void> {
+  for (const grant of grants) await writer.record(agentGrantRevoked, { userId, clientId: grant.clientRecord, grantId: grant.grantId });
 }
 
 /**
@@ -259,15 +265,19 @@ function clientOfCode(value: string): string | undefined {
 /**
  * Revokes, in a removal's write, everything that lets an agent client act for
  * the removed person (teams-and-roles: Removing a member): each of their
- * grants, the tiehall CLI's included, with its security event; then any
- * refresh token or stored access token of theirs that no grant covers; the
- * device codes they approved that the CLI has not exchanged yet, which are
- * denied; and the authorization codes issued to them that no client has
- * exchanged yet, which are removed. So no client gets a token for them from
- * anything they approved before the removal.
+ * grants, the tiehall CLI's included; then any refresh token or stored access
+ * token of theirs that no grant covers; the device codes they approved that
+ * the CLI has not exchanged yet, which are denied; and the authorization codes
+ * issued to them that no client has exchanged yet, which are removed. So no
+ * client gets a token for them from anything they approved before the
+ * removal. It appends no event: it returns the grants it revoked, whose
+ * events the removal appends once it has changed every row it changes, since
+ * a write takes every row lock it needs before its first event
+ * (event-sequence.ts).
  */
-export async function revokeAgentAccessOf(writer: Writer, userId: string, at: Date): Promise<void> {
-  for (const grant of await lockGrants(writer, userId)) await revokeGrant(writer, userId, grant, at);
+export async function revokeAgentAccessOf(writer: Writer, userId: string, at: Date): Promise<LockedGrant[]> {
+  const grants = await lockGrants(writer, userId);
+  for (const grant of grants) await removeGrant(writer, userId, grant, at);
   await writer.tx
     .update(oauthRefreshTokens)
     .set({ revoked: at })
@@ -278,6 +288,7 @@ export async function revokeAgentAccessOf(writer: Writer, userId: string, at: Da
     .set({ status: "denied" })
     .where(and(eq(oauthDeviceCodes.orgId, writer.orgId), eq(oauthDeviceCodes.userId, userId), eq(oauthDeviceCodes.status, "approved")));
   await deleteUnexchangedCodes(writer, userId);
+  return grants;
 }
 
 /** The digest the authorization server keeps of an opaque token: SHA-256, base64url without padding. */

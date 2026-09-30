@@ -2,12 +2,12 @@ import { changeMemberRole, removeMember } from "@tiehall/catalog";
 import { leavesNoAdmin, memberRemoved, memberRoleChanged, Refusal, type Provenance, type Role } from "@tiehall/core";
 import { memberOrganizations, members, signInBlocks, teamMembers, teams, users, webSessions } from "@tiehall/db";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import { revokeAgentAccessOf } from "./agent-grants.ts";
+import { recordGrantRevocations, revokeAgentAccessOf } from "./agent-grants.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import type { JobSender } from "./jobs.ts";
 import { userName } from "./members.ts";
-import { revokePersonalAccessTokensOf } from "./personal-access-tokens.ts";
+import { recordTokenRevocations, revokePersonalAccessTokensOf } from "./personal-access-tokens.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
 import type { OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Writer } from "./write.ts";
@@ -126,9 +126,12 @@ export async function removeMembership(writer: Writer, member: { userId: string;
     await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
   }
   await endWebSessionsOf(writer, userId);
-  // Every grant and personal access token they hold is revoked, so none of them works again.
-  await revokeAgentAccessOf(writer, userId, writer.now());
-  await revokePersonalAccessTokensOf(writer, userId, writer.now());
+  // Every grant and personal access token they hold is revoked, so none of them works again: every row first, then
+  // the events, so that the write holds each row lock it needs before its first event (event-sequence.ts).
+  const grants = await revokeAgentAccessOf(writer, userId, writer.now());
+  const tokenIds = await revokePersonalAccessTokensOf(writer, userId, writer.now());
+  await recordGrantRevocations(writer, userId, grants);
+  await recordTokenRevocations(writer, userId, tokenIds);
   await writer.record(
     memberRemoved,
     removal.cause === "admin"

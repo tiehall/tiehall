@@ -36,15 +36,21 @@ import type { OrgContext } from "./with-org.ts";
 // 4. the request's proposals: its pending ones, oldest first, then the one
 //    the call names, then the record of what its commitment replaced
 //    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);
-// 5. what a write counts or numbers before its first event: an agent token's
+// 5. a person's credentials: their agent grants, then the rows those grants
+//    and their personal access tokens stand for, the refresh and access
+//    tokens, the device codes, the authorization codes and the tokens
+//    themselves. A removal revokes them all before its first event
+//    (agent-grants.ts, personal-access-tokens.ts); a person's own revocation
+//    locks the one grant or token it revokes first;
+// 6. what a write counts or numbers before its first event: an agent token's
 //    writes (write-limits.ts), the loop limit's re-lock of the request's row
 //    (loop-limit.ts) and a team's next request number (request-numbers.ts);
-// 6. the org's event counter, here, with the first event: the last lock a
+// 7. the org's event counter, here, with the first event: the last lock a
 //    write takes. What a write does after its first event, such as cancelling
 //    the proposals its change ends, locks only rows it holds already.
-// packages/commands/test/proposal-locks.test.ts and
-// member-organization-locks.test.ts run the pairs of writes that once waited
-// on each other, in both orders.
+// packages/commands/test/proposal-locks.test.ts,
+// member-organization-locks.test.ts and member-removal-races.test.ts run the
+// pairs of writes that once waited on each other, in both orders.
 
 /** Takes the next event number of the org, locking its counter row until the transaction ends. */
 export async function takeEventNumber({ tx, orgId }: OrgContext): Promise<number> {

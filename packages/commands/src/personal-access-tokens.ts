@@ -315,17 +315,26 @@ export const PERSONAL_ACCESS_TOKEN_MESSAGES: ConfirmMessages = {
 
 /**
  * Revokes, in a removal's write, every personal access token the removed
- * person holds that was not revoked yet, each with its security event
- * (teams-and-roles: Removing a member).
+ * person holds that was not revoked yet (teams-and-roles: Removing a member),
+ * and returns their ids, oldest first. It appends no event: the removal
+ * appends one for each (recordTokenRevocations()) once it has changed every
+ * row it changes, so a person revoking their own token meanwhile waits for
+ * the removal instead of holding the token's row while the removal waits for
+ * it (event-sequence.ts).
  */
-export async function revokePersonalAccessTokensOf(writer: Writer, userId: string, at: Date): Promise<void> {
+export async function revokePersonalAccessTokensOf(writer: Writer, userId: string, at: Date): Promise<string[]> {
   const revoked = await writer.tx
     .update(personalAccessTokens)
     .set({ revokedAt: at })
     .where(and(eq(personalAccessTokens.orgId, writer.orgId), eq(personalAccessTokens.userId, userId), isNull(personalAccessTokens.revokedAt)))
     .returning({ tokenId: personalAccessTokens.id, createdAt: personalAccessTokens.createdAt });
   revoked.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.tokenId.localeCompare(b.tokenId));
-  for (const { tokenId } of revoked) await writer.record(personalAccessTokenRevoked, { userId, tokenId });
+  return revoked.map(({ tokenId }) => tokenId);
+}
+
+/** Appends the security event of each personal access token a removal revoked, in the order given. */
+export async function recordTokenRevocations(writer: Writer, userId: string, tokenIds: readonly string[]): Promise<void> {
+  for (const tokenId of tokenIds) await writer.record(personalAccessTokenRevoked, { userId, tokenId });
 }
 
 /** A personal access token a call named, as its check found it. */

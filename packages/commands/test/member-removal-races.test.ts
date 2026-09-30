@@ -135,3 +135,34 @@ describe("a removal that commits while Dana's write creates a credential", () =>
     expect((await harness.refresh(client, refreshToken ?? "")).body["error"]).toBe("invalid_grant");
   });
 });
+
+describe("a removal while Dana revokes their own personal access token", () => {
+  it("does not deadlock: the removal takes the token's row before its first event, so both answer without a 500", async () => {
+    const dana = await harness.member("dana-lock-order");
+    // Dana has a grant, so the removal's first event, the grant's revocation, comes before the token's.
+    await harness.tokens(dana, ["requests:read"]);
+    await harness.personalAccessToken(dana, { name: "Revoked twice" });
+    const { rows } = await harness.install.owner.query<{ id: string }>("SELECT id FROM personal_access_tokens WHERE user_id = $1", [dana.userId]);
+    const tokenId = rows[0]?.id ?? "";
+    const page = await (await harness.handle(new Request(`${URL_OF_INSTALL}/tokens`, { headers: { cookie: dana.cookie, accept: "text/html" } }))).text();
+    const held = await holdEventCounter();
+    // The removal first: it reaches its first event and waits for the counter.
+    const removal = removing(dana);
+    await untilWaiting(harness.install.owner, 1);
+    // Then Dana's own revocation, from the page Dana still has open.
+    const revoking = harness.handle(
+      new Request(`${URL_OF_INSTALL}/tokens`, {
+        method: "POST",
+        headers: { cookie: dana.cookie, accept: "application/json", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+        body: new URLSearchParams({ action: "revoke_token", token: tokenId, csrf: hiddenField(page, "csrf") }).toString(),
+      }),
+    );
+    await untilWaiting(harness.install.owner, 2);
+    await held.release();
+    const [removed, revoked] = await Promise.all([removal.answer, revoking]);
+    expect(removed.status).toBe(200);
+    expect(revoked.status).not.toBe(500);
+    const { rows: tokens } = await harness.install.owner.query("SELECT revoked_at IS NOT NULL AS revoked FROM personal_access_tokens WHERE id = $1", [tokenId]);
+    expect(tokens).toEqual([{ revoked: true }]);
+  });
+});
