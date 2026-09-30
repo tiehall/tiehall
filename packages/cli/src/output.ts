@@ -7,6 +7,7 @@ import {
   requestPageText,
   requestText,
   revisedPacketText,
+  updatesText,
   type InboxJson,
   type LinkedPullRequestJson,
   type MessagePostJson,
@@ -14,6 +15,7 @@ import {
   type RequestJson,
   type RequestPageJson,
   type RevisedPacketJson,
+  type UpdatesJson,
 } from "@tiehall/packet/tool-text";
 
 // What the CLI prints (agent-surfaces: CLI request commands; agent-safety:
@@ -46,6 +48,7 @@ export const RENDERERS: Readonly<Record<string, Render>> = {
   "messages.post": (output, reader) => postedMessageText(output as MessagePostJson, reader),
   "requests.link_pr": (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
   "proposals.propose": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
+  "updates.read": (output, reader) => updatesText(output as UpdatesJson, reader, "cli"),
 };
 
 /** Whether an answer is the proposal a commitment became, or the proposal a withdrawal ended. */

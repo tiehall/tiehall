@@ -541,5 +541,46 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
       }
     ],
     "proposes": true
+  },
+  {
+    "command": "updates",
+    "operationId": "updates.read",
+    "summary": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
+    "method": "POST",
+    "path": "/api/v1/updates",
+    "stability": "alpha",
+    "arguments": [],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "acknowledge",
+        "in": "body",
+        "types": [
+          "integer"
+        ],
+        "required": false,
+        "description": "The number of the last update you have handled: your cursor moves up to it before the read, so the updates you get follow it. A cursor never moves back."
+      },
+      {
+        "name": "limit",
+        "in": "body",
+        "types": [
+          "integer"
+        ],
+        "required": false,
+        "description": "How many updates to return, 1 to 50; 25 unless given."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
   }
 ];

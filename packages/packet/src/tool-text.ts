@@ -485,3 +485,161 @@ export function inboxText(inbox: InboxJson, reader: Reader): AgentText[] {
     requests.length === 1 ? `1 request is addressed to ${yours}.` : `${requests.length} requests are addressed to ${yours}, newest first.`;
   return [{ origin: "tiehall", text: heading }, ...requests.flatMap((request) => requestText(request, reader))];
 }
+
+/** The request an update is about, in Tiehall's own words, as the pull readers name it. */
+export interface UpdateRequestJson {
+  id: string;
+  key: string;
+  url: string;
+  targetTeam: TeamJson;
+}
+
+/** An update: a domain event on a request in the reader's scope, as whats_new and `tiehall updates` return it. */
+export interface UpdateJson {
+  number: number;
+  type: string;
+  occurredAt: string;
+  data: Readonly<Record<string, string | number | boolean>>;
+  request: UpdateRequestJson;
+}
+
+/** A page of updates after the reader's cursor, and the requests they are about. */
+export interface UpdatesJson {
+  events: UpdateJson[];
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  "requests": RequestJson[];
+  cursor: number;
+  more: boolean;
+}
+
+/** An event's type, such as request.message_posted: dotted lower-case words. */
+const EVENT_TYPE = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
+/** A request's URL on the install: the install's URL, a slash and the key. */
+const REQUEST_URL = new RegExp(`${INSTALL_URL.source.slice(0, -1)}/${REQUEST_KEY.source.slice(1)}`);
+
+/** What each kind of commitment proposes to do to its request, in Tiehall's words. */
+const COMMITMENTS: Readonly<Record<string, string>> = {
+  due_date: "change its due date",
+  scope: "change its scope",
+  decline: "decline it",
+  reassign: "reassign it to another team",
+  withdraw: "withdraw it",
+  done: "mark it done",
+};
+
+/** A whole number of an update's data, such as a revision; 0 is allowed where the form is a count from 0. */
+function whole(value: unknown, what: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ToolTextError(`A ${what} is not a whole number.`);
+  return value;
+}
+
+/** What an update says, in Tiehall's words, from the ids and fixed values its event carries; undefined for a type it does not know. */
+function updateDetail({ type, data }: UpdateJson): string | undefined {
+  const id = (name: string) => checked(data[name], UUID, "id");
+  const word = (name: string) => checked(data[name], WORD, name);
+  switch (type) {
+    case "request.opened":
+      return "it was opened";
+    case "request.claimed":
+      return "it was claimed";
+    case "request.started":
+      return "work on it started";
+    case "request.released":
+      return "its claim was released";
+    case "request.message_posted": {
+      const kind = data["kind"] === undefined ? undefined : word("kind");
+      const what =
+        kind === "question"
+          ? data["blocking"] === true
+            ? "a blocking question"
+            : "a question"
+          : kind === "answer"
+            ? `an answer to question ${id("questionId")}`
+            : kind === "comment"
+              ? "a comment"
+              : "a message";
+      return `${what}, message ${id("messageId")}`;
+    }
+    case "request.message_edited":
+      return `message ${id("messageId")} was edited, now at version ${count(data["version"], "version")}`;
+    case "request.packet_revised":
+      return `its packet is at revision ${count(data["revision"], "revision")}`;
+    case "request.pull_request_linked":
+      return "a pull request was linked to it";
+    case "request.state_changed":
+      return `it moved from ${word("previousState")} to ${word("state")}`;
+    case "request.needs_human_flagged":
+      return "it waits for a person (needs_human): agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI";
+    case "request.needs_human_cleared":
+      return "a person cleared its needs_human flag";
+    case "request.reassigned":
+      return "it was reassigned to another team, which gave it a new key";
+    case "proposal.created": {
+      const kind = word("kind");
+      const what = Object.hasOwn(COMMITMENTS, kind) ? COMMITMENTS[kind] : undefined;
+      if (what === undefined) throw new ToolTextError("A proposal's kind is not one of the kinds of commitment.");
+      return `proposal ${id("proposalId")} to ${what} was made; it waits for confirmation in the web UI`;
+    }
+    case "proposal.confirmed": {
+      const proposal = id("proposalId");
+      const step = word("step");
+      const applied = data["applied"] === true;
+      if (step === "accountable_human") {
+        return applied
+          ? `proposal ${proposal} was confirmed and took effect`
+          : `proposal ${proposal} was confirmed by its accountable human and waits for the other side's confirmation`;
+      }
+      if (step === "other_side") return `the other side confirmed proposal ${proposal}${applied ? ", which took effect" : ""}`;
+      throw new ToolTextError("A confirmation's step is not one Tiehall records.");
+    }
+    case "proposal.undone":
+      return `proposal ${id("proposalId")} was undone`;
+    case "proposal.ended": {
+      const reason = data["reason"] === undefined ? "" : ` (${word("reason")})`;
+      return `proposal ${id("proposalId")} ended without taking effect: ${word("how")}${reason}`;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** One update, in Tiehall's words: its number, request, type, team, time, what it says and the request's URL. */
+function updateLine(update: UpdateJson): string {
+  const number = count(update.number, "update number");
+  const key = checked(update.request.key, REQUEST_KEY, "request key");
+  const type = checked(update.type, EVENT_TYPE, "event type");
+  const team = checked(update.request.targetTeam.key, TEAM_KEY, "team key");
+  const at = checked(update.occurredAt, DATE_TIME, "date");
+  const url = checked(update.request.url, REQUEST_URL, "request URL");
+  checked(update.data["requestId"], UUID, "request id");
+  const detail = updateDetail(update);
+  return `Update ${number}: ${key} ${type} (team ${team}), ${at}${detail === undefined ? "" : `: ${detail}`}. ${url}`;
+}
+
+/**
+ * A page of updates, as whats_new and `tiehall updates` print it: how many
+ * follow the reader's cursor and how to acknowledge them, with whats_new, for
+ * a tool's result, or with `tiehall updates --acknowledge`, for the CLI's
+ * output; each update in Tiehall's words; and the requests they are about,
+ * each title fenced with its origin for the reader.
+ */
+export function updatesText(updates: UpdatesJson, reader: Reader, surface: "mcp" | "cli" = "mcp"): AgentText[] {
+  const cursor = whole(updates.cursor, "cursor");
+  if (updates.events.length === 0) return [{ origin: "tiehall", text: `No updates after your cursor ${cursor}.` }];
+  const lines = updates.events.map(updateLine);
+  const last = count(updates.events.at(-1)?.number, "update number");
+  const acknowledge =
+    surface === "cli"
+      ? `Once you have handled them, run tiehall updates --acknowledge ${last}: until then, each run lists them again.`
+      : `Once you have handled them, call whats_new with acknowledge ${last}: until then, each call returns them again.`;
+  const heading = [
+    `${updates.events.length === 1 ? "1 update" : `${updates.events.length} updates`} after your cursor ${cursor}, oldest first.`,
+    ...(updates.more ? ["More updates wait after these; acknowledge these to read them."] : []),
+    acknowledge,
+  ].join(" ");
+  const { "requests": requests } = updates;
+  return [
+    { origin: "tiehall", text: [heading, ...lines].join("\n") },
+    ...(requests.length === 0 ? [] : [{ origin: "tiehall" as const, text: "The requests these updates are about:" }, ...requests.flatMap((request) => requestText(request, reader))]),
+  ];
+}

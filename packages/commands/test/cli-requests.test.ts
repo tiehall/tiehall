@@ -24,7 +24,8 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 //
 // The tests were written first, as expected failures: the request commands
 // waited for task 17.3 and signing in and choosing an install for 17.4, which
-// turned theirs into plain tests; `tiehall updates` waits for 19.3.
+// turned theirs into plain tests; `tiehall updates` waited for 19.3, which
+// turned its test into a plain test.
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
@@ -459,23 +460,43 @@ describe("signing in and choosing an install (task 17.4)", () => {
   });
 });
 
-describe("updates (task 19.3)", () => {
+describe("updates", () => {
   // requester-loop: The pull readers, "The CLI keeps its own place".
-  it.fails("lists a question Sam's Claude Code agent already acknowledged through whats_new, since the CLI keeps its own place", async () => {
+  it("lists a question Sam's Claude Code agent already acknowledged through whats_new, since the CLI keeps its own place", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "messages.post", { key: request.key, kind: "question", body: "Which browsers?" });
+    // Sam's agent reads every page of whats_new, acknowledging each, so the question is acknowledged with the rest.
     const client = await connectMcp(harness, { token: sam.token, version: MODERN });
     try {
-      const read = await client.callTool({ name: "whats_new", arguments: {} });
-      if (read.isError === true) throw new Error("whats_new was refused");
-      const events = (read.structuredContent as { events: { number: number }[] }).events;
-      await client.callTool({ name: "whats_new", arguments: { acknowledge: Math.max(...events.map(({ number }) => number)) } });
+      let args: Record<string, unknown> = { limit: 50 };
+      let acknowledged = false;
+      for (;;) {
+        const read = await client.callTool({ name: "whats_new", arguments: args });
+        if (read.isError === true) throw new Error("whats_new was refused");
+        const events = (read.structuredContent as { events: { number: number; data: { requestId?: string } }[] }).events;
+        if (events.length === 0) break;
+        acknowledged ||= events.some(({ data }) => data.requestId === request.id);
+        args = { limit: 50, acknowledge: Math.max(...events.map(({ number }) => number)) };
+      }
+      expect(acknowledged).toBe(true);
     } finally {
       await client.close();
     }
-    const run = await samCli.run(["updates"]);
-    expect(run.code).toBe(0);
-    expect(run.stdout).toContain(request.key);
-    expect(run.stdout).toContain("question");
+    // The CLI's cursor has not moved: `tiehall updates` still lists the question, on the page that reaches it.
+    let acknowledge: string[] = [];
+    let listed = "";
+    for (;;) {
+      const run = await samCli.run(["updates", "--limit", "50", ...acknowledge]);
+      expect(run).toMatchObject({ code: 0, stderr: "" });
+      if (run.stdout.includes(request.key)) {
+        listed = run.stdout;
+        break;
+      }
+      const last = /run tiehall updates --acknowledge (\d+)/.exec(run.stdout)?.[1];
+      if (last === undefined) break;
+      acknowledge = ["--acknowledge", last];
+    }
+    expect(listed).toContain(request.key);
+    expect(listed).toContain("question");
   });
 });

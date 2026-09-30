@@ -74,7 +74,9 @@ export const readUpdates = defineCommand({
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
+  surfaces: ["rest", "mcp", "cli"],
+  tool: "whats_new",
+  cli: [{ command: "updates" }],
   stability: "alpha",
 });
 

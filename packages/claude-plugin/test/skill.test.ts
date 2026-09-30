@@ -67,3 +67,21 @@ describe("the Tiehall skill", () => {
     }
   });
 });
+
+// agent-surfaces: The MCP tools. Every tool the skill teaches is one the install's MCP server offers, as the
+// committed snapshot of the tool list records it (public-api: MCP tools follow the same compatibility rules), from
+// whats_new, which the skill has the agent call at the start of a session, to propose.
+describe("the tools the skill names", () => {
+  const snapshot = JSON.parse(readFileSync(new URL("../../../mcp/tools.json", import.meta.url), "utf8")) as { tools: { name: string }[] };
+  const offered = new Set(snapshot.tools.map(({ name }) => name));
+  const taught = ["whats_new", "whoami", "directory", "open_request", "list_inbox", "get_request", "post_message", "claim", "set_status", "link_pr", "propose"];
+
+  it("are named in the skill", () => {
+    for (const tool of taught) expect(body, tool).toContain(`\`${tool}\``);
+  });
+
+  it("are each a tool the MCP server offers, whats_new among them", () => {
+    expect(offered.has("whats_new")).toBe(true);
+    for (const tool of taught) expect(offered.has(tool), tool).toBe(true);
+  });
+});

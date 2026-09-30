@@ -7641,6 +7641,319 @@
       "stability": "alpha"
     },
     {
+      "description": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
+      "inputSchema": {
+        "properties": {
+          "acknowledge": {
+            "description": "The number of the last update you have handled: your cursor moves up to it before the read, so the updates you get follow it. A cursor never moves back.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "description": "How many updates to return, 1 to 50; 25 unless given.",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "whats_new",
+      "outputSchema": {
+        "properties": {
+          "cursor": {
+            "description": "The number of the last update this reader acknowledged; 0 before the first.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "description": "The updates after your cursor, oldest first.",
+            "items": {
+              "properties": {
+                "data": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9_]*)$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-zA-Z0-9]*$",
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "number": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "occurredAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                  "type": "string"
+                },
+                "request": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "description": "The request's key now, such as FE-142.",
+                      "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                      "type": "string"
+                    },
+                    "targetTeam": {
+                      "description": "The team the request is addressed to now.",
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "url": {
+                      "description": "The request's URL on the install, which get_request and `tiehall get` read.",
+                      "pattern": "^https?:\\/\\/(?:[A-Za-z0-9\\.-]+|\\[[0-9A-Fa-f:\\.]+\\])(?::\\d{1,5})?\\/([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key",
+                    "url",
+                    "targetTeam"
+                  ],
+                  "type": "object"
+                },
+                "type": {
+                  "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "type",
+                "occurredAt",
+                "data",
+                "request"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "more": {
+            "description": "Whether more updates wait after this page; acknowledge this page to read them.",
+            "type": "boolean"
+          },
+          "requests": {
+            "description": "The requests these updates are about, as they are now.",
+            "items": {
+              "properties": {
+                "claimant": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "bot": {
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "human",
+                          "type": "string"
+                        },
+                        "login": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "login",
+                        "kind",
+                        "bot"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "key": {
+                  "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                  "type": "string"
+                },
+                "needsHuman": {
+                  "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                  "type": "boolean"
+                },
+                "requester": {
+                  "properties": {
+                    "team": {
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "key": {
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "key"
+                      ],
+                      "type": "object"
+                    },
+                    "user": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "bot": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "human",
+                              "type": "string"
+                            },
+                            "login": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "login",
+                            "kind",
+                            "bot"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "team"
+                  ],
+                  "type": "object"
+                },
+                "state": {
+                  "enum": [
+                    "open",
+                    "claimed",
+                    "in_progress",
+                    "needs_info",
+                    "done",
+                    "declined",
+                    "withdrawn"
+                  ],
+                  "type": "string"
+                },
+                "targetTeam": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key"
+                  ],
+                  "type": "object"
+                },
+                "untrusted": {
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "key",
+                "state",
+                "targetTeam",
+                "requester",
+                "claimant",
+                "createdAt",
+                "needsHuman",
+                "untrusted"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events",
+          "requests",
+          "cursor",
+          "more"
+        ],
+        "type": "object"
+      },
+      "stability": "alpha"
+    },
+    {
       "description": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL; and warn when the Tiehall skill in use is older than the install supports.",
       "inputSchema": {
         "properties": {

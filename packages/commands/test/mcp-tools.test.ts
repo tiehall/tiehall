@@ -16,8 +16,8 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // as an expected failure until the task that builds what it checks turned it
 // into a plain test: the tool list's annotations, levels and schemas in 16.3,
 // whoami and directory in 16.5, open_request and list_inbox in 16.6. The list
-// of exactly twelve tools waits for the last of them: whats_new comes in 19.3
-// and attach_contract_changes in 23.5.
+// of exactly twelve tools waits for the last of them: whats_new came in 19.3,
+// and attach_contract_changes comes in 23.5.
 
 /** The _meta key under which every tool states its stability level. */
 const STABILITY = "com.tiehall/stability";
@@ -259,6 +259,56 @@ describe.each(PROTOCOL_VERSIONS)("list_inbox, on protocol version %s", (version)
     expect(result.isError).not.toBe(true);
     // The key is quoted, so the source-citation check does not take the name and its colon for a citation.
     expect(result.structuredContent).toMatchObject({ "requests": [] });
+  });
+});
+
+// requester-loop: The pull readers; requester-loop: What whats_new covers; agent-surfaces: The MCP tools.
+describe.each(PROTOCOL_VERSIONS)("whats_new, on protocol version %s", (version) => {
+  /** Every update the person's agent reads, page after page, each acknowledged so the next follows it; and the texts. */
+  async function readAll(person: McpPerson): Promise<{ events: { number: number; type: string; data: Record<string, unknown> }[]; text: string; cursor: number }> {
+    const client = await connectMcp(harness, { token: person.token, version });
+    try {
+      await client.listTools();
+      const events: { number: number; type: string; data: Record<string, unknown> }[] = [];
+      const texts: string[] = [];
+      let args: Record<string, unknown> = { limit: 50 };
+      for (;;) {
+        const result = await client.callTool({ name: "whats_new", arguments: args });
+        expect(result.isError).not.toBe(true);
+        const page = result.structuredContent as { events: { number: number; type: string; data: Record<string, unknown> }[]; cursor: number; more: boolean };
+        events.push(...page.events);
+        texts.push(textOf(result));
+        const last = page.events.at(-1)?.number;
+        if (last === undefined) return { events, text: texts.join("\n"), cursor: page.cursor };
+        args = { limit: 50, acknowledge: last };
+      }
+    } finally {
+      await client.close();
+    }
+  }
+
+  it("returns a new request addressed to the caller's team, in Tiehall's words, with its title fenced as another team's", async () => {
+    const title = `Updates check for FE on ${version}`;
+    const opened = await openRequestInTheWebUi<{ id: string; key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA", title });
+    const { events, text } = await readAll(dana);
+    expect(events.filter(({ data }) => data["requestId"] === opened.id).map(({ type }) => type)).toEqual(["request.opened"]);
+    expect(text).toContain(`${opened.key} request.opened (team FE)`);
+    expect(text).toContain(`${URL_OF_INSTALL}/${opened.key}`);
+    expect(text).toContain(`origin="other team">\n${title}\n`);
+  });
+
+  it("takes an acknowledgement, after which the acknowledged updates are not returned again", async () => {
+    const opened = await openRequestInTheWebUi<{ id: string; key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA" });
+    const { events, cursor } = await readAll(dana);
+    const update = events.find(({ data }) => data["requestId"] === opened.id);
+    expect(update).toBeDefined();
+    expect(cursor).toBeGreaterThanOrEqual(update?.number ?? Infinity);
+    expect((await readAll(dana)).events.find(({ data }) => data["requestId"] === opened.id)).toBeUndefined();
+  });
+
+  it("leaves out a request the caller has no part in", async () => {
+    const opened = await openRequestInTheWebUi<{ id: string; key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA" });
+    expect((await readAll(kim)).events.find(({ data }) => data["requestId"] === opened.id)).toBeUndefined();
   });
 });
 

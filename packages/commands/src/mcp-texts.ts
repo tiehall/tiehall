@@ -8,6 +8,7 @@ import {
   proposeTool,
   readDirectory,
   readRequest,
+  readUpdates,
   setRequestStatus,
   whoami,
 } from "@tiehall/catalog";
@@ -21,6 +22,7 @@ import {
   requestPageText,
   requestText,
   revisedPacketText,
+  updatesText,
   whoamiText,
   type DirectoryJson,
   type InboxJson,
@@ -30,6 +32,7 @@ import {
   type RequestJson,
   type RequestPageJson,
   type RevisedPacketJson,
+  type UpdatesJson,
   type WhoamiJson,
 } from "@tiehall/packet/tool-text";
 
@@ -57,6 +60,7 @@ export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
   [whoami.id]: (output) => whoamiText(output as WhoamiJson),
   [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),
+  [readUpdates.id]: (output, reader) => updatesText(output as UpdatesJson, reader),
 };
 
 /**
