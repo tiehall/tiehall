@@ -2,7 +2,7 @@ import { cimd } from "@better-auth/cimd";
 import { mcp } from "@better-auth/mcp";
 import { oauthDeviceAuthorization } from "@better-auth/oauth-provider";
 import type { BetterAuthPlugin } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { SCOPES } from "@tiehall/catalog";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
@@ -34,10 +34,10 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   fetcher (outbound.ts), which resolves the host itself, refuses an internal
 //   address without connecting to it, and here follows no redirect; the
 //   client counts as identified only when the document's client_id equals the
-//   URL exactly. At most 60 documents a minute are fetched from one host, and
-//   an authorization request that cannot be checked because its host's limit
-//   is used up gets 429 with Retry-After; no other limit on the fetches
-//   applies.
+//   URL exactly. At most 60 documents a minute are fetched from one host, on
+//   whatever port its URL names, and an authorization request that cannot be
+//   checked because its host's limit is used up gets 429 with Retry-After; no
+//   other limit on the fetches applies.
 // - Tiehall offers exactly three scopes, requests:read, requests:write and
 //   contracts:report, and no admin scope (agent-access: OAuth scopes are
 //   coarse): a scope an authorization request asks for that is not one of
@@ -180,8 +180,35 @@ export function authorizationServerPlugins({ url, orgId, clients = {} }: Authori
   return plugins;
 }
 
+/** How long the fetches of a host are counted for: a minute. */
+const FETCH_WINDOW_MS = 60_000;
+
+/**
+ * Counts the metadata-document fetches from each host, whatever port the URL
+ * names, over the past minute, in this process's memory (one web process per
+ * install); refuses a fetch beyond the host's 60 with the answer the sign-in
+ * service turns into the error model's 429.
+ */
+function fetchesPerHost(): (url: string) => void {
+  const byHost = new Map<string, number[]>();
+  return (url) => {
+    const now = Date.now();
+    // Hosts with no fetch in the past minute are forgotten, so the count keeps no more than a minute's hosts.
+    if (byHost.size > 10_000) for (const [host, times] of byHost) if (times.every((at) => now - at >= FETCH_WINDOW_MS)) byHost.delete(host);
+    const host = new URL(url).hostname;
+    const recent = (byHost.get(host) ?? []).filter((at) => now - at < FETCH_WINDOW_MS);
+    if (recent.length >= METADATA_FETCHES_PER_HOST_PER_MINUTE) {
+      byHost.set(host, recent);
+      throw new APIError("TOO_MANY_REQUESTS", { error: "temporarily_unavailable", error_description: "metadata fetch rate limit exceeded for the client's host" });
+    }
+    recent.push(now);
+    byHost.set(host, recent);
+  };
+}
+
 /** The plugin that identifies clients by their Client ID Metadata Documents, fetched with this fetcher. */
 function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
+  const countFetch = fetchesPerHost();
   return cimd({
     metadataProfile: "mcp-2026-07-28",
     // The document's own answer, as the outbound fetcher gives it; a refused fetch fails the resolution of the client.
@@ -192,10 +219,16 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
         headers: document.contentType === undefined ? {} : { "content-type": document.contentType },
       });
     },
-    // The one limit agent-access names: 60 fetches a minute from one host. The plugin's other limits are set out of reach.
+    // The one limit agent-access names: 60 fetches a minute from one host, which the plugin would count per origin, a
+    // host and a port, so a client could name another port for each fetch. It is counted per host just before each
+    // fetch, and the plugin's own limits are set out of reach.
+    isMetadataDocumentUrlAllowed: (url) => {
+      countFetch(url);
+      return true;
+    },
     metadataFetchPolicy: {
-      maximumFetchesPerOriginPerMinute: METADATA_FETCHES_PER_HOST_PER_MINUTE,
-      maximumConcurrentFetchesPerOrigin: METADATA_FETCHES_PER_HOST_PER_MINUTE,
+      maximumFetchesPerOriginPerMinute: 1_000_000,
+      maximumConcurrentFetchesPerOrigin: 1_000_000,
       maximumFetchesPerMinute: 1_000_000,
       maximumConcurrentFetches: 1_000_000,
       minimumFetchInterval: 0,

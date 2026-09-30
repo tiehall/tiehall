@@ -26,6 +26,7 @@ const HOSTS: Readonly<Record<string, string>> = {
   "vendor.example": "93.184.215.14",
   "busy.example": "93.184.215.15",
   "quiet.example": "93.184.215.16",
+  "ports.example": "93.184.215.17",
   "internal.vendor.example": "10.0.0.5",
 };
 
@@ -51,7 +52,8 @@ function documentFor(clientId: string, overrides: Record<string, unknown> = {}):
 
 beforeAll(async () => {
   server = createServer((request, response) => {
-    const host = (request.headers.host ?? "").split(":")[0] ?? "";
+    // The host as the client id names it, with its port when it names one.
+    const host = request.headers.host ?? "";
     const url = `https://${host}${request.url ?? "/"}`;
     fetched.push(url);
     if (request.url === "/oauth/mismatched.json") {
@@ -152,5 +154,18 @@ describe("the fetches from one host", () => {
     expect(fetched).toHaveLength(60);
     // Another host has its own 60.
     expect((await authorizeAs("https://quiet.example/clients/1.json", "198.51.100.62")).status).toBe(302);
+  });
+
+  it("count together whatever port each client id names: a host is one host on any port", async () => {
+    for (let index = 1; index <= 60; index += 1) {
+      const answer = await authorizeAs(`https://ports.example:${8000 + index}/clients/${index}.json`, `203.0.113.${index}`);
+      expect(answer.status, `client ${index}`).toBe(302);
+    }
+    expect(fetched).toHaveLength(60);
+    const refused = await authorizeAs("https://ports.example:8061/clients/61.json", "203.0.113.61");
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await authorizeAs("https://ports.example/clients/62.json", "203.0.113.62")).status).toBe(429);
+    expect(fetched).toHaveLength(60);
   });
 });
