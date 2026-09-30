@@ -1,8 +1,9 @@
-import type { Client } from "@modelcontextprotocol/client";
+import type { CallToolResult, Client } from "@modelcontextprotocol/client";
+import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { connectMcp, mcpPerson, MODERN, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
+import { connectMcp, LEGACY, mcpPerson, MODERN, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
 import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 
 // URL-mode elicitation for MCP clients (agent-surfaces: URL-mode elicitation
@@ -19,6 +20,16 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // nothing without a session. Only the client whose call created the proposal
 // gets it: the other side of a two-sided commitment finds the proposal in its
 // web inbox.
+//
+// Clients without URL-mode elicitation are pointed to the web inbox
+// (agent-surfaces: Clients without URL-mode elicitation are pointed to the web
+// inbox; agent-safety: The confirm URL never reaches the model; design.md,
+// Technical decisions: T9). Every connection on 2025-11-25, whatever it
+// declared when it connected, a 2026-07-28 client that does not declare
+// elicitation.url, and the CLI, which calls REST, get the proposal itself: its
+// id, the confirmations it needs and when it expires, and the text says it
+// waits in its accountable human's web inbox. Nothing in it leads to the
+// confirm page.
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
@@ -216,5 +227,93 @@ describe("a URL-mode elicitation for a proposal, to a 2026-07-28 client that dec
     const standing = await harness.install.web(bob.session).read<{ waiting: { id: string }[] }>("inbox.standing_list", {});
     if (!standing.ok) throw new Error(`inbox.standing_list answered ${standing.problem.status}`);
     expect(standing.output.waiting.map(({ id }) => id)).toContain(proposalId);
+  });
+});
+
+describe("a proposal for a client without URL-mode elicitation", () => {
+  /** A client of Bob's that would fulfil any elicitation it got, recording it. */
+  async function recordingClient(version: ProtocolVersion, capabilities: Record<string, unknown>): Promise<{ client: Client; elicited: unknown[] }> {
+    const elicited: unknown[] = [];
+    const client = await connectMcp(harness, { token: bob.token, version, capabilities });
+    if ("elicitation" in capabilities) {
+      client.setRequestHandler("elicitation/create", async (asked) => {
+        elicited.push(asked.params);
+        return { action: "accept" };
+      });
+    }
+    await client.listTools();
+    return { client, elicited };
+  }
+
+  /** What every such client gets: the proposal's id, the confirmations it needs, its expiry and its web inbox, and no confirm URL. */
+  async function expectPointedToTheInbox(result: CallToolResult, requestId: string): Promise<void> {
+    expect(result.isError).not.toBe(true);
+    const proposal = await newestProposal(requestId);
+    expect(result.structuredContent).toMatchObject({
+      proposal: {
+        id: proposal.id,
+        kind: "decline",
+        state: "pending",
+        confirmations: { needed: [{ step: "accountable_human", user: { id: bob.userId } }], received: [] },
+        expiresAt: expect.stringMatching(/Z$/),
+      },
+    });
+    const text = textOf(result);
+    expect(text).toContain(`Proposal ${proposal.id}: decline`);
+    expect(text).toContain("It waits in bob-fe's web inbox: a person confirms or rejects it there, in Tiehall's web UI, not through an agent.");
+    expect(text).toMatch(/It expires at \d{4}-\d{2}-\d{2}T/);
+    expect(text).not.toContain("/confirm/");
+    expect(JSON.stringify(result.structuredContent)).not.toContain("/confirm/");
+  }
+
+  it("on a 2025-11-25 connection, even one that declared URL-mode elicitation when it connected, is the proposal, which names its web inbox", async () => {
+    const request = await openToFe();
+    const { client, elicited } = await recordingClient(LEGACY, URL_ELICITATION);
+    try {
+      expect(client.getNegotiatedProtocolVersion()).toBe(LEGACY);
+      await expectPointedToTheInbox(await client.callTool({ name: "set_status", arguments: { key: request.key, state: "declined" } }), request.id);
+    } finally {
+      await client.close();
+    }
+    expect(elicited).toEqual([]);
+  });
+
+  it("on 2026-07-28, for a client that does not declare elicitation.url, even one that declares form elicitation, is the proposal with no elicitation", async () => {
+    for (const capabilities of [{}, { elicitation: { form: {} } }]) {
+      const request = await openToFe();
+      const { client, elicited } = await recordingClient(MODERN, capabilities);
+      try {
+        const answer = await callManually(client, "set_status", { key: request.key, state: "declined" });
+        expect(answer.resultType, JSON.stringify(capabilities)).toBeUndefined();
+        await expectPointedToTheInbox(answer as CallToolResult, request.id);
+      } finally {
+        await client.close();
+      }
+      expect(elicited).toEqual([]);
+    }
+  });
+
+  it("for the CLI, which calls REST, is the 202 answer with the proposal, printed with its web inbox and no confirm URL, and it waits in that inbox", async () => {
+    const request = await openToFe();
+    const cli = await harness.signInCli(bob);
+    const answer = await harness.api("POST", `/api/v1/requests/${request.key}/status`, { authorization: `Bearer ${cli.accessToken}` }, { state: "declined" });
+    expect(answer.status).toBe(202);
+    const body = (await answer.json()) as { proposal: ProposalJson };
+    const proposal = await newestProposal(request.id);
+    expect(body.proposal).toMatchObject({
+      id: proposal.id,
+      state: "pending",
+      confirmations: { needed: [{ step: "accountable_human", user: { id: bob.userId } }], received: [] },
+      expiresAt: expect.stringMatching(/Z$/),
+    });
+    expect(JSON.stringify(body)).not.toContain("/confirm/");
+    // The CLI prints a proposal with the same Apache-2.0 text the tools show (task 17.3 prints it).
+    const printed = proposalText(body.proposal);
+    expect(printed).toContain(`Proposal ${proposal.id}: decline ${request.key}.`);
+    expect(printed).toContain("It waits in bob-fe's web inbox");
+    expect(printed).not.toContain("/confirm/");
+    const standing = await harness.install.web(bob.session).read<{ waiting: { id: string }[] }>("inbox.standing_list", {});
+    if (!standing.ok) throw new Error(`inbox.standing_list answered ${standing.problem.status}`);
+    expect(standing.output.waiting.map(({ id }) => id)).toContain(proposal.id);
   });
 });
