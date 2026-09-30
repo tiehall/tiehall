@@ -17,12 +17,14 @@ export {
 } from "./command.ts";
 export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
 export { BODY_LIMIT, bodyLimitOf, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB } from "./body-limits.ts";
-export { AGENT_CLIENT_COMMANDS, approveAgentClient, approveDevice, revokeAgentGrant } from "./agent-clients.ts";
+export { AGENT_CLIENT_COMMANDS, approveAgentClient, approveDevice, listAgentGrants, revokeAgentGrant } from "./agent-clients.ts";
 export {
   createPersonalAccessToken,
   getPersonalAccessTokenSettings,
+  listPersonalAccessTokens,
   PERSONAL_ACCESS_TOKEN_COMMANDS,
   PERSONAL_ACCESS_TOKEN_PREFIX,
+  revokePersonalAccessToken,
 } from "./personal-access-tokens.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";

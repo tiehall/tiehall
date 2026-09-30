@@ -109,7 +109,7 @@ describe("the Connected agents and tokens page", () => {
 
   it("leads its form to the review page of exactly the token it names", async () => {
     const page = await (await harness.handle(new Request(`${URL_OF_INSTALL}/tokens`, { headers: { cookie: ana.cookie } }))).text();
-    const form = new URLSearchParams({ name: "Nightly sync", expiresInDays: "14", csrf: hiddenField(page, "csrf") });
+    const form = new URLSearchParams({ action: "create", name: "Nightly sync", expiresInDays: "14", csrf: hiddenField(page, "csrf") });
     form.append("scope", "requests:read");
     const answer = await harness.handle(
       new Request(`${URL_OF_INSTALL}/tokens`, {

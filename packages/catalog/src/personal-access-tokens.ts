@@ -10,7 +10,9 @@ import { defineCommand, SCOPES } from "./command.ts";
 // value, which starts with th_pat_, is in the creation's output only: the
 // confirmation's page shows it once, and Tiehall keeps only a hash of it.
 // The web UI reads the install's PAT settings, to say how long a token may
-// live.
+// live. A user lists their tokens and revokes any of them, in the web UI only
+// too, on their Connected agents and tokens page; revoking takes access away,
+// so it needs no confirmation step.
 
 /** The prefix of every personal access token's value. */
 export const PERSONAL_ACCESS_TOKEN_PREFIX = "th_pat_";
@@ -66,4 +68,41 @@ export const getPersonalAccessTokenSettings = defineCommand({
   stability: "beta",
 });
 
-export const PERSONAL_ACCESS_TOKEN_COMMANDS = [createPersonalAccessToken, getPersonalAccessTokenSettings];
+export const listPersonalAccessTokens = defineCommand({
+  id: "personal_access_tokens.list",
+  summary: "List the signed-in user's personal access tokens that were not revoked, with their labels, scopes and expiry; never their values.",
+  input: z.object({}),
+  output: z.object({
+    tokens: z.array(
+      z.object({
+        id: z.uuid(),
+        /** The label its user gave it. */
+        name: z.string(),
+        scopes: z.array(z.enum(SCOPES)),
+        createdAt: z.iso.datetime(),
+        expiresAt: z.iso.datetime(),
+        /** Whether it has expired, so that calls with it are refused. */
+        expired: z.boolean(),
+      }),
+    ),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const revokePersonalAccessToken = defineCommand({
+  id: "personal_access_tokens.revoke",
+  summary: "Revoke one of the signed-in user's personal access tokens, which stops it working at once.",
+  input: z.object({ tokenId: z.uuid() }),
+  output: z.object({ tokenId: z.uuid() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const PERSONAL_ACCESS_TOKEN_COMMANDS = [createPersonalAccessToken, getPersonalAccessTokenSettings, listPersonalAccessTokens, revokePersonalAccessToken];

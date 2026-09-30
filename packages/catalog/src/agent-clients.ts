@@ -8,8 +8,9 @@ import { defineCommand } from "./command.ts";
 // a client is a change to who may act for the member, so it needs the
 // confirmation step and runs only in the web UI, from the consent screen or,
 // for the tiehall CLI, from the device approval page; revoking a grant only
-// takes access away, so it needs none, but runs only in the web UI too. No
-// agent surface offers either.
+// takes access away, so it needs none, but runs only in the web UI too, from
+// the member's Connected agents and tokens page, which lists their grants. No
+// agent surface offers any of them.
 
 export const approveAgentClient = defineCommand({
   id: "agent_clients.approve",
@@ -63,4 +64,36 @@ export const revokeAgentGrant = defineCommand({
   stability: "beta",
 });
 
-export const AGENT_CLIENT_COMMANDS = [approveAgentClient, approveDevice, revokeAgentGrant];
+export const listAgentGrants = defineCommand({
+  id: "agent_grants.list",
+  summary: "List the grants the signed-in member gave agent clients, the tiehall CLI's included, with who each client says it is and what it may do.",
+  input: z.object({}),
+  output: z.object({
+    grants: z.array(
+      z.object({
+        id: z.uuid(),
+        client: z.object({
+          /** The name the client gives itself, its own claim; null when it gave none. For the tiehall CLI, Tiehall's own name for it. */
+          name: z.string().nullable(),
+          /** Whether the client is the tiehall CLI, which signs in through the device flow. */
+          cli: z.boolean(),
+          /** For a client identified by its Client ID Metadata Document, the verified host of the document's URL; null otherwise. */
+          verifiedHost: z.string().nullable(),
+          /** Whether the client registered itself, so nothing verifies who it is. */
+          unverified: z.boolean(),
+        }),
+        /** What the client may do for the member. */
+        scopes: z.array(z.string()),
+        /** When the member last approved the client. */
+        approvedAt: z.iso.datetime(),
+      }),
+    ),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const AGENT_CLIENT_COMMANDS = [approveAgentClient, approveDevice, revokeAgentGrant, listAgentGrants];

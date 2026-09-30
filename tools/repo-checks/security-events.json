@@ -136,7 +136,14 @@
             "case": "records a security event that names the member and the token, never the value"
           }
         },
-        { "action": "a personal access token revoked", "pending": "15.17" }
+        {
+          "action": "a personal access token revoked",
+          "event": "personal_access_token.revoked",
+          "test": {
+            "file": "packages/commands/test/connected-agents-page.test.ts",
+            "case": "makes its next call get 401 at once, is a security event, and leaves the page"
+          }
+        }
       ]
     },
     {

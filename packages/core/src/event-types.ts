@@ -596,6 +596,21 @@ export const personalAccessTokenCreated = defineEventType({
   },
 });
 
+/**
+ * A user revoked one of their personal access tokens, so it works no more
+ * (agent-access: Users list and revoke their own agent grants and tokens;
+ * activity-log: Which actions are security events). It names the user it
+ * acted for and the token, never its value or its label.
+ */
+export const personalAccessTokenRevoked = defineEventType({
+  type: "personal_access_token.revoked",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    tokenId: { kind: "id", of: "token" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -634,4 +649,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   agentClientApproved,
   agentGrantRevoked,
   personalAccessTokenCreated,
+  personalAccessTokenRevoked,
 ];

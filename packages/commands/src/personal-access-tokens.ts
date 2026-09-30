@@ -3,22 +3,35 @@ import {
   createPersonalAccessToken,
   getPersonalAccessTokenAdminSettings,
   getPersonalAccessTokenSettings,
+  listAgentGrants,
+  listPersonalAccessTokens,
   PERSONAL_ACCESS_TOKEN_PREFIX,
+  revokeAgentGrant,
+  revokePersonalAccessToken,
   SCOPES,
   setPersonalAccessTokenMaxLifetime,
   setPersonalAccessTokens,
   type Scope,
 } from "@tiehall/catalog";
-import { personalAccessTokenCreated, personalAccessTokenMaxLifetimeChanged, personalAccessTokensSwitched, Refusal, type Review } from "@tiehall/core";
+import {
+  personalAccessTokenCreated,
+  personalAccessTokenMaxLifetimeChanged,
+  personalAccessTokenRevoked,
+  personalAccessTokensSwitched,
+  quotePreamble,
+  Refusal,
+  type Review,
+} from "@tiehall/core";
 import { installSettings, personalAccessTokens, type Database } from "@tiehall/db";
-import { and, eq, sql } from "drizzle-orm";
-import type { PersonalAccessTokenCaller } from "./caller.ts";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import type { z } from "zod";
+import type { Caller, PersonalAccessTokenCaller } from "./caller.ts";
 import { CONFIRM_PATH, type ConfirmMessages } from "./confirm-route.ts";
 import type { Reviews } from "./confirmation-step.ts";
 import { SCOPE_TEXTS } from "./consent.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { createPageRoute, htmlAnswer, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 
 // Personal access tokens (agent-access: Personal access tokens are scoped,
@@ -118,10 +131,15 @@ function day(at: Date): string {
 
 type CreateInput = { name: string; scopes: Scope[]; expiresInDays: number };
 
+/** The signed-in member whose own tokens a web UI call creates, lists or revokes; the web UI runs these only for one. */
+function ownerOf(caller: Caller): string {
+  if (caller.kind !== "web_session") throw new Refusal("forbidden", "Only a signed-in member creates, lists or revokes their personal access tokens, in the web UI.");
+  return caller.userId;
+}
+
 export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
   [createPersonalAccessToken.id]: defineHandler(createPersonalAccessToken, async ({ name, scopes, expiresInDays }, context) => {
-    if (context.caller.kind !== "web_session") throw new Refusal("forbidden", "Only a signed-in member creates a personal access token, in the web UI.");
-    const userId = context.caller.userId;
+    const userId = ownerOf(context.caller);
     const { maxLifetimeDays } = await personalAccessTokenSettingsIn(context);
     assertLifetime(expiresInDays, maxLifetimeDays);
     const createdAt = context.now();
@@ -139,6 +157,58 @@ export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
   }),
 
   [getPersonalAccessTokenSettings.id]: defineHandler(getPersonalAccessTokenSettings, async (_input, context) => personalAccessTokenSettingsIn(context)),
+
+  [listPersonalAccessTokens.id]: defineHandler(listPersonalAccessTokens, async (_input, context) => {
+    const userId = ownerOf(context.caller);
+    const now = context.now();
+    const rows = await context.tx
+      .select({
+        id: personalAccessTokens.id,
+        name: personalAccessTokens.name,
+        scopes: personalAccessTokens.scopes,
+        createdAt: personalAccessTokens.createdAt,
+        expiresAt: personalAccessTokens.expiresAt,
+      })
+      .from(personalAccessTokens)
+      .where(and(eq(personalAccessTokens.orgId, context.orgId), eq(personalAccessTokens.userId, userId), isNull(personalAccessTokens.revokedAt)))
+      .orderBy(asc(personalAccessTokens.createdAt), asc(personalAccessTokens.id));
+    return {
+      tokens: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        scopes: SCOPES.filter((scope) => row.scopes.includes(scope)),
+        createdAt: row.createdAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+        expired: row.expiresAt.getTime() <= now.getTime(),
+      })),
+    };
+  }),
+
+  [revokePersonalAccessToken.id]: defineHandler(revokePersonalAccessToken, async ({ tokenId }, context) => {
+    const userId = ownerOf(context.caller);
+    const at = context.now();
+    return context.write(async (writer) => {
+      const [token] = await writer.tx
+        .select({ id: personalAccessTokens.id })
+        .from(personalAccessTokens)
+        .where(
+          and(
+            eq(personalAccessTokens.orgId, writer.orgId),
+            eq(personalAccessTokens.id, tokenId),
+            eq(personalAccessTokens.userId, userId),
+            isNull(personalAccessTokens.revokedAt),
+          ),
+        )
+        .for("update");
+      if (token === undefined) throw new Refusal("record-not-found", "You hold no personal access token with this id that may still be revoked.");
+      await writer.tx
+        .update(personalAccessTokens)
+        .set({ revokedAt: at })
+        .where(and(eq(personalAccessTokens.orgId, writer.orgId), eq(personalAccessTokens.id, tokenId)));
+      await writer.record(personalAccessTokenRevoked, { userId, tokenId });
+      return { tokenId };
+    });
+  }),
 
   [getPersonalAccessTokenAdminSettings.id]: defineHandler(getPersonalAccessTokenAdminSettings, async (_input, context) => personalAccessTokenSettingsIn(context)),
 
@@ -280,12 +350,24 @@ export function personalAccessTokenCaller(found: FoundPersonalAccessToken): Pers
 // The "Connected agents and tokens" page, /tokens (agent-access: Users list and
 // revoke their own agent grants and tokens; agent-access: Personal access
 // tokens are scoped, expiring and created in the web UI). Every signed-in
-// member has one. It holds the form that creates a personal access token: a
-// label, the scopes and the lifetime, which says the install's longest; its
-// POST, which passes the web UI's write checks, leads to the creation's review
-// page for exactly what the form named, where the token is created with the
-// confirmation step. A value the form names that the command's schema does not
-// take reaches the review page as it was sent, which refuses it with 400.
+// member has one. It lists, for them alone:
+// - the grants they gave agent clients, the tiehall CLI's included: who each
+//   client says it is, quoted as its own claim, whether its identity is
+//   verified, what it may do and when they approved it, each with a form that
+//   revokes the grant, which stops its refresh token at once;
+// - their personal access tokens that were not revoked: each one's label,
+//   scopes and expiry, never its value, with a form that revokes it, which
+//   stops it at once;
+// - the form that creates a personal access token: a label, the scopes and
+//   the lifetime, which says the install's longest.
+// Each form's POST passes the web UI's write checks. A revocation needs no
+// confirmation step, since it only takes access away: it runs at once, as a
+// security event, and leads back to the page; a grant or a token that is not
+// the member's gets 404, as one that does not exist. The creation's form leads
+// to its review page for exactly what the form named, where the token is
+// created with the confirmation step; a value the form names that the
+// command's schema does not take reaches the review page as it was sent,
+// which refuses it with 400.
 
 /** The number a form's field names, or the field as it was sent, which the schema then refuses. */
 function numberField(value: string | null): number | string {
@@ -298,32 +380,107 @@ function reviewPath(input: unknown): string {
   return `${CONFIRM_PATH}${createPersonalAccessToken.id}?input=${encodeURIComponent(JSON.stringify(input))}`;
 }
 
+type ListedGrant = z.output<typeof listAgentGrants.output>["grants"][number];
+type ListedToken = z.output<typeof listPersonalAccessTokens.output>["tokens"][number];
+
 export function createTokensRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: TOKENS_PATH,
     name: "Connected agents and tokens",
     async get(_query, { read, csrf }) {
       const settings = await read<{ on: boolean; maxLifetimeDays: number }>(getPersonalAccessTokenSettings.id, {});
-      return htmlAnswer(tokensPage(settings, csrf));
+      const { grants } = await read<{ grants: ListedGrant[] }>(listAgentGrants.id, {});
+      const { tokens } = await read<{ tokens: ListedToken[] }>(listPersonalAccessTokens.id, {});
+      return htmlAnswer(tokensPage(settings, grants, tokens, csrf));
     },
-    async post(form) {
-      const input = { name: form.get("name") ?? "", scopes: form.getAll("scope"), expiresInDays: numberField(form.get("expiresInDays")) };
-      return seeOther(reviewPath(input));
+    async post(form, { write }) {
+      switch (form.get("action")) {
+        case "revoke_grant":
+          await write(revokeAgentGrant.id, { grantId: form.get("grant") ?? "" });
+          return seeOther(TOKENS_PATH);
+        case "revoke_token":
+          await write(revokePersonalAccessToken.id, { tokenId: form.get("token") ?? "" });
+          return seeOther(TOKENS_PATH);
+        case "create":
+          return seeOther(reviewPath({ name: form.get("name") ?? "", scopes: form.getAll("scope"), expiresInDays: numberField(form.get("expiresInDays")) }));
+        default:
+          throw new Refusal("route-not-found", "The Connected agents and tokens page offers no such action.");
+      }
     },
   });
 }
 
-/** The page: the form that creates a personal access token. */
-function tokensPage({ on, maxLifetimeDays }: { on: boolean; maxLifetimeDays: number }, csrf: string): string {
+/** A day as the page shows it, in UTC. */
+function pageDay(at: string): string {
+  return `${at.slice(0, 10)} (UTC)`;
+}
+
+/** What a list of scopes lets a client or a token do, in Tiehall's own words. */
+function scopeList(scopes: readonly string[]): string[] {
+  return scopes.map((scope) => `          <li>${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</li>`);
+}
+
+/** One grant: who the client says it is, what it may do, and the form that revokes it. */
+function grantItem(grant: ListedGrant, csrf: string): string {
+  const who = grant.client.cli
+    ? ["        <p>The tiehall CLI, signed in with tiehall login.</p>"]
+    : [
+        grant.client.name === null
+          ? "        <p>An agent client that gives no name.</p>"
+          : `        <p>An agent client that calls itself:</p>\n        <blockquote class="untrusted" data-origin="external"><p>${escapeHtml(quotePreamble("external"))}</p><pre>${escapeHtml(grant.client.name)}</pre></blockquote>`,
+        grant.client.verifiedHost === null
+          ? "        <p>Unverified client: it registered itself with this install.</p>"
+          : `        <p>${escapeHtml(`Verified: it is identified by its metadata document on ${grant.client.verifiedHost}.`)}</p>`,
+      ];
+  return [
+    "      <li>",
+    ...who,
+    `        <p>${escapeHtml(`Approved on ${pageDay(grant.approvedAt)}. It may:`)}</p>`,
+    "        <ul>",
+    ...scopeList(grant.scopes),
+    "        </ul>",
+    postForm(TOKENS_PATH, { action: "revoke_grant", grant: grant.id }, csrf, "Revoke this grant", "        "),
+    "      </li>",
+  ].join("\n");
+}
+
+/** One personal access token: its label, what it may do, its expiry, and the form that revokes it. */
+function tokenItem(token: ListedToken, csrf: string): string {
+  return [
+    "      <li>",
+    `        <p>${escapeHtml(token.name)}</p>`,
+    `        <p>${escapeHtml(`Created on ${pageDay(token.createdAt)}; ${token.expired ? "expired" : "expires"} on ${pageDay(token.expiresAt)}. It may:`)}</p>`,
+    "        <ul>",
+    ...scopeList(token.scopes),
+    "        </ul>",
+    postForm(TOKENS_PATH, { action: "revoke_token", token: token.id }, csrf, "Revoke this token", "        "),
+    "      </li>",
+  ].join("\n");
+}
+
+/** The page: the member's grants and tokens, each with its revoke form, and the form that creates a personal access token. */
+function tokensPage(
+  { on, maxLifetimeDays }: { on: boolean; maxLifetimeDays: number },
+  grants: readonly ListedGrant[],
+  tokens: readonly ListedToken[],
+  csrf: string,
+): string {
   const defaultDays = Math.min(30, maxLifetimeDays);
   return htmlPage(
     "Connected agents and tokens",
     [
       "      <h1>Connected agents and tokens</h1>",
+      "      <h2>Agent clients you approved</h2>",
+      "      <p>Each acts as you, within your role and what it may do. Revoking a grant stops its refresh token at once; access tokens it already holds stop working within 10 minutes.</p>",
+      ...(grants.length === 0 ? ["      <p>You have approved no agent client.</p>"] : ["      <ul>", ...grants.map((grant) => grantItem(grant, csrf)), "      </ul>"]),
+      "      <h2>Personal access tokens</h2>",
+      "      <p>Revoking a personal access token stops it working at once.</p>",
+      ...(on ? [] : ["      <p>An admin has switched personal access tokens off in this install: calls with them are refused until an admin switches them on again.</p>"]),
+      ...(tokens.length === 0 ? ["      <p>You have no personal access token.</p>"] : ["      <ul>", ...tokens.map((token) => tokenItem(token, csrf)), "      </ul>"]),
       "      <h2>Create a personal access token</h2>",
       "      <p>A personal access token lets a script, or a host that can only send a header, call Tiehall's API as you, within your role and the scopes you choose. Creating one needs a confirmation.</p>",
-      ...(on ? [] : ["      <p>An admin has switched personal access tokens off in this install: calls with them are refused until an admin switches them on again.</p>"]),
       `      <form method="post" action="${TOKENS_PATH}">`,
+      '        <input type="hidden" name="action" value="create">',
       `        <p><label for="token-name">Label</label></p>`,
       `        <p><input type="text" id="token-name" name="name" maxlength="100" required></p>`,
       "        <fieldset>",

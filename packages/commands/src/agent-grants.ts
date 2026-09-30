@@ -1,13 +1,14 @@
-import { approveAgentClient, revokeAgentGrant, SCOPES } from "@tiehall/catalog";
+import { approveAgentClient, listAgentGrants, revokeAgentGrant, SCOPES } from "@tiehall/catalog";
 import { agentClientApproved, agentGrantRevoked, Refusal } from "@tiehall/core";
 import { oauthAccessTokens, oauthClients, oauthConsents, oauthRefreshTokens } from "@tiehall/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { REFRESH_SCOPE } from "./authorization-server.ts";
 import { actsForUser, type Caller } from "./caller.ts";
 import type { ConfirmRedirects } from "./confirm-route.ts";
 import type { Reviews } from "./confirmation-step.ts";
 import type { AgentClient } from "./agent-clients.ts";
 import { authorizationRequestOf, consentReview, consentViewIn, continuePathOf } from "./consent.ts";
+import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import type { Writer } from "./write.ts";
 
@@ -29,6 +30,10 @@ import type { Writer } from "./write.ts";
 // without its event; the browser then goes back to the authorization, which
 // gives the client its code for that member. Approving the same client again
 // updates the one grant.
+//
+// A member lists their own grants on their Connected agents and tokens page:
+// for each, who the client says it is, whether it is the tiehall CLI, whether
+// its identity is verified, what it may do and when the member approved it.
 //
 // Revoking a grant needs no confirmation step, since it only takes access
 // away, but runs only in the web UI, for the member whose grant it is (404 for
@@ -98,6 +103,35 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     });
   }),
 
+  [listAgentGrants.id]: defineHandler(listAgentGrants, async (_input, context) => {
+    const userId = memberOf(context.caller);
+    const rows = await context.tx
+      .select({
+        id: oauthConsents.id,
+        clientId: oauthClients.clientId,
+        name: oauthClients.name,
+        discovery: oauthClients.clientDiscoveryId,
+        scopes: oauthConsents.scopes,
+        createdAt: oauthConsents.createdAt,
+        updatedAt: oauthConsents.updatedAt,
+      })
+      .from(oauthConsents)
+      .innerJoin(oauthClients, and(eq(oauthClients.orgId, oauthConsents.orgId), eq(oauthClients.clientId, oauthConsents.clientId)))
+      .where(and(eq(oauthConsents.orgId, context.orgId), eq(oauthConsents.userId, userId)))
+      .orderBy(asc(oauthConsents.createdAt), asc(oauthConsents.id));
+    return {
+      grants: rows.map((row) => {
+        const verifiedHost = row.discovery === "cimd" ? hostOf(row.clientId) : undefined;
+        return {
+          id: row.id,
+          client: { name: row.name ?? null, cli: row.clientId === CLI_CLIENT_ID, verifiedHost: verifiedHost ?? null, unverified: verifiedHost === undefined && row.clientId !== CLI_CLIENT_ID },
+          scopes: row.scopes.filter((scope) => scope !== REFRESH_SCOPE),
+          approvedAt: (row.updatedAt ?? row.createdAt ?? new Date(0)).toISOString(),
+        };
+      }),
+    };
+  }),
+
   [revokeAgentGrant.id]: defineHandler(revokeAgentGrant, async ({ grantId }, context) => {
     const userId = memberOf(context.caller);
     const at = context.now();
@@ -129,6 +163,15 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     });
   }),
 };
+
+/** The host of a metadata-document client's id, its document's URL. */
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The consent screen is the review page of an approval: who is asking and what for, in Tiehall's own words. */
 export const AGENT_GRANT_REVIEWS: Reviews = {

@@ -2,11 +2,13 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import {
+  CLI_CLIENT_ID,
   createAgentTokenCheck,
   createConsentRoute,
   createDeviceApprovalRoute,
   createRestHandler,
   createTokensRoute,
+  DEVICE_CODE_GRANT_TYPE,
   resourceMetadataUrlOf,
   TOKENS_PATH,
   type AgentClientOptions,
@@ -114,6 +116,13 @@ export interface AgentAccessHarness {
     input?: { name?: string; scopes?: readonly string[]; expiresInDays?: number },
     headers?: Record<string, string>,
   ): Promise<string>;
+  /**
+   * Signs the tiehall CLI in for a signed-in member as `tiehall login` and the
+   * member do: the device authorization request, the code typed on the device
+   * approval page, its confirmation and the CLI's poll; returns the CLI's
+   * tokens, and fails the test when a step does not answer as it should.
+   */
+  signInCli(person: SignedIn, scopes?: readonly string[]): Promise<{ accessToken: string; refreshToken: string }>;
   close(): Promise<void>;
 }
 
@@ -285,7 +294,7 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     async personalAccessToken(person, input = {}, headers = {}) {
       const fromThePage = { cookie: person.cookie, accept: "text/html", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" };
       const page = await (await handle(new Request(`${URL_OF_INSTALL}${TOKENS_PATH}`, { headers: { cookie: person.cookie, accept: "text/html" } }))).text();
-      const form = new URLSearchParams({ name: input.name ?? "A script", expiresInDays: String(input.expiresInDays ?? 30), csrf: hiddenField(page, "csrf") });
+      const form = new URLSearchParams({ action: "create", name: input.name ?? "A script", expiresInDays: String(input.expiresInDays ?? 30), csrf: hiddenField(page, "csrf") });
       for (const scope of input.scopes ?? ["requests:read", "requests:write"]) form.append("scope", scope);
       const posted = await handle(
         new Request(`${URL_OF_INSTALL}${TOKENS_PATH}`, { method: "POST", headers: { ...fromThePage, "content-type": "application/x-www-form-urlencoded" }, body: form.toString() }),
@@ -306,6 +315,40 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
       const token = /<pre><code>(th_pat_[A-Za-z0-9_-]+)<\/code><\/pre>/.exec(shown)?.[1];
       if (confirmed.status !== 200 || token === undefined) throw new Error(`the confirmation answered ${confirmed.status}: ${shown}`);
       return token;
+    },
+    async signInCli(person, scopes = ["requests:read", "requests:write"]) {
+      const form = (fields: Record<string, string>) => ({
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(fields).toString(),
+      });
+      const started = await handle(
+        new Request(`${URL_OF_INSTALL}/api/auth/device/code`, form({ client_id: CLI_CLIENT_ID, resource: MCP_RESOURCE, scope: scopes.join(" ") })),
+      );
+      const { device_code: deviceCode, user_code: userCode } = (await started.json()) as { device_code?: string; user_code?: string };
+      if (started.status !== 200 || deviceCode === undefined || userCode === undefined) throw new Error(`the device authorization answered ${started.status}`);
+      const fromThePage = { cookie: person.cookie, accept: "text/html", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" };
+      const page = await (await handle(new Request(`${URL_OF_INSTALL}/device`, { headers: { cookie: person.cookie } }))).text();
+      const review = await handle(
+        new Request(`${URL_OF_INSTALL}/device`, { method: "POST", headers: fromThePage, body: new URLSearchParams({ user_code: userCode, csrf: hiddenField(page, "csrf") }).toString() }),
+      );
+      const html = await review.text();
+      if (review.status !== 200) throw new Error(`the device approval page answered ${review.status}: ${html}`);
+      const approved = await handle(
+        new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve_device`, {
+          method: "POST",
+          headers: fromThePage,
+          body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+        }),
+      );
+      if (approved.status !== 200) throw new Error(`the approval answered ${approved.status}: ${await approved.text()}`);
+      const polled = await token({ grant_type: DEVICE_CODE_GRANT_TYPE, device_code: deviceCode, client_id: CLI_CLIENT_ID });
+      const accessToken = polled.body["access_token"];
+      const refreshToken = polled.body["refresh_token"];
+      if (polled.status !== 200 || typeof accessToken !== "string" || typeof refreshToken !== "string") {
+        throw new Error(`the CLI's poll answered ${polled.status}: ${JSON.stringify(polled.body)}`);
+      }
+      return { accessToken, refreshToken };
     },
     async close() {
       await stub.close();
