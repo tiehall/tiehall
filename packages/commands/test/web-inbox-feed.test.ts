@@ -72,9 +72,10 @@ async function page(session: WebSessionCaller | undefined): Promise<{ status: nu
   return { status: answer.status, html: await answer.text(), headers: answer.headers };
 }
 
-/** The hidden fields of the page's form that acknowledges the updates it shows. */
+/** The hidden fields of the page's form that acknowledges the updates it shows, among the page's forms. */
 function acknowledgeForm(html: string): Record<string, string> {
-  const form = /<form method="post" action="\/inbox">([\s\S]*?)<\/form>/.exec(html)?.[1] ?? "";
+  const forms = [...html.matchAll(/<form method="post" action="\/inbox">([\s\S]*?)<\/form>/g)].map(([, form]) => form ?? "");
+  const form = forms.find((each) => each.includes('name="action" value="acknowledge"')) ?? "";
   return Object.fromEntries([...form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map(([, name, value]) => [name ?? "", value ?? ""]));
 }
 
