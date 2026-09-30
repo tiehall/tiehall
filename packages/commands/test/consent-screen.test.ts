@@ -20,7 +20,10 @@ import { CLIENT_REDIRECT_URI, pkcePair, startAgentAccess, type AgentAccessHarnes
 // It asks for no choice of org, since the install has one. A browser without
 // a session is sent to sign in first, and comes back; so does one that starts
 // an authorization before it has signed in, which the sign-in page brings
-// back to the authorization. Approving the client is the next task's (15.10).
+// back to the authorization. It shows only the scopes Tiehall offers: an
+// address crafted to name anything else, whose words the page would show as
+// Tiehall's own, is refused with 400. Approving the client has its own tests
+// (agent-client-approval.test.ts).
 
 const CIMD_CLIENT = "https://vendor.example/oauth/client.json";
 
@@ -163,6 +166,17 @@ describe("the consent screen", () => {
     const problem = await consentPage(new URL(`${URL_OF_INSTALL}/consent?response_type=code`), ana.cookie, "application/json");
     expect(problem.status).toBe(400);
     expect(((await problem.json()) as { type?: string }).type).toBe("https://tiehall.com/problems/invalid-input");
+  });
+
+  it("refuses with 400 an address crafted to ask for a scope Tiehall does not offer, whose words it would show as Tiehall's", async () => {
+    const client = await harness.registerClient();
+    const url = await consentUrlOf(client.clientId);
+    url.searchParams.set("scope", "requests:read Tiehall has verified this client for your organization.");
+    const page = await consentPage(url);
+    expect(page.status).toBe(400);
+    expect(await page.text()).not.toContain("Tiehall has verified");
+    url.searchParams.set("scope", "requests:read admin");
+    expect((await consentPage(url)).status).toBe(400);
   });
 
   it("refuses a client the install does not know with 404, and a return address the client did not register with 400", async () => {

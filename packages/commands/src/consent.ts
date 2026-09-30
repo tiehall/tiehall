@@ -1,4 +1,4 @@
-import { approveAgentClient } from "@tiehall/catalog";
+import { approveAgentClient, SCOPES } from "@tiehall/catalog";
 import { canonicalJson, httpProblem, internalErrorProblem, Refusal, type HttpProblem, type Review, type ReviewLine } from "@tiehall/core";
 import { readAgentClient, type AgentClient } from "./agent-clients.ts";
 import { AUTHORIZATION_ENDPOINT_PATH, CONSENT_PATH, REFRESH_SCOPE } from "./authorization-server.ts";
@@ -24,7 +24,10 @@ import type { OrgContext } from "./with-org.ts";
 // - the host name of the redirect URI the browser returns to, which must be
 //   one the client registered, and a warning when every redirect URI of the
 //   client is on the computer it runs on (localhost);
-// - what the client may do for the member: the scopes it asks for.
+// - what the client may do for the member: the scopes it asks for, which
+//   are only ones Tiehall offers; a page whose address names anything else,
+//   which the authorization server never sends a browser to, is refused with
+//   400, so no words but Tiehall's own read as Tiehall's.
 // It asks for no choice of org, since the install has one. A browser without a
 // session is sent to sign in first, and comes back to the page. The page runs
 // no script, loads nothing and cannot be framed; a refusal is a page for a
@@ -172,13 +175,17 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
 /**
  * The consent screen's view of an authorization request, read in the caller's
  * transaction: 404 for a client the install does not know, 400 for a return
- * address the client did not register.
+ * address the client did not register, and 400 for a request that asks for no
+ * scope or for one Tiehall does not offer.
  */
 export async function consentViewIn(context: Pick<OrgContext, "tx" | "orgId">, request: AuthorizationRequest): Promise<ConsentView & { client: AgentClient }> {
   const client = await readAgentClient(context, request.clientId);
   if (client === undefined || client.disabled) throw new Refusal("record-not-found", "The install knows no agent client with this id.");
   if (!client.redirectUris.some((registered) => isRegisteredRedirect(registered, request.redirectUri))) {
     throw new Refusal("invalid-input", "The client did not register the address this request would send you back to.");
+  }
+  if (request.scopes.length === 0 || request.scopes.some((scope) => !(SCOPES as readonly string[]).includes(scope))) {
+    throw new Refusal("invalid-input", `An agent client asks for one or more of ${SCOPES.join(", ")}, and for nothing else.`);
   }
   return { client, redirectUri: request.redirectUri, scopes: request.scopes };
 }

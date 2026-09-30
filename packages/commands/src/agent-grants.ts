@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { approveAgentClient, listAgentGrants, revokeAgentGrant, SCOPES } from "@tiehall/catalog";
+import { approveAgentClient, listAgentGrants, revokeAgentGrant } from "@tiehall/catalog";
 import { agentClientApproved, agentGrantRevoked, Refusal } from "@tiehall/core";
 import { members, oauthAccessTokens, oauthClients, oauthConsents, oauthDeviceCodes, oauthRefreshTokens, signInVerifications, type Database } from "@tiehall/db";
 import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
@@ -107,10 +107,8 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
   [approveAgentClient.id]: defineHandler(approveAgentClient, async ({ authorization }, context) => {
     const userId = memberOf(context.caller);
     const request = authorizationRequestOf(new URLSearchParams(authorization));
+    // Refused with 400 for a request that asks for a scope Tiehall does not offer, as its review page is.
     const { client } = await consentViewIn(context, request);
-    if (request.scopes.length === 0 || request.scopes.some((scope) => !(SCOPES as readonly string[]).includes(scope))) {
-      throw new Refusal("invalid-input", `An agent client asks for one or more of ${SCOPES.join(", ")}, and for nothing else.`);
-    }
     const scopes = [...request.scopes, REFRESH_SCOPE];
     const resources = request.parameters.getAll("resource");
     const at = context.now();
