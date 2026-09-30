@@ -6,7 +6,8 @@ name: Image checks
 # digest, the image it pushed (self-host-install: Tiehall's containers are
 # confined; self-host-install: Compose runs Tiehall and Postgres;
 # self-host-install: Backups with the shipped scripts; self-host-install:
-# Upgrades apply migrations before the app starts). The operator tests that
+# Upgrades apply migrations before the app starts; self-host-install:
+# Migrations expand, then contract). The operator tests that
 # need the previous image take the image last built from main before the
 # commit under test (get-previous-image.sh): the pull request's base, or the
 # commit main was at before the push.
@@ -109,7 +110,7 @@ jobs:
       - run: pnpm test:install backup
 
   upgrade-test:
-    name: Upgrade
+    name: Upgrade and rollback
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -140,5 +141,6 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
       # The previous image with seeded data, upgraded with `docker compose pull && docker compose up -d`: the seeded
       # data is served after the upgrade, a failing fixture migration keeps the app off the new image and the schema
-      # on the old one with the reason in the log, and an upgrade across two releases succeeds.
-      - run: pnpm test:install upgrade
+      # on the old one with the reason in the log, and an upgrade across two releases succeeds. After an upgrade with
+      # only expand steps, the previous image starts again on the newer schema; after a contract step it refuses to.
+      - run: pnpm test:install upgrade rollback
