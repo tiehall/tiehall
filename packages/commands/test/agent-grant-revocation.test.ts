@@ -140,6 +140,7 @@ describe("a grant revoked on the page", () => {
     expect((await revokeOnThePage(ana, client.clientId)).status).toBe(303);
     await held.release();
     const exchanged = await exchanging;
+    expect(exchanged.status).toBe(400);
     expect(exchanged.body["error"]).toBe("invalid_grant");
     expect(exchanged.body["access_token"]).toBeUndefined();
     expect(exchanged.body["refresh_token"]).toBeUndefined();

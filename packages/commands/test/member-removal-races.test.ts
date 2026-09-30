@@ -125,6 +125,7 @@ describe("a removal that commits while Dana's write creates a credential", () =>
     await held.release();
     expect((await removal.answer).status).toBe(200);
     const rotated = await refreshing;
+    expect(rotated.status).toBe(400);
     expect(rotated.body["error"]).toBe("invalid_grant");
     const { rows } = await harness.install.owner.query<{ n: number }>(
       "SELECT count(*)::int AS n FROM oauth_refresh_tokens WHERE user_id = $1 AND revoked IS NULL",
