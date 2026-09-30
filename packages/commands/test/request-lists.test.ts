@@ -16,9 +16,9 @@ import { addTeam, callApi, joinTeams, openRequestInTheWebUi, sessionOf, tokenOf 
 // member's web session, in read-only transactions; the list of the requests a
 // member opened is an internal read that no agent surface offers.
 //
-// The seeded requests: FE-1, which Alice opened from BE to FE; BE-1, which Bob
-// opened from FE to BE; and FE-2, which Carol opened from OPS to FE. Dave is a
-// member of QA, a team that none of them involves.
+// Three requests are seeded. Alice opened FE-1 from BE to FE, Bob opened BE-1
+// from FE to BE, and Carol opened FE-2 from OPS to FE. Dave is a member of QA,
+// a team that none of them involves.
 
 let install: TestInstall;
 let alice: WebSessionCaller;
@@ -168,6 +168,6 @@ describe("the web UI's request lists", () => {
 
   it("reads the requests a member opened through an internal read that no agent surface offers", async () => {
     await expect(install.execute("requests.list_opened", tokenOf(alice.userId), {})).rejects.toMatchObject({ reason: "route-not-found", status: 404 });
-    await expect(install.execute("requests.list_opened", alice, {})).resolves.toMatchObject({ requests: [{ key: "FE-1" }] });
+    await expect(install.execute("requests.list_opened", alice, {})).resolves.toMatchObject({ "requests": [{ key: "FE-1" }] });
   });
 });

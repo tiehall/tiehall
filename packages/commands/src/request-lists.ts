@@ -117,7 +117,7 @@ function stateForm({ list, state }: ListQuery): string {
   ].join("\n");
 }
 
-function listsPage(query: ListQuery, requests: readonly RequestView[], older: boolean): string {
+function listsPage(query: ListQuery, listed: readonly RequestView[], older: boolean): string {
   const { title, empty } = LISTS[query.list];
   const pages = [
     ...(query.page > 1 ? [link(listPath({ ...query, page: query.page - 1 }), "Newer requests")] : []),
@@ -131,12 +131,12 @@ function listsPage(query: ListQuery, requests: readonly RequestView[], older: bo
       `      <p>${link(NEW_REQUEST_PATH, "Open a request")}</p>`,
       `      <h2>${escapeHtml(title)}</h2>`,
       stateForm(query),
-      ...(requests.length === 0
+      ...(listed.length === 0
         ? [`      <p>${escapeHtml(query.state === undefined && query.page === 1 ? empty : "No request here.")}</p>`]
         : [
             "      <table>",
             "        <tr><th>Key</th><th>Title</th><th>State</th><th>To</th><th>Opened by</th><th>Claimed by</th><th>Opened at</th><th></th></tr>",
-            ...requests.map(row),
+            ...listed.map(row),
             "      </table>",
           ]),
       ...(pages.length === 0 ? [] : [`      <p>${pages.join(" · ")}</p>`]),
