@@ -34,7 +34,9 @@ export interface CliEnvironment {
   stderr(text: string): void;
   stdin?(): Promise<string>;
   fetch?(request: Request): Promise<Response>;
-  sleep?(milliseconds: number): Promise<void>;
+  sleep?(milliseconds: number, signal?: AbortSignal): Promise<void>;
+  now?(): Date;
+  parentAlive?(): boolean;
 }
 
 /** What a run of the CLI printed, and its exit code. */
@@ -63,8 +65,14 @@ export interface CliMachine {
   pretendVersion(version: string): void;
   /** What the run under way has printed to its standard output so far. */
   printed(): string;
-  /** Runs `tiehall <args>`, with this standard input and this wait between polls, until it exits. */
-  run(args: readonly string[], options?: { stdin?: string; sleep?: (milliseconds: number) => Promise<void> }): Promise<CliRun>;
+  /**
+   * Runs `tiehall <args>`, with this standard input, this wait between polls, which is none unless given, and
+   * these environment variables, until it exits.
+   */
+  run(
+    args: readonly string[],
+    options?: { stdin?: string; sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>; env?: Record<string, string> },
+  ): Promise<CliRun>;
   /** Saves a login for this install, as `tiehall login` keeps it. */
   saveLogin(url: string, tokens: { accessToken: string; refreshToken: string }, expiresAt?: Date): void;
   /** The saved logins, by install URL, as the CLI keeps them. */
@@ -113,7 +121,7 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
       printed = "";
       const code = await cli.run({
         argv: args,
-        env: { TIEHALL_CONFIG_DIR: configDir, HOME: configDir },
+        env: { TIEHALL_CONFIG_DIR: configDir, HOME: configDir, ...options.env },
         stdout: (text) => void (printed += text),
         stderr: (text) => void (stderr += text),
         stdin: async () => options.stdin ?? "",
@@ -140,6 +148,20 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
       rmSync(configDir, { recursive: true, force: true });
     },
   };
+}
+
+/** Waits this long in real time, or until the signal aborts: the wait a long-running command, such as a hook's, needs. */
+export function realSleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted === true) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, milliseconds);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 /** A member's CLI, signed in to the harness's install through the device flow, on a machine of its own. */

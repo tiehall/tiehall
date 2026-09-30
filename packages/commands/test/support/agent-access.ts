@@ -155,10 +155,12 @@ function registration(metadata: Record<string, unknown>): Record<string, unknown
 /** How the install takes agent clients, such as the fetcher of their metadata documents, which a test routes to a local server. */
 export interface AgentAccessOptions {
   clientMetadata?: AgentClientOptions;
+  /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
+  wait?: { holdMs?: number; shutdown?: AbortSignal };
 }
 
 export async function startAgentAccess(options: AgentAccessOptions = {}): Promise<AgentAccessHarness> {
-  const install = await startTestInstall();
+  const install = await startTestInstall(options.wait === undefined ? {} : { wait: options.wait });
   const stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
   const signIn = await startSignIn(install, stub, options.clientMetadata === undefined ? {} : { agentClients: options.clientMetadata });
