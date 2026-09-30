@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compareVersions, MINIMUM_CLI_VERSION } from "@tiehall/core";
 import { CLI_VERSION } from "tiehall";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
-import { signedInCli, type CliMachine } from "./support/cli.ts";
+import { realSleep, signedInCli, type CliMachine } from "./support/cli.ts";
 import { mcpPerson, PROBLEM, type McpPerson } from "./support/mcp.ts";
 import { openRequestInTheWebUi } from "./support/requests.ts";
 
@@ -98,6 +98,36 @@ describe("a call from a CLI older than the minimum", () => {
       expect(run.stderr).toContain("Upgrade required: This tiehall CLI is version");
       expect(run.stderr).toContain("npm install --global tiehall@latest");
       expect(await stored(request.key)).toEqual({ state: "open", claimant: null });
+    } finally {
+      machine.close();
+    }
+  });
+});
+
+// agent-surfaces: The Claude Code plugin, "A hook runs an old CLI". The hooks run the CLI, so the minimum holds them
+// too: the install refuses an old CLI's hooks with 400 upgrade-required, the digest prints no updates, and the waiter
+// exits without code 2 and without calling again.
+describe("the hooks of a CLI older than the minimum", () => {
+  it("fetch no updates: the digest prints nothing, and the waiter exits without code 2 after one call", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    const result = await harness.install.web(sam.session).write("messages.post", { key: request.key, kind: "comment", body: "For FE." }, harness.install.fromThePage(sam.session));
+    expect(result.ok).toBe(true);
+    const machine = await signedInCli(harness, dana);
+    try {
+      machine.pretendVersion(older(MINIMUM_CLI_VERSION));
+      const input = (event: string) => ({ stdin: JSON.stringify({ session_id: "session-old", hook_event_name: event }), sleep: realSleep });
+      expect(await machine.run(["hook", "session-start"], input("SessionStart"))).toEqual({ code: 0, stdout: "", stderr: "" });
+      const from = machine.calls.length;
+      expect(await machine.run(["hook", "wait"], input("Stop"))).toEqual({ code: 0, stdout: "", stderr: "" });
+      expect(machine.calls.slice(from).map(({ url }) => new URL(url).pathname)).toEqual(["/api/v1/events/wait"]);
+      // The same calls from the CLI this repository builds read the updates.
+      const current = await signedInCli(harness, dana);
+      try {
+        const digest = await current.run(["hook", "session-start"], input("SessionStart"));
+        expect(digest.stdout).toContain(request.key);
+      } finally {
+        current.close();
+      }
     } finally {
       machine.close();
     }

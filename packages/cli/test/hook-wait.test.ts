@@ -14,6 +14,7 @@ import {
   settle,
   SHUTTING_DOWN,
   startCli,
+  UPGRADE_REQUIRED,
   stubInstall,
   type ManualClock,
   type Running,
@@ -263,6 +264,13 @@ describe("clean error output", () => {
 
   it("writes nothing and does not wake Claude when the install refuses the call, and does not call again", async () => {
     install.answerNextWait(() => problem("forbidden", 403, "Forbidden", "You are no longer a member of this install."));
+    expect(await waiter().done).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(waits()).toHaveLength(1);
+  });
+
+  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI".
+  it("exits without code 2, without a word and without calling again when the install needs a newer CLI", async () => {
+    install.answerEveryCall(UPGRADE_REQUIRED);
     expect(await waiter().done).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(waits()).toHaveLength(1);
   });

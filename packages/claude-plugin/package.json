@@ -2,7 +2,7 @@
   "name": "@tiehall/claude-plugin",
   "version": "0.0.0",
   "private": true,
-  "description": "The Claude Code plugin, at this folder's root: its manifest, its MCP connection to the install whose URL the user gives, and the Tiehall skill.",
+  "description": "The Claude Code plugin, at this folder's root: its manifest, its MCP connection to the install whose URL the user gives, its hooks and their launcher, and the Tiehall skill.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -23,6 +23,7 @@
   "files": [
     ".claude-plugin",
     ".mcp.json",
+    "hooks",
     "skills"
   ]
 }

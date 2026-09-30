@@ -2,7 +2,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hookInput, INSTALL, manualClock, problem, saveLogin, startCli, stubInstall, type ManualClock, type StubInstall } from "./support/hooks.ts";
+import {
+  hookInput,
+  INSTALL,
+  manualClock,
+  problem,
+  saveLogin,
+  startCli,
+  stubInstall,
+  UPGRADE_REQUIRED,
+  type ManualClock,
+  type StubInstall,
+} from "./support/hooks.ts";
 
 // `tiehall hook session-start`, the Claude Code SessionStart digest
 // (requester-loop: Claude Code SessionStart digest; requester-loop: The hooks
@@ -120,6 +131,14 @@ describe("a digest that cannot read", () => {
       stdout: "",
       stderr: "",
     });
+  });
+
+  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI".
+  it("prints no updates when the install needs a newer CLI", async () => {
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    install.answerEveryCall(UPGRADE_REQUIRED);
+    expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(install.calls.map(({ path }) => path)).toEqual(["/api/v1/updates"]);
   });
 
   it("reads from the install --install names, as the plugin's launcher passes it", async () => {
