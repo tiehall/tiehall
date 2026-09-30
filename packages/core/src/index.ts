@@ -1,6 +1,6 @@
 // @tiehall/core: Pure domain rules with no I/O: the state machine, the side rules, the confirmation rules, the
 // role matrix, and the shape of events and their provenance.
-export * from "./cli-versions.ts";
+export * from "./client-versions.ts";
 export * from "./confirmation.ts";
 export * from "./error-model.ts";
 export * from "./events.ts";

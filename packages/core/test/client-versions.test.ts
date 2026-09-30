@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLI_VERSION_HEADER, cliVersionRefusal, compareVersions, MINIMUM_CLI_VERSION } from "../src/index.ts";
+import { CLI_VERSION_HEADER, cliVersionRefusal, compareVersions, isVersion, MINIMUM_CLI_VERSION, MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION } from "../src/index.ts";
 
 // The CLI sends its version and the server keeps a minimum (public-api: The
 // CLI sends its version and the server keeps a minimum; public-api: One error
@@ -21,6 +21,11 @@ describe("CLI versions", () => {
   it("are sent in the Tiehall-CLI-Version header, and the minimum is a version", () => {
     expect(CLI_VERSION_HEADER).toBe("tiehall-cli-version");
     expect(compareVersions(MINIMUM_CLI_VERSION, MINIMUM_CLI_VERSION)).toBe(0);
+  });
+
+  // agent-surfaces: The Claude Code plugin. Tiehall keeps a minimum for the plugin and one for the skill.
+  it("have minimums for the Claude Code plugin and the skill too, each a version", () => {
+    expect([MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION].every(isVersion)).toBe(true);
   });
 
   it("below the minimum are refused with upgrade-required, whose detail says how to upgrade", () => {

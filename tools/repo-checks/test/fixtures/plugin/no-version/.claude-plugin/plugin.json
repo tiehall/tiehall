@@ -1,0 +1,14 @@
+{
+  "name": "tiehall",
+  "description": "Tiehall in Claude Code: your team's Tiehall install as an MCP server, and the skill that teaches Claude to open, read and answer requests between teams. Set TIEHALL_URL to your install's URL, such as https://tiehall.example.com, once, before you enable it.",
+  "author": {
+    "name": "The Tiehall maintainers"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "tiehall",
+    "requests",
+    "handoff",
+    "mcp"
+  ]
+}

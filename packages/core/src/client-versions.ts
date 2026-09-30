@@ -18,6 +18,17 @@ export const CLI_VERSION_HEADER = "tiehall-cli-version";
 /** The oldest CLI this install supports; raising it refuses every older CLI's calls. */
 export const MINIMUM_CLI_VERSION = "0.1.0";
 
+/**
+ * The oldest Claude Code plugin Tiehall supports (agent-surfaces: The Claude
+ * Code plugin). The plugin's hooks run the CLI, so its minimum holds through
+ * the CLI's: a plugin release that needs a newer CLI raises MINIMUM_CLI_VERSION
+ * with it. The plugin check in CI fails on a plugin below it.
+ */
+export const MINIMUM_PLUGIN_VERSION = "0.1.0";
+
+/** The oldest version of the Tiehall skill Tiehall supports; whoami warns an agent whose skill is older. */
+export const MINIMUM_SKILL_VERSION = "0.1.0";
+
 /** A semantic version: its major, minor and patch numbers, and its pre-release, if any. */
 const VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})(?:-([0-9A-Za-z.-]{1,64}))?(?:\+[0-9A-Za-z.-]{1,64})?$/;
 

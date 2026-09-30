@@ -28,6 +28,7 @@
     "check:packet-schema": "node packages/catalog/src/check-packet-schema.ts",
     "client:generate": "node packages/client/src/write-client.ts",
     "check:client": "node packages/client/src/check-client.ts",
+    "check:plugin": "node tools/repo-checks/src/check-plugin.ts",
     "check:confirmations": "node tools/repo-checks/src/check-confirmations.ts",
     "check:security-events": "node tools/repo-checks/src/check-security-events.ts",
     "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",

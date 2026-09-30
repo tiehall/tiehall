@@ -168,6 +168,32 @@ jobs:
       # catalog generates.
       - run: pnpm check:client
 
+  claude-plugin:
+    name: Claude Code plugin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      # The check reads the minimums Tiehall keeps, so packages/core is installed too.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks --filter "@tiehall/core..."
+      # packages/claude-plugin's manifest states the plugin's version and its
+      # skill's frontmatter the skill's, neither older than the minimum Tiehall
+      # keeps; the manifest has only the keys Claude Code knows, the skill is in
+      # the Agent Skills format, and the MCP connection points at the /mcp of
+      # the install whose URL the user gives (agent-surfaces: The Claude Code
+      # plugin).
+      - run: pnpm check:plugin
+
   mcp-tools:
     name: MCP tool snapshot
     runs-on: ubuntu-24.04

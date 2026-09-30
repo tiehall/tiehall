@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tiehall": {
+      "type": "http",
+      "url": "https://tiehall.example.com/mcp"
+    }
+  }
+}
