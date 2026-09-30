@@ -10,7 +10,7 @@ D53, which the maintainer decided on 2026-09-30, settles it: the image applies D
 
 - The runtime stage of the Dockerfile applies the available operating-system updates from Debian's signed archives when the image is built: non-interactively, without recommended packages, installing and removing no package, in one step that also removes the package lists and apt's caches, so the image holds no package index. The step runs before the package managers are removed and before the image switches to its non-root user. The image keeps its rules: a numeric non-root user, a read-only root filesystem and no package manager for Node.
 - The self-host-install requirement "Release pipeline integrity" gains the rule that the operating system's security patches are applied when the image is built, from Debian's signed security archive. The 7-day release age keeps applying to npm packages, to CI actions and to the base image, which stays pinned by digest and changes only through reviewed pull requests after 7 days.
-- A repository check fails a Dockerfile whose runtime stage lacks that step, places it after the switch to the non-root user or after the package managers are removed, or leaves the package lists in the image; CI runs it with the other repository tests. An image test checks that the built image holds no package list and no downloaded package.
+- A repository check fails a Dockerfile whose runtime stage lacks that step, places it after the switch to the non-root user or after the package managers are removed, lets it install or remove packages, or leaves the package lists in the image; CI runs it with the other repository tests. An image test checks that the built image holds no package list and no downloaded package.
 
 ## Capabilities
 

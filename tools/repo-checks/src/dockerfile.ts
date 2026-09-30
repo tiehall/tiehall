@@ -1,16 +1,18 @@
 // The Dockerfile's part of self-host-install: Release pipeline integrity (D53): the operating system's security
 // patches are applied when the image is built. The last stage of the Dockerfile, which becomes the image, must hold
 // one RUN that updates the package lists and runs `apt-get upgrade` without asking anything and without recommended
-// packages, joins its commands with `&&` and updates with `--error-on=any` so that any failure fails the build,
-// including an archive apt cannot fetch or verify, which apt-get update otherwise only warns about, and removes the
-// package lists and apt's caches before it ends, so that no layer holds a package index; and that RUN must come
-// before the step that removes the package managers and before the image switches to its non-root user.
+// packages, installs and removes no package, so that only the packages the base image carries are upgraded, joins
+// its commands with `&&` and updates with `--error-on=any` so that any failure fails the build, including an archive
+// apt cannot fetch or verify, which apt-get update otherwise only warns about, and removes the package lists and
+// apt's caches before it ends, so that no layer holds a package index; and that RUN must come before the step that
+// removes the package managers and before the image switches to its non-root user.
 
 export type OsUpdateRule =
   | "missing"
   | "interactive"
   | "recommends"
   | "not-chained"
+  | "changes-packages"
   | "index-left"
   | "after-package-managers-removed"
   | "after-user";
@@ -92,11 +94,21 @@ const APT_OPTIONS_WITH_VALUE = new Set([
   "--error-on",
 ]);
 
-/** An apt-get command: its subcommand and its options; undefined for any other command. */
-function aptGet(command: string): { subcommand: string; options: string[] } | undefined {
-  const [program, ...rest] = words(command);
-  if (program !== "apt-get") return undefined;
+interface AptCommand {
+  /** apt-get, apt or aptitude. */
+  program: string;
+  subcommand: string;
+  options: string[];
+  /** The words after the subcommand that are not options, such as the names of packages. */
+  operands: string[];
+}
+
+/** A command of apt-get, apt or aptitude, which read their command lines alike; undefined for any other command. */
+function aptCommand(command: string): AptCommand | undefined {
+  const [program = "", ...rest] = words(command);
+  if (!["apt-get", "apt", "aptitude"].includes(program)) return undefined;
   const options: string[] = [];
+  const operands: string[] = [];
   let subcommand = "";
   for (let index = 0; index < rest.length; index++) {
     const word = rest[index] ?? "";
@@ -107,9 +119,17 @@ function aptGet(command: string): { subcommand: string; options: string[] } | un
       options.push(word);
     } else if (subcommand === "") {
       subcommand = word;
+    } else {
+      operands.push(word);
     }
   }
-  return { subcommand, options };
+  return { program, subcommand, options, operands };
+}
+
+/** An apt-get command; undefined for any other command. */
+function aptGet(command: string): AptCommand | undefined {
+  const apt = aptCommand(command);
+  return apt?.program === "apt-get" ? apt : undefined;
 }
 
 const isApt = (subcommand: string) => (command: string) => aptGet(command)?.subcommand === subcommand;
@@ -144,9 +164,15 @@ function setsNoninteractive(command: string): boolean {
   return all.slice(0, program === -1 ? all.length : program).includes(NONINTERACTIVE);
 }
 
-/** The shell text of a RUN, unquoted, with the redirections that hold `&`, such as `2>&1`, taken out. */
+/**
+ * The shell text of a RUN, unquoted, with its redirections taken out: those that hold `&`, such as `2>&1`, so that
+ * they are not read as separators, and those to or from a file, with the file, so that it is not read as a word of
+ * the command.
+ */
 function shellText(run: Instruction): string {
-  return unquoted(run.args).replace(/\d*>&\d*-?|&>>?/g, " ");
+  return unquoted(run.args)
+    .replace(/\d*[<>]&\d*-?/g, " ")
+    .replace(/(?:&>>?|\d*>>?|\d*<)\s*[^\s;&|<>]+/g, " ");
 }
 
 /** The commands of a RUN, in order, split at every shell separator; `separators` finds the ones that are not `&&`. */
@@ -175,6 +201,48 @@ const leavesOutRecommends = (option: string) =>
  */
 const failsOnAnyError = (option: string) =>
   /^--error-on(?:=| )any$/.test(option) || /^(?:-o|--option) APT::Update::Error-Mode=any$/.test(option);
+
+/** The subcommands of apt-get, apt and aptitude that install or remove packages, or upgrade them. */
+const CHANGING_SUBCOMMANDS = new Set([
+  "install",
+  "reinstall",
+  "remove",
+  "purge",
+  "autoremove",
+  "auto-remove",
+  "autopurge",
+  "upgrade",
+  "safe-upgrade",
+  "full-upgrade",
+  "dist-upgrade",
+  "dselect-upgrade",
+  "build-dep",
+  "satisfy",
+]);
+/** The actions of dpkg that install or remove packages. */
+const DPKG_CHANGING_ACTIONS = new Set(["-i", "--install", "--unpack", "-r", "--remove", "-P", "--purge"]);
+/** Whether an option of apt-get upgrade lets it install packages that the image does not have. */
+const allowsNewPackages = (option: string) =>
+  option === "--with-new-pkgs" || /^(?:-o|--option) APT::Get::Upgrade-Allow-New=(?:1|true|yes|on)$/i.test(option);
+
+/**
+ * How a command of the step installs or removes packages; undefined when it does not. Only `apt-get upgrade` may
+ * change packages, and only those the image has: it installs none unless it names packages or allows new ones, and
+ * removes none. `apt upgrade` and `aptitude safe-upgrade` may install new packages, so they are not the upgrade.
+ */
+function packageChange(command: string): string | undefined {
+  const quoted = `"${words(command).join(" ")}"`;
+  const apt = aptCommand(command);
+  if (apt !== undefined) {
+    if (!CHANGING_SUBCOMMANDS.has(apt.subcommand)) return undefined;
+    if (apt.program !== "apt-get" || apt.subcommand !== "upgrade") return `it runs ${quoted}`;
+    if (apt.operands.length > 0) return `${quoted} names packages, which it installs when the image lacks them`;
+    if (apt.options.some(allowsNewPackages)) return `${quoted} allows new packages`;
+    return undefined;
+  }
+  const [program, ...rest] = words(command);
+  return program === "dpkg" && rest.some((word) => DPKG_CHANGING_ACTIONS.has(word)) ? `it runs ${quoted}` : undefined;
+}
 
 /** The problems with the operating-system updates in a Dockerfile's last stage; empty when it follows the rule. */
 export function osUpdateProblems(dockerfile: string): OsUpdateProblem[] {
@@ -214,6 +282,11 @@ export function osUpdateProblems(dockerfile: string): OsUpdateProblem[] {
     const warnsOnly = list.filter(isApt("update")).some((command) => !(aptGet(command)?.options ?? []).some(failsOnAnyError));
     if (warnsOnly) failures.push("its apt-get update lacks --error-on=any, so an archive it cannot fetch or verify is only a warning");
     if (failures.length > 0) add("not-chained", step.line, `a failed command must fail the build: ${failures.join(", and ")}`);
+
+    const changes = list.map(packageChange).filter((change) => change !== undefined);
+    if (changes.length > 0) {
+      add("changes-packages", step.line, `the step must upgrade only the packages the base image carries: ${changes.join("; ")}`);
+    }
   }
 
   // Every RUN of the stage that fetches package lists removes them, and apt's caches, after its last update.
