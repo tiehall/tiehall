@@ -5,12 +5,13 @@ name: Image checks
 # of the pull request, and the Build workflow calls it on main to test, by
 # digest, the image it pushed (self-host-install: Tiehall's containers are
 # confined; self-host-install: Compose runs Tiehall and Postgres;
+# self-host-install: Setup names the company and makes the first admin;
 # self-host-install: Backups with the shipped scripts; self-host-install:
 # Upgrades apply migrations before the app starts; self-host-install:
-# Migrations expand, then contract). The operator tests that
-# need the previous image take the image last built from main before the
-# commit under test (get-previous-image.sh): the pull request's base, or the
-# commit main was at before the push.
+# Migrations expand, then contract). The operator tests that need the previous
+# image take the image last built from main before the commit under test
+# (get-previous-image.sh): the pull request's base, or the commit main was at
+# before the push.
 
 on:
   workflow_call:
@@ -73,6 +74,35 @@ jobs:
       # Boots deploy/compose.yaml with the image in role all against stock
       # postgres:17 and waits for /healthz to report healthy.
       - run: node tools/image-tests/src/boot-test.ts
+
+  fresh-install-test:
+    name: Fresh install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      # The GitHub stub comes from @tiehall/testing, a workspace dependency of the image tests.
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      # deploy/compose.yaml with the .env init prints, the setup code from `docker compose logs app`, the setup
+      # screen and the App's manifest flow against the GitHub stub in the runner's Chrome, the first admin, a team
+      # and a request.
+      - run: pnpm test:install fresh-install
 
   backup-test:
     name: Backup and restore

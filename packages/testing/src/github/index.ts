@@ -61,6 +61,12 @@ export interface GitHubStubOptions {
   unreachableHookUrls?: readonly string[];
   /** The clock, in milliseconds since the epoch. */
   now?: () => number;
+  /**
+   * The address both faces listen on: 127.0.0.1 unless given, such as
+   * 0.0.0.0 for an install whose containers reach the stub through the
+   * host's gateway. The URLs the stub names stay on 127.0.0.1.
+   */
+  listenHost?: string;
 }
 
 export interface CreateAppInput {
@@ -208,8 +214,8 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
     },
   });
   const received: RecordedRequest[] = [];
-  const web = await listen("web", handlers.web, received, world, options.tls);
-  const api = await listen("api", handlers.api, received, world, options.tls);
+  const web = await listen("web", handlers.web, received, world, options.tls, options.listenHost);
+  const api = await listen("api", handlers.api, received, world, options.tls, options.listenHost);
   urls = { web: web.url, api: api.url };
 
   const rewrite = (url: string | URL): string => {
@@ -531,6 +537,7 @@ async function listen(
   received: RecordedRequest[],
   world: GitHubWorld,
   tls: GitHubStubOptions["tls"],
+  listenHost = "127.0.0.1",
 ): Promise<Listening> {
   const onRequest = (incoming: IncomingMessage, outgoing: ServerResponse): void => {
     const chunks: Buffer[] = [];
@@ -569,7 +576,7 @@ async function listen(
     }
   };
   const server: Server = tls === undefined ? createHttpServer(onRequest) : createHttpsServer({ key: tls.key, cert: tls.cert }, onRequest);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, listenHost, resolve));
   const { port } = server.address() as { port: number };
   return {
     url: `${tls === undefined ? "http" : "https"}://127.0.0.1:${port}`,

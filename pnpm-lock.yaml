@@ -539,6 +539,9 @@ importers:
 
   tools/image-tests:
     devDependencies:
+      '@tiehall/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.5
