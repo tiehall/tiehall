@@ -41,7 +41,7 @@ export function readerOf(caller: Caller): string {
 }
 
 /** The reader's cursor: the number of the last event it acknowledged, 0 before the first. */
-async function cursorOf({ tx, orgId }: OrgContext, userId: string, reader: string): Promise<number> {
+export async function cursorOf({ tx, orgId }: OrgContext, userId: string, reader: string): Promise<number> {
   const [row] = await tx
     .select({ acknowledged: readCursors.acknowledged })
     .from(readCursors)
@@ -82,15 +82,24 @@ export const EVENT_READ_HANDLERS: Handlers = {
 
   [acknowledgeEvents.id]: defineHandler(acknowledgeEvents, async ({ upTo }, context) => {
     const { userId, reader } = readerContext(context);
-    if (upTo > (await lastEventNumber(context))) throw new Refusal("record-not-found", "There is no event with that number yet.");
-    const [row] = await context.tx
-      .insert(readCursors)
-      .values({ orgId: context.orgId, userId, reader, acknowledged: upTo })
-      .onConflictDoUpdate({
-        target: [readCursors.orgId, readCursors.userId, readCursors.reader],
-        set: { acknowledged: sql`greatest(${readCursors.acknowledged}, excluded.acknowledged)`, updatedAt: sql`now()` },
-      })
-      .returning({ acknowledged: readCursors.acknowledged });
-    return { cursor: row?.acknowledged ?? upTo };
+    return { cursor: await acknowledgeUpTo(context, userId, reader, upTo) };
   }),
 };
+
+/**
+ * Moves the reader's cursor up to an event that exists, and never back;
+ * returns the cursor. A number no event has yet is refused with 404 and moves
+ * nothing.
+ */
+export async function acknowledgeUpTo(context: OrgContext, userId: string, reader: string, upTo: number): Promise<number> {
+  if (upTo > (await lastEventNumber(context))) throw new Refusal("record-not-found", "There is no event with that number yet.");
+  const [row] = await context.tx
+    .insert(readCursors)
+    .values({ orgId: context.orgId, userId, reader, acknowledged: upTo })
+    .onConflictDoUpdate({
+      target: [readCursors.orgId, readCursors.userId, readCursors.reader],
+      set: { acknowledged: sql`greatest(${readCursors.acknowledged}, excluded.acknowledged)`, updatedAt: sql`now()` },
+    })
+    .returning({ acknowledged: readCursors.acknowledged });
+  return row?.acknowledged ?? upTo;
+}

@@ -115,6 +115,7 @@ export {
 export { GITHUB_LOGIN, INSTALL_URL, role, user } from "./schemas.ts";
 export { DIRECTORY_COMMANDS, getTeam, readDirectory, whoami } from "./directory.ts";
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
+export { readUpdates, REQUEST_URL, update, UPDATE_COMMANDS, updateRequest, updatesInput, updatesPage } from "./updates.ts";
 export {
   getPersonalAccessTokenAdminSettings,
   getSignInPolicy,

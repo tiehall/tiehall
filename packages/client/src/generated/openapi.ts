@@ -343,6 +343,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place. */
+        post: operations["updates.read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/whoami": {
         parameters: {
             query?: never;
@@ -4206,6 +4223,195 @@ export interface operations {
             };
             /** @description There is no such operation, or the record the call names does not exist. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "updates.read": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The number of the last update you have handled: your cursor moves up to it before the read, so the updates you get follow it. A cursor never moves back. */
+                    acknowledge?: number;
+                    /** @description How many updates to return, 1 to 50; 25 unless given. */
+                    limit?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The number of the last update this reader acknowledged; 0 before the first. */
+                        cursor: number;
+                        /** @description The updates after your cursor, oldest first. */
+                        events: {
+                            data: {
+                                [key: string]: string | number | boolean;
+                            };
+                            number: number;
+                            /** Format: date-time */
+                            occurredAt: string;
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @description The request's key now, such as FE-142. */
+                                key: string;
+                                /** @description The team the request is addressed to now. */
+                                targetTeam: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                /** @description The request's URL on the install, which get_request and `tiehall get` read. */
+                                url: string;
+                            };
+                            type: string;
+                        }[];
+                        /** @description Whether more updates wait after this page; acknowledge this page to read them. */
+                        more: boolean;
+                        /** @description The requests these updates are about, as they are now. */
+                        requests: {
+                            claimant: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            needsHuman: boolean;
+                            requester: {
+                                team: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                } | null;
+                            };
+                            /** @enum {string} */
+                            state: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+                            targetTeam: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            untrusted: {
+                                title: string;
+                            };
+                        }[];
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request's state does not allow this action. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than 2 MiB, the limit on this operation's body; it is not read, and nothing runs. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -9,6 +9,7 @@ import { proposalAnswer } from "../src/proposals.ts";
 import { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "../src/pull-requests.ts";
 import { getRequest } from "../src/requests.ts";
 import { GITHUB_LOGIN, INSTALL_URL } from "../src/schemas.ts";
+import { REQUEST_URL } from "../src/updates.ts";
 import { agentOutputSchemas, outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
 
 // User text in JSON sits under untrusted objects (agent-safety: User text in
@@ -23,6 +24,8 @@ const IDENTIFIERS: readonly RegExp[] = [
   TEAM_KEY,
   GITHUB_LOGIN,
   INSTALL_URL,
+  // A request's URL on the install, which the pull readers name each update's request by.
+  REQUEST_URL,
   EVENT_TYPE_NAME,
   EVENT_FIELD_NAME,
   EVENT_STRING_VALUE,

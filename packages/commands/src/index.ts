@@ -297,6 +297,7 @@ export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts"
 export { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
 export { takeEventNumber } from "./event-sequence.ts";
 export { readerOf } from "./event-reads.ts";
+export { readUpdatesFor, UPDATES_PAGE_SIZE, updatesAfter, updatesPageOf, type UpdateScope, type UpdatesPage, type UpdateView } from "./updates.ts";
 export { takeRequestNumber } from "./request-numbers.ts";
 export { noSuchRequest, resolveRequestKey, teamOfKey, type ResolvedRequestKey } from "./request-keys.ts";
 export {

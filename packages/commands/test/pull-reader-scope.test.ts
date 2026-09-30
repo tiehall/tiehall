@@ -24,8 +24,8 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sendApi, sessio
 // is at the start, and read on to the last page by acknowledging each page, so
 // every update in scope is read and nothing else is moved; and the web inbox's
 // update feed through the web UI's commands, as the signed-in user. They were
-// written first, as expected failures: whats_new waited for task 19.2 and the
-// web inbox's update feed for 19.6.
+// written first, as expected failures: whats_new waited for task 19.2, which
+// turned its tests into plain tests, and the web inbox's update feed for 19.6.
 
 let install: TestInstall;
 let clock = new Date("2026-10-01T09:00:00Z");
@@ -158,14 +158,14 @@ async function reject(login: string, proposal: string): Promise<void> {
 
 describe("whats_new (task 19.2)", () => {
   // requester-loop: Pull is the contract, "A question reaches the requester's agent by pull".
-  it.fails("holds a question the target team asks on a request the user opened", async () => {
+  it("holds a question the target team asks on a request the user opened", async () => {
     const request = await open("sam", "FE");
     await post("bob", request.key, { kind: "question", body: "Which browsers?" });
     expect(on(await whatsNew("sam"), request.id)).toContain("request.message_posted:question");
   });
 
   // requester-loop: What whats_new covers, "A request the user claimed".
-  it.fails("holds an answer on a request the user claimed, which another user opened", async () => {
+  it("holds an answer on a request the user claimed, which another user opened", async () => {
     const request = await open("sam", "FE");
     await claim("dana", request.key);
     const question = await post("dana", request.key, { kind: "question", body: "Which browsers?" });
@@ -174,12 +174,12 @@ describe("whats_new (task 19.2)", () => {
   });
 
   // requester-loop: What whats_new covers, "A new request to the user's team".
-  it.fails("holds a new request addressed to one of the user's teams", async () => {
+  it("holds a new request addressed to one of the user's teams", async () => {
     const request = await open("sam", "FE");
     expect(on(await whatsNew("dana"), request.id)).toEqual(["request.opened"]);
   });
 
-  it.fails("holds the events on a request the user is accountable for, though they neither opened nor claimed it", async () => {
+  it("holds the events on a request the user is accountable for, though they neither opened nor claimed it", async () => {
     const request = await open("sam", "FE");
     await claim("dana", request.key);
     // Bob's agent proposes a due date, which makes Bob the proposal's accountable human.
@@ -189,7 +189,7 @@ describe("whats_new (task 19.2)", () => {
   });
 
   // requester-loop: What whats_new covers, "A request the user has no part in".
-  it.fails("holds no event on a request the user has no part in", async () => {
+  it("holds no event on a request the user has no part in", async () => {
     const request = await open("lee", "OPS");
     await post("oli", request.key, { kind: "question", body: "Which region?" });
     // The question is in the scope of the request's requester, so the read itself works.
@@ -197,13 +197,13 @@ describe("whats_new (task 19.2)", () => {
     expect(on(await whatsNew("dana"), request.id)).toEqual([]);
   });
 
-  it.fails("holds only the opening of a new request to the user's team, not the events that follow it", async () => {
+  it("holds only the opening of a new request to the user's team, not the events that follow it", async () => {
     const request = await open("sam", "FE");
     await post("sam", request.key, { kind: "comment", body: "More detail in the design doc." });
     expect(on(await whatsNew("erin"), request.id)).toEqual(["request.opened"]);
   });
 
-  it.fails("holds a request of another team that was reassigned to one of the user's teams", async () => {
+  it("holds a request of another team that was reassigned to one of the user's teams", async () => {
     const request = await open("sam", "OPS");
     const answer = await callApi(install, tokenOf(id("oli")), "POST", `/api/v1/requests/${request.key}/proposals`, { kind: "reassign", team: "FE" });
     if (answer.status !== 202) throw new Error(`requests.propose answered ${answer.status}: ${JSON.stringify(answer.body)}`);
@@ -245,7 +245,7 @@ describe("the web inbox's update feed (task 19.6)", () => {
 
 describe("proposal outcomes in the proposing user's whats_new (task 19.2)", () => {
   // requester-loop: Proposal outcomes reach the proposing agent, "A confirmed decline".
-  it.fails("hold the confirmation of a decline that the user's agent proposed", async () => {
+  it("hold the confirmation of a decline that the user's agent proposed", async () => {
     const request = await open("sam", "FE");
     const answer = await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
     expect(answer.status).toBe(202);
@@ -256,7 +256,7 @@ describe("proposal outcomes in the proposing user's whats_new (task 19.2)", () =
   });
 
   // requester-loop: Proposal outcomes reach the proposing agent, "A due date confirmed by both sides".
-  it.fails("hold the user's own confirmation of a due date and then the other side's, with which it took effect", async () => {
+  it("hold the user's own confirmation of a due date and then the other side's, with which it took effect", async () => {
     const request = await open("sam", "FE");
     const proposal = await proposeDueDate("dana", request.key);
     await confirm("dana", proposal);
@@ -271,7 +271,7 @@ describe("proposal outcomes in the proposing user's whats_new (task 19.2)", () =
   });
 
   // requester-loop: Proposal outcomes reach the proposing agent, "The other side's rejection reaches the proposing agent".
-  it.fails("hold the other side's rejection of a due date the user confirmed", async () => {
+  it("hold the other side's rejection of a due date the user confirmed", async () => {
     const request = await open("sam", "FE");
     const proposal = await proposeDueDate("dana", request.key);
     await confirm("dana", proposal);
@@ -281,7 +281,7 @@ describe("proposal outcomes in the proposing user's whats_new (task 19.2)", () =
   });
 
   // requester-loop: Proposal outcomes reach the proposing agent, "A half-confirmed due date expires".
-  it.fails("hold the expiry of a due date the user confirmed and the other side never did", async () => {
+  it("hold the expiry of a due date the user confirmed and the other side never did", async () => {
     at("2026-10-01T09:00:00Z");
     const request = await openRequest(install, tokenOf(id("sam")), { targetTeam: "FE" });
     const answer = await sendApi(install, tokenOf(id("sam")), "POST", `/api/v1/requests/${request.key}/packet/revisions`, {

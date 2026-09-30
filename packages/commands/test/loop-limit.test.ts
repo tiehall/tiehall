@@ -235,6 +235,7 @@ describe("a flagged request", () => {
     const writesOnNoRequest = {
       "requests.create": "opens a request, which the caps on opened requests limit instead",
       "events.acknowledge": "moves a read cursor, which is no write on a request",
+      "updates.read": "reads the user's updates and moves a read cursor, which is no write on a request",
     };
     // An operation that only reads, such as get_request, which MCP alone offers, is no write.
     const agentWrites_ = CATALOG.commands
@@ -365,5 +366,23 @@ describe("a flagged request", () => {
     const read = await callApi(install, token, "GET", "/api/v1/events?limit=500");
     const last = read.body.events.at(-1).number;
     expect(await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: last })).toMatchObject({ status: 200, body: { cursor: last } });
+    // agent-safety: Runaway agent loops flag the request needs_human, "Acknowledging events on a flagged request":
+    // whats_new reads the updates on it, page after page, and each acknowledgement moves the cursor past them.
+    const reader = tokenOf(alice);
+    const onRequest: number[] = [];
+    let page = await callApi(install, reader, "POST", "/api/v1/updates", { limit: 50 });
+    for (;;) {
+      expect(page.status).toBe(200);
+      const events = page.body.events as { number: number; data: { requestId: string } }[];
+      onRequest.push(...events.filter(({ data }) => data.requestId === requestId).map(({ number }) => number));
+      const acknowledged = events.at(-1)?.number ?? page.body.cursor;
+      page = await callApi(install, reader, "POST", "/api/v1/updates", { acknowledge: acknowledged, limit: 50 });
+      expect(page.body.cursor).toBe(acknowledged);
+      if (events.length === 0) break;
+    }
+    expect(onRequest.length).toBeGreaterThan(0);
+    expect(page.body.cursor).toBeGreaterThanOrEqual(Math.max(...onRequest));
+    expect(await messages()).toBe(7);
+    expect(await flagged()).toBe(true);
   });
 });

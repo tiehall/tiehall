@@ -24,6 +24,7 @@ import { PULL_REQUEST_LINK_HANDLERS } from "./pull-request-links.ts";
 import { REQUEST_PAGE_HANDLERS } from "./request-pages.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
+import { UPDATE_HANDLERS } from "./updates.ts";
 import { USER_HANDLERS } from "./users.ts";
 import { WRITE_LIMIT_HANDLERS } from "./write-limits.ts";
 
@@ -48,6 +49,7 @@ export const HANDLERS: Handlers = {
   ...PROPOSAL_UNDO_HANDLERS,
   ...PROPOSAL_WAITING_HANDLERS,
   ...EVENT_READ_HANDLERS,
+  ...UPDATE_HANDLERS,
   ...WRITE_LIMIT_HANDLERS,
   ...SIGN_IN_POLICY_HANDLERS,
   ...ACTIVITY_LOG_HANDLERS,
