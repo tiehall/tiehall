@@ -19,7 +19,17 @@ import { compareVersions, isVersion } from "@tiehall/core";
 //   Skills format, which also loads on its own in other clients: YAML
 //   frontmatter that names the skill as its folder, describes it, and states
 //   its version under metadata, no older than the minimum Tiehall keeps for
-//   the skill; the Tiehall skill, tiehall, among them.
+//   the skill; the Tiehall skill, tiehall, among them;
+// - its hooks, hooks/hooks.json, and the launcher they run,
+//   hooks/tiehall-hook.sh (requester-loop: Claude Code SessionStart digest;
+//   requester-loop: Claude Code Stop-hook waiter; design.md, Technical
+//   decisions: T15): SessionStart runs `tiehall hook session-start`, Stop runs
+//   `tiehall hook wait` with asyncRewake and a timeout longer than the
+//   waiter's 30-minute cap, and SessionEnd runs `tiehall hook session-end`,
+//   each as one command through the launcher, and no other hook is
+//   registered. The manifest declares no channel, since the hooks are the
+//   plugin's only push path (requester-loop: No push paths other than the
+//   hooks).
 
 export interface Minimums {
   plugin: string;
@@ -50,6 +60,20 @@ const SKILL_KEYS: ReadonlySet<string> = new Set(["name", "description", "license
 
 /** A plugin's or a skill's name: lower-case letters and digits in words joined by hyphens, at most 64 characters. */
 const NAME = /^(?=.{1,64}$)[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** The launcher the plugin's hooks run, which runs `tiehall hook <name>` and stays quiet without the CLI. */
+export const LAUNCHER = "hooks/tiehall-hook.sh";
+
+/** The name of the `tiehall hook` command each of the plugin's hooks runs, by the hook's event. */
+const HOOK_NAMES: Readonly<Record<string, string>> = { SessionStart: "session-start", Stop: "wait", SessionEnd: "session-end" };
+
+/** The command a hook runs: the launcher, with sh, from the plugin's folder, and the name of its `tiehall hook` command. */
+export function hookCommand(name: string): string {
+  return `sh "\${CLAUDE_PLUGIN_ROOT}/${LAUNCHER}" ${name}`;
+}
+
+/** The waiter's cap, in seconds: the Stop hook's timeout is longer. */
+const WAITER_CAP_SECONDS = 30 * 60;
 
 /** Where the plugin's MCP server is: the /mcp of the install whose URL the user gives once. */
 export const MCP_URL = "${TIEHALL_URL}/mcp";
@@ -97,7 +121,8 @@ export function checkPlugin(root: string, minimums: Minimums): PluginReport {
   if (manifest !== undefined && !isObject(manifest)) problems.push(`${manifestFile}: is not a JSON object.`);
   if (isObject(manifest)) {
     for (const key of Object.keys(manifest)) {
-      if (!MANIFEST_KEYS.has(key)) problems.push(`${manifestFile}: has the key ${key}, which a Claude Code plugin manifest does not have.`);
+      if (key === "channels") problems.push(`${manifestFile}: declares a channel; the plugin's only push path is its hooks.`);
+      else if (!MANIFEST_KEYS.has(key)) problems.push(`${manifestFile}: has the key ${key}, which a Claude Code plugin manifest does not have.`);
     }
     if (typeof manifest["name"] !== "string" || !NAME.test(manifest["name"])) problems.push(`${manifestFile}: names the plugin in lower-case words joined by hyphens.`);
     else report.name = manifest["name"];
@@ -160,7 +185,51 @@ export function checkPlugin(root: string, minimums: Minimums): PluginReport {
     problems.push(...versioned);
     if (versioned.length === 0 && typeof name === "string") report.skills.push({ name, version: String(metadata["version"]) });
   }
+  problems.push(...hookProblems(root));
   return report;
+}
+
+/** The problems of the plugin's hooks and their launcher. */
+function hookProblems(root: string): string[] {
+  const problems: string[] = [];
+  const hooksFile = "hooks/hooks.json";
+  if (!existsSync(join(root, hooksFile))) {
+    problems.push(
+      `${hooksFile}: is missing: the plugin runs tiehall hook session-start when a session starts, tiehall hook wait when a turn ends and tiehall hook session-end when a session ends.`,
+    );
+  } else {
+    const registered = readJson(root, hooksFile, problems);
+    const events = isObject(registered) && isObject(registered["hooks"]) ? registered["hooks"] : undefined;
+    if (registered !== undefined && events === undefined) problems.push(`${hooksFile}: holds no hooks.`);
+    if (events !== undefined) {
+      for (const event of Object.keys(events)) {
+        if (!Object.hasOwn(HOOK_NAMES, event)) problems.push(`${hooksFile}: registers a ${event} hook; the plugin registers SessionStart, Stop and SessionEnd only.`);
+      }
+      for (const [event, name] of Object.entries(HOOK_NAMES)) {
+        const groups = events[event];
+        const group = Array.isArray(groups) && groups.length === 1 ? groups[0] : undefined;
+        const hooks = isObject(group) && group["matcher"] === undefined && Array.isArray(group["hooks"]) && group["hooks"].length === 1 ? group["hooks"] : undefined;
+        const hook: unknown = hooks?.[0];
+        if (!isObject(hook) || hook["type"] !== "command" || hook["command"] !== hookCommand(name)) {
+          problems.push(`${hooksFile}: runs one command for ${event}, ${hookCommand(name)}.`);
+          continue;
+        }
+        if (event === "Stop") {
+          if (hook["asyncRewake"] !== true) problems.push(`${hooksFile}: runs the Stop hook without asyncRewake, so the waiter could not wake Claude.`);
+          const timeout = hook["timeout"];
+          if (typeof timeout !== "number" || timeout <= WAITER_CAP_SECONDS) {
+            problems.push(
+              `${hooksFile}: gives the Stop hook a timeout of ${typeof timeout === "number" ? timeout : "600, Claude Code's default,"} seconds; the waiter's cap is 30 minutes, so its timeout is longer, 1900 seconds.`,
+            );
+          }
+        } else if (hook["asyncRewake"] !== undefined) {
+          problems.push(`${hooksFile}: runs the ${event} hook with asyncRewake, which only the Stop hook's waiter has.`);
+        }
+      }
+    }
+  }
+  if (!existsSync(join(root, LAUNCHER))) problems.push(`${LAUNCHER}: is missing: the plugin's hooks run tiehall through this launcher, which stays quiet without the CLI.`);
+  return problems;
 }
 
 /** Every problem of the plugin whose root is this folder. */

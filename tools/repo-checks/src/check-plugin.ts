@@ -1,7 +1,7 @@
 // CI check for agent-surfaces: The Claude Code plugin. It fails when the
-// plugin's manifest, its MCP connection or its skills are not what Claude
-// Code and the Agent Skills format take, or state no version, or one older
-// than the minimum Tiehall keeps.
+// plugin's manifest, its MCP connection, its hooks or its skills are not what
+// Claude Code and the Agent Skills format take, or state no version, or one
+// older than the minimum Tiehall keeps.
 // Usage: node tools/repo-checks/src/check-plugin.ts [plugin folder]
 import { resolve } from "node:path";
 import process from "node:process";
@@ -20,7 +20,8 @@ if (report.problems.length === 0) {
   console.error(
     `\nThe plugin states its version in .claude-plugin/plugin.json and each skill its own in its frontmatter's metadata, ` +
       `neither older than the minimum Tiehall keeps (the plugin's ${MINIMUM_PLUGIN_VERSION}, the skill's ${MINIMUM_SKILL_VERSION}), ` +
-      "and its MCP connection points at the install whose URL the user gives (agent-surfaces: The Claude Code plugin).",
+      "its MCP connection points at the install whose URL the user gives, and its hooks run tiehall hook through its launcher " +
+      "(agent-surfaces: The Claude Code plugin; requester-loop: Claude Code Stop-hook waiter).",
   );
   process.exitCode = 1;
 }

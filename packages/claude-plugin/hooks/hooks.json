@@ -1,0 +1,38 @@
+{
+  "description": "Tiehall's requester loop in Claude Code: a digest of the news on your requests when a session starts, and a waiter that wakes Claude when news arrives while the session is idle. Each hook runs the tiehall CLI through the plugin's launcher, and stays quiet without it.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/tiehall-hook.sh\" session-start",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/tiehall-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1900
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/tiehall-hook.sh\" session-end"
+          }
+        ]
+      }
+    ]
+  }
+}

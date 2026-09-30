@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CATALOG, defineCatalog, defineCommand, packet, SCOPES } from "../src/index.ts";
@@ -511,5 +512,33 @@ describe("the committed form", () => {
     keysInOrder(JSON.parse(text));
     expect(JSON.parse(text)).toEqual(document);
     expect(serializeDocument(openApiDocument(catalog, { version: "0.4.0" }))).toBe(text);
+  });
+});
+
+// requester-loop: No push paths other than the hooks, "No event stream in the API". The wait endpoint serves the
+// requester loop; no operation of the document an install serves, nor of the committed one, streams events as
+// server-sent events.
+describe("the document an install serves", () => {
+  /** Every media type a document's operations take or answer with. */
+  function mediaTypes(document: { paths: Record<string, Record<string, { requestBody?: { content?: object }; responses?: Record<string, { content?: object }> }>> }): string[] {
+    const found: string[] = [];
+    for (const operations of Object.values(document.paths)) {
+      for (const operation of Object.values(operations)) {
+        if (typeof operation !== "object" || operation === null) continue;
+        found.push(...Object.keys(operation.requestBody?.content ?? {}));
+        for (const response of Object.values(operation.responses ?? {})) found.push(...Object.keys(response.content ?? {}));
+      }
+    }
+    return found;
+  }
+
+  it("describes no operation that streams events as server-sent events", () => {
+    const committed = JSON.parse(readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8"));
+    for (const document of [JSON.parse(serializeDocument(openApiDocument(CATALOG))), committed]) {
+      const types = mediaTypes(document);
+      expect(types.length).toBeGreaterThan(0);
+      expect(types.filter((type) => type.includes("event-stream"))).toEqual([]);
+      expect(new Set(types)).toEqual(new Set(["application/json", "application/problem+json"]));
+    }
   });
 });

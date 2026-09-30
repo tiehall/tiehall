@@ -12,7 +12,11 @@ import { pluginProblems } from "../src/plugin.ts";
 // Tiehall keeps a minimum for each version, and the check fails on a manifest
 // or a skill without a version, or with one below its minimum, on a manifest
 // key Claude Code does not know, on a skill whose frontmatter the format
-// refuses, and on an MCP connection that names one install.
+// refuses, and on an MCP connection that names one install. The plugin's
+// hooks run `tiehall hook session-start` when a session starts, `tiehall hook
+// wait` with asyncRewake and a timeout longer than the waiter's 30-minute cap
+// when a turn ends, and `tiehall hook session-end` when a session ends, each
+// through the plugin's launcher, and the plugin declares no channel.
 
 const script = fileURLToPath(new URL("../src/check-plugin.ts", import.meta.url));
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/plugin/${name}/`, import.meta.url));
@@ -69,5 +73,25 @@ describe("the plugin check", () => {
     expect(pluginProblems(fixture("skill-name-mismatch"), minimums)).toEqual([
       "skills/tiehall/SKILL.md: is named tie-hall, but an Agent Skill is named as its folder, tiehall.",
     ]);
+  });
+
+  // requester-loop: Claude Code SessionStart digest; requester-loop: Claude Code Stop-hook waiter.
+  it("fails on a plugin without its hooks", () => {
+    expect(pluginProblems(fixture("no-hooks"), minimums)).toEqual([
+      "hooks/hooks.json: is missing: the plugin runs tiehall hook session-start when a session starts, tiehall hook wait when a turn ends and tiehall hook session-end when a session ends.",
+      "hooks/tiehall-hook.sh: is missing: the plugin's hooks run tiehall through this launcher, which stays quiet without the CLI.",
+    ]);
+  });
+
+  it("fails on a Stop hook without asyncRewake, or with a timeout no longer than the waiter's 30-minute cap", () => {
+    expect(pluginProblems(fixture("stop-without-rewake"), minimums)).toEqual([
+      "hooks/hooks.json: runs the Stop hook without asyncRewake, so the waiter could not wake Claude.",
+      "hooks/hooks.json: gives the Stop hook a timeout of 600 seconds; the waiter's cap is 30 minutes, so its timeout is longer, 1900 seconds.",
+    ]);
+  });
+
+  // requester-loop: No push paths other than the hooks, "No channel in the plugin".
+  it("fails on a plugin that declares a channel", () => {
+    expect(pluginProblems(fixture("channel"), minimums)).toEqual([".claude-plugin/plugin.json: declares a channel; the plugin's only push path is its hooks."]);
   });
 });
