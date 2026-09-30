@@ -50,6 +50,8 @@ export interface CliCall {
   url: string;
   /** The Authorization header it carried, if any. */
   authorization: string | null;
+  /** The CLI version it named in its Tiehall-CLI-Version header, if any. */
+  cliVersion: string | null;
 }
 
 export interface CliMachine {
@@ -57,6 +59,8 @@ export interface CliMachine {
   configDir: string;
   /** Every call the CLI made, in order, whichever host it was for. */
   calls: CliCall[];
+  /** Makes every later call name this CLI version, as an older or newer CLI's would. */
+  pretendVersion(version: string): void;
   /** What the run under way has printed to its standard output so far. */
   printed(): string;
   /** Runs `tiehall <args>`, with this standard input and this wait between polls, until it exits. */
@@ -84,8 +88,10 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
   const configDir = mkdtempSync(join(tmpdir(), "tiehall-cli-"));
   const calls: CliCall[] = [];
   let printed = "";
+  let version: string | undefined;
   const fetch = async (request: Request): Promise<Response> => {
-    calls.push({ method: request.method, url: request.url, authorization: request.headers.get("authorization") });
+    if (version !== undefined) request.headers.set("tiehall-cli-version", version);
+    calls.push({ method: request.method, url: request.url, authorization: request.headers.get("authorization"), cliVersion: request.headers.get("tiehall-cli-version") });
     const { origin } = new URL(request.url);
     if (origin === URL_OF_INSTALL) return harness.handle(request);
     const other = others[origin];
@@ -96,6 +102,9 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
     configDir,
     calls,
     printed: () => printed,
+    pretendVersion(named) {
+      version = named;
+    },
     async run(args, options = {}) {
       // Imported when a test runs, so that a missing command fails that test rather than the file.
       const cli = (await import("tiehall")) as unknown as Partial<TiehallCli>;

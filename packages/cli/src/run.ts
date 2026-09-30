@@ -4,7 +4,7 @@ import { CliError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf, installUrlOf, type SavedLogin } from "./logins.ts";
 import { expiresSoon, logIn, refreshLogin } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
-import { CLI_VERSION } from "./version.ts";
+import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
 // The tiehall CLI (agent-surfaces: The CLI package; agent-surfaces: CLI
 // request commands; public-api: The license map; design.md, Technical
@@ -146,7 +146,7 @@ function parseGlobals(argv: readonly string[]): { globals: Globals; words: strin
 function clientFor(environment: CliEnvironment, login: SavedLogin): TiehallClient {
   return createTiehallClient({
     baseUrl: login.url,
-    headers: { authorization: `Bearer ${login.accessToken}`, "user-agent": `tiehall/${CLI_VERSION}` },
+    headers: { authorization: `Bearer ${login.accessToken}`, "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
     fetch: (request) => (environment.fetch ?? fetch)(request),
   });
 }

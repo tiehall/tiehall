@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { run } from "../src/index.ts";
+import { CLI_VERSION, run } from "../src/index.ts";
 
 // Signing in and the saved logins (agent-access: The CLI keeps its token
 // readable only by the user; agent-access: The CLI signs in through a
@@ -32,7 +32,7 @@ const saved = () => (JSON.parse(readFileSync(file(), "utf8")) as { logins: Recor
 /** An install at this URL whose device flow approves at the first poll, and whose API answers who the token is. */
 function install(url: string, options: { tokens?: () => { access_token: string; refresh_token: string; expires_in: number } } = {}) {
   let issued = 0;
-  const calls: { method: string; path: string; form: Record<string, string>; authorization: string | null }[] = [];
+  const calls: { method: string; path: string; form: Record<string, string>; authorization: string | null; cliVersion: string | null }[] = [];
   const tokens =
     options.tokens ??
     (() => {
@@ -43,7 +43,7 @@ function install(url: string, options: { tokens?: () => { access_token: string; 
     const { pathname } = new URL(request.url);
     const text = request.method === "POST" ? await request.text() : "";
     const form = Object.fromEntries(new URLSearchParams(text));
-    calls.push({ method: request.method, path: pathname, form, authorization: request.headers.get("authorization") });
+    calls.push({ method: request.method, path: pathname, form, authorization: request.headers.get("authorization"), cliVersion: request.headers.get("tiehall-cli-version") });
     if (pathname === "/api/auth/device/code") {
       return Response.json({ device_code: "the-device-code", user_code: "WDJB-MJHT", verification_uri: `${url}/device`, expires_in: 600, interval: 5 });
     }
@@ -168,6 +168,17 @@ describe("tiehall login", () => {
     expect(Object.keys(saved()).sort()).toEqual([COM, NET]);
     expect(saved()[COM]?.accessToken).toBe("access-2");
     expect(saved()[NET]?.accessToken).toBe("access-1");
+  });
+});
+
+// public-api: The CLI sends its version and the server keeps a minimum.
+describe("every call", () => {
+  it("names the CLI's version, the sign-in's and the refresh's included", async () => {
+    const com = install(COM);
+    await tiehall(["login", COM], { [COM]: com.handle });
+    await tiehall(["inbox"], { [COM]: com.handle }, () => new Date(Date.now() + 3_600_000));
+    expect(com.calls.map(({ path }) => path)).toEqual(["/api/auth/device/code", "/api/auth/oauth2/token", "/api/auth/oauth2/token", "/api/v1/inbox", "/api/v1/whoami"]);
+    expect(com.calls.every(({ cliVersion }) => cliVersion === CLI_VERSION)).toBe(true);
   });
 });
 

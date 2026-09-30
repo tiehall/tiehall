@@ -1,5 +1,5 @@
 import { API_PREFIX, deprecationHeaders, isProposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
-import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
+import { CLI_VERSION_HEADER, cliVersionRefusal, httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson } from "@tiehall/packet/render";
 import { bodyLimitFor, readBoundedBody } from "./body-limit.ts";
 import type { Caller } from "./caller.ts";
@@ -26,6 +26,12 @@ import { createLogger, type Logger } from "./log.ts";
 //   holds (public-api: Request bodies have a size limit). The web role's
 //   request guard refuses such a body before the route sees it; the route
 //   refuses it too, so the rule holds where the guard is not installed;
+// - a call from the tiehall CLI names the CLI's version in the
+//   Tiehall-CLI-Version header, and one from a CLI older than the install's
+//   minimum is refused with 400 and the problem type upgrade-required, which
+//   says how to upgrade, before its token, its input or its operation is
+//   judged, so it runs nothing (public-api: The CLI sends its version and the
+//   server keeps a minimum);
 // - it asks who is calling, from the access token in the Authorization header
 //   alone, and answers a call without one with 401 and a challenge that
 //   points to the protected resource metadata, with the scopes the operation
@@ -131,6 +137,9 @@ export function createRestHandler(options: RestOptions): RestHandler {
       });
     }
     if (found === undefined) return problem(new Refusal("route-not-found", "There is no such operation here."));
+    // A CLI older than the install supports is told to upgrade before anything of the call is judged.
+    const outdated = cliVersionRefusal(request.headers.get(CLI_VERSION_HEADER));
+    if (outdated !== undefined) return withDeprecation(problem(outdated), found);
     return withDeprecation(await answer(request, url, found, body), found);
   };
 

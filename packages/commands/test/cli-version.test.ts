@@ -1,0 +1,117 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { compareVersions, MINIMUM_CLI_VERSION } from "@tiehall/core";
+import { CLI_VERSION } from "tiehall";
+import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
+import { signedInCli, type CliMachine } from "./support/cli.ts";
+import { mcpPerson, PROBLEM, type McpPerson } from "./support/mcp.ts";
+import { openRequestInTheWebUi } from "./support/requests.ts";
+
+// The CLI sends its version and the server keeps a minimum (public-api: The
+// CLI sends its version and the server keeps a minimum; agent-surfaces: The
+// Claude Code plugin; design.md, Decisions this change rests on: D28 #1,
+// #63). Every call of the tiehall CLI names its version in the
+// Tiehall-CLI-Version header, and /api/v1 answers a call from a CLI older
+// than the install's minimum with 400 and the problem type upgrade-required,
+// which says how to upgrade, before it runs anything, whoever calls: the
+// hooks of the Claude Code plugin run the CLI, so the minimum also holds the
+// plugin to the versions whose hooks work.
+
+let harness: AgentAccessHarness;
+let sam: McpPerson;
+let dana: McpPerson;
+let danaCli: CliMachine;
+
+beforeAll(async () => {
+  harness = await startAgentAccess();
+  sam = await mcpPerson(harness, "sam-be", { teams: ["BE"] });
+  dana = await mcpPerson(harness, "dana-fe", { teams: ["FE"] });
+  danaCli = await signedInCli(harness, dana);
+}, 120_000);
+
+afterAll(async () => {
+  danaCli?.close();
+  await harness?.close();
+});
+
+/** A version below the install's minimum. */
+function older(version: string): string {
+  const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+  if (patch > 0) return `${major}.${minor}.${patch - 1}`;
+  if (minor > 0) return `${major}.${minor - 1}.99`;
+  return `${major - 1}.99.99`;
+}
+
+async function stored(key: string): Promise<{ state: string; claimant: string | null }> {
+  const { rows } = await harness.install.owner.query(
+    `SELECT r.state, r.claimant_user_id AS claimant FROM requests r JOIN teams t ON t.org_id = r.org_id AND t.id = r.target_team_id WHERE t.key || '-' || r.number = $1`,
+    [key],
+  );
+  return rows[0];
+}
+
+describe("the CLI's version", () => {
+  it("is at least the install's minimum, for the CLI this repository builds", () => {
+    expect(compareVersions(CLI_VERSION, MINIMUM_CLI_VERSION)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("rides in every call the CLI makes", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    const from = danaCli.calls.length;
+    expect((await danaCli.run(["get", request.key])).code).toBe(0);
+    const calls = danaCli.calls.slice(from);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every(({ cliVersion }) => cliVersion === CLI_VERSION)).toBe(true);
+  });
+});
+
+describe("a call from a CLI older than the minimum", () => {
+  // public-api: The CLI sends its version and the server keeps a minimum, "An old CLI is told to upgrade".
+  it("gets 400 upgrade-required with directions to upgrade, and the operation does not run", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    const headers = { authorization: `Bearer ${dana.token}`, "tiehall-cli-version": older(MINIMUM_CLI_VERSION) };
+    const inbox = await harness.api("GET", "/api/v1/inbox", headers);
+    expect(inbox.status).toBe(400);
+    expect(inbox.headers.get("content-type")).toBe("application/problem+json");
+    const problem = (await inbox.json()) as { type: string; detail: string };
+    expect(problem.type).toBe(`${PROBLEM}upgrade-required`);
+    expect(problem.detail).toContain("npm install --global tiehall@latest");
+    const claim = await harness.api("POST", `/api/v1/requests/${request.key}/claim`, headers);
+    expect(claim.status).toBe(400);
+    expect(await stored(request.key)).toEqual({ state: "open", claimant: null });
+  });
+
+  it("is told to upgrade before its token is looked at, and a path that serves nothing still gets 404", async () => {
+    const version = older(MINIMUM_CLI_VERSION);
+    expect((await harness.api("GET", "/api/v1/inbox", { "tiehall-cli-version": version })).status).toBe(400);
+    expect((await harness.api("GET", "/api/v1/inbox", { authorization: "Bearer not-a-token", "tiehall-cli-version": version })).status).toBe(400);
+    expect((await harness.api("GET", "/api/v1/nothing-here", { "tiehall-cli-version": version })).status).toBe(404);
+  });
+
+  it("is shown by the CLI as the problem it is, and changes nothing", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    const machine = await signedInCli(harness, dana);
+    try {
+      // The machine's calls leave with an older CLI's version, as an old CLI's would.
+      machine.pretendVersion(older(MINIMUM_CLI_VERSION));
+      const run = await machine.run(["claim", request.key]);
+      expect(run.code).toBe(1);
+      expect(run.stderr).toContain("Upgrade required: This tiehall CLI is version");
+      expect(run.stderr).toContain("npm install --global tiehall@latest");
+      expect(await stored(request.key)).toEqual({ state: "open", claimant: null });
+    } finally {
+      machine.close();
+    }
+  });
+});
+
+describe("a call that names no CLI version", () => {
+  it("is no CLI's, such as a script's with a token, and runs", async () => {
+    expect((await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${dana.token}` })).status).toBe(200);
+  });
+
+  it("names one the install cannot read, and gets 400 invalid-input", async () => {
+    const answer = await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${dana.token}`, "tiehall-cli-version": "the newest" });
+    expect(answer.status).toBe(400);
+    expect(((await answer.json()) as { type: string }).type).toBe(`${PROBLEM}invalid-input`);
+  });
+});

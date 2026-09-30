@@ -1,6 +1,6 @@
 {
   "name": "tiehall",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "The command line of Tiehall, for people and their agents. It takes its request commands from the OpenAPI document through @tiehall/client, which it bundles.",
   "license": "Apache-2.0",

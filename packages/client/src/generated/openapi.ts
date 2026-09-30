@@ -641,7 +641,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -732,7 +732,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -887,7 +887,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1020,7 +1020,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1145,7 +1145,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1451,7 +1451,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1668,7 +1668,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1798,7 +1798,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1932,7 +1932,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2116,7 +2116,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2241,7 +2241,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2466,7 +2466,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2586,7 +2586,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2689,7 +2689,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2895,7 +2895,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3035,7 +3035,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3280,7 +3280,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3560,7 +3560,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3824,7 +3824,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4067,7 +4067,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4164,7 +4164,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
             400: {
                 headers: {
                     [name: string]: unknown;

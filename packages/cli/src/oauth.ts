@@ -1,5 +1,6 @@
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, saveLogin, withLoginsLock, type SavedLogin } from "./logins.ts";
+import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
 // How the CLI signs in, and keeps its login working (agent-access: The CLI
 // signs in through a restricted device flow; agent-access: Access tokens live
@@ -32,7 +33,7 @@ async function post(environment: CliEnvironment, url: string, path: string, fiel
     response = await (environment.fetch ?? fetch)(
       new Request(`${url}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
         body: new URLSearchParams(fields).toString(),
       }),
     );

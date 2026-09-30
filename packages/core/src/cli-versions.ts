@@ -1,0 +1,61 @@
+import { Refusal } from "./error-model.ts";
+
+// The CLI sends its version and the server keeps a minimum (public-api: The
+// CLI sends its version and the server keeps a minimum; agent-surfaces: The
+// Claude Code plugin; design.md, Decisions this change rests on: D28 #1, #63;
+// design.md, Design rules: Public API). Every call of the tiehall CLI names
+// its version, a semantic version such as 0.1.0, in the Tiehall-CLI-Version
+// header, and the install keeps the oldest version it supports: a call from
+// an older CLI is refused with 400 and the problem type upgrade-required,
+// whose detail says how to upgrade, and runs nothing. The Claude Code
+// plugin's hooks run the CLI, so the minimum holds the plugin too. A call
+// that names no version is not the CLI's, such as a script's, and one whose
+// version cannot be read fails its input; its value is never quoted.
+
+/** The header every call of the CLI names its version in, as HTTP headers are compared: in lower case. */
+export const CLI_VERSION_HEADER = "tiehall-cli-version";
+
+/** The oldest CLI this install supports; raising it refuses every older CLI's calls. */
+export const MINIMUM_CLI_VERSION = "0.1.0";
+
+/** A semantic version: its major, minor and patch numbers, and its pre-release, if any. */
+const VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})(?:-([0-9A-Za-z.-]{1,64}))?(?:\+[0-9A-Za-z.-]{1,64})?$/;
+
+function parts(version: string): { numbers: number[]; preRelease: string | undefined } | undefined {
+  const match = VERSION.exec(version);
+  if (match === null) return undefined;
+  return { numbers: [Number(match[1]), Number(match[2]), Number(match[3])], preRelease: match[4] };
+}
+
+/** Whether a text is a semantic version, such as 0.1.0 or 1.2.0-rc.1. */
+export function isVersion(version: string): boolean {
+  return parts(version) !== undefined;
+}
+
+/** Below zero when a is older than b, zero when they are the same release, above zero when a is newer. */
+export function compareVersions(a: string, b: string): number {
+  const [x, y] = [parts(a), parts(b)];
+  if (x === undefined || y === undefined) throw new TypeError("Only semantic versions compare.");
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (x.numbers[index] ?? 0) - (y.numbers[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  // A pre-release comes before its release; two pre-releases compare as text.
+  if (x.preRelease === y.preRelease) return 0;
+  if (x.preRelease === undefined) return 1;
+  if (y.preRelease === undefined) return -1;
+  return x.preRelease < y.preRelease ? -1 : 1;
+}
+
+/** The refusal of a call that names this CLI version, or none; a call that names no version is not the CLI's. */
+export function cliVersionRefusal(version: string | null, minimum: string = MINIMUM_CLI_VERSION): Refusal | undefined {
+  if (version === null) return undefined;
+  if (!isVersion(version.trim())) {
+    return new Refusal("invalid-input", "The Tiehall-CLI-Version header names the CLI's version, a semantic version such as 0.1.0.");
+  }
+  if (compareVersions(version.trim(), minimum) >= 0) return undefined;
+  return new Refusal(
+    "upgrade-required",
+    `This tiehall CLI is version ${version.trim()}, and this install needs version ${minimum} or later: upgrade it with npm install --global tiehall@latest, and run the command again.`,
+  );
+}

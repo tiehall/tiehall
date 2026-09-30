@@ -116,7 +116,7 @@ const IF_MATCH_ERRORS: Readonly<Record<string, string>> = {
 
 /** The errors every operation can answer with, and those of writes and of POSTs. */
 const ERRORS: Readonly<Record<string, string>> = {
-  "400": "The input fails the operation's schema, or is outside what the install's settings allow.",
+  "400": "The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required).",
   "401": "The call carries no valid token.",
   "403": "The caller may not take this action.",
   "404": "There is no such operation, or the record the call names does not exist.",
