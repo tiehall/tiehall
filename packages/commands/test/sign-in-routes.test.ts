@@ -60,7 +60,7 @@ describe("the route inventory", () => {
     expect(routes).toContain("POST /get-session");
   });
 
-  it("serves only the routes it marks as harmless, GitHub's return and the agent clients' OAuth flow, and gates none yet", () => {
+  it("serves only the routes it marks as harmless, GitHub's return, the agent clients' OAuth flow and the CLI's device authorization, and gates none yet", () => {
     const served = Object.entries(SIGN_IN_ROUTES).filter(([, route]) => route.kind !== "blocked");
     expect(served.map(([route, { kind }]) => `${kind} ${route}`)).toEqual([
       "harmless GET /callback/:id",
@@ -69,6 +69,7 @@ describe("the route inventory", () => {
       "harmless POST /oauth2/register",
       "harmless POST /oauth2/revoke",
       "harmless GET /jwks",
+      "harmless POST /device/code",
     ]);
     for (const route of Object.values(SIGN_IN_ROUTES)) expect(route.why.length).toBeGreaterThan(20);
   });

@@ -351,6 +351,13 @@
       "when": 1790729667116,
       "tag": "0049_add_personal_access_token_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790729984560,
+      "tag": "0050_add_device_codes",
+      "breakpoints": true
     }
   ]
 }

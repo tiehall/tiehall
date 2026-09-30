@@ -10,7 +10,8 @@ import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn 
 // issuer: it publishes the protected resource metadata of the install's MCP
 // resource, which names the install as its authorization server, and the
 // authorization server metadata, which offers the authorization code grant
-// with refresh tokens and never the client credentials grant. Its access
+// with refresh tokens, the device grant that only the CLI may use
+// (device-flow.test.ts), and never the client credentials grant. Its access
 // tokens are JWTs that live 600 seconds, signed with the install's own keys,
 // and /api/v1 accepts them. Checking one reads the install's signing keys in
 // the same process, so it makes no outbound call.
@@ -49,7 +50,7 @@ describe("the install's authorization server", () => {
     }
   });
 
-  it("publishes the authorization server metadata, with the install's URL as issuer, the authorization code and refresh token grants only, and S256", async () => {
+  it("publishes the authorization server metadata, with the install's URL as issuer, the authorization code and refresh token grants and the CLI's device grant only, and S256", async () => {
     const { status, body } = await json("/.well-known/oauth-authorization-server");
     expect(status).toBe(200);
     expect(body).toMatchObject({
@@ -60,7 +61,8 @@ describe("the install's authorization server", () => {
       code_challenge_methods_supported: ["S256"],
       authorization_response_iss_parameter_supported: true,
     });
-    expect(body["grant_types_supported"]).toEqual(["authorization_code", "refresh_token"]);
+    expect(body["grant_types_supported"]).toEqual(["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"]);
+    expect(body["device_authorization_endpoint"]).toBe(`${URL_OF_INSTALL}/api/auth/device/code`);
   });
 
   it("issues access tokens for the MCP resource that live 600 seconds and name the approving user", async () => {

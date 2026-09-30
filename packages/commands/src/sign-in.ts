@@ -5,6 +5,7 @@ import { authorizationCodeRequest, getOAuth2Tokens } from "better-auth/oauth2";
 import type { GithubProfile } from "better-auth/social-providers";
 import { and, eq } from "drizzle-orm";
 import { isIP } from "node:net";
+import { SCOPES } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, signInCompleted, signInRefused, type HttpProblem } from "@tiehall/core";
 import {
   githubApp,
@@ -15,6 +16,7 @@ import {
   oauthClientResources,
   oauthClients,
   oauthConsents,
+  oauthDeviceCodes,
   oauthRefreshTokens,
   oauthResources,
   oauthSigningKeys,
@@ -29,7 +31,8 @@ import {
 import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { continuePathOf, isAuthorizationRequest } from "./consent.ts";
-import { authorizationServerPlugins, type AgentClientOptions } from "./authorization-server.ts";
+import { authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
+import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -337,6 +340,11 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     const clientSecret = await options.database.transaction((tx) => readSecret({ tx, orgId: stored.orgId }, options.secrets(), "github_app.client_secret"));
     if (clientSecret === undefined) return undefined;
     const auth = betterAuth(authOptions({ orgId: stored.orgId, clientId: stored.clientId, clientSecret }, mode));
+    if (mode === "sign-in") {
+      // Once the authorization server has made its MCP resource's record, the CLI is seeded as its registered client.
+      await auth.$context;
+      await seedCliClient(options.database, stored.orgId, { resource: mcpResourceOf(options.url), scopes: [...SCOPES, REFRESH_SCOPE] });
+    }
     built.set(mode, { key: stored.key, auth });
     logger.info("sign-in service: the sign-in service is built from the GitHub App's stored credentials", { clientId: stored.clientId, mode });
     return auth;
@@ -401,6 +409,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           oauthAccessTokens,
           oauthConsents,
           oauthClientAssertions,
+          oauthDeviceCodes,
         },
       }),
       advanced: {
@@ -565,6 +574,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           : [
               ...authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) }),
               clientRegistrations({ database: options.database, ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }) }),
+              cliDeviceFlow({ database: options.database, resource: mcpResourceOf(options.url), refreshScope: REFRESH_SCOPE }),
             ]),
       ],
       hooks: { before: routeGuard },

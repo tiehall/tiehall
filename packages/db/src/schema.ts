@@ -1144,6 +1144,60 @@ export const oauthClientRegistrations = pgTable(
   ],
 );
 
+// The device codes of the CLI's sign-in (agent-access: The CLI signs in
+// through a restricted device flow; agent-access: The device approval page
+// cannot be prefilled): one row per device authorization request the CLI made,
+// with the code the CLI polls with, the short code the person types on the
+// device approval page, and when it expires, 10 minutes after the request.
+// The address the request came from, as the install sees it after its trusted
+// proxies, and the time of the request are kept so the approval page can show
+// them. It stays pending, with no user, until a member approves it with the
+// confirmation step; the CLI's first exchange of an approved code uses it up,
+// and an expired one is removed.
+export const oauthDeviceCodes = pgTable(
+  "oauth_device_codes",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    deviceCode: text("device_code").notNull(),
+    userCode: text("user_code").notNull(),
+    /** The member who approved the code; none while it is pending. */
+    userId: uuid("user_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** pending, approved or denied. */
+    status: text("status").notNull(),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+    /** How long the CLI waits between polls, in milliseconds. */
+    pollingInterval: integer("polling_interval"),
+    clientId: text("client_id"),
+    oauthClientId: text("oauth_client_id"),
+    scope: text("scope"),
+    resources: text("resources").array(),
+    /** The client address the device authorization request came from; none when the install could not tell it. */
+    requestedFrom: inet("requested_from"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("oauth_device_codes_device_code").on(table.deviceCode),
+    uniqueIndex("oauth_device_codes_user_code").on(table.userCode),
+    index("oauth_device_codes_expires_at").on(table.orgId, table.expiresAt),
+    foreignKey({
+      name: "oauth_device_codes_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "oauth_device_codes_client_fk",
+      columns: [table.orgId, table.oauthClientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }).onDelete("cascade"),
+    check("oauth_device_codes_status_known", sql`${table.status} IN ('pending', 'approved', 'denied')`),
+  ],
+);
+
 // The client assertions a private_key_jwt client has used, by a digest of
 // their jti, so none is accepted twice.
 export const oauthClientAssertions = pgTable(

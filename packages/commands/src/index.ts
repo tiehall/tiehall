@@ -26,6 +26,17 @@ export {
 } from "./consent.ts";
 export { createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOptions, type SigningKeys } from "./agent-tokens.ts";
 export {
+  CLI_CLIENT_ID,
+  cliDeviceFlow,
+  DEVICE_APPROVAL_PATH,
+  DEVICE_CODE_GRANT_TYPE,
+  DEVICE_CODE_LIFETIME_SECONDS,
+  deviceScopeOf,
+  removeExpiredDeviceCodes,
+  seedCliClient,
+  type CliDeviceFlowOptions,
+} from "./device-flow.ts";
+export {
   ACCESS_TOKEN_LIFETIME_SECONDS,
   AUTHORIZATION_ENDPOINT_PATH,
   AUTHORIZATION_SIGN_IN_PATH,

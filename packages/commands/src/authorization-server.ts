@@ -1,9 +1,11 @@
 import { cimd } from "@better-auth/cimd";
 import { mcp } from "@better-auth/mcp";
+import { oauthDeviceAuthorization } from "@better-auth/oauth-provider";
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { SCOPES } from "@tiehall/catalog";
+import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
 import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
 // The install's OAuth 2.1 authorization server for agent clients
@@ -45,6 +47,10 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   request each client sends is completed with it before the server reads
 //   it, and a client that asks for offline_access itself is refused like any
 //   other scope Tiehall does not offer.
+// - `oauthDeviceAuthorization()` offers the device authorization grant, which
+//   only the `tiehall` CLI may use (device-flow.ts): its codes expire after 10
+//   minutes, a person approves one on the install's device approval page, and
+//   the CLI exchanges it at the token endpoint for tokens like any grant's.
 // The service keeps the records of both in Tiehall's own tables, each row
 // with the install's org id, which the plugins do not know about, so each of
 // their tables gains the field with the org's id as its value.
@@ -99,6 +105,7 @@ const MODEL_NAMES = {
   oauthAccessToken: "oauthAccessTokens",
   oauthConsent: "oauthConsents",
   oauthClientAssertion: "oauthClientAssertions",
+  deviceCode: "oauthDeviceCodes",
 } as const;
 
 /** How many Client ID Metadata Documents the install fetches from one host in a minute, at most. */
@@ -155,8 +162,20 @@ export function authorizationServerPlugins({ url, orgId, clients = {} }: Authori
       oauthClientAssertion: { modelName: MODEL_NAMES.oauthClientAssertion },
     },
   });
+  // The CLI's device flow: no validateClient, which would admit any client; the guard in device-flow.ts admits the CLI alone.
+  const deviceFlow = oauthDeviceAuthorization({
+    expiresIn: `${DEVICE_CODE_LIFETIME_SECONDS}s`,
+    interval: "5s",
+    verificationUri: `${url}${DEVICE_APPROVAL_PATH}`,
+    schema: { deviceCode: { modelName: MODEL_NAMES.deviceCode } },
+  });
   // The plugin's endpoint types are stricter than the plugin interface under exactOptionalPropertyTypes; it is one.
-  const plugins = [withOrgId(signingKeys, orgId), withOrgId(server as unknown as BetterAuthPlugin, orgId), offeredScopes()];
+  const plugins = [
+    withOrgId(signingKeys, orgId),
+    withOrgId(server as unknown as BetterAuthPlugin, orgId),
+    withOrgId(deviceFlow as unknown as BetterAuthPlugin, orgId),
+    offeredScopes(),
+  ];
   if (clients.metadataDocuments !== false) plugins.push(metadataDocuments(clients.fetchDocument ?? createOutboundFetcher({ maxRedirects: 0 })));
   return plugins;
 }

@@ -144,6 +144,27 @@ export const SIGN_IN_ROUTES: Readonly<Record<string, SignInRouteClass>> = {
   },
   "GET /.well-known/openid-configuration": { kind: "blocked", why: NO_OPENID },
   "GET /token": { kind: "blocked", why: "The signing keys sign agents' access tokens only; a web session gets no JWT." },
+  // The CLI's device flow (device-flow.ts).
+  "POST /device/code": {
+    kind: "harmless",
+    why: "The device authorization endpoint, which serves the tiehall CLI alone: its guard refuses every other client id with unauthorized_client, and a code grants nothing until a member approves it on the device approval page with the confirmation step.",
+  },
+  "POST /device/token": {
+    kind: "blocked",
+    why: "The library's own device token endpoint would hand the CLI a web session's token; the CLI exchanges its code at the OAuth token endpoint for an access token for the MCP resource instead.",
+  },
+  "GET /device": {
+    kind: "blocked",
+    why: "It would bind a device code to whoever opens it signed in, before they approved it; Tiehall's device approval page reads a typed code and stores nothing until the approval is confirmed.",
+  },
+  "POST /device/approve": {
+    kind: "blocked",
+    why: "A member approves a device code on Tiehall's device approval page with the confirmation step; this route would let a same-origin request approve one with the cookie alone.",
+  },
+  "POST /device/deny": {
+    kind: "blocked",
+    why: "A device code nobody approves expires after 10 minutes; nothing needs a denial over HTTP.",
+  },
 };
 
 /** A route of a sign-in service instance: its method and its path under /api/auth. */
