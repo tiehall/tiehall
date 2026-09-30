@@ -43,6 +43,8 @@ export interface McpClientOptions {
   /** The access token or personal access token the client sends; none sends no Authorization header. */
   token?: string;
   version: ProtocolVersion;
+  /** The name the client gives itself, such as a real client's; a contract test's own unless given. */
+  name?: string;
   /** The client capabilities it declares, such as elicitation. */
   capabilities?: Record<string, unknown>;
   /** Where its HTTP exchanges with /mcp are logged, in order. */
@@ -50,9 +52,9 @@ export interface McpClientOptions {
 }
 
 /** An SDK client of this protocol version, not connected yet. */
-export function mcpClient(options: Pick<McpClientOptions, "version" | "capabilities">): Client {
+export function mcpClient(options: Pick<McpClientOptions, "version" | "capabilities" | "name">): Client {
   return new Client(
-    { name: `tiehall-contract-test-${options.version}`, version: "0.0.0" },
+    { name: options.name ?? `tiehall-contract-test-${options.version}`, version: "0.0.0" },
     {
       capabilities: options.capabilities ?? {},
       ...(options.version === MODERN ? { versionNegotiation: { mode: { pin: MODERN } } } : {}),
