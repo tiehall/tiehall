@@ -82,6 +82,11 @@ beforeAll(async () => {
   await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: "Move the banner" });
   const reassign = await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-2/proposals", { kind: "reassign", team: "MOB" });
   expect((await install.confirm(sessionOf(bob), "proposals.confirm", { proposal: reassign.body.proposal.id })).status).toBe(200);
+  // FE-3, reassigned to MOB, which makes it MOB-2, and then undone, which makes it FE-3 again.
+  await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: "Fix the footer" });
+  const moved = await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-3/proposals", { kind: "reassign", team: "MOB" });
+  expect((await install.confirm(sessionOf(bob), "proposals.confirm", { proposal: moved.body.proposal.id })).status).toBe(200);
+  expect((await install.confirm(sessionOf(bob), "proposals.undo", { proposal: moved.body.proposal.id })).status).toBe(200);
   await openRequest(install, tokenOf(alice), { targetTeam: "OPS", title: "Rotate the logs" });
   const admin = sessionOf(pia);
   const renamed = await install.web(admin).write("teams.change_key", { teamId: teams["OPS"], key: "SRE" }, install.fromThePage(admin));
@@ -144,8 +149,6 @@ interface Row {
   /** The Accept header, or none. */
   accept?: string;
   check(answer: Answer): void | Promise<void>;
-  /** The task that makes the row pass; until then it is an expected failure. */
-  waitsFor?: "18.3" | "18.4" | "18.5";
 }
 
 /** An HTML page of FE-1, as the request page shows it. */
@@ -275,20 +278,22 @@ const ROWS: Row[] = [
     },
   },
   // A team's earlier key, and a key from before a reassignment, lead to the canonical URL in every representation.
-  { name: "a renamed team's old key leads a browser to the new key", path: "/OPS-1", as: "session:bob", accept: BROWSER, check: leadsTo("/SRE-1"), waitsFor: "18.5" },
-  { name: "a renamed team's old key leads markdown to the new key", path: "/OPS-1.md", as: "token:bob", check: leadsTo("/SRE-1.md"), waitsFor: "18.5" },
-  { name: "a renamed team's old key leads JSON to the new key", path: "/OPS-1.json", as: "token:bob", check: leadsTo("/SRE-1.json"), waitsFor: "18.5" },
-  { name: "a renamed team's old key leads a negotiated call to the new key", path: "/OPS-1", as: "token:bob", accept: "application/json", check: leadsTo("/SRE-1"), waitsFor: "18.5" },
-  { name: "a reassigned request's old key leads a browser to its new key", path: "/FE-2", as: "session:bob", accept: BROWSER, check: leadsTo("/MOB-1"), waitsFor: "18.5" },
-  { name: "a reassigned request's old key leads markdown to its new key", path: "/FE-2.md", as: "token:bob", check: leadsTo("/MOB-1.md"), waitsFor: "18.5" },
-  { name: "a reassigned request's old key leads JSON to its new key", path: "/FE-2.json", as: "token:bob", check: leadsTo("/MOB-1.json"), waitsFor: "18.5" },
+  { name: "a renamed team's old key leads a browser to the new key", path: "/OPS-1", as: "session:bob", accept: BROWSER, check: leadsTo("/SRE-1") },
+  { name: "a renamed team's old key leads markdown to the new key", path: "/OPS-1.md", as: "token:bob", check: leadsTo("/SRE-1.md") },
+  { name: "a renamed team's old key leads JSON to the new key", path: "/OPS-1.json", as: "token:bob", check: leadsTo("/SRE-1.json") },
+  { name: "a renamed team's old key leads a negotiated call to the new key", path: "/OPS-1", as: "token:bob", accept: "application/json", check: leadsTo("/SRE-1") },
+  { name: "a reassigned request's old key leads a browser to its new key", path: "/FE-2", as: "session:bob", accept: BROWSER, check: leadsTo("/MOB-1") },
+  { name: "a reassigned request's old key leads markdown to its new key", path: "/FE-2.md", as: "token:bob", check: leadsTo("/MOB-1.md") },
+  { name: "a reassigned request's old key leads JSON to its new key", path: "/FE-2.json", as: "token:bob", check: leadsTo("/MOB-1.json") },
+  { name: "an undone reassignment's new key leads a browser back to the old key", path: "/MOB-2", as: "session:bob", accept: BROWSER, check: leadsTo("/FE-3") },
+  { name: "an undone reassignment's new key leads JSON back to the old key", path: "/MOB-2.json", as: "token:bob", check: leadsTo("/FE-3.json") },
+  { name: "the canonical key after an undone reassignment serves the request", path: "/FE-3.json", as: "token:bob", check: (answer) => expect(JSON.parse(answer.body)).toMatchObject({ key: "FE-3" }) },
   { name: "an old key leads nobody without credentials anywhere", path: "/FE-2.json", as: "none", check: isToldWhatToUse },
 ];
 
 describe("the negotiation matrix of /<KEY>", () => {
   for (const row of ROWS) {
-    const test = row.waitsFor === undefined ? it : it.fails;
-    test(row.name, async () => {
+    it(row.name, async () => {
       const path = row.path.replace("TOKEN", token["bob"] ?? "");
       const answer = await call(path, { ...credentials(row.as), ...(row.accept === undefined ? {} : { accept: row.accept }) });
       await row.check(answer);
@@ -308,7 +313,7 @@ function varied(answer: Answer): string[] {
   return (Array.isArray(vary) ? vary.join(",") : (vary ?? "")).split(",").map((name) => name.trim().toLowerCase());
 }
 
-const ANSWERS: { name: string; path: string; as: string; accept?: string; status: number; waitsFor?: "18.3" | "18.4" | "18.5" }[] = [
+const ANSWERS: { name: string; path: string; as: string; accept?: string; status: number }[] = [
   { name: "the HTML page", path: "/FE-1", as: "session:bob", accept: BROWSER, status: 200 },
   { name: "markdown by suffix", path: "/FE-1.md", as: "token:bob", status: 200 },
   { name: "markdown by Accept", path: "/FE-1", as: "token:bob", accept: "text/markdown", status: 200 },
@@ -317,13 +322,12 @@ const ANSWERS: { name: string; path: string; as: string; accept?: string; status
   { name: "a removed member's 403", path: "/FE-1.json", as: "token:dana", status: 403 },
   { name: "the redirect to sign-in", path: "/FE-1", as: "none", accept: BROWSER, status: 303 },
   { name: "the 401 without credentials", path: "/FE-1.md", as: "none", status: 401 },
-  { name: "the redirect from an old key", path: "/FE-2.json", as: "token:bob", status: 307, waitsFor: "18.5" },
+  { name: "the redirect from an old key", path: "/FE-2.json", as: "token:bob", status: 307 },
 ];
 
 describe("the headers of every answer of /<KEY>", () => {
   for (const row of ANSWERS) {
-    const test = row.waitsFor === undefined ? it : it.fails;
-    test(`${row.name} sends Vary: Accept, Authorization, Cache-Control: private, no-store and an ETag`, async () => {
+    it(`${row.name} sends Vary: Accept, Authorization, Cache-Control: private, no-store and an ETag`, async () => {
       const answer = await call(row.path, { ...credentials(row.as), ...(row.accept === undefined ? {} : { accept: row.accept }) });
       expect(answer.status).toBe(row.status);
       expect(varied(answer)).toEqual(expect.arrayContaining(["accept", "authorization"]));

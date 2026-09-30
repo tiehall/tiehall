@@ -38,6 +38,13 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 // negotiates HTML as a page with a link on, to any other as the RFC 9457
 // problem (public-api: One error model for Tiehall's own refusals;
 // github-layer-hardening: design.md, Decisions this change rests on: D50 (7)).
+// A key written with a team's earlier key, or one the request had before a
+// reassignment, leads with 307 to the request's canonical URL, in the same
+// representation: its current key, and the same suffix (requests:
+// Reassignment gives a new key and the old key redirects; requests: Request
+// keys that use a renamed team key keep resolving). Since an undo can lead a
+// key back again, the redirect is temporary. Since the canonical key is data
+// of the request, only a caller who may read it is led there.
 //
 // Every answer sends Vary: Accept, Authorization, Cache-Control: private,
 // no-store and an ETag: a JSON body's is strong, from its bytes; markdown's
@@ -141,6 +148,11 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
         );
       }
       const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson;
+      if (read.key !== path.key) {
+        // A key written with a team's earlier key, or from before a reassignment: the canonical URL, in the same representation.
+        const suffix = path.suffix === "markdown" ? ".md" : path.suffix === "json" ? ".json" : "";
+        return answer(redirect(307, new URL(`/${read.key}${suffix}`, options.url)));
+      }
       if (representation === "html") {
         const headers = new Headers({ ...URL_HEADERS, etag: requestEtag("html", caller, JSON.stringify(read)) });
         for (const cookie of renewal.getSetCookie()) headers.append("set-cookie", cookie);
