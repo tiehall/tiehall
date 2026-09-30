@@ -1,4 +1,4 @@
-import { getPacket, getRequest, listRequestProposals, whoami } from "@tiehall/catalog";
+import { getPacket, getRequest, listRequestProposals, readDirectory, whoami } from "@tiehall/catalog";
 import type { ProblemDetails } from "@tiehall/core";
 import type { PacketRevisionView } from "./packet-revisions.ts";
 import type { ProposalView } from "./proposals.ts";
@@ -10,8 +10,9 @@ import type { WebCommands, WebResult } from "./web-commands.ts";
 // people on the request; requests: What a proposal records and shows;
 // design.md, Technical decisions: T3): the request with its thread, as the
 // /api/v1 read returns it, its packet at its current revision, and its
-// proposals, newest first, and who reads it, with the reader's teams, which
-// decide the actions the page offers them, each read through execute() as the
+// proposals, newest first, who reads it, with the reader's teams, which
+// decide the actions the page offers them, and the install's teams, which a
+// reassignment picks from, each read through execute() as the
 // reader, in a read-only transaction. The page, a server component, reads them as the
 // signed-in member's web session; the proxy that lets a browser through to it
 // reads them too, as the same session, for the page's ETag, which so changes
@@ -32,6 +33,8 @@ export interface RequestPageData {
   packet: PacketRevisionView;
   proposals: ProposalView[];
   viewer: RequestPageViewer;
+  /** The install's teams, by key, in the directory's order. */
+  teams: { key: string }[];
 }
 
 /** Runs one of the page's reads as its reader; a refusal is thrown. */
@@ -44,12 +47,19 @@ export async function readRequestPage(read: PageRead, key: string, request?: Req
   // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
   const { "proposals": proposals } = await read<{ "proposals": ProposalView[] }>(listRequestProposals.id, { key: found.key });
   const { user, teams } = await read<RequestPageViewer>(whoami.id, {});
-  return { request: found, packet, proposals, viewer: { user: { id: user.id }, teams: teams.map(({ id, key }) => ({ id, key })) } };
+  const directory = await read<{ teams: { key: string }[] }>(readDirectory.id, {});
+  return {
+    request: found,
+    packet,
+    proposals,
+    viewer: { user: { id: user.id }, teams: teams.map(({ id, key }) => ({ id, key })) },
+    teams: directory.teams.map(({ key }) => ({ key })),
+  };
 }
 
-/** What the page's ETag is made from: the request, its packet, its proposals and its reader's teams, as its reader reads them. */
-export function requestPageFacts({ request, packet, proposals, viewer }: RequestPageData): string[] {
-  return [JSON.stringify(request), JSON.stringify(packet), JSON.stringify(proposals), JSON.stringify(viewer)];
+/** What the page's ETag is made from: the request, its packet, its proposals, its reader's teams and the install's, as its reader reads them. */
+export function requestPageFacts({ request, packet, proposals, viewer, teams }: RequestPageData): string[] {
+  return [JSON.stringify(request), JSON.stringify(packet), JSON.stringify(proposals), JSON.stringify(viewer), JSON.stringify(teams)];
 }
 
 /** A web session's refusal of one of the page's reads, carried out of readRequestPage(). */

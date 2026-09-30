@@ -15,9 +15,7 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // thread, claims it, posts a question, and declines it, which becomes a
 // proposal that the page lists with a link to its confirm page. The flow runs
 // in the installed Chrome against the web app as the image runs it
-// (web-app.ts), signed in with a real web session. It waits as an expected
-// failure until the commitment actions of task 18.11, since the form (18.7),
-// the page (18.8) and its direct actions (18.10) come first.
+// (web-app.ts), signed in with a real web session.
 
 const TITLE = "Add a dark mode to the settings page";
 const NEED = "Our users work at night; the settings page should follow the system's dark mode.";
@@ -71,7 +69,7 @@ async function textOf(locator: Locator): Promise<string> {
 }
 
 describe("the web UI's create-then-view flow", () => {
-  it.fails("opens a request to FE in the web form, shows its packet and thread, claims it, posts a question and declines it, which waits as a proposal with a link to its confirm page", { timeout: 120_000 }, async () => {
+  it("opens a request to FE in the web form, shows its packet and thread, claims it, posts a question and declines it, which waits as a proposal with a link to its confirm page", { timeout: 120_000 }, async () => {
     const page = await danasPage();
     await page.goto(`${web.url}/requests/new`);
     await page.getByLabel("To team").selectOption("FE");
@@ -100,6 +98,7 @@ describe("the web UI's create-then-view flow", () => {
     // A decline is a commitment: it waits as a proposal, which links to its confirm page, and the request stays claimed.
     await page.getByRole("button", { name: "Decline" }).click();
     const proposals = page.getByRole("region", { name: "Proposals" });
+    await proposals.getByText("A decline, pending").waitFor();
     expect(await textOf(proposals)).toContain("decline");
     const confirm = proposals.getByRole("link", { name: /confirm/i });
     expect(await confirm.getAttribute("href")).toMatch(/^\/confirm\/[0-9a-f-]{36}$/);

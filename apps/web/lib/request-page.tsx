@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { RequestPageData } from "@tiehall/commands/web";
+import { packetLinesOf, type RequestPageData } from "@tiehall/commands/web";
 import { ActionForm } from "./action-form.tsx";
 
 // The web UI's page of a request, as a server component renders it
@@ -24,7 +24,13 @@ import { ActionForm } from "./action-form.tsx";
 // the target team claims an open request and starts work on a claimed one; the
 // claimant releases the claim, and so may a member of the target team when
 // the claimant is no longer a member; either side posts a comment, a question,
-// which may be blocking, or an answer that names its question. Each is a form
+// which may be blocking, or an answer that names its question. Commitments
+// wait as proposals, which the page lists with a link to their confirm page
+// (requests: Commitments become proposals): a member of the target team
+// proposes to decline the request, to mark it done or to reassign it to
+// another team; the requester side proposes to withdraw it or changes its
+// packet, which waits as a proposal while the request is claimed; either
+// side proposes a due date, or its removal. Each is a form
 // that runs through the page's server action (action-form.tsx), which runs the
 // operation through execute() as the reader's web session, so what the page
 // offers is only a convenience: execute() decides, and a refusal shows as the
@@ -353,6 +359,107 @@ function ProposalsSection({ proposals }: { proposals: readonly Proposal[] }): Re
   );
 }
 
+/** The states from which a request can be marked done. */
+const DONE_FROM: ReadonlySet<string> = new Set(["claimed", "in_progress", "needs_info"]);
+
+/** The form that changes the packet's text fields, filled with the current revision's. */
+function PacketForm({ request, packet, csrf }: { request: Request; packet: Packet; csrf: string }): ReactNode {
+  const { untrusted } = packet.packet;
+  const lines = packetLinesOf(untrusted);
+  return (
+    <ActionForm requestKey={request.key} action="change_packet" csrf={csrf} button="Change the packet">
+      <input type="hidden" name="revision" value={String(packet.revision)} />
+      <p>
+        {request.claimant === null
+          ? "While nobody holds its claim, a change is the packet's next revision at once."
+          : "While it is claimed, a change of its need or acceptance criteria waits as a proposal that you, then the claimant, confirm."}
+      </p>
+      <p>
+        <label htmlFor="need">Need</label>
+      </p>
+      <p>
+        <textarea id="need" name="need" defaultValue={untrusted.need} required />
+      </p>
+      <p>
+        <label htmlFor="acceptanceCriteria">Acceptance criteria, one per line</label>
+      </p>
+      <p>
+        <textarea id="acceptanceCriteria" name="acceptanceCriteria" defaultValue={lines.acceptanceCriteria} />
+      </p>
+      <p>
+        <label htmlFor="codeRefs">Code refs, one per line: a repository, then a path and a ref if you like</label>
+      </p>
+      <p>
+        <textarea id="codeRefs" name="codeRefs" defaultValue={lines.codeRefs} />
+      </p>
+      <p>
+        <label htmlFor="links">Links, one per line: a URL, then a title if you like</label>
+      </p>
+      <p>
+        <textarea id="links" name="links" defaultValue={lines.links} />
+      </p>
+    </ActionForm>
+  );
+}
+
+/** The commitments the reader may propose on the request as it is now, each a form whose proposal waits for its confirmations. */
+function CommitmentsSection({ data, parts, csrf }: { data: RequestPageData; parts: Parts; csrf: string }): ReactNode {
+  const { request, packet, teams } = data;
+  const { key, state } = request;
+  const forms: ReactNode[] = [];
+  if (!TERMINAL.has(state)) {
+    if (parts.targetTeam) {
+      forms.push(<ActionForm key="decline" requestKey={key} action="decline" csrf={csrf} button="Decline" />);
+      if (DONE_FROM.has(state)) forms.push(<ActionForm key="done" requestKey={key} action="done" csrf={csrf} button="Mark done" />);
+      const others = teams.filter((team) => team.key !== request.targetTeam.key);
+      if (others.length > 0) {
+        forms.push(
+          <ActionForm key="reassign" requestKey={key} action="reassign" csrf={csrf} button="Reassign">
+            <p>
+              <label htmlFor="team">Team to reassign it to</label>{" "}
+              <select id="team" name="team">
+                {others.map((team) => (
+                  <option key={team.key} value={team.key}>
+                    {team.key}
+                  </option>
+                ))}
+              </select>
+            </p>
+          </ActionForm>,
+        );
+      }
+    }
+    if (parts.requesterSide) forms.push(<ActionForm key="withdraw" requestKey={key} action="withdraw" csrf={csrf} button="Withdraw" />);
+    if (parts.targetTeam || parts.requesterSide) {
+      forms.push(
+        <ActionForm key="due_date" requestKey={key} action="due_date" csrf={csrf} button="Propose the due date">
+          <input type="hidden" name="revision" value={String(packet.revision)} />
+          <p>
+            <label htmlFor="dueDate">Due date</label> <input type="date" id="dueDate" name="dueDate" required />
+          </p>
+        </ActionForm>,
+      );
+      if (packet.packet.due_date !== undefined) {
+        forms.push(
+          <ActionForm key="remove_due_date" requestKey={key} action="remove_due_date" csrf={csrf} button="Propose removing the due date">
+            <input type="hidden" name="revision" value={String(packet.revision)} />
+          </ActionForm>,
+        );
+      }
+    }
+    if (parts.requesterSide) forms.push(<PacketForm key="change_packet" request={request} packet={packet} csrf={csrf} />);
+  }
+  return (
+    <Section id="commitments" title="Commitments">
+      <p>
+        A commitment waits as a proposal until the people it needs confirm it on its confirm page. A due date, and a change of the need or the
+        acceptance criteria while the request is claimed, need a confirmation from each side.
+      </p>
+      {forms.length === 0 ? <p>There is no commitment for you to propose on it now.</p> : forms}
+    </Section>
+  );
+}
+
 /** The page of a request, whose forms carry the reader's CSRF token. */
 export function RequestPage({ data, csrf }: { data: RequestPageData; csrf: string }): ReactNode {
   const { request, packet, proposals } = data;
@@ -363,6 +470,7 @@ export function RequestPage({ data, csrf }: { data: RequestPageData; csrf: strin
       {request.needsHuman ? <WaitsForAPerson request={request} /> : null}
       <Summary request={request} />
       <ActionsSection request={request} parts={parts} csrf={csrf} />
+      <CommitmentsSection data={data} parts={parts} csrf={csrf} />
       <PacketSection packet={packet} />
       <ThreadSection messages={request.messages} />
       <PostSection request={request} parts={parts} csrf={csrf} />

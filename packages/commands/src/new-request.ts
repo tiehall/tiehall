@@ -51,8 +51,23 @@ function lines(text: string): string[] {
     .filter((line) => line !== "");
 }
 
-/** The input of requests.create that the form's fields make. */
-function inputOf(form: URLSearchParams): Record<string, unknown> {
+/** A packet's text fields as a form of the web UI writes them: the need, and the acceptance criteria, code refs and links, one per line. */
+export interface PacketText {
+  need: string;
+  acceptance_criteria?: string[];
+  code_refs?: { repository: string; path?: string; ref?: string }[];
+  links?: { url: string; title?: string }[];
+}
+
+/**
+ * The packet's text fields a form's fields make, as the web form that opens a
+ * request and the packet change on a request's page write them: the need,
+ * and, when the form gives them, the acceptance criteria, one per line; code
+ * refs, one per line, a repository and then a path and a ref if the person
+ * likes; and links, one per line, a URL and then a title. A code ref of more
+ * than three parts is refused with 400.
+ */
+export function packetTextOf(form: URLSearchParams): PacketText {
   const text = (name: string) => form.get(name) ?? "";
   const issues: RefusalIssue[] = [];
   const codeRefs = lines(text("codeRefs")).map((line, index) => {
@@ -66,6 +81,31 @@ function inputOf(form: URLSearchParams): Record<string, unknown> {
     return { url, ...(title.length === 0 ? {} : { title: title.join(" ") }) };
   });
   const criteria = lines(text("acceptanceCriteria"));
+  return {
+    need: text("need"),
+    ...(criteria.length === 0 ? {} : { acceptance_criteria: criteria }),
+    ...(codeRefs.length === 0 ? {} : { code_refs: codeRefs }),
+    ...(links.length === 0 ? {} : { links }),
+  };
+}
+
+/** A packet's code refs and links as the lines of the web UI's forms: each on its own line, its parts separated by a space. */
+export function packetLinesOf(untrusted: {
+  acceptance_criteria?: readonly string[] | undefined;
+  code_refs?: readonly { repository: string; path?: string | undefined; ref?: string | undefined }[] | undefined;
+  links?: readonly { url: string; title?: string | undefined }[] | undefined;
+}): { acceptanceCriteria: string; codeRefs: string; links: string } {
+  return {
+    acceptanceCriteria: (untrusted.acceptance_criteria ?? []).join("\n"),
+    codeRefs: (untrusted.code_refs ?? []).map(({ repository, path, ref }) => [repository, path, ref].filter((part) => part !== undefined).join(" ")).join("\n"),
+    links: (untrusted.links ?? []).map(({ url, title }) => (title === undefined ? url : `${url} ${title}`)).join("\n"),
+  };
+}
+
+/** The input of requests.create that the form's fields make. */
+function inputOf(form: URLSearchParams): Record<string, unknown> {
+  const text = (name: string) => form.get(name) ?? "";
+  const untrusted = packetTextOf(form);
   const dueDate = text("dueDate").trim();
   const requestingTeam = text("requestingTeam");
   return {
@@ -76,12 +116,7 @@ function inputOf(form: URLSearchParams): Record<string, unknown> {
       schema_version: "1-beta",
       kind: "request",
       ...(dueDate === "" ? {} : { due_date: dueDate }),
-      untrusted: {
-        need: text("need"),
-        ...(criteria.length === 0 ? {} : { acceptance_criteria: criteria }),
-        ...(codeRefs.length === 0 ? {} : { code_refs: codeRefs }),
-        ...(links.length === 0 ? {} : { links }),
-      },
+      untrusted,
     },
   };
 }

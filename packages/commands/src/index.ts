@@ -365,7 +365,7 @@ export {
   type RequestUrlPath,
 } from "./negotiation.ts";
 export { createRequestUrlRoute, requestEtag, type RequestUrlAnswer, type RequestUrlOptions, type RequestUrlRoute } from "./request-urls.ts";
-export { createNewRequestRoute, NEW_REQUEST_PATH } from "./new-request.ts";
+export { createNewRequestRoute, NEW_REQUEST_PATH, packetLinesOf, packetTextOf, type PacketText } from "./new-request.ts";
 export { createRequestListsRoute, REQUEST_LIST_PAGE_SIZE, REQUEST_LISTS_PATH } from "./request-lists.ts";
 export {
   readRequestPage,
@@ -382,6 +382,7 @@ export {
   runRequestPageAction,
   type RequestPageAction,
   type RequestPageActionState,
+  type RequestPageCalls,
   type RequestPageWrite,
 } from "./request-page-actions.ts";
 export {
