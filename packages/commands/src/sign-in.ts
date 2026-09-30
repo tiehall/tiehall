@@ -27,7 +27,7 @@ import {
   type Database,
 } from "@tiehall/db";
 import type { SigningKeys } from "./agent-tokens.ts";
-import { authorizationServerPlugins } from "./authorization-server.ts";
+import { authorizationServerPlugins, type AgentClientOptions } from "./authorization-server.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -224,6 +224,8 @@ export interface SignInServiceOptions {
   github?: { webUrl?: string; apiUrl?: string; fetch?: typeof fetch; timeoutMs?: number };
   /** Where the sign-in that completes setup sends the jobs of the deliveries held during setup; without it, a job that runs every minute releases them. */
   jobs?: JobSender;
+  /** How the service's authorization server takes agent clients, such as whether it fetches their metadata documents. */
+  agentClients?: AgentClientOptions;
   logger?: Logger;
 }
 
@@ -554,7 +556,10 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
       // The usual instance is also the install's authorization server for agent clients (authorization-server.ts);
       // the one that completes setup signs the first admin in and nothing more.
-      plugins: [githubEndpoints(), ...(setup ? [] : authorizationServerPlugins({ url: options.url, orgId: input.orgId }))],
+      plugins: [
+        githubEndpoints(),
+        ...(setup ? [] : authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) })),
+      ],
       hooks: { before: routeGuard },
     };
   }
@@ -742,7 +747,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         const answer = await auth.handler(request);
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
         if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
-        if (answer.status === 429) return answerRefused(refusalOfRateLimit(answer));
+        if (answer.status === 429) return answerRefused(await refusalOfLimit(answer));
         if (refusalOf(answer)) return answerRefused(new Refusal("sign-in-refused", SIGN_IN_REFUSED), answer.headers);
         return answer;
       } catch (error) {
@@ -918,6 +923,27 @@ const routeGuard = createAuthMiddleware(async (context) => {
   if (servedOverHttp(context.request.method, context.path, (context.params ?? {}) as Record<string, unknown>)) return;
   throw new APIError("NOT_FOUND", { code: "route_not_found", message: "The install serves no such sign-in route." });
 });
+
+/**
+ * The error model's 429 for a call the service refused for a limit: the
+ * fetches of Client ID Metadata Documents from the host a client's id names,
+ * 60 a minute, whose count clears within the minute, or the service's own rate
+ * limit, with the seconds to wait that its answer names.
+ */
+async function refusalOfLimit(answer: Response): Promise<Refusal> {
+  const body = (await answer
+    .clone()
+    .json()
+    .catch(() => undefined)) as { error?: unknown } | undefined;
+  if (body?.error === "temporarily_unavailable") {
+    return new Refusal(
+      "rate-limited",
+      "Tiehall fetched as many client metadata documents from this client's host as it does in a minute. Try again in a minute.",
+      { retryAfterSeconds: 60 },
+    );
+  }
+  return refusalOfRateLimit(answer);
+}
 
 /**
  * The error model's 429 for a call the sign-in service's rate limit refused,

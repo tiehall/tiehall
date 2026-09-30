@@ -1,7 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
-import { createAgentTokenCheck, createRestHandler, resourceMetadataUrlOf, type AgentTokenCheck, type RestHandler } from "../../src/index.ts";
+import {
+  createAgentTokenCheck,
+  createRestHandler,
+  resourceMetadataUrlOf,
+  type AgentClientOptions,
+  type AgentTokenCheck,
+  type RestHandler,
+} from "../../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./install.ts";
 import { addUser } from "./members.ts";
 import { startSignIn, type SignInHarness } from "./sign-in.ts";
@@ -67,8 +74,12 @@ export interface AgentAccessHarness {
   registerClient(metadata?: Record<string, unknown>): Promise<AgentClient>;
   /** Stores the grant a confirmed approval of this client by this user stores, for these scopes. */
   approve(userId: string, clientId: string, scopes: readonly string[]): Promise<void>;
-  /** Sends the person's browser to the authorization endpoint with these parameters over a complete request. */
-  authorize(cookie: string, client: AgentClient, pkce: Pkce, parameters?: Record<string, string | undefined>): Promise<Response>;
+  /**
+   * Sends the person's browser to the authorization endpoint with these
+   * parameters over a complete request, and these headers besides its cookie,
+   * such as the client address the web role's request guard names.
+   */
+  authorize(cookie: string, client: AgentClient, pkce: Pkce, parameters?: Record<string, string | undefined>, headers?: Record<string, string>): Promise<Response>;
   /** Exchanges an authorization code for tokens. */
   exchange(client: AgentClient, code: string, pkce: Pkce): Promise<TokenAnswer>;
   /** Exchanges a refresh token for new tokens. */
@@ -104,11 +115,16 @@ function registration(metadata: Record<string, unknown>): Record<string, unknown
   };
 }
 
-export async function startAgentAccess(): Promise<AgentAccessHarness> {
+/** How the install takes agent clients, such as the fetcher of their metadata documents, which a test routes to a local server. */
+export interface AgentAccessOptions {
+  clientMetadata?: AgentClientOptions;
+}
+
+export async function startAgentAccess(options: AgentAccessOptions = {}): Promise<AgentAccessHarness> {
   const install = await startTestInstall();
   const stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
-  const signIn = await startSignIn(install, stub);
+  const signIn = await startSignIn(install, stub, options.clientMetadata === undefined ? {} : { agentClients: options.clientMetadata });
   let offset = 0;
   const clock: TestClock = {
     now: () => new Date(Date.now() + offset),
@@ -180,7 +196,7 @@ export async function startAgentAccess(): Promise<AgentAccessHarness> {
         [clientId, userId, [...scopes, "offline_access"], [MCP_RESOURCE]],
       );
     },
-    authorize(cookie, client, pkce, parameters = {}) {
+    authorize(cookie, client, pkce, parameters = {}, headers = {}) {
       const query = new URLSearchParams();
       const all: Record<string, string | undefined> = {
         response_type: "code",
@@ -194,7 +210,7 @@ export async function startAgentAccess(): Promise<AgentAccessHarness> {
         ...parameters,
       };
       for (const [name, value] of Object.entries(all)) if (value !== undefined) query.set(name, value);
-      return handle(new Request(`${URL_OF_INSTALL}/api/auth/oauth2/authorize?${query}`, { headers: { cookie, accept: "text/html" } }));
+      return handle(new Request(`${URL_OF_INSTALL}/api/auth/oauth2/authorize?${query}`, { headers: { ...headers, cookie, accept: "text/html" } }));
     },
     exchange: (client, code, pkce) =>
       token({

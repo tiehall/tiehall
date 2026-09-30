@@ -4,12 +4,14 @@ export { createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOption
 export {
   ACCESS_TOKEN_LIFETIME_SECONDS,
   AUTHORIZATION_SIGN_IN_PATH,
+  METADATA_FETCHES_PER_HOST_PER_MINUTE,
   authorizationServerPlugins,
   CONSENT_PATH,
   MCP_PATH,
   mcpResourceOf,
   REFRESH_SCOPE,
   resourceMetadataUrlOf,
+  type AgentClientOptions,
   type AuthorizationServerOptions,
 } from "./authorization-server.ts";
 export {

@@ -5,6 +5,7 @@ import {
   createSignInService,
   readInstallations,
   storeGitHubApp,
+  type AgentClientOptions,
   type InstallGitHub,
   type SecretBox,
   type SignInService,
@@ -89,7 +90,15 @@ export interface SignInHarness {
 export async function startSignIn(
   install: TestInstall,
   stub: GitHubStub,
-  options: { owner?: string; fetch?: typeof fetch; sameAppAs?: SignInHarness; hook?: { url: string }; timeoutMs?: number } = {},
+  options: {
+    owner?: string;
+    fetch?: typeof fetch;
+    sameAppAs?: SignInHarness;
+    hook?: { url: string };
+    timeoutMs?: number;
+    /** How the service's authorization server takes agent clients. */
+    agentClients?: AgentClientOptions;
+  } = {},
 ): Promise<SignInHarness> {
   // Another sign-in service for the App a harness stored, such as one whose fetch fails some calls, or a new App.
   const app =
@@ -124,6 +133,7 @@ export async function startSignIn(
     // The stub serves on local ports, which the service reaches with the plain fetch; at an install it reaches GitHub only.
     github: { webUrl: stub.webUrl, apiUrl: stub.apiUrl, fetch: options.fetch ?? fetch, ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) },
     logger: process.env["DEBUG_SIGN_IN"] === undefined ? install.logger : createLogger(),
+    ...(options.agentClients === undefined ? {} : { agentClients: options.agentClients }),
   });
 
   async function signIn(login: string, { jar = new CookieJar(), headers = {} }: { jar?: CookieJar; headers?: Record<string, string> } = {}): Promise<SignInAttempt> {

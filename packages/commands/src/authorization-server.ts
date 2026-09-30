@@ -1,8 +1,10 @@
+import { cimd } from "@better-auth/cimd";
 import { mcp } from "@better-auth/mcp";
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { SCOPES } from "@tiehall/catalog";
+import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
 // The install's OAuth 2.1 authorization server for agent clients
 // (agent-access: Tiehall is the authorization server for agent clients;
@@ -23,6 +25,17 @@ import { SCOPES } from "@tiehall/catalog";
 //   it is refused, and every refresh token of that client for that user with
 //   it. Dynamic Client Registration is on, for clients that register without
 //   credentials.
+// - `cimd()` identifies a client whose client_id is an https URL by the Client
+//   ID Metadata Document at that URL, which is preferred to registration
+//   (agent-access: Clients identified by a Client ID Metadata Document are
+//   preferred). The document is fetched only through the install's outbound
+//   fetcher (outbound.ts), which resolves the host itself, refuses an internal
+//   address without connecting to it, and here follows no redirect; the
+//   client counts as identified only when the document's client_id equals the
+//   URL exactly. At most 60 documents a minute are fetched from one host, and
+//   an authorization request that cannot be checked because its host's limit
+//   is used up gets 429 with Retry-After; no other limit on the fetches
+//   applies.
 // - Tiehall offers exactly three scopes, requests:read, requests:write and
 //   contracts:report, and no admin scope (agent-access: OAuth scopes are
 //   coarse): a scope an authorization request asks for that is not one of
@@ -86,15 +99,27 @@ const MODEL_NAMES = {
   oauthClientAssertion: "oauthClientAssertions",
 } as const;
 
+/** How many Client ID Metadata Documents the install fetches from one host in a minute, at most. */
+export const METADATA_FETCHES_PER_HOST_PER_MINUTE = 60;
+
+/** How the authorization server takes agent clients. */
+export interface AgentClientOptions {
+  /** Whether Client ID Metadata Documents are fetched (TIEHALL_CLIENT_METADATA_FETCH); on unless off. */
+  metadataDocuments?: boolean;
+  /** The fetcher of metadata documents: the install's outbound fetcher, following no redirect, unless a test gives one. */
+  fetchDocument?: OutboundFetcher;
+}
+
 export interface AuthorizationServerOptions {
   /** The install's URL (TIEHALL_URL), as its origin: the issuer. */
   url: string;
   /** The install's org, whose id every row the plugins store carries. */
   orgId: string;
+  clients?: AgentClientOptions;
 }
 
 /** The sign-in service's plugins that make it the install's authorization server for agent clients. */
-export function authorizationServerPlugins({ url, orgId }: AuthorizationServerOptions): BetterAuthPlugin[] {
+export function authorizationServerPlugins({ url, orgId, clients = {} }: AuthorizationServerOptions): BetterAuthPlugin[] {
   const signingKeys = jwt({
     jwt: { issuer: url },
     disableSettingJwtHeader: true,
@@ -127,7 +152,32 @@ export function authorizationServerPlugins({ url, orgId }: AuthorizationServerOp
     },
   });
   // The plugin's endpoint types are stricter than the plugin interface under exactOptionalPropertyTypes; it is one.
-  return [withOrgId(signingKeys, orgId), withOrgId(server as unknown as BetterAuthPlugin, orgId), offeredScopes()];
+  const plugins = [withOrgId(signingKeys, orgId), withOrgId(server as unknown as BetterAuthPlugin, orgId), offeredScopes()];
+  if (clients.metadataDocuments !== false) plugins.push(metadataDocuments(clients.fetchDocument ?? createOutboundFetcher({ maxRedirects: 0 })));
+  return plugins;
+}
+
+/** The plugin that identifies clients by their Client ID Metadata Documents, fetched with this fetcher. */
+function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
+  return cimd({
+    metadataProfile: "mcp-2026-07-28",
+    // The document's own answer, as the outbound fetcher gives it; a refused fetch fails the resolution of the client.
+    fetchClientMetadataResource: async (input) => {
+      const document = await fetchDocument(input instanceof Request ? input.url : input.toString());
+      return new Response(document.body, {
+        status: document.status,
+        headers: document.contentType === undefined ? {} : { "content-type": document.contentType },
+      });
+    },
+    // The one limit agent-access names: 60 fetches a minute from one host. The plugin's other limits are set out of reach.
+    metadataFetchPolicy: {
+      maximumFetchesPerOriginPerMinute: METADATA_FETCHES_PER_HOST_PER_MINUTE,
+      maximumConcurrentFetchesPerOrigin: METADATA_FETCHES_PER_HOST_PER_MINUTE,
+      maximumFetchesPerMinute: 1_000_000,
+      maximumConcurrentFetches: 1_000_000,
+      minimumFetchInterval: 0,
+    },
+  }) as unknown as BetterAuthPlugin;
 }
 
 /**
