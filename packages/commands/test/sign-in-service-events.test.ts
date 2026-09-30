@@ -50,8 +50,11 @@ describe("a write the sign-in service owns", () => {
     const { response, jar } = await harness.signIn("alice", { headers: { "x-forwarded-for": "198.51.100.23", "user-agent": "Mozilla/5.0 (alice)" } });
     expect(response.status).toBe(302);
     const session = await harness.sessionOf(jar);
+    // The event's transaction wrote after the session's: its transaction id is the same or newer. The two rows' times
+    // cannot tell, since the sign-in service sets the session's in the app's clock and the database the event's in its
+    // own, and the two clocks may differ by a few milliseconds.
     const { rows } = await install.owner.query(
-      `SELECT e.type, e.class, e.data, e.actor_user_id, e.occurred_at >= s.created_at AS after_the_session, host(o.ip_address) AS ip, o.user_agent
+      `SELECT e.type, e.class, e.data, e.actor_user_id, age(e.xmin) <= age(s.xmin) AS after_the_session, host(o.ip_address) AS ip, o.user_agent
          FROM events e
          JOIN web_sessions s ON s.id = $2
          LEFT JOIN security_event_origins o ON o.org_id = e.org_id AND o.event_number = e.number
