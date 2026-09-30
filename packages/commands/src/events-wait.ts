@@ -28,8 +28,9 @@ import { updatesAfter, updatesPageOf } from "./updates.ts";
 // woken, on its own every few seconds, and when the hold ends. Security events
 // send no wake-up and are never updates, and an update outside the user's
 // scope wakes the wait only to find nothing, so it holds on. While the app
-// shuts down, a wait ends at once with 503 and Retry-After: 0, as does a wait
-// that starts then, and the client calls again once the app is back.
+// shuts down, a wait ends at once with 503 and Retry-After: 0, whether the
+// shutdown comes while it holds or while it reads, as does a wait that starts
+// then, and the client calls again once the app is back.
 
 /** How long a wait holds when no update comes: 60 seconds. */
 export const WAIT_HOLD_MS = 60_000;
@@ -52,8 +53,9 @@ function userOf(caller: Caller): string {
   return caller.userId;
 }
 
-/** Holds until the wake-up, the time or the shutdown, whichever comes first; says which. */
+/** Holds until the wake-up, the time or the shutdown, whichever comes first; says which. A shutdown that began before it holds ends it at once. */
 function held(woken: Promise<void> | undefined, ms: number, shutdown: AbortSignal): Promise<"woken" | "time" | "shutdown"> {
+  if (shutdown.aborted) return Promise.resolve("shutdown");
   return new Promise((resolve) => {
     const done = (outcome: "woken" | "time" | "shutdown") => {
       clearTimeout(timer);
@@ -91,6 +93,8 @@ async function waitStep({ cursor: given }: { cursor?: number | undefined }, cont
           cursor: found.at(-1)?.number ?? cursor,
         };
       }
+      // A shutdown that began while the wait read, between its holds, ends it as one that comes while it holds does.
+      if (shutdown.aborted) throw shuttingDown();
       const remaining = deadline - Date.now();
       if (remaining <= 0) return { events: [], cursor };
       if ((await held(wake?.woken, Math.min(remaining, RECHECK_MS), shutdown)) === "shutdown") throw shuttingDown();

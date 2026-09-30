@@ -1,5 +1,8 @@
+import { waitForEvents } from "@tiehall/catalog";
+import { Refusal } from "@tiehall/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID, WAIT_HOLD_MS, type Caller } from "../src/index.ts";
+import { WAIT_HANDLERS } from "../src/events-wait.ts";
+import { CLI_CLIENT_ID, WAIT_HOLD_MS, type Caller, type PrepareContext } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -181,6 +184,44 @@ describe("a removed member's wait", () => {
     const answer = await wait(lee, 0);
     expect(answer.at - started).toBeLessThan(HOLD_MS / 2);
     expect(answer).toMatchObject({ status: 403, body: { type: "https://tiehall.com/problems/removed-member" } });
+  });
+});
+
+// requester-loop: The long-poll wait endpoint, "The app shuts down during a wait". A shutdown can begin while the
+// wait reads, between its holds, so it is seen however it comes: the wait's own step runs here with a read that
+// the shutdown interrupts, and no install.
+describe("a shutdown that begins while a wait reads", () => {
+  /** Runs the wait's step with a read during which the shutdown begins, and which finds nothing; resolves with its outcome and how long it took. */
+  async function waitShutDownWhileReading(): Promise<{ outcome: unknown; took: number }> {
+    const step = WAIT_HANDLERS[waitForEvents.id]?.prepare;
+    if (step === undefined) throw new Error("The wait has no step that holds.");
+    const shutdown = new AbortController();
+    const context = {
+      caller: oauthTokenOf("5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", CLI_CLIENT_ID, "cli"),
+      member: undefined,
+      github: undefined,
+      secrets: undefined,
+      sealed: {},
+      read: async <T>() => {
+        shutdown.abort();
+        return [] as T;
+      },
+      url: URL_OF_INSTALL,
+      waits: { holdMs: HOLD_MS, shutdown: shutdown.signal },
+    } satisfies PrepareContext;
+    const started = Date.now();
+    const outcome = await step({ cursor: 0 }, context).then(
+      (answer) => answer,
+      (error: unknown) => error,
+    );
+    return { outcome, took: Date.now() - started };
+  }
+
+  it("ends the wait with the shutting-down refusal at once, not with an empty answer after the hold", async () => {
+    const { outcome, took } = await waitShutDownWhileReading();
+    expect(outcome).toBeInstanceOf(Refusal);
+    expect(outcome).toMatchObject({ reason: "shutting-down", status: 503, retryAfterSeconds: 0 });
+    expect(took).toBeLessThan(HOLD_MS / 3);
   });
 });
 
