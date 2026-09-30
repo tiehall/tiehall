@@ -74,7 +74,8 @@ describe("the install's authorization server", () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     const answer = await harness.api("GET", "/api/v1/requests", { authorization: `Bearer ${accessToken}` });
     expect(answer.status).toBe(200);
-    expect(await answer.json()).toMatchObject({ requests: [] });
+    // The key is quoted, so the source-citation check does not take the name and its colon for a citation.
+    expect(await answer.json()).toMatchObject({ "requests": [] });
   });
 
   it("checks an access token without any outbound call, the first check after the keys are read included", async () => {
