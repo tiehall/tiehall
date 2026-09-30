@@ -18,8 +18,9 @@ import { startSignIn, type CookieJar, type SignInHarness } from "./support/sign-
 // and the sign-in that accepts it clears the block; its security events name
 // the clearing. The person rejoins with the invite's role, in no team, and
 // with nothing from before: the web sessions the removal ended stay ended.
-// Agent grants and personal access tokens come with group 15, whose task
-// 15.19 checks that a rejoined person's old ones stay refused.
+// member-removal-tokens.test.ts checks that the person's agent grants and
+// personal access tokens from before stay refused once an invite admits them
+// again.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -119,11 +120,6 @@ describe("a removed organization member", () => {
     expect(await membershipOf(lee.userId)).toEqual({ role: "member", teams: [] });
     await expect(harness.sessionOf(leeBrowser)).rejects.toMatchObject({ status: 403, type: "https://tiehall.com/problems/removed-member" });
   });
-
-  // Agent grants come with group 15 (15.2 to 15.11), and task 15.19 revokes them with a removal.
-  it.todo("rejoins with no agent grant from before: an OAuth token issued before the removal gets 401");
-  // Personal access tokens come with task 15.14, and task 15.19 revokes them with a removal.
-  it.todo("rejoins with no personal access token from before: a token created before the removal gets 401");
 
   it("signs in later with no block to clear, and the sign-in names none", async () => {
     const from = await lastEvent();
