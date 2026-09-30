@@ -1,5 +1,7 @@
 import { checkProvenance, eventData, EventShapeError, type EventData, type EventType, type Provenance } from "@tiehall/core";
 import { events } from "@tiehall/db";
+import { sql } from "drizzle-orm";
+import { EVENTS_CHANNEL } from "./event-wakeups.ts";
 import { takeEventNumber } from "./event-sequence.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -8,6 +10,10 @@ import type { OrgContext } from "./with-org.ts";
 // domain events and security events). The event takes the org's next number,
 // holds only the fields its type declares, and records who caused it as the
 // server stamped it. It commits or rolls back with the change it records.
+// A domain event also sends a notification, which Postgres delivers when the
+// transaction commits and drops when it rolls back, and whose payload is the
+// event's number alone: it wakes the long-poll waits, which then read what
+// came (event-wakeups.ts). A security event sends none, so it wakes no wait.
 
 export interface AppendedEvent {
   /** The event's number in the install's sequence. */
@@ -41,5 +47,6 @@ export async function appendEvent<T extends EventType>(
           teamId: provenance.teamId ?? null,
         }),
   });
+  if (type.class === "domain") await context.tx.execute(sql`SELECT pg_notify(${EVENTS_CHANNEL}, ${String(number)})`);
   return { number };
 }

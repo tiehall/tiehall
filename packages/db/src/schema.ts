@@ -95,6 +95,9 @@ export const events = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.number] }),
+    // The requests a user is accountable for anything on, which the pull readers and the long-poll waits read on
+    // every call and every wake-up (requester-loop: What whats_new covers).
+    index("events_actor_user_id").on(table.orgId, table.actorUserId),
     check("events_number_positive", sql`${table.number} > 0`),
     check("events_class_known", sql`${table.class} IN ('domain', 'security')`),
     check("events_data_is_object", sql`jsonb_typeof(${table.data}) = 'object'`),

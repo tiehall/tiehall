@@ -114,6 +114,7 @@ export {
   type Handlers,
   type Prepare,
   type PrepareContext,
+  type WaitSettings,
 } from "./execute.ts";
 export {
   buildAppManifest,
@@ -297,6 +298,9 @@ export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts"
 export { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
 export { takeEventNumber } from "./event-sequence.ts";
 export { readerOf } from "./event-reads.ts";
+export { createEventWakeups, EVENTS_CHANNEL, type EventWakeups, type WakeUp } from "./event-wakeups.ts";
+export { WAIT_HOLD_MS } from "./events-wait.ts";
+export { shutdownSignal, startShutdown } from "./shutdown.ts";
 export { readUpdatesFor, UPDATES_PAGE_SIZE, updatesAfter, updatesPageOf, type UpdateScope, type UpdatesPage, type UpdateView } from "./updates.ts";
 export { takeRequestNumber } from "./request-numbers.ts";
 export { noSuchRequest, resolveRequestKey, teamOfKey, type ResolvedRequestKey } from "./request-keys.ts";

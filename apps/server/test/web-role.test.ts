@@ -201,6 +201,29 @@ describe("the web role on SIGTERM", () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
+  // requester-loop: The long-poll wait endpoint, "The app shuts down during a wait". The role's stop signals the
+  // process's shutdown, which the app's waits listen to: a wait in flight ends at once with 503 and Retry-After: 0,
+  // long before the drain timeout, so the role stops as soon as its other calls finish.
+  it("ends a wait in flight at once with 503 and Retry-After: 0, and exits 0 well before its drain timeout", async () => {
+    const web = await startWebRole();
+    const waiting = fetch(`http://127.0.0.1:${web.port}/api/v1/events/wait?cursor=0`).then(async (response) => ({
+      status: response.status,
+      retryAfter: response.headers.get("retry-after"),
+      body: (await response.json()) as unknown,
+    }));
+    await until("the wait to start", () => web.output().includes("fixture: wait started"));
+    const stopped = Date.now();
+    web.child.kill("SIGTERM");
+    expect(await waiting).toEqual({
+      status: 503,
+      retryAfter: "0",
+      body: expect.objectContaining({ type: "https://tiehall.com/problems/shutting-down", status: 503 }),
+    });
+    expect(await web.exited).toBe(0);
+    expect(Date.now() - stopped).toBeLessThan(5_000);
+    expect(logEntries(web.output()).map(({ msg }) => msg)).toContain("web: stopped");
+  });
+
   it("stops waiting for calls in flight after its drain timeout, and says how many it cut off", async () => {
     const web = await startWebRole({ SLOW_MS: "60000", DRAIN_TIMEOUT_MS: "300" });
     const slow = fetch(`http://127.0.0.1:${web.port}/slow`).catch(() => "cut off");

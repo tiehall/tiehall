@@ -24,7 +24,8 @@ let dana: string;
 const SECURITY_TYPES = EVENT_TYPES.filter(({ class: cls }) => cls === "security").map(({ type }) => type);
 
 beforeAll(async () => {
-  install = await startTestInstall();
+  // A wait with nothing in its reader's scope holds a second here, instead of 60.
+  install = await startTestInstall({ wait: { holdMs: 1_000 } });
   const be = await addTeam(install.owner, "BE");
   const fe = await addTeam(install.owner, "FE");
   pia = sessionOf(await addUser(install.owner, { role: "admin", login: "pia" }));
@@ -116,8 +117,17 @@ describe("security events", () => {
   });
 
   // The long-poll wait endpoint (task 19.5) and the web inbox's update feed (task 19.6) serve the same domain
-  // events as the pull readers; these cases become plain tests when those tasks land.
-  it.todo("reach no wait answer of GET /api/v1/events/wait, an admin's included");
+  // events as the pull readers; each case became a plain test when its task landed.
+  it.each([
+    ["Pia's CLI, an admin's, which holds until the wait ends", () => oauthTokenOf(pia.userId, "tiehall-cli", "cli"), []],
+    ["Bob's CLI, which the new request to his team wakes at once", () => oauthTokenOf(bob, "tiehall-cli", "cli"), ["request.opened"]],
+  ])("reach no wait answer of GET /api/v1/events/wait: %s", async (_name, caller, expected) => {
+    const response = await install.api(caller())(new Request(`${URL_OF_INSTALL}/api/v1/events/wait?cursor=0`));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { events: { type: string }[] };
+    expect(body.events.map(({ type }) => type)).toEqual(expected);
+    expect(JSON.stringify(body)).not.toMatch(/member\.role_changed|activity_log\.reconciled|"security"/);
+  });
 
   it.todo("reach no web inbox update feed, an admin's included");
 });

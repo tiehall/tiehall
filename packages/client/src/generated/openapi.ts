@@ -36,6 +36,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wait for your next updates: answers as soon as one of the updates whats_new returns comes after the cursor, with ids and Tiehall's own text only, or with an empty list once 60 seconds pass. It moves no cursor: read the updates themselves with whats_new. */
+        get: operations["events.wait"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox": {
         parameters: {
             query?: never;
@@ -822,6 +839,103 @@ export interface operations {
             };
             /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "events.wait": {
+        parameters: {
+            query?: {
+                /** @description The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given. */
+                cursor?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The number of the last update in the list, or the cursor the wait was given when the list is empty. */
+                        cursor: number;
+                        /** @description The updates after the cursor, oldest first; empty when none came before the wait ended. */
+                        events: {
+                            /** @description The request's key, such as FE-142. */
+                            request_key: string;
+                            /** @description The update's number, which whats_new acknowledges. */
+                            seq: number;
+                            /** @description The key of the team the request is addressed to, such as FE. */
+                            team_key: string;
+                            /** @description The update's type, such as request.message_posted. */
+                            type: string;
+                            /** @description The request's URL on the install. */
+                            url: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

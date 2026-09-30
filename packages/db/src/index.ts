@@ -2,10 +2,13 @@
 // and the app's connection. Only packages/commands and the migrations import it
 // (design.md, Technical decisions: T2).
 export {
+  listen,
   openDatabase,
   withPassword,
   type Database,
   type DatabaseConnection,
+  type Listener,
+  type ListenOptions,
   type OpenDatabaseOptions,
   type Transaction,
 } from "./connection.ts";

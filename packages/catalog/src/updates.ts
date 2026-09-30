@@ -1,4 +1,4 @@
-import { REQUEST_KEY } from "@tiehall/core";
+import { EVENT_TYPE_NAME, REQUEST_KEY, TEAM_KEY } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { eventView } from "./events.ts";
@@ -80,4 +80,44 @@ export const readUpdates = defineCommand({
   stability: "alpha",
 });
 
-export const UPDATE_COMMANDS = [readUpdates];
+/**
+ * An entry of the wait's answer (requester-loop: The long-poll wait endpoint;
+ * design.md, Technical decisions: T15): ids and Tiehall's own text only, never
+ * what anyone wrote, since it can reach a model unasked through the Claude
+ * Code hooks (agent-safety: Notices that can reach a model carry only server
+ * text). The reader then pulls the content with whats_new and get_request.
+ */
+export const waitEntry = z.object({
+  seq: z.number().int().min(1).meta({ description: "The update's number, which whats_new acknowledges." }),
+  type: z.string().regex(EVENT_TYPE_NAME).meta({ description: "The update's type, such as request.message_posted." }),
+  request_key: requestKeyOutput.meta({ description: "The request's key, such as FE-142." }),
+  team_key: z.string().regex(TEAM_KEY).meta({ description: "The key of the team the request is addressed to, such as FE." }),
+  url: z.string().regex(REQUEST_URL).meta({ description: "The request's URL on the install." }),
+});
+
+export const waitForEvents = defineCommand({
+  id: "events.wait",
+  summary:
+    "Wait for your next updates: answers as soon as one of the updates whats_new returns comes after the cursor, with ids and Tiehall's own text only, or with an empty list once 60 seconds pass. It moves no cursor: read the updates themselves with whats_new.",
+  input: z.object({
+    cursor: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .meta({ description: "The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given." }),
+  }),
+  output: z.object({
+    events: z.array(waitEntry).meta({ description: "The updates after the cursor, oldest first; empty when none came before the wait ended." }),
+    cursor: z.number().int().min(0).meta({ description: "The number of the last update in the list, or the cursor the wait was given when the list is empty." }),
+  }),
+  method: "GET",
+  path: "/api/v1/events/wait",
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const UPDATE_COMMANDS = [readUpdates, waitForEvents];

@@ -50,3 +50,52 @@ export function withPassword({ connectionString, password }: DatabaseConnection)
   url.password = encodeURIComponent(password);
   return url.toString();
 }
+
+/** A connection that listens on one channel for Postgres notifications (NOTIFY). */
+export interface Listener {
+  close(): Promise<void>;
+}
+
+export interface ListenOptions {
+  /** The name the connection shows in pg_stat_activity. */
+  applicationName?: string;
+  /** Hears each notification on the channel, with its payload. */
+  onNotification(payload: string | undefined): void;
+  /** Hears that the connection failed or ended without close(); it listens no more. */
+  onLost(error: Error): void;
+}
+
+/**
+ * Opens a connection of its own, outside the pool, and listens on the channel
+ * (LISTEN); resolves once it listens, so a notification sent after that is
+ * heard.
+ */
+export async function listen(connection: DatabaseConnection, channel: string, options: ListenOptions): Promise<Listener> {
+  const client = new pg.Client({ connectionString: withPassword(connection), application_name: options.applicationName ?? "tiehall listener" });
+  let closing = false;
+  let lost = false;
+  const lose = (error: Error) => {
+    if (closing || lost) return;
+    lost = true;
+    options.onLost(error);
+  };
+  client.on("notification", (message) => {
+    if (message.channel === channel) options.onNotification(message.payload);
+  });
+  client.on("error", lose);
+  client.on("end", () => lose(new Error("The listening connection ended.")));
+  try {
+    await client.connect();
+    await client.query(`LISTEN ${pg.escapeIdentifier(channel)}`);
+  } catch (error) {
+    closing = true;
+    await client.end().catch(() => {});
+    throw error;
+  }
+  return {
+    async close() {
+      closing = true;
+      await client.end().catch(() => {});
+    },
+  };
+}

@@ -4,6 +4,9 @@
 // only after SLOW_MS, so a test can hold a call in flight while the role stops; /fail prints an error whose
 // message quotes what the call carried, as a library's error can.
 //
+// /api/v1/events/wait holds, as the app's wait endpoint does, until the process's shutdown signal, which the web
+// role gives when it starts to stop, and then answers 503 with Retry-After: 0.
+//
 // For the tests of request bodies, three paths answer as the app's routes do, and print what they did with the
 // body: /api/v1/… answers as the setup gate does before setup is complete, 503 setup-required, without reading
 // the body; /mcp reads the body and answers 200, as an MCP server answers a JSON-RPC call; a form posted to
@@ -14,6 +17,8 @@
 // /members/page answer as Next.js answers a page, with its own Vary.
 import http from "node:http";
 import process from "node:process";
+import { shutdownSignal } from "@tiehall/commands";
+import { httpProblem, Refusal } from "@tiehall/core";
 
 const SETUP_REQUIRED = JSON.stringify({
   type: "https://tiehall.com/problems/setup-required",
@@ -43,6 +48,19 @@ const server = http.createServer((request, response) => {
     console.error("⨯", new Error(`the call failed on ${decodeURIComponent(request.url)}`));
     response.statusCode = 500;
     response.end();
+    return;
+  }
+  if (request.url?.startsWith("/api/v1/events/wait") === true) {
+    // As the app's wait endpoint does, the wait holds until the process's shutdown signal, then answers 503.
+    console.log("fixture: wait started");
+    const answer = () => {
+      const { status, headers, body } = httpProblem(new Refusal("shutting-down", "Tiehall is shutting down. Retry the call; it is answered once Tiehall is back."));
+      response.writeHead(status, headers);
+      response.end(JSON.stringify(body));
+    };
+    const signal = shutdownSignal();
+    if (signal.aborted) answer();
+    else signal.addEventListener("abort", answer, { once: true });
     return;
   }
   if (request.url?.startsWith("/api/v1/") === true) {

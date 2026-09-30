@@ -9,6 +9,7 @@ import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
 import { createConsentRoute, type ConsentRoute } from "./consent.ts";
 import { createDeviceApprovalRoute, type DeviceApprovalRoute } from "./device-approval.ts";
 import { openAppDatabase } from "./database.ts";
+import { createEventWakeups } from "./event-wakeups.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
@@ -112,6 +113,9 @@ function servicesOf(env: Environment): Services {
       github,
       secrets,
       url: installUrl(env["TIEHALL_URL"] ?? ""),
+      // The long-poll waits are woken by the events that commit, over one connection per process that listens once a
+      // wait starts, and end when the process's shutdown signal is given.
+      waits: { wakeups: createEventWakeups(connection, { logger, applicationName: "tiehall web event wake-ups" }) },
     }),
     step: createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store: { database }, confirmations, subjects: CONFIRMATION_SUBJECTS, github }),
     logger,

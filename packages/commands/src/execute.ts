@@ -3,6 +3,7 @@ import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
+import type { EventWakeups } from "./event-wakeups.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { assertRoleAllows, memberOf, type Member } from "./members.ts";
@@ -95,7 +96,9 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // handler with what the step returned. The handler reads again what it
 // depends on and refuses with 409 when that changed meanwhile. A step that
 // fails, such as when GitHub does not answer, leaves the nonce unused, so the
-// person can post the same review page again.
+// person can post the same review page again. The long-poll wait uses the same
+// step to hold a call open without holding a connection or a transaction: it
+// reads in short read-only transactions between wake-ups (events-wait.ts).
 
 /** What a handler's step before the call's transaction gets besides the parsed input. */
 export interface PrepareContext {
@@ -110,6 +113,22 @@ export interface PrepareContext {
   readonly sealed: Readonly<Record<string, string>>;
   /** Reads, in a short read-only transaction of its own, as the install's org. */
   read<T>(read: (context: OrgContext) => Promise<T>): Promise<T>;
+  /** The install's URL, TIEHALL_URL, as its origin; undefined where the process has none. */
+  readonly url: string | undefined;
+  /** How the long-poll waits hold, for a step that waits; undefined where the process sets none. */
+  readonly waits: WaitSettings | undefined;
+}
+
+/**
+ * How the long-poll waits hold (requester-loop: The long-poll wait endpoint):
+ * what wakes them when an event commits, how long they hold, 60 seconds
+ * unless a test shortens it, and the signal that ends them when the app shuts
+ * down, the process's own unless a test gives another.
+ */
+export interface WaitSettings {
+  wakeups?: EventWakeups;
+  holdMs?: number;
+  shutdown?: AbortSignal;
 }
 
 /** A handler's step before the call's transaction, such as a call to GitHub; what it returns is the handler's `prepared`. */
@@ -226,6 +245,8 @@ export interface ExecuteServices {
   secrets?: () => SecretBox;
   /** The install's URL, TIEHALL_URL, as its origin, which the operations that name the install, such as whoami, give. */
   url?: string;
+  /** How the long-poll waits hold. */
+  waits?: WaitSettings;
 }
 
 export interface ExecuteOptions {
@@ -387,6 +408,8 @@ export function createExecute(services: ExecuteServices): Execute {
         secrets: services.secrets,
         sealed: authorized.sealed,
         read: (read) => withOrg(store.database, read, { readOnly: true }),
+        url: services.url,
+        waits: services.waits,
       });
     }
 

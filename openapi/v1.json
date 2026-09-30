@@ -1091,6 +1091,179 @@
         "x-stability-level": "alpha"
       }
     },
+    "/api/v1/events/wait": {
+      "get": {
+        "operationId": "events.wait",
+        "parameters": [
+          {
+            "description": "The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given.",
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "cursor": {
+                      "description": "The number of the last update in the list, or the cursor the wait was given when the list is empty.",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "events": {
+                      "description": "The updates after the cursor, oldest first; empty when none came before the wait ended.",
+                      "items": {
+                        "properties": {
+                          "request_key": {
+                            "description": "The request's key, such as FE-142.",
+                            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                            "type": "string"
+                          },
+                          "seq": {
+                            "description": "The update's number, which whats_new acknowledges.",
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "team_key": {
+                            "description": "The key of the team the request is addressed to, such as FE.",
+                            "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                            "type": "string"
+                          },
+                          "type": {
+                            "description": "The update's type, such as request.message_posted.",
+                            "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The request's URL on the install.",
+                            "pattern": "^https?:\\/\\/(?:[A-Za-z0-9\\.-]+|\\[[0-9A-Fa-f:\\.]+\\])(?::\\d{1,5})?\\/([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "seq",
+                          "type",
+                          "request_key",
+                          "team_key",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The operation's result."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required)."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The call carries no valid token."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller may not take this action."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "There is no such operation, or the record the call names does not exist."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A limit is exceeded; retry after the time Retry-After gives.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying.",
+                "required": true,
+                "schema": {
+                  "description": "The seconds to wait before retrying.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "requests:read"
+            ]
+          }
+        ],
+        "summary": "Wait for your next updates: answers as soon as one of the updates whats_new returns comes after the cursor, with ids and Tiehall's own text only, or with an empty list once 60 seconds pass. It moves no cursor: read the updates themselves with whats_new.",
+        "x-stability-level": "alpha"
+      }
+    },
     "/api/v1/inbox": {
       "get": {
         "operationId": "requests.inbox",

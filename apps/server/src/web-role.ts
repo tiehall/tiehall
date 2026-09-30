@@ -1,6 +1,6 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { createLogger, openDatabase, routeConsoleTo, startSetup, type AppSettings, type Logger } from "@tiehall/commands";
+import { createLogger, openDatabase, routeConsoleTo, startSetup, startShutdown, type AppSettings, type Logger } from "@tiehall/commands";
 import { installRequestGuard } from "./request-guard.ts";
 import { TrustedProxies } from "./trusted-proxies.ts";
 
@@ -13,10 +13,12 @@ import { TrustedProxies } from "./trusted-proxies.ts";
 // gracefully). Next.js is told to leave SIGTERM and SIGINT to it: on either,
 // every new call gets 503 with `Retry-After: 0`, the calls in flight get up to
 // the drain timeout to finish, and then the role closes its connections and
-// exits 0. Its log lines are JSON on standard output: what Next.js prints to
-// the console, such as its version, its addresses and "Ready" at start, goes
-// through the role's logger too (self-host-install: Logs carry ids, never
-// message text or credentials).
+// exits 0. The role gives the process's shutdown signal first, which ends the
+// app's long-poll waits at once with the same 503 (requester-loop: The
+// long-poll wait endpoint). Its log lines are JSON on standard output: what
+// Next.js prints to the console, such as its version, its addresses and
+// "Ready" at start, goes through the role's logger too (self-host-install:
+// Logs carry ids, never message text or credentials).
 //
 // At each start while setup is incomplete, the role prints a new setup code to
 // its log and stores its hash, replacing the previous one (self-host-install:
@@ -81,6 +83,8 @@ export async function runWebRole(settings: AppSettings, options: WebRoleOptions)
     if (stopping) return;
     stopping = true;
     clearTimeout(setupRetry);
+    // The app's long-poll waits end at once with 503 and Retry-After: 0, so the drain does not wait them out.
+    startShutdown();
     const inFlight = guard.inFlight;
     logger.info(
       inFlight === 0

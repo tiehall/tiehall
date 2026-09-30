@@ -22,6 +22,7 @@ import {
   CONFIRM_MESSAGES,
   CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
+  createEventWakeups,
   type ConfirmationStep,
   type Caller,
   type ConfirmRoute,
@@ -109,7 +110,12 @@ export interface TestInstall {
 }
 
 export async function startTestInstall(
-  options: { setUp?: (owner: pg.Client) => Promise<void>; now?: () => Date } = {},
+  options: {
+    setUp?: (owner: pg.Client) => Promise<void>;
+    now?: () => Date;
+    /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
+    wait?: { holdMs?: number; shutdown?: AbortSignal };
+  } = {},
 ): Promise<TestInstall> {
   const migrationsFolder = fileURLToPath(new URL("../../../db/migrations/", import.meta.url));
   const database: TestDatabase = await createTestDatabase();
@@ -138,6 +144,8 @@ export async function startTestInstall(
     checkKey: (credentials, appId) =>
       installGitHub?.checkKey(credentials, appId) ?? Promise.reject(new Error("The install has no GitHub App to check a key with.")),
   };
+  // The long-poll waits are woken by the events that commit, over a connection of its own that listens once a wait starts.
+  const wakeups = createEventWakeups({ connectionString: url.toString(), password: appRole.password }, { logger });
   const execute = createExecute({
     catalog: CATALOG,
     handlers: HANDLERS,
@@ -147,6 +155,7 @@ export async function startTestInstall(
     github,
     secrets: () => box,
     url: URL_OF_INSTALL,
+    waits: { wakeups, ...options.wait },
     ...(options.now === undefined ? {} : { now: options.now }),
   });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });
@@ -204,6 +213,7 @@ export async function startTestInstall(
       installGitHub = value;
     },
     async close() {
+      await wakeups.close();
       await db.$client.end();
       await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
       await owner.end();
