@@ -225,8 +225,22 @@
     {
       "item": "a change to the PAT switch, the longest PAT lifetime or the daily write budget;",
       "actions": [
-        { "action": "a change to the PAT switch", "pending": "15.15" },
-        { "action": "a change to the longest PAT lifetime", "pending": "15.15" },
+        {
+          "action": "a change to the PAT switch",
+          "event": "settings.personal_access_tokens_switched",
+          "test": {
+            "file": "packages/commands/test/personal-access-token-settings.test.ts",
+            "case": "switched off by an admin with the confirmation step makes every existing PAT get 403, and switched on again restores unexpired ones"
+          }
+        },
+        {
+          "action": "a change to the longest PAT lifetime",
+          "event": "settings.personal_access_token_max_lifetime_changed",
+          "test": {
+            "file": "packages/commands/test/personal-access-token-settings.test.ts",
+            "case": "set shorter by an admin with the confirmation step applies to new PATs, and is a security event"
+          }
+        },
         {
           "action": "a change to the daily write budget",
           "event": "settings.write_budget_changed",

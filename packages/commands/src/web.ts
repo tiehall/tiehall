@@ -2,7 +2,7 @@ import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
-import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
+import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
@@ -248,6 +248,14 @@ export function tokensRoute(env: Environment): PageRoute {
 /** The sign-in policy page of the admin UI under /admin/sign-in-policy, for the signed-in admin's web session. */
 export function signInPolicyRoute(env: Environment): PageRoute {
   return pageOf("sign-in policy", env, createSignInPolicyRoute);
+}
+
+/**
+ * The personal access tokens page of the admin UI under
+ * /admin/personal-access-tokens, for the signed-in admin's web session.
+ */
+export function personalAccessTokenSettingsRoute(env: Environment): PageRoute {
+  return pageOf("personal access tokens", env, createPersonalAccessTokenSettingsRoute);
 }
 
 /**

@@ -4,10 +4,12 @@ import { defineCommand } from "./command.ts";
 
 // The install settings an admin changes in the web UI (agent-safety: Agent
 // writes are limited per token and budgeted per install; sign-in: The sign-in
-// policy; agent-safety: Actions that need the confirmation step;
-// teams-and-roles: What admins and members may do). Each needs the confirmation step for that exact change, so no agent
-// surface offers it. The web UI's sign-in policy page shows the policy in
-// force, to admins only.
+// policy; agent-access: An admin sets the PAT switch and the maximum lifetime;
+// agent-safety: Actions that need the confirmation step; teams-and-roles: What
+// admins and members may do). Each needs the confirmation step for that exact
+// change, so no agent surface offers it. The web UI's sign-in policy page
+// shows the policy in force, and its personal access tokens page the PAT
+// switch and the longest lifetime, to admins only.
 
 /** A daily budget of agent writes: a whole number from 1 to 1,000,000. */
 const dailyWriteBudget = z
@@ -61,4 +63,53 @@ export const getSignInPolicy = defineCommand({
   stability: "beta",
 });
 
-export const SETTINGS_COMMANDS = [setWriteBudget, setSignInPolicy, getSignInPolicy];
+export const setPersonalAccessTokens = defineCommand({
+  id: "settings.set_personal_access_tokens",
+  summary: "Switch personal access tokens on or off for the install: while they are off, every call with one is refused, and switching them on again lets unexpired ones work again.",
+  input: z.object({ on: z.boolean().meta({ description: "true to accept calls with personal access tokens, false to refuse them all." }) }),
+  output: z.object({ on: z.boolean(), previousOn: z.boolean() }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "agent_access",
+  surfaces: [],
+  stability: "beta",
+});
+
+/** The longest lifetime of a new personal access token: 1 to 90 days. */
+const maxLifetimeDays = z.int().min(1).max(90).meta({ description: "The longest lifetime a new personal access token may have, from 1 to 90 days." });
+
+export const setPersonalAccessTokenMaxLifetime = defineCommand({
+  id: "settings.set_personal_access_token_max_lifetime",
+  summary: "Set the longest lifetime a new personal access token may have, from 1 to 90 days, 90 until an admin changes it; tokens that exist keep their expiry.",
+  input: z.object({ maxLifetimeDays }),
+  output: z.object({ maxLifetimeDays: z.int(), previousMaxLifetimeDays: z.int() }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "agent_access",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const getPersonalAccessTokenAdminSettings = defineCommand({
+  id: "settings.get_personal_access_tokens",
+  summary: "Show an admin whether personal access tokens are switched on, and the longest lifetime a new one may have.",
+  input: z.object({}),
+  output: z.object({ on: z.boolean(), maxLifetimeDays: z.int() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "agent_access",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const SETTINGS_COMMANDS = [
+  setWriteBudget,
+  setSignInPolicy,
+  getSignInPolicy,
+  setPersonalAccessTokens,
+  setPersonalAccessTokenMaxLifetime,
+  getPersonalAccessTokenAdminSettings,
+];

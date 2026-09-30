@@ -5,6 +5,7 @@ import {
   createInvite,
   createTeam,
   findInviteAccount,
+  getPersonalAccessTokenAdminSettings,
   getSignInPolicy,
   listInvites,
   listMembers,
@@ -14,6 +15,8 @@ import {
   renameTeam,
   revokeInvite,
   setBotFlag,
+  setPersonalAccessTokenMaxLifetime,
+  setPersonalAccessTokens,
   setSignInPolicy,
   type invite,
   type listedMember,
@@ -54,6 +57,11 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   confirmation step).
 // - /admin/sign-in-policy is an admin's: the policy in force, and a link to
 //   the review page that changes it, with the confirmation step.
+// - /admin/personal-access-tokens is an admin's (agent-access: An admin sets
+//   the PAT switch and the maximum lifetime): whether personal access tokens
+//   are switched on, with a link to the review page that switches them, and
+//   the longest lifetime of a new one, with a form that leads to the review
+//   page of the lifetime it names; each change needs the confirmation step.
 // Every read and write runs through execute() as the signed-in session (see
 // web-pages.ts), so a member who opens an admin page, or posts one of its
 // forms, gets 403 and changes nothing, whatever the page shows. The admin
@@ -67,6 +75,8 @@ export const INVITES_PATH = "/admin/invites";
 export const TEAMS_PATH = "/admin/teams";
 /** Where an admin sees and changes the sign-in policy. */
 export const SIGN_IN_POLICY_PATH = "/admin/sign-in-policy";
+/** Where an admin switches personal access tokens on or off and sets their longest lifetime. */
+export const PERSONAL_ACCESS_TOKEN_SETTINGS_PATH = "/admin/personal-access-tokens";
 
 type ListedMember = z.output<typeof listedMember>;
 type ListedTeam = z.output<typeof listedTeam>;
@@ -79,6 +89,7 @@ function adminNav(): string {
     [INVITES_PATH, "Invites"],
     [TEAMS_PATH, "Teams"],
     [SIGN_IN_POLICY_PATH, "Sign-in policy"],
+    [PERSONAL_ACCESS_TOKEN_SETTINGS_PATH, "Personal access tokens"],
     [GITHUB_ADMIN_PATH, "GitHub"],
     [ACTIVITY_LOG_PATH, "Activity log"],
   ];
@@ -359,6 +370,49 @@ export function createSignInPolicyRoute(options: PageRouteOptions): PageRoute {
           ].join("\n"),
         ),
       );
+    },
+  });
+}
+
+// The personal access tokens page.
+
+/** The number a form's field names, or the field as it was sent, which the command's schema then refuses with 400. */
+function numberOf(value: string | null): number | string {
+  const text = (value ?? "").trim();
+  return /^\d{1,6}$/.test(text) ? Number(text) : text;
+}
+
+export function createPersonalAccessTokenSettingsRoute(options: PageRouteOptions): PageRoute {
+  return createPageRoute(options, {
+    path: PERSONAL_ACCESS_TOKEN_SETTINGS_PATH,
+    name: "personal access tokens",
+    async get(_query, { read, csrf }) {
+      const { on, maxLifetimeDays } = await read<{ on: boolean; maxLifetimeDays: number }>(getPersonalAccessTokenAdminSettings.id, {});
+      return htmlAnswer(
+        htmlPage(
+          "Personal access tokens",
+          [
+            "      <h1>Personal access tokens</h1>",
+            adminNav(),
+            on
+              ? "      <p>Personal access tokens are switched on.</p>"
+              : "      <p>Personal access tokens are switched off: every call with one is refused. Switching them on again lets the ones that have not expired and were not revoked work again.</p>",
+            `      <p>${link(reviewPath(setPersonalAccessTokens.id, { on: !on }), on ? "Switch personal access tokens off" : "Switch personal access tokens on")}, with a confirmation.${on ? " No token is revoked: switching them on again lets them work again." : ""}</p>`,
+            `      <p>${escapeHtml(`A new personal access token lives at most ${maxLifetimeDays} days.`)} Tokens that exist keep their expiry when this changes.</p>`,
+            `      <form method="post" action="${PERSONAL_ACCESS_TOKEN_SETTINGS_PATH}">`,
+            '        <p><label for="max-lifetime">The longest lifetime of a new personal access token, in days, from 1 to 90</label></p>',
+            `        <p><input type="number" id="max-lifetime" name="maxLifetimeDays" min="1" max="90" value="${maxLifetimeDays}" required></p>`,
+            `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+            '        <button type="submit">Review the change</button>',
+            "      </form>",
+          ].join("\n"),
+        ),
+      );
+    },
+    async post(form, { read }) {
+      // Only an admin's form leads on: a member gets 403, as for the page.
+      await read(getPersonalAccessTokenAdminSettings.id, {});
+      return seeOther(reviewPath(setPersonalAccessTokenMaxLifetime.id, { maxLifetimeDays: numberOf(form.get("maxLifetimeDays")) }));
     },
   });
 }

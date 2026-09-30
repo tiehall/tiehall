@@ -383,10 +383,12 @@ export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type 
 export {
   createInvitesRoute,
   createMembersRoute,
+  createPersonalAccessTokenSettingsRoute,
   createSignInPolicyRoute,
   createTeamsRoute,
   INVITES_PATH,
   MEMBERS_PATH,
+  PERSONAL_ACCESS_TOKEN_SETTINGS_PATH,
   SIGN_IN_POLICY_PATH,
   TEAMS_PATH,
 } from "./admin-pages.ts";

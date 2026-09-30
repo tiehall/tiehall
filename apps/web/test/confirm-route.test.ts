@@ -9,6 +9,7 @@ import {
   MANIFEST_REDIRECT_PATH,
   MEMBERS_PATH,
   PACKET_SCHEMA_PATH,
+  PERSONAL_ACCESS_TOKEN_SETTINGS_PATH,
   COMPANY_PATH,
   SETUP_PATH,
   SETUP_SIGN_IN_CALLBACK_PATH,
@@ -103,10 +104,11 @@ describe("the app", () => {
   });
 
   // The members page, which every member opens and whose forms set and clear
-  // the bot flag, and the admin UI's invites and teams pages, whose forms
-  // revoke invites and change teams (teams-and-roles: What admins and members
-  // may do).
-  it.each([MEMBERS_PATH, INVITES_PATH, TEAMS_PATH])("mounts its page on %s, for a GET and a POST", async (path) => {
+  // the bot flag, and the admin UI's invites, teams and personal access tokens
+  // pages, whose forms revoke invites, change teams and lead to the review page
+  // of a new longest PAT lifetime (teams-and-roles: What admins and members may
+  // do; agent-access: An admin sets the PAT switch and the maximum lifetime).
+  it.each([MEMBERS_PATH, INVITES_PATH, TEAMS_PATH, PERSONAL_ACCESS_TOKEN_SETTINGS_PATH])("mounts its page on %s, for a GET and a POST", async (path) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);
     const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;

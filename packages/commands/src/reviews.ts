@@ -8,7 +8,7 @@ import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
 import { GITHUB_MODE_REVIEWS } from "./github-mode.ts";
 import { INVITE_REVIEWS } from "./invites.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
-import { PERSONAL_ACCESS_TOKEN_MESSAGES, PERSONAL_ACCESS_TOKEN_REVIEWS } from "./personal-access-tokens.ts";
+import { PERSONAL_ACCESS_TOKEN_MESSAGES, PERSONAL_ACCESS_TOKEN_REVIEWS, PERSONAL_ACCESS_TOKEN_SETTINGS_REVIEWS } from "./personal-access-tokens.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
 import { UNDO_REVIEWS } from "./proposal-undo.ts";
 import { SIGN_IN_POLICY_REVIEWS } from "./sign-in-policy.ts";
@@ -32,6 +32,7 @@ export const REVIEWS: Reviews = {
   ...AGENT_GRANT_REVIEWS,
   ...DEVICE_APPROVAL_REVIEWS,
   ...PERSONAL_ACCESS_TOKEN_REVIEWS,
+  ...PERSONAL_ACCESS_TOKEN_SETTINGS_REVIEWS,
 };
 
 // What a command's confirmation nonce is bound to, where it is not the

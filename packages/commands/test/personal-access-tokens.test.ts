@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { WebSessionCaller } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { hiddenField, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { addUser } from "./support/members.ts";
+import { sessionOf } from "./support/requests.ts";
 
 // Personal access tokens are scoped, expiring and created in the web UI
 // (agent-access: Personal access tokens are scoped, expiring and created in
@@ -18,15 +21,16 @@ import { hiddenField, startAgentAccess, type AgentAccessHarness, type SignedIn }
 // a token's call to it gets 404, and a confirmation without a valid nonce 403.
 // A call to /api/v1 with the value acts for the member, within its scopes.
 //
-// Until an admin sets the longest lifetime in the web UI (15.15), the tests
-// set it as that change stores it.
+// An admin sets the longest lifetime in the web UI with the confirmation step.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
+let ada: WebSessionCaller;
 
 beforeAll(async () => {
   harness = await startAgentAccess();
   ana = await harness.member("ana-k");
+  ada = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada" }));
 }, 60_000);
 
 afterAll(async () => {
@@ -35,13 +39,10 @@ afterAll(async () => {
 
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
-/** Sets the install's longest PAT lifetime as an admin's confirmed change stores it. */
+/** An admin sets the install's longest PAT lifetime in the web UI, with the confirmation step. */
 async function maxLifetime(days: number): Promise<void> {
-  await harness.install.owner.query(
-    `INSERT INTO install_settings (org_id, personal_access_token_max_days) SELECT id, $1 FROM orgs
-       ON CONFLICT (org_id) DO UPDATE SET personal_access_token_max_days = excluded.personal_access_token_max_days`,
-    [days],
-  );
+  const answer = await harness.install.confirm(ada, "settings.set_personal_access_token_max_lifetime", { maxLifetimeDays: days });
+  if (answer.status !== 200) throw new Error(`the change's confirmation answered ${answer.status}: ${await answer.text()}`);
 }
 
 /** How many personal access tokens the install holds. */

@@ -356,6 +356,36 @@ export const writeBudgetChanged = defineEventType({
 });
 
 /**
+ * An admin switched personal access tokens on or off, with the confirmation
+ * step (agent-access: An admin sets the PAT switch and the maximum lifetime;
+ * activity-log: Which actions are security events). It names the switch before
+ * and after; its provenance names the admin.
+ */
+export const personalAccessTokensSwitched = defineEventType({
+  type: "settings.personal_access_tokens_switched",
+  class: "security",
+  fields: {
+    on: { kind: "boolean" },
+    previousOn: { kind: "boolean" },
+  },
+});
+
+/**
+ * An admin changed the longest lifetime a new personal access token may have,
+ * with the confirmation step (agent-access: An admin sets the PAT switch and
+ * the maximum lifetime; activity-log: Which actions are security events). It
+ * names the lifetime before and after, in days; its provenance names the admin.
+ */
+export const personalAccessTokenMaxLifetimeChanged = defineEventType({
+  type: "settings.personal_access_token_max_lifetime_changed",
+  class: "security",
+  fields: {
+    maxLifetimeDays: { kind: "integer" },
+    previousMaxLifetimeDays: { kind: "integer" },
+  },
+});
+
+/**
  * The nightly comparison found a member, a role or an agent-client grant that
  * the security events did not record, and recorded it (activity-log:
  * Trust-state changes are reconciled every night; activity-log: Which actions
@@ -589,6 +619,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   inviteRevoked,
   signInPolicyChanged,
   writeBudgetChanged,
+  personalAccessTokensSwitched,
+  personalAccessTokenMaxLifetimeChanged,
   trustStateReconciled,
   activityLogExported,
   signInCompleted,

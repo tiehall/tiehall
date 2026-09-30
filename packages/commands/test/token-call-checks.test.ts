@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { WebSessionCaller } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { addUser } from "./support/members.ts";
+import { sessionOf } from "./support/requests.ts";
 
 // Every token call is checked against the install's current state
 // (agent-access: Every token call is checked against the install's current
@@ -15,13 +18,13 @@ import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./supp
 // rotation are the conformance tests' (oauth-conformance.test.ts).
 //
 // The personal access tokens are created in the web UI with the confirmation
-// step, and their calls go through the install's token check. Until an admin
-// changes the switch in the web UI with the confirmation step (15.15), the
-// tests set it as that change stores it.
+// step, and their calls go through the install's token check; an admin
+// changes the switch in the web UI with the confirmation step.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
 let bob: SignedIn;
+let ada: WebSessionCaller;
 /** Ana's and Bob's personal access tokens, which may read and write requests. */
 let anaPat: string;
 let bobPat: string;
@@ -30,6 +33,7 @@ beforeAll(async () => {
   harness = await startAgentAccess();
   ana = await harness.member("ana-k");
   bob = await harness.member("bob-k");
+  ada = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada" }));
   anaPat = await harness.personalAccessToken(ana, { scopes: ["requests:read", "requests:write"] });
   bobPat = await harness.personalAccessToken(bob, { scopes: ["requests:read", "requests:write"] });
 }, 60_000);
@@ -44,13 +48,10 @@ afterAll(async () => {
   await harness?.close();
 });
 
-/** Sets the install's PAT switch as an admin's confirmed change stores it. */
+/** An admin switches personal access tokens on or off in the web UI, with the confirmation step. */
 async function patSwitch(on: boolean): Promise<void> {
-  await harness.install.owner.query(
-    `INSERT INTO install_settings (org_id, personal_access_tokens_on) SELECT id, $1 FROM orgs
-       ON CONFLICT (org_id) DO UPDATE SET personal_access_tokens_on = excluded.personal_access_tokens_on`,
-    [on],
-  );
+  const answer = await harness.install.confirm(ada, "settings.set_personal_access_tokens", { on });
+  if (answer.status !== 200) throw new Error(`the switch's confirmation answered ${answer.status}: ${await answer.text()}`);
 }
 
 describe("the PAT switch", () => {

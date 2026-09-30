@@ -1,8 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createPersonalAccessToken, getPersonalAccessTokenSettings, PERSONAL_ACCESS_TOKEN_PREFIX, SCOPES, type Scope } from "@tiehall/catalog";
-import { personalAccessTokenCreated, Refusal, type Review } from "@tiehall/core";
+import {
+  createPersonalAccessToken,
+  getPersonalAccessTokenAdminSettings,
+  getPersonalAccessTokenSettings,
+  PERSONAL_ACCESS_TOKEN_PREFIX,
+  SCOPES,
+  setPersonalAccessTokenMaxLifetime,
+  setPersonalAccessTokens,
+  type Scope,
+} from "@tiehall/catalog";
+import { personalAccessTokenCreated, personalAccessTokenMaxLifetimeChanged, personalAccessTokensSwitched, Refusal, type Review } from "@tiehall/core";
 import { installSettings, personalAccessTokens, type Database } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { PersonalAccessTokenCaller } from "./caller.ts";
 import { CONFIRM_PATH, type ConfirmMessages } from "./confirm-route.ts";
 import type { Reviews } from "./confirmation-step.ts";
@@ -34,6 +43,17 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 //   the value once, and no later page, answer or event holds it;
 // - is recorded with a security event that names its user and the token.
 //
+// The PAT switch and the longest lifetime (agent-access: An admin sets the PAT
+// switch and the maximum lifetime): a new install has the switch on and a
+// longest lifetime of 90 days. Only an admin changes either, in the web UI,
+// with the confirmation step, so a member gets 403 and no agent surface offers
+// the change; a longest lifetime above 90 days fails the command's schema with
+// 400. Each change is a security event that names the value before and after;
+// setting a value it already has changes nothing and records nothing. The
+// switch revokes nothing: it is read at every call (with-org.ts), so switching
+// it on again lets unexpired tokens work again. A new longest lifetime applies
+// to tokens created after it; the ones that exist keep their expiry.
+//
 // A call to /api/v1 names a PAT in its Authorization header, as a bearer
 // token (agent-tokens.ts). The check looks the token up by its digest: one
 // that is unknown, expired or revoked is refused with 401 invalid_token, and
@@ -64,8 +84,16 @@ export function isPersonalAccessToken(value: string): boolean {
   return value.startsWith(PERSONAL_ACCESS_TOKEN_PREFIX);
 }
 
-/** The install's PAT settings: the switch and the longest lifetime, read in the caller's transaction; their defaults until an admin changed them. */
-export async function personalAccessTokenSettingsIn({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<{ on: boolean; maxLifetimeDays: number }> {
+/**
+ * The install's PAT settings: the switch and the longest lifetime, read in the
+ * caller's transaction; their defaults until an admin changed them. Locked, an
+ * admin's change reads them after any change under way has committed.
+ */
+export async function personalAccessTokenSettingsIn(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  lock = false,
+): Promise<{ on: boolean; maxLifetimeDays: number }> {
+  if (lock) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tiehall.install_settings.personal_access_tokens:${orgId}`}, 0))`);
   const [row] = await tx
     .select({ on: installSettings.personalAccessTokensOn, maxLifetimeDays: installSettings.personalAccessTokenMaxDays })
     .from(installSettings)
@@ -111,6 +139,34 @@ export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
   }),
 
   [getPersonalAccessTokenSettings.id]: defineHandler(getPersonalAccessTokenSettings, async (_input, context) => personalAccessTokenSettingsIn(context)),
+
+  [getPersonalAccessTokenAdminSettings.id]: defineHandler(getPersonalAccessTokenAdminSettings, async (_input, context) => personalAccessTokenSettingsIn(context)),
+
+  [setPersonalAccessTokens.id]: defineHandler(setPersonalAccessTokens, async ({ on }, context) => {
+    const { on: previousOn } = await personalAccessTokenSettingsIn(context, true);
+    if (previousOn === on) return { on, previousOn };
+    return context.write(async (writer) => {
+      await writer.tx
+        .insert(installSettings)
+        .values({ orgId: writer.orgId, personalAccessTokensOn: on })
+        .onConflictDoUpdate({ target: installSettings.orgId, set: { personalAccessTokensOn: on } });
+      await writer.record(personalAccessTokensSwitched, { on, previousOn });
+      return { on, previousOn };
+    });
+  }),
+
+  [setPersonalAccessTokenMaxLifetime.id]: defineHandler(setPersonalAccessTokenMaxLifetime, async ({ maxLifetimeDays }, context) => {
+    const { maxLifetimeDays: previousMaxLifetimeDays } = await personalAccessTokenSettingsIn(context, true);
+    if (previousMaxLifetimeDays === maxLifetimeDays) return { maxLifetimeDays, previousMaxLifetimeDays };
+    return context.write(async (writer) => {
+      await writer.tx
+        .insert(installSettings)
+        .values({ orgId: writer.orgId, personalAccessTokenMaxDays: maxLifetimeDays })
+        .onConflictDoUpdate({ target: installSettings.orgId, set: { personalAccessTokenMaxDays: maxLifetimeDays } });
+      await writer.record(personalAccessTokenMaxLifetimeChanged, { maxLifetimeDays, previousMaxLifetimeDays });
+      return { maxLifetimeDays, previousMaxLifetimeDays };
+    });
+  }),
 };
 
 /** The review of a new token: what it may do and when it expires, in Tiehall's own words, with the label quoted. */
@@ -133,6 +189,41 @@ export const PERSONAL_ACCESS_TOKEN_REVIEWS: Reviews = {
       ],
     };
     return review;
+  },
+};
+
+/** The reviews of an admin's changes to the PAT switch and the longest lifetime, in Tiehall's own words. */
+export const PERSONAL_ACCESS_TOKEN_SETTINGS_REVIEWS: Reviews = {
+  [setPersonalAccessTokens.id]: async (input, context) => {
+    const { on } = input as { on: boolean };
+    const current = await personalAccessTokenSettingsIn(context);
+    const lines =
+      current.on === on
+        ? [{ text: `Personal access tokens are already switched ${on ? "on" : "off"}, so confirming changes nothing.` }]
+        : on
+          ? [
+              { text: "Switch personal access tokens on for the install." },
+              { text: "From then on, calls with personal access tokens are accepted again, those created while they were off included, unless a token has expired or was revoked." },
+            ]
+          : [
+              { text: "Switch personal access tokens off for the install." },
+              {
+                text: "From then on, every call with a personal access token is refused with 403, those created before included. No token is revoked: switching them on again lets the ones that have not expired work again.",
+              },
+            ];
+    return { title: on ? "Switch personal access tokens on" : "Switch personal access tokens off", lines };
+  },
+  [setPersonalAccessTokenMaxLifetime.id]: async (input, context) => {
+    const { maxLifetimeDays } = input as { maxLifetimeDays: number };
+    const current = await personalAccessTokenSettingsIn(context);
+    const lines =
+      current.maxLifetimeDays === maxLifetimeDays
+        ? [{ text: `A new personal access token already lives at most ${maxLifetimeDays} days, so confirming changes nothing.` }]
+        : [
+            { text: `Change the longest lifetime of a new personal access token from ${current.maxLifetimeDays} to ${maxLifetimeDays} days.` },
+            { text: "Tokens that exist keep their expiry; a token created from then on expires within the new lifetime." },
+          ];
+    return { title: "Change the longest lifetime of personal access tokens", lines };
   },
 };
 

@@ -96,7 +96,15 @@ export {
 } from "./proposals.ts";
 export { GITHUB_LOGIN, role, user } from "./schemas.ts";
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
-export { getSignInPolicy, setSignInPolicy, setWriteBudget, SETTINGS_COMMANDS } from "./settings.ts";
+export {
+  getPersonalAccessTokenAdminSettings,
+  getSignInPolicy,
+  setPersonalAccessTokenMaxLifetime,
+  setPersonalAccessTokens,
+  setSignInPolicy,
+  setWriteBudget,
+  SETTINGS_COMMANDS,
+} from "./settings.ts";
 export { addTeamMember, changeTeamKey, createTeam, listedTeam, listTeams, removeTeamMember, renameTeam, team, TEAM_COMMANDS, teamKey } from "./teams.ts";
 export { JIRA_SITE_URL, jiraSiteUrl } from "./integrations.ts";
 export {
