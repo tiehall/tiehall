@@ -1,10 +1,12 @@
-import { COMMAND_TABLE, createTiehallClient, type CommandEntry, type TiehallClient } from "@tiehall/client";
+import { COMMAND_TABLE, type CommandEntry } from "@tiehall/client";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
-import { chooseLogin, configDirOf, installUrlOf, type SavedLogin } from "./logins.ts";
-import { expiresSoon, isRedirect, logIn, redirectRefusal, refreshLogin } from "./oauth.ts";
+import { HOOK_COMMANDS, hookSessionEnd, hookWait } from "./hooks.ts";
+import { chooseLogin, configDirOf, installUrlOf } from "./logins.ts";
+import { logIn } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
-import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
+import { sessionFor, type Session } from "./session.ts";
+import { CLI_VERSION } from "./version.ts";
 
 // The tiehall CLI (agent-surfaces: The CLI package; agent-surfaces: CLI
 // request commands; public-api: The license map; design.md, Technical
@@ -32,6 +34,12 @@ const OWN_COMMANDS: readonly { usage: string; summary: string }[] = [
   { usage: "tiehall login <url>", summary: "Sign in to the Tiehall install at this URL, through its approval page, and keep the login: one per install." },
 ];
 
+/** The commands that serve the Claude Code plugin's hooks, which `tiehall hook` lists. */
+const HOOKS: readonly { usage: string; summary: string }[] = HOOK_COMMANDS.map(({ command, summary }) => ({ usage: `tiehall ${command}`, summary }));
+
+/** The names of the CLI's own commands of more than one word, and the words that lead to them, such as "hook". */
+const OWN_NAMES: readonly string[] = ["hook", ...HOOK_COMMANDS.map(({ command }) => command)];
+
 /** Runs one `tiehall` command; returns its exit code: 0 once it has done what it was asked, 1 otherwise. */
 export async function run(environment: CliEnvironment): Promise<number> {
   try {
@@ -56,6 +64,7 @@ async function dispatch(environment: CliEnvironment): Promise<number> {
     return words.length === 0 && !globals.help ? 1 : 0;
   }
   if (words.join(" ") === "login") return login(environment, globals, rest);
+  if (words[0] === "hook") return hook(environment, globals, words.join(" "));
   const entry = COMMAND_TABLE.find(({ command }) => command === words.join(" "));
   if (entry === undefined) throw new CliError(`tiehall has no command ${words.join(" ")}. Run tiehall --help for its commands.`);
   if (globals.help) {
@@ -75,6 +84,28 @@ async function dispatch(environment: CliEnvironment): Promise<number> {
   const reader = globals.json ? undefined : { teams: await teamsOf(session) };
   environment.stdout(answerText(entry.operationId, answer.body, reader));
   return 0;
+}
+
+/**
+ * `tiehall hook <name>`: the command a hook of the Claude Code plugin runs,
+ * which writes only what the hook passes on to Claude; `tiehall hook` lists
+ * them.
+ */
+async function hook(environment: CliEnvironment, globals: Globals, command: string): Promise<number> {
+  if (command === "hook" || globals.help) {
+    const found = HOOKS.filter(({ usage }) => command === "hook" || usage === `tiehall ${command}`);
+    environment.stdout(listing("Usage: tiehall hook <name>\n\nThe commands the Claude Code plugin's hooks run:", found.length > 0 ? found : HOOKS));
+    return command === "hook" && !globals.help ? 1 : 0;
+  }
+  if (command === "hook wait") return hookWait(environment, globals.install);
+  if (command === "hook session-end") return hookSessionEnd(environment);
+  return 0;
+}
+
+/** A heading and commands, each with what it does, in two columns. */
+function listing(heading: string, commands: readonly { usage: string; summary: string }[]): string {
+  const width = Math.max(...commands.map(({ usage }) => usage.length)) + 2;
+  return [heading, ...commands.map(({ usage, summary }) => `  ${usage.padEnd(width)}${summary}`), ""].join("\n");
 }
 
 /** `tiehall login <url>`: signs in to the install at that URL, and keeps the login. */
@@ -131,7 +162,7 @@ function parseGlobals(argv: readonly string[]): { globals: Globals; words: strin
     if (token.startsWith("-")) break;
     leading.push(token);
   }
-  const names = new Set(COMMAND_TABLE.map(({ command }) => command));
+  const names = new Set([...COMMAND_TABLE.map(({ command }) => command), ...OWN_NAMES]);
   let length = Math.min(1, leading.length);
   for (let words = leading.length; words > 1; words -= 1) {
     if (names.has(leading.slice(0, words).join(" "))) {
@@ -140,62 +171,6 @@ function parseGlobals(argv: readonly string[]): { globals: Globals; words: strin
     }
   }
   return { globals, words: leading.slice(0, length), rest: others.slice(length) };
-}
-
-/** A client of the saved login's install, which sends its token and says which CLI calls. */
-function clientFor(environment: CliEnvironment, login: SavedLogin): TiehallClient {
-  return createTiehallClient({
-    baseUrl: login.url,
-    headers: { authorization: `Bearer ${login.accessToken}`, "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
-    // Redirects are not followed (isRedirect()): the call is answered with the redirect itself.
-    fetch: (request) => (environment.fetch ?? fetch)(new Request(request, { redirect: "manual" })),
-  });
-}
-
-/** What the install answered: its status and its JSON body. */
-interface Answer {
-  ok: boolean;
-  status: number;
-  body: unknown;
-}
-
-type Call = (client: TiehallClient) => Promise<{ data?: unknown; error?: unknown; response: Response }>;
-
-/** The calls of one command to its install, with the saved login's tokens, refreshed first when they expire. */
-interface Session {
-  send(call: Call): Promise<Answer>;
-}
-
-function sessionFor(environment: CliEnvironment, saved: SavedLogin): Session {
-  const configDir = configDirOf(environment.env);
-  let login = saved;
-  let refreshed = false;
-  const once = async (call: Call): Promise<Answer> => {
-    let answered: { data?: unknown; error?: unknown; response: Response };
-    try {
-      answered = await call(clientFor(environment, login));
-    } catch (error) {
-      const why = error instanceof Error ? error.message : String(error);
-      throw new CliError(`The CLI could not reach ${login.url}: ${why}`);
-    }
-    const { response } = answered;
-    if (isRedirect(response)) throw redirectRefusal(login.url);
-    return { ok: response.ok, status: response.status, body: response.ok ? answered.data : answered.error };
-  };
-  return {
-    async send(call) {
-      if (!refreshed && expiresSoon(environment, login)) {
-        login = await refreshLogin(environment, configDir, login);
-        refreshed = true;
-      }
-      const answer = await once(call);
-      // An access token the install no longer takes, such as one it refused before it expired, is refreshed once.
-      if (answer.status !== 401 || refreshed) return answer;
-      login = await refreshLogin(environment, configDir, login);
-      refreshed = true;
-      return once(call);
-    },
-  };
 }
 
 /** Prints a refusal: the problem the install answered with, or what the CLI can say of an answer that is none. */
@@ -222,7 +197,7 @@ function usageOf(entry: CommandEntry): string {
 
 /** `tiehall --help`: every command, with what it does. */
 function overview(): string {
-  const commands = [...OWN_COMMANDS, ...COMMAND_TABLE.map((entry) => ({ usage: usageOf(entry), summary: entry.summary }))];
+  const commands = [...OWN_COMMANDS, ...COMMAND_TABLE.map((entry) => ({ usage: usageOf(entry), summary: entry.summary })), ...HOOKS];
   const width = Math.max(...commands.map(({ usage }) => usage.length)) + 2;
   return [
     `tiehall ${CLI_VERSION}: the command line of Tiehall, for people and their agents.`,

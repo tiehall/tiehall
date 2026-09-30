@@ -1,5 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { COMMAND_TABLE } from "@tiehall/client";
 import { NODE_MAJOR_MINIMUM, run } from "../src/index.ts";
 import { RENDERERS } from "../src/output.ts";
+import { sessionLockPath } from "../src/session-lock.ts";
 
 // The tiehall package (agent-surfaces: The CLI package; agent-surfaces: CLI
 // request commands; public-api: Request bodies have a size limit). It runs on
@@ -34,6 +37,16 @@ function tiehall(args: readonly string[], nodeVersion?: string) {
   const child = spawnSync(process.execPath, [...preload, launcher, ...args], { encoding: "utf8", env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: scratch } });
   if (child.error) throw child.error;
   return child;
+}
+
+/** Whether the process with this id still runs. */
+function runs(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Runs one command in this process, with this fetch. */
@@ -108,6 +121,75 @@ describe("the package", () => {
     expect(child.stdout).toContain("Usage: tiehall reply <key> <body> [options]");
     expect(child.stdout).toContain("--question-id <string> (required)");
     expect(child.stdout).not.toContain("--kind");
+  });
+});
+
+// requester-loop: Claude Code Stop-hook waiter. The hooks run the tiehall command as Claude Code starts it, with
+// Claude Code's input on its standard input; a hook that cannot do its work ends without a word, and one whose
+// standard input never ends still ends.
+describe("the hook commands, as Claude Code runs them", () => {
+  it("end without a word when the CLI is not signed in", () => {
+    for (const hook of ["wait", "session-end"]) {
+      const child = spawnSync(process.execPath, [launcher, "hook", hook], {
+        encoding: "utf8",
+        input: JSON.stringify({ session_id: "session-1", hook_event_name: "Stop" }),
+        env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: scratch },
+      });
+      expect({ hook, status: child.status, stdout: child.stdout, stderr: child.stderr }).toEqual({ hook, status: 0, stdout: "", stderr: "" });
+    }
+  });
+
+  // requester-loop: Claude Code Stop-hook waiter: a waiter whose session has ended exits.
+  it("end the waiter, and free its lock, once the Claude Code that started it has stopped", async () => {
+    const waits: string[] = [];
+    const server = createServer((request) => void waits.push(request.url ?? ""));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://localhost:${(server.address() as AddressInfo).port}`;
+    const configDir = mkdtempSync(join(tmpdir(), "tiehall-orphan-"));
+    writeFileSync(
+      join(configDir, "logins.json"),
+      JSON.stringify({ logins: { [url]: { accessToken: "a", refreshToken: "r", expiresAt: new Date(Date.now() + 600_000).toISOString() } } }),
+      { mode: 0o600 },
+    );
+    try {
+      // A stand-in for Claude Code: it starts the waiter, as the Stop hook does, and stops without ending the session.
+      // It runs beside this process's server, which the waiter calls, so it is not run synchronously.
+      const claude = spawn(
+        process.execPath,
+        [
+          "-e",
+          `const { spawn } = require("node:child_process");
+           const waiter = spawn(process.execPath, [${JSON.stringify(launcher)}, "hook", "wait"], { stdio: ["pipe", "ignore", "ignore"], env: { PATH: process.env.PATH, TIEHALL_CONFIG_DIR: ${JSON.stringify(configDir)} } });
+           waiter.stdin.end(JSON.stringify({ session_id: "session-orphan", hook_event_name: "Stop" }));
+           process.stdout.write(String(waiter.pid));
+           setTimeout(() => process.exit(0), 1500);`,
+        ],
+        { stdio: ["ignore", "pipe", "ignore"] },
+      );
+      let printed = "";
+      claude.stdout.on("data", (chunk: Buffer) => (printed += chunk.toString()));
+      await new Promise((resolve) => claude.on("exit", resolve));
+      const pid = Number(printed);
+      expect(pid).toBeGreaterThan(0);
+      expect(waits).toEqual(["/api/v1/events/wait"]);
+      const until = Date.now() + 15_000;
+      while (Date.now() < until && runs(pid)) await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(runs(pid)).toBe(false);
+      expect(existsSync(sessionLockPath(configDir, "session-orphan"))).toBe(false);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it("end when their standard input never does", async () => {
+    const child = spawn(process.execPath, [launcher, "hook", "wait"], { env: { PATH: process.env["PATH"] ?? "", TIEHALL_CONFIG_DIR: scratch }, stdio: ["pipe", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    const code = await new Promise<number | null>((resolve) => child.on("exit", resolve));
+    expect({ code, output }).toEqual({ code: 0, output: "" });
   });
 });
 

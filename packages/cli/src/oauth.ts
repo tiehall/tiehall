@@ -1,4 +1,4 @@
-import { CliError, type CliEnvironment } from "./environment.ts";
+import { CliError, nowOf, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, saveLogin, withLoginsLock, type SavedLogin } from "./logins.ts";
 import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
@@ -54,7 +54,7 @@ async function post(environment: CliEnvironment, url: string, path: string, fiel
       }),
     );
   } catch (error) {
-    throw new CliError(`The CLI could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new UnreachableError(`The CLI could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (isRedirect(response)) throw redirectRefusal(url);
   let body: unknown;
@@ -73,7 +73,7 @@ function expiry(environment: CliEnvironment, seconds: unknown): string {
 }
 
 function now(environment: CliEnvironment): Date {
-  return environment.now?.() ?? new Date();
+  return nowOf(environment);
 }
 
 /** The tokens of an answer of the token endpoint, as a saved login for the install. */
@@ -105,7 +105,7 @@ export async function logIn(environment: CliEnvironment, configDir: string, url:
   let interval = typeof started.body["interval"] === "number" && started.body["interval"] > 0 ? started.body["interval"] : 5;
   const lifetime = typeof started.body["expires_in"] === "number" ? started.body["expires_in"] : 600;
   const until = now(environment).getTime() + lifetime * 1000;
-  const sleep = environment.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const sleep = sleepOf(environment);
   for (;;) {
     await sleep(interval * 1000);
     const polled = await post(environment, url, "/api/auth/oauth2/token", { grant_type: DEVICE_CODE_GRANT, device_code: deviceCode, client_id: CLI_CLIENT_ID });
@@ -135,7 +135,7 @@ export function expiresSoon(environment: CliEnvironment, login: SavedLogin): boo
  * tokens, as saved, are used.
  */
 export async function refreshLogin(environment: CliEnvironment, configDir: string, login: SavedLogin): Promise<SavedLogin> {
-  const sleep = environment.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const sleep = sleepOf(environment);
   return withLoginsLock(configDir, sleep, async () => {
     const current = chooseLogin(configDir, { install: login.url });
     if (current.accessToken !== login.accessToken && !expiresSoon(environment, current)) return current;
@@ -145,6 +145,8 @@ export async function refreshLogin(environment: CliEnvironment, configDir: strin
       client_id: CLI_CLIENT_ID,
       resource: `${login.url}/mcp`,
     });
+    // An install that cannot answer for now, such as one that restarts, may take the refresh token once it is back.
+    if (refreshed.status >= 500) throw new UnreachableError(`${login.url} could not refresh the saved login for now (HTTP ${refreshed.status}): try again once it is back.`);
     if (refreshed.status !== 200) throw new CliError(`The saved login for ${login.url} no longer works: run tiehall login ${login.url} again.`);
     const next = loginOf(environment, login.url, refreshed.body);
     saveLogin(configDir, next);
