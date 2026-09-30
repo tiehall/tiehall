@@ -23,8 +23,8 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // instead.
 //
 // The tests were written first, as expected failures: the request commands
-// wait for task 17.3, signing in and choosing an install for 17.4, and
-// `tiehall updates` for 19.3, which each turn their tests into plain tests.
+// waited for task 17.3 and signing in and choosing an install for 17.4, which
+// turned theirs into plain tests; `tiehall updates` waits for 19.3.
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
@@ -308,7 +308,7 @@ describe("signing in and choosing an install (task 17.4)", () => {
   }
 
   // agent-surfaces: CLI request commands, "Signing in to an install".
-  it.fails("login starts the device flow with the install, prints a code to type on its approval page, and keeps a saved login for it", async () => {
+  it("login starts the device flow with the install, prints a code to type on its approval page, and keeps a saved login for it", async () => {
     const machine = cliMachine(harness);
     try {
       const run = await logIn(machine, dana);
@@ -324,7 +324,7 @@ describe("signing in and choosing an install (task 17.4)", () => {
   });
 
   // agent-surfaces: CLI request commands, "One saved login per install".
-  it.fails("login keeps one saved login per install: another install's beside it, and a new one in place of that install's", async () => {
+  it("login keeps one saved login per install: another install's beside it, and a new one in place of that install's", async () => {
     const other = signInOnlyInstall("https://tiehall.example.net");
     const machine = cliMachine(harness, { "https://tiehall.example.net": other.handle });
     try {
@@ -343,7 +343,7 @@ describe("signing in and choosing an install (task 17.4)", () => {
   });
 
   // agent-surfaces: CLI request commands, "Several saved logins need a choice".
-  it.fails("with several saved logins, a command that names no install refuses, lists them and sends nothing; --install picks one", async () => {
+  it("with several saved logins, a command that names no install refuses, lists them and sends nothing; --install picks one", async () => {
     const machine = cliMachine(harness, { "https://tiehall.example.net": async () => new Response("unexpected", { status: 500 }) });
     try {
       machine.saveLogin(URL_OF_INSTALL, await harness.signInCli(dana));
@@ -364,7 +364,7 @@ describe("signing in and choosing an install (task 17.4)", () => {
     }
   });
 
-  it.fails("with several saved logins, a request URL picks the install by its origin", async () => {
+  it("with several saved logins, a request URL picks the install by its origin", async () => {
     const machine = cliMachine(harness, { "https://tiehall.example.net": async () => new Response("unexpected", { status: 500 }) });
     try {
       machine.saveLogin(URL_OF_INSTALL, await harness.signInCli(dana));
@@ -379,8 +379,29 @@ describe("signing in and choosing an install (task 17.4)", () => {
     }
   });
 
+  // agent-access: Access tokens live 10 minutes and refresh tokens rotate. A saved login keeps working past its
+  // access token's 10 minutes: the CLI refreshes it first, and keeps the new tokens.
+  it("refreshes a saved login whose access token has expired, and keeps the new tokens in place of the old", async () => {
+    const machine = cliMachine(harness);
+    try {
+      const tokens = await harness.signInCli(dana);
+      machine.saveLogin(URL_OF_INSTALL, tokens, new Date(Date.now() - 60_000));
+      const request = await openToFe();
+      const run = await machine.run(["get", request.key]);
+      expect(run).toMatchObject({ code: 0, stderr: "" });
+      expect(run.stdout).toContain(request.key);
+      const saved = machine.logins()[URL_OF_INSTALL];
+      expect(saved?.accessToken).not.toBe(tokens.accessToken);
+      expect(saved?.refreshToken).not.toBe(tokens.refreshToken);
+      expect(machine.loginsFileMode()).toBe(0o600);
+      expect((await machine.run(["get", request.key])).code).toBe(0);
+    } finally {
+      machine.close();
+    }
+  });
+
   // agent-surfaces: CLI request commands, "A URL on another origin is refused".
-  it.fails("get refuses a URL on another origin, and sends no request and no token there", async () => {
+  it("get refuses a URL on another origin, and sends no request and no token there", async () => {
     const reached: Request[] = [];
     const machine = cliMachine(harness, {
       "https://attacker.example.net": async (request) => {
