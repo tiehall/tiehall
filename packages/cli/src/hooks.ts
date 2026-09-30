@@ -223,7 +223,7 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
     switch (waited.kind) {
       case "answered": {
         failures = 0;
-        const fresh = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor);
+        const fresh = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor, stop);
         if (fresh !== undefined) return fresh;
         // Everything it answered was announced already: the next call waits past it, and past what the mark holds.
         cursor = Math.max(waited.cursor, announcedThrough(configDir, session.url));
@@ -245,15 +245,19 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
 /**
  * The notices the mark does not hold, which the mark then holds, up to `through`
  * when it is given, such as the cursor of the answer they came in; undefined
- * when the mark holds them all.
+ * when the mark holds them all, or when `stop` aborted before the mark's lock
+ * was taken, as it does when the waiter's session ends, since then the news
+ * reaches nobody and the next session's digest lists it.
  */
 export function announceFresh(
   configDir: string,
   url: string,
   notices: readonly { seq: number; notice: Notice }[],
   through?: number,
+  stop?: AbortSignal,
 ): Promise<{ seq: number; notice: Notice }[] | undefined> {
   return announce(configDir, url, (announced) => {
+    if (stop?.aborted === true) return undefined;
     const fresh = notices.filter(({ seq }) => seq > announced);
     if (fresh.length === 0) return undefined;
     return { through: Math.max(through ?? 0, ...fresh.map(({ seq }) => seq)), picked: fresh };

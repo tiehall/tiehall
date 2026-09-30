@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -332,6 +332,27 @@ describe("the lock of a Claude Code session", () => {
     expect(await wait.done).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(existsSync(sessionLockPath(configDir, "session-1"))).toBe(false);
     expect(install.holding()).toBe(0);
+  });
+
+  // requester-loop: Claude Code Stop-hook waiter, "The session ends"; requester-loop: News is announced once. News that
+  // came as the session ended reaches no Claude, so the waiter does not mark it announced, and the next session's
+  // digest lists it.
+  it("marks nothing announced, and wakes nothing, when the session ends while the waiter records the news that came", async () => {
+    const wait = waiter("session-1");
+    await install.untilHolding();
+    // A digest of another session holds the mark's lock for a moment, so the waiter waits for it with the news in hand.
+    const markLock = join(configDir, "announced.lock");
+    writeFileSync(markLock, "");
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(wait.ended()).toBe(false);
+    const end = startCli(["hook", "session-end"], { configDir, clock, fetch: install.fetch, stdin: hookInput("session-1", "SessionEnd") });
+    expect(await end.done).toEqual({ code: 0, stdout: "", stderr: "" });
+    rmSync(markLock);
+    expect(await wait.done).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(existsSync(join(configDir, "announced.json"))).toBe(false);
+    const digest = await startCli(["hook", "session-start"], { configDir, clock, fetch: install.fetch, stdin: hookInput("session-2", "SessionStart") }).done;
+    expect(digest.stdout).toContain("FE-142 request.message_posted (team FE)");
   });
 
   it("is left alone by the end of another session, and an end without a waiter does nothing", async () => {
