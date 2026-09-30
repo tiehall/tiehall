@@ -125,6 +125,12 @@ export interface AgentAccessHarness {
    * tokens, and fails the test when a step does not answer as it should.
    */
   signInCli(person: SignedIn, scopes?: readonly string[]): Promise<{ accessToken: string; refreshToken: string }>;
+  /**
+   * Approves a device code as the signed-in member does: the code typed on the
+   * device approval page, and its confirmation; fails the test when a step
+   * does not answer as it should.
+   */
+  approveDevice(person: SignedIn, userCode: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -343,6 +349,16 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
       );
       const { device_code: deviceCode, user_code: userCode } = (await started.json()) as { device_code?: string; user_code?: string };
       if (started.status !== 200 || deviceCode === undefined || userCode === undefined) throw new Error(`the device authorization answered ${started.status}`);
+      await harness.approveDevice(person, userCode);
+      const polled = await token({ grant_type: DEVICE_CODE_GRANT_TYPE, device_code: deviceCode, client_id: CLI_CLIENT_ID });
+      const accessToken = polled.body["access_token"];
+      const refreshToken = polled.body["refresh_token"];
+      if (polled.status !== 200 || typeof accessToken !== "string" || typeof refreshToken !== "string") {
+        throw new Error(`the CLI's poll answered ${polled.status}: ${JSON.stringify(polled.body)}`);
+      }
+      return { accessToken, refreshToken };
+    },
+    async approveDevice(person, userCode) {
       const fromThePage = { cookie: person.cookie, accept: "text/html", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" };
       const page = await (await handle(new Request(`${URL_OF_INSTALL}/device`, { headers: { cookie: person.cookie } }))).text();
       const review = await handle(
@@ -358,13 +374,6 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
         }),
       );
       if (approved.status !== 200) throw new Error(`the approval answered ${approved.status}: ${await approved.text()}`);
-      const polled = await token({ grant_type: DEVICE_CODE_GRANT_TYPE, device_code: deviceCode, client_id: CLI_CLIENT_ID });
-      const accessToken = polled.body["access_token"];
-      const refreshToken = polled.body["refresh_token"];
-      if (polled.status !== 200 || typeof accessToken !== "string" || typeof refreshToken !== "string") {
-        throw new Error(`the CLI's poll answered ${polled.status}: ${JSON.stringify(polled.body)}`);
-      }
-      return { accessToken, refreshToken };
     },
     async close() {
       await stub.close();
