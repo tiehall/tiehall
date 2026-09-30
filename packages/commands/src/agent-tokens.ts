@@ -11,7 +11,8 @@ import type { Caller } from "./caller.ts";
 // Authorization header, as `Bearer <token>`; a call without one names no one.
 // A token the install issued is a JWT of the type at+jwt, signed with one of
 // the install's own keys, issued by the install's URL, TIEHALL_URL, for its
-// one protected resource, TIEHALL_URL/mcp, as its audience, and not expired. It acts for its subject, the user who approved the client, through
+// one protected resource, TIEHALL_URL/mcp, as its audience, and not expired;
+// a token bound to a DPoP key is not a bearer token, and is refused. It acts for its subject, the user who approved the client, through
 // the client that holds it, within the three OAuth scopes it carries. Any
 // other token is refused with 401 and invalid_token.
 //
@@ -77,6 +78,8 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
       if (isTokenError(error)) throw invalidToken();
       throw error;
     }
+    // A token bound to a key (DPoP, RFC 9449) is good only with a proof of that key, which /api/v1 does not take.
+    if (claims["cnf"] !== undefined) throw invalidToken();
     const userId = claims["sub"];
     const clientId = claims["azp"] ?? claims["client_id"];
     if (typeof userId !== "string" || !UUID.test(userId) || typeof clientId !== "string" || clientId === "") throw invalidToken();

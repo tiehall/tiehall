@@ -126,6 +126,12 @@ describe("the check of an access token", () => {
     await expect(check()(request(tokenFor({ aud })))).rejects.toMatchObject({ reason: "invalid-token", status: 401 });
   });
 
+  it("refuses a token bound to a DPoP key, which /api/v1 takes only as a bearer token, with invalid_token", async () => {
+    await expect(check()(request(tokenFor({ aud: MCP_RESOURCE, cnf: { jkt: "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I" } })))).rejects.toMatchObject({
+      reason: "invalid-token",
+    });
+  });
+
   it("refuses a token from another issuer with invalid_token", async () => {
     await expect(check()(request(tokenFor({ aud: MCP_RESOURCE, iss: "https://tiehall.other.example" })))).rejects.toMatchObject({ reason: "invalid-token" });
   });
