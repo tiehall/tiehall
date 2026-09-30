@@ -3,7 +3,8 @@ import { REQUEST_KEY, Refusal } from "@tiehall/core";
 import { packetRevisions, teams } from "@tiehall/db";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestPageText, type Reader } from "@tiehall/packet/tool-text";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
@@ -80,17 +81,49 @@ export function keyOfRequestName(name: string, installUrl: string | undefined): 
   return key;
 }
 
-/** The request's current packet revision, with the team whose member added it. */
+/**
+ * The request's current packet revision, with the team whose member wrote its
+ * text (agent-safety: Every string shown to agents has an origin). The text is
+ * the packet's `untrusted` object, and its writer is the team that added the
+ * latest revision that changed it: a revision that kept it as it was, such as
+ * the one a due date the target team proposed adds once it is confirmed,
+ * wrote none of it, so the requester side's text keeps its origin.
+ */
 async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
   const [row] = await tx
-    .select({ number: packetRevisions.number, packet: packetRevisions.packet, teamId: teams.id, teamKey: teams.key })
+    .select({ number: packetRevisions.number, packet: packetRevisions.packet })
     .from(packetRevisions)
-    .leftJoin(teams, and(eq(teams.orgId, packetRevisions.orgId), eq(teams.id, packetRevisions.teamId)))
     .where(and(eq(packetRevisions.orgId, orgId), eq(packetRevisions.requestId, requestId)))
     .orderBy(desc(packetRevisions.number))
     .limit(1);
   if (row === undefined) throw new Error("A request has no packet revision.");
-  const team = row.teamId === null || row.teamKey === null ? null : { id: row.teamId, key: row.teamKey };
+  const previous = alias(packetRevisions, "previous");
+  const [writer] = await tx
+    .select({ teamId: teams.id, teamKey: teams.key })
+    .from(packetRevisions)
+    .leftJoin(teams, and(eq(teams.orgId, packetRevisions.orgId), eq(teams.id, packetRevisions.teamId)))
+    .where(
+      and(
+        eq(packetRevisions.orgId, orgId),
+        eq(packetRevisions.requestId, requestId),
+        notExists(
+          tx
+            .select({ number: previous.number })
+            .from(previous)
+            .where(
+              and(
+                eq(previous.orgId, packetRevisions.orgId),
+                eq(previous.requestId, packetRevisions.requestId),
+                eq(previous.number, sql`${packetRevisions.number} - 1`),
+                sql`(${previous.packet} -> 'untrusted')::jsonb = (${packetRevisions.packet} -> 'untrusted')::jsonb`,
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(desc(packetRevisions.number))
+    .limit(1);
+  const team = writer === undefined || writer.teamId === null || writer.teamKey === null ? null : { id: writer.teamId, key: writer.teamKey };
   return { number: row.number, packet: row.packet as Packet, team };
 }
 

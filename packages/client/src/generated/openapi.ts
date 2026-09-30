@@ -3948,7 +3948,7 @@ export interface operations {
                             kind: "request" | "contract_change";
                             /** @description The current revision's number, from 1 for the packet the request was opened with. */
                             revision: number;
-                            /** @description The team whose member added the current revision; null for a revision Tiehall added. */
+                            /** @description The team whose member wrote the packet's text: the team that added the latest revision that changed it, which a revision that only moves the due date does not; null for text Tiehall added. */
                             team: {
                                 /** Format: uuid */
                                 id: string;

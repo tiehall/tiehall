@@ -71,7 +71,12 @@ export const requestPage = z.object({
     revision: z.number().int().min(1).meta({ description: "The current revision's number, from 1 for the packet the request was opened with." }),
     kind: z.enum(PACKET_KINDS),
     dueDate: z.iso.date().nullable().meta({ description: "The day the request is due, from the current revision; null when it names none." }),
-    team: teamRef.nullable().meta({ description: "The team whose member added the current revision; null for a revision Tiehall added." }),
+    team: teamRef
+      .nullable()
+      .meta({
+        description:
+          "The team whose member wrote the packet's text: the team that added the latest revision that changed it, which a revision that only moves the due date does not; null for text Tiehall added.",
+      }),
   }),
   section: pageSection.meta({ description: "The sections this page reads: all, or the one named." }),
   page: z.number().int().min(1),
