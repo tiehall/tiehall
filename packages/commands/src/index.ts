@@ -18,6 +18,7 @@ export {
   continuePathOf,
   createConsentRoute,
   isAuthorizationRequest,
+  isRegisteredRedirect,
   type AuthorizationRequest,
   type ConsentRoute,
   type ConsentRouteOptions,

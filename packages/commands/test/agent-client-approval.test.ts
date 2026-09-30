@@ -161,6 +161,19 @@ describe("a confirmed approval", () => {
     expect(claims.sub).toBe(ana.userId);
   });
 
+  it("works for a native client that returns to another port of the loopback address it registered", async () => {
+    const registered = await harness.registerClient({ redirect_uris: ["http://127.0.0.1/callback"] });
+    const client = { clientId: registered.clientId, redirectUri: "http://127.0.0.1:61234/callback" };
+    const pkce = pkcePair();
+    const form = await consentFor(ana, client, pkce);
+    const confirmed = await post(ana, form);
+    expect(confirmed.status).toBe(303);
+    const answer = await harness.handle(new Request(new URL(confirmed.headers.get("location") ?? "", URL_OF_INSTALL), { headers: { cookie: ana.cookie } }));
+    const location = new URL(answer.headers.get("location") ?? "");
+    expect(`${location.origin}${location.pathname}`).toBe("http://127.0.0.1:61234/callback");
+    expect(location.searchParams.get("code")).not.toBeNull();
+  });
+
   it("is used once: posting the same form again gets 403", async () => {
     const client = await harness.registerClient();
     const form = await consentFor(ana, client, pkcePair());

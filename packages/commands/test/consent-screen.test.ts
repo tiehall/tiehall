@@ -176,6 +176,26 @@ describe("the consent screen", () => {
   });
 });
 
+describe("a native client's return address", () => {
+  it("may take any port on the loopback address it registered, as the authorization server allows, and the page names that host", async () => {
+    const client = await harness.registerClient({ redirect_uris: ["http://127.0.0.1/callback"] });
+    const answer = await harness.authorize(ana.cookie, { clientId: client.clientId, redirectUri: "http://127.0.0.1:61234/callback" }, pkcePair(), { scope: "requests:read" });
+    const url = new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
+    expect(url.pathname).toBe("/consent");
+    const page = await consentPage(url);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("127.0.0.1");
+  });
+
+  it("may not change anything but the port: another path on the loopback address is refused with 400", async () => {
+    const client = await harness.registerClient({ redirect_uris: ["http://127.0.0.1/callback"] });
+    const url = await consentUrlOf(client.clientId);
+    // Crafted by hand: the authorization server would not send the browser here with another path.
+    url.searchParams.set("redirect_uri", "http://127.0.0.1:61234/elsewhere");
+    expect((await consentPage(url)).status).toBe(400);
+  });
+});
+
 describe("an authorization started before its person signed in", () => {
   it("sends them to the sign-in page, which brings them back to the authorization, and on to the consent screen", async () => {
     const client = await harness.registerClient();

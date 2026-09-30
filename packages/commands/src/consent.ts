@@ -105,6 +105,27 @@ const SCOPE_TEXTS: Readonly<Record<string, string>> = {
   "contracts:report": "contracts:report: attach classified contract changes to a request",
 };
 
+/**
+ * Whether a redirect URI is one the client registered: the same URI, or, for
+ * a native client's return to its own computer over http, the same URI on
+ * another port, since such a client listens on whatever port is free when it
+ * runs (RFC 8252), as the authorization server allows too.
+ */
+export function isRegisteredRedirect(registered: string, requested: string): boolean {
+  if (registered === requested) return true;
+  const withoutPort = (uri: string): string | undefined => {
+    try {
+      const url = new URL(uri);
+      if (url.protocol !== "http:" || !isLocalhost(uri) || url.username !== "" || url.password !== "" || uri.includes("#")) return undefined;
+      return `${url.protocol}//${url.hostname}${url.pathname}${url.search}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const a = withoutPort(registered);
+  return a !== undefined && a === withoutPort(requested);
+}
+
 /** Whether a redirect URI is on the computer the client runs on. */
 function isLocalhost(uri: string): boolean {
   try {
@@ -156,7 +177,7 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
 export async function consentViewIn(context: Pick<OrgContext, "tx" | "orgId">, request: AuthorizationRequest): Promise<ConsentView & { client: AgentClient }> {
   const client = await readAgentClient(context, request.clientId);
   if (client === undefined || client.disabled) throw new Refusal("record-not-found", "The install knows no agent client with this id.");
-  if (!client.redirectUris.includes(request.redirectUri)) {
+  if (!client.redirectUris.some((registered) => isRegisteredRedirect(registered, request.redirectUri))) {
     throw new Refusal("invalid-input", "The client did not register the address this request would send you back to.");
   }
   return { client, redirectUri: request.redirectUri, scopes: request.scopes };
