@@ -1,4 +1,4 @@
-import { CATALOG } from "@tiehall/catalog";
+import { CATALOG, toolReadsOnly } from "@tiehall/catalog";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { storePacketRevision, write, type Store } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
@@ -222,8 +222,9 @@ describe("a flagged request", () => {
       "requests.create": "opens a request, which the caps on opened requests limit instead",
       "events.acknowledge": "moves a read cursor, which is no write on a request",
     };
+    // An operation that only reads, such as get_request, which MCP alone offers, is no write.
     const agentWrites_ = CATALOG.commands
-      .filter(({ surfaces, method }) => surfaces.length > 0 && method !== "GET")
+      .filter((definition) => definition.surfaces.length > 0 && !toolReadsOnly(definition))
       .map(({ id }) => id)
       .sort();
     expect([...Object.keys(writes), ...Object.keys(writesOnNoRequest)].sort()).toEqual(agentWrites_);

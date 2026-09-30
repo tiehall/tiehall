@@ -18,6 +18,7 @@ import { PROPOSAL_ENDING_HANDLERS } from "./proposal-endings.ts";
 import { PROPOSAL_UNDO_HANDLERS } from "./proposal-undo.ts";
 import { PROPOSAL_WAITING_HANDLERS } from "./proposal-waiting.ts";
 import { PROPOSAL_HANDLERS } from "./proposals.ts";
+import { REQUEST_PAGE_HANDLERS } from "./request-pages.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
 import { USER_HANDLERS } from "./users.ts";
@@ -32,6 +33,7 @@ export const HANDLERS: Handlers = {
   ...TEAM_HANDLERS,
   ...USER_HANDLERS,
   ...REQUEST_HANDLERS,
+  ...REQUEST_PAGE_HANDLERS,
   ...MESSAGE_HANDLERS,
   ...PACKET_HANDLERS,
   ...PROPOSAL_HANDLERS,

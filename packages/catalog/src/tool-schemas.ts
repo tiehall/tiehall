@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Catalog } from "./catalog.ts";
+import type { CommandDefinition, StabilityLevel } from "./command.ts";
 
 // Tool schemas that current clients accept (agent-surfaces: Tool schemas that
 // current clients accept; public-api: MCP tools follow the same compatibility
@@ -193,6 +194,51 @@ export function toolDescriptions(catalog: Catalog): readonly ToolDescription[] {
     DESCRIPTIONS.set(catalog, tools);
   }
   return tools;
+}
+
+// Tool annotations and stability levels (agent-surfaces: Tool annotations and
+// stability levels; design.md, Decisions this change rests on: D28 #65). The
+// tool list gives every tool MCP annotations and, in its _meta, the stability
+// level of its operation, under Tiehall's own key. A tool's read-only hint is
+// true only when its operation only reads: it needs no scope but
+// requests:read, and, if REST offers it too, REST offers it with GET. So a
+// tool that changes a request never carries it, and neither does one that
+// changes anything else, such as a reader's cursor.
+
+/** The _meta key under which every tool states its operation's stability level. */
+export const STABILITY_META_KEY = "com.tiehall/stability";
+
+/** Whether a tool only reads: its operation needs no scope but requests:read, and is offered on REST, if at all, with GET. */
+export function toolReadsOnly(definition: CommandDefinition): boolean {
+  const readScopeOnly = definition.scopes.every((scope) => scope === "requests:read");
+  return readScopeOnly && (definition.method === undefined || definition.method === "GET");
+}
+
+/** A tool as the MCP tool list shows it, with its annotations and its stability level in _meta. */
+export interface ToolListing extends ToolDescription {
+  annotations: { readOnlyHint: boolean };
+  _meta: { [STABILITY_META_KEY]: StabilityLevel };
+}
+
+const LISTINGS = new WeakMap<Catalog, readonly ToolListing[]>();
+
+/** Every tool the catalog offers on MCP, sorted by name, as the tool list shows it; computed once per catalog. */
+export function toolListing(catalog: Catalog): readonly ToolListing[] {
+  let listing = LISTINGS.get(catalog);
+  if (listing === undefined) {
+    const byTool = new Map(catalog.commands.map((definition) => [definition.tool, definition]));
+    listing = toolDescriptions(catalog).map((description) => {
+      const definition = byTool.get(description.name);
+      if (definition === undefined) throw new Error(`The tool ${description.name} has no operation.`);
+      return {
+        ...description,
+        annotations: { readOnlyHint: toolReadsOnly(definition) },
+        _meta: { [STABILITY_META_KEY]: definition.stability },
+      };
+    });
+    LISTINGS.set(catalog, listing);
+  }
+  return listing;
 }
 
 /** The snapshot as it is committed: `{ "tools": [...] }` with every object's keys sorted, and a final newline. */

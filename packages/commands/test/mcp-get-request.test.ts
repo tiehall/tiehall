@@ -16,7 +16,8 @@ import { addUser } from "./support/members.ts";
 // 8,000 tokens, 32,000 characters, counting both its markdown and its
 // structured content. A page says how to fetch the next one, and every result
 // shows whether the request waits for a person (needs_human). The contract
-// tests wait as expected failures until 16.7 turns them into plain tests.
+// tests wait as expected failures until 16.7 turns them into plain tests;
+// those that the key-only read of 16.3 already passes are plain tests since.
 
 /** The most characters a page may hold: 8,000 tokens at 4 characters each. */
 const PAGE_CHARACTERS = 32_000;
@@ -97,7 +98,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(byUrl.structuredContent).toEqual(byKey.structuredContent);
   });
 
-  it.fails("refuses a URL on another origin as input that fails the schema, and sends nothing to that origin", async () => {
+  it("refuses a URL on another origin as input that fails the schema, and sends nothing to that origin", async () => {
     const outbound = vi.spyOn(globalThis, "fetch");
     const result = await getRequest(dana, version, { request: `https://other.example.net/${small.key}` });
     const problem = problemOf(result);
@@ -106,14 +107,14 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(outbound.mock.calls.map(([input]) => String(input instanceof Request ? input.url : input))).not.toContainEqual(expect.stringContaining("other.example.net"));
   });
 
-  it.fails("refuses what is neither a key nor a URL as input that fails the schema", async () => {
+  it("refuses what is neither a key nor a URL as input that fails the schema", async () => {
     for (const request of ["not a key", "fe-1", `${URL_OF_INSTALL}/api/v1/requests/${small.key}`]) {
       const problem = problemOf(await getRequest(dana, version, { request }));
       expect(problem.type, request).toBe(`${PROBLEM}invalid-input`);
     }
   });
 
-  it.fails("answers a key written with a team's earlier key with the request under its current key", async () => {
+  it("answers a key written with a team's earlier key with the request under its current key", async () => {
     // A team of its own for each protocol version, whose key changes from AL… to AK….
     const suffix = version === MODERN ? "M" : "L";
     const admin = sessionOf(await addUser(harness.install.owner, { role: "admin" }));

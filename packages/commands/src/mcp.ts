@@ -1,6 +1,7 @@
 import { createMcpHandler, Server, type AuthInfo, type CallToolResult, type McpHttpHandler, type Tool } from "@modelcontextprotocol/server";
-import { toolDescriptions, type Catalog } from "@tiehall/catalog";
+import { toolListing, type Catalog } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, toolError } from "@tiehall/core";
+import { agentJson } from "@tiehall/packet/render";
 import { DEFAULT_SCOPES } from "./authorization-server.ts";
 import { bodyLimitFor, readBoundedBody } from "./body-limit.ts";
 import type { Caller } from "./caller.ts";
@@ -19,7 +20,13 @@ import { createLogger, type Logger } from "./log.ts";
 // the SDK answers with a fresh server, so no protocol session is kept between
 // calls and none is ever handed out. The server offers tools only, with no
 // resources and no prompts; its tools come from the catalog's operations
-// offered on MCP.
+// offered on MCP. The tool list is the same for every caller, whatever their
+// role, since no operation an agent surface offers is an admin action: each
+// tool carries its lowered schemas, MCP annotations, whose read-only hint only
+// a tool that only reads carries, and its operation's stability level in
+// _meta (agent-surfaces: Tool annotations and stability levels; agent-surfaces:
+// Admin actions and trust changes are on no agent surface). A tool call runs
+// its operation through execute() as the caller.
 //
 // Before the SDK sees a call, the route:
 // - reads its body, up to the size limit every path but contract.report and
@@ -67,13 +74,33 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
   const logger = options.logger ?? createLogger();
   const { catalog } = options;
   const version = options.version ?? "0.0.0-dev";
-  // The tools as the tool list shows them, computed once: each operation offered on MCP, with its lowered schemas.
-  const listed: Tool[] = toolDescriptions(catalog).map(({ name, description, inputSchema, outputSchema }) => ({
+  // The tools as the tool list shows them, computed once: each operation offered on MCP, with its lowered
+  // schemas, its annotations and its stability level in _meta; the same for every caller, whatever their role.
+  const listed: Tool[] = toolListing(catalog).map(({ name, description, inputSchema, outputSchema, annotations, _meta }) => ({
     name,
     description,
     inputSchema: inputSchema as Tool["inputSchema"],
     outputSchema: outputSchema as Tool["outputSchema"],
+    annotations: { ...annotations },
+    _meta: { ..._meta },
   }));
+  // The operation behind each tool.
+  const operations = new Map(catalog.commands.filter(({ surfaces }) => surfaces.includes("mcp")).map((definition) => [definition.tool, definition]));
+
+  /** Runs the tool's operation through execute() as the caller; a refusal is a tool result with isError. */
+  async function callTool(caller: Caller, name: string, args: unknown): Promise<CallToolResult> {
+    const definition = operations.get(name);
+    if (definition === undefined) return refused(new Refusal("route-not-found", "There is no such tool here."));
+    try {
+      const output = agentJson(await options.execute(definition.id, caller, args ?? {}));
+      return { content: [{ type: "text", text: JSON.stringify(output) }], structuredContent: output as Record<string, unknown> };
+    } catch (error) {
+      if (error instanceof Refusal) return refused(error);
+      logger.error("mcp: the tool failed", { operationId: definition.id, error });
+      // A failure that is not one of Tiehall's own refusals says nothing about itself, as REST's 500 does.
+      return { isError: true, content: [{ type: "text", text: JSON.stringify(internalErrorProblem().body) }] };
+    }
+  }
 
   // One fresh server per call, for the caller the route authenticated, on either protocol version.
   const handler: McpHttpHandler = createMcpHandler(
@@ -82,8 +109,7 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
       if (caller === undefined) throw new Error("The MCP route hands every call to the SDK with its caller.");
       const server = new Server({ name: MCP_SERVER_NAME, version }, { capabilities: { tools: {} } });
       server.setRequestHandler("tools/list", async () => ({ tools: listed }));
-      // No operation is offered on MCP yet, so every tool a call names is one the server does not offer.
-      server.setRequestHandler("tools/call", async () => refused(new Refusal("route-not-found", "There is no such tool here.")));
+      server.setRequestHandler("tools/call", async (request) => callTool(caller, request.params.name, request.params.arguments));
       return server;
     },
     { onerror: (error) => logger.warn("mcp: the SDK refused a call", { error }) },

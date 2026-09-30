@@ -6,8 +6,11 @@ import { committedToolSnapshotPath } from "../src/committed-files.ts";
 import {
   lowerToolSchema,
   serializeToolSnapshot,
+  STABILITY_META_KEY,
   ToolSchemaError,
   toolDescriptions,
+  toolListing,
+  toolReadsOnly,
   toolSnapshotDrift,
   toolSnapshotProblems,
 } from "../src/tool-schemas.ts";
@@ -131,6 +134,53 @@ describe("the tool descriptions", () => {
   it("are computed once per catalog", () => {
     const catalog = defineCatalog([tool()]);
     expect(toolDescriptions(catalog)).toBe(toolDescriptions(catalog));
+  });
+});
+
+// Tool annotations and stability levels (agent-surfaces: Tool annotations and
+// stability levels; design.md, Decisions this change rests on: D28 #65). Every
+// tool carries MCP annotations, whose read-only hint is true only for a tool
+// that only reads: one whose operation needs no scope but requests:read, and
+// is offered on REST, if at all, with GET. Every tool's _meta states its
+// operation's stability level.
+describe("the tool listing", () => {
+  const read = (overrides: Partial<CommandDefinition> = {}) =>
+    tool({ id: "reports.get", tool: "get_report", input: z.object({ id: z.string() }), scopes: ["requests:read"], ...overrides });
+
+  it("hints read-only only for a tool whose operation needs no scope but requests:read and is offered with GET, if on REST", () => {
+    expect(toolReadsOnly(read())).toBe(true);
+    expect(toolReadsOnly(read({ surfaces: ["rest", "mcp"], method: "GET", path: "/api/v1/reports/{id}" }))).toBe(true);
+    expect(toolReadsOnly(tool())).toBe(false);
+    expect(toolReadsOnly(read({ scopes: ["requests:read", "requests:write"] }))).toBe(false);
+    expect(toolReadsOnly(read({ scopes: ["contracts:report"] }))).toBe(false);
+    // An operation that needs only requests:read but is sent with POST changes something, such as acknowledging events.
+    expect(toolReadsOnly(read({ surfaces: ["rest", "mcp"], method: "POST", path: "/api/v1/reports/{id}/seen" }))).toBe(false);
+  });
+
+  it("gives every tool annotations and its operation's stability level in _meta, with its description and lowered schemas", () => {
+    const catalog = defineCatalog([tool({ stability: "beta" }), read()]);
+    const listing = toolListing(catalog);
+    expect(listing.map(({ name }) => name)).toEqual(["file_report", "get_report"]);
+    expect(listing[0]).toMatchObject({
+      name: "file_report",
+      description: "File a report on a request.",
+      annotations: { readOnlyHint: false },
+      _meta: { [STABILITY_META_KEY]: "beta" },
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+    });
+    expect(listing[1]).toMatchObject({ annotations: { readOnlyHint: true }, _meta: { [STABILITY_META_KEY]: "alpha" } });
+    expect(STABILITY_META_KEY).toBe("com.tiehall/stability");
+  });
+
+  it("gives the real catalog's get_request the read-only hint, and claim not", () => {
+    const byName = new Map(toolListing(CATALOG).map((listed) => [listed.name, listed]));
+    expect(byName.get("get_request")?.annotations.readOnlyHint).toBe(true);
+    expect(byName.get("claim")?.annotations.readOnlyHint).toBe(false);
+    for (const listed of byName.values()) {
+      const definition = CATALOG.commands.find(({ tool: name }) => name === listed.name);
+      expect(listed._meta[STABILITY_META_KEY], listed.name).toBe(definition?.stability);
+    }
   });
 });
 

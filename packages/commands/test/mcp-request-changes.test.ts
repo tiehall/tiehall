@@ -17,7 +17,8 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // withdraws a pending proposal of the caller's user. The contract tests use
 // the official MCP SDK client on both protocol versions and wait as expected
 // failures until the tasks that build the tools turn them into plain tests:
-// post_message, claim, set_status and link_pr in 16.8, propose in 16.9. The
+// post_message, claim, set_status and link_pr in 16.8, propose in 16.9; claim
+// is offered on MCP since 16.3, so its test is a plain one since. The
 // inputs they send are the ones these tests assume for tools whose operations
 // are not defined yet (link_pr and propose); the task that defines each keeps
 // them, or changes them here with its definition, tests first.
@@ -82,7 +83,7 @@ async function proposalCount(requestId: string): Promise<number> {
 }
 
 describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on protocol version %s", (version) => {
-  it.fails("claim: an agent claims an open request of its user's team for them, with no proposal", async () => {
+  it("claim: an agent claims an open request of its user's team for them, with no proposal", async () => {
     const request = await openToFe();
     const result = await call(dana, version, "claim", { key: request.key });
     expect(result.isError).not.toBe(true);

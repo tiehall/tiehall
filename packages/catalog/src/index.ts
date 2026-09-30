@@ -52,6 +52,7 @@ export {
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
+export { readRequest, REQUEST_PAGE_COMMANDS, REQUEST_SECTIONS, requestPage } from "./request-pages.ts";
 export {
   editMessage,
   getMessage,
@@ -123,4 +124,13 @@ export {
 export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
-export { lowerToolSchema, toolDescriptions, type JsonSchema, type ToolDescription } from "./tool-schemas.ts";
+export {
+  lowerToolSchema,
+  STABILITY_META_KEY,
+  toolDescriptions,
+  toolListing,
+  toolReadsOnly,
+  type JsonSchema,
+  type ToolDescription,
+  type ToolListing,
+} from "./tool-schemas.ts";

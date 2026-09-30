@@ -1,3 +1,775 @@
 {
-  "tools": []
+  "tools": [
+    {
+      "description": "Claim an open request of one of your teams for yourself; it needs no confirmation.",
+      "inputSchema": {
+        "properties": {
+          "key": {
+            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "name": "claim",
+      "outputSchema": {
+        "properties": {
+          "claimant": {
+            "anyOf": [
+              {
+                "properties": {
+                  "bot": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "human",
+                    "type": "string"
+                  },
+                  "login": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "login",
+                  "kind",
+                  "bot"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+            "type": "string"
+          },
+          "needsHuman": {
+            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+            "type": "boolean"
+          },
+          "requester": {
+            "properties": {
+              "team": {
+                "properties": {
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "key": {
+                    "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "bot": {
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "human",
+                        "type": "string"
+                      },
+                      "login": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "login",
+                      "kind",
+                      "bot"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "user",
+              "team"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "claimed",
+              "in_progress",
+              "needs_info",
+              "done",
+              "declined",
+              "withdrawn"
+            ],
+            "type": "string"
+          },
+          "targetTeam": {
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "key": {
+                "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "key"
+            ],
+            "type": "object"
+          },
+          "untrusted": {
+            "properties": {
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "state",
+          "targetTeam",
+          "requester",
+          "claimant",
+          "createdAt",
+          "needsHuman",
+          "untrusted"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read a request by its key, such as FE-142, with its packet and its thread, as a page that shows whether the request waits for a person (needs_human). Every member of the install can read every request.",
+      "inputSchema": {
+        "properties": {
+          "request": {
+            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
+            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "type": "object"
+      },
+      "name": "get_request",
+      "outputSchema": {
+        "properties": {
+          "next": {
+            "anyOf": [
+              {
+                "properties": {
+                  "page": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "section": {
+                    "enum": [
+                      "all",
+                      "packet",
+                      "thread"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "section",
+                  "page"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The section and page to read next; null on the last page."
+          },
+          "packet": {
+            "properties": {
+              "dueDate": {
+                "anyOf": [
+                  {
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The day the request is due, from the current revision; null when it names none."
+              },
+              "kind": {
+                "enum": [
+                  "request",
+                  "contract_change"
+                ],
+                "type": "string"
+              },
+              "revision": {
+                "description": "The current revision's number, from 1 for the packet the request was opened with.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "team": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "key": {
+                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "key"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The team whose member added the current revision; null for a revision Tiehall added."
+              }
+            },
+            "required": [
+              "revision",
+              "kind",
+              "dueDate",
+              "team"
+            ],
+            "type": "object"
+          },
+          "page": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pages": {
+            "description": "How many pages the sections read take.",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "field": {
+                      "description": "The packet field, such as need or acceptance_criteria.",
+                      "pattern": "^[a-z][a-z_]*$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "packet_field",
+                      "type": "string"
+                    },
+                    "part": {
+                      "description": "This part's number, from 1.",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "parts": {
+                      "description": "How many parts the field or message is split into; 1 when it is whole.",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "untrusted": {
+                      "properties": {
+                        "text": {
+                          "description": "The field's text, or, for a field that is not text, its JSON: all of it, or this part.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "field",
+                    "part",
+                    "parts",
+                    "untrusted"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "message",
+                      "type": "string"
+                    },
+                    "message": {
+                      "description": "The message of the thread: its kind, what it answers, when it was posted and who posted it.",
+                      "properties": {
+                        "answered": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
+                        "blocking": {
+                          "type": "boolean"
+                        },
+                        "editedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "comment",
+                            "question",
+                            "answer"
+                          ],
+                          "type": "string"
+                        },
+                        "postedAt": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                          "type": "string"
+                        },
+                        "provenance": {
+                          "properties": {
+                            "actorKind": {
+                              "enum": [
+                                "agent",
+                                "web_session",
+                                "system",
+                                "integration"
+                              ],
+                              "type": "string"
+                            },
+                            "surface": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "web",
+                                    "mcp",
+                                    "cli",
+                                    "api",
+                                    "github",
+                                    "jira"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "team": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "user": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "bot": {
+                                      "type": "boolean"
+                                    },
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "const": "human",
+                                      "type": "string"
+                                    },
+                                    "login": {
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "login",
+                                    "kind",
+                                    "bot"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "actorKind",
+                            "surface",
+                            "user",
+                            "team"
+                          ],
+                          "type": "object"
+                        },
+                        "questionId": {
+                          "anyOf": [
+                            {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "blocking",
+                        "questionId",
+                        "answered",
+                        "version",
+                        "postedAt",
+                        "editedAt",
+                        "provenance"
+                      ],
+                      "type": "object"
+                    },
+                    "part": {
+                      "description": "This part's number, from 1.",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "parts": {
+                      "description": "How many parts the field or message is split into; 1 when it is whole.",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "untrusted": {
+                      "properties": {
+                        "client": {
+                          "description": "The agent client its poster named themselves by.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "text": {
+                          "description": "The message's latest text: all of it, or this part.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "client"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "message",
+                    "part",
+                    "parts",
+                    "untrusted"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "request": {
+            "properties": {
+              "claimant": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "bot": {
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "human",
+                        "type": "string"
+                      },
+                      "login": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "login",
+                      "kind",
+                      "bot"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "key": {
+                "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                "type": "string"
+              },
+              "needsHuman": {
+                "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                "type": "boolean"
+              },
+              "requester": {
+                "properties": {
+                  "team": {
+                    "properties": {
+                      "id": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "key": {
+                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "key"
+                    ],
+                    "type": "object"
+                  },
+                  "user": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "bot": {
+                            "type": "boolean"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "human",
+                            "type": "string"
+                          },
+                          "login": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "login",
+                          "kind",
+                          "bot"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "user",
+                  "team"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "enum": [
+                  "open",
+                  "claimed",
+                  "in_progress",
+                  "needs_info",
+                  "done",
+                  "declined",
+                  "withdrawn"
+                ],
+                "type": "string"
+              },
+              "targetTeam": {
+                "properties": {
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "key": {
+                    "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "untrusted": {
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "state",
+              "targetTeam",
+              "requester",
+              "claimant",
+              "createdAt",
+              "needsHuman",
+              "untrusted"
+            ],
+            "type": "object"
+          },
+          "section": {
+            "description": "The sections this page reads: all, or the one named.",
+            "enum": [
+              "all",
+              "packet",
+              "thread"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
+          "packet",
+          "section",
+          "page",
+          "pages",
+          "next",
+          "parts"
+        ],
+        "type": "object"
+      }
+    }
+  ]
 }

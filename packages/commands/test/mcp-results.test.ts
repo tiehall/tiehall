@@ -14,7 +14,8 @@ import { openRequestInTheWebUi } from "./support/requests.ts";
 // with its origin. Every refusal is a tool result with isError whose content
 // is the error model's problem, naming its type, while the OAuth refusals stay
 // HTTP statuses. The contract tests wait as expected failures until 16.4 turns
-// them into plain tests.
+// them into plain tests; those that the tool calls of 16.3 already pass are
+// plain tests since.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
@@ -63,7 +64,7 @@ function fenced(origin: string, text: string): RegExp {
 }
 
 describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (version) => {
-  it.fails("carries structured content that validates against the tool's output schema, with a markdown rendering", async () => {
+  it("carries structured content that validates against the tool's output schema, with a markdown rendering", async () => {
     const result = await call(sam, version, "get_request", { request: fe.key });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ request: { key: fe.key, state: "open", untrusted: { title: "Add a dark mode" } } });
@@ -81,7 +82,7 @@ describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (versi
     expect(textOf(result)).toMatch(fenced("other team", "Add a dark mode"));
   });
 
-  it.fails("answers a refusal as a tool result with isError, whose content is the problem and names its type, inside an HTTP 200", async () => {
+  it("answers a refusal as a tool result with isError, whose content is the problem and names its type, inside an HTTP 200", async () => {
     const log: McpExchange[] = [];
     const result = await call(dana, version, "get_request", { request: "FE-99999" }, log);
     const problem = problemOf(result);
@@ -105,7 +106,7 @@ describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (versi
 });
 
 describe("a removed member's agent", () => {
-  it.fails("gets a tool error that names the removed member's problem, and no data of the install", async () => {
+  it("gets a tool error that names the removed member's problem, and no data of the install", async () => {
     await harness.install.owner.query("DELETE FROM members WHERE user_id = $1", [lee.userId]);
     try {
       for (const version of PROTOCOL_VERSIONS) {

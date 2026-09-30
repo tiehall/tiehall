@@ -159,7 +159,8 @@ export const claimRequest = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
+  surfaces: ["rest", "mcp"],
+  tool: "claim",
   stability: "alpha",
 });
 

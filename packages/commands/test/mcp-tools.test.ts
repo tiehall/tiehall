@@ -11,9 +11,9 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // agent surface; agent-surfaces: Tools that change a request directly;
 // design.md, Decisions this change rests on: D28 #55, #56, #65). The contract
 // tests use the official MCP SDK client on both protocol versions, with an
-// access token from the install's real authorization code flow, and wait as
-// expected failures until the task that builds what each checks turns it into
-// a plain test: the tool list's annotations, levels and schemas in 16.3,
+// access token from the install's real authorization code flow. Each waited
+// as an expected failure until the task that builds what it checks turned it
+// into a plain test: the tool list's annotations, levels and schemas in 16.3,
 // whoami and directory in 16.5, open_request and list_inbox in 16.6. The list
 // of exactly twelve tools waits for the last of them: whats_new comes in 19.3
 // and attach_contract_changes in 23.5.
@@ -83,7 +83,7 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
     expect((await listed(dana, version)).map(({ name }) => name).sort()).toEqual(TOOLS);
   });
 
-  it.fails("gives every tool an annotations object, and the read-only hint only to tools that only read", async () => {
+  it("gives every tool an annotations object, and the read-only hint only to tools that only read", async () => {
     const tools = await listed(dana, version);
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) expect(tool.annotations, tool.name).toBeTypeOf("object");
@@ -97,7 +97,7 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
     }
   });
 
-  it.fails("states each tool's stability level in its _meta, equal to its operation's", async () => {
+  it("states each tool's stability level in its _meta, equal to its operation's", async () => {
     const tools = await listed(dana, version);
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) {
@@ -108,7 +108,7 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
     }
   });
 
-  it.fails("gives every tool schemas that current clients accept: an object root with no composition, and no $ref or $defs", async () => {
+  it("gives every tool schemas that current clients accept: an object root with no composition, and no $ref or $defs", async () => {
     const tools = await listed(dana, version);
     expect(tools.length).toBeGreaterThan(0);
     for (const tool of tools) {
@@ -123,7 +123,7 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
     }
   });
 
-  it.fails("is the same for an admin's agent as for a member's, and holds no admin action and nothing that needs the confirmation step", async () => {
+  it("is the same for an admin's agent as for a member's, and holds no admin action and nothing that needs the confirmation step", async () => {
     const forAdmin = await listed(erin, version);
     const forMember = await listed(dana, version);
     expect(forAdmin.length).toBeGreaterThan(0);
