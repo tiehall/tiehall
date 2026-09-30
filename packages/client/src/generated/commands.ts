@@ -261,7 +261,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
   {
     "command": "open",
     "operationId": "requests.create",
-    "summary": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one.",
+    "summary": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one. The packet must hold every field the target team requires, which directory lists; a request that lacks one is refused as invalid input naming each missing field, and nothing is opened.",
     "method": "POST",
     "path": "/api/v1/requests",
     "stability": "alpha",

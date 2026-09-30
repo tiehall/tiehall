@@ -15,8 +15,9 @@ import { addTeam, callApi, joinTeams, tokenOf } from "./support/requests.ts";
 // offers the change. The web form that opens a request shows the notes of the
 // team it opens a request to, and marks the fields that team requires.
 // Intake notes are text a user wrote: agents read them fenced, in directory
-// (mcp-tools.test.ts). Refusing a request that lacks a required field comes
-// with task 18.13, and the requests a contract report opens with 23.6.
+// (mcp-tools.test.ts). A request that lacks a required field is refused on
+// every path (required-fields.test.ts); the requests a contract report opens
+// come with task 23.6.
 
 let install: TestInstall;
 let ada: WebSessionCaller;
@@ -141,7 +142,7 @@ describe("the web form that opens a request", () => {
     for (const id of ["acceptanceCriteria", "codeRefs", "links", "dueDate"]) expect(html, id).not.toMatch(new RegExp(`id="${id}" name="${id}" required>`));
   });
 
-  // Refusing a request that lacks a required field on every path is task 18.13, and the requests a contract report
-  // opens are task 23.6: once both are built, a report opens a request to FE without the acceptance criteria FE requires.
-  it.todo("does not hold the requests a contract report opens to the target team's required fields (waits for 18.13 and 23.6)");
+  // Refusing a request that lacks a required field on every path came with task 18.13; the requests a contract report
+  // opens are task 23.6: once it is built, a report opens a request to FE without the acceptance criteria FE requires.
+  it.todo("does not hold the requests a contract report opens to the target team's required fields (waits for 23.6)");
 });

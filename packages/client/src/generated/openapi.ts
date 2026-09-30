@@ -131,7 +131,7 @@ export interface paths {
         /** List the install's requests, newest first, optionally only those to one team or in one state. */
         get: operations["requests.list"];
         put?: never;
-        /** Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one. */
+        /** Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one. The packet must hold every field the target team requires, which directory lists; a request that lacks one is refused as invalid input naming each missing field, and nothing is opened. */
         post: operations["requests.create"];
         delete?: never;
         options?: never;
