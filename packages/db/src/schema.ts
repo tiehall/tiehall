@@ -2129,6 +2129,34 @@ export const questionNotices = pgTable(
   ],
 );
 
+// The daily digests sent by email (requester-loop: Email for people, only
+// when SMTP is set; design.md, Self-hosting decisions: S10). One row per user
+// and UTC day whose digest went out, with how many updates it held, so each
+// day's digest is sent at most once.
+export const emailDigests = pgTable(
+  "email_digests",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    /** The UTC day the digest covers. */
+    day: date("day").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    /** How many updates the digest held. */
+    updates: integer("updates").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.day] }),
+    foreignKey({
+      name: "email_digests_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("email_digests_updates_positive", sql`${table.updates} > 0`),
+  ],
+);
+
 // Receipts (requests: Receipts; requester-loop: The web inbox). One row per
 // receipt a person gets for a confirmation: that they confirmed a commitment
 // that now waits for the other side, or that it took effect with their

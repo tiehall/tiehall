@@ -3,6 +3,7 @@ import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
 import { DEVICE_APPROVAL_HANDLERS } from "./device-approval.ts";
 import { DIRECTORY_HANDLERS } from "./directory.ts";
+import { EMAIL_SETTINGS_HANDLERS } from "./email-settings.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import { WAIT_HANDLERS } from "./events-wait.ts";
 import type { Handlers } from "./execute.ts";
@@ -52,6 +53,7 @@ export const HANDLERS: Handlers = {
   ...EVENT_READ_HANDLERS,
   ...UPDATE_HANDLERS,
   ...WAIT_HANDLERS,
+  ...EMAIL_SETTINGS_HANDLERS,
   ...WRITE_LIMIT_HANDLERS,
   ...SIGN_IN_POLICY_HANDLERS,
   ...ACTIVITY_LOG_HANDLERS,

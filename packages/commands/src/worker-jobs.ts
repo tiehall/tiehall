@@ -12,6 +12,7 @@ import { processGitHubDelivery, releaseHeldGitHubDeliveries } from "./github-web
 import { pruneIdempotencyKeys } from "./idempotency.ts";
 import { expireProposals } from "./proposal-endings.ts";
 import { notifyWaitingProposals } from "./proposal-waiting.ts";
+import { emailDigests } from "./digests.ts";
 import { emailQuestion } from "./question-emails.ts";
 import { emailReceipts } from "./receipts.ts";
 import type { JobData } from "./jobs.ts";
@@ -29,6 +30,7 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   notifyWaitingProposals,
   emailReceipts,
   emailQuestion,
+  emailDigests,
   processGitHubDelivery,
   releaseHeldGitHubDeliveries,
   pruneGitHubDeliveries,

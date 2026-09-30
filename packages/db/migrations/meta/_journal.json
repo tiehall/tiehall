@@ -400,6 +400,13 @@
       "when": 1790791461637,
       "tag": "0056_add_question_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1790791803589,
+      "tag": "0057_add_email_digests",
+      "breakpoints": true
     }
   ]
 }

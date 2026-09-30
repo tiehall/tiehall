@@ -72,21 +72,23 @@ function requestsOf(orgId: string, userId: string, scope: UpdateScope): SQL {
       SELECT r.id::text FROM requests r WHERE r.org_id = ${orgId} AND r.requesting_team_id::text IN (${teamsOf(orgId, userId)})`;
 }
 
-/** The user's updates after a number, oldest first, at most `limit` of them, and whether more follow. */
-export async function updatesAfter(
-  { tx, orgId }: OrgContext,
-  { userId, scope, after, limit }: { userId: string; scope: UpdateScope; after: number; limit: number },
-): Promise<{ events: ScopedEvent[]; more: boolean }> {
+/** The condition that the event `e` is one of the user's updates in the scope. */
+function inScope(orgId: string, userId: string, scope: UpdateScope): SQL {
   const teams = teamsOf(orgId, userId);
-  const { rows } = await tx.execute<{ number: string | number; type: string; occurred_at: Date | string; data: ScopedEvent["data"] }>(sql`
-    SELECT e.number, e.type, e.occurred_at, e.data
-      FROM events e
-     WHERE e.org_id = ${orgId} AND e.class = 'domain' AND e.number > ${after}
+  return sql`e.org_id = ${orgId} AND e.class = 'domain'
        AND (
          e.data->>'requestId' IN (${requestsOf(orgId, userId, scope)})
          OR (e.type = 'request.opened' AND e.data->>'targetTeamId' IN (${teams}))
          OR (e.type = 'request.reassigned' AND e.data->>'teamId' IN (${teams}))
-       )
+       )`;
+}
+
+/** Reads the events that meet a condition, oldest first, at most `limit` of them, and whether more follow. */
+async function scopedEvents({ tx }: OrgContext, where: SQL, limit: number): Promise<{ events: ScopedEvent[]; more: boolean }> {
+  const { rows } = await tx.execute<{ number: string | number; type: string; occurred_at: Date | string; data: ScopedEvent["data"] }>(sql`
+    SELECT e.number, e.type, e.occurred_at, e.data
+      FROM events e
+     WHERE ${where}
      ORDER BY e.number
      LIMIT ${limit + 1}`);
   const events = rows.map((row) => ({
@@ -96,6 +98,26 @@ export async function updatesAfter(
     data: row.data,
   }));
   return { events: events.slice(0, limit), more: events.length > limit };
+}
+
+/** The user's updates after a number, oldest first, at most `limit` of them, and whether more follow. */
+export async function updatesAfter(
+  context: OrgContext,
+  { userId, scope, after, limit }: { userId: string; scope: UpdateScope; after: number; limit: number },
+): Promise<{ events: ScopedEvent[]; more: boolean }> {
+  return scopedEvents(context, sql`${inScope(context.orgId, userId, scope)} AND e.number > ${after}`, limit);
+}
+
+/** The user's updates that happened from one time until another, oldest first, at most `limit` of them, and whether more follow. */
+export async function updatesBetween(
+  context: OrgContext,
+  { userId, scope, from, until, limit }: { userId: string; scope: UpdateScope; from: Date; until: Date; limit: number },
+): Promise<{ events: ScopedEvent[]; more: boolean }> {
+  return scopedEvents(
+    context,
+    sql`${inScope(context.orgId, userId, scope)} AND e.occurred_at >= ${from.toISOString()}::timestamptz AND e.occurred_at < ${until.toISOString()}::timestamptz`,
+    limit,
+  );
 }
 
 /** A page of the user's updates as the pull readers answer it, each with its request, and the requests they are about. */

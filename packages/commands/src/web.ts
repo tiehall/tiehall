@@ -13,6 +13,7 @@ import { createEventWakeups } from "./event-wakeups.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
+import { createEmailSettingsRoute } from "./email-settings-page.ts";
 import { createInboxRoute } from "./inbox-page.ts";
 import { HANDLERS } from "./handlers.ts";
 import { createInstallGitHub } from "./install-github.ts";
@@ -27,7 +28,7 @@ import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { createTokensRoute } from "./personal-access-tokens.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
-import { installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
+import { emailIsSetUp, installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
@@ -323,6 +324,11 @@ export function requestListsRoute(env: Environment): PageRoute {
 /** The web inbox at /inbox, which every member may open, for the signed-in user's web session. */
 export function inboxRoute(env: Environment): PageRoute {
   return pageOf("inbox", env, createInboxRoute);
+}
+
+/** A member's email settings at /settings/email, for the signed-in user's web session; it says whether the install sends email. */
+export function emailSettingsRoute(env: Environment): PageRoute {
+  return pageOf("email settings", env, (options) => createEmailSettingsRoute(options, { emailSetUp: emailIsSetUp(env) }));
 }
 
 /** The invites page of the admin UI under /admin/invites, for the signed-in admin's web session. */

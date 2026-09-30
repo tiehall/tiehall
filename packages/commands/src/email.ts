@@ -1,4 +1,5 @@
 import { emailSubject, noticeEventType, noticeKey, noticeTeam, noticeUrl } from "@tiehall/packet/notices";
+import { updateDescription } from "@tiehall/packet/tool-text";
 import { createTransport } from "nodemailer";
 import type { SmtpSettings, SmtpTls } from "./settings.ts";
 
@@ -140,6 +141,59 @@ export const QUESTION_NOTICE: EmailTemplate<{ subject: ServerText; key: ServerTe
       "It is also listed in the update feed of your web inbox.",
       "",
     ].join("\n"),
+};
+
+/** An event's type, such as request.started. */
+export function eventTypeText(type: string): ServerText {
+  if (!/^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/.test(type)) throw new TypeError("An event type is dotted lower-case words, such as request.started.");
+  return type as ServerText;
+}
+
+/** What an update says, in Tiehall's words, from the ids and fixed values its event carries, which the notice templates check. */
+export function updateSaid(update: { type: string; data: Readonly<Record<string, string | number | boolean>> }): ServerText {
+  return (updateDescription(update, { ids: false }) ?? "it changed") as ServerText;
+}
+
+/** One request's part of a digest: its key, its target team, its URL, and its updates, each with its time and type. */
+export interface DigestRequest {
+  key: ServerText;
+  team: ServerText;
+  url: ServerText;
+  updates: readonly { at: ServerText; type: ServerText; said: ServerText }[];
+}
+
+/** How many updates a digest lists at most; the rest are counted, and the web inbox lists them all. */
+export const DIGEST_UPDATES = 200;
+
+/**
+ * The text of a daily digest (requester-loop: Email for people, only when
+ * SMTP is set): the day's updates by request, each request by its key, target
+ * team and URL, and each update by its time, its type and what it says, all
+ * in Tiehall's words; nothing anyone wrote.
+ */
+export function digestText({ day, byRequest, more, inbox, settings }: { day: ServerText; byRequest: readonly DigestRequest[]; more: number; inbox: ServerText; settings: ServerText }): ServerText {
+  const total = byRequest.reduce((sum, { updates }) => sum + updates.length, 0) + more;
+  const lines = [`Your updates in Tiehall on ${day} (UTC), ${total === 1 ? "1 update" : `${total} updates`}, by request:`, ""];
+  for (const request of byRequest) {
+    lines.push(`${request.key} (team ${request.team}): ${request.url}`);
+    for (const { at, type, said } of request.updates) lines.push(`- ${at} ${type}: ${said}`);
+    lines.push("");
+  }
+  if (more > 0) lines.push(`And ${more === 1 ? "1 more update" : `${more} more updates`}, which your web inbox lists.`, "");
+  lines.push(
+    "Questions asked of you were emailed as they came and are not repeated here; proposal notices and receipts come on their own.",
+    `Your web inbox lists every update: ${inbox}`,
+    `Turn this digest off in your email settings: ${settings}`,
+    "",
+  );
+  return lines.join("\n") as ServerText;
+}
+
+/** The daily digest email, whose subject names only the day it covers. */
+export const DIGEST: EmailTemplate<{ day: ServerText; text: ServerText }> = {
+  id: "email.digest",
+  subject: ({ day }) => `Tiehall: your updates of ${day} (UTC)`,
+  text: ({ text }) => text,
 };
 
 /** A calendar day, such as a due date, written as YYYY-MM-DD. */

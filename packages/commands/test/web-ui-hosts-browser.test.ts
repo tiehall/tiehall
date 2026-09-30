@@ -33,6 +33,7 @@ const APP = fileURLToPath(new URL("../../../apps/web/app/", import.meta.url));
 const PAGES: Readonly<Record<string, readonly string[]>> = {
   "route.ts": ["/"],
   "inbox/route.ts": ["/inbox"],
+  "settings/email/route.ts": ["/settings/email"],
   "members/route.ts": ["/members"],
   "requests/route.ts": ["/requests", "/requests?list=opened", "/requests?list=all"],
   "requests/new/route.ts": ["/requests/new", "/requests/new?team=FE"],

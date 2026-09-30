@@ -373,6 +373,11 @@ const DEFAULT_SMTP_PORTS: Record<SmtpTls, number> = { starttls: 587, tls: 465, n
 /** An address, alone or after a display name in angle brackets. */
 const EMAIL_ADDRESS = /^(?:[^<>@\r\n]*<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>|[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+)$/;
 
+/** Whether the install's settings hold SMTP settings, and so whether it sends email at all. */
+export function emailIsSetUp(env: Environment): boolean {
+  return readSmtp(env) !== undefined;
+}
+
 function readSmtp(env: Environment): SmtpSettings | undefined {
   const host = optional(env, "TIEHALL_SMTP_HOST");
   if (host === undefined) {

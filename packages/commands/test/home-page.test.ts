@@ -61,6 +61,7 @@ describe("the home page", () => {
     expect(html).toContain('<a href="/members">Members</a>');
     // The request lists, and the form that opens a request.
     expect(html).toContain('<a href="/inbox">Inbox</a>');
+    expect(html).toContain('<a href="/settings/email">Email settings</a>');
     expect(html).toContain('<a href="/requests">Requests</a>');
     expect(html).toContain('<a href="/requests/new">Open a request</a>');
   });
