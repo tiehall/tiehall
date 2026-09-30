@@ -320,3 +320,44 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(await proposalCount(request.id)).toBe(0);
   });
 });
+
+// What a proposal records and shows, read over MCP (requests: What a proposal records and shows; task 14.7): wherever
+// a proposal is returned, it names who proposed it, the client, the surface and the user, the confirmations it needs
+// and those it has received, each with its user and time, when it expires, and, once it ended, how.
+describe.each(PROTOCOL_VERSIONS)("a proposal returned over MCP, on protocol version %s", (version) => {
+  it("names who proposed it, the confirmations it needs and has received, and its expiry, and once it ended, how", async () => {
+    const request = await openToFe();
+    const proposed = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-20", expectedRevision: 1 });
+    const created = (proposed.structuredContent as { proposal: { id: string; expiresAt: string } }).proposal;
+    expect(created).toMatchObject({
+      kind: "due_date",
+      state: "pending",
+      accountableHuman: { id: sam.userId, login: "sam-be-qa" },
+      proposedBy: { user: { id: sam.userId }, actorKind: "agent", surface: "mcp" },
+      change: { dueDate: "2026-10-20" },
+      confirmations: {
+        needed: [{ step: "accountable_human", user: { id: sam.userId } }, { step: "other_side", team: { key: "FE" }, rules: ["target_team"] }],
+        received: [],
+      },
+      expiresAt: expect.stringMatching(/Z$/),
+      endedAt: null,
+      cancelReason: null,
+      untrusted: { client: expect.any(String) },
+    });
+    const text = textOf(proposed);
+    expect(text).toContain(`Proposal ${created.id}: change the due date of ${request.key}. It is pending.`);
+    expect(text).toContain(`It expires at ${created.expiresAt}`);
+    expect((await harness.install.confirm(sam.session, "proposals.confirm", { proposal: created.id })).status).toBe(200);
+    const withdrawn = await call(sam, version, "propose", { kind: "withdraw_proposal", proposal: created.id });
+    expect(withdrawn.structuredContent).toMatchObject({
+      proposal: {
+        id: created.id,
+        state: "withdrawn",
+        confirmations: { received: [{ step: "accountable_human", user: { id: sam.userId }, confirmedAt: expect.stringMatching(/Z$/) }] },
+        endedAt: expect.stringMatching(/Z$/),
+      },
+    });
+    expect(textOf(withdrawn)).toContain("It was withdrawn, so it will not take effect.");
+    expect(textOf(withdrawn)).toContain("It has received sam-be-qa's, at");
+  });
+});
