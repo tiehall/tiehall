@@ -4,6 +4,8 @@ import { EMAIL_SETTINGS_PATH } from "./email-settings-page.ts";
 import { INBOX_PATH } from "./inbox-page.ts";
 import { NEW_REQUEST_PATH } from "./new-request.ts";
 import { REQUEST_LISTS_PATH } from "./request-lists.ts";
+import type { Banner } from "./admin-alerts.ts";
+import { bannersSection } from "./admin-page.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -25,7 +27,9 @@ import { csrfTokenFor } from "./web-writes.ts";
 // is plain HTML: no script, no style from anywhere, no framing, and forms that
 // post only to the install. Every answer carries the cookie that renews the
 // session it read, when the read renewed it (sign-in: Signing out and ending
-// sessions; session-renewal.ts).
+// sessions; session-renewal.ts). Above the links it shows the banners the
+// signed-in member may act on, such as a problem with an integration to an
+// admin (tracker-mirrors: Broken integrations are surfaced; admin-alerts.ts).
 
 export interface HomeRouteOptions {
   /**
@@ -37,6 +41,8 @@ export interface HomeRouteOptions {
   session(request: Request, renewal?: Headers): Promise<WebSessionCaller | undefined>;
   /** The install's auth secret (TIEHALL_AUTH_SECRET), which signs the CSRF tokens; read when it is first needed. */
   secret: () => string;
+  /** The banners the web UI shows this member, read through execute(); the page shows none without it. */
+  banners?: (caller: WebSessionCaller) => Promise<readonly Banner[]>;
   logger?: Logger;
 }
 
@@ -52,11 +58,12 @@ export function createHomeRoute(options: HomeRouteOptions): HomeRoute {
       const caller = await options.session(request, renewal);
       if (caller === undefined) return new Response(null, { status: 303, headers: { location: SIGN_IN_PATH, "cache-control": "no-store" } });
       const csrf = csrfTokenFor(options.secret(), caller.sessionId);
+      const banners = options.banners === undefined ? [] : await options.banners(caller);
       return new Response(
         htmlPage(
           "Tiehall",
           `      <h1>Tiehall</h1>
-      <p>You are signed in.</p>
+${bannersSection(banners).map((line) => `${line}\n`).join("")}      <p>You are signed in.</p>
       <p><a href="${INBOX_PATH}">Inbox</a></p>
       <p><a href="${EMAIL_SETTINGS_PATH}">Email settings</a></p>
       <p><a href="${REQUEST_LISTS_PATH}">Requests</a></p>

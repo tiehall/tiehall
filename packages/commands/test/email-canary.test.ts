@@ -3,13 +3,16 @@ import { startSmtpSink, type ReceivedMessage, type SmtpSink } from "@tiehall/tes
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as email from "../src/email.ts";
 import {
+  emailAdminAlerts,
   emailDigests,
   emailQuestion,
   emailReceipts,
   notifyWaitingProposals,
   openMailer,
+  recordGivenUpDelivery,
   remindPersonalAccessTokenOwners,
   sendTestMessage,
+  withOrg,
   type Mailer,
 } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
@@ -128,6 +131,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.DIGEST.id;
   if (/^Tiehall: your personal access token expires on \d{4}-\d{2}-\d{2}$/.test(subject)) return email.PERSONAL_ACCESS_TOKEN_REMINDER.id;
   if (subject === "Tiehall: test message") return email.TEST_MESSAGE.id;
+  if (subject === "Tiehall: GitHub's webhook deliveries to the install fail") return email.GITHUB_WEBHOOK_ALERT.id;
   return undefined;
 }
 
@@ -175,6 +179,15 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     const { rows } = await install.owner.query<{ at: Date }>("SELECT min(occurred_at) AS at FROM events WHERE data->>'requestId' = $1", [request.id]);
     const day = (rows[0]?.at ?? new Date()).toISOString().slice(0, 10);
     await runJob(emailDigests, new Date(Date.parse(`${day}T00:00:00Z`) + 24 * 3_600_000 + 5 * 60_000));
+    // The alert to the admins about GitHub's webhook: the install's App, named with the canary, gives a delivery up.
+    await install.owner.query(
+      `INSERT INTO github_app (org_id, app_id, slug, name, client_id, owner_login, owner_type, mode)
+         SELECT id, 4242, 'canary-7c3a', $1, 'Iv1.canary', 'canary-7c3a', 'Organization', 'webhook' FROM orgs`,
+      [CANARY.slice(0, 34)],
+    );
+    const alerts: { queue: string; data: unknown }[] = [];
+    await withOrg(install.db, (context) => recordGivenUpDelivery(context, { send: async (_tx, queue, data) => void alerts.push({ queue, data }) }, 4242));
+    for (const { data } of alerts.filter(({ queue }) => queue === emailAdminAlerts.type.queue)) await runJob(emailAdminAlerts, new Date(), data);
     // And the admin's test message.
     await sendTestMessage(mailer, { to: "pia@example.com", installUrl: URL_OF_INSTALL });
   }, 60_000);
@@ -201,6 +214,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     expect(templates()).toEqual(
       [
         "email.digest",
+        "email.github_webhook_alert",
         "email.personal_access_token_reminder",
         "email.proposal_notice",
         "email.question_notice",

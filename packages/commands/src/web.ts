@@ -1,4 +1,6 @@
-import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
+import { CATALOG, getBanners, OPENAPI_JSON } from "@tiehall/catalog";
+import type { Banner } from "./admin-alerts.ts";
+import { emailStatus } from "./email.ts";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
@@ -31,7 +33,7 @@ import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { createTokensRoute } from "./personal-access-tokens.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
-import { emailIsSetUp, installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
+import { emailIsSetUp, installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, readSmtp, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
 import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
@@ -319,7 +321,7 @@ export function membersRoute(env: Environment): PageRoute {
 
 /** The admin page at /admin, the first page of the admin UI, for the signed-in user's web session. */
 export function adminRoute(env: Environment): PageRoute {
-  return pageOf("admin", env, (options) => createAdminRoute({ ...options, version: runningVersion(env) }));
+  return pageOf("admin", env, (options) => createAdminRoute({ ...options, version: runningVersion(env), email: emailStatus(readSmtp(env)) }));
 }
 
 /** The web form that opens a request, at /requests/new, which every member of a team may use, for the signed-in user's web session. */
@@ -458,8 +460,13 @@ let homePage: HomeRoute | undefined;
 /** The home page at /, which sends a person who is not signed in to the sign-in page; built once per process. */
 export function homeRoute(env: Environment): HomeRoute {
   if (homePage !== undefined) return homePage;
-  const { logger } = servicesOf(env);
-  homePage = createHomeRoute({ session: (request, renewal) => webSession(env, request.headers, renewal), secret: () => readAuthSecret(env), logger });
+  const { logger, execute } = servicesOf(env);
+  homePage = createHomeRoute({
+    session: (request, renewal) => webSession(env, request.headers, renewal),
+    secret: () => readAuthSecret(env),
+    banners: async (caller) => ((await execute(getBanners.id, caller, {}, { readOnly: true })) as { banners: Banner[] }).banners,
+    logger,
+  });
   return homePage;
 }
 

@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp } from "@tiehall/testing/github";
 import {
+  ADMIN_PATH,
   checkGitHubDeliveryLog,
+  createAdminRoute,
   connectInstallations,
   createGitHubAdminRoute,
   csrfTokenFor,
@@ -296,6 +298,14 @@ describe("the mode an App's credentials set (github-app-reachability 1.7)", () =
     const page = await pageText();
     expect(page).toContain("GitHub runs in polling mode");
     expect(page).not.toMatch(/fail|broken|not reach/i);
+    // And no banner on the admin page (21.10).
+    const admin = await createAdminRoute({ execute: install.execute, session: async () => ada, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger })(
+      new Request(`${URL_OF_INSTALL}${ADMIN_PATH}`),
+    );
+    expect(admin.status).toBe(200);
+    const adminText = await admin.text();
+    expect(adminText).toContain("GitHub runs in polling mode");
+    expect(adminText).not.toMatch(/fail|broken|not reach/i);
   });
 
   it("keeps the behavior of an App with a webhook: webhook mode, until a failed delivery after the first installation", async () => {

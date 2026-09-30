@@ -190,6 +190,7 @@ export {
   GITHUB_MODES,
   GITHUB_WEBHOOK_SECRET_HANDLERS,
   githubModeOf,
+  recordGivenUpDelivery,
   settleModeFromDeliveryLog,
   type DeliveryLogCheckOptions,
   type GitHubMode,
@@ -451,6 +452,7 @@ export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-r
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type GitHubAdminRouteOptions } from "./github-admin-route.ts";
 export { createAdminRoute, type AdminRouteOptions } from "./admin-page.ts";
+export { bannersFor, emailAdminAlerts, type AdminAlert, type AdminAlertEmailData, type Banner } from "./admin-alerts.ts";
 export { DEFAULT_SOURCE_REPOSITORY, runningVersion, type RunningVersion } from "./running-version.ts";
 export {
   ADMIN_PATH,

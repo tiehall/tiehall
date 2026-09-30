@@ -378,7 +378,8 @@ export function emailIsSetUp(env: Environment): boolean {
   return readSmtp(env) !== undefined;
 }
 
-function readSmtp(env: Environment): SmtpSettings | undefined {
+/** The SMTP settings in .env, which send the install's email; undefined when none are set, and Tiehall sends no email. */
+export function readSmtp(env: Environment): SmtpSettings | undefined {
   const host = optional(env, "TIEHALL_SMTP_HOST");
   if (host === undefined) {
     if (SMTP_SETTINGS.some((name) => optional(env, name) !== undefined)) {

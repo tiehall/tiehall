@@ -5,7 +5,9 @@ import { defineCommand } from "./command.ts";
 // admin page warns about missing backups; design.md, Self-hosting decisions:
 // S11): when the last backup finished, as backup.sh recorded it on the host,
 // and whether the page warns because none has finished yet, or none in the
-// last 7 days. Only the web UI reads it.
+// last 7 days; and the banners of the web UI about problems with the
+// integrations (tracker-mirrors: Broken integrations are surfaced; design.md,
+// Decisions this change rests on: D28 #41, #83). Only the web UI reads them.
 
 /** How many days may pass after the last backup before the admin page warns. */
 export const BACKUP_WARNING_DAYS = 7;
@@ -34,4 +36,26 @@ export const getInstallStatus = defineCommand({
   stability: "alpha",
 });
 
-export const INSTALL_COMMANDS = [getInstallStatus];
+/** A banner of the web UI: a problem with an integration, in Tiehall's own words, and where to fix it. */
+export const banner = z.object({
+  /** What the banner is about, such as github_webhook. */
+  id: z.string(),
+  text: z.string(),
+  /** The page that says more, on the install. */
+  link: z.object({ href: z.string(), text: z.string() }),
+});
+
+export const getBanners = defineCommand({
+  id: "install.get_banners",
+  summary:
+    "The banners the web UI shows you: the problems with the install's integrations that you may act on. Admins see every one; a team's members see those of the integrations their team's mirrors go through.",
+  input: z.object({}),
+  output: z.object({ banners: z.array(banner) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const INSTALL_COMMANDS = [getInstallStatus, getBanners];

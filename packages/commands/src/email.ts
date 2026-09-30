@@ -336,6 +336,25 @@ export const PERSONAL_ACCESS_TOKEN_REMINDER: EmailTemplate<{ createdOn: ServerTe
     ].join("\n"),
 };
 
+/**
+ * The alert to every admin when Tiehall gave up a GitHub webhook delivery
+ * (tracker-mirrors: Broken integrations are surfaced): sent once while its
+ * banner shows, with the admin page that says what to do. Only server text.
+ */
+export const GITHUB_WEBHOOK_ALERT: EmailTemplate<{ page: ServerText; polling: ServerText }> = {
+  id: "email.github_webhook_alert",
+  subject: () => "Tiehall: GitHub's webhook deliveries to the install fail",
+  text: ({ page, polling }) =>
+    [
+      "Tiehall gave up a GitHub webhook delivery to the install after asking GitHub 5 times to deliver it again.",
+      polling,
+      "",
+      `Check the webhook in the App's settings on GitHub, on its Advanced tab. The admin page says more: ${page}`,
+      "The banner in the web UI stays until an admin switches GitHub's mode or a delivery reaches the install again; this email is sent once while it shows.",
+      "",
+    ].join("\n"),
+};
+
 /** The test message an admin sends from the admin page. */
 export const TEST_MESSAGE: EmailTemplate<{ install: ServerText }> = {
   id: "email.test_message",

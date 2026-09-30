@@ -2,6 +2,7 @@ import { getGitHubIntegration, setGitHubMode, storeGitHubWebhookSecret } from "@
 import { GITHUB_MODES, githubModeChanged, githubWebhookSecretStored, Refusal } from "@tiehall/core";
 import { githubApp, githubInstallations, integrationSecrets, type Database } from "@tiehall/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { emailAdminAlerts } from "./admin-alerts.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { attemptFailed, madeAfter, readDeliveryLog } from "./github-delivery-log.ts";
@@ -264,15 +265,20 @@ export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions
  */
 export async function recordGivenUpDelivery(context: OrgContext, jobs: JobSender, appId: number): Promise<boolean> {
   const [row] = await context.tx
-    .select({ appId: githubApp.appId, mode: githubApp.mode, modeSetBy: githubApp.modeSetBy })
+    .select({ appId: githubApp.appId, mode: githubApp.mode, modeSetBy: githubApp.modeSetBy, givenUpAt: githubApp.webhookGivenUpAt })
     .from(githubApp)
     .where(eq(githubApp.orgId, context.orgId))
     .for("update");
   if (row === undefined || row.appId !== appId) return false;
-  await context.tx
-    .update(githubApp)
-    .set({ webhookGivenUpAt: sql`coalesce(${githubApp.webhookGivenUpAt}, now())` })
-    .where(eq(githubApp.orgId, context.orgId));
+  if (row.givenUpAt === null) {
+    const [raised] = await context.tx
+      .update(githubApp)
+      .set({ webhookGivenUpAt: sql`now()` })
+      .where(eq(githubApp.orgId, context.orgId))
+      .returning({ at: githubApp.webhookGivenUpAt });
+    // The banner shows from now on, and every admin is emailed about it once, when SMTP is set (admin-alerts.ts).
+    await jobs.send(context.tx, emailAdminAlerts.type.queue, { alert: "github_webhook", raisedAt: (raised?.at ?? new Date()).toISOString() });
+  }
   // An admin who chose webhook mode may be fixing the webhook at this moment: their choice stands.
   if (row.mode !== "webhook" || row.modeSetBy === "admin") return false;
   await context.tx

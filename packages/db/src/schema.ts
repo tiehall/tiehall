@@ -241,6 +241,36 @@ export const backups = pgTable(
   ],
 );
 
+// The emails about admin alerts that went out (tracker-mirrors: Broken
+// integrations are surfaced; design.md, Decisions this change rests on: D28
+// #41). An alert, such as GitHub's webhook deliveries failing, raised at one
+// time, is emailed once to each admin while its banner shows: the job records
+// each admin it emailed in the transaction that sends the email, so a retried
+// job emails nobody twice.
+export const adminAlertEmails = pgTable(
+  "admin_alert_emails",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The alert, such as github_webhook. */
+    alert: text("alert").notNull(),
+    /** When the alert was raised, which tells one showing of its banner from the next. */
+    raisedAt: timestamp("raised_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.alert, table.raisedAt, table.userId] }),
+    foreignKey({
+      name: "admin_alert_emails_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("admin_alert_emails_alert_known", sql`${table.alert} IN ('github_webhook')`),
+  ],
+);
+
 // The setup code (self-host-install: The setup code guards the setup screen;
 // design.md, Self-hosting decisions: S3). While setup is incomplete, each start
 // of the web role prints a new code to its log and stores only its SHA-256
