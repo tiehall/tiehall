@@ -308,12 +308,28 @@
       }
     },
     {
-      "description": "Read a request by its key, such as FE-142, with its packet and its thread, as a page that shows whether the request waits for a person (needs_human). Every member of the install can read every request.",
+      "description": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",
       "inputSchema": {
         "properties": {
+          "page": {
+            "description": "The page to read, from 1; the first unless given. Each page names the next.",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
           "request": {
-            "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request.",
-            "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+            "description": "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install, such as https://tiehall.example.com/FE-142.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "section": {
+            "description": "Read only this section, the packet or the thread, or all of the request, which is read unless another is given.",
+            "enum": [
+              "all",
+              "packet",
+              "thread"
+            ],
             "type": "string"
           }
         },

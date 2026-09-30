@@ -16,9 +16,9 @@ import { addUser } from "./support/members.ts";
 // 8,000 tokens, 32,000 characters, counting both its markdown and its
 // structured content. A page says how to fetch the next one, and every result
 // shows whether the request waits for a person (needs_human). The contract
-// tests wait as expected failures until 16.7 turns them into plain tests;
-// those that the key-only read of 16.3 and the markdown of 16.4 already pass
-// are plain tests since.
+// tests waited as expected failures until 16.7 turned them into plain tests;
+// those that the key-only read of 16.3 and the markdown of 16.4 already
+// passed became plain tests then.
 
 /** The most characters a page may hold: 8,000 tokens at 4 characters each. */
 const PAGE_CHARACTERS = 32_000;
@@ -91,7 +91,7 @@ async function getRequest(person: McpPerson, version: ProtocolVersion, args: Rec
 }
 
 describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version) => {
-  it.fails("returns the same request for its key and for its URL on the install's origin", async () => {
+  it("returns the same request for its key and for its URL on the install's origin", async () => {
     const byKey = await getRequest(dana, version, { request: small.key });
     const byUrl = await getRequest(dana, version, { request: `${URL_OF_INSTALL}/${small.key}` });
     expect(byKey.isError).not.toBe(true);
@@ -128,7 +128,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect((result.structuredContent as Page).request.key).toBe(opened.key.replace(/^AL/, "AK"));
   });
 
-  it.fails("pages a 100,000-character request: the first page holds at most 32,000 characters and says how to fetch the next", async () => {
+  it("pages a 100,000-character request: the first page holds at most 32,000 characters and says how to fetch the next", async () => {
     const first = await getRequest(dana, version, { request: large.key });
     expect(first.isError).not.toBe(true);
     expect(resultSize(first)).toBeLessThanOrEqual(PAGE_CHARACTERS);
@@ -139,7 +139,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(textOf(first)).toContain("page 2");
   });
 
-  it.fails("gives the whole request over its pages, each within 32,000 characters", async () => {
+  it("gives the whole request over its pages, each within 32,000 characters", async () => {
     const texts = new Map<string, string>();
     let args: Record<string, unknown> = { request: large.key };
     for (let count = 0; count < 20; count += 1) {
@@ -160,7 +160,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(values).toContain(SECOND);
   });
 
-  it.fails("reads one section, the thread or the packet, in pages of its own", async () => {
+  it("reads one section, the thread or the packet, in pages of its own", async () => {
     const thread = (await getRequest(dana, version, { request: large.key, section: "thread" })).structuredContent as Page;
     expect(thread.section).toBe("thread");
     expect(thread.parts.length).toBeGreaterThan(0);
@@ -171,7 +171,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(packet.parts.map(({ field }) => field)).toContain("need");
   });
 
-  it.fails("refuses a page the request does not have as input that fails the schema", async () => {
+  it("refuses a page the request does not have as input that fails the schema", async () => {
     const problem = problemOf(await getRequest(dana, version, { request: small.key, page: 99 }));
     expect(problem.type).toBe(`${PROBLEM}invalid-input`);
   });

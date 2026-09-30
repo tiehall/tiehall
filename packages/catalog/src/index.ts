@@ -53,7 +53,15 @@ export {
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
-export { readRequest, REQUEST_PAGE_COMMANDS, REQUEST_SECTIONS, requestPage } from "./request-pages.ts";
+export {
+  CHARACTERS_PER_TOKEN,
+  PAGE_CHARACTERS,
+  PAGE_TOKENS,
+  readRequest,
+  REQUEST_PAGE_COMMANDS,
+  REQUEST_SECTIONS,
+  requestPage,
+} from "./request-pages.ts";
 export {
   editMessage,
   getMessage,
