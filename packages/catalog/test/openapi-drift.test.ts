@@ -28,7 +28,7 @@ describe("the drift check", () => {
   });
 
   it("fails when an operation was added without regenerating", () => {
-    const added = { ...openRequest, id: "requests.create_draft", path: "/api/v1/drafts", cliCommand: "draft" };
+    const added = { ...openRequest, id: "requests.create_draft", path: "/api/v1/drafts", cli: [{ command: "draft" }] };
     expect(documentDrift(defineCatalog([openRequest, added]), fixtureDocument)).toContain("/api/v1/drafts");
   });
 

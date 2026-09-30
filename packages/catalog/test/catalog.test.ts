@@ -26,7 +26,7 @@ const fixture = {
     confirm: false,
     surfaces: ["rest", "mcp", "cli"],
     tool: "get_request",
-    cliCommand: "get",
+    cli: [{ command: "get", arguments: ["key"] }],
     stability: "beta",
   }),
   declineRequest: defineCommand({
@@ -64,7 +64,7 @@ const fixture = {
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
-    cliCommand: "contract report",
+    cli: [{ command: "contract report" }],
     stability: "stable",
     deprecated: { since: "2026-09-01", sunset: "2027-03-01" },
   }),
@@ -116,7 +116,7 @@ describe("a catalog", () => {
         path: "/api/v1/members/{userId}/role",
         scopes: ["requests:write"],
         tool: "change_role",
-        cliCommand: "role",
+        ...(surface === "cli" ? { cli: [{ command: "role" }] } : {}),
       });
       expect(catalogProblems(definitions), surface).toEqual([
         "members.change_role: it needs the confirmation step, which runs only in the web UI, so no agent surface offers it.",
@@ -170,7 +170,7 @@ describe("a catalog", () => {
         path: "/api/v1/teams",
         scopes: ["requests:write"],
         tool: "create_team",
-        cliCommand: "team create",
+        ...(surface === "cli" ? { cli: [{ command: "team create" }] } : {}),
       } as CommandDefinition;
       expect(catalogProblems([...fixtureCatalog, offered]), surface).toEqual([
         "teams.create: it is an admin action, which runs only in the web UI, so no agent surface offers it.",
@@ -293,13 +293,13 @@ describe("a catalog", () => {
     expect(catalogProblems(withChanged("getRequest", { stability: "draft" }))).toEqual([
       "requests.get: the stability level draft is not one of alpha, beta, stable.",
     ]);
-    expect(catalogProblems(withChanged("getRequest", { surfaces: ["rest", "web"] }))).toEqual([
+    expect(catalogProblems(withChanged("getRequest", { surfaces: ["rest", "mcp", "cli", "web"] }))).toEqual([
       "requests.get: the surface web is not one of rest, mcp, cli; a command that no surface offers is internal.",
     ]);
     expect(catalogProblems(withChanged("getRequest", { tool: undefined }))).toEqual([
       "requests.get: it is offered on MCP, so it names its tool.",
     ]);
-    expect(catalogProblems(withChanged("getRequest", { cliCommand: undefined }))).toEqual([
+    expect(catalogProblems(withChanged("getRequest", { cli: undefined }))).toEqual([
       "requests.get: it is offered on the CLI, so it names its CLI command.",
     ]);
     expect(catalogProblems(withChanged("reportContract", { surfaces: ["cli"] }))).toEqual([
@@ -311,28 +311,86 @@ describe("a catalog", () => {
     expect(catalogProblems(withChanged("reportContract", { deprecated: { since: "1 September", sunset: "2027-03-01" } }))).toEqual([
       "contract.report: its deprecation dates are calendar dates, such as 2026-12-15.",
     ]);
-    expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", tool: "read_request", cliCommand: "read" }])).toEqual([
+    expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", tool: "read_request", cli: [{ command: "read" }] }])).toEqual([
       "requests.read: GET /api/v1/requests/{key} is also the path of requests.get.",
     ]);
     // The same path with its parameter named differently matches the same URLs, and OpenAPI treats the two as one path.
     expect(
       catalogProblems([
         ...fixtureCatalog,
-        { ...fixture.getRequest, id: "requests.read", input: z.object({ id: z.string() }), path: "/api/v1/requests/{id}", tool: "read_request", cliCommand: "read" },
+        { ...fixture.getRequest, id: "requests.read", input: z.object({ id: z.string() }), path: "/api/v1/requests/{id}", tool: "read_request", cli: [{ command: "read" }] },
       ]),
     ).toEqual(["requests.read: GET /api/v1/requests/{id} is also the path of requests.get."]);
     // A literal segment where another path has a parameter is not the same path: the literal one wins on REST.
     expect(
       catalogProblems([
         ...fixtureCatalog,
-        { ...fixture.getRequest, id: "requests.search", input: z.object({}), path: "/api/v1/requests/search", tool: "search_requests", cliCommand: "search" },
+        { ...fixture.getRequest, id: "requests.search", input: z.object({}), path: "/api/v1/requests/search", tool: "search_requests", cli: [{ command: "search" }] },
       ]),
     ).toEqual([]);
-    expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", path: "/api/v1/read/{key}", cliCommand: "read" }])).toEqual([
+    expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", path: "/api/v1/read/{key}", cli: [{ command: "read" }] }])).toEqual([
       "requests.read: the tool get_request is also the tool of requests.get.",
     ]);
     expect(catalogProblems([...fixtureCatalog, { ...fixture.getRequest, id: "requests.read", path: "/api/v1/read/{key}", tool: "read_request" }])).toEqual([
       "requests.read: the CLI command get is also the CLI command of requests.get.",
+    ]);
+  });
+
+  // agent-surfaces: CLI request commands; design.md, Self-hosting decisions: S16. The CLI builds each of its request
+  // commands from the operation's x-tiehall-cli extension, since it may not import the catalog: a command's
+  // arguments and the input it sets are fields of the operation's input, and each command is named once.
+  it("refuses CLI commands that the CLI could not build from the document", () => {
+    expect(catalogProblems(withChanged("declineRequest", { cli: [{ command: "decline" }] }))).toEqual([
+      "requests.decline: it names CLI commands, so it is offered on the CLI.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [] }))).toEqual(["requests.get: it is offered on the CLI, so it names its CLI command."]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "Get" }] }))).toEqual([
+      'requests.get: its CLI command Get is not lower-case words, such as get or "contract report".',
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get", arguments: ["id"] }] }))).toEqual([
+      "requests.get: its CLI command get takes id as an argument, which is not a field of its input.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get", arguments: ["key", "key"] }] }))).toEqual([
+      "requests.get: its CLI command get takes key as an argument twice.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get", input: { page: 2 } }] }))).toEqual([
+      "requests.get: its CLI command get sets page, which is not a field of its input.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get", arguments: ["key"], defaults: { key: "FE-1" } }] }))).toEqual([
+      "requests.get: its CLI command get both takes key as an argument and sets it.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get", input: { key: "FE-1" }, defaults: { key: "FE-2" } }] }))).toEqual([
+      "requests.get: its CLI command get sets key twice.",
+    ]);
+    expect(catalogProblems(withChanged("getRequest", { cli: [{ command: "get" }, { command: "get" }] }))).toEqual([
+      "requests.get: the CLI command get is also the CLI command of requests.get.",
+    ]);
+  });
+
+  it("lets two CLI commands run one operation whose input has variants, each naming fields of any variant", () => {
+    const post = defineCommand({
+      id: "messages.post",
+      summary: "Post a message.",
+      input: z.discriminatedUnion("kind", [
+        z.object({ key: z.string(), kind: z.literal("question"), body: z.string() }),
+        z.object({ key: z.string(), kind: z.literal("answer"), body: z.string(), questionId: z.string() }),
+      ]),
+      output: z.object({}),
+      method: "POST",
+      path: "/api/v1/requests/{key}/messages",
+      scopes: ["requests:write"],
+      commitment: false,
+      confirm: false,
+      surfaces: ["rest", "cli"],
+      cli: [
+        { command: "ask", arguments: ["key", "body"], defaults: { kind: "question" } },
+        { command: "reply", arguments: ["key", "body", "questionId"], input: { kind: "answer" } },
+      ],
+      stability: "alpha",
+    });
+    expect(catalogProblems([...fixtureCatalog, post])).toEqual([]);
+    expect(catalogProblems([...fixtureCatalog, { ...post, cli: [{ command: "reply", arguments: ["key", "text"] }] }])).toEqual([
+      "messages.post: its CLI command reply takes text as an argument, which is not a field of its input.",
     ]);
   });
 });
@@ -343,8 +401,8 @@ describe("the real catalog", () => {
   const ORG = /(^|[^a-z])(org|orgs|organi[sz]ations?)([^a-z]|$)/i;
 
   it("has no operation, tool or CLI command that creates, lists, picks or switches an org", () => {
-    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cliCommand }) =>
-      [id, summary, path, tool, cliCommand].filter((name): name is string => name !== undefined),
+    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cli = [] }) =>
+      [id, summary, path, tool, ...cli.map(({ command }) => command)].filter((name): name is string => name !== undefined),
     );
     expect(names.filter((name) => ORG.test(name))).toEqual([]);
   });
@@ -380,8 +438,8 @@ describe("the real catalog, which offers requests and no rooms", () => {
   const ROOM = /(^|[^a-z])(rooms?|channels?|chats?|conversations?|dms?|direct_messages?)([^a-z]|$)/i;
 
   it("has no operation, tool or CLI command that creates, lists or reads a free-form room", () => {
-    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cliCommand }) =>
-      [id, summary, path, tool, cliCommand].filter((name): name is string => name !== undefined),
+    const names = CATALOG.commands.flatMap(({ id, summary, path, tool, cli = [] }) =>
+      [id, summary, path, tool, ...cli.map(({ command }) => command)].filter((name): name is string => name !== undefined),
     );
     expect(names.filter((name) => ROOM.test(name))).toEqual([]);
     expect(CATALOG.get("requests.get")).toBeDefined();

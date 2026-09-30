@@ -27,7 +27,7 @@ const catalog = defineCatalog([
     confirm: false,
     surfaces: ["rest", "mcp", "cli"],
     tool: "open_request",
-    cliCommand: "open",
+    cli: [{ command: "open", arguments: ["team"] }],
     stability: "beta",
   }),
   defineCommand({
@@ -56,7 +56,7 @@ const catalog = defineCatalog([
     commitment: true,
     confirm: false,
     surfaces: ["rest", "cli"],
-    cliCommand: "decline",
+    cli: [{ command: "decline", arguments: ["key"], defaults: { reason: "Out of scope." } }],
     stability: "alpha",
   }),
   defineCommand({
@@ -70,7 +70,7 @@ const catalog = defineCatalog([
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
-    cliCommand: "contract report",
+    cli: [{ command: "contract report" }],
     stability: "stable",
   }),
   defineCommand({
@@ -220,11 +220,43 @@ describe("the OpenAPI document", () => {
     expect(operation("/api/v1/requests/{key}", "get").parameters?.some(({ name }) => name === "Idempotency-Key")).toBe(false);
   });
 
-  it("names the CLI's command in x-tiehall-cli on each operation the CLI offers", () => {
-    expect(operation("/api/v1/requests", "post")["x-tiehall-cli"]).toEqual({ command: "open" });
-    expect(operation("/api/v1/contract/reports", "post")["x-tiehall-cli"]).toEqual({ command: "contract report" });
-    expect(operation("/api/v1/requests/{key}/decline", "post")["x-tiehall-cli"]).toEqual({ command: "decline" });
+  // design.md, Self-hosting decisions: S16; agent-surfaces: CLI request commands. The CLI builds its request
+  // commands from these, since it may not import the catalog: each command's name, the input fields it takes as
+  // positional arguments, in order, and the input it sets itself or by default.
+  it("names the CLI's commands in x-tiehall-cli on each operation the CLI offers, with their arguments and the input they set", () => {
+    expect(operation("/api/v1/requests", "post")["x-tiehall-cli"]).toEqual({ commands: [{ command: "open", arguments: ["team"] }] });
+    expect(operation("/api/v1/contract/reports", "post")["x-tiehall-cli"]).toEqual({ commands: [{ command: "contract report" }] });
+    expect(operation("/api/v1/requests/{key}/decline", "post")["x-tiehall-cli"]).toEqual({
+      commands: [{ command: "decline", arguments: ["key"], defaults: { reason: "Out of scope." } }],
+    });
     expect(operation("/api/v1/requests/{key}", "get")).not.toHaveProperty("x-tiehall-cli");
+  });
+
+  it("lists every command of an operation that the CLI offers under more than one, with the input each sets", () => {
+    const post = defineCommand({
+      id: "messages.post",
+      summary: "Post a message.",
+      input: z.object({ key: z.string(), kind: z.enum(["question", "answer"]), body: z.string(), questionId: z.string().optional() }),
+      output: z.object({}),
+      method: "POST",
+      path: "/api/v1/requests/{key}/messages",
+      scopes: ["requests:write"],
+      commitment: false,
+      confirm: false,
+      surfaces: ["rest", "cli"],
+      cli: [
+        { command: "ask", arguments: ["key", "body"], defaults: { kind: "question" } },
+        { command: "reply", arguments: ["key", "body"], input: { kind: "answer" } },
+      ],
+      stability: "alpha",
+    });
+    const document = openApiDocument(defineCatalog([post])) as { paths: Record<string, Record<string, Record<string, unknown>>> };
+    expect(document.paths["/api/v1/requests/{key}/messages"]?.["post"]?.["x-tiehall-cli"]).toEqual({
+      commands: [
+        { command: "ask", arguments: ["key", "body"], defaults: { kind: "question" } },
+        { command: "reply", arguments: ["key", "body"], input: { kind: "answer" } },
+      ],
+    });
   });
 
   it("marks a deprecated operation with its sunset date", () => {

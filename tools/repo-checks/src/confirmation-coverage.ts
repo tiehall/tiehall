@@ -128,8 +128,11 @@ export function confirmationCoverageProblems(inputs: CoverageInputs): string[] {
     for (const [route, operation] of operationsOf(inputs.openapi)) {
       if (operation["operationId"] !== definition.id) continue;
       problems.push(`${definition.id} needs the confirmation step, but openapi/v1.json offers it as ${route}.`);
-      const cli = (operation["x-tiehall-cli"] as { command?: unknown } | undefined)?.command;
-      if (cli !== undefined) problems.push(`${definition.id} needs the confirmation step, but openapi/v1.json offers it on the CLI as ${String(cli)}.`);
+      const commands = (operation["x-tiehall-cli"] as { commands?: unknown } | undefined)?.commands;
+      for (const command of Array.isArray(commands) ? commands : []) {
+        const name = (command as { command?: unknown } | null)?.command;
+        problems.push(`${definition.id} needs the confirmation step, but openapi/v1.json offers it on the CLI as ${String(name)}.`);
+      }
     }
     for (const tool of toolsOf(inputs.tools)) {
       const operationId = (tool["_meta"] as { operationId?: unknown } | undefined)?.operationId;

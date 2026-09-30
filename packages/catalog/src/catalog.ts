@@ -180,10 +180,32 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
         }
       }
     }
+    const cli = definition.cli ?? [];
     if (surfaces.includes("cli")) {
       if (!surfaces.includes("rest")) problem("it is offered on the CLI, which calls REST, so it is offered on REST too.");
-      if (definition.cliCommand === undefined) problem("it is offered on the CLI, so it names its CLI command.");
-      else claim(cliCommands, definition.cliCommand, "the CLI command");
+      if (cli.length === 0) problem("it is offered on the CLI, so it names its CLI command.");
+    } else if (cli.length > 0) {
+      problem("it names CLI commands, so it is offered on the CLI.");
+    }
+    const fieldNames = inputFieldsOfAnyVariant(definition.input);
+    for (const command of cli) {
+      if (!CLI_COMMAND.test(command.command)) {
+        problem(`its CLI command ${command.command} is not lower-case words, such as get or "contract report".`);
+        continue;
+      }
+      claim(cliCommands, command.command, "the CLI command");
+      const set = [...Object.keys(command.input ?? {}), ...Object.keys(command.defaults ?? {})];
+      const taken = new Set<string>();
+      for (const argument of command.arguments ?? []) {
+        if (taken.has(argument)) problem(`its CLI command ${command.command} takes ${argument} as an argument twice.`);
+        taken.add(argument);
+        if (!fieldNames.has(argument)) problem(`its CLI command ${command.command} takes ${argument} as an argument, which is not a field of its input.`);
+        else if (set.includes(argument)) problem(`its CLI command ${command.command} both takes ${argument} as an argument and sets it.`);
+      }
+      for (const field of new Set(set)) {
+        if (!fieldNames.has(field)) problem(`its CLI command ${command.command} sets ${field}, which is not a field of its input.`);
+        else if (set.indexOf(field) !== set.lastIndexOf(field)) problem(`its CLI command ${command.command} sets ${field} twice.`);
+      }
     }
     if (definition.ifMatch !== undefined || definition.etag !== undefined) {
       if (!surfaces.includes("rest")) {
@@ -218,6 +240,15 @@ export function defineCatalog(definitions: readonly CommandDefinition[]): Catalo
     commands: [...definitions],
     get: (id) => byId.get(id),
   };
+}
+
+/** A CLI command's name: one or more lower-case words, such as get, link-pr or "contract report". */
+const CLI_COMMAND = /^[a-z][a-z-]*( [a-z][a-z-]*)*$/;
+
+/** Every field an input has in any of its variants: an object's fields, or those of each variant of a union of objects. */
+function inputFieldsOfAnyVariant(input: z.ZodType): ReadonlySet<string> {
+  if (input instanceof z.ZodObject) return new Set(Object.keys(input.shape));
+  return new Set((variantsOf(input) ?? []).flatMap((variant) => Object.keys(variant.shape)));
 }
 
 /** The methods whose input comes in a JSON body, which alone can carry an input with variants. */

@@ -37,7 +37,7 @@ const withReport = defineCatalog([
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
-    cliCommand: "contract report",
+    cli: [{ command: "contract report" }],
     stability: "stable",
   }),
 ]);

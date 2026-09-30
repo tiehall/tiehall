@@ -14,6 +14,6 @@ export const openRequest: CommandDefinition = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest", "cli"],
-  cliCommand: "open",
+  cli: [{ command: "open" }],
   stability: "beta",
 });

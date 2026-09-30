@@ -253,7 +253,11 @@
         "summary": "Open a request to a team.",
         "x-stability-level": "beta",
         "x-tiehall-cli": {
-          "command": "open"
+          "commands": [
+            {
+              "command": "open"
+            }
+          ]
         }
       }
     }

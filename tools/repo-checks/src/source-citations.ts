@@ -87,6 +87,10 @@ export function trackedFiles(root: string): string[] {
         !file.startsWith("openspec/") &&
         !file.startsWith(".claude/") &&
         file !== "pnpm-lock.yaml" &&
+        // @tiehall/client's files that openapi-typescript and the command table write from openapi/v1.json: their
+        // unquoted keys read like citations when a key is a capability's name followed by its colon, and their one
+        // comment comes from generate.ts, which is checked.
+        !file.startsWith("packages/client/src/generated/") &&
         // The check's own test holds wrong citations on purpose, as fixtures.
         file !== "tools/repo-checks/test/source-citations.test.ts",
     );

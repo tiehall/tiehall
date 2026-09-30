@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
 import { bodyLimitOf, MIB } from "./body-limits.ts";
 import { variantsOf, type Catalog } from "./catalog.ts";
-import type { CommandDefinition } from "./command.ts";
+import type { CliCommand, CommandDefinition } from "./command.ts";
 import { packet, PACKET_COMPONENT } from "./packet.ts";
 import { proposalAnswer } from "./proposals.ts";
 
@@ -31,9 +31,11 @@ import { proposalAnswer } from "./proposals.ts";
 //   9457 problems; an operation whose method takes a body also lists 413,
 //   described with the limit on its body, 2 MiB or 16 MiB for
 //   contract.report (public-api: Request bodies have a size limit);
-// - x-tiehall-cli with the CLI's command, on each operation the CLI offers,
+// - x-tiehall-cli with the CLI's commands, on each operation the CLI offers,
 //   from which the CLI builds its request commands (design.md, Self-hosting
-//   decisions: S16).
+//   decisions: S16): each command's name, the input fields it takes as
+//   positional arguments, in order, and the input it sets itself or by
+//   default, as { commands: [{ command, arguments, input, defaults }] }.
 // Response schemas never set `additionalProperties: false`, so a response can
 // gain a field without breaking a strictly generated client, and a schema used
 // in requests and responses, such as the packet, keeps one component id: the
@@ -188,8 +190,18 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
     operation.deprecated = true;
     if (definition.deprecated.sunset !== undefined) operation["x-sunset"] = definition.deprecated.sunset;
   }
-  if (definition.surfaces.includes("cli")) operation["x-tiehall-cli"] = { command: definition.cliCommand };
+  if (definition.surfaces.includes("cli")) operation["x-tiehall-cli"] = { commands: (definition.cli ?? []).map(cliCommandOf) };
   return operation;
+}
+
+/** A CLI command as x-tiehall-cli states it: its name, and its arguments and the input it sets, where it has them. */
+function cliCommandOf({ command, arguments: positional, input, defaults }: CliCommand): Record<string, unknown> {
+  return {
+    command,
+    ...(positional === undefined || positional.length === 0 ? {} : { arguments: [...positional] }),
+    ...(input === undefined || Object.keys(input).length === 0 ? {} : { input: { ...input } }),
+    ...(defaults === undefined || Object.keys(defaults).length === 0 ? {} : { defaults: { ...defaults } }),
+  };
 }
 
 /** The body of an input with variants: each variant without the fields the path carries, in the same kind of union. */

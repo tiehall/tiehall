@@ -5,6 +5,8 @@ export {
   HTTP_METHODS,
   SCOPES,
   STABILITY_LEVELS,
+  type CliCommand,
+  type CliValue,
   type CommandDefinition,
   type CommandInput,
   type CommandOutput,

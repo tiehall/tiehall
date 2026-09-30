@@ -78,7 +78,7 @@ const getRequest = defineCommand({
   confirm: false,
   surfaces: ["rest", "mcp", "cli"],
   tool: "get_request",
-  cliCommand: "get",
+  cli: [{ command: "get" }],
   stability: "beta",
 });
 
@@ -105,7 +105,7 @@ function list(): { items: { item: string; actions: Record<string, unknown>[] }[]
   };
 }
 
-const openapi = { paths: { "/api/v1/requests/{key}": { get: { operationId: "requests.get", "x-tiehall-cli": { command: "get" } } } } };
+const openapi = { paths: { "/api/v1/requests/{key}": { get: { operationId: "requests.get", "x-tiehall-cli": { commands: [{ command: "get" }] } } } } };
 const tools = { tools: [{ name: "get_request" }] };
 
 /** The inputs of the check, with the parts a case changes. */
@@ -224,7 +224,7 @@ describe("the confirmation coverage check", () => {
     const leakedDocument = {
       paths: {
         ...openapi.paths,
-        "/api/v1/members/{userId}": { delete: { operationId: "members.remove", "x-tiehall-cli": { command: "member remove" } } },
+        "/api/v1/members/{userId}": { delete: { operationId: "members.remove", "x-tiehall-cli": { commands: [{ command: "member remove" }] } } },
       },
     };
     const leakedTools = { tools: [{ name: "get_request" }, { name: "remove_member", _meta: { operationId: "members.remove" } }] };

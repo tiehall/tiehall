@@ -1,0 +1,217 @@
+{
+  "components": {
+    "schemas": {
+      "Packet": {
+        "properties": {
+          "kind": {
+            "enum": ["request", "contract_change"],
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "1-beta",
+            "type": "string"
+          }
+        },
+        "required": ["schema_version", "kind"],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Tiehall API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/requests": {
+      "get": {
+        "operationId": "requests.list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "enum": ["open", "claimed"],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            },
+            "description": "The requests."
+          }
+        },
+        "summary": "List the requests; the CLI does not offer it.",
+        "x-stability-level": "alpha"
+      },
+      "post": {
+        "operationId": "requests.create",
+        "parameters": [
+          {
+            "description": "A key of your choice that makes a retried POST run once.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "packet": { "$ref": "#/components/schemas/Packet" },
+                  "targetTeam": {
+                    "description": "The key of the team the request is addressed to, such as FE.",
+                    "type": "string"
+                  },
+                  "title": { "type": "string" }
+                },
+                "required": ["targetTeam", "title", "packet"],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            },
+            "description": "The request."
+          }
+        },
+        "summary": "Open a request to a team.",
+        "x-stability-level": "beta",
+        "x-tiehall-cli": {
+          "commands": [{ "arguments": ["targetTeam"], "command": "open" }]
+        }
+      }
+    },
+    "/api/v1/requests/{key}/messages": {
+      "post": {
+        "operationId": "messages.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "blocking": { "description": "Whether the request waits for the answer.", "type": "boolean" },
+                      "body": { "description": "The message's text.", "type": "string" },
+                      "kind": { "const": "question", "type": "string" }
+                    },
+                    "required": ["kind", "body"],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "body": { "description": "The message's text.", "type": "string" },
+                      "kind": { "const": "answer", "type": "string" },
+                      "questionId": { "description": "The id of the question this answers.", "format": "uuid", "type": "string" }
+                    },
+                    "required": ["kind", "body", "questionId"],
+                    "type": "object"
+                  }
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            },
+            "description": "The message."
+          }
+        },
+        "summary": "Post a question or an answer in a request's thread.",
+        "x-stability-level": "alpha",
+        "x-tiehall-cli": {
+          "commands": [
+            { "arguments": ["key", "body"], "command": "reply", "input": { "kind": "answer" } },
+            { "arguments": ["key", "body"], "command": "ask", "defaults": { "kind": "question" } }
+          ]
+        }
+      }
+    },
+    "/api/v1/requests/{key}/proposals": {
+      "post": {
+        "operationId": "requests.propose",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "description": "The ETag of the packet's current revision, such as \"3\".",
+            "in": "header",
+            "name": "If-Match",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "dueDate": {
+                    "anyOf": [{ "format": "date", "type": "string" }, { "type": "null" }],
+                    "description": "The due date to propose, or null to remove it."
+                  },
+                  "limit": { "maximum": 50, "minimum": 1, "type": "integer" }
+                },
+                "required": ["dueDate"],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            },
+            "description": "The request."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            },
+            "description": "The proposal the call became."
+          }
+        },
+        "summary": "Propose a due date.",
+        "x-stability-level": "alpha",
+        "x-tiehall-cli": {
+          "commands": [{ "arguments": ["key"], "command": "propose" }]
+        }
+      }
+    }
+  }
+}

@@ -50,7 +50,7 @@ const catalog = defineCatalog([
     confirm: false,
     surfaces: ["rest", "mcp", "cli"],
     tool: "decline_probe",
-    cliCommand: "decline",
+    cli: [{ command: "decline" }],
     stability: "alpha",
   }),
 ]);

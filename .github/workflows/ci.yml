@@ -143,6 +143,31 @@ jobs:
       # that file (public-api: Every API change is reviewed as a document diff).
       - run: pnpm check:openapi
 
+  client-package:
+    name: Client package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/client
+      # Regenerates @tiehall/client from openapi/v1.json, its types and the
+      # command table the CLI builds its request commands from, read from each
+      # operation's x-tiehall-cli extension, and fails when either differs from
+      # the committed files (public-api: The client package `@tiehall/client`).
+      # The openapi-document job has checked that openapi/v1.json is what the
+      # catalog generates.
+      - run: pnpm check:client
+
   mcp-tools:
     name: MCP tool snapshot
     runs-on: ubuntu-24.04

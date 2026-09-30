@@ -61,6 +61,29 @@ export interface SealedField {
   readonly schema: z.ZodType<string>;
 }
 
+/** A value a CLI command sets in its operation's input, such as the kind of a message. */
+export type CliValue = string | number | boolean;
+
+/**
+ * A command of the CLI that runs an operation (agent-surfaces: CLI request
+ * commands; design.md, Self-hosting decisions: S16). The CLI may not import
+ * the catalog, so the OpenAPI document states each command in its operation's
+ * x-tiehall-cli extension, and the CLI builds the command from it: its name;
+ * the input fields it takes as positional arguments, in this order; the input
+ * it sets itself, for which it offers no option; and the input it sets unless
+ * an option gives another value. Every other field of the operation's input,
+ * and each header the operation takes, such as If-Match, is an option named
+ * after it, such as --question-id. Two commands can run one operation, as ask
+ * and reply both post a message.
+ */
+export interface CliCommand {
+  /** One or more lower-case words, such as get or "contract report". */
+  readonly command: string;
+  readonly arguments?: readonly string[];
+  readonly input?: Readonly<Record<string, CliValue>>;
+  readonly defaults?: Readonly<Record<string, CliValue>>;
+}
+
 export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output extends z.ZodType = z.ZodType> {
   /** A dotted lower-case name, such as requests.create; the OpenAPI operationId. */
   readonly id: string;
@@ -96,8 +119,8 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   readonly surfaces: readonly CommandSurface[];
   /** The MCP tool's name, for a command offered on MCP, such as get_request. */
   readonly tool?: string;
-  /** The CLI command, for a command offered on the CLI, such as get or "contract report". */
-  readonly cliCommand?: string;
+  /** The CLI's commands that run it, for a command offered on the CLI: most have one, such as get or "contract report". */
+  readonly cli?: readonly CliCommand[];
   readonly stability: StabilityLevel;
   readonly deprecated?: Deprecation;
   /**
