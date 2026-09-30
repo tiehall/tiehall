@@ -61,8 +61,9 @@ export const linkPullRequest = defineCommand({
   scopes: ["requests:write"],
   commitment: true,
   confirm: false,
-  surfaces: ["rest", "mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "link_pr",
+  cli: [{ command: "link-pr", arguments: ["key", "url"] }],
   stability: "alpha",
 });
 

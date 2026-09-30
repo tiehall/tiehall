@@ -4,6 +4,7 @@ import { Refusal } from "@tiehall/core";
 import { mcpResourceOf } from "./authorization-server.ts";
 import type { Database } from "@tiehall/db";
 import type { Caller } from "./caller.ts";
+import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { findPersonalAccessToken, isPersonalAccessToken, personalAccessTokenCaller } from "./personal-access-tokens.ts";
 import { RemovedMemberError } from "./with-org.ts";
 
@@ -34,6 +35,10 @@ import { RemovedMemberError } from "./with-org.ts";
 // 403, as every call for a removed member is (teams-and-roles: Removing a
 // member). An access token's caller carries when it was issued, which the
 // call's membership re-check compares with when the user's membership began.
+// A call with a token of the CLI's client came through the CLI, whose device
+// flow alone issues one, so what it changes is recorded on the surface `cli`;
+// any other token's call to /api/v1 on `api` (requests: Provenance is stamped
+// by the server).
 
 /** The install's public signing keys, as a JSON Web Key Set. */
 export interface SigningKeys {
@@ -109,7 +114,9 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     const granted = typeof claims["scope"] === "string" ? claims["scope"].split(" ") : [];
     const scopes = SCOPES.filter((scope): scope is Scope => granted.includes(scope));
     const issuedAt = typeof claims["iat"] === "number" ? new Date(claims["iat"] * 1000) : undefined;
-    return { kind: "oauth_token", userId, clientId, scopes, surface: "api", ...(issuedAt === undefined ? {} : { issuedAt }) };
+    // Only the CLI holds a token of its client, from its device flow, so a call with one came through the CLI.
+    const surface = clientId === CLI_CLIENT_ID ? "cli" : "api";
+    return { kind: "oauth_token", userId, clientId, scopes, surface, ...(issuedAt === undefined ? {} : { issuedAt }) };
   };
 }
 

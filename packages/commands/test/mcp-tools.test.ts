@@ -137,15 +137,17 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
 });
 
 describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => {
-  it("names the user the connection acts for and the install by its URL, and whether the user is a bot", async () => {
+  it("names the user the connection acts for, the teams they belong to and the install by its URL, and whether the user is a bot", async () => {
     const result = await call(dana, version, "whoami");
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toEqual({
       user: { id: dana.userId, login: "dana-fe", kind: "human", bot: false },
+      teams: [{ id: expect.any(String), key: "FE" }],
       install: { url: URL_OF_INSTALL },
     });
     const text = textOf(result);
     expect(text).toContain("dana-fe");
+    expect(text).toContain("They belong to team FE.");
     expect(text).toContain(URL_OF_INSTALL);
   });
 

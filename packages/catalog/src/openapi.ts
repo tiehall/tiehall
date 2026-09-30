@@ -92,6 +92,17 @@ const ifMatchHeader = z.object({
   }),
 });
 
+/** The If-Match header of an operation whose input has variants, only some of which add a packet revision. */
+const optionalIfMatchHeader = z.object({
+  "If-Match": z
+    .string()
+    .optional()
+    .meta({
+      description:
+        'For a call that changes the packet: the ETag of the packet\'s current revision, as the packet read returned it, such as "3". Such a call without it gets 428, and one whose If-Match is not the current revision\'s gets 412, and nothing changes.',
+    }),
+});
+
 /** The ETag header of an answer that states one. */
 const etagHeader = z.object({
   ETag: z.string().meta({ description: 'The ETag of the revision the answer holds, such as "3", for If-Match on the next write.' }),
@@ -170,7 +181,10 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
   const inPath = z.object(Object.fromEntries(fields.filter(([key]) => pathKeys.has(key))));
   const rest = z.object(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
   const hasBody = BODY_METHODS.has(method);
-  const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(definition.input, variants, pathKeys);
+  const notInBody = new Set([...pathKeys, ...(definition.ifMatch === undefined ? [] : [definition.ifMatch])]);
+  const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(definition.input, variants, notInBody);
+  // An input with variants takes If-Match only in the variants that change the packet, so there it is optional.
+  const ifMatch = variants === undefined ? ifMatchHeader : optionalIfMatchHeader;
   const operation: ZodOpenApiOperationObject & Record<`x-${string}`, unknown> = {
     operationId: definition.id,
     summary: definition.summary,
@@ -180,7 +194,7 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
       ...(pathKeys.size > 0 ? { path: inPath } : {}),
       ...(!hasBody && Object.keys(rest.shape).length > 0 ? { query: rest } : {}),
       ...(method === "POST" || definition.ifMatch !== undefined
-        ? { header: definition.ifMatch === undefined ? idempotencyKey : method === "POST" ? idempotencyKey.extend(ifMatchHeader.shape) : ifMatchHeader }
+        ? { header: definition.ifMatch === undefined ? idempotencyKey : method === "POST" ? idempotencyKey.extend(ifMatch.shape) : ifMatch }
         : {}),
     },
     ...(hasBody && body !== undefined ? { requestBody: { content: { "application/json": { schema: body } } } } : {}),
@@ -204,10 +218,15 @@ function cliCommandOf({ command, arguments: positional, input, defaults }: CliCo
   };
 }
 
-/** The body of an input with variants: each variant without the fields the path carries, in the same kind of union. */
-function bodyVariants(input: z.ZodType, variants: readonly z.ZodObject[], pathKeys: ReadonlySet<string>): z.ZodType {
-  const mask: Record<string, true> = Object.fromEntries([...pathKeys].map((key) => [key, true as const]));
-  const options = variants.map((variant) => variant.omit(mask as Parameters<typeof variant.omit>[0])) as [z.ZodObject, ...z.ZodObject[]];
+/**
+ * The body of an input with variants: each variant without the fields the
+ * path carries, or REST fills from If-Match, in the same kind of union.
+ */
+function bodyVariants(input: z.ZodType, variants: readonly z.ZodObject[], notInBody: ReadonlySet<string>): z.ZodType {
+  const options = variants.map((variant) => {
+    const mask: Record<string, true> = Object.fromEntries([...notInBody].filter((key) => Object.hasOwn(variant.shape, key)).map((key) => [key, true as const]));
+    return variant.omit(mask as Parameters<typeof variant.omit>[0]);
+  }) as [z.ZodObject, ...z.ZodObject[]];
   return input instanceof z.ZodDiscriminatedUnion ? z.discriminatedUnion(input.def.discriminator, options) : z.union(options);
 }
 

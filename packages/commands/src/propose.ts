@@ -15,9 +15,10 @@ import { requestView } from "./request-views.ts";
 // so both surfaces refuse and propose alike:
 // - due_date makes the packet's next revision from the current one with the
 //   due date set, moved or removed, and scope takes the next revision whole,
-//   through revisePacket(), which packets.add_revision runs too: the
-//   requester side only, the expected revision named or 428, current or 412,
-//   and a proposal for what is a commitment, or the revision added at once;
+//   through revisePacket(), which packets.add_revision runs too: either side
+//   for a due date, the requester side for anything else, the expected
+//   revision named or 428, current or 412, and a proposal for what is a
+//   commitment, or the revision added at once;
 // - reassign and withdraw propose as requests.propose does;
 // - withdraw_proposal ends a pending proposal of the caller's user without
 //   any effect, as proposals.withdraw does in the web UI, and answers with it.
@@ -41,7 +42,7 @@ export const PROPOSE_HANDLERS: Handlers = {
   [proposeTool.id]: defineHandler(proposeTool, async (input, context) => {
     switch (input.kind) {
       case "due_date":
-        return revised(context, await revisePacket(context, input.key, input.expectedRevision, (current) => withDueDate(current, input.dueDate)));
+        return revised(context, await revisePacket(context, input.key, input.expectedRevision, (current) => withDueDate(current, input.dueDate), "propose_due_date"));
       case "scope":
         return revised(context, await revisePacket(context, input.key, input.expectedRevision, () => input.packet));
       case "reassign":

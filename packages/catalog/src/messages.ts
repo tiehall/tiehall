@@ -58,8 +58,13 @@ export const postMessage = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest", "mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "post_message",
+  // ask asks a question unless --kind names another kind, and reply answers the question --question-id names.
+  cli: [
+    { command: "ask", arguments: ["key", "body"], defaults: { kind: "question" } },
+    { command: "reply", arguments: ["key", "body"], input: { kind: "answer" } },
+  ],
   stability: "alpha",
 });
 

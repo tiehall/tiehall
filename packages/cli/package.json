@@ -2,19 +2,32 @@
   "name": "tiehall",
   "version": "0.0.0",
   "private": true,
-  "description": "The tiehall CLI. Takes its request commands from the OpenAPI document through @tiehall/client.",
+  "description": "The command line of Tiehall, for people and their agents. It takes its request commands from the OpenAPI document through @tiehall/client, which it bundles.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
+  "bin": {
+    "tiehall": "bin/tiehall.mjs"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "rolldown --config rolldown.config.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@tiehall/client": "workspace:*",
+    "@tiehall/packet": "workspace:*",
+    "@types/node": "catalog:",
+    "rolldown": "1.2.9",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

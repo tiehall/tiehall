@@ -111,8 +111,9 @@ export const createRequest = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest", "mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "open_request",
+  cli: [{ command: "open", arguments: ["targetTeam"] }],
   stability: "alpha",
 });
 
@@ -161,11 +162,14 @@ export const listInbox = defineCommand({
   }),
   // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
   output: z.object({ "requests": z.array(request) }),
+  method: "GET",
+  path: "/api/v1/inbox",
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,
-  surfaces: ["mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "list_inbox",
+  cli: [{ command: "inbox" }],
   stability: "alpha",
 });
 
@@ -179,8 +183,9 @@ export const claimRequest = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest", "mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "claim",
+  cli: [{ command: "claim", arguments: ["key"] }],
   stability: "alpha",
 });
 
@@ -206,8 +211,9 @@ export const setRequestStatus = defineCommand({
   scopes: ["requests:write"],
   commitment: true,
   confirm: false,
-  surfaces: ["rest", "mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "set_status",
+  cli: [{ command: "status", arguments: ["key", "state"] }],
   stability: "alpha",
 });
 

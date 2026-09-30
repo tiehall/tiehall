@@ -39,17 +39,22 @@ import { resolveRequestKey } from "./request-keys.ts";
  * the packet the call makes from the current one, as it reads it with the
  * request's row locked. Both packets.add_revision and the propose tool change
  * a packet through it, so either refuses a missing or stale expected revision
- * the same way.
+ * the same way. A due date is the one change either side may propose
+ * (requests: Which side may act on a request): the propose tool's due date
+ * asks for that right instead, and a change it makes that is no commitment,
+ * such as the due date the packet has already, is a revision, which only the
+ * requester side adds.
  */
 export async function revisePacket(
   context: HandlerContext,
   key: string,
   expectedRevision: number | undefined,
   next: (current: Packet) => Packet,
+  action: "add_revision" | "propose_due_date" = "add_revision",
 ): Promise<PacketRevisionView | ProposalAnswer> {
   const userId = actingUserOf(context);
   const row = await lockRequest(context, key);
-  await assertSideAllows(context, userId, row, "add_revision");
+  await assertSideAllows(context, userId, row, action);
   if (expectedRevision === undefined) {
     throw new Refusal(
       "if-match-required",
@@ -69,6 +74,7 @@ export async function revisePacket(
     throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
   }
   const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
+  if (action === "propose_due_date" && !commitments.includes("due_date")) await assertSideAllows(context, userId, row, "add_revision");
   if (commitments.length > 0) {
     return context.propose(row, {
       kind: commitments.includes("scope") ? "scope" : "due_date",

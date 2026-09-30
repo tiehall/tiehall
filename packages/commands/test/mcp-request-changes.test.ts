@@ -255,6 +255,35 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(packet.packet.due_date).toBeUndefined();
   });
 
+  // requests: Which side may act on a request, "Either side proposes a due date"; D28 #3; D30 (2).
+  it("proposes a due date for either side: the target team's waits for the requester side, and each proposal is its proposer's", async () => {
+    const request = await openToFe();
+    const revision = await revisionOf(request.key);
+    const byBob = await call(bob, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-15", expectedRevision: revision });
+    expect(byBob.isError).not.toBe(true);
+    expect(byBob.structuredContent).toMatchObject({
+      proposal: {
+        kind: "due_date",
+        accountableHuman: { id: bob.userId },
+        confirmations: { needed: [{ step: "accountable_human", user: { id: bob.userId } }, { step: "other_side", rules: ["requester_side"] }] },
+      },
+    });
+    const bySam = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-20", expectedRevision: revision });
+    expect(bySam.structuredContent).toMatchObject({ proposal: { kind: "due_date", accountableHuman: { id: sam.userId } } });
+    expect(await proposalCount(request.id)).toBe(2);
+  });
+
+  it("refuses a due date from a member of neither side with 403, and a scope change from the target team, and creates no proposal", async () => {
+    const request = await openToFe();
+    const outsider = await mcpPerson(harness, `oli-ops-${version}`, { teams: ["OPS"] });
+    const revision = await revisionOf(request.key);
+    const dueDate = await call(outsider, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-15", expectedRevision: revision });
+    expect(problemOf(dueDate)).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
+    const scope = await call(bob, version, "propose", { kind: "scope", key: request.key, expectedRevision: revision, packet: packetOf("Something else.") });
+    expect(problemOf(scope)).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
+    expect(await proposalCount(request.id)).toBe(0);
+  });
+
   it("proposes a scope change after a claim that needs the requester's confirmation and then the claimant's", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });

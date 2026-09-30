@@ -320,7 +320,7 @@
             "type": "integer"
           },
           "request": {
-            "description": "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install, such as https://tiehall.example.com/FE-142.",
+            "description": "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install: the install's URL, a slash and the key.",
             "maxLength": 2048,
             "minLength": 1,
             "type": "string"
@@ -7621,7 +7621,7 @@
       "stability": "alpha"
     },
     {
-      "description": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, and the Tiehall install, by its URL.",
+      "description": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL.",
       "inputSchema": {
         "properties": {},
         "type": "object"
@@ -7632,7 +7632,7 @@
           "install": {
             "properties": {
               "url": {
-                "description": "The install's URL, such as https://tiehall.example.com, where its requests live.",
+                "description": "The install's URL, TIEHALL_URL, as an origin: where its requests live.",
                 "pattern": "^https?:\\/\\/(?:[A-Za-z0-9\\.-]+|\\[[0-9A-Fa-f:\\.]+\\])(?::\\d{1,5})?$",
                 "type": "string"
               }
@@ -7641,6 +7641,28 @@
               "url"
             ],
             "type": "object"
+          },
+          "teams": {
+            "description": "The teams the user belongs to, by key: their own team's text is fenced as the same team's.",
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "key": {
+                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "key"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "user": {
             "properties": {
@@ -7672,6 +7694,7 @@
         },
         "required": [
           "user",
+          "teams",
           "install"
         ],
         "type": "object"

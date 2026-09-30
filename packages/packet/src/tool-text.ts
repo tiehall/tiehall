@@ -177,9 +177,10 @@ function messageOrigin(message: MessageFactsJson, reader: Reader): AgentText["or
 /**
  * A page of a request: where it sits among the pages, the request and its
  * packet revision in Tiehall's words, the title and each part, fenced with
- * their origins, and how to read the next page.
+ * their origins, and how to read the next page: with get_request, for a tool's
+ * result, or with `tiehall get`, for the CLI's output.
  */
-export function requestPageText(page: RequestPageJson, reader: Reader): AgentText[] {
+export function requestPageText(page: RequestPageJson, reader: Reader, surface: "mcp" | "cli" = "mcp"): AgentText[] {
   const key = checked(page.request.key, REQUEST_KEY, "request key");
   const section = checked(page.section, WORD, "section");
   const number = count(page.page, "page");
@@ -214,7 +215,10 @@ export function requestPageText(page: RequestPageJson, reader: Reader): AgentTex
     const nextSection = checked(page.next.section, WORD, "section");
     texts.push({
       origin: "tiehall",
-      text: `For the rest, call get_request with request "${key}", section "${nextSection}" and page ${count(page.next.page, "page")}.`,
+      text:
+        surface === "cli"
+          ? `For the rest, run tiehall get ${key} --section ${nextSection} --page ${count(page.next.page, "page")}.`
+          : `For the rest, call get_request with request "${key}", section "${nextSection}" and page ${count(page.next.page, "page")}.`,
     });
   }
   return texts;
@@ -308,13 +312,16 @@ const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1
 /** Who a connection acts for, as whoami returns it. */
 export interface WhoamiJson {
   user: UserJson;
+  teams: TeamJson[];
   install: { url: string };
 }
 
-/** Who a connection acts for and on which install, in Tiehall's words. */
+/** Who a connection acts for, the teams they belong to, and on which install, in Tiehall's words. */
 export function whoamiText(whoami: WhoamiJson): AgentText[] {
   const url = checked(whoami.install.url, INSTALL_URL, "install URL");
-  return [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}.` }];
+  const keys = whoami.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
+  const teams = keys.length === 0 ? "no team" : `team${keys.length === 1 ? "" : "s"} ${listed(keys)}`;
+  return [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}. They belong to ${teams}.` }];
 }
 
 /** The install's teams and registered APIs, as directory returns them. */

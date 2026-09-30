@@ -76,6 +76,18 @@ describe("an OAuth token", () => {
     expect(rows[0]).toEqual({ actor_kind: "agent", actor_user_id: erin.userId, client: client.clientId, surface: "api" });
   });
 
+  // requests: Provenance is stamped by the server; D30 (3). A call through the CLI, which alone holds a token of the
+  // CLI's client, from its device flow, is recorded on cli; any other /api/v1 call on api.
+  it("held by the CLI, from its device flow, is recorded as an agent's action through the CLI, on cli", async () => {
+    const fe = (await harness.install.owner.query<{ id: string }>("SELECT id FROM teams WHERE key = 'FE'")).rows[0]?.id ?? "";
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, alice.userId, { targetTeam: "FE" });
+    const { accessToken } = await harness.signInCli(bob);
+    const answer = await harness.api("POST", `/api/v1/requests/${request.key}/claim`, bearer(accessToken));
+    expect(answer.status).toBe(200);
+    const { rows } = await harness.install.owner.query("SELECT actor_kind, actor_user_id, client, surface, team_id FROM events WHERE type = 'request.claimed' ORDER BY number DESC LIMIT 1");
+    expect(rows[0]).toEqual({ actor_kind: "agent", actor_user_id: bob.userId, client: "tiehall-cli", surface: "cli", team_id: fe });
+  });
+
   it("turns a commitment into a proposal: Erin's agent declining FE-1 gets 202 with a proposal, and FE-1 is not declined", async () => {
     const { client, accessToken } = await harness.tokens(erin, ["requests:read", "requests:write"]);
     const answer = await harness.api("POST", `/api/v1/requests/${fe1}/status`, bearer(accessToken), { state: "declined" });

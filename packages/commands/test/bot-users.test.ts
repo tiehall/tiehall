@@ -170,6 +170,7 @@ describe("an admin", () => {
           const result = await client.callTool({ name: "whoami", arguments: {} });
           expect(result.structuredContent, version).toEqual({
             user: { id: bot, login: "acme-ci-bot", kind: "human", bot: true },
+            teams: expect.any(Array),
             install: { url: URL_OF_INSTALL },
           });
           expect(textOf(result), version).toContain("acme-ci-bot (a bot user)");

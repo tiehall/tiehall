@@ -255,7 +255,7 @@ importers:
     dependencies:
       '@scalar/api-reference':
         specifier: 1.69.2
-        version: 1.69.2(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)
+        version: 1.69.2(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)
       '@tiehall/catalog':
         specifier: workspace:*
         version: link:../../packages/catalog
@@ -324,9 +324,24 @@ importers:
 
   packages/cli:
     devDependencies:
+      '@tiehall/client':
+        specifier: workspace:*
+        version: link:../client
+      '@tiehall/packet':
+        specifier: workspace:*
+        version: link:../packet
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.5
+      rolldown:
+        specifier: 1.2.9
+        version: 1.2.9
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@opentelemetry/api@1.9.0)(@types/node@24.13.5)(vite@8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.1))
 
   packages/client:
     dependencies:
@@ -4938,10 +4953,10 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@scalar/agent-chat@0.12.33(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)':
+  '@scalar/agent-chat@0.12.33(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)':
     dependencies:
       '@ai-sdk/vue': 3.0.33(vue@3.5.43(typescript@6.0.3))(zod@4.6.5)
-      '@scalar/api-client': 3.19.2(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
+      '@scalar/api-client': 3.19.2(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
       '@scalar/components': 0.29.3(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
       '@scalar/helpers': 0.12.0
       '@scalar/icons': 0.7.6(typescript@6.0.3)
@@ -4977,7 +4992,7 @@ snapshots:
       - universal-cookie
       - zod
 
-  '@scalar/api-client@3.19.2(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)':
+  '@scalar/api-client@3.19.2(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)':
     dependencies:
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@4.3.3)
       '@headlessui/vue': 1.7.23(vue@3.5.43(typescript@6.0.3))
@@ -4997,7 +5012,7 @@ snapshots:
       '@scalar/use-toasts': 0.10.5(typescript@6.0.3)
       '@scalar/workspace-store': 0.63.0(typescript@6.0.3)
       '@vueuse/core': 13.9.0(vue@3.5.43(typescript@6.0.3))
-      '@vueuse/integrations': 13.9.0(focus-trap@7.8.0)(fuse.js@7.5.0)(vue@3.5.43(typescript@6.0.3))
+      '@vueuse/integrations': 13.9.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.5.0)(vue@3.5.43(typescript@6.0.3))
       focus-trap: 7.8.0
       fuse.js: 7.5.0
       js-base64: 3.9.3
@@ -5025,11 +5040,11 @@ snapshots:
       - typescript
       - universal-cookie
 
-  '@scalar/api-reference@1.69.2(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)':
+  '@scalar/api-reference@1.69.2(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)':
     dependencies:
       '@headlessui/vue': 1.7.23(vue@3.5.43(typescript@6.0.3))
-      '@scalar/agent-chat': 0.12.33(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)
-      '@scalar/api-client': 3.19.2(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
+      '@scalar/agent-chat': 0.12.33(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)(zod@4.6.5)
+      '@scalar/api-client': 3.19.2(change-case@5.4.4)(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
       '@scalar/blocks': 0.1.19(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
       '@scalar/code-highlight': 0.4.6(supports-color@7.2.0)
       '@scalar/components': 0.29.3(supports-color@7.2.0)(tailwindcss@4.3.3)(typescript@6.0.3)
@@ -5469,12 +5484,13 @@ snapshots:
       '@vueuse/shared': 13.9.0(vue@3.5.43(typescript@6.0.3))
       vue: 3.5.43(typescript@6.0.3)
 
-  '@vueuse/integrations@13.9.0(focus-trap@7.8.0)(fuse.js@7.5.0)(vue@3.5.43(typescript@6.0.3))':
+  '@vueuse/integrations@13.9.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.5.0)(vue@3.5.43(typescript@6.0.3))':
     dependencies:
       '@vueuse/core': 13.9.0(vue@3.5.43(typescript@6.0.3))
       '@vueuse/shared': 13.9.0(vue@3.5.43(typescript@6.0.3))
       vue: 3.5.43(typescript@6.0.3)
     optionalDependencies:
+      change-case: 5.4.4
       focus-trap: 7.8.0
       fuse.js: 7.5.0
 

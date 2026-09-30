@@ -94,19 +94,22 @@ export const readRequest = defineCommand({
       .max(2048)
       .meta({
         description:
-          "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install, such as https://tiehall.example.com/FE-142.",
+          "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install: the install's URL, a slash and the key.",
       }),
     section: pageSection
       .optional()
       .meta({ description: "Read only this section, the packet or the thread, or all of the request, which is read unless another is given." }),
-    page: z.number().int().min(1).optional().meta({ description: "The page to read, from 1; the first unless given. Each page names the next." }),
+    page: z.coerce.number().int().min(1).optional().meta({ description: "The page to read, from 1; the first unless given. Each page names the next." }),
   }),
   output: requestPage,
+  method: "GET",
+  path: "/api/v1/requests/{request}/pages",
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,
-  surfaces: ["mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "get_request",
+  cli: [{ command: "get", arguments: ["request"] }],
   stability: "alpha",
 });
 

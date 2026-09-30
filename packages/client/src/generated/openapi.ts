@@ -36,6 +36,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none. */
+        get: operations["requests.inbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/messages/{messageId}": {
         parameters: {
             query?: never;
@@ -64,6 +81,23 @@ export interface paths {
         put?: never;
         /** Edit a message you posted: its new text becomes its next version, and every earlier version stays as it was. */
         post: operations["messages.edit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose a commitment that people confirm in the web UI: set, move or remove a request's due date, change its scope (its need, acceptance criteria or contract section) with the next revision of its packet, reassign it to another team, or withdraw it; or withdraw a pending proposal you proposed, by its id. A scope change before the request is claimed is added to the packet at once. */
+        post: operations["proposals.propose"];
         delete?: never;
         options?: never;
         head?: never;
@@ -269,6 +303,40 @@ export interface paths {
         put?: never;
         /** Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request. */
         post: operations["requests.set_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/requests/{request}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request. */
+        get: operations["requests.read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL. */
+        get: operations["users.whoami"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -751,6 +819,134 @@ export interface operations {
             };
         };
     };
+    "requests.inbox": {
+        parameters: {
+            query?: {
+                /** @description How many requests to return, 1 to 50; 20 unless given. */
+                limit?: number;
+                /** @description How many of the newest requests to skip; 0 unless given. */
+                offset?: number;
+                /** @description Only the requests in this state. */
+                state?: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        requests: {
+                            claimant: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            needsHuman: boolean;
+                            requester: {
+                                team: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                } | null;
+                            };
+                            /** @enum {string} */
+                            state: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+                            targetTeam: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            untrusted: {
+                                title: string;
+                            };
+                        }[];
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "messages.get": {
         parameters: {
             query?: never;
@@ -1005,6 +1201,330 @@ export interface operations {
             };
             /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "proposals.propose": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header). */
+                "Idempotency-Key"?: string;
+                /** @description For a call that changes the packet: the ETag of the packet's current revision, as the packet read returned it, such as "3". Such a call without it gets 428, and one whose If-Match is not the current revision's gets 412, and nothing changes. */
+                "If-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The due date to propose, such as 2026-10-15, or null to remove the request's due date. */
+                    dueDate: string | null;
+                    /** @description The request's key, such as FE-142; a key written with a team's earlier key names the same request. */
+                    key: string;
+                    /**
+                     * @description What to propose or withdraw.
+                     * @constant
+                     */
+                    kind: "due_date";
+                } | {
+                    /** @description The request's key, such as FE-142; a key written with a team's earlier key names the same request. */
+                    key: string;
+                    /** @constant */
+                    kind: "scope";
+                    packet: components["schemas"]["Packet"];
+                } | {
+                    /** @description The request's key, such as FE-142; a key written with a team's earlier key names the same request. */
+                    key: string;
+                    /** @constant */
+                    kind: "reassign";
+                    /** @description The key of the team to reassign the request to, such as MOB. */
+                    team: string;
+                } | {
+                    /** @description The request's key, such as FE-142; a key written with a team's earlier key names the same request. */
+                    key: string;
+                    /** @constant */
+                    kind: "withdraw";
+                } | {
+                    /** @constant */
+                    kind: "withdraw_proposal";
+                    /**
+                     * Format: uuid
+                     * @description The id of a pending proposal you proposed, which ends without taking effect.
+                     */
+                    proposal: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The operation's result, for a call that makes no commitment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        packet: {
+                            /** Format: date-time */
+                            createdAt: string;
+                            packet: components["schemas"]["Packet"];
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            revision: number;
+                        };
+                        request: {
+                            claimant: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            needsHuman: boolean;
+                            requester: {
+                                team: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                } | null;
+                            };
+                            /** @enum {string} */
+                            state: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+                            targetTeam: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            untrusted: {
+                                title: string;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description The call makes a commitment, which became this proposal instead: it takes effect once the people it needs have confirmed it in the web UI. The answer holds no confirm URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        proposal: {
+                            accountableHuman: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            };
+                            cancelReason: ("terminal_state" | "reassigned" | "accountable_removed" | "stale") | null;
+                            change: {
+                                dueDate?: string | null;
+                                team?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                            };
+                            confirmations: {
+                                needed: {
+                                    rules: ("target_team" | "requester_side" | "claimant")[];
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    team: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        key: string;
+                                    } | null;
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    } | null;
+                                }[];
+                                received: {
+                                    /** Format: date-time */
+                                    confirmedAt: string;
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    };
+                                }[];
+                            };
+                            /** Format: date-time */
+                            createdAt: string;
+                            endedAt: string | null;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            /**
+                             * @description The kind of commitment it proposes.
+                             * @enum {string}
+                             */
+                            kind: "due_date" | "scope" | "decline" | "reassign" | "withdraw" | "done";
+                            proposedBy: {
+                                /** @enum {string} */
+                                actorKind: "agent" | "web_session" | "integration";
+                                surface: ("web" | "mcp" | "cli" | "api" | "github" | "jira") | null;
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                };
+                            };
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            /**
+                             * @description pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.
+                             * @enum {string}
+                             */
+                            state: "pending" | "applied" | "rejected" | "withdrawn" | "expired" | "cancelled";
+                            untrusted: {
+                                client: string | null;
+                                packet: components["schemas"]["Packet"] | null;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request's state does not allow this action. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description If-Match is not the ETag of the current revision, which someone else has changed since; nothing is added. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than 2 MiB, the limit on this operation's body; it is not read, and nothing runs. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call has no If-Match header, which adding a revision needs; nothing is added. */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3360,6 +3880,319 @@ export interface operations {
             };
             /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "requests.read": {
+        parameters: {
+            query?: {
+                /** @description The page to read, from 1; the first unless given. Each page names the next. */
+                page?: number;
+                /** @description Read only this section, the packet or the thread, or all of the request, which is read unless another is given. */
+                section?: "all" | "packet" | "thread";
+            };
+            header?: never;
+            path: {
+                /** @description The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install: the install's URL, a slash and the key. */
+                request: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section and page to read next; null on the last page. */
+                        next: {
+                            page: number;
+                            /** @enum {string} */
+                            section: "all" | "packet" | "thread";
+                        } | null;
+                        packet: {
+                            /** @description The day the request is due, from the current revision; null when it names none. */
+                            dueDate: string | null;
+                            /** @enum {string} */
+                            kind: "request" | "contract_change";
+                            /** @description The current revision's number, from 1 for the packet the request was opened with. */
+                            revision: number;
+                            /** @description The team whose member added the current revision; null for a revision Tiehall added. */
+                            team: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            } | null;
+                        };
+                        page: number;
+                        /** @description How many pages the sections read take. */
+                        pages: number;
+                        parts: ({
+                            /** @description The packet field, such as need or acceptance_criteria. */
+                            field: string;
+                            /** @constant */
+                            kind: "packet_field";
+                            /** @description This part's number, from 1. */
+                            part: number;
+                            /** @description How many parts the field or message is split into; 1 when it is whole. */
+                            parts: number;
+                            untrusted: {
+                                /** @description The field's text, or, for a field that is not text, its JSON: all of it, or this part. */
+                                text: string;
+                            };
+                        } | {
+                            /** @constant */
+                            kind: "message";
+                            /** @description The message of the thread: its kind, what it answers, when it was posted and who posted it. */
+                            message: {
+                                answered: boolean | null;
+                                blocking: boolean;
+                                editedAt: string | null;
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                kind: "comment" | "question" | "answer";
+                                /** Format: date-time */
+                                postedAt: string;
+                                provenance: {
+                                    /** @enum {string} */
+                                    actorKind: "agent" | "web_session" | "system" | "integration";
+                                    surface: ("web" | "mcp" | "cli" | "api" | "github" | "jira") | null;
+                                    team: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        key: string;
+                                    } | null;
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    } | null;
+                                };
+                                questionId: string | null;
+                                version: number;
+                            };
+                            /** @description This part's number, from 1. */
+                            part: number;
+                            /** @description How many parts the field or message is split into; 1 when it is whole. */
+                            parts: number;
+                            untrusted: {
+                                /** @description The agent client its poster named themselves by. */
+                                client: string | null;
+                                /** @description The message's latest text: all of it, or this part. */
+                                text: string;
+                            };
+                        })[];
+                        request: {
+                            claimant: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            needsHuman: boolean;
+                            requester: {
+                                team: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                } | null;
+                            };
+                            /** @enum {string} */
+                            state: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+                            targetTeam: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            untrusted: {
+                                title: string;
+                            };
+                        };
+                        /**
+                         * @description The sections this page reads: all, or the one named.
+                         * @enum {string}
+                         */
+                        section: "all" | "packet" | "thread";
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "users.whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        install: {
+                            /** @description The install's URL, TIEHALL_URL, as an origin: where its requests live. */
+                            url: string;
+                        };
+                        /** @description The teams the user belongs to, by key: their own team's text is fenced as the same team's. */
+                        teams: {
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                        }[];
+                        user: {
+                            bot: boolean;
+                            /** Format: uuid */
+                            id: string;
+                            /** @constant */
+                            kind: "human";
+                            login: string;
+                        };
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

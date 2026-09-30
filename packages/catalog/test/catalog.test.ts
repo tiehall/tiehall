@@ -549,6 +549,35 @@ describe("an operation with If-Match or an ETag", () => {
     ]);
   });
 
+  // design.md, Where the specs leave room: the expected revision off REST. An operation whose input has variants,
+  // such as propose, takes If-Match in the variants that change the packet, where the field is optional.
+  it("is registered with an input that has variants when the variants that have the field have it optional", () => {
+    const propose = defineCommand({
+      id: "proposals.propose",
+      summary: "Propose a commitment.",
+      input: z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("due_date"), key: z.string(), dueDate: z.string().nullable(), expectedRevision: z.number().int().min(1).optional() }),
+        z.strictObject({ kind: z.literal("withdraw"), key: z.string() }),
+      ]),
+      output: z.object({ revision: z.number().int() }),
+      method: "POST",
+      path: "/api/v1/proposals",
+      scopes: ["requests:write"],
+      commitment: true,
+      confirm: false,
+      surfaces: ["rest"],
+      stability: "alpha",
+      ifMatch: "expectedRevision",
+    });
+    expect(catalogProblems([propose])).toEqual([]);
+    expect(catalogProblems([{ ...propose, ifMatch: "key" }])).toEqual([
+      "proposals.propose: its If-Match fills key, which is not an optional field of its input.",
+    ]);
+    expect(catalogProblems([{ ...propose, ifMatch: "revision" }])).toEqual([
+      "proposals.propose: its If-Match fills revision, which is not an optional field of its input.",
+    ]);
+  });
+
   it("is refused with If-Match or an ETag when REST does not offer it", () => {
     const { method: _method, path: _path, ...internal } = addRevision;
     expect(catalogProblems([{ ...internal, surfaces: [] }])).toEqual([

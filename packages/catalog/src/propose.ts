@@ -28,9 +28,11 @@ import { teamKey } from "./teams.ts";
 // commitment answers with the request and its packet as they are now.
 //
 // The variants are strict objects, so an input that mixes them fails the
-// schema (agent-surfaces: Tool schemas that current clients accept). The
-// operation is offered on MCP only; on REST, packets.add_revision and
-// requests.propose make the same commitments.
+// schema (agent-surfaces: Tool schemas that current clients accept). It is
+// offered on MCP, and on REST for the CLI's `propose`, which runs it as the
+// tool does (agent-surfaces: CLI request commands); on REST the expected
+// revision comes from If-Match, never from the body. packets.add_revision and
+// requests.propose make the same commitments on REST too.
 
 const expectedRevision = z
   .number()
@@ -68,11 +70,15 @@ export const proposeTool = defineCommand({
     }),
   ]),
   output: z.object({ request, packet: packetRevision }),
+  method: "POST",
+  path: "/api/v1/proposals",
   scopes: ["requests:write"],
   commitment: true,
   confirm: false,
-  surfaces: ["mcp"],
+  surfaces: ["rest", "mcp", "cli"],
   tool: "propose",
+  cli: [{ command: "propose", arguments: ["kind", "key"] }],
+  ifMatch: "expectedRevision",
   stability: "alpha",
 });
 

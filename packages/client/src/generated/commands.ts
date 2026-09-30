@@ -4,4 +4,542 @@
 import type { CommandEntry } from "../command-table.ts";
 
 /** Every command of the CLI that runs an operation, sorted by name, from the x-tiehall-cli extension of each operation it offers. */
-export const COMMAND_TABLE: readonly CommandEntry[] = [];
+export const COMMAND_TABLE: readonly CommandEntry[] = [
+  {
+    "command": "ask",
+    "operationId": "messages.post",
+    "summary": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/messages",
+    "stability": "alpha",
+    "arguments": [
+      "key",
+      "body"
+    ],
+    "input": {},
+    "defaults": {
+      "kind": "question"
+    },
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "blocking",
+        "in": "body",
+        "types": [
+          "boolean"
+        ],
+        "required": false,
+        "description": "Only a question can block its request."
+      },
+      {
+        "name": "body",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The message's text, as you write it; it is kept exactly."
+      },
+      {
+        "name": "kind",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "comment",
+          "question",
+          "answer"
+        ],
+        "required": true
+      },
+      {
+        "name": "questionId",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "The id of the question this answers."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "claim",
+    "operationId": "requests.claim",
+    "summary": "Claim an open request of one of your teams for yourself; it needs no confirmation.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/claim",
+    "stability": "alpha",
+    "arguments": [
+      "key"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "get",
+    "operationId": "requests.read",
+    "summary": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",
+    "method": "GET",
+    "path": "/api/v1/requests/{request}/pages",
+    "stability": "alpha",
+    "arguments": [
+      "request"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "request",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142, a key written with a team's earlier key included, or the request's URL on this install: the install's URL, a slash and the key."
+      },
+      {
+        "name": "section",
+        "in": "query",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "all",
+          "packet",
+          "thread"
+        ],
+        "required": false,
+        "description": "Read only this section, the packet or the thread, or all of the request, which is read unless another is given."
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "types": [
+          "integer"
+        ],
+        "required": false,
+        "description": "The page to read, from 1; the first unless given. Each page names the next."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "inbox",
+    "operationId": "requests.inbox",
+    "summary": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+    "method": "GET",
+    "path": "/api/v1/inbox",
+    "stability": "alpha",
+    "arguments": [],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "state",
+        "in": "query",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "open",
+          "claimed",
+          "in_progress",
+          "needs_info",
+          "done",
+          "declined",
+          "withdrawn"
+        ],
+        "required": false,
+        "description": "Only the requests in this state."
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "types": [
+          "integer"
+        ],
+        "required": false,
+        "description": "How many requests to return, 1 to 50; 20 unless given."
+      },
+      {
+        "name": "offset",
+        "in": "query",
+        "types": [
+          "integer"
+        ],
+        "required": false,
+        "description": "How many of the newest requests to skip; 0 unless given."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "link-pr",
+    "operationId": "requests.link_pr",
+    "summary": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/pull-requests",
+    "stability": "alpha",
+    "arguments": [
+      "key",
+      "url"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "url",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The pull request's URL on GitHub.com, such as https://github.com/acme/web/pull/88."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": true
+  },
+  {
+    "command": "open",
+    "operationId": "requests.create",
+    "summary": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one.",
+    "method": "POST",
+    "path": "/api/v1/requests",
+    "stability": "alpha",
+    "arguments": [
+      "targetTeam"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "packet",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true
+      },
+      {
+        "name": "requestingTeam",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "The key of the team you open it from, one of yours; needed when you belong to several teams."
+      },
+      {
+        "name": "targetTeam",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The key of the team the request is addressed to, such as FE."
+      },
+      {
+        "name": "title",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's title: one line of 1 to 200 characters."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "propose",
+    "operationId": "proposals.propose",
+    "summary": "Propose a commitment that people confirm in the web UI: set, move or remove a request's due date, change its scope (its need, acceptance criteria or contract section) with the next revision of its packet, reassign it to another team, or withdraw it; or withdraw a pending proposal you proposed, by its id. A scope change before the request is claimed is added to the packet at once.",
+    "method": "POST",
+    "path": "/api/v1/proposals",
+    "stability": "alpha",
+    "arguments": [
+      "kind",
+      "key"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "dueDate",
+        "in": "body",
+        "types": [
+          "string",
+          "null"
+        ],
+        "required": false,
+        "description": "The due date to propose, such as 2026-10-15, or null to remove the request's due date."
+      },
+      {
+        "name": "key",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "kind",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "due_date",
+          "scope",
+          "reassign",
+          "withdraw",
+          "withdraw_proposal"
+        ],
+        "required": true,
+        "description": "What to propose or withdraw."
+      },
+      {
+        "name": "packet",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": false
+      },
+      {
+        "name": "team",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "The key of the team to reassign the request to, such as MOB."
+      },
+      {
+        "name": "proposal",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "The id of a pending proposal you proposed, which ends without taking effect."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      },
+      {
+        "name": "If-Match",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "For a call that changes the packet: the ETag of the packet's current revision, as the packet read returned it, such as \"3\". Such a call without it gets 428, and one whose If-Match is not the current revision's gets 412, and nothing changes."
+      }
+    ],
+    "proposes": true
+  },
+  {
+    "command": "reply",
+    "operationId": "messages.post",
+    "summary": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/messages",
+    "stability": "alpha",
+    "arguments": [
+      "key",
+      "body"
+    ],
+    "input": {
+      "kind": "answer"
+    },
+    "defaults": {},
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "blocking",
+        "in": "body",
+        "types": [
+          "boolean"
+        ],
+        "values": [
+          false
+        ],
+        "required": false,
+        "description": "Only a question can block its request."
+      },
+      {
+        "name": "body",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The message's text, as you write it; it is kept exactly."
+      },
+      {
+        "name": "kind",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "answer"
+        ],
+        "required": true
+      },
+      {
+        "name": "questionId",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The id of the question this answers."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
+  },
+  {
+    "command": "status",
+    "operationId": "requests.set_status",
+    "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/status",
+    "stability": "alpha",
+    "arguments": [
+      "key",
+      "state"
+    ],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "state",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "in_progress",
+          "open",
+          "declined",
+          "done"
+        ],
+        "required": true,
+        "description": "in_progress to start work on the claimed request, open to release its claim, or declined or done to propose declining it or marking it done."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": true
+  }
+];

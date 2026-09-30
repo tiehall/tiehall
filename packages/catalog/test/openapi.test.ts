@@ -428,6 +428,51 @@ describe("ETag and If-Match in the document", () => {
   });
 });
 
+// public-api: Packet revisions use ETag and If-Match; design.md, Where the specs leave room: the expected revision off
+// REST. An operation whose input has variants, only some of which change the packet, takes If-Match as an optional
+// header, needed by those variants, and no variant's body names the field REST fills from it.
+describe("If-Match on an operation whose input has variants", () => {
+  const document = openApiDocument(
+    defineCatalog([
+      defineCommand({
+        id: "proposals.propose",
+        summary: "Propose a commitment.",
+        input: z.discriminatedUnion("kind", [
+          z.strictObject({ kind: z.literal("due_date"), key: z.string(), dueDate: z.string().nullable(), expectedRevision: z.number().int().min(1).optional() }),
+          z.strictObject({ kind: z.literal("withdraw"), key: z.string() }),
+        ]),
+        output: z.object({ key: z.string() }),
+        method: "POST",
+        path: "/api/v1/proposals",
+        scopes: ["requests:write"],
+        commitment: true,
+        confirm: false,
+        surfaces: ["rest"],
+        stability: "alpha",
+        ifMatch: "expectedRevision",
+      }),
+    ]),
+  ) as Json & { paths: Record<string, Record<string, Json & { parameters?: Json[]; responses: Record<string, Json> }>> };
+  const propose = document.paths["/api/v1/proposals"]?.["post"];
+
+  it("lists If-Match as an optional header, with the Idempotency-Key, and names the field in no variant of the body", () => {
+    const ifMatch = propose?.parameters?.find(({ name }) => name === "If-Match");
+    expect(ifMatch).toMatchObject({ in: "header", schema: { type: "string" } });
+    expect(ifMatch?.["required"]).not.toBe(true);
+    expect(propose?.parameters?.some(({ name }) => name === "Idempotency-Key")).toBe(true);
+    const body = (propose?.["requestBody"] as { content: Record<string, { schema: Json }> }).content["application/json"]?.schema ?? {};
+    const variants = (body["oneOf"] ?? body["anyOf"]) as Json[];
+    expect(variants.map((variant) => Object.keys(variant["properties"] as Json).sort())).toEqual([
+      ["dueDate", "key", "kind"],
+      ["key", "kind"],
+    ]);
+  });
+
+  it("answers 428 without If-Match and 412 when it does not match", () => {
+    expect(Object.keys(propose?.responses ?? {})).toEqual(expect.arrayContaining(["412", "428"]));
+  });
+});
+
 // public-api: Commitments over the API answer 202 with a proposal; agent-safety: The confirm URL never reaches the model.
 describe("the commitments of the real catalog", () => {
   const real = openApiDocument(CATALOG) as Json & { paths: Record<string, Record<string, Json & { responses: Record<string, Json> }>> };

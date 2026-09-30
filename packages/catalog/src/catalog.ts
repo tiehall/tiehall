@@ -212,8 +212,12 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
         problem("If-Match and ETag are REST headers, so only an operation offered on REST names them.");
       } else {
         const field = definition.ifMatch;
-        const inputShape = definition.input instanceof z.ZodObject ? (definition.input.shape as Record<string, z.ZodType>) : {};
-        if (field !== undefined && !(inputShape[field] instanceof z.ZodOptional)) {
+        // An input with variants names the field in the variants that change the packet, and only those.
+        const shapes = (definition.input instanceof z.ZodObject ? [definition.input] : (variantsOf(definition.input) ?? [])).map(
+          (object) => object.shape as Record<string, z.ZodType>,
+        );
+        const having = shapes.filter((shape) => field !== undefined && Object.hasOwn(shape, field));
+        if (field !== undefined && (having.length === 0 || having.some((shape) => !(shape[field] instanceof z.ZodOptional)))) {
           problem(`its If-Match fills ${field}, which is not an optional field of its input.`);
         }
         const outputShape = definition.output instanceof z.ZodObject ? (definition.output.shape as Record<string, z.ZodType>) : {};
