@@ -96,7 +96,7 @@ export const SIGN_IN_ROUTES: Readonly<Record<string, SignInRouteClass>> = {
   // The install's authorization server for agent clients (authorization-server.ts).
   "GET /oauth2/authorize": {
     kind: "harmless",
-    why: "The authorization endpoint an agent client sends a person's browser to: it signs the person in and asks them to approve the client, and gives a code only for an approval they confirmed.",
+    why: "The authorization endpoint an agent client sends a person's browser to: it signs the person in and asks them to approve the client, and gives a code only for an approval they confirmed, to a web session the install's pages take.",
   },
   "POST /oauth2/authorize": { kind: "blocked", why: "Agent clients send the person's browser to the authorization endpoint with a GET; the form-post variant is not used." },
   "POST /oauth2/token": {

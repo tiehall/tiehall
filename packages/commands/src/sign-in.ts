@@ -32,7 +32,7 @@ import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { grantChecks } from "./agent-grants.ts";
 import { continuePathOf, isAuthorizationRequest } from "./consent.ts";
-import { authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
+import { AUTHORIZATION_ENDPOINT_PATH, authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
 import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
@@ -144,7 +144,10 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // the checks of who may sign in again, rather than refused as a removed
 // member's, which is what an ended session means. The library has no such cap,
 // so it is Tiehall's own check. The session the setup screen's sign-in creates
-// follows the same rules.
+// follows the same rules. The authorization endpoint of agent clients, which
+// the library serves with its own read of the session, takes a session only
+// as session() does: one session() reads as none reaches it as no session, so
+// the browser is sent to sign in, and one a removal ended gets 403 there too.
 //
 // The rate limit (design.md, Technical decisions: T7): the service's own
 // limiter is on in every environment, with the library's window and limits,
@@ -750,6 +753,41 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     return answerRefusal(request, httpProblem(refusal), wayOn, extra);
   }
 
+  /**
+   * The web session a request's cookie names, as every page and route of the
+   * install takes it (SignInService.session()).
+   */
+  async function readSession(headers: Headers, renewal?: Headers): Promise<WebSessionCaller | undefined> {
+    if (!cookieNames(headers).includes(sessionCookie)) return undefined;
+    const auth = await current();
+    if (auth === undefined) return undefined;
+    // First a read that renews nothing: an ended session, a capped one or a removed member's is not extended.
+    const read = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
+    // A session that has expired is gone now, and the service's answer expires the browser's cookie.
+    passOn(read.headers, renewal);
+    const found = read.response;
+    if (found === null) return undefined;
+    const session = found.session as typeof found.session & { endedAt?: Date | null };
+    if (session.endedAt !== undefined && session.endedAt !== null) throw new RemovedMemberError();
+    // 30 days after its sign-in, the session goes, and the browser is sent to sign in again.
+    if (Date.now() - new Date(session.createdAt).getTime() >= SESSION_LIFETIME_DAYS * DAY_SECONDS * 1000) {
+      await options.database.delete(webSessions).where(eq(webSessions.id, session.id));
+      const gone = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
+      passOn(gone.headers, renewal);
+      return undefined;
+    }
+    // Only a member's session serves anything, whatever ended or did not end it.
+    const [member] = await options.database.select({ userId: members.userId }).from(members).where(eq(members.userId, session.userId)).limit(1);
+    if (member === undefined) throw new RemovedMemberError();
+    // A day or more after its creation or last extension, a read that may renew it extends it, as the service does.
+    if (renewal !== undefined && dueForExtension(new Date(session.expiresAt))) {
+      const renewed = await auth.api.getSession({ headers, query: { disableCookieCache: true }, returnHeaders: true });
+      passOn(renewed.headers, renewal);
+      if (renewed.response === null) return undefined;
+    }
+    return { kind: "web_session", userId: session.userId, sessionId: session.id };
+  }
+
   return {
     async handler(request) {
       try {
@@ -763,12 +801,26 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         if (pathname.startsWith(`${AUTH_BASE_PATH}/`) && !servedOverHttpAt(request.method, pathname.slice(AUTH_BASE_PATH.length))) {
           return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
         }
-        const answer = await auth.handler(request);
+        // The authorization endpoint takes a web session only as the install's pages take it: one that has expired or
+        // reached its 30 days is none, so the browser is sent to sign in, and one a removal ended gets 403 and no code.
+        let forwarded = request;
+        const renewal = new Headers();
+        if (pathname === AUTHORIZATION_ENDPOINT_PATH && cookieNames(request.headers).includes(sessionCookie)) {
+          let caller: WebSessionCaller | undefined;
+          try {
+            caller = await readSession(request.headers, renewal);
+          } catch (error) {
+            if (error instanceof Refusal) return refused(request, error, TO_SIGN_IN, renewal);
+            throw error;
+          }
+          if (caller === undefined) forwarded = new Request(request, { headers: withoutCookie(request.headers, sessionCookie) });
+        }
+        const answer = await auth.handler(forwarded);
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
         if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
         if (answer.status === 429) return answerRefused(await refusalOfLimit(answer));
         if (refusalOf(answer)) return answerRefused(new Refusal("sign-in-refused", SIGN_IN_REFUSED), answer.headers);
-        return answer;
+        return withSetCookies(answer, renewal);
       } catch (error) {
         logger.error("sign-in service: a request to the sign-in service failed", { error });
         return problem(internalErrorProblem());
@@ -815,7 +867,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       try {
         if (request.method !== "POST") return refused(request, new Refusal("route-not-found", "Sign out with the sign-out button of a page."), TO_HOME);
         const toSignIn = new Headers({ location: SIGN_IN_PATH, "cache-control": "no-store" });
-        const session = cookieNames(request.headers).includes(sessionCookie) ? await this.session(request.headers).catch(() => undefined) : undefined;
+        const session = cookieNames(request.headers).includes(sessionCookie) ? await readSession(request.headers).catch(() => undefined) : undefined;
         const auth = await current();
         if (session === undefined || auth === undefined) return new Response(null, { status: 303, headers: toSignIn });
         const form = new URLSearchParams(await request.text());
@@ -884,36 +936,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       },
     },
 
-    async session(headers, renewal) {
-      if (!cookieNames(headers).includes(sessionCookie)) return undefined;
-      const auth = await current();
-      if (auth === undefined) return undefined;
-      // First a read that renews nothing: an ended session, a capped one or a removed member's is not extended.
-      const read = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
-      // A session that has expired is gone now, and the service's answer expires the browser's cookie.
-      passOn(read.headers, renewal);
-      const found = read.response;
-      if (found === null) return undefined;
-      const session = found.session as typeof found.session & { endedAt?: Date | null };
-      if (session.endedAt !== undefined && session.endedAt !== null) throw new RemovedMemberError();
-      // 30 days after its sign-in, the session goes, and the browser is sent to sign in again.
-      if (Date.now() - new Date(session.createdAt).getTime() >= SESSION_LIFETIME_DAYS * DAY_SECONDS * 1000) {
-        await options.database.delete(webSessions).where(eq(webSessions.id, session.id));
-        const gone = await auth.api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true }, returnHeaders: true });
-        passOn(gone.headers, renewal);
-        return undefined;
-      }
-      // Only a member's session serves anything, whatever ended or did not end it.
-      const [member] = await options.database.select({ userId: members.userId }).from(members).where(eq(members.userId, session.userId)).limit(1);
-      if (member === undefined) throw new RemovedMemberError();
-      // A day or more after its creation or last extension, a read that may renew it extends it, as the service does.
-      if (renewal !== undefined && dueForExtension(new Date(session.expiresAt))) {
-        const renewed = await auth.api.getSession({ headers, query: { disableCookieCache: true }, returnHeaders: true });
-        passOn(renewed.headers, renewal);
-        if (renewed.response === null) return undefined;
-      }
-      return { kind: "web_session", userId: session.userId, sessionId: session.id };
-    },
+    session: readSession,
   };
 }
 
@@ -1039,6 +1062,27 @@ function cookieValue(headers: Headers | undefined, name: string): string | undef
     if (key === name) return value.join("=");
   }
   return undefined;
+}
+
+/** The headers without one cookie, so the service reads the request as if the browser had not sent it. */
+function withoutCookie(headers: Headers, name: string): Headers {
+  const kept = new Headers(headers);
+  const cookies = (headers.get("cookie") ?? "")
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair !== "" && (pair.split("=")[0] ?? "") !== name);
+  if (cookies.length === 0) kept.delete("cookie");
+  else kept.set("cookie", cookies.join("; "));
+  return kept;
+}
+
+/** The answer with the Set-Cookie values a read of the session gave, such as one that expires an ended session's cookie. */
+function withSetCookies(answer: Response, cookies: Headers): Response {
+  const set = cookies.getSetCookie();
+  if (set.length === 0) return answer;
+  const headers = new Headers(answer.headers);
+  for (const cookie of set) headers.append("set-cookie", cookie);
+  return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers });
 }
 
 function cookieNames(headers: Headers): string[] {
