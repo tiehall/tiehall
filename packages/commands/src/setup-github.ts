@@ -164,7 +164,15 @@ export function newAppPage(webUrl: string, org: string, state: string): string {
 }
 
 /** The App step: the operator's settings, what the App gets, and the button that posts the manifest to GitHub. */
-export function appStepBody(input: { url: string; webUrl: string; settings: AppStepSettings; state: string; company?: string }): string {
+export function appStepBody(input: {
+  url: string;
+  webUrl: string;
+  settings: AppStepSettings;
+  state: string;
+  company?: string;
+  /** In a step `setup reopen` opened: the App in use, which a new App would replace. */
+  reopened?: { app?: StoredGitHubApp };
+}): string {
   const { url, webUrl, settings, state } = input;
   const trial = isTrialUrl(url);
   const orgValid = settings.org === "" || GITHUB_LOGIN.test(settings.org);
@@ -187,9 +195,22 @@ export function appStepBody(input: { url: string; webUrl: string; settings: AppS
 ${option}        <button type="submit">Apply</button>
       </form>
 `;
-  const intro = `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Create the install's GitHub App</h2>
+  const inUse = input.reopened?.app;
+  const intro =
+    input.reopened === undefined
+      ? `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Create the install's GitHub App</h2>
       <p>${escapeHtml(
         "Tiehall signs people in with GitHub, links pull requests and mirrors requests into GitHub Issues through a GitHub App of its own. " +
+          "The button below takes you to GitHub, which asks you to confirm the App and then sends you back here. " +
+          "To change the App's owner, its name or the option below, change them and apply them first.",
+      )}</p>
+`
+      : `      <h2>Create a new GitHub App</h2>
+      <p>${escapeHtml(
+        "The operator command setup reopen opened this step again. " +
+          `The install keeps serving its members with the App in use${inUse === undefined ? "" : `, "${inUse.name}"`}, until you create a new App here. ` +
+          "The new App replaces it at once: Tiehall deletes the old App's credentials, and no longer acts on the old App's installations. " +
+          "Once you have installed the new App, an admin of the install signs in with GitHub here, which connects the new App's installations and closes this step. " +
           "The button below takes you to GitHub, which asks you to confirm the App and then sends you back here. " +
           "To change the App's owner, its name or the option below, change them and apply them first.",
       )}</p>
@@ -227,6 +248,34 @@ ${option}        <button type="submit">Apply</button>
 `;
 }
 
+/**
+ * The App step of a step that `setup reopen` opened: the App step, to create a
+ * new App, and the way to keep the App in use, an admin's sign-in, which
+ * closes the step and changes nothing else.
+ */
+export function reopenedAppStepBody(input: {
+  url: string;
+  webUrl: string;
+  settings: AppStepSettings;
+  state: string;
+  /** The App in use. */
+  app?: StoredGitHubApp;
+  /** Whether the setup screen offers its sign-in. */
+  signIn?: boolean;
+  error?: string | null;
+}): string {
+  const create = appStepBody({ url: input.url, webUrl: input.webUrl, settings: input.settings, state: input.state, reopened: input.app === undefined ? {} : { app: input.app } });
+  if (input.signIn === false) return create;
+  return `${create}      <h2>Keep the App in use</h2>
+${signInError(input.error)}      <p>${escapeHtml(
+    "If the App in use is to stay, sign in with GitHub as an admin of the install instead. That closes this step: the App, its installations and every member's role stay as they are, and nobody becomes an admin.",
+  )}</p>
+      <form method="post" action="${SETUP_SIGN_IN_PATH}">
+        <button type="submit">Sign in with GitHub as an admin</button>
+      </form>
+`;
+}
+
 /** Why the sign-in from the setup screen did not complete setup, by the code it returned with. */
 const SIGN_IN_ERRORS: Readonly<Record<string, string>> = {
   github_failed: "GitHub could not be reached to list the App's installations, so setup is not complete. Sign in again.",
@@ -234,7 +283,16 @@ const SIGN_IN_ERRORS: Readonly<Record<string, string>> = {
   no_app: "Create the install's GitHub App before you sign in.",
   sign_in_refused: "The sign-in did not come from the browser that entered the setup code. Sign in from that browser.",
   access_denied: "GitHub says you did not authorize the install's GitHub App, so setup is not complete. Sign in again.",
+  setup_admins_only: "Only an admin of the install can close this step. Sign in with the GitHub account of an admin.",
+  setup_complete: "Setup is complete, and this step is closed.",
 };
+
+/** The line that says why the last sign-in from the setup screen did not complete, or none. */
+function signInError(error: string | null | undefined): string {
+  if (error === undefined || error === null) return "";
+  return `      <p>${escapeHtml(SIGN_IN_ERRORS[error] ?? "The sign-in with GitHub did not complete setup. Sign in again.")}</p>
+`;
+}
 
 /** An App's settings page on GitHub, under its owner: an organization's or a person's. */
 export function appSettingsPage(webUrl: string, app: Pick<ReplacedGitHubApp, "slug" | "owner">): string {
@@ -251,11 +309,11 @@ export function appSettingsPage(webUrl: string, app: Pick<ReplacedGitHubApp, "sl
  * nobody uses, so the step names it and links to its settings on GitHub,
  * where it can be deleted.
  */
-function replacedAppNotices(webUrl: string, app: StoredGitHubApp, replaced: readonly ReplacedGitHubApp[]): string {
+function replacedAppNotices(webUrl: string, app: StoredGitHubApp, replaced: readonly ReplacedGitHubApp[], reopened = false): string {
   return replaced
     .map(
       (old) => `      <p>${escapeHtml(
-        `The GitHub App "${old.name}" that this setup created before is no longer used: Tiehall uses "${app.name}" in its place. ` +
+        `The GitHub App "${old.name}"${reopened ? "" : " that this setup created before"} is no longer used: Tiehall uses "${app.name}" in its place. ` +
           "It is still registered on GitHub, with a private key nobody uses, so delete it there:",
       )} <a href="${escapeHtml(appSettingsPage(webUrl, old))}">${escapeHtml(`${old.name} in its settings on GitHub`)}</a></p>
 `,
@@ -272,23 +330,30 @@ export function installStepBody(input: {
   error?: string | null;
   /** The Apps that later returns replaced during setup, which the step says can be deleted on GitHub. */
   replaced?: readonly ReplacedGitHubApp[];
+  /** In a step that `setup reopen` opened, whose sign-in closes the step rather than completing setup. */
+  reopened?: boolean;
 }): string {
   const { webUrl, app } = input;
+  const reopened = input.reopened === true;
   const owner = app.owner.type === "Organization" ? `the GitHub organization ${app.owner.login}` : `your GitHub account ${app.owner.login}`;
   const install = `${webUrl}/apps/${encodeURIComponent(app.slug)}/installations/new`;
-  const error =
-    input.error === undefined || input.error === null
-      ? ""
-      : `      <p>${escapeHtml(SIGN_IN_ERRORS[input.error] ?? "The sign-in with GitHub did not complete setup. Sign in again.")}</p>
-`;
   const signIn =
     input.signIn === false
-      ? `      <p>${escapeHtml("Then come back here to sign in with GitHub, which completes setup.")}</p>
+      ? `      <p>${escapeHtml(reopened ? "Then come back here to sign in with GitHub as an admin, which closes this step." : "Then come back here to sign in with GitHub, which completes setup.")}</p>
 `
-      : `      <h2>Sign in to complete setup</h2>
-${error}      <p>${escapeHtml(
-          "Once the App is installed, sign in with your GitHub account. You become the install's first admin, the installations of the App are connected, and setup is complete.",
-        )}</p>
+      : reopened
+        ? `      <h2>Sign in to close this step</h2>
+${signInError(input.error)}      <p>${escapeHtml(
+            "Once the App is installed, sign in with the GitHub account of an admin of the install. The new App's installations are connected, and this step closes. Nobody becomes an admin: every member keeps their role.",
+          )}</p>
+      <form method="post" action="${SETUP_SIGN_IN_PATH}">
+        <button type="submit">Sign in with GitHub as an admin</button>
+      </form>
+`
+        : `      <h2>Sign in to complete setup</h2>
+${signInError(input.error)}      <p>${escapeHtml(
+            "Once the App is installed, sign in with your GitHub account. You become the install's first admin, the installations of the App are connected, and setup is complete.",
+          )}</p>
       <form method="post" action="${SETUP_SIGN_IN_PATH}">
         <button type="submit">Sign in with GitHub</button>
       </form>
@@ -296,5 +361,5 @@ ${error}      <p>${escapeHtml(
   return `${input.company === undefined ? "" : companyLine(input.company)}      <h2>Install the GitHub App</h2>
       <p>${escapeHtml(`The GitHub App "${app.name}" is created, owned by ${owner}. Install it there, and choose the repositories it covers.`)}</p>
       <p><a href="${escapeHtml(install)}">${escapeHtml(`Install ${app.name} on GitHub`)}</a></p>
-${replacedAppNotices(webUrl, app, input.replaced ?? [])}${signIn}`;
+${replacedAppNotices(webUrl, app, input.replaced ?? [], reopened)}${signIn}`;
 }

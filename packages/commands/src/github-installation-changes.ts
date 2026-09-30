@@ -4,6 +4,7 @@ import { githubConnectedInstallations, githubInstallations } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { readGitHubApp } from "./github-app.ts";
 import { connectInstallations, coveredRepositories, knownInstallations, syncGitHubInstallations } from "./github-installations.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -21,8 +22,14 @@ import type { OrgContext } from "./with-org.ts";
 // repositories it covered stop counting, its security event is recorded, and
 // no member is removed, whoever joined through its organization.
 
-/** An installation Tiehall knows, by its id, with its row locked until the call's transaction ends; 404 when none. */
-async function installationRecord({ tx, orgId }: OrgContext, id: string, lock: boolean) {
+/**
+ * An installation of the App in use that Tiehall knows, by its id, with its
+ * row locked until the call's transaction ends; 404 when none, as for an
+ * installation of an App that a new one replaced.
+ */
+async function installationRecord(context: OrgContext, id: string, lock: boolean) {
+  const { tx, orgId } = context;
+  const app = await readGitHubApp(context);
   const query = tx
     .select({
       installationId: githubInstallations.installationId,
@@ -38,7 +45,7 @@ async function installationRecord({ tx, orgId }: OrgContext, id: string, lock: b
       githubConnectedInstallations,
       and(eq(githubConnectedInstallations.orgId, githubInstallations.orgId), eq(githubConnectedInstallations.installationId, githubInstallations.id)),
     )
-    .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.id, id)));
+    .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.id, id), ...(app === undefined ? [] : [eq(githubInstallations.appId, app.appId)])));
   const [row] = lock ? await query.for("update", { of: githubInstallations }) : await query;
   if (row === undefined) throw new Refusal("record-not-found", "The install's GitHub App has no such installation.");
   return row;
@@ -47,8 +54,11 @@ async function installationRecord({ tx, orgId }: OrgContext, id: string, lock: b
 export const GITHUB_INSTALLATION_HANDLERS: Handlers = {
   [listGitHubInstallations.id]: defineHandler(listGitHubInstallations, async (_input, context) => {
     const covered = await coveredRepositories(context);
+    // Only the App in use: an App that a new one replaced in a step setup reopen opened has no credentials here any more.
+    const app = await readGitHubApp(context);
+    const known = (await knownInstallations(context)).filter((installation) => app === undefined || installation.appId === app.appId);
     return {
-      installations: (await knownInstallations(context)).map((installation) => ({
+      installations: known.map((installation) => ({
         id: installation.id,
         installationId: installation.installationId,
         account: installation.account.login,

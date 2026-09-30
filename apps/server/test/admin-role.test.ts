@@ -42,7 +42,7 @@ function runAdmin(args: string[], env: Record<string, string>): Promise<Exit> {
   );
 }
 
-const USAGE = "Usage: main.mjs admin grant <github-login>.";
+const USAGE = "Usage: main.mjs admin grant <github-login>, or main.mjs admin setup reopen.";
 
 let database: TestDatabase;
 let owner: pg.Client;
@@ -128,7 +128,7 @@ describe("admin grant", () => {
 });
 
 describe("the admin role's usage", () => {
-  it.each([[[]], [["grant"]], [["grant", "a", "b"]], [["revoke", "dana-gh"]], [["setup"]], [["setup", "close"]]])(
+  it.each([[[]], [["grant"]], [["grant", "a", "b"]], [["revoke", "dana-gh"]], [["setup"]], [["setup", "close"]], [["setup", "reopen", "now"]]])(
     "prints its usage for %j, reads no setting and exits 2",
     async (args) => {
       const run = await runAdmin(args, {});
@@ -142,8 +142,30 @@ describe("the admin role's usage", () => {
   });
 });
 
-describe("admin grant before setup completes", () => {
-  it("changes nothing, says that setup is not complete, and exits 1", async () => {
+describe("setup reopen", () => {
+  it("reopens the setup screen's App step, prints a new setup code with the setup screen's URL, and exits 0", async () => {
+    const run = await runAdmin(["setup", "reopen"], appSettings);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toBe("");
+    const code = /enter the setup code ([0-9A-Z-]{34})\./.exec(run.stdout)?.[1];
+    expect(code).toBeDefined();
+    expect(run.stdout).toBe(
+      "The setup screen's GitHub App step is open again. Open https://tiehall.example.com/setup and enter the setup code " +
+        `${code}.\n` +
+        "The install keeps serving its members with the App in use until a new App is created there. The step closes when an " +
+        "admin of the install signs in with GitHub from the setup screen; closing it makes nobody an admin.\n",
+    );
+    const { rows } = await owner.query<{ actor_kind: string; operator_command: string; data: unknown }>(
+      "SELECT actor_kind, operator_command, data FROM events WHERE type = 'setup.reopened'",
+    );
+    expect(rows).toEqual([{ actor_kind: "operator", operator_command: "setup reopen", data: { alreadyOpen: false } }]);
+    expect((await owner.query("SELECT setup_reopened_at IS NOT NULL AS open FROM orgs")).rows).toEqual([{ open: true }]);
+    await owner.query("UPDATE orgs SET setup_reopened_at = NULL; DELETE FROM setup_codes");
+  });
+});
+
+describe("the operator commands before setup completes", () => {
+  it("change nothing, say that setup is not complete, and exit 1", async () => {
     await owner.query("UPDATE orgs SET setup_completed_at = NULL");
     try {
       const run = await runAdmin(["grant", "dana-gh"], appSettings);
@@ -154,6 +176,15 @@ describe("admin grant before setup completes", () => {
           "tiehall admin grant: setup is not complete, so the install has no admin to recover; the person who completes " +
           "setup on the setup screen becomes its first admin. Nothing changed.\n",
       });
+      const reopen = await runAdmin(["setup", "reopen"], appSettings);
+      expect(reopen).toEqual({
+        code: 1,
+        stdout: "",
+        stderr:
+          "tiehall admin setup reopen: setup is not complete, so the setup screen is open already: read its setup code " +
+          "with `docker compose logs app`. Nothing changed.\n",
+      });
+      expect((await owner.query("SELECT setup_reopened_at FROM orgs")).rows).toEqual([{ setup_reopened_at: null }]);
     } finally {
       await owner.query("UPDATE orgs SET setup_completed_at = now()");
     }

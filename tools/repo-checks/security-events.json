@@ -197,6 +197,14 @@
             "case": "stores the secret encrypted once an admin confirms it, replacing any stored one, and records a security event for the changed integration"
           }
         },
+        {
+          "action": "the install's GitHub App replaced by a new App in a step that setup reopen opened, whose installations it disconnects",
+          "event": "github.app_replaced",
+          "test": {
+            "file": "packages/commands/test/setup-reopen.test.ts",
+            "case": "with a new App: deletes the old App's credentials, disconnects its installations, connects only the new App's when an admin closes it, and keeps members, teams, roles, grants and tokens"
+          }
+        },
         { "action": "the Jira connection connected", "pending": "25.1" },
         { "action": "the Jira connection changed", "pending": "25.2" },
         { "action": "the Jira connection disconnected", "pending": "25.2" },
@@ -277,7 +285,14 @@
             "case": "changes nothing for a login that belongs to no member and says so, recording the run as a security event operator.command_run that names the command and no user"
           }
         },
-        { "action": "setup reopen run on the host", "pending": "21.2" }
+        {
+          "action": "setup reopen run on the host",
+          "event": "setup.reopened",
+          "test": {
+            "file": "packages/commands/test/setup-reopen.test.ts",
+            "case": "prints a new setup code, records a security event naming the command and no user, and the install keeps serving members, sessions and tokens with the App in use"
+          }
+        }
       ]
     },
     {

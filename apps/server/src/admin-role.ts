@@ -1,9 +1,13 @@
-import { grantAdmin, isGitHubLogin, openDatabase, readAppSettings, SettingsError, SetupRequiredError, type Environment } from "@tiehall/commands";
+import { grantAdmin, isGitHubLogin, openDatabase, readAppSettings, reopenSetup, SettingsError, SetupRequiredError, type Environment } from "@tiehall/commands";
 
 // The admin role (self-host-install: Operator commands on the host; design.md,
 // Self-hosting decisions: S3): the commands an operator runs on the host, for
 // example
 //   docker compose run --rm app admin grant dana-gh
+//   docker compose run --rm app admin setup reopen
+// `admin grant` makes a member an admin; `setup reopen` reopens the setup
+// screen's GitHub App step and prints a new setup code, the one secret this
+// role prints, for the operator to enter on the setup screen.
 // They work without the web UI and without the confirmation step, because
 // whoever can run them already controls the host. The role reads the settings
 // the app reads, and connects to the database as the app role, never as the
@@ -18,10 +22,10 @@ import { grantAdmin, isGitHubLogin, openDatabase, readAppSettings, SettingsError
 // setting missing or the database out of reach), and 2 for a usage error,
 // which reads no setting and connects to nothing.
 
-export const ADMIN_USAGE = "Usage: main.mjs admin grant <github-login>.";
+export const ADMIN_USAGE = "Usage: main.mjs admin grant <github-login>, or main.mjs admin setup reopen.";
 
 /** An operator command, as the role's arguments name it. */
-export type AdminCommand = { name: "grant"; login: string };
+export type AdminCommand = { name: "grant"; login: string } | { name: "setup reopen" };
 
 export interface AdminOutput {
   stdout(text: string): void;
@@ -36,6 +40,7 @@ export function parseAdminCommand(args: readonly string[]): AdminCommand | { usa
     if (!isGitHubLogin(login)) return { usage: `tiehall admin grant: ${JSON.stringify(login)} is not a GitHub login.\n${ADMIN_USAGE}` };
     return { name: "grant", login };
   }
+  if (name === "setup" && rest.length === 1 && rest[0] === "reopen") return { name: "setup reopen" };
   return { usage: ADMIN_USAGE };
 }
 
@@ -57,7 +62,7 @@ export async function runAdminRole(args: readonly string[], env: Environment, ou
   }
   const database = openDatabase(settings.database, { applicationName: "tiehall admin" });
   try {
-    return await grant(database, command.login, output);
+    return command.name === "grant" ? await grant(database, command.login, output) : await reopen(database, settings.url, output);
   } catch (error) {
     // The database's own refusal, such as a connection it refused; it names no password.
     output.stderr(`tiehall admin ${command.name}: the command failed, and nothing changed: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -90,4 +95,24 @@ async function grant(database: Parameters<typeof grantAdmin>[0], login: string, 
       output.stderr(`tiehall admin grant: no member of this install has the GitHub login ${login}, so nothing changed.\n`);
       return 1;
   }
+}
+
+async function reopen(database: Parameters<typeof reopenSetup>[0], url: string, output: AdminOutput): Promise<number> {
+  let result;
+  try {
+    result = await reopenSetup(database);
+  } catch (error) {
+    if (!(error instanceof SetupRequiredError)) throw error;
+    output.stderr(
+      "tiehall admin setup reopen: setup is not complete, so the setup screen is open already: read its setup code " +
+        "with `docker compose logs app`. Nothing changed.\n",
+    );
+    return 1;
+  }
+  output.stdout(
+    `The setup screen's GitHub App step is open again. Open ${url}/setup and enter the setup code ${result.code}.\n` +
+      "The install keeps serving its members with the App in use until a new App is created there. The step closes when an " +
+      "admin of the install signs in with GitHub from the setup screen; closing it makes nobody an admin.\n",
+  );
+  return 0;
 }

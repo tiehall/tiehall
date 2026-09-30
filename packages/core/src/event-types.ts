@@ -483,6 +483,21 @@ export const setupCompleted = defineEventType({
 });
 
 /**
+ * The operator command `setup reopen` reopened the setup screen's GitHub App
+ * step and printed a new setup code (self-host-install: Operator commands on
+ * the host; activity-log: Which actions are security events). It says whether
+ * a step was open already, which the new code then kept open; its provenance
+ * names the command and no user.
+ */
+export const setupReopened = defineEventType({
+  type: "setup.reopened",
+  class: "security",
+  fields: {
+    alreadyOpen: { kind: "boolean" },
+  },
+});
+
+/**
  * An operator command run on the host changed nothing (self-host-install:
  * Operator commands on the host; activity-log: Which actions are security
  * events): `admin grant` for a login that belongs to no member of the install,
@@ -516,10 +531,32 @@ export const githubInstallationConnected = defineEventType({
 });
 
 /**
- * An admin disconnected an installation of the install's GitHub App
+ * The setup screen stored a new GitHub App in a step that `setup reopen`
+ * opened, and its credentials replaced those of the App in use
+ * (self-host-install: Operator commands on the host; activity-log: Which
+ * actions are security events): a change of the integration. It names both
+ * Apps by GitHub's numeric ids, and holds none of their credentials; its
+ * provenance is the system's, since a setup session names no user.
+ */
+export const githubAppReplaced = defineEventType({
+  type: "github.app_replaced",
+  class: "security",
+  fields: {
+    /** GitHub's numeric id of the new App. */
+    app: { kind: "integer" },
+    /** GitHub's numeric id of the App it replaced. */
+    previousApp: { kind: "integer" },
+  },
+});
+
+/**
+ * An installation of the install's GitHub App was disconnected
  * (tracker-mirrors: Admins connect GitHub installations with the confirmation
- * step; activity-log: Which actions are security events). It names Tiehall's
- * record of the installation; its provenance names the admin.
+ * step; activity-log: Which actions are security events): by an admin, or by
+ * a new App that replaced the App it belongs to in a step that `setup reopen`
+ * opened (self-host-install: Operator commands on the host). It names
+ * Tiehall's record of the installation; its provenance names the admin, or the
+ * system.
  */
 export const githubInstallationDisconnected = defineEventType({
   type: "github.installation_disconnected",
@@ -675,9 +712,11 @@ export const EVENT_TYPES: readonly EventType[] = [
   signInCompleted,
   signInRefused,
   setupCompleted,
+  setupReopened,
   operatorCommandRun,
   githubInstallationConnected,
   githubInstallationDisconnected,
+  githubAppReplaced,
   githubModeChanged,
   githubWebhookSecretStored,
   githubPrivateKeyUploaded,

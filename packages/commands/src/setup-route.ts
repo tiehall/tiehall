@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
-import { orgs, setupSessions, type Database } from "@tiehall/db";
-import { and, eq, sql } from "drizzle-orm";
+import { githubAppReplaced, githubInstallationDisconnected, httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
+import { githubConnectedInstallations, githubInstallations, orgs, setupSessions, type Database, type Transaction } from "@tiehall/db";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, GitHubUnavailableError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
@@ -20,8 +20,10 @@ import {
   installStepBody,
   manifestState,
   manifestStateNonce,
+  reopenedAppStepBody,
 } from "./setup-github.ts";
 import type { SetupSignIn } from "./sign-in.ts";
+import { writeIn } from "./write.ts";
 
 // The setup screen at /setup (self-host-install: The setup code guards the
 // setup screen; self-host-install: The GitHub App is created with GitHub's
@@ -68,7 +70,22 @@ import type { SetupSignIn } from "./sign-in.ts";
 //   person who signs in becomes the first admin, the App's installations are
 //   connected, and setup closes: the browser lands on the web UI, signed in,
 //   and its setup cookie is dropped.
-// - Once setup is complete, every path under /setup answers 404 to everyone.
+// - Once setup is complete, every path under /setup answers 404 to everyone,
+//   except while a step that the operator command `setup reopen` opened is
+//   open (self-host-install: Operator commands on the host;
+//   operator-commands.ts). That step reopens only the GitHub App step: the
+//   company's name stays as it is, and its form answers 404. A browser that
+//   entered the code the command printed gets the App step, which also lets an
+//   admin close the step with the App in use, and, once the setup screen has
+//   stored a new App's credentials in the step, the step that installs it and
+//   signs in. The new App's credentials replace the old App's at once, in one
+//   transaction that also disconnects the old App's installations, each with
+//   its security event, and records the App's replacement as a security event
+//   of the system's, since a setup session names no user; the install keeps
+//   serving its members, web sessions and tokens throughout. The sign-in from
+//   the setup screen closes the step only for a person who is already an admin
+//   (sign-in.ts; setup-completion.ts), and the browser's setup cookie is
+//   dropped once it has.
 // A refusal is a page for a browser, which leads back to the setup screen, or
 // to Tiehall once setup is complete, and an RFC 9457 problem for every other
 // client (public-api: One error model for Tiehall's own refusals; html.ts);
@@ -142,7 +159,8 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   const now = options.now ?? (() => new Date());
   return async function setup(request) {
     try {
-      if ((await readSetupState(options.database)).complete) return refuse(request, CLOSED);
+      const state = await readSetupState(options.database);
+      if (state.complete && !state.reopened) return refuse(request, CLOSED);
       const { pathname } = new URL(request.url);
       if (pathname === MANIFEST_REDIRECT_PATH && request.method === "GET") return await fromGitHub(request);
       if (pathname === COMPANY_PATH && request.method === "POST") return await nameCompany(request);
@@ -153,7 +171,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       if (browserOrigin(request) !== options.url) return page(wrongOriginPage(options.url));
       const token = cookieOf(request, cookieName);
       if (token === undefined || !(await isSetupSession(options.database, token))) return page(codePage());
-      return await nextStep(request, token);
+      return await nextStep(request, token, state.reopened);
     } catch (error) {
       logger.error("setup: the setup screen failed", { error });
       return problem(internalErrorProblem());
@@ -163,18 +181,35 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
   /**
    * The step a browser with a setup session is at: the company's name until it
    * is given, or when the operator asks to change it; then the App step; then
-   * installing the App and signing in once the App is stored.
+   * installing the App and signing in once the App is stored. In a step that
+   * `setup reopen` opened: the App step, until a new App is stored in it, and
+   * then installing that App and signing in as an admin.
    */
-  async function nextStep(request: Request, token: string): Promise<Response> {
-    const { company, app, replaced } = await options.database.transaction(async (tx) => {
-      const [org] = await tx.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1);
-      if (org === undefined) return { company: null, app: undefined, replaced: [] };
-      return { company: org.name, app: await readGitHubApp({ tx, orgId: org.id }), replaced: await readReplacedGitHubApps({ tx, orgId: org.id }) };
+  async function nextStep(request: Request, token: string, reopened: boolean): Promise<Response> {
+    const { company, app, replaced, reopenedAt } = await options.database.transaction(async (tx) => {
+      const [org] = await tx.select({ id: orgs.id, name: orgs.name, reopenedAt: orgs.setupReopenedAt }).from(orgs).limit(1);
+      if (org === undefined) return { company: null, app: undefined, replaced: [], reopenedAt: null };
+      return {
+        company: org.name,
+        app: await readGitHubApp({ tx, orgId: org.id }),
+        replaced: await readReplacedGitHubApps({ tx, orgId: org.id }),
+        reopenedAt: org.reopenedAt,
+      };
     });
     const query = new URL(request.url).searchParams;
-    if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? "")));
     // Both steps' buttons lead to GitHub: the manifest's form posts there, and the sign-in's answer redirects there.
     const toGitHub = { "content-security-policy": pagePolicy(`'self' ${new URL(webUrl).origin}`) };
+    if (reopened) {
+      const signIn = options.signIn !== undefined;
+      // A new App: one the setup screen stored since the step opened.
+      if (app !== undefined && reopenedAt !== null && app.storedAt.getTime() > reopenedAt.getTime()) {
+        return page(layout(installStepBody({ webUrl, app, signIn, error: query.get("error"), replaced, reopened: true })), toGitHub);
+      }
+      const settings = appStepSettings(options.url, query, company ?? "");
+      const body = reopenedAppStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), signIn, error: query.get("error"), ...(app === undefined ? {} : { app }) });
+      return page(layout(body), toGitHub);
+    }
+    if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? "")));
     if (app !== undefined) {
       return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error"), replaced })), toGitHub);
     }
@@ -226,8 +261,9 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     const token = cookieOf(request, cookieName);
     if (token === undefined || !(await isSetupSession(options.database, token))) return refuse(request, NOT_IN_SESSION);
     const answer = await signIn.callback(request);
-    if (answer.status >= 300 && answer.status < 400 && (await readSetupState(options.database)).complete) {
-      // Setup is complete: the setup session is of no use any more, so its cookie goes.
+    const after = answer.status >= 300 && answer.status < 400 ? await readSetupState(options.database) : undefined;
+    if (after !== undefined && after.complete && !after.reopened) {
+      // Setup is complete, or the reopened step closed: the setup session is of no use any more, so its cookie goes.
       const headers = new Headers(answer.headers);
       headers.append("set-cookie", `${cookieName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${options.url.startsWith("https:") ? "; Secure" : ""}`);
       return new Response(answer.body, { status: answer.status, headers });
@@ -265,13 +301,13 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       return refuse(request, httpProblem(CONVERSION_FAILED));
     }
     const stored = await options.database.transaction(async (tx) => {
-      // Setup may have completed meanwhile, in another browser; the org row is locked against that.
+      // Setup may have completed, or a reopened step closed, meanwhile, in another browser; the org row is locked against that.
       const [org] = await tx
-        .select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt })
+        .select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt, setupReopenedAt: orgs.setupReopenedAt })
         .from(orgs)
         .limit(1)
         .for("update");
-      if (org === undefined || org.setupCompletedAt !== null) return "closed";
+      if (org === undefined || (org.setupCompletedAt !== null && org.setupReopenedAt === null)) return "closed";
       // The state is used once: recorded on the setup session's row, with the App it stored.
       const used = await tx
         .update(setupSessions)
@@ -282,6 +318,8 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       // The latest App wins; the one it replaces is recorded, so the install step says it can be deleted on GitHub.
       const replaced = await recordReplacedGitHubApp({ tx, orgId: org.id }, app.id);
       await storeGitHubApp({ tx, orgId: org.id }, box, app);
+      // In a step `setup reopen` opened, the new App replaces the App in use: its installations are no longer connected.
+      if (org.setupCompletedAt !== null && replaced !== undefined) await replaceAppInUse({ tx, orgId: org.id }, app.id, replaced.appId);
       return { replaced };
     });
     if (stored === "closed") return refuse(request, CLOSED);
@@ -312,6 +350,40 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
 
 function sha256(text: string): Buffer {
   return createHash("sha256").update(text, "utf8").digest();
+}
+
+/** Writes that start no job, as the setup screen's writes do not. */
+const NO_JOBS = { send: () => Promise.reject(new Error("The setup screen's writes start no job.")) };
+
+/**
+ * Records, in the transaction that stored a new App in a step `setup reopen`
+ * opened, that it replaced the App in use, and disconnects that App's
+ * installations, each with its security event: Tiehall no longer acts on them,
+ * since it no longer holds their App's credentials. The setup session names no
+ * user, so the events are the system's.
+ */
+async function replaceAppInUse(context: { tx: Transaction; orgId: string }, appId: number, previousAppId: number): Promise<void> {
+  const { tx, orgId } = context;
+  const old = await tx
+    .select({ id: githubConnectedInstallations.installationId })
+    .from(githubConnectedInstallations)
+    .innerJoin(githubInstallations, and(eq(githubInstallations.orgId, githubConnectedInstallations.orgId), eq(githubInstallations.id, githubConnectedInstallations.installationId)))
+    .where(and(eq(githubConnectedInstallations.orgId, orgId), ne(githubInstallations.appId, appId)));
+  await writeIn(context, NO_JOBS, { actorKind: "system", surface: "web" }, async (writer) => {
+    await writer.record(githubAppReplaced, { app: appId, previousApp: previousAppId });
+    if (old.length === 0) return;
+    // The repositories they covered go with them: the foreign key cascades.
+    await tx.delete(githubConnectedInstallations).where(
+      and(
+        eq(githubConnectedInstallations.orgId, orgId),
+        inArray(
+          githubConnectedInstallations.installationId,
+          old.map(({ id }) => id),
+        ),
+      ),
+    );
+    for (const { id } of old) await writer.record(githubInstallationDisconnected, { installationId: id });
+  });
 }
 
 /** Whether a return with this state's nonce stored an App already, for the setup session with this token. */

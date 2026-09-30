@@ -833,7 +833,19 @@ describe("the admin role", () => {
   it("prints its usage for an unknown command and exits 2", () => {
     const run = docker(["run", "--rm", ...confined, image, "admin", "revoke", "dana-gh"]);
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("Usage: main.mjs admin grant <github-login>");
+    expect(run.stderr).toContain("Usage: main.mjs admin grant <github-login>, or main.mjs admin setup reopen.");
+  });
+
+  it("runs setup reopen confined, as the app role, and prints the new setup code for the setup screen", () => {
+    try {
+      const run = docker(["run", "--rm", ...confined, ...connected, image, "admin", "setup", "reopen"]);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toMatch(/^The setup screen's GitHub App step is open again\. Open http:\/\/localhost:3000\/setup and enter the setup code [0-9A-Z]{4}(-[0-9A-Z]{4}){6}\.\n/);
+      expect(ownerQuery(rolesPostgres, "SELECT actor_kind || ' ' || operator_command FROM events WHERE type = 'setup.reopened'")).toBe("operator setup reopen");
+    } finally {
+      // The web and all roles' tests read this database too: the step closes again.
+      ownerQuery(rolesPostgres, "UPDATE orgs SET setup_reopened_at = NULL; DELETE FROM setup_codes;");
+    }
   });
 });
 

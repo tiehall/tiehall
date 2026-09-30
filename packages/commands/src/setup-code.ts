@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { orgs, setupCodes, setupSessions, type Database } from "@tiehall/db";
+import { orgs, setupCodes, setupSessions, type Database, type Transaction } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { Logger } from "./log.ts";
 
@@ -20,8 +20,16 @@ import type { Logger } from "./log.ts";
 //   a cookie of that browser, stored as its SHA-256. A wrong code, the code of
 //   an earlier start and any code once setup is complete open none.
 // - Once setup is complete, a start prints no code, and no code or session
-//   opens anything.
-// The setup code is the one secret the log shows, by design.
+//   opens anything, until the operator command `setup reopen` reopens the
+//   setup screen's GitHub App step (self-host-install: Operator commands on
+//   the host; operator-commands.ts): the command prints a new code in place of
+//   a start, stored the same way, and while the step is open that code opens a
+//   setup session, and the sessions opened with it are setup sessions. A start
+//   of the app prints no code then, since setup is complete, so the command's
+//   code keeps working across restarts; running the command again replaces it.
+//   The step's close ends every setup session, as the completion of setup does.
+// The setup code is the one secret the log shows, by design, and the one
+// secret `setup reopen` prints to the operator.
 
 /** Crockford's base32 alphabet: digits and upper-case letters without I, L, O and U. */
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -54,6 +62,22 @@ function sha256(text: string): Buffer {
   return createHash("sha256").update(text, "utf8").digest();
 }
 
+/**
+ * Stores the hash of a new setup code for the org, in the caller's
+ * transaction, in place of the previous code's: that code opens no session
+ * any more, and the sessions it opened stay.
+ */
+export async function storeSetupCode(tx: Pick<Transaction, "insert">, orgId: string, code: string): Promise<void> {
+  const codeHash = sha256(normalizeSetupCode(code) ?? "");
+  await tx
+    .insert(setupCodes)
+    .values({ orgId, codeHash })
+    .onConflictDoUpdate({ target: setupCodes.orgId, set: { codeHash, createdAt: sql`now()` } });
+}
+
+/** Whether the setup screen serves setup sessions: setup is not complete, or a step that `setup reopen` opened is open. */
+const SETUP_OPEN = sql`(${orgs.setupCompletedAt} IS NULL OR ${orgs.setupReopenedAt} IS NOT NULL)`;
+
 export interface StartSetupOptions {
   /** The app's database, written as the app role. */
   database: Database;
@@ -70,16 +94,12 @@ export interface StartSetupOptions {
  */
 export async function startSetup(options: StartSetupOptions): Promise<{ code: string } | undefined> {
   const code = generateSetupCode(options.random);
-  const codeHash = sha256(normalizeSetupCode(code) ?? "");
   const stored = await options.database.transaction(async (tx) => {
     // The install's one org: made unnamed at the first start, named on the setup screen.
     await tx.insert(orgs).values({}).onConflictDoNothing();
     const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
     if (org === undefined || org.setupCompletedAt !== null) return false;
-    await tx
-      .insert(setupCodes)
-      .values({ orgId: org.id, codeHash })
-      .onConflictDoUpdate({ target: setupCodes.orgId, set: { codeHash, createdAt: sql`now()` } });
+    await storeSetupCode(tx, org.id, code);
     return true;
   });
   if (!stored) return undefined;
@@ -90,18 +110,19 @@ export async function startSetup(options: StartSetupOptions): Promise<{ code: st
 /**
  * Opens a setup session for a browser that entered this code, and returns the
  * session's token for its cookie; undefined, opening none, unless the code is
- * the one the latest start printed and setup is incomplete.
+ * the one the latest start, or the latest run of `setup reopen`, printed, and
+ * setup is incomplete or a step that command opened is open.
  */
 export async function openSetupSession(database: Database, code: string): Promise<string | undefined> {
   const normalized = normalizeSetupCode(code);
   if (normalized === undefined) return undefined;
   return database.transaction(async (tx) => {
     const [current] = await tx
-      .select({ orgId: setupCodes.orgId, codeHash: setupCodes.codeHash, setupCompletedAt: orgs.setupCompletedAt })
+      .select({ orgId: setupCodes.orgId, codeHash: setupCodes.codeHash })
       .from(setupCodes)
-      .innerJoin(orgs, eq(orgs.id, setupCodes.orgId))
+      .innerJoin(orgs, and(eq(orgs.id, setupCodes.orgId), SETUP_OPEN))
       .limit(1);
-    if (current === undefined || current.setupCompletedAt !== null) return undefined;
+    if (current === undefined) return undefined;
     if (!timingSafeEqual(current.codeHash, sha256(normalized))) return undefined;
     const token = randomBytes(32).toString("base64url");
     await tx.insert(setupSessions).values({ orgId: current.orgId, tokenHash: sha256(token) });
@@ -109,13 +130,13 @@ export async function openSetupSession(database: Database, code: string): Promis
   });
 }
 
-/** Whether a cookie's token is a setup session of this install while setup is incomplete. */
+/** Whether a cookie's token is a setup session of this install while setup is incomplete, or a reopened step is open. */
 export async function isSetupSession(database: Database, token: string | undefined): Promise<boolean> {
   if (token === undefined || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
   const [session] = await database
     .select({ id: setupSessions.id })
     .from(setupSessions)
-    .innerJoin(orgs, and(eq(orgs.id, setupSessions.orgId), sql`${orgs.setupCompletedAt} IS NULL`))
+    .innerJoin(orgs, and(eq(orgs.id, setupSessions.orgId), SETUP_OPEN))
     .where(eq(setupSessions.tokenHash, sha256(token)))
     .limit(1);
   return session !== undefined;

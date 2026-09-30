@@ -44,6 +44,13 @@ export const orgs = pgTable(
      * The setup code guards the setup screen).
      */
     setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
+    /**
+     * When the operator command `setup reopen` reopened the setup screen's
+     * GitHub App step, which stays open until an admin's sign-in from the
+     * setup screen closes it; null while no such step is open
+     * (self-host-install: Operator commands on the host).
+     */
+    setupReopenedAt: timestamp("setup_reopened_at", { withTimezone: true }),
   },
   // A unique index on a constant: a second row would repeat it.
   () => [uniqueIndex("orgs_one_row").on(sql`(true)`)],

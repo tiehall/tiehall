@@ -1,6 +1,7 @@
-import { memberRoleChanged, operatorCommandRun, Refusal, type Role } from "@tiehall/core";
-import { members, users, type Database } from "@tiehall/db";
+import { memberRoleChanged, operatorCommandRun, Refusal, setupReopened, type Role } from "@tiehall/core";
+import { members, orgs, users, type Database } from "@tiehall/db";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { generateSetupCode, storeSetupCode } from "./setup-code.ts";
 import { write } from "./write.ts";
 
 // The operator commands the image's admin role runs on the host
@@ -22,6 +23,18 @@ import { write } from "./write.ts";
 // locked as an admin's role change locks them (member-changes.ts), so a grant
 // run twice at once changes the role once. Before setup completes the install
 // has no admin to recover, and the command runs nothing (withOrg).
+//
+// `setup reopen` reopens the setup screen's GitHub App step and prints a new
+// setup code, so the operator can create the App again, for example after its
+// credentials leaked or it was deleted (design.md, Self-hosting decisions: S3;
+// Readings to confirm: R4). Setup stays complete: the install keeps serving
+// its members, web sessions and tokens with the App in use until the setup
+// screen stores a new App's credentials (setup-route.ts), and the step closes
+// only when a person who is already an admin signs in from the setup screen
+// (setup-completion.ts). The code is stored as a start's is (setup-code.ts);
+// running the command again while the step is open replaces the code and keeps
+// the step, and the time it opened. Before setup completes, the setup screen
+// is open already, and the command runs nothing.
 
 /** A GitHub login: 1 to 39 letters, digits and single hyphens, neither first nor last. */
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
@@ -80,5 +93,29 @@ export async function grantAdmin(database: Database, login: string): Promise<Gra
       .where(and(eq(members.orgId, writer.orgId), eq(members.userId, member.userId)));
     await writer.record(memberRoleChanged, { userId: member.userId, role: "admin", previousRole: member.role as Role });
     return { outcome: "granted", userId: member.userId, login: member.login };
+  });
+}
+
+/** What `setup reopen` did: the new setup code, which opens the reopened step, and whether a step was open already. */
+export interface ReopenSetupResult {
+  code: string;
+  alreadyOpen: boolean;
+}
+
+/**
+ * Runs `setup reopen`: opens the setup screen's GitHub App step, or keeps it
+ * open, stores a new setup code in place of any other, and records the run as
+ * a security event. Throws SetupRequiredError before setup completes.
+ */
+export async function reopenSetup(database: Database, options: { random?: (size: number) => Buffer } = {}): Promise<ReopenSetupResult> {
+  const code = generateSetupCode(options.random);
+  return write({ database, jobs: NO_JOBS }, { actorKind: "operator", command: "setup reopen" }, async (writer) => {
+    // Held until the transaction ends, as the setup screen's writes and the step's close hold it.
+    const [org] = await writer.tx.select({ reopenedAt: orgs.setupReopenedAt }).from(orgs).where(eq(orgs.id, writer.orgId)).for("update");
+    const alreadyOpen = org?.reopenedAt !== null && org?.reopenedAt !== undefined;
+    if (!alreadyOpen) await writer.tx.update(orgs).set({ setupReopenedAt: sql`now()` }).where(eq(orgs.id, writer.orgId));
+    await storeSetupCode(writer.tx, writer.orgId, code);
+    await writer.record(setupReopened, { alreadyOpen });
+    return { code, alreadyOpen };
   });
 }

@@ -24,8 +24,9 @@ import { createLogger, type Logger } from "./log.ts";
 // other path is a page, /docs/api among them.
 //
 // Setup never becomes incomplete again (`setup reopen` reopens only the App
-// step, while the install keeps serving), so once the gate has seen it
-// complete it lets every call through without reading the database again.
+// step, while the install keeps serving, and the setup screen, which the gate
+// always serves, reads that itself), so once the gate has seen it complete it
+// lets every call through without reading the database again.
 
 /** What the gate needs to know of the install. */
 export interface SetupState {
@@ -36,6 +37,13 @@ export interface SetupState {
    * credentials and private key, with a webhook secret or without one.
    */
   appCredentialsStored: boolean;
+  /**
+   * The operator command `setup reopen` has reopened the setup screen's
+   * GitHub App step, which an admin's sign-in from the setup screen closes;
+   * setup stays complete meanwhile (self-host-install: Operator commands on
+   * the host).
+   */
+  reopened: boolean;
 }
 
 /** The gate's answer to one call: serve it, send it to /setup, or refuse it. */
@@ -79,13 +87,17 @@ const SETUP_REQUIRED = httpProblem(
  */
 export async function readSetupState(database: Database): Promise<SetupState> {
   return database.transaction(async (tx) => {
-    const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
-    if (org === undefined) return { complete: false, appCredentialsStored: false };
+    const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt, setupReopenedAt: orgs.setupReopenedAt }).from(orgs).limit(1);
+    if (org === undefined) return { complete: false, appCredentialsStored: false, reopened: false };
     const [privateKey] = await tx
       .select({ name: integrationSecrets.name })
       .from(integrationSecrets)
       .where(and(eq(integrationSecrets.orgId, org.id), eq(integrationSecrets.name, "github_app.private_key")));
-    return { complete: org.setupCompletedAt !== null, appCredentialsStored: privateKey !== undefined };
+    return {
+      complete: org.setupCompletedAt !== null,
+      appCredentialsStored: privateKey !== undefined,
+      reopened: org.setupCompletedAt !== null && org.setupReopenedAt !== null,
+    };
   });
 }
 

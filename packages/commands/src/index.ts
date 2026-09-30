@@ -337,7 +337,7 @@ export {
   type SmtpSettings,
   type SmtpTls,
 } from "./settings.ts";
-export { grantAdmin, isGitHubLogin, type GrantAdminResult } from "./operator-commands.ts";
+export { grantAdmin, isGitHubLogin, reopenSetup, type GrantAdminResult, type ReopenSetupResult } from "./operator-commands.ts";
 export { RemovedMemberError, SetupRequiredError, withOrg, type OrgContext, type WithOrgOptions } from "./with-org.ts";
 export {
   createSetupGate,

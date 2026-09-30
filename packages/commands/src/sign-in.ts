@@ -46,8 +46,8 @@ import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession } from "./setup-code.ts";
 import { AdmissionWithdrawnError, applyAdmission, decideAdmission, isMemberNow, type Admission } from "./sign-in-admission.ts";
-import { completeSetup, SetupCompletionError } from "./setup-completion.ts";
-import { SETUP_PATH } from "./setup-gate.ts";
+import { completeOrCloseSetup, SetupCompletionError } from "./setup-completion.ts";
+import { readSetupState, SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { setupCookieName } from "./setup-route.ts";
 import { routeInventory, servedOverHttp, servedOverHttpAt } from "./sign-in-routes.ts";
@@ -169,7 +169,15 @@ import { write, type Origin, type Store, type Writer } from "./write.ts";
 // the setup screen, which says why; the user that sign-in created, if it
 // created one, goes with its link to the GitHub account, as for any refused
 // sign-in, and a user that existed before stays. Once setup is complete,
-// /setup answers 404 and that instance is never reached again.
+// /setup answers 404 and that instance is not reached again, until the
+// operator command `setup reopen` reopens the setup screen's App step
+// (self-host-install: Operator commands on the host): while that step is open,
+// the instance admits, from a browser that holds a setup session, only a
+// person whose user is already an admin of the install, and their sign-in
+// closes the step before their web session is stored (setup-completion.ts),
+// making nobody an admin. Anyone else is refused with 403 sign-in-refused, and,
+// setup being complete, the refusal is recorded as a refused sign-in with its
+// security event, and the admin's sign-in as a sign-in.
 
 /** Where the sign-in service's own routes live, such as GitHub's return to the sign-in callback. */
 export const AUTH_BASE_PATH = "/api/auth";
@@ -191,6 +199,10 @@ export const SIGN_IN_REFUSED =
 export const SETUP_SIGN_IN_REFUSED =
   "Setup is completed only by a sign-in from the browser that entered the setup code, while setup is not complete. Open the setup screen in that browser.";
 
+/** What a sign-in from the setup screen reads when a step `setup reopen` opened is open and the person is not an admin. */
+export const SETUP_ADMINS_ONLY =
+  "Only an admin of the install can close the setup step that setup reopen opened, so this sign-in is refused and the step stays open. Sign in with the GitHub account of an admin.";
+
 /** What every write of a linked account stores in place of the user tokens GitHub issued: nothing. */
 const NO_USER_TOKEN = {
   accessToken: null,
@@ -202,6 +214,8 @@ const NO_USER_TOKEN = {
 
 /** The code Better Auth carries a refusal under, from the admission check to the callback's answer. */
 const REFUSED_CODE = "sign_in_refused";
+/** The code of a sign-in from the setup screen that a reopened step refuses, because the person is not an admin. */
+const SETUP_ADMINS_ONLY_CODE = "setup_admins_only";
 
 /** How many days a web session lasts after it was created or last extended, when it is not used. */
 export const SESSION_IDLE_DAYS = 7;
@@ -354,10 +368,22 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     return auth;
   }
 
-  /** Whether a sign-in from the setup screen comes from a browser that holds a setup session while setup is incomplete. */
+  /** Whether a sign-in from the setup screen comes from a browser that holds a setup session while setup is incomplete or a reopened step is open. */
   async function admitsSetup(context: { request?: Request | undefined; headers?: Headers | undefined } | null | undefined): Promise<boolean> {
     const headers = context?.request?.headers ?? context?.headers;
     return isSetupSession(options.database, cookieValue(headers, setupCookie));
+  }
+
+  /** Whether the GitHub account with this numeric id is an admin of the install now, through its Tiehall user. */
+  async function isAdminAccount(githubAccountId: number): Promise<boolean> {
+    if (!Number.isSafeInteger(githubAccountId) || githubAccountId <= 0) return false;
+    const [row] = await options.database
+      .select({ role: members.role })
+      .from(members)
+      .innerJoin(users, and(eq(users.orgId, members.orgId), eq(users.id, members.userId)))
+      .where(eq(users.githubAccountId, githubAccountId))
+      .limit(1);
+    return row?.role === "admin";
   }
 
   /**
@@ -440,14 +466,25 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         },
         async validateUserInfo(data, context) {
           const user = data.user as { id?: unknown; name?: unknown; githubAccountId?: unknown };
-          if (setup) {
-            if (data.source.action !== "link-account" && (await admitsSetup(context))) return;
-            // Nothing is recorded: the activity log takes no event before setup completes.
-            logger.warn("sign-in service: a sign-in from the setup screen came without a setup session, or after setup completed");
-            return { error: REFUSED_CODE, errorDescription: SETUP_SIGN_IN_REFUSED };
-          }
           const githubAccountId = Number(user.githubAccountId);
           const login = typeof user.name === "string" ? user.name : "";
+          if (setup) {
+            if (data.source.action === "link-account" || !(await admitsSetup(context))) {
+              // Nothing is recorded: the activity log takes no event before setup completes.
+              logger.warn("sign-in service: a sign-in from the setup screen came without a setup session, or after setup completed");
+              return { error: REFUSED_CODE, errorDescription: SETUP_SIGN_IN_REFUSED };
+            }
+            // While setup is incomplete, the sign-in completes it; in a step setup reopen opened, only an admin's closes it.
+            if (!(await readSetupState(options.database)).complete || (await isAdminAccount(githubAccountId))) return;
+            logger.warn("sign-in service: a sign-in from the setup screen of a reopened step was not an admin's");
+            const userId = data.source.action === "sign-in" && typeof user.id === "string" ? user.id : undefined;
+            try {
+              await recordRefusal({ githubAccountId, login, userId }, whereFrom(context));
+            } catch (error) {
+              logger.error("sign-in service: the security event of a refused sign-in could not be appended", { error });
+            }
+            return { error: SETUP_ADMINS_ONLY_CODE, errorDescription: SETUP_ADMINS_ONLY };
+          }
           if (Number.isSafeInteger(githubAccountId) && githubAccountId > 0 && data.source.action !== "link-account") {
             const admission = await decideAdmission(admissionServices, { id: githubAccountId, login });
             if (admission !== undefined) {
@@ -491,7 +528,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                   async before(session: { userId: string }, context: Parameters<typeof whereFrom>[0]) {
                     const created = createdUsers.delete(session.userId);
                     try {
-                      await completeSetup(
+                      await completeOrCloseSetup(
                         { database: options.database, github: installGitHub, ...(options.jobs === undefined ? {} : { jobs: options.jobs }), logger },
                         { userId: session.userId, origin: whereFrom(context) },
                       );
@@ -506,6 +543,16 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                       }
                       if (!(error instanceof SetupCompletionError)) throw error;
                       logger.warn("sign-in service: setup could not be completed", { error, reason: error.code });
+                      // An admin who lost the role while GitHub answered: a refused sign-in, recorded as one, since setup is complete.
+                      if (error.code === SETUP_ADMINS_ONLY_CODE) {
+                        const githubAccountId = await githubAccountOf(session.userId);
+                        const [user] = await options.database.select({ login: users.githubLogin }).from(users).where(eq(users.id, session.userId));
+                        if (githubAccountId !== undefined) {
+                          await recordRefusal({ githubAccountId, login: user?.login ?? "", userId: session.userId }, whereFrom(context)).catch((failure: unknown) =>
+                            logger.error("sign-in service: the security event of a refused sign-in could not be appended", { error: failure }),
+                          );
+                        }
+                      }
                       throw new APIError("FORBIDDEN", { code: error.code, message: error.message });
                     }
                   },
@@ -928,6 +975,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           if (answer.status === 404) return refused(request, new Refusal("route-not-found", "The install serves no such sign-in route."), TO_SETUP);
           if (answer.status === 429) return refused(request, refusalOfRateLimit(answer), TO_SETUP);
           if (refusalOf(answer)) return refused(request, new Refusal("forbidden", SETUP_SIGN_IN_REFUSED), TO_SETUP, answer.headers);
+          if (refusalOf(answer, SETUP_ADMINS_ONLY_CODE)) return refused(request, new Refusal("sign-in-refused", SETUP_ADMINS_ONLY), TO_SETUP, answer.headers);
           return answer;
         } catch (error) {
           logger.error("sign-in service: GitHub's return to the setup screen's sign-in failed", { error });
@@ -1007,12 +1055,12 @@ function refusalOfRateLimit(answer: Response): Refusal {
 }
 
 /** Whether an answer of the sign-in callback is the redirect Better Auth makes for a refused sign-in. */
-function refusalOf(answer: Response): boolean {
+function refusalOf(answer: Response, code: string = REFUSED_CODE): boolean {
   if (answer.status < 300 || answer.status >= 400) return false;
   const location = answer.headers.get("location");
   if (location === null) return false;
   try {
-    return new URL(location, "https://tiehall.invalid").searchParams.get("error") === REFUSED_CODE;
+    return new URL(location, "https://tiehall.invalid").searchParams.get("error") === code;
   } catch {
     return false;
   }
