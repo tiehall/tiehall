@@ -1,3 +1,4 @@
+import { removeUnusedAgentClients } from "./agent-clients.ts";
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
 import { pruneGitHubDeliveries } from "./github-delivery-pruning.ts";
 import { syncGitHubInstallations } from "./github-installations.ts";
@@ -32,4 +33,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   redeliverGitHubDeliveries,
   checkGitHubDeliveryLog,
   pollGitHub,
+  removeUnusedAgentClients,
 ];

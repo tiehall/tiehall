@@ -27,6 +27,7 @@ import {
   type Database,
 } from "@tiehall/db";
 import type { SigningKeys } from "./agent-tokens.ts";
+import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { authorizationServerPlugins, type AgentClientOptions } from "./authorization-server.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
@@ -558,7 +559,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       // the one that completes setup signs the first admin in and nothing more.
       plugins: [
         githubEndpoints(),
-        ...(setup ? [] : authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) })),
+        ...(setup
+          ? []
+          : [
+              ...authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) }),
+              clientRegistrations({ database: options.database, ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }) }),
+            ]),
       ],
       hooks: { before: routeGuard },
     };
@@ -926,15 +932,23 @@ const routeGuard = createAuthMiddleware(async (context) => {
 
 /**
  * The error model's 429 for a call the service refused for a limit: the
- * fetches of Client ID Metadata Documents from the host a client's id names,
- * 60 a minute, whose count clears within the minute, or the service's own rate
- * limit, with the seconds to wait that its answer names.
+ * registrations of agent clients from one address, 10 an hour, with the
+ * seconds until the oldest leaves the hour; the fetches of Client ID Metadata
+ * Documents from the host a client's id names, 60 a minute, whose count
+ * clears within the minute; or the service's own rate limit, with the seconds
+ * to wait that its answer names.
  */
 async function refusalOfLimit(answer: Response): Promise<Refusal> {
   const body = (await answer
     .clone()
     .json()
-    .catch(() => undefined)) as { error?: unknown } | undefined;
+    .catch(() => undefined)) as { error?: unknown; code?: unknown; message?: unknown } | undefined;
+  if (body?.code === REGISTRATION_LIMIT_CODE) {
+    const retryAfterSeconds = Number(answer.headers.get("x-retry-after"));
+    return new Refusal("rate-limited", typeof body.message === "string" ? body.message : "This address registered as many agent clients this hour as it may.", {
+      retryAfterSeconds: Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : 3600,
+    });
+  }
   if (body?.error === "temporarily_unavailable") {
     return new Refusal(
       "rate-limited",

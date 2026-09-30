@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import {
@@ -150,11 +150,13 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     return new Response("Not found", { status: 404 });
   };
 
+  // Each registration comes from a client address of its own, as the web role's request guard names it, unless the
+  // test names one: one address registers at most 10 clients an hour.
   const register: AgentAccessHarness["register"] = (metadata = {}, headers = {}) =>
     handle(
       new Request(`${URL_OF_INSTALL}/api/auth/oauth2/register`, {
         method: "POST",
-        headers: { "content-type": "application/json", ...headers },
+        headers: { "content-type": "application/json", "x-forwarded-for": `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`, ...headers },
         body: JSON.stringify(registration(metadata)),
       }),
     );

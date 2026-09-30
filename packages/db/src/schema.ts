@@ -1111,6 +1111,39 @@ export const oauthConsents = pgTable(
   ],
 );
 
+// The registrations agent clients made through Dynamic Client Registration
+// (agent-access: Dynamic Client Registration stays on, limited and
+// unverified): one row per registration request the authorization server took
+// up, with the client address it came from, as the install sees it after its
+// trusted proxies, and the client id it was given once it succeeded. One
+// address makes at most 10 registrations an hour, counted from these rows. A
+// registered client that has never completed an authorization is removed 7
+// days after it registered, and its row with it.
+export const oauthClientRegistrations = pgTable(
+  "oauth_client_registrations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** The client address the registration came from; none when the install could not tell it. */
+    ipAddress: inet("ip_address"),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull(),
+    /** The client id the registration was given; none for one the authorization server refused. */
+    clientId: text("client_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("oauth_client_registrations_address_time").on(table.orgId, table.ipAddress, table.registeredAt),
+    index("oauth_client_registrations_client").on(table.orgId, table.clientId),
+    foreignKey({
+      name: "oauth_client_registrations_client_fk",
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [oauthClients.orgId, oauthClients.clientId],
+    }).onDelete("cascade"),
+  ],
+);
+
 // The client assertions a private_key_jwt client has used, by a digest of
 // their jti, so none is accepted twice.
 export const oauthClientAssertions = pgTable(

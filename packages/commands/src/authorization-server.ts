@@ -108,6 +108,8 @@ export interface AgentClientOptions {
   metadataDocuments?: boolean;
   /** The fetcher of metadata documents: the install's outbound fetcher, following no redirect, unless a test gives one. */
   fetchDocument?: OutboundFetcher;
+  /** The clock registrations are counted by; the system clock unless a test controls it. */
+  now?: () => Date;
 }
 
 export interface AuthorizationServerOptions {
