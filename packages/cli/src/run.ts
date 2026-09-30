@@ -1,7 +1,7 @@
 import { COMMAND_TABLE, type CommandEntry } from "@tiehall/client";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
-import { HOOK_COMMANDS, hookSessionEnd, hookWait } from "./hooks.ts";
+import { HOOK_COMMANDS, hookSessionEnd, hookSessionStart, hookWait } from "./hooks.ts";
 import { chooseLogin, configDirOf, installUrlOf } from "./logins.ts";
 import { logIn } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
@@ -97,6 +97,7 @@ async function hook(environment: CliEnvironment, globals: Globals, command: stri
     environment.stdout(listing("Usage: tiehall hook <name>\n\nThe commands the Claude Code plugin's hooks run:", found.length > 0 ? found : HOOKS));
     return command === "hook" && !globals.help ? 1 : 0;
   }
+  if (command === "hook session-start") return hookSessionStart(environment, globals.install);
   if (command === "hook wait") return hookWait(environment, globals.install);
   if (command === "hook session-end") return hookSessionEnd(environment);
   return 0;

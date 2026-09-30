@@ -15,6 +15,12 @@ import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
 // launcher passes as --install, and Claude Code's input on their standard
 // input names the session.
 //
+// `tiehall hook session-start`, which the SessionStart hook runs, prints a
+// digest that is added to Claude's context: a line of Tiehall's words and one
+// line per update after the CLI client's cursor, the request key, the event
+// type, the team and the request URL, read without acknowledging anything; it
+// prints nothing when nothing is new.
+//
 // `tiehall hook wait`, which the Stop hook runs with asyncRewake at the end
 // of every turn, waits for news on the user's requests. It long-polls the wait
 // endpoint, GET /api/v1/events/wait, with the CLI client's cursor, calling
@@ -59,6 +65,19 @@ function backoffAfter(failures: number): number {
 
 /** How long a hook waits for Claude Code's input on its standard input, in real time. */
 const INPUT_MS = 2_000;
+
+/** How many updates the digest lists at most: one page of whats_new. */
+const DIGEST_LIMIT = 50;
+
+/** How long the digest's read may take, so that a session starts without waiting on an install that does not answer. */
+const DIGEST_READ_MS = 10_000;
+
+/** The digest's first line, in Tiehall's words, before one line per update. */
+export const DIGEST_HEADING =
+  "Tiehall: updates on your requests are waiting. Read them with whats_new, or run tiehall updates, and acknowledge what you have handled.";
+
+/** The digest's last line when more updates wait than it lists. */
+export const DIGEST_MORE = "More updates wait after these: whats_new reads them all.";
 
 /** The reminder's first line, in Tiehall's words, before one line per update. */
 export const REMINDER_HEADING = "Tiehall: news on your requests. Read it with whats_new, or run tiehall updates, and acknowledge what you have handled.";
@@ -246,6 +265,49 @@ export async function hookWait(environment: CliEnvironment, install: string | un
   }
 }
 
+/** An update of whats_new's answer, as far as the digest reads it: its number and type, and its request's key, target team and URL. */
+interface UpdateEntry {
+  number?: unknown;
+  type?: unknown;
+  request?: { key?: unknown; url?: unknown; targetTeam?: { key?: unknown } };
+}
+
+/**
+ * `tiehall hook session-start`: prints the digest of the updates after the
+ * CLI client's cursor, read without acknowledging anything, or nothing; 0
+ * whatever happens.
+ */
+export async function hookSessionStart(environment: CliEnvironment, install: string | undefined): Promise<number> {
+  const stop = new AbortController();
+  try {
+    await hookInputOf(environment);
+    const login = chooseLogin(configDirOf(environment.env), { install });
+    const session = sessionFor(environment, login);
+    void sleepOf(environment)(DIGEST_READ_MS, stop.signal).then(() => stop.abort());
+    const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT }, signal: stop.signal }));
+    if (!answer.ok) return 0;
+    const page = answer.body as { events?: unknown; more?: unknown } | undefined;
+    if (!Array.isArray(page?.events)) return 0;
+    const entries = (page.events as UpdateEntry[]).map(({ number, type, request }) => ({
+      seq: number,
+      type,
+      request_key: request?.key,
+      team_key: request?.targetTeam?.key,
+      url: request?.url,
+    }));
+    const notices = noticesOf(session.url, entries);
+    if (notices.length === 0) return 0;
+    const lines = [DIGEST_HEADING, ...notices.map(({ notice }) => hookLine(notice)), ...(page.more === true ? [DIGEST_MORE] : [])];
+    environment.stdout(`${lines.join("\n")}\n`);
+    return 0;
+  } catch {
+    // A session starts whatever happens here, and nothing reaches Claude but the digest.
+    return 0;
+  } finally {
+    stop.abort();
+  }
+}
+
 /** `tiehall hook session-end`: ends the session's waiter and frees its lock, without a word. */
 export async function hookSessionEnd(environment: CliEnvironment): Promise<number> {
   try {
@@ -259,6 +321,10 @@ export async function hookSessionEnd(environment: CliEnvironment): Promise<numbe
 
 /** The hook commands, with their usage and what they do, as `tiehall hook` lists them. */
 export const HOOK_COMMANDS: readonly { command: string; summary: string }[] = [
+  {
+    command: "hook session-start",
+    summary: "For the Claude Code plugin's SessionStart hook: print the updates on your requests that are new, with their request keys, event types, teams and URLs.",
+  },
   {
     command: "hook wait",
     summary:

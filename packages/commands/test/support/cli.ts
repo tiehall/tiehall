@@ -164,6 +164,22 @@ export function realSleep(milliseconds: number, signal?: AbortSignal): Promise<v
   });
 }
 
+/**
+ * Acknowledges every update the machine's CLI has, through `tiehall updates`,
+ * so that its hooks see only what comes next; returns the cursor it leaves.
+ */
+export async function acknowledgeEverything(machine: CliMachine): Promise<number> {
+  let cursor = 0;
+  for (;;) {
+    const read = await machine.run(["updates", "--json", "--limit", "50"]);
+    if (read.code !== 0) throw new Error(`tiehall updates answered ${read.stderr}`);
+    const page = JSON.parse(read.stdout) as { events: { number: number }[]; cursor: number };
+    cursor = page.cursor;
+    if (page.events.length === 0) return cursor;
+    await machine.run(["updates", "--json", "--limit", "1", "--acknowledge", String(Math.max(...page.events.map(({ number }) => number)))]);
+  }
+}
+
 /** A member's CLI, signed in to the harness's install through the device flow, on a machine of its own. */
 export async function signedInCli(harness: AgentAccessHarness, person: SignedIn): Promise<CliMachine> {
   const machine = cliMachine(harness);

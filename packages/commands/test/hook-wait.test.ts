@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
-import { realSleep, signedInCli, type CliMachine, type CliRun } from "./support/cli.ts";
+import { acknowledgeEverything, realSleep, signedInCli, type CliMachine, type CliRun } from "./support/cli.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { addTeams, mcpPerson, type McpPerson } from "./support/mcp.ts";
 import { openRequestInTheWebUi } from "./support/requests.ts";
@@ -47,16 +47,6 @@ afterAll(async () => {
 async function ask(person: McpPerson, key: string, body = QUESTION): Promise<void> {
   const result = await harness.install.web(person.session).write("messages.post", { key, kind: "question", body }, harness.install.fromThePage(person.session));
   if (!result.ok) throw new Error(`messages.post answered ${JSON.stringify(result.problem)}`);
-}
-
-/** Acknowledges every update Sam's CLI has, through `tiehall updates`, so that a waiter waits for what comes next. */
-async function acknowledgeEverything(machine: CliMachine): Promise<void> {
-  for (;;) {
-    const read = await machine.run(["updates", "--json", "--limit", "50"]);
-    const { events } = JSON.parse(read.stdout) as { events: { number: number }[] };
-    if (events.length === 0) return;
-    await machine.run(["updates", "--json", "--limit", "1", "--acknowledge", String(Math.max(...events.map(({ number }) => number)))]);
-  }
 }
 
 /** Starts `tiehall hook wait` on Sam's machine, as the Stop hook runs it at the end of a turn of this session. */
