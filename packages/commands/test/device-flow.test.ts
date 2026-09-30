@@ -207,12 +207,12 @@ describe("another client", () => {
 
   it("gets unauthorized_client for a metadata-document client id, an unknown id, no id or two ids, and nothing is fetched or issued", async () => {
     const before = await deviceCodes();
-    const requests: Record<string, string>[] = [
+    const forms: Record<string, string>[] = [
       { ...CLI_REQUEST, client_id: "https://agent.example/client.json" },
       { ...CLI_REQUEST, client_id: "an-unknown-client" },
       { resource: MCP_RESOURCE, scope: "requests:read" },
     ];
-    for (const form of requests) {
+    for (const form of forms) {
       const answer = await deviceCode(form);
       expect(answer.status, JSON.stringify(form)).toBe(400);
       expect(answer.body["error"], JSON.stringify(form)).toBe("unauthorized_client");
