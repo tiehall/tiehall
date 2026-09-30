@@ -7,8 +7,9 @@ import pg from "pg";
 // updates the app role that web, worker, all and the operator commands connect
 // as. The app role owns nothing, so it can never alter or drop a table or the
 // trigger that keeps the event tables append-only (activity-log: The activity
-// log is append-only); it changes the data of the app's tables, and may only
-// insert into and read the event tables.
+// log is append-only); it changes the data of the app's tables, may only
+// insert into and read the event tables, and may only read the tables that
+// something else writes, such as the record backup.sh keeps.
 
 /** The schema of Tiehall's own tables, which the migrations make. */
 export const TIEHALL_SCHEMA = "public";
@@ -42,6 +43,13 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
   "public.proposal_confirmations",
 ];
 
+/**
+ * Every table the app role may only read: the record of finished backups,
+ * which backup.sh writes on the host as the database owner (self-host-install:
+ * Backups with the shipped scripts).
+ */
+export const READ_ONLY_TABLES: readonly string[] = ["public.backups"];
+
 export interface AppRole {
   /** The role's name, which is the user in the app's database URL. */
   name: string;
@@ -51,6 +59,8 @@ export interface AppRole {
 export interface AppRoleGrants {
   schemas: readonly string[];
   appendOnlyTables: readonly string[];
+  /** The tables the app role may only read; none unless given. */
+  readOnlyTables?: readonly string[];
 }
 
 /** A setting of the app role that the migrate step refuses; its message says why, and names no secret. */
@@ -81,7 +91,7 @@ type RoleAttributes = Record<(typeof FORBIDDEN_ATTRIBUTES)[number][0], boolean>;
 export async function setUpAppRole(
   owner: Queryable,
   role: AppRole,
-  grants: AppRoleGrants = { schemas: APP_SCHEMAS, appendOnlyTables: APPEND_ONLY_TABLES },
+  grants: AppRoleGrants = { schemas: APP_SCHEMAS, appendOnlyTables: APPEND_ONLY_TABLES, readOnlyTables: READ_ONLY_TABLES },
 ): Promise<void> {
   if (role.password === "") throw new DatabaseRoleError("The app role's password is empty.");
   await owner.query("BEGIN");
@@ -178,9 +188,10 @@ function grantStatements(
   app: string,
   database: string,
   { schemas, tables }: { schemas: string[]; tables: Table[] },
-  { appendOnlyTables }: AppRoleGrants,
+  { appendOnlyTables, readOnlyTables = [] }: AppRoleGrants,
 ): string {
   const appendOnly = new Set(appendOnlyTables);
+  const readOnly = new Set(readOnlyTables);
   const statements = [
     `REVOKE CREATE ON DATABASE ${pg.escapeIdentifier(database)} FROM PUBLIC, ${app}`,
     `GRANT CONNECT ON DATABASE ${pg.escapeIdentifier(database)} TO ${app}`,
@@ -195,7 +206,8 @@ function grantStatements(
   }
   for (const { schema, name } of tables) {
     const table = `${pg.escapeIdentifier(schema)}.${pg.escapeIdentifier(name)}`;
-    const rights = appendOnly.has(`${schema}.${name}`) ? "SELECT, INSERT" : "SELECT, INSERT, UPDATE, DELETE";
+    const qualified = `${schema}.${name}`;
+    const rights = readOnly.has(qualified) ? "SELECT" : appendOnly.has(qualified) ? "SELECT, INSERT" : "SELECT, INSERT, UPDATE, DELETE";
     statements.push(`REVOKE ALL ON TABLE ${table} FROM ${app}`, `GRANT ${rights} ON TABLE ${table} TO ${app}`);
   }
   return statements.map((statement) => `${statement};`).join("\n");

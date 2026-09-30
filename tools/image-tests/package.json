@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:install": "vitest run --config vitest.install.config.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -1,0 +1,235 @@
+import { spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { waitFor, type Run } from "./docker.ts";
+
+// A self-hosted install for the operator tests (self-host-install: Compose runs
+// Tiehall and Postgres; self-host-install: Backups with the shipped scripts;
+// self-host-install: Upgrades apply migrations before the app starts): a
+// folder that holds what a release publishes (compose.yaml, the Caddyfile,
+// backup.sh and restore.sh) and the .env the image's init role prints, as an
+// operator's install folder does, under a Compose project name of its own.
+// Commands run in that folder as an operator runs them, with nothing of the
+// shell running the test that names Tiehall or Compose, except the project's
+// name, so several installs can run side by side and none meets another's.
+
+const DEPLOY = fileURLToPath(new URL("../../../deploy/", import.meta.url));
+
+/** The files a release publishes next to the .env that init prints. */
+export const RELEASE_FILES = ["compose.yaml", "Caddyfile", "backup.sh", "restore.sh"] as const;
+
+/** A port on 127.0.0.1 that nothing listens on now. */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => (typeof address === "object" && address !== null ? resolve(address.port) : reject(new Error("no port"))));
+    });
+  });
+}
+
+export interface InstallOptions {
+  /** The image init runs from, and the install runs: init pins it with --image. */
+  image: string;
+  /** The port the app is published on, on 127.0.0.1; a free one unless given. */
+  port?: number;
+  /** A prefix for the Compose project's name. */
+  name?: string;
+}
+
+export class Install {
+  /** The install's folder: the release files and .env. */
+  readonly dir: string;
+  /** The Compose project's name. */
+  readonly project: string;
+  /** The port the app is published on, on 127.0.0.1. */
+  readonly port: number;
+  /** TIEHALL_URL: http://localhost and the port, a trial URL on one machine. */
+  readonly url: string;
+
+  private constructor(dir: string, project: string, port: number) {
+    this.dir = dir;
+    this.project = project;
+    this.port = port;
+    this.url = `http://localhost:${port}`;
+  }
+
+  /**
+   * A new install folder: the release files, and the .env that
+   * `docker run --rm <image> init --url <url> --image <image>` prints, with
+   * the app published on the install's own port. Nothing runs yet.
+   */
+  static async create(options: InstallOptions): Promise<Install> {
+    const port = options.port ?? (await freePort());
+    const project = `${options.name ?? "tiehall-install"}-${randomBytes(4).toString("hex")}`;
+    const dir = mkdtempSync(join(tmpdir(), `${project}-`));
+    for (const file of RELEASE_FILES) copyFileSync(join(DEPLOY, file), join(dir, file));
+    const install = new Install(dir, project, port);
+    const init = install.shell(`docker run --rm --network none ${quote(options.image)} init --url ${quote(install.url)} --image ${quote(options.image)} > .env`);
+    if (init.status !== 0) throw new Error(`init failed: ${init.stderr}`);
+    install.setEnv("TIEHALL_HTTP_BIND", `127.0.0.1:${port}`);
+    return install;
+  }
+
+  /** The environment every command of the install runs with: the Compose project's name, and nothing else of Tiehall or Compose. */
+  environment(): Record<string, string> {
+    const env: Record<string, string> = { COMPOSE_PROJECT_NAME: this.project };
+    for (const [name, value] of Object.entries(process.env)) {
+      if (value !== undefined && !name.startsWith("TIEHALL_") && !name.startsWith("COMPOSE_")) env[name] ??= value;
+    }
+    return env;
+  }
+
+  /** Runs a shell command in the install's folder, as an operator types it there. */
+  shell(command: string, options: { timeoutSeconds?: number; input?: string | Buffer } = {}): Run {
+    const run = spawnSync("bash", ["-c", command], {
+      cwd: this.dir,
+      env: this.environment(),
+      encoding: "utf8",
+      timeout: (options.timeoutSeconds ?? 300) * 1000,
+      maxBuffer: 64 * 1024 * 1024,
+      ...(options.input === undefined ? {} : { input: options.input }),
+    });
+    if (run.error) throw run.error;
+    return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+  }
+
+  /** Runs `docker compose` in the install's folder. */
+  compose(args: string[], options: { timeoutSeconds?: number } = {}): Run {
+    return this.shell(["docker", "compose", ...args].map(quote).join(" "), options);
+  }
+
+  /** `docker compose up -d --wait`: every service up and healthy, or it throws with the stack's state and logs. */
+  up(extra: string[] = []): void {
+    const up = this.compose(["up", "--detach", "--wait", "--wait-timeout", "240", ...extra], { timeoutSeconds: 300 });
+    if (up.status !== 0) throw new Error(`docker compose up failed:\n${up.stderr}\n${this.describe()}`);
+  }
+
+  /** The stack's state and logs, for a failure's message. */
+  describe(): string {
+    return `${this.compose(["ps", "--all"]).stdout}\n${this.compose(["logs", "--no-color"]).stdout}`;
+  }
+
+  /** A service's log. */
+  logs(service: string): string {
+    return this.compose(["logs", "--no-color", "--no-log-prefix", service]).stdout;
+  }
+
+  /** Runs SQL as the database owner in the bundled Postgres, and returns its rows as text, one per line. */
+  sql(query: string): string {
+    const run = this.shell(
+      "docker compose exec -T postgres psql --username tiehall --dbname tiehall --tuples-only --no-align --quiet -v ON_ERROR_STOP=1",
+      { input: query },
+    );
+    if (run.status !== 0) throw new Error(`psql failed: ${run.stderr}`);
+    return run.stdout.trim();
+  }
+
+  /** A setting of the install's .env. */
+  readEnv(name: string): string | undefined {
+    const line = readFileSync(join(this.dir, ".env"), "utf8")
+      .split("\n")
+      .find((entry) => entry.startsWith(`${name}=`));
+    return line?.slice(name.length + 1);
+  }
+
+  /** Sets a setting of the install's .env, as an operator edits it. */
+  setEnv(name: string, value: string): void {
+    const file = join(this.dir, ".env");
+    const lines = readFileSync(file, "utf8").split("\n");
+    const at = lines.findIndex((line) => line.startsWith(`${name}=`));
+    if (at === -1) lines.push(`${name}=${value}`);
+    else lines[at] = `${name}=${value}`;
+    writeFileSync(file, lines.join("\n"), { mode: 0o600 });
+  }
+
+  /** A request to the app, on its published port, as a client on the host sends it. */
+  fetch(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`http://127.0.0.1:${this.port}${path}`, init);
+  }
+
+  /** Waits until the app answers /healthz with "up". */
+  async healthy(): Promise<void> {
+    await waitFor(
+      "the app's /healthz",
+      async () => ((await this.fetch("/healthz").catch(() => undefined))?.ok === true ? true : undefined),
+      240,
+    );
+  }
+
+  /** Stops the stack and removes it with its volumes, and the folder. */
+  destroy(): void {
+    this.compose(["--profile", "caddy", "down", "--volumes", "--remove-orphans", "--timeout", "10"], { timeoutSeconds: 120 });
+    rmSync(this.dir, { recursive: true, force: true });
+  }
+}
+
+/** A word for bash, quoted. */
+export function quote(word: string): string {
+  return /^[A-Za-z0-9_./:@=,+-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
+}
+
+/** What seeded an install: a member's personal access token and the request opened with it. */
+export interface Seeded {
+  token: string;
+  requestKey: string;
+  requestTitle: string;
+}
+
+/**
+ * Data for an install whose setup the test completes by SQL, as its first
+ * admin's sign-in leaves it, and a request opened through /api/v1: the company
+ * Acme, Dana its admin in the team BE, the team FE, and a personal access token
+ * of Dana's, with which a request is opened from BE to FE.
+ */
+export async function seed(install: Install): Promise<Seeded> {
+  const token = `th_pat_${randomBytes(32).toString("base64url")}`;
+  const hash = createHash("sha256").update(token, "utf8").digest("hex");
+  install.sql(`
+    UPDATE orgs SET name = 'Acme', setup_completed_at = now();
+    DELETE FROM setup_codes;
+    INSERT INTO users (org_id, id, github_account_id, github_login, sign_in_key)
+      SELECT id, '5c1c1b5e-0d6e-4c52-9d0f-3a3c8f2b7a01', 4242, 'dana', 'github:4242' FROM orgs;
+    INSERT INTO members (org_id, user_id, role) SELECT id, '5c1c1b5e-0d6e-4c52-9d0f-3a3c8f2b7a01', 'admin' FROM orgs;
+    INSERT INTO teams (org_id, key, name) SELECT id, 'FE', 'Frontend' FROM orgs;
+    INSERT INTO teams (org_id, key, name) SELECT id, 'BE', 'Backend' FROM orgs;
+    INSERT INTO team_members (org_id, team_id, user_id)
+      SELECT t.org_id, t.id, '5c1c1b5e-0d6e-4c52-9d0f-3a3c8f2b7a01' FROM teams t WHERE t.key = 'BE';
+    INSERT INTO personal_access_tokens (org_id, user_id, name, scopes, token_hash, created_at, expires_at)
+      SELECT id, '5c1c1b5e-0d6e-4c52-9d0f-3a3c8f2b7a01', 'operator tests', ARRAY['requests:read', 'requests:write'], '${hash}', now(), now() + interval '30 days' FROM orgs;
+  `);
+  const requestTitle = "Show the invoice total on the order page";
+  const key = await openRequest(install, token, requestTitle);
+  return { token, requestKey: key, requestTitle };
+}
+
+/** Opens a request from BE to FE through /api/v1 with a personal access token, and returns its key. */
+export async function openRequest(install: Install, token: string, title: string): Promise<string> {
+  const answer = await install.fetch("/api/v1/requests", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      targetTeam: "FE",
+      requestingTeam: "BE",
+      title,
+      packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "Expose the invoice total in the orders API." } },
+    }),
+  });
+  const body = (await answer.json()) as { key?: string };
+  if (answer.status !== 200 || typeof body.key !== "string") throw new Error(`opening a request answered ${answer.status}: ${JSON.stringify(body)}`);
+  return body.key;
+}
+
+/** Reads a request through /api/v1 with a personal access token: its status and title. */
+export async function readRequest(install: Install, token: string, key: string): Promise<{ status: number; title?: string }> {
+  const answer = await install.fetch(`/api/v1/requests/${key}`, { headers: { authorization: `Bearer ${token}` } });
+  const body = (await answer.json()) as { untrusted?: { title?: unknown } };
+  const title = body.untrusted?.title;
+  return typeof title === "string" ? { status: answer.status, title } : { status: answer.status };
+}

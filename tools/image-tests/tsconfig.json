@@ -5,5 +5,5 @@
     "lib": ["dom", "es2024"],
     "types": ["node"]
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "vitest.config.ts", "vitest.install.config.ts"]
 }

@@ -213,6 +213,34 @@ export const idempotencyKeys = pgTable(
   ],
 );
 
+// The backups that finished (self-host-install: Backups with the shipped
+// scripts; self-host-install: The admin page warns about missing backups;
+// design.md, Self-hosting decisions: S11). backup.sh runs on the host and,
+// once its dump is written, records here, as the database owner, when the
+// backup finished and the dump's file name; the admin page reads the latest.
+// The app role may only read this table.
+export const backups = pgTable(
+  "backups",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** When backup.sh finished writing the dump. */
+    finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
+    /** The dump's file name in the backups folder, such as tiehall-20261001T020000Z.dump. */
+    file: text("file").notNull(),
+    /** The dump's size in bytes. */
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("backups_finished_at").on(table.orgId, table.finishedAt),
+    check("backups_size_not_negative", sql`${table.sizeBytes} >= 0`),
+    check("backups_file_length", sql`char_length(${table.file}) BETWEEN 1 AND 255`),
+  ],
+);
+
 // The setup code (self-host-install: The setup code guards the setup screen;
 // design.md, Self-hosting decisions: S3). While setup is incomplete, each start
 // of the web role prints a new code to its log and stores only its SHA-256

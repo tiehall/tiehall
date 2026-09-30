@@ -1,10 +1,14 @@
 name: Image checks
 
-# The image's container tests and the self-host boot test, as one reusable
-# workflow: CI calls it on pull requests to test a build of the pull request,
-# and the Build workflow calls it on main to test, by digest, the image it
-# pushed (self-host-install: Tiehall's containers are confined;
-# self-host-install: Compose runs Tiehall and Postgres).
+# The image's container tests, the self-host boot test and the operator
+# tests, as one reusable workflow: CI calls it on pull requests to test a build
+# of the pull request, and the Build workflow calls it on main to test, by
+# digest, the image it pushed (self-host-install: Tiehall's containers are
+# confined; self-host-install: Compose runs Tiehall and Postgres;
+# self-host-install: Backups with the shipped scripts). The operator tests that
+# need the previous image take the image last built from main before the
+# commit under test (get-previous-image.sh): the pull request's base, or the
+# commit main was at before the push.
 
 on:
   workflow_call:
@@ -67,3 +71,38 @@ jobs:
       # Boots deploy/compose.yaml with the image in role all against stock
       # postgres:17 and waits for /healthz to report healthy.
       - run: node tools/image-tests/src/boot-test.ts
+
+  backup-test:
+    name: Backup and restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The history, to find the image last built from main before this commit.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/image-tests
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      - name: Get the previous image
+        run: tools/image-tests/get-previous-image.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GHCR_TOKEN: ${{ github.token }}
+      # backup.sh writes a timestamped dump only its owner can read and records the finished backup; restore.sh
+      # restores it into an empty database and the app boots with the data; a dump from the previous image is
+      # brought up to date by migrate.
+      - run: pnpm test:install backup
