@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+import type { BetterAuthPlugin } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { approveAgentClient, listAgentGrants, revokeAgentGrant, SCOPES } from "@tiehall/catalog";
 import { agentClientApproved, agentGrantRevoked, Refusal } from "@tiehall/core";
-import { oauthAccessTokens, oauthClients, oauthConsents, oauthDeviceCodes, oauthRefreshTokens, signInVerifications } from "@tiehall/db";
-import { and, asc, eq, isNull, like, sql } from "drizzle-orm";
+import { members, oauthAccessTokens, oauthClients, oauthConsents, oauthDeviceCodes, oauthRefreshTokens, signInVerifications, type Database } from "@tiehall/db";
+import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import { REFRESH_SCOPE } from "./authorization-server.ts";
 import { actsForUser, type Caller } from "./caller.ts";
 import type { ConfirmRedirects } from "./confirm-route.ts";
@@ -10,6 +13,7 @@ import type { AgentClient } from "./agent-clients.ts";
 import { authorizationRequestOf, consentReview, consentViewIn, continuePathOf } from "./consent.ts";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { withOrg } from "./with-org.ts";
 import type { Writer } from "./write.ts";
 
 // A member's grants to agent clients (agent-access: Approving an agent client
@@ -39,9 +43,21 @@ import type { Writer } from "./write.ts";
 // away, but runs only in the web UI, for the member whose grant it is (404 for
 // any other, as for a grant that does not exist). It removes the grant, marks
 // every refresh token of that client for that member revoked, so the next
-// refresh gets invalid_grant, and appends its security event, together.
-// Access tokens already issued stop working when they expire, within 10
-// minutes.
+// refresh gets invalid_grant, removes the authorization codes the client was
+// given for that member and has not exchanged, denies the device codes the
+// member approved for it that it has not exchanged, and appends its security
+// event, together. Access tokens already issued stop working when they expire,
+// within 10 minutes.
+//
+// The token endpoint gives tokens only from a grant that still exists: after
+// the authorization server has issued them, a check locks the member's row and
+// the grant's, so a removal or a revocation under way commits first, and when
+// the person is no longer a member or the grant is gone, it revokes what was
+// just issued and every other refresh token of that client for that person,
+// and answers invalid_grant instead. So a code or a refresh token a client
+// exchanges while its grant is revoked, or its person removed, leaves it no
+// token, and no refresh token that the Connected agents and tokens page could
+// no longer show.
 
 /**
  * Stores a member's grant to an agent client, in the approval's write, with
@@ -171,8 +187,9 @@ function lockGrants(writer: Writer, userId: string, grantId?: string): Promise<L
 /**
  * Revokes one grant in the writer's transaction: removes it, marks every
  * refresh token of its client for the user revoked, so the next refresh gets
- * invalid_grant, removes their stored access tokens, and appends the security
- * event.
+ * invalid_grant, removes their stored access tokens, denies the device codes
+ * the user approved for the client and removes the authorization codes issued
+ * to it for them that were not exchanged yet, and appends the security event.
  */
 async function revokeGrant(writer: Writer, userId: string, grant: LockedGrant, at: Date): Promise<void> {
   await writer.tx.delete(oauthConsents).where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grant.grantId)));
@@ -190,7 +207,50 @@ async function revokeGrant(writer: Writer, userId: string, grant: LockedGrant, a
   await writer.tx
     .delete(oauthAccessTokens)
     .where(and(eq(oauthAccessTokens.orgId, writer.orgId), eq(oauthAccessTokens.clientId, grant.clientId), eq(oauthAccessTokens.userId, userId)));
+  await writer.tx
+    .update(oauthDeviceCodes)
+    .set({ status: "denied" })
+    .where(
+      and(
+        eq(oauthDeviceCodes.orgId, writer.orgId),
+        eq(oauthDeviceCodes.userId, userId),
+        eq(oauthDeviceCodes.oauthClientId, grant.clientId),
+        eq(oauthDeviceCodes.status, "approved"),
+      ),
+    );
+  await deleteUnexchangedCodes(writer, userId, grant.clientId);
   await writer.record(agentGrantRevoked, { userId, clientId: grant.clientRecord, grantId: grant.grantId });
+}
+
+/**
+ * Removes the authorization codes issued for the user that no client has
+ * exchanged yet, or only those issued to one client. A code is kept as the
+ * sign-in service writes it: JSON that names its type, its user and, in the
+ * request it answers, its client.
+ */
+async function deleteUnexchangedCodes(writer: Writer, userId: string, clientId?: string): Promise<void> {
+  const codes = await writer.tx
+    .select({ id: signInVerifications.id, value: signInVerifications.value })
+    .from(signInVerifications)
+    .where(
+      and(
+        eq(signInVerifications.orgId, writer.orgId),
+        like(signInVerifications.value, '%"type":"authorization_code"%'),
+        like(signInVerifications.value, `%"userId":"${userId}"%`),
+      ),
+    );
+  const ids = codes.filter(({ value }) => clientId === undefined || clientOfCode(value) === clientId).map(({ id }) => id);
+  if (ids.length > 0) await writer.tx.delete(signInVerifications).where(and(eq(signInVerifications.orgId, writer.orgId), inArray(signInVerifications.id, ids)));
+}
+
+/** The client an authorization code was issued to, as its stored request names it. */
+function clientOfCode(value: string): string | undefined {
+  try {
+    const clientId = (JSON.parse(value) as { query?: { client_id?: unknown } }).query?.client_id;
+    return typeof clientId === "string" ? clientId : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -214,16 +274,99 @@ export async function revokeAgentAccessOf(writer: Writer, userId: string, at: Da
     .update(oauthDeviceCodes)
     .set({ status: "denied" })
     .where(and(eq(oauthDeviceCodes.orgId, writer.orgId), eq(oauthDeviceCodes.userId, userId), eq(oauthDeviceCodes.status, "approved")));
-  // An authorization code is kept as the sign-in service writes it: JSON that names its type and its user.
-  await writer.tx
-    .delete(signInVerifications)
-    .where(
-      and(
-        eq(signInVerifications.orgId, writer.orgId),
-        like(signInVerifications.value, '%"type":"authorization_code"%'),
-        like(signInVerifications.value, `%"userId":"${userId}"%`),
-      ),
-    );
+  await deleteUnexchangedCodes(writer, userId);
+}
+
+/** The digest the authorization server keeps of an opaque token: SHA-256, base64url without padding. */
+function storedTokenOf(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("base64url");
+}
+
+/** The user and the client an answer of the token endpoint issued its access token for; undefined for one it cannot read. */
+async function holderOf(database: Database, accessToken: string): Promise<{ userId: string; clientId: string } | undefined> {
+  const parts = accessToken.split(".");
+  if (parts.length === 3) {
+    try {
+      // The token was signed a moment ago by this install's own key: only who it is for is read here.
+      const claims = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8")) as Record<string, unknown>;
+      const userId = claims["sub"];
+      const clientId = claims["azp"] ?? claims["client_id"];
+      return typeof userId === "string" && typeof clientId === "string" ? { userId, clientId } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const [row] = await withOrg(database, ({ tx, orgId }) =>
+    tx
+      .select({ userId: oauthAccessTokens.userId, clientId: oauthAccessTokens.clientId })
+      .from(oauthAccessTokens)
+      .where(and(eq(oauthAccessTokens.orgId, orgId), eq(oauthAccessTokens.token, storedTokenOf(accessToken)))),
+  );
+  return row?.userId === undefined || row.userId === null ? undefined : { userId: row.userId, clientId: row.clientId };
+}
+
+export interface GrantCheckOptions {
+  /** The app's database, as the app role. */
+  database: Database;
+}
+
+/**
+ * The check after the token endpoint: tokens only for a member, from a grant
+ * that still exists. It locks the member's row and the grant's, so that a
+ * removal or a revocation under way commits first; when either is gone, it
+ * revokes the refresh tokens of that client for that person, the ones just
+ * issued included, removes their stored access tokens, and answers
+ * invalid_grant instead of the tokens.
+ */
+export function grantChecks(options: GrantCheckOptions): BetterAuthPlugin {
+  return {
+    id: "tiehall-grant-checks",
+    hooks: {
+      after: [
+        {
+          matcher: (context) => context.path === "/oauth2/token",
+          handler: createAuthMiddleware(async (context) => {
+            const accessToken = (context.context.returned as { access_token?: unknown } | undefined)?.access_token;
+            if (typeof accessToken !== "string") return;
+            const holder = await holderOf(options.database, accessToken);
+            if (holder === undefined) throw new Error("The token endpoint issued an access token whose user and client cannot be read.");
+            const { userId, clientId } = holder;
+            const granted = await withOrg(options.database, async ({ tx, orgId }) => {
+              const [member] = await tx
+                .select({ userId: members.userId })
+                .from(members)
+                .where(and(eq(members.orgId, orgId), eq(members.userId, userId)))
+                .for("key share");
+              const [grant] = await tx
+                .select({ id: oauthConsents.id })
+                .from(oauthConsents)
+                .where(and(eq(oauthConsents.orgId, orgId), eq(oauthConsents.userId, userId), eq(oauthConsents.clientId, clientId)))
+                .for("key share");
+              if (member !== undefined && grant !== undefined) return true;
+              await tx
+                .update(oauthRefreshTokens)
+                .set({ revoked: new Date() })
+                .where(
+                  and(
+                    eq(oauthRefreshTokens.orgId, orgId),
+                    eq(oauthRefreshTokens.userId, userId),
+                    eq(oauthRefreshTokens.clientId, clientId),
+                    isNull(oauthRefreshTokens.revoked),
+                  ),
+                );
+              await tx
+                .delete(oauthAccessTokens)
+                .where(and(eq(oauthAccessTokens.orgId, orgId), eq(oauthAccessTokens.userId, userId), eq(oauthAccessTokens.clientId, clientId)));
+              return false;
+            });
+            if (!granted) {
+              throw new APIError("BAD_REQUEST", { error: "invalid_grant", error_description: "The grant this request comes from was revoked." });
+            }
+          }),
+        },
+      ],
+    },
+  };
 }
 
 /** The host of a metadata-document client's id, its document's URL. */

@@ -20,8 +20,10 @@ import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn 
 // An expired code is removed by an hourly job, with the address it kept.
 //
 // The device approval page, where a member approves a code with the
-// confirmation step, is the next task's (15.13); until then a test approves a
-// code as that approval stores it.
+// confirmation step, has its own tests (device-approval.test.ts); here a test
+// approves a code as that approval stores it: the code, approved for the
+// member, and the member's grant to the CLI, without which the token endpoint
+// gives no token.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
@@ -67,9 +69,15 @@ async function deviceToken(code: string, clientId = CLI_CLIENT_ID): Promise<Answ
 /** The CLI's own request, as `tiehall login` sends it: its client id, the MCP resource and the scopes it works with. */
 const CLI_REQUEST = { client_id: CLI_CLIENT_ID, resource: MCP_RESOURCE, scope: "requests:read requests:write" };
 
-/** Approves a device code for a user as the device approval page's confirmed approval stores it (15.13). */
+/** Approves a device code for a user as the device approval page's confirmed approval stores it: the code, and the user's grant to the CLI. */
 async function approve(userCode: string, userId: string): Promise<void> {
   await harness.install.owner.query("UPDATE oauth_device_codes SET status = 'approved', user_id = $2 WHERE user_code = $1", [userCode, userId]);
+  await harness.install.owner.query(
+    `INSERT INTO oauth_consents (org_id, client_id, user_id, scopes, resources, requested_user_info_claims, created_at, updated_at)
+       SELECT d.org_id, $3, $2, string_to_array(d.scope, ' '), d.resources, '{}', now(), now() FROM oauth_device_codes d
+        WHERE d.user_code = $1 AND NOT EXISTS (SELECT 1 FROM oauth_consents c WHERE c.user_id = $2 AND c.client_id = $3)`,
+    [userCode, userId, CLI_CLIENT_ID],
+  );
 }
 
 /** How many device codes the install holds. */

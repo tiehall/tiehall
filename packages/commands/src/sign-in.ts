@@ -30,6 +30,7 @@ import {
 } from "@tiehall/db";
 import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
+import { grantChecks } from "./agent-grants.ts";
 import { continuePathOf, isAuthorizationRequest } from "./consent.ts";
 import { authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
 import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
@@ -575,6 +576,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
               ...authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) }),
               clientRegistrations({ database: options.database, ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }) }),
               cliDeviceFlow({ database: options.database, resource: mcpResourceOf(options.url), refreshScope: REFRESH_SCOPE }),
+              grantChecks({ database: options.database }),
             ]),
       ],
       hooks: { before: routeGuard },
