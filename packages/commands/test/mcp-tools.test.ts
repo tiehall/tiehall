@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CATALOG } from "@tiehall/catalog";
+import { MINIMUM_SKILL_VERSION } from "@tiehall/core";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
@@ -66,6 +67,14 @@ async function call(person: McpPerson, version: ProtocolVersion, name: string, a
   } finally {
     await client.close();
   }
+}
+
+/** A version older than this one. */
+function olderThan(version: string): string {
+  const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+  if (patch > 0) return `${major}.${minor}.${patch - 1}`;
+  if (minor > 0) return `${major}.${minor - 1}.99`;
+  return `${major - 1}.99.99`;
 }
 
 /** The tools as a person's agent lists them on this protocol version. */
@@ -144,11 +153,42 @@ describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => 
       user: { id: dana.userId, login: "dana-fe", kind: "human", bot: false },
       teams: [{ id: expect.any(String), key: "FE" }],
       install: { url: URL_OF_INSTALL },
+      warnings: [],
     });
     const text = textOf(result);
     expect(text).toContain("dana-fe");
     expect(text).toContain("They belong to team FE.");
     expect(text).toContain(URL_OF_INSTALL);
+  });
+
+  // agent-surfaces: The Claude Code plugin, "whoami warns an old skill"; D28 #63. The skill names its version when
+  // it calls whoami, and Tiehall keeps a minimum for it.
+  it("warns when the skill in use is older than the skill's minimum, and still names the user and the install", async () => {
+    const skillVersion = olderThan(MINIMUM_SKILL_VERSION);
+    const result = await call(dana, version, "whoami", { skillVersion });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      user: { id: dana.userId, login: "dana-fe" },
+      install: { url: URL_OF_INSTALL },
+      warnings: [{ kind: "skill_outdated", skillVersion, minimum: MINIMUM_SKILL_VERSION }],
+    });
+    const text = textOf(result);
+    expect(text).toContain(`The Tiehall skill you follow is version ${skillVersion}, older than the oldest this install supports, ${MINIMUM_SKILL_VERSION}`);
+    expect(text).toContain("dana-fe");
+    expect(text).toContain(URL_OF_INSTALL);
+  });
+
+  it("gives no warning for a skill at or above the minimum, or when no skill version is named", async () => {
+    for (const args of [{ skillVersion: MINIMUM_SKILL_VERSION }, { skillVersion: "99.0.0" }, {}]) {
+      const result = await call(dana, version, "whoami", args);
+      expect((result.structuredContent as { warnings: unknown[] }).warnings, JSON.stringify(args)).toEqual([]);
+      expect(textOf(result)).not.toContain("older than");
+    }
+  });
+
+  it("refuses a skill version that is not a semantic version, as input that fails the schema", async () => {
+    const result = await call(dana, version, "whoami", { skillVersion: "the newest" });
+    expect(problemOf(result).type).toBe(`${PROBLEM}invalid-input`);
   });
 
   it("says so when the user is a bot", async () => {

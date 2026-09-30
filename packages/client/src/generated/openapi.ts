@@ -333,7 +333,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL. */
+        /** Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL; and warn when the Tiehall skill in use is older than the install supports. */
         get: operations["users.whoami"];
         put?: never;
         post?: never;
@@ -4129,7 +4129,10 @@ export interface operations {
     };
     "users.whoami": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The version of the Tiehall skill you follow, as its frontmatter's metadata states it, such as 0.1.0; whoami warns when it is older than the install supports. */
+                skillVersion?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4161,6 +4164,15 @@ export interface operations {
                             kind: "human";
                             login: string;
                         };
+                        /** @description What the agent tells its user: that the skill it follows is older than the install supports; none when all is well. */
+                        warnings: {
+                            /** @constant */
+                            kind: "skill_outdated";
+                            /** @description The oldest version of the skill the install supports. */
+                            minimum: string;
+                            /** @description The version of the skill in use, as the call named it. */
+                            skillVersion: string;
+                        }[];
                     };
                 };
             };

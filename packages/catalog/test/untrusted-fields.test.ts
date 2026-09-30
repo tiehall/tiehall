@@ -1,4 +1,4 @@
-import { EVENT_FIELD_NAME, EVENT_STRING_VALUE, EVENT_TYPE_NAME, REQUEST_KEY, TEAM_KEY } from "@tiehall/core";
+import { EVENT_FIELD_NAME, EVENT_STRING_VALUE, EVENT_TYPE_NAME, REQUEST_KEY, SEMANTIC_VERSION, TEAM_KEY } from "@tiehall/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { defineCatalog } from "../src/catalog.ts";
@@ -29,6 +29,8 @@ const IDENTIFIERS: readonly RegExp[] = [
   PACKET_FIELD_NAME,
   GITHUB_REPOSITORY,
   PULL_REQUEST_URL,
+  // A version, such as the Tiehall skill's that whoami warns about, holds no space.
+  SEMANTIC_VERSION,
 ];
 const patterns = new Set(IDENTIFIERS.map(({ source }) => source));
 const problemsOf = (schema: z.ZodType) => outputSchemaProblems(schema, patterns).map(({ path }) => path);

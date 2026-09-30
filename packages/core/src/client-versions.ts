@@ -29,8 +29,9 @@ export const MINIMUM_PLUGIN_VERSION = "0.1.0";
 /** The oldest version of the Tiehall skill Tiehall supports; whoami warns an agent whose skill is older. */
 export const MINIMUM_SKILL_VERSION = "0.1.0";
 
-/** A semantic version: its major, minor and patch numbers, and its pre-release, if any. */
-const VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})(?:-([0-9A-Za-z.-]{1,64}))?(?:\+[0-9A-Za-z.-]{1,64})?$/;
+/** A semantic version: its major, minor and patch numbers, and its pre-release, if any, such as 0.1.0 or 1.2.0-rc.1. */
+export const SEMANTIC_VERSION = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})(?:-([0-9A-Za-z\.-]{1,64}))?(?:\+[0-9A-Za-z\.-]{1,64})?$/;
+const VERSION = SEMANTIC_VERSION;
 
 function parts(version: string): { numbers: number[]; preRelease: string | undefined } | undefined {
   const match = VERSION.exec(version);

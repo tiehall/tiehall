@@ -172,6 +172,7 @@ describe("an admin", () => {
             user: { id: bot, login: "acme-ci-bot", kind: "human", bot: true },
             teams: expect.any(Array),
             install: { url: URL_OF_INSTALL },
+            warnings: [],
           });
           expect(textOf(result), version).toContain("acme-ci-bot (a bot user)");
         } finally {

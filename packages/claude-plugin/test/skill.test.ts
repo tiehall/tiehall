@@ -51,6 +51,16 @@ describe("the Tiehall skill", () => {
     expect(commitments).toMatch(/[Nn]ever confirm a proposal/);
   });
 
+  // agent-surfaces: The Claude Code plugin, "whoami warns an old skill". whoami can warn only when the skill names
+  // its version, so the skill has the agent name the version its frontmatter states.
+  it("tells the agent to call whoami with the skill's own version, as its frontmatter states it, and to pass on a warning", () => {
+    const version = /^metadata:\n {2}version: "([^"]+)"$/m.exec(skill)?.[1];
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const start = flat(section("At the start of a session"));
+    expect(start).toContain(`call \`whoami\` with \`skillVersion\` "${version}", the version of this skill`);
+    expect(start).toMatch(/If it warns that this skill is older than the install supports, tell the user/);
+  });
+
   it("names the CLI's commands beside the tools, for a client without the MCP server", () => {
     for (const command of ["tiehall inbox", "tiehall get", "tiehall open", "tiehall ask", "tiehall reply", "tiehall propose", "tiehall status", "tiehall claim", "tiehall link-pr"]) {
       expect(body, command).toContain(command);

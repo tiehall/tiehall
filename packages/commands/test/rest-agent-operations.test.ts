@@ -54,6 +54,7 @@ describe("whoami on /api/v1", () => {
         { id: expect.any(String), key: "QA" },
       ],
       install: { url: URL_OF_INSTALL },
+      warnings: [],
     });
   });
 });

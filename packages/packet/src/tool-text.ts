@@ -314,14 +314,29 @@ export interface WhoamiJson {
   user: UserJson;
   teams: TeamJson[];
   install: { url: string };
+  /** What the agent tells its user, such as that the skill it follows is older than the install supports. */
+  warnings?: { kind: string; skillVersion: string; minimum: string }[];
 }
 
-/** Who a connection acts for, the teams they belong to, and on which install, in Tiehall's words. */
+/** A semantic version, such as 0.1.0 or 1.2.0-rc.1, which holds no space. */
+const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,64})?(?:\+[0-9A-Za-z.-]{1,64})?$/;
+
+/** Who a connection acts for, the teams they belong to, and on which install, in Tiehall's words, and any warning, such as an old skill. */
 export function whoamiText(whoami: WhoamiJson): AgentText[] {
   const url = checked(whoami.install.url, INSTALL_URL, "install URL");
   const keys = whoami.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
   const teams = keys.length === 0 ? "no team" : `team${keys.length === 1 ? "" : "s"} ${listed(keys)}`;
-  return [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}. They belong to ${teams}.` }];
+  const texts: AgentText[] = [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}. They belong to ${teams}.` }];
+  for (const warning of whoami.warnings ?? []) {
+    if (warning.kind !== "skill_outdated") throw new ToolTextError("A warning is not of a kind Tiehall gives.");
+    const version = checked(warning.skillVersion, VERSION, "skill version");
+    const minimum = checked(warning.minimum, VERSION, "skill version");
+    texts.push({
+      origin: "tiehall",
+      text: `The Tiehall skill you follow is version ${version}, older than the oldest this install supports, ${minimum}: tell the user to update the Tiehall plugin, or the skill's folder in their client.`,
+    });
+  }
+  return texts;
 }
 
 /** The install's teams and registered APIs, as directory returns them. */

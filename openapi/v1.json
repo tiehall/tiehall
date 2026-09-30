@@ -10183,7 +10183,18 @@
     "/api/v1/whoami": {
       "get": {
         "operationId": "users.whoami",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "The version of the Tiehall skill you follow, as its frontmatter's metadata states it, such as 0.1.0; whoami warns when it is older than the install supports.",
+            "in": "query",
+            "name": "skillVersion",
+            "schema": {
+              "description": "The version of the Tiehall skill you follow, as its frontmatter's metadata states it, such as 0.1.0; whoami warns when it is older than the install supports.",
+              "pattern": "^(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})(?:-([0-9A-Za-z\\.-]{1,64}))?(?:\\+[0-9A-Za-z\\.-]{1,64})?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -10251,12 +10262,41 @@
                         "bot"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "description": "What the agent tells its user: that the skill it follows is older than the install supports; none when all is well.",
+                      "items": {
+                        "properties": {
+                          "kind": {
+                            "const": "skill_outdated",
+                            "type": "string"
+                          },
+                          "minimum": {
+                            "description": "The oldest version of the skill the install supports.",
+                            "pattern": "^(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})(?:-([0-9A-Za-z\\.-]{1,64}))?(?:\\+[0-9A-Za-z\\.-]{1,64})?$",
+                            "type": "string"
+                          },
+                          "skillVersion": {
+                            "description": "The version of the skill in use, as the call named it.",
+                            "pattern": "^(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})\\.(0|[1-9]\\d{0,5})(?:-([0-9A-Za-z\\.-]{1,64}))?(?:\\+[0-9A-Za-z\\.-]{1,64})?$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "skillVersion",
+                          "minimum"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
                     "user",
                     "teams",
-                    "install"
+                    "install",
+                    "warnings"
                   ],
                   "type": "object"
                 }
@@ -10352,7 +10392,7 @@
             ]
           }
         ],
-        "summary": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL.",
+        "summary": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL; and warn when the Tiehall skill in use is older than the install supports.",
         "x-stability-level": "alpha"
       }
     }
