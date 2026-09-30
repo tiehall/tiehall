@@ -49,6 +49,10 @@ export interface TestInstall {
   owner: pg.Client;
   /** The database's URL, as its owner, such as for a dump. */
   databaseUrl: string;
+  /** The app role's connection, as the web role reads it from TIEHALL_DATABASE_APP_URL and its password, such as for a web app a test starts. */
+  appDatabase: { url: string; password: string };
+  /** The install's TIEHALL_SECRET_KEY, which opens the stored integration secrets, such as for a web app a test starts. */
+  secretKey: string;
   /** The install's auth secret, TIEHALL_AUTH_SECRET, which signs the CSRF tokens, the nonces and the sign-in service's cookies. */
   authSecret: string;
   /** The install's logger, which writes nowhere. */
@@ -121,7 +125,8 @@ export async function startTestInstall(
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 
   const secret = randomBytes(32).toString("base64url");
-  const box = openSecretBox(randomBytes(32).toString("base64url"));
+  const secretKey = randomBytes(32).toString("base64url");
+  const box = openSecretBox(secretKey);
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
   const sentJobs: { queue: string; data: JobData }[] = [];
@@ -179,6 +184,8 @@ export async function startTestInstall(
   return {
     owner,
     databaseUrl: database.url,
+    appDatabase: { url: url.toString(), password: appRole.password },
+    secretKey,
     authSecret: secret,
     logger,
     box,

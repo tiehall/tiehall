@@ -98,14 +98,17 @@ export async function startSignIn(
     timeoutMs?: number;
     /** How the service's authorization server takes agent clients. */
     agentClients?: AgentClientOptions;
+    /** The install's URL the service signs people in at, such as a web app's a test started; URL_OF_INSTALL unless given. */
+    url?: string;
   } = {},
 ): Promise<SignInHarness> {
+  const url = options.url ?? URL_OF_INSTALL;
   // Another sign-in service for the App a harness stored, such as one whose fetch fails some calls, or a new App.
   const app =
     options.sameAppAs?.app ??
     stub.createApp({
       owner: options.owner ?? "acme",
-      callbackUrls: [`${URL_OF_INSTALL}/api/auth/callback/github`],
+      callbackUrls: [`${url}/api/auth/callback/github`],
       // An App with a webhook, whose deliveries the stub logs with what GitHub sent, for a test to store.
       ...(options.hook === undefined ? {} : { hook: options.hook }),
     });
@@ -127,7 +130,7 @@ export async function startSignIn(
   if (options.sameAppAs === undefined) await store(app.clientSecret);
   const service = createSignInService({
     database: install.db,
-    url: URL_OF_INSTALL,
+    url,
     secret: () => install.authSecret,
     secrets: () => box,
     // The stub serves on local ports, which the service reaches with the plain fetch; at an install it reaches GitHub only.
@@ -138,9 +141,9 @@ export async function startSignIn(
 
   async function signIn(login: string, { jar = new CookieJar(), headers = {} }: { jar?: CookieJar; headers?: Record<string, string> } = {}): Promise<SignInAttempt> {
     const started = await service.page(
-      new Request(`${URL_OF_INSTALL}/sign-in`, {
+      new Request(`${url}/sign-in`, {
         method: "POST",
-        headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, cookie: jar.header() },
+        headers: { ...headers, "content-type": "application/x-www-form-urlencoded", origin: url, cookie: jar.header() },
         body: new URLSearchParams({ return: "/" }).toString(),
       }),
     );
