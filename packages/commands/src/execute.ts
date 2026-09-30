@@ -25,7 +25,11 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    for a user, first re-checks that the user is still a member, refusing a
 //    removed one with 403 before anything else about the call is judged or
 //    looked up, its input included (teams-and-roles: Membership is re-checked
-//    on every call; public-api: One error model for Tiehall's own refusals);
+//    on every call; public-api: One error model for Tiehall's own refusals),
+//    and, for a call made with a personal access token, that the install's
+//    PAT switch is on, refusing it with 403 personal-access-tokens-off while
+//    it is off (agent-access: Every token call is checked against the
+//    install's current state);
 //    then refuses a call made with an OAuth token or a personal access token
 //    that lacks a scope the operation needs, with 403 insufficient_scope
 //    naming that scope, before anything runs (agent-access: Missing and
@@ -285,6 +289,8 @@ export function createExecute(services: ExecuteServices): Execute {
     // 2. withOrg() has refused a removed member already; then what the surface found wrong with the call.
     const writeOptions = { ...(options.origin === undefined ? {} : { origin: options.origin }), now };
     const forUser = actsForUser(caller) ? caller.userId : undefined;
+    // A personal access token's call goes on only while the PAT switch is on, read at the time of the call.
+    const personalAccessToken = caller.kind === "personal_access_token";
 
     /**
      * Steps 2 to 5 in the given transaction: the call's own refusal, the
@@ -359,7 +365,7 @@ export function createExecute(services: ExecuteServices): Execute {
       const authorized = await withOrg(
         store.database,
         async (context) => ({ ...(await authorize(context, "check")), caller: await asMemberOrNoUser(context, caller) }),
-        { readOnly: true, forUser },
+        { readOnly: true, forUser, personalAccessToken },
       );
       prepared = await handler.prepare(authorized.input, {
         caller: authorized.caller,
@@ -422,7 +428,7 @@ export function createExecute(services: ExecuteServices): Execute {
         };
         return options.around === undefined ? run() : options.around(context, run);
       },
-      { readOnly: options.readOnly === true, forUser },
+      { readOnly: options.readOnly === true, forUser, personalAccessToken },
     );
   };
 }

@@ -1626,7 +1626,9 @@ export const agentWriteDays = pgTable(
 // for the install's org, made by the first change; until then every setting
 // has its default. The daily write budget is 5,000 agent writes by default
 // (agent-safety: Agent writes are limited per token and budgeted per install),
-// and the sign-in policy admits organization members and invited people.
+// the sign-in policy admits organization members and invited people, and
+// personal access tokens are switched on (agent-access: An admin sets the PAT
+// switch and the maximum lifetime).
 export const installSettings = pgTable(
   "install_settings",
   {
@@ -1639,6 +1641,13 @@ export const installSettings = pgTable(
      * GitHub organization admits new members, or only invites do.
      */
     signInPolicy: text("sign_in_policy").notNull().default("organization_members_and_invited"),
+    /**
+     * The PAT switch (agent-access: Every token call is checked against the
+     * install's current state): while it is off, every call with a personal
+     * access token is refused, and turning it on again lets unexpired ones
+     * work again, since it is read at each call and revokes nothing.
+     */
+    personalAccessTokensOn: boolean("personal_access_tokens_on").notNull().default(true),
   },
   (table) => [
     check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`),

@@ -1,0 +1,1 @@
+ALTER TABLE "install_settings" ADD COLUMN "personal_access_tokens_on" boolean DEFAULT true NOT NULL;
