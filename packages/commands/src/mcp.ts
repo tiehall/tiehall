@@ -1,5 +1,15 @@
-import { createMcpHandler, Server, type AuthInfo, type CallToolResult, type McpHttpHandler, type Tool } from "@modelcontextprotocol/server";
-import { toolListing, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import {
+  createMcpHandler,
+  Server,
+  type AuthInfo,
+  type CallToolResult,
+  type InputRequiredResult,
+  type McpHttpHandler,
+  type RequestStateCodec,
+  type ServerContext,
+  type Tool,
+} from "@modelcontextprotocol/server";
+import { isProposalAnswer, toolListing, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, toolError } from "@tiehall/core";
 import type { Database } from "@tiehall/db";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
@@ -8,8 +18,20 @@ import { bodyLimitFor, readBoundedBody } from "./body-limit.ts";
 import type { Caller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
 import { createLogger, type Logger } from "./log.ts";
+import {
+  callDigest,
+  confirmPageElicitation,
+  createRetryStates,
+  declaresUrlElicitation,
+  retryBinding,
+  retryStateOf,
+  stateRefused,
+  type ElicitedProposal,
+  type RetryState,
+} from "./mcp-elicitation.ts";
 import { TOOL_TEXTS, toolTexts, type ToolText } from "./mcp-texts.ts";
 import { teamsOfMember } from "./members.ts";
+import { proposalView } from "./proposals.ts";
 import type { Origin } from "./write.ts";
 import { withOrg } from "./with-org.ts";
 
@@ -72,6 +94,15 @@ import { withOrg } from "./with-org.ts";
 // included, since execute() validates with the operation's own schema. A
 // failure that is not one of Tiehall's refusals is such a result too, a 500
 // that says nothing about itself.
+//
+// A call that creates a proposal, from a client on protocol version
+// 2026-07-28 that declares URL-mode elicitation, answers with an
+// input-required result instead: the URL-mode elicitation of the proposal's
+// confirm page, and a signed request state for the retry
+// (mcp-elicitation.ts). Every other client, and every connection on
+// 2025-11-25, gets the proposal, which names its web inbox. The retry that
+// carries the state answers at once with the proposal as it is now, and
+// creates nothing.
 
 /** How the MCP server names itself to clients. */
 export const MCP_SERVER_NAME = "tiehall";
@@ -89,6 +120,14 @@ export interface McpRouteOptions {
   database?: Database;
   /** The release the install runs, which the server names itself with; 0.0.0-dev unless given. */
   version?: string;
+  /**
+   * The install's URL, TIEHALL_URL, whose confirm pages a URL-mode
+   * elicitation opens; with the auth secret and the database, a client that
+   * declares URL-mode elicitation gets one for a proposal its call created.
+   */
+  url?: string;
+  /** TIEHALL_AUTH_SECRET, from which the key that signs the request state of an elicitation is derived. */
+  secret?: () => string;
   logger?: Logger;
 }
 
@@ -100,9 +139,15 @@ const CHALLENGED: ReadonlySet<string> = new Set(["unauthenticated", "invalid-tok
 /** Who a call acts for, or the refusal every tool call it makes gets. */
 type Calling = { caller: Caller; origin: Origin } | { refusal: Refusal };
 
-/** What the SDK hands the server factory for the call. */
+/** What the SDK hands the server factory for the call, with what a request state is bound to for its caller. */
 interface CallingInfo extends AuthInfo {
-  extra: { calling: Calling };
+  extra: { calling: Calling; binding?: string };
+}
+
+/** What running a tool gave: its result, and the proposal its call created, if it made a commitment. */
+interface ToolAnswer {
+  result: CallToolResult;
+  proposal?: ElicitedProposal;
 }
 
 export function createMcpRoute(options: McpRouteOptions): McpRoute {
@@ -128,11 +173,19 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     _meta: { ..._meta },
   }));
 
+  // The request states of elicitations, signed with a key derived from the auth secret, made when first needed.
+  let states: RequestStateCodec<RetryState> | undefined;
+  const statesOf = (): RequestStateCodec<RetryState> | undefined => {
+    if (options.secret === undefined) return undefined;
+    states ??= createRetryStates(options.secret());
+    return states;
+  };
+
   /** Runs the tool's operation through execute() for the call; a refusal is a tool result with isError. */
-  async function callTool(calling: Calling, name: string, args: unknown): Promise<CallToolResult> {
+  async function callTool(calling: Calling, name: string, args: unknown): Promise<ToolAnswer> {
     const definition = operations.get(name);
-    if (definition === undefined) return refused(new Refusal("route-not-found", "There is no such tool here."));
-    if ("refusal" in calling) return refused(calling.refusal);
+    if (definition === undefined) return { result: refused(new Refusal("route-not-found", "There is no such tool here.")) };
+    if ("refusal" in calling) return { result: refused(calling.refusal) };
     const { caller, origin } = calling;
     const render = texts[definition.id];
     if (render === undefined) throw new Error(`${definition.id} has no renderer of its markdown.`);
@@ -149,23 +202,88 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     try {
       const output = agentJson(await options.execute(definition.id, caller, args ?? {}, executeOptions));
       const markdown = createAgentView().markdown(toolTexts(render, output, { teams }));
+      const result: CallToolResult = { content: [{ type: "text", text: markdown }], structuredContent: output as Record<string, unknown> };
+      return definition.commitment && isProposalAnswer(output) ? { result, proposal: output.proposal as ElicitedProposal } : { result };
+    } catch (error) {
+      if (error instanceof Refusal) return { result: refused(error) };
+      logger.error("mcp: the tool failed", { operationId: definition.id, error });
+      return { result: failed() };
+    }
+  }
+
+  /**
+   * A tool call: its operation's result, or, for a call that created a
+   * proposal from a client on 2026-07-28 that declares URL-mode elicitation,
+   * the elicitation of the proposal's confirm page with the state of the
+   * retry. A retry that carries the state answers with the proposal instead.
+   */
+  async function answerToolCall(
+    calling: Calling,
+    era: "legacy" | "modern",
+    name: string,
+    args: unknown,
+    context: ServerContext,
+  ): Promise<CallToolResult | InputRequiredResult> {
+    const state = context.mcpReq.requestState<unknown>();
+    if (state !== undefined) return retried(calling, name, args, state);
+    const { result, proposal } = await callTool(calling, name, args);
+    const codec = statesOf();
+    if (proposal === undefined || codec === undefined || options.url === undefined || options.database === undefined) return result;
+    if (!declaresUrlElicitation(era, context)) return result;
+    try {
+      const minted = await codec.mint({ proposal: proposal.id, call: callDigest(name, args) }, context);
+      return confirmPageElicitation(options.url, proposal, minted);
+    } catch (error) {
+      // The proposal exists either way; a client that cannot be sent to its page is pointed to the web inbox.
+      logger.error("mcp: the elicitation could not be made", { error });
+      return result;
+    }
+  }
+
+  /**
+   * The retry of a call that created a proposal, with the state its
+   * elicitation carried, which the SDK has checked with the codec: it answers
+   * at once with the proposal as it is now, and runs nothing again.
+   */
+  async function retried(calling: Calling, name: string, args: unknown, payload: unknown): Promise<CallToolResult> {
+    if ("refusal" in calling) return refused(calling.refusal);
+    const state = retryStateOf(payload);
+    const { caller } = calling;
+    const database = options.database;
+    if (state === undefined || statesOf() === undefined || state.call !== callDigest(name, args) || database === undefined) return refused(stateRefused());
+    if (caller.kind !== "oauth_token" && caller.kind !== "personal_access_token") return refused(stateRefused());
+    try {
+      const proposal = await withOrg(database, (context) => proposalView(context, state.proposal), {
+        readOnly: true,
+        forUser: caller.userId,
+        personalAccessToken: caller.kind === "personal_access_token",
+        issuedAt: caller.kind === "oauth_token" ? caller.issuedAt : undefined,
+      });
+      const output = agentJson({ proposal });
+      const markdown = createAgentView().markdown(toolTexts(() => [], output, { teams: [] }));
       return { content: [{ type: "text", text: markdown }], structuredContent: output as Record<string, unknown> };
     } catch (error) {
       if (error instanceof Refusal) return refused(error);
-      logger.error("mcp: the tool failed", { operationId: definition.id, error });
-      // A failure that is not one of Tiehall's own refusals says nothing about itself, as REST's 500 does.
-      return { isError: true, content: [{ type: "text", text: JSON.stringify(internalErrorProblem().body) }] };
+      logger.error("mcp: the retry failed", { error });
+      return failed();
     }
   }
 
   // One fresh server per call, for whoever the route found the call acts for, on either protocol version.
   const handler: McpHttpHandler = createMcpHandler(
-    ({ authInfo }) => {
+    ({ authInfo, era }) => {
       const calling = (authInfo as CallingInfo | undefined)?.extra.calling;
       if (calling === undefined) throw new Error("The MCP route hands every call to the SDK with whoever it acts for.");
-      const server = new Server({ name: MCP_SERVER_NAME, version }, { capabilities: { tools: {} } });
+      const codec = statesOf();
+      // A retry's state is checked by the codec before the tool's handler runs; a state that fails is refused.
+      const server = new Server(
+        { name: MCP_SERVER_NAME, version },
+        { capabilities: { tools: {} }, ...(codec === undefined ? {} : { requestState: { verify: codec.verify } }) },
+      );
       server.setRequestHandler("tools/list", async () => ({ tools: listed }));
-      server.setRequestHandler("tools/call", async (request) => callTool(calling, request.params.name, request.params.arguments));
+      server.setRequestHandler("tools/call", async (request, context) =>
+        answerToolCall(calling, era, request.params.name, request.params.arguments, context),
+      );
       return server;
     },
     { onerror: (error) => logger.warn("mcp: the SDK refused a call", { error }) },
@@ -196,12 +314,13 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
       const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
       const userAgent = request.headers.get("user-agent") ?? undefined;
       calling = { caller, origin: { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) } };
+      const binding = retryBinding(caller);
       authInfo = {
         // The token itself is not handed on: nothing past the check needs it.
         token: "",
         clientId: caller.kind === "oauth_token" ? caller.clientId : caller.kind,
         scopes: caller.kind === "oauth_token" || caller.kind === "personal_access_token" ? [...caller.scopes] : [],
-        extra: { calling },
+        extra: { calling, ...(binding === undefined ? {} : { binding }) },
       };
     } catch (error) {
       // A person the token check found not to be a member gets a tool error for every tool call, and no data.
@@ -300,6 +419,11 @@ function calledTools(body: Uint8Array): string[] {
 /** The caller as one that came through MCP: an agent's token call is recorded with the surface mcp. */
 function onTheMcpSurface(caller: Caller): Caller {
   return caller.kind === "oauth_token" || caller.kind === "personal_access_token" ? { ...caller, surface: "mcp" } : caller;
+}
+
+/** A failure that is not one of Tiehall's own refusals, as a tool result that says nothing about itself, as REST's 500 does. */
+function failed(): CallToolResult {
+  return { isError: true, content: [{ type: "text", text: JSON.stringify(internalErrorProblem().body) }] };
 }
 
 /** A refusal as a tool result: isError, with the error model's problem, which names its type, as its content. */

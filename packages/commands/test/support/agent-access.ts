@@ -182,6 +182,9 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     authenticate: freshTokenCheck(),
     resourceMetadata: resourceMetadataUrlOf(URL_OF_INSTALL),
     database: install.db,
+    // A proposal's URL-mode elicitation opens its confirm page on the install, and its state is signed with the auth secret.
+    url: URL_OF_INSTALL,
+    secret: () => install.authSecret,
     logger: install.logger,
   });
 

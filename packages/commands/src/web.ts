@@ -163,6 +163,10 @@ export function mcpRoute(env: Environment): McpRoute {
     resourceMetadata: resourceMetadataUrlOf(url),
     database,
     ...(env["TIEHALL_VERSION"] === undefined ? {} : { version: env["TIEHALL_VERSION"] }),
+    // A proposal's URL-mode elicitation opens its confirm page on the install; its request state is signed with a
+    // key derived from TIEHALL_AUTH_SECRET, read when the first state is minted or checked.
+    url,
+    secret: () => readAuthSecret(env),
     logger,
   });
   return mcp;
