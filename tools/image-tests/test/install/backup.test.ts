@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, inject, it } from "vitest";
+import { documented } from "../../src/docs.ts";
 import { Install, openRequest, readRequest, seed } from "../../src/install.ts";
 
 // The backup-and-restore round trip (self-host-install: Backups with the
@@ -12,13 +13,17 @@ import { Install, openRequest, readRequest, seed } from "../../src/install.ts";
 // timestamped file only its owner can read in the backups folder, then records
 // in the database when the backup finished; restore.sh stops the app, restores
 // a dump into an empty database and starts the app again, whose migrate step
-// brings a dump of an older release up to the running one. CI runs this on
-// every pull request and every build of main, and before each release.
+// brings a dump of an older release up to the running one. The test runs the
+// commands as the install docs write them (docs.ts). CI runs this on every
+// pull request and every build of main, and before each release.
 
 const image = inject("image");
 const previousImage = inject("previousImage");
 
 const installs: Install[] = [];
+
+/** The documented restore of this dump, which the docs show with an example file name. */
+const restoreCommand = (dump: string) => documented("backup-restore", { "backups/tiehall-20261001T031500Z.dump": dump });
 
 afterEach(() => {
   for (const install of installs.splice(0)) install.destroy();
@@ -43,7 +48,7 @@ describe("backup.sh and restore.sh", () => {
     const install = await started(image, "tiehall-backup");
     const { token, requestKey, requestTitle } = await seed(install);
 
-    const backup = install.shell("./backup.sh");
+    const backup = install.shell(documented("backup-run"));
 
     expect(backup.status, backup.stderr).toBe(0);
     // A timestamped dump in Postgres's custom format, which only its owner can read, in a folder only its owner can open.
@@ -64,7 +69,7 @@ describe("backup.sh and restore.sh", () => {
     // The database is lost, and restore.sh restores the dump into an empty one.
     const lost = install.compose(["down", "--volumes"], { timeoutSeconds: 120 });
     expect(lost.status, lost.stderr).toBe(0);
-    const restore = install.shell(`./restore.sh backups/${file}`, { timeoutSeconds: 600 });
+    const restore = install.shell(restoreCommand(`backups/${file}`), { timeoutSeconds: 600 });
 
     expect(restore.status, `${restore.stdout}\n${restore.stderr}`).toBe(0);
     await install.healthy();
@@ -79,10 +84,10 @@ describe("backup.sh and restore.sh", () => {
   it("stops the app while it restores, and starts it again once the dump is in", async () => {
     const install = await started(image, "tiehall-restore");
     await seed(install);
-    expect(install.shell("./backup.sh").status).toBe(0);
+    expect(install.shell(documented("backup-run")).status).toBe(0);
     const [file] = dumps(install);
 
-    const restore = install.shell(`./restore.sh backups/${file}`, { timeoutSeconds: 600 });
+    const restore = install.shell(restoreCommand(`backups/${file}`), { timeoutSeconds: 600 });
 
     expect(restore.status, `${restore.stdout}\n${restore.stderr}`).toBe(0);
     const said = restore.stdout;
@@ -107,14 +112,14 @@ describe("backup.sh and restore.sh", () => {
     expect(previousImage, "Set TIEHALL_PREVIOUS_IMAGE to the previous release's image, or the image last built from main").not.toBe("");
     const previous = await started(previousImage, "tiehall-backup-previous");
     const { token, requestKey, requestTitle } = await seed(previous);
-    const backup = previous.shell("./backup.sh");
+    const backup = previous.shell(documented("backup-run"));
     expect(backup.status, backup.stderr).toBe(0);
     const [file] = dumps(previous);
     const dump = join(previous.dir, "backups", file!);
     const appliedBefore = Number(previous.sql("SELECT count(*) FROM tiehall_migrate.applied_migrations"));
 
     const install = await started(image, "tiehall-backup-current");
-    const restore = install.shell(`./restore.sh ${dump}`, { timeoutSeconds: 600 });
+    const restore = install.shell(restoreCommand(dump), { timeoutSeconds: 600 });
 
     expect(restore.status, `${restore.stdout}\n${restore.stderr}`).toBe(0);
     await install.healthy();

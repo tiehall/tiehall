@@ -16,6 +16,7 @@ In development, toward an open-source, self-hosted v1: one company per install, 
 - How it is built, and the decisions behind it: [design](openspec/changes/add-tiehall-oss-v1/design.md)
 - What it does, capability by capability: [specs](openspec/changes/add-tiehall-oss-v1/specs/)
 - The plan: [tasks](openspec/changes/add-tiehall-oss-v1/tasks.md)
+- Installing and running it: [install docs](docs/install.md)
 
 ## License
 

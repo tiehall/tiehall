@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -66,15 +66,29 @@ export class Install {
    * the app published on the install's own port. Nothing runs yet.
    */
   static async create(options: InstallOptions): Promise<Install> {
+    const install = await Install.empty(options);
+    try {
+      for (const file of RELEASE_FILES) copyFileSync(join(DEPLOY, file), join(install.dir, file));
+      const init = install.shell(`docker run --rm --network none ${quote(options.image)} init --url ${quote(install.url)} --image ${quote(options.image)} > .env`);
+      if (init.status !== 0) throw new Error(`init failed: ${init.stderr}`);
+      install.publishOnItsPort();
+      return install;
+    } catch (error) {
+      rmSync(install.dir, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /** A new, empty install folder, for a test that fills it as the docs say; its URL is http://localhost and its own port. */
+  static async empty(options: Pick<InstallOptions, "port" | "name">): Promise<Install> {
     const port = options.port ?? (await freePort());
     const project = `${options.name ?? "tiehall-install"}-${randomBytes(4).toString("hex")}`;
-    const dir = mkdtempSync(join(tmpdir(), `${project}-`));
-    for (const file of RELEASE_FILES) copyFileSync(join(DEPLOY, file), join(dir, file));
-    const install = new Install(dir, project, port);
-    const init = install.shell(`docker run --rm --network none ${quote(options.image)} init --url ${quote(install.url)} --image ${quote(options.image)} > .env`);
-    if (init.status !== 0) throw new Error(`init failed: ${init.stderr}`);
-    install.setEnv("TIEHALL_HTTP_BIND", `127.0.0.1:${port}`);
-    return install;
+    return new Install(mkdtempSync(join(tmpdir(), `${project}-`)), project, port);
+  }
+
+  /** Publishes the app on the install's own port, which init's 127.0.0.1:3000 may not be free for, as an operator changes it in .env. */
+  publishOnItsPort(): void {
+    this.setEnv("TIEHALL_HTTP_BIND", `127.0.0.1:${this.port}`);
   }
 
   /** The environment every command of the install runs with: the Compose project's name, and nothing else of Tiehall or Compose. */
@@ -98,6 +112,27 @@ export class Install {
     });
     if (run.error) throw run.error;
     return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+  }
+
+  /**
+   * Runs a shell command in the install's folder without holding up this
+   * process, for a command that reaches a server of the test itself, such as
+   * one that downloads the release files from it.
+   */
+  shellAsync(command: string, options: { timeoutSeconds?: number } = {}): Promise<Run> {
+    return new Promise((resolve, reject) => {
+      const child = spawn("bash", ["-c", command], { cwd: this.dir, env: this.environment(), stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      const timer = setTimeout(() => child.kill("SIGKILL"), (options.timeoutSeconds ?? 300) * 1000);
+      child.on("error", reject);
+      child.on("close", (status) => {
+        clearTimeout(timer);
+        resolve({ status, stdout, stderr });
+      });
+    });
   }
 
   /** Runs `docker compose` in the install's folder. */

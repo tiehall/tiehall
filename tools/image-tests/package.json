@@ -14,6 +14,7 @@
     "test:install": "vitest run --config vitest.install.config.ts"
   },
   "devDependencies": {
+    "@tiehall/repo-checks": "workspace:*",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "playwright-core": "1.63.0",

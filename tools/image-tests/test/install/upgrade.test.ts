@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from "vitest";
+import { documented } from "../../src/docs.ts";
 import { Install, readRequest, seed } from "../../src/install.ts";
 import { buildFixtureImage, migrationsOf, Registry, removeImage } from "../../src/registry.ts";
 
@@ -16,8 +17,9 @@ import { buildFixtureImage, migrationsOf, Registry, removeImage } from "../../sr
 // migration commits whole or not at all; the migrate step's log says why, and
 // setting the old TIEHALL_IMAGE back and running `docker compose up -d` brings
 // the app back on the old image. Skipping a release works: its migrations and
-// the next release's run in order. The images come from a registry of the
-// test's own, so the pull is real (registry.ts).
+// the next release's run in order. The test runs the commands as the install
+// docs write them (docs.ts); the images come from a registry of the test's
+// own, so the pull is real (registry.ts).
 
 const image = inject("image");
 const previousImage = inject("previousImage");
@@ -64,10 +66,17 @@ function appImage(install: Install): string {
   return install.compose(["ps", "--format", "{{.Image}}", "app"]).stdout.trim();
 }
 
-/** The upgrade as the docs write it: the new TIEHALL_IMAGE in .env, then `docker compose pull && docker compose up -d`. */
+/** The upgrade as the docs write it: a backup, the new TIEHALL_IMAGE in .env, then `docker compose pull && docker compose up -d`. */
 function upgrade(install: Install, to: string) {
+  const backup = install.shell(documented("upgrade-backup"));
+  expect(backup.status, backup.stderr).toBe(0);
   install.setEnv("TIEHALL_IMAGE", to);
-  return install.shell("docker compose pull && docker compose up -d", { timeoutSeconds: 600 });
+  return install.shell(documented("upgrade-pull-up"), { timeoutSeconds: 600 });
+}
+
+/** The docs' check after an upgrade: the services, /healthz on the app's port, and the migrate step's log. */
+function check(install: Install) {
+  return install.shell(documented("upgrade-check", { "127.0.0.1:3000": `127.0.0.1:${install.port}` }));
 }
 
 describe("an upgrade", () => {
@@ -79,6 +88,10 @@ describe("an upgrade", () => {
 
     expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
     await install.healthy();
+    const checked = check(install);
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(checked.stdout).toContain('{"status":"up"}');
+    expect(checked.stdout).toContain("migrate: done");
     expect(appImage(install)).toBe(current);
     // Every migration the new image carries has run, in order, the ones the old image had first.
     const after = applied(install);
@@ -113,7 +126,7 @@ describe("an upgrade", () => {
 
     // Going back to the old image, as the docs write it, brings the app back on the old schema, with the data.
     install.setEnv("TIEHALL_IMAGE", current);
-    const back = install.shell("docker compose up -d", { timeoutSeconds: 600 });
+    const back = install.shell(documented("rollback-up"), { timeoutSeconds: 600 });
     expect(back.status, back.stderr).toBe(0);
     await install.healthy();
     expect(appImage(install)).toBe(current);
