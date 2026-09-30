@@ -79,11 +79,16 @@ function Summary({ request }: { request: Request }): ReactNode {
   );
 }
 
-/** The notice of a request agents flagged needs_human. */
+/**
+ * The notice of a request agents flagged needs_human, which names both human
+ * actions that clear the flag: a message posted in the web UI, and a proposal
+ * on the request confirmed there (agent-safety: Runaway agent loops flag the
+ * request needs_human; design.md, Decisions: D46 (7)).
+ */
 function WaitsForAPerson({ request }: { request: Request }): ReactNode {
   return (
     <p role="alert">
-      <strong>{`${request.key} waits for a person: agents made so many writes on it that their writes are refused until a member posts a message on it here.`}</strong>
+      <strong>{`${request.key} waits for a person: agents made so many writes on it that their writes are refused until a member posts a message on it here or confirms a proposal on it in the web UI.`}</strong>
     </p>
   );
 }

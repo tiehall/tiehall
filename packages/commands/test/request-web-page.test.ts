@@ -152,10 +152,15 @@ describe("the web UI's page of a request", () => {
     expect(textOf((await open("FE-1")).html)).not.toContain("waits for a person");
   });
 
-  it("shows that a request agents flagged needs_human waits for a person", async () => {
+  // Either human action clears the flag: a message posted in the web UI, or a proposal on the request confirmed there
+  // (agent-safety: Runaway agent loops flag the request needs_human; design.md, Decisions: D46 (7)), and the notice
+  // names both.
+  it("shows that a request agents flagged needs_human waits for a person, and what a person does to clear it", async () => {
     const { status, html } = await open("FE-2");
     expect(status).toBe(200);
-    expect(textOf(html)).toContain("FE-2 waits for a person: agents made so many writes on it that their writes are refused until a member posts a message on it here.");
+    expect(textOf(html)).toContain(
+      "FE-2 waits for a person: agents made so many writes on it that their writes are refused until a member posts a message on it here or confirms a proposal on it in the web UI.",
+    );
   });
 
   it("gives the page a new ETag when a proposal is made on the request, since the page lists it", async () => {

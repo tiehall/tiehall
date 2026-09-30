@@ -89,7 +89,7 @@ function row(request: RequestView): string {
     escapeHtml(requester),
     escapeHtml(request.claimant === null ? "nobody" : person(request.claimant)),
     escapeHtml(request.createdAt),
-    request.needsHuman ? "It waits for a person: agents' writes on it are refused until a member posts a message on it." : "",
+    request.needsHuman ? "It waits for a person: agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI." : "",
   ];
   return `        <tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
 }

@@ -120,7 +120,9 @@ describe("the web UI's request lists", () => {
     await install.owner.query("UPDATE requests SET needs_human = true WHERE title = 'Expose the settings API'");
     try {
       const { html } = await open(dave, "?list=all");
-      expect(/<tr><td><a href="\/BE-1">BE-1<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).toContain("waits for a person");
+      expect(/<tr><td><a href="\/BE-1">BE-1<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).toContain(
+        "It waits for a person: agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI.",
+      );
       expect(/<tr><td><a href="\/FE-2">FE-2<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).not.toContain("waits for a person");
     } finally {
       await install.owner.query("UPDATE requests SET needs_human = false WHERE title = 'Expose the settings API'");
