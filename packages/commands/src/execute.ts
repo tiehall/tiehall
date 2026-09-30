@@ -247,6 +247,12 @@ export interface ExecuteOptions {
   /** Runs the call in a read-only transaction, in which any write fails, as a web page's read does. */
   readOnly?: boolean;
   /**
+   * Told the id of the proposal the call created through propose(), such as
+   * the MCP route, which elicits a confirmation only for a proposal its call
+   * created, and never for one the call answers with after ending it.
+   */
+  proposed?: (proposalId: string) => void;
+  /**
    * A refusal the surface found in the call itself before execute() ran, such
    * as a REST body that is not JSON: it is given after the membership
    * re-check, so a removed member's call gets 403 whatever it sends.
@@ -421,9 +427,11 @@ export function createExecute(services: ExecuteServices): Execute {
               },
               writeOptions,
             ),
-          propose: (request, commitment) => {
+          propose: async (request, commitment) => {
             if (!definition.commitment) throw new Error(`${commandId} is not flagged as a commitment, so it creates no proposal.`);
-            return createProposal(handlerContext, request, commitment);
+            const answer = await createProposal(handlerContext, request, commitment);
+            options.proposed?.(answer.proposal.id);
+            return answer;
           },
         };
         const run = async () => {

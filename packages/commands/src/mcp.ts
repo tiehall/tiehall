@@ -103,7 +103,9 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // input-required result instead: the URL-mode elicitation of the proposal's
 // confirm page, and a signed request state for the retry
 // (mcp-elicitation.ts). Every other client, and every connection on
-// 2025-11-25, gets the proposal, which names its web inbox.
+// 2025-11-25, gets the proposal, which names its web inbox. Only a proposal
+// the call created is elicited, as execute() reports it: a call that answers
+// with a proposal it ended, such as propose withdrawing one, gets its answer.
 //
 // The retry that carries the state (agent-surfaces: Retrying after an
 // elicitation; agent-surfaces: Accepting an elicitation is not consent) is
@@ -206,6 +208,8 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     if (render === undefined) throw new Error(`${definition.id} has no renderer of its markdown.`);
     // The keys of the caller's teams, read in the call's own transaction, decide each text's origin.
     let teams: string[] = [];
+    // The proposal the call created, if it made a commitment; a call that ended a proposal created none.
+    let created: string | undefined;
     const executeOptions: ExecuteOptions = {
       origin,
       around: async (context, run) => {
@@ -213,12 +217,16 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         if ("userId" in caller && caller.userId !== undefined) teams = (await teamsOfMember(context, caller.userId)).map(({ key }) => key);
         return output;
       },
+      proposed: (proposalId) => {
+        created = proposalId;
+      },
     };
     try {
       const output = agentJson(await options.execute(definition.id, caller, args ?? {}, executeOptions));
       const markdown = createAgentView().markdown(toolTexts(render, output, { teams }));
       const result: CallToolResult = { content: [{ type: "text", text: markdown }], structuredContent: output as Record<string, unknown> };
-      return definition.commitment && isProposalAnswer(output) ? { result, proposal: output.proposal as ElicitedProposal } : { result };
+      const proposal = definition.commitment && isProposalAnswer(output) ? (output.proposal as ElicitedProposal) : undefined;
+      return proposal !== undefined && created !== undefined && proposal.id === created ? { result, proposal } : { result };
     } catch (error) {
       if (error instanceof Refusal) return { result: refused(error) };
       logger.error("mcp: the tool failed", { operationId: definition.id, error });

@@ -166,6 +166,25 @@ describe("a URL-mode elicitation for a proposal, to a 2026-07-28 client that dec
     }
   });
 
+  it("is not sent for a call that ends a proposal instead of creating one: withdrawing it answers with the proposal it ended", async () => {
+    const request = await openToFe();
+    const client = await clientOf(sam, URL_ELICITATION);
+    try {
+      elicitationOf(await callManually(client, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-16", expectedRevision: 1 }));
+      const proposal = await newestProposal(request.id);
+      const withdrawn = await callManually(client, "propose", { kind: "withdraw_proposal", proposal: proposal.id });
+      expect(withdrawn.resultType).not.toBe("input_required");
+      expect(withdrawn.inputRequests).toBeUndefined();
+      expect(withdrawn.requestState).toBeUndefined();
+      expect(withdrawn["structuredContent"]).toMatchObject({ proposal: { id: proposal.id, state: "withdrawn" } });
+      expect(textOf(withdrawn as unknown as CallToolResult)).toContain("withdrawn");
+      expect(JSON.stringify(withdrawn)).not.toContain("/confirm/");
+      expect((await newestProposal(request.id)).state).toBe("withdrawn");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("gives a URL that carries no personal data and is not pre-authenticated: a browser without a session is sent to sign in", async () => {
     const request = await openToFe();
     const client = await clientOf(bob, URL_ELICITATION);
