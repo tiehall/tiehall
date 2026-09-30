@@ -152,6 +152,7 @@ export function mcpRoute(env: Environment): McpRoute {
     execute,
     authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
     resourceMetadata: resourceMetadataUrlOf(url),
+    database,
     ...(env["TIEHALL_VERSION"] === undefined ? {} : { version: env["TIEHALL_VERSION"] }),
     logger,
   });

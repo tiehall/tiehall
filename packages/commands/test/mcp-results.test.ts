@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
-import { openRequestInTheWebUi } from "./support/requests.ts";
+import { addUser } from "./support/members.ts";
+import { openRequestInTheWebUi, sessionOf } from "./support/requests.ts";
 
 // What a tool call answers (agent-surfaces: Tool results carry structured
 // content and fenced markdown; public-api: One error model for Tiehall's own
@@ -13,15 +14,16 @@ import { openRequestInTheWebUi } from "./support/requests.ts";
 // markdown rendering in which every string Tiehall did not generate is fenced
 // with its origin. Every refusal is a tool result with isError whose content
 // is the error model's problem, naming its type, while the OAuth refusals stay
-// HTTP statuses. The contract tests wait as expected failures until 16.4 turns
-// them into plain tests; those that the tool calls of 16.3 already pass are
-// plain tests since.
+// HTTP statuses. The contract tests waited as expected failures until 16.4,
+// or, for those that the tool calls of 16.3 already passed, 16.3, turned them
+// into plain tests.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
 let sam: McpPerson;
 let lee: McpPerson;
 let reader: McpPerson;
+let patHolder: McpPerson;
 /** A request to FE, opened by Sam from QA, whose thread holds a message Dana posted for FE. */
 let fe: { key: string };
 
@@ -33,6 +35,7 @@ beforeAll(async () => {
   sam = await mcpPerson(harness, "sam-be-qa", { teams: ["BE", "QA"] });
   lee = await mcpPerson(harness, "lee-fe", { teams: ["FE"] });
   reader = await mcpPerson(harness, "rory-fe-read-only", { teams: ["FE"], scopes: ["requests:read"] });
+  patHolder = await mcpPerson(harness, "pat-fe", { teams: ["FE"] });
   fe = await openRequestInTheWebUi(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA", title: "Add a dark mode" });
   const posted = await harness.install
     .web(dana.session)
@@ -71,12 +74,12 @@ describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (versi
     expect(textOf(result)).toContain(fe.key);
   });
 
-  it.fails("fences another team's text for a reader of another team, naming its origin", async () => {
+  it("fences another team's text for a reader of another team, naming its origin", async () => {
     const result = await call(sam, version, "get_request", { request: fe.key });
     expect(textOf(result)).toMatch(fenced("other team", FE_MESSAGE));
   });
 
-  it.fails("fences the reader's own team's text too, naming it as the same team's", async () => {
+  it("fences the reader's own team's text too, naming it as the same team's", async () => {
     const result = await call(dana, version, "get_request", { request: fe.key });
     expect(textOf(result)).toMatch(fenced("same team", FE_MESSAGE));
     expect(textOf(result)).toMatch(fenced("other team", "Add a dark mode"));
@@ -92,7 +95,7 @@ describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (versi
     expect(log.find(({ rpcMethod }) => rpcMethod === "tools/call")?.status).toBe(200);
   });
 
-  it.fails("answers a token without the scope a tool needs with HTTP 403 insufficient_scope naming the scope, and runs nothing", async () => {
+  it("answers a token without the scope a tool needs with HTTP 403 insufficient_scope naming the scope, and runs nothing", async () => {
     const log: McpExchange[] = [];
     const before = await harness.install.owner.query("SELECT count(*) FROM events");
     await expect(call(reader, version, "claim", { key: fe.key }, log)).rejects.toThrow();
@@ -124,7 +127,25 @@ describe("a removed member's agent", () => {
     }
   });
 
-  it.fails("holding an access token issued before they rejoined gets HTTP 401 invalid_token, the OAuth refusal of a revoked token", async () => {
+  it("holding a personal access token that the removal revoked gets a tool error for every tool call, and no data", async () => {
+    const pat = await harness.personalAccessToken({ userId: patHolder.userId, cookie: patHolder.cookie }, { scopes: ["requests:read"] });
+    const admin = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada-admin" }));
+    const removed = await harness.install.confirm(admin, "members.remove", { userId: patHolder.userId });
+    expect(removed.status).toBe(200);
+    for (const version of PROTOCOL_VERSIONS) {
+      const client = await connectMcp(harness, { token: pat, version });
+      try {
+        const result = await client.callTool({ name: "get_request", arguments: { request: fe.key } });
+        const problem = problemOf(result);
+        expect(problem.type, version).toBe(`${PROBLEM}removed-member`);
+        expect(textOf(result), version).not.toContain("Add a dark mode");
+      } finally {
+        await client.close();
+      }
+    }
+  });
+
+  it("holding an access token issued before they rejoined gets HTTP 401 invalid_token, the OAuth refusal of a revoked token", async () => {
     // Lee was removed and has rejoined since the token was issued, so the removal revoked it.
     await harness.install.owner.query("UPDATE members SET joined_at = now() + interval '1 second' WHERE user_id = $1", [lee.userId]);
     for (const version of PROTOCOL_VERSIONS) {

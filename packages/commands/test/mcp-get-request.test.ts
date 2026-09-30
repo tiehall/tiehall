@@ -17,7 +17,8 @@ import { addUser } from "./support/members.ts";
 // structured content. A page says how to fetch the next one, and every result
 // shows whether the request waits for a person (needs_human). The contract
 // tests wait as expected failures until 16.7 turns them into plain tests;
-// those that the key-only read of 16.3 already passes are plain tests since.
+// those that the key-only read of 16.3 and the markdown of 16.4 already pass
+// are plain tests since.
 
 /** The most characters a page may hold: 8,000 tokens at 4 characters each. */
 const PAGE_CHARACTERS = 32_000;
@@ -175,7 +176,7 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(problem.type).toBe(`${PROBLEM}invalid-input`);
   });
 
-  it.fails("shows whether the request waits for a person", async () => {
+  it("shows whether the request waits for a person", async () => {
     expect(((await getRequest(dana, version, { request: small.key })).structuredContent as Page).request.needsHuman).toBe(false);
     await harness.install.owner.query("UPDATE requests SET needs_human = true WHERE id = $1", [small.id]);
     try {

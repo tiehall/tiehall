@@ -205,8 +205,7 @@ describe("the same rules on /mcp", () => {
     expect(answer.headers.get("www-authenticate")).toContain(`resource_metadata="${URL_OF_INSTALL}/.well-known/oauth-protected-resource/mcp"`);
   });
 
-  // A tool call that needs a scope the token lacks is refused over HTTP before it runs, which 16.4 builds for the tools 16.3 registers.
-  it.fails("answers a token without the scope a tool needs with 403 insufficient_scope naming that scope, and runs nothing", async () => {
+  it("answers a token without the scope a tool needs with 403 insufficient_scope naming that scope, and runs nothing", async () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     const before = Number((await harness.install.owner.query("SELECT count(*) FROM events")).rows[0].count);
     const answer = await harness.handle(toolCall("claim", { key: "FE-1" }, { authorization: `Bearer ${accessToken}` }));

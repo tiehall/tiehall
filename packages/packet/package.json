@@ -14,7 +14,8 @@
     "./notices": "./src/notices.ts",
     "./render": "./src/render.ts",
     "./schema/v1-beta.json": "./schema/v1-beta.json",
-    "./proposals": "./src/proposals.ts"
+    "./proposals": "./src/proposals.ts",
+    "./tool-text": "./src/tool-text.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

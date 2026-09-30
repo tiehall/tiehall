@@ -181,6 +181,7 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     execute: install.execute,
     authenticate: freshTokenCheck(),
     resourceMetadata: resourceMetadataUrlOf(URL_OF_INSTALL),
+    database: install.db,
     logger: install.logger,
   });
 
