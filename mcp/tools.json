@@ -185,7 +185,8 @@
           "untrusted"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers.",
@@ -305,7 +306,8 @@
           "apis"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",
@@ -905,7 +907,8 @@
           "parts"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link.",
@@ -2232,7 +2235,8 @@
           }
         },
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
@@ -2447,7 +2451,8 @@
           "requests"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one.",
@@ -3302,7 +3307,8 @@
           "untrusted"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
@@ -3723,7 +3729,8 @@
           "request"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Propose a commitment that people confirm in the web UI: set, move or remove a request's due date, change its scope (its need, acceptance criteria or contract section) with the next revision of its packet, reassign it to another team, or withdraw it; or withdraw a pending proposal you proposed, by its id. A scope change before the request is claimed is added to the packet at once.",
@@ -6363,7 +6370,8 @@
           }
         },
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
@@ -7609,7 +7617,8 @@
           }
         },
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     },
     {
       "description": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, and the Tiehall install, by its URL.",
@@ -7666,7 +7675,8 @@
           "install"
         ],
         "type": "object"
-      }
+      },
+      "stability": "alpha"
     }
   ]
 }

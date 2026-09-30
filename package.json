@@ -29,6 +29,7 @@
     "check:confirmations": "node tools/repo-checks/src/check-confirmations.ts",
     "check:security-events": "node tools/repo-checks/src/check-security-events.ts",
     "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",
+    "check:tool-compat": "node tools/repo-checks/src/check-tool-compat.ts",
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts"
   },

@@ -143,7 +143,9 @@ export {
   toolDescriptions,
   toolListing,
   toolReadsOnly,
+  toolSnapshot,
   type JsonSchema,
   type ToolDescription,
   type ToolListing,
+  type ToolSnapshotEntry,
 } from "./tool-schemas.ts";

@@ -2,8 +2,9 @@ name: API compatibility
 
 # Notice before a breaking change, enforced on every pull request
 # (public-api: Notice before a breaking change is enforced in CI; public-api:
-# The `api-breaking` label for urgent security fixes; handoff-packet: Breaking
-# packet changes before publication). It lives apart from ci.yml because it
+# The `api-breaking` label for urgent security fixes; public-api: MCP tools
+# follow the same compatibility rules; handoff-packet: Breaking packet changes
+# before publication). It lives apart from ci.yml because it
 # also runs when a label is added or removed, so adding the api-breaking label
 # runs the checks again without a new push.
 
@@ -52,6 +53,18 @@ jobs:
       # breaking to openapi/changelog.json and bumps info.version. The labels
       # come from the event, through the environment, never into the script.
       - run: node tools/repo-checks/src/check-api-compat.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+      # Compares mcp/tools.json at the merge base with the pull request's, with
+      # the same oasdiff and notice periods, reading each tool as an operation
+      # at the stability level and with the deprecation the snapshot records:
+      # a beta tool is removed, or gains a required argument, only after the
+      # notice, and a stable tool only gains things. With the api-breaking
+      # label, a break passes only when the pull request also adds a changelog
+      # entry of kind breaking. ci.yml's MCP tools job has checked that the
+      # snapshot is what the catalog generates.
+      - run: node tools/repo-checks/src/check-tool-compat.ts
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Catalog } from "./catalog.ts";
-import type { CommandDefinition, StabilityLevel } from "./command.ts";
+import type { CommandDefinition, Deprecation, StabilityLevel } from "./command.ts";
 import { proposalAnswer } from "./proposals.ts";
 
 // Tool schemas that current clients accept (agent-surfaces: Tool schemas that
@@ -28,7 +28,12 @@ import { proposalAnswer } from "./proposals.ts";
 //   the listed output schema.
 // The schemas are computed once per catalog. Their snapshot, mcp/tools.json,
 // is committed; CI regenerates it and lints it on every pull request, so every
-// change to a tool is reviewed as a diff of that file.
+// change to a tool is reviewed as a diff of that file. The snapshot also
+// records each tool's stability level and, once deprecated, its deprecation
+// dates, those of its operation, so that CI can compare it at a pull
+// request's merge base with the pull request's by the notice rules of each
+// tool's operation (public-api: MCP tools follow the same compatibility
+// rules; tools/repo-checks/src/tool-compat.ts).
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -237,6 +242,30 @@ export function toolDescriptions(catalog: Catalog): readonly ToolDescription[] {
   return tools;
 }
 
+/** A tool as mcp/tools.json records it: as the tool list shows it, with its operation's stability level and deprecation. */
+export interface ToolSnapshotEntry extends ToolDescription {
+  stability: StabilityLevel;
+  deprecated?: Deprecation;
+}
+
+const SNAPSHOTS = new WeakMap<Catalog, readonly ToolSnapshotEntry[]>();
+
+/** Every tool the catalog offers on MCP, sorted by name, as the snapshot records it; computed once per catalog. */
+export function toolSnapshot(catalog: Catalog): readonly ToolSnapshotEntry[] {
+  let snapshot = SNAPSHOTS.get(catalog);
+  if (snapshot === undefined) {
+    const byTool = new Map(catalog.commands.map((definition) => [definition.tool, definition]));
+    snapshot = toolDescriptions(catalog).map((description) => {
+      const definition = byTool.get(description.name);
+      if (definition === undefined) throw new Error(`The tool ${description.name} has no operation.`);
+      const { stability, deprecated } = definition;
+      return { ...description, stability, ...(deprecated === undefined ? {} : { deprecated: { ...deprecated } }) };
+    });
+    SNAPSHOTS.set(catalog, snapshot);
+  }
+  return snapshot;
+}
+
 // Tool annotations and stability levels (agent-surfaces: Tool annotations and
 // stability levels; design.md, Decisions this change rests on: D28 #65). The
 // tool list gives every tool MCP annotations and, in its _meta, the stability
@@ -283,7 +312,7 @@ export function toolListing(catalog: Catalog): readonly ToolListing[] {
 }
 
 /** The snapshot as it is committed: `{ "tools": [...] }` with every object's keys sorted, and a final newline. */
-export function serializeToolSnapshot(tools: readonly ToolDescription[]): string {
+export function serializeToolSnapshot(tools: readonly ToolSnapshotEntry[]): string {
   return `${JSON.stringify(sortKeys({ tools }), null, 2)}\n`;
 }
 
@@ -299,7 +328,7 @@ function sortKeys(value: unknown): unknown {
 
 /** What differs between the committed snapshot and the one the catalog generates; undefined when nothing does. */
 export function toolSnapshotDrift(catalog: Catalog, committed: string): string | undefined {
-  const tools = toolDescriptions(catalog);
+  const tools = toolSnapshot(catalog);
   const generated = serializeToolSnapshot(tools);
   if (generated === committed) return undefined;
   const byName = (list: readonly { name: string }[]) => new Map(list.map((tool) => [tool.name, JSON.stringify(sortKeys(tool))]));

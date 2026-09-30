@@ -13,6 +13,7 @@ import {
   toolDescriptions,
   toolListing,
   toolReadsOnly,
+  toolSnapshot,
   toolSnapshotDrift,
   toolSnapshotProblems,
 } from "../src/tool-schemas.ts";
@@ -24,7 +25,9 @@ import {
 // root of type object, no composition at the root, and variants as a `kind`
 // enum plus optional fields, while execute() still validates with the zod
 // union. The tools' names, descriptions and schemas are committed as a
-// snapshot that CI regenerates and lints on every pull request.
+// snapshot that CI regenerates and lints on every pull request, with each
+// tool's stability level and deprecation, which the compatibility check reads
+// (public-api: MCP tools follow the same compatibility rules).
 
 const Person = z.object({ login: z.string().describe("The person's GitHub login.") }).meta({ id: "Person" });
 
@@ -258,14 +261,31 @@ describe("the snapshot lint", () => {
     expect(toolSnapshotDrift(CATALOG, committed)).toBeUndefined();
   });
 
+  it("records each tool with its operation's stability level and, once deprecated, its deprecation dates", () => {
+    const deprecated = { since: "2026-12-01", sunset: "2026-12-15" };
+    const catalog = defineCatalog([tool({ stability: "beta", deprecated }), tool({ id: "reports.list", tool: "list_reports", input: z.object({}) })]);
+    const [filed, listed] = toolSnapshot(catalog);
+    expect(filed).toEqual({ ...toolDescriptions(catalog)[0], stability: "beta", deprecated });
+    expect(listed).toEqual({ ...toolDescriptions(catalog)[1], stability: "alpha" });
+    expect(Object.keys(listed ?? {})).not.toContain("deprecated");
+    expect(toolSnapshot(catalog)).toBe(toolSnapshot(catalog));
+    // The committed snapshot records every tool's level.
+    const committed = JSON.parse(readFileSync(committedToolSnapshotPath(), "utf8")) as { tools: { name: string; stability?: string }[] };
+    for (const { name, stability } of committed.tools) {
+      expect(stability, name).toBe(CATALOG.commands.find(({ tool: toolName }) => toolName === name)?.stability);
+    }
+  });
+
   it("reports a tool change that was not regenerated, as a diff of the snapshot", () => {
     const catalog = defineCatalog([tool()]);
-    const committed = serializeToolSnapshot(toolDescriptions(catalog));
+    const committed = serializeToolSnapshot(toolSnapshot(catalog));
     expect(toolSnapshotDrift(catalog, committed)).toBeUndefined();
     const changed = defineCatalog([tool({ summary: "File a bug or a feature report." })]);
     expect(toolSnapshotDrift(changed, committed)).toContain("pnpm mcp:generate");
-    // A removed tool shows too.
+    // A removed tool shows too, and so does a new level or a deprecation.
     expect(toolSnapshotDrift(defineCatalog([]), committed)).toContain("file_report");
+    expect(toolSnapshotDrift(defineCatalog([tool({ stability: "beta" })]), committed)).toContain("file_report (changed)");
+    expect(toolSnapshotDrift(defineCatalog([tool({ deprecated: { since: "2026-12-01" } })]), committed)).toContain("file_report (changed)");
   });
 });
 
