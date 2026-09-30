@@ -283,6 +283,14 @@ export {
   type OutboundRefusalReason,
 } from "./outbound.ts";
 export { createMcpRoute, MCP_SERVER_NAME, type McpRoute, type McpRouteOptions } from "./mcp.ts";
+export {
+  bindingContext,
+  callDigest,
+  createRetryStates,
+  REQUEST_STATE_TTL_SECONDS,
+  retryBinding,
+  type RetryState,
+} from "./mcp-elicitation.ts";
 export { TOOL_TEXTS, toolTexts, type ToolText } from "./mcp-texts.ts";
 export { createRestHandler, type RestHandler, type RestOptions } from "./rest.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";

@@ -59,6 +59,21 @@ export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),
 };
 
+/**
+ * The texts of a retry after an elicitation (agent-surfaces: Retrying after an
+ * elicitation): a line in Tiehall's words while the proposal waits, the
+ * proposal, and, once the commitment took effect, the operation's output as it
+ * is now through its renderer.
+ */
+export function retriedTexts(proposal: unknown, applied: { output: unknown; render: ToolText } | undefined, reader: Reader): AgentText[] {
+  const view = proposal as ProposalJson;
+  const waiting: AgentText[] =
+    view.state === "pending"
+      ? [{ origin: "tiehall", text: `Proposal ${view.id} is waiting for confirmation, so nothing has changed yet; a person confirms or rejects it in Tiehall's web UI.` }]
+      : [];
+  return [...waiting, { origin: "tiehall", text: proposalText(view) }, ...(applied === undefined ? [] : applied.render(applied.output, reader))];
+}
+
 /** The texts of a tool's result: the proposal a commitment created, or the operation's output through its renderer. */
 export function toolTexts(render: ToolText, output: unknown, reader: Reader): AgentText[] {
   if (isProposalAnswer(output)) return [{ origin: "tiehall", text: proposalText(output.proposal as ProposalJson) }];

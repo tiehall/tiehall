@@ -9,7 +9,7 @@ import {
   type ServerContext,
   type Tool,
 } from "@modelcontextprotocol/server";
-import { isProposalAnswer, toolListing, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { isProposalAnswer, proposeTool, setRequestStatus, toolListing, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, toolError } from "@tiehall/core";
 import type { Database } from "@tiehall/db";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
@@ -19,6 +19,7 @@ import type { Caller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
 import { createLogger, type Logger } from "./log.ts";
 import {
+  bindingContext,
   callDigest,
   confirmPageElicitation,
   createRetryStates,
@@ -29,11 +30,13 @@ import {
   type ElicitedProposal,
   type RetryState,
 } from "./mcp-elicitation.ts";
-import { TOOL_TEXTS, toolTexts, type ToolText } from "./mcp-texts.ts";
+import { retriedTexts, TOOL_TEXTS, toolTexts, type ToolText } from "./mcp-texts.ts";
 import { teamsOfMember } from "./members.ts";
+import { packetRevisionOf } from "./packet-revisions.ts";
 import { proposalView } from "./proposals.ts";
+import { requestView } from "./request-views.ts";
 import type { Origin } from "./write.ts";
-import { withOrg } from "./with-org.ts";
+import { withOrg, type OrgContext } from "./with-org.ts";
 
 // The install's MCP endpoint, /mcp (agent-surfaces: Four agent surfaces;
 // agent-surfaces: One MCP endpoint for both protocol versions; agent-access:
@@ -100,9 +103,21 @@ import { withOrg } from "./with-org.ts";
 // input-required result instead: the URL-mode elicitation of the proposal's
 // confirm page, and a signed request state for the retry
 // (mcp-elicitation.ts). Every other client, and every connection on
-// 2025-11-25, gets the proposal, which names its web inbox. The retry that
-// carries the state answers at once with the proposal as it is now, and
-// creates nothing.
+// 2025-11-25, gets the proposal, which names its web inbox.
+//
+// The retry that carries the state (agent-surfaces: Retrying after an
+// elicitation; agent-surfaces: Accepting an elicitation is not consent) is
+// checked by the route before the SDK sees it: a state that was changed, that
+// has expired, that is bound to another user or client, or that was issued for
+// another call is refused with HTTP 403 and the problem type
+// request-state-refused, since the SDK's own refusal would be a JSON-RPC error
+// inside an HTTP 200. A state the check admits answers at once, and runs
+// nothing again, whatever the client answered to the elicitation, since
+// accepting it only means the person agreed to open the page: with the
+// applied result, the operation's output as it is now beside the proposal,
+// once the commitment took effect; with the proposal and how it ended, once it
+// ended without taking effect; and otherwise with the proposal, waiting for
+// confirmation, whose outcome reaches the user later.
 
 /** How the MCP server names itself to clients. */
 export const MCP_SERVER_NAME = "tiehall";
@@ -242,8 +257,10 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
 
   /**
    * The retry of a call that created a proposal, with the state its
-   * elicitation carried, which the SDK has checked with the codec: it answers
-   * at once with the proposal as it is now, and runs nothing again.
+   * elicitation carried, which the route and the SDK have checked: it answers
+   * at once by the proposal as it is now, and runs nothing again. Once the
+   * commitment took effect, the result is the operation's output as it is now,
+   * the applied result, beside the proposal.
    */
   async function retried(calling: Calling, name: string, args: unknown, payload: unknown): Promise<CallToolResult> {
     if ("refusal" in calling) return refused(calling.refusal);
@@ -252,21 +269,57 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     const database = options.database;
     if (state === undefined || statesOf() === undefined || state.call !== callDigest(name, args) || database === undefined) return refused(stateRefused());
     if (caller.kind !== "oauth_token" && caller.kind !== "personal_access_token") return refused(stateRefused());
+    const definition = operations.get(name);
     try {
-      const proposal = await withOrg(database, (context) => proposalView(context, state.proposal), {
-        readOnly: true,
-        forUser: caller.userId,
-        personalAccessToken: caller.kind === "personal_access_token",
-        issuedAt: caller.kind === "oauth_token" ? caller.issuedAt : undefined,
-      });
-      const output = agentJson({ proposal });
-      const markdown = createAgentView().markdown(toolTexts(() => [], output, { teams: [] }));
-      return { content: [{ type: "text", text: markdown }], structuredContent: output as Record<string, unknown> };
+      const { proposal, applied, teams } = await withOrg(
+        database,
+        async (context) => {
+          const view = await proposalView(context, state.proposal);
+          const own = view.state === "applied" && definition !== undefined ? await appliedOutput(definition, context, view.request.id) : undefined;
+          return { proposal: view, applied: own, teams: (await teamsOfMember(context, caller.userId)).map(({ key }) => key) };
+        },
+        {
+          readOnly: true,
+          forUser: caller.userId,
+          personalAccessToken: caller.kind === "personal_access_token",
+          issuedAt: caller.kind === "oauth_token" ? caller.issuedAt : undefined,
+        },
+      );
+      const render = definition === undefined ? undefined : texts[definition.id];
+      const own = applied === undefined || render === undefined ? undefined : { output: agentJson(applied) as Record<string, unknown>, render };
+      const output = agentJson({ ...(own?.output ?? {}), proposal }) as Record<string, unknown>;
+      const markdown = createAgentView().markdown(retriedTexts(output["proposal"], own, { teams }));
+      return { content: [{ type: "text", text: markdown }], structuredContent: output };
     } catch (error) {
       if (error instanceof Refusal) return refused(error);
       logger.error("mcp: the retry failed", { error });
       return failed();
     }
+  }
+
+  /**
+   * The refusal of a retried tool call whose request state is not valid for
+   * it, found before the SDK sees the call: one that was changed, that has
+   * expired, that is bound to another user or client, or that was issued for
+   * another call; none when the body retries no call with a state, or every
+   * state it carries is valid. A removed member's retry gets that removal.
+   */
+  async function stateRefusal(calling: Calling, binding: string | undefined, body: Uint8Array): Promise<Refusal | undefined> {
+    const retries = retriedCalls(body);
+    if (retries.length === 0) return undefined;
+    if ("refusal" in calling) return calling.refusal;
+    const codec = statesOf();
+    for (const { name, args, state } of retries) {
+      if (codec === undefined || binding === undefined || typeof state !== "string") return stateRefused();
+      try {
+        const payload = retryStateOf(await codec.verify(state, bindingContext(binding)));
+        if (payload === undefined || payload.call !== callDigest(name, args)) return stateRefused();
+      } catch {
+        // The codec says why only as a fixed reason code, which the refusal need not repeat.
+        return stateRefused();
+      }
+    }
+    return undefined;
   }
 
   // One fresh server per call, for whoever the route found the call acts for, on either protocol version.
@@ -334,6 +387,9 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         return internalError();
       }
     }
+    // A retry's request state that is not valid for it is refused here, as an HTTP status, before anything runs.
+    const refusedState = await stateRefusal(calling, authInfo.extra.binding, body);
+    if (refusedState !== undefined) return problem(refusedState);
     try {
       // The SDK reads the body again, from a request that carries the bytes the route read.
       const forwarded = new Request(request.url, {
@@ -396,6 +452,40 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
 
 /** Reads a body's bytes as UTF-8 text. */
 const decoder = new TextDecoder();
+
+/** The operation's output as it is now, for a commitment that took effect: the applied result a retry answers with. */
+const APPLIED_OUTPUTS: Readonly<Record<string, (context: OrgContext, requestId: string) => Promise<unknown>>> = {
+  [setRequestStatus.id]: (context, requestId) => requestView(context, requestId),
+  [proposeTool.id]: async (context, requestId) => ({ request: await requestView(context, requestId), packet: await packetRevisionOf(context, requestId) }),
+};
+
+/** The applied result of the operation, validated against its output schema; none for an operation that has no reader of it. */
+async function appliedOutput(definition: CommandDefinition, context: OrgContext, requestId: string): Promise<unknown> {
+  const read = APPLIED_OUTPUTS[definition.id];
+  if (read === undefined) return undefined;
+  const output = definition.output.safeParse(await read(context, requestId));
+  return output.success ? output.data : undefined;
+}
+
+/** The tool calls of a body's JSON-RPC messages that carry a request state: each one's tool, arguments and state as sent. */
+function retriedCalls(body: Uint8Array): { name: string; args: unknown; state: unknown }[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decoder.decode(body));
+  } catch {
+    return [];
+  }
+  const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  const retries: { name: string; args: unknown; state: unknown }[] = [];
+  for (const message of messages) {
+    if (typeof message !== "object" || message === null) continue;
+    const { method, params } = message as { method?: unknown; params?: unknown };
+    if (method !== "tools/call" || typeof params !== "object" || params === null || !Object.hasOwn(params, "requestState")) continue;
+    const { name, arguments: args, requestState } = params as { name?: unknown; arguments?: unknown; requestState?: unknown };
+    retries.push({ name: typeof name === "string" ? name : "", args, state: requestState });
+  }
+  return retries;
+}
 
 /** The names of the tools the JSON-RPC messages of a body call; none for a body that is not JSON. */
 function calledTools(body: Uint8Array): string[] {

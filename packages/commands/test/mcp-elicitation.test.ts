@@ -1,9 +1,10 @@
 import type { CallToolResult, Client } from "@modelcontextprotocol/client";
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { bindingContext, callDigest, createRetryStates, expireProposals, REQUEST_STATE_TTL_SECONDS, retryBinding } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { connectMcp, LEGACY, mcpPerson, MODERN, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
+import { connectMcp, LEGACY, mcpPerson, MODERN, PROBLEM, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
 import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 
 // URL-mode elicitation for MCP clients (agent-surfaces: URL-mode elicitation
@@ -30,6 +31,18 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // id, the confirmations it needs and when it expires, and the text says it
 // waits in its accountable human's web inbox. Nothing in it leads to the
 // confirm page.
+//
+// Retrying after an elicitation (agent-surfaces: Retrying after an
+// elicitation; public-api: One error model for Tiehall's own refusals;
+// design.md, Technical decisions: T9; design.md, Readings to confirm with the
+// founder: R13). The client retries the call with the request state the
+// elicitation carried, signed and bound to the user the token acts for, the
+// client and the proposal, and valid 8 days. The retry answers at once, with
+// the applied result once the commitment took effect, with how the proposal
+// ended once it ended without taking effect, and with the proposal waiting for
+// confirmation while it waits, the other side's confirmation included. A state
+// bound to another user or client, one that was changed, one for another call
+// and one that expired are refused before anything runs, with HTTP 403.
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
@@ -315,5 +328,197 @@ describe("a proposal for a client without URL-mode elicitation", () => {
     const standing = await harness.install.web(bob.session).read<{ waiting: { id: string }[] }>("inbox.standing_list", {});
     if (!standing.ok) throw new Error(`inbox.standing_list answered ${standing.problem.status}`);
     expect(standing.output.waiting.map(({ id }) => id)).toContain(proposal.id);
+  });
+});
+
+describe("the retry of a call whose proposal came as an elicitation", () => {
+  /** A call made in manual mode that created a proposal and got its elicitation: its tool, arguments, proposal and state. */
+  interface Elicited {
+    name: string;
+    args: Record<string, unknown>;
+    proposal: string;
+    state: string;
+  }
+
+  /** Makes the call as the person's elicitation-capable client and returns what the retry needs. */
+  async function elicit(person: McpPerson, requestId: string, name: string, args: Record<string, unknown>): Promise<Elicited> {
+    const client = await clientOf(person, URL_ELICITATION);
+    try {
+      const result = await callManually(client, name, args);
+      elicitationOf(result);
+      if (typeof result.requestState !== "string") throw new Error("The elicitation carried no request state.");
+      return { name, args, proposal: (await newestProposal(requestId)).id, state: result.requestState };
+    } finally {
+      await client.close();
+    }
+  }
+
+  /** Retries the call with a state, as the person's client with this token, accepting the elicitation; the exchanges go to the log. */
+  async function retry(
+    person: McpPerson,
+    call: Pick<Elicited, "name" | "args">,
+    state: string,
+    options: { token?: string; log?: McpExchange[] } = {},
+  ): Promise<CallToolResult & { resultType?: string }> {
+    const client = await connectMcp(harness, { token: options.token ?? person.token, version: MODERN, capabilities: URL_ELICITATION, ...(options.log === undefined ? {} : { log: options.log }) });
+    try {
+      await client.listTools();
+      const params = { name: call.name, arguments: call.args, requestState: state, inputResponses: { confirm_page: { action: "accept" } } };
+      return (await client.request({ method: "tools/call", params }, { allowInputRequired: true })) as unknown as CallToolResult & { resultType?: string };
+    } finally {
+      await client.close();
+    }
+  }
+
+  /** A retry that /mcp refuses before anything runs: the HTTP status and the problem of its answer. */
+  async function refusedRetry(person: McpPerson, call: Pick<Elicited, "name" | "args">, state: string, token?: string): Promise<{ status: number; problem: { type?: string; status?: number } }> {
+    const log: McpExchange[] = [];
+    await expect(retry(person, call, state, { log, ...(token === undefined ? {} : { token }) })).rejects.toThrow();
+    const answer = log.filter(({ rpcMethod }) => rpcMethod === "tools/call").at(-1);
+    return { status: answer?.status ?? 0, problem: JSON.parse(answer?.body ?? "{}") as { type?: string; status?: number } };
+  }
+
+  /** The proposal's state and the confirmations it has, as stored. */
+  async function storedProposal(id: string): Promise<{ state: string; confirmations: number }> {
+    const { rows } = await harness.install.owner.query<{ state: string; confirmations: number }>(
+      "SELECT state, (SELECT count(*)::int FROM proposal_confirmations c WHERE c.proposal_id = p.id) AS confirmations FROM proposals p WHERE id = $1",
+      [id],
+    );
+    const row = rows[0];
+    if (row === undefined) throw new Error("No such proposal.");
+    return row;
+  }
+
+  /** A due date Sam proposes on a request to FE, as an elicitation, which needs Sam's confirmation and then one from FE. */
+  async function dueDate(): Promise<{ request: RequestJson; call: Elicited }> {
+    const request = await openToFe();
+    const call = await elicit(sam, request.id, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-30", expectedRevision: 1 });
+    return { request, call };
+  }
+
+  const confirmAs = async (person: McpPerson, proposal: string) =>
+    expect((await harness.install.confirm(person.session, "proposals.confirm", { proposal })).status).toBe(200);
+
+  it("returns the applied result once the commitment took effect: the request declined", async () => {
+    const request = await openToFe();
+    const call = await elicit(bob, request.id, "set_status", { key: request.key, state: "declined" });
+    await confirmAs(bob, call.proposal);
+    const result = await retry(bob, call, call.state);
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ key: request.key, state: "declined", proposal: { id: call.proposal, state: "applied" } });
+    expect(textOf(result)).toContain("It took effect.");
+    expect(textOf(result)).not.toContain("/confirm/");
+  });
+
+  it("returns the applied result to a client that retries on its own once its user confirmed on the page, as its tool's output schema admits", async () => {
+    const request = await openToFe();
+    const client = await connectMcp(harness, { token: bob.token, version: MODERN, capabilities: URL_ELICITATION });
+    client.setRequestHandler("elicitation/create", async (asked) => {
+      // The person opens the page and confirms there, in the web UI, before the client retries.
+      const proposal = new URL(String((asked.params as { url?: unknown }).url)).pathname.split("/").at(-1) ?? "";
+      await confirmAs(bob, proposal);
+      return { action: "accept" };
+    });
+    try {
+      await client.listTools();
+      const result = await client.callTool({ name: "set_status", arguments: { key: request.key, state: "declined" } });
+      expect(result.structuredContent).toMatchObject({ key: request.key, state: "declined", proposal: { state: "applied" } });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("returns at once, while the proposal waits, that it is waiting for confirmation, with its id, and changes nothing", async () => {
+    const request = await openToFe();
+    const call = await elicit(bob, request.id, "set_status", { key: request.key, state: "declined" });
+    const started = Date.now();
+    const result = await retry(bob, call, call.state);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(result.structuredContent).toMatchObject({ proposal: { id: call.proposal, state: "pending" } });
+    expect(textOf(result)).toContain(`Proposal ${call.proposal} is waiting for confirmation`);
+    expect(await storedProposal(call.proposal)).toEqual({ state: "pending", confirmations: 0 });
+    const read = await harness.api("GET", `/api/v1/requests/${request.key}`, { authorization: `Bearer ${bob.token}` });
+    expect(((await read.json()) as { state: string }).state).toBe("open");
+  });
+
+  it("returns at once that it is waiting while the other side has not confirmed, and the due date is unchanged", async () => {
+    const { request, call } = await dueDate();
+    await confirmAs(sam, call.proposal);
+    const result = await retry(sam, call, call.state);
+    expect(result.structuredContent).toMatchObject({ proposal: { id: call.proposal, state: "pending", confirmations: { received: [{ step: "accountable_human" }] } } });
+    expect(textOf(result)).toContain(`Proposal ${call.proposal} is waiting for confirmation`);
+    const packet = await harness.api("GET", `/api/v1/requests/${request.key}/packet`, { authorization: `Bearer ${sam.token}` });
+    expect(((await packet.json()) as { packet: { due_date?: string } }).packet.due_date).toBeUndefined();
+  });
+
+  it("returns at once that the proposal was rejected, after the other side rejected it", async () => {
+    const { call } = await dueDate();
+    await confirmAs(sam, call.proposal);
+    const rejected = await harness.install.web(bob.session).write("proposals.reject", { proposal: call.proposal }, harness.install.fromThePage(bob.session));
+    expect(rejected.ok).toBe(true);
+    const result = await retry(sam, call, call.state);
+    expect(result.structuredContent).toMatchObject({ proposal: { id: call.proposal, state: "rejected" } });
+    expect(textOf(result)).toContain("It was rejected, so it will not take effect.");
+  });
+
+  it("returns that the proposal expired, 7 days and 2 hours after it was created", async () => {
+    const { call } = await dueDate();
+    const later = new Date(Date.now() + (7 * 24 + 2) * 60 * 60 * 1000);
+    await expireProposals.handle(
+      { id: "expire", queue: expireProposals.type.queue, data: {}, signal: new AbortController().signal },
+      { database: harness.install.db, now: () => later },
+    );
+    const result = await retry(sam, call, call.state);
+    expect(result.structuredContent).toMatchObject({ proposal: { id: call.proposal, state: "expired" } });
+    expect(textOf(result)).toContain("It expired, so it will not take effect.");
+  });
+
+  it("refuses with HTTP 403 a state bound to another user, or to another client of the same user", async () => {
+    const { call } = await dueDate();
+    const anotherUser = await refusedRetry(dana, call, call.state);
+    expect(anotherUser).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused`, status: 403 }) });
+    const { accessToken } = await harness.tokens({ userId: sam.userId, cookie: sam.cookie });
+    const anotherClient = await refusedRetry(sam, call, call.state, accessToken);
+    expect(anotherClient).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused` }) });
+    // The state still answers the user and client it was bound to.
+    expect((await retry(sam, call, call.state)).structuredContent).toMatchObject({ proposal: { id: call.proposal } });
+  });
+
+  it("refuses with HTTP 403, not as an error inside a 200, a state that was changed, and nothing changes on the proposal", async () => {
+    const { call } = await dueDate();
+    const [version, body = "", mac = ""] = call.state.split(".");
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { p: { proposal: string } };
+    const changedPayload = `${version}.${Buffer.from(JSON.stringify({ ...payload, p: { ...payload.p, proposal: "00000000-0000-4000-8000-000000000000" } })).toString("base64url")}.${mac}`;
+    const changedMac = `${version}.${body}.${mac.slice(0, -2)}${mac.at(-2) === "A" ? "B" : "A"}${mac.at(-1) ?? ""}`;
+    for (const tampered of [changedPayload, changedMac, "not a state"]) {
+      const refused = await refusedRetry(sam, call, tampered);
+      expect(refused.status, tampered).toBe(403);
+      expect(refused.problem.type).toBe(`${PROBLEM}request-state-refused`);
+    }
+    expect(await storedProposal(call.proposal)).toEqual({ state: "pending", confirmations: 0 });
+  });
+
+  it("refuses with HTTP 403 a state carried by another call than the one that created its proposal", async () => {
+    const { request, call } = await dueDate();
+    const other = await refusedRetry(sam, { name: "propose", args: { ...call.args, dueDate: "2026-11-30" } }, call.state);
+    expect(other.status).toBe(403);
+    const elsewhere = await refusedRetry(sam, { name: "set_status", args: { key: request.key, state: "declined" } }, call.state);
+    expect(elsewhere.status).toBe(403);
+  });
+
+  it("keeps a state valid 8 days, and refuses with HTTP 403 one issued 9 days earlier", async () => {
+    expect(REQUEST_STATE_TTL_SECONDS).toBe(8 * 24 * 60 * 60);
+    const { call } = await dueDate();
+    const claims = JSON.parse(Buffer.from(sam.token.split(".")[1] ?? "", "base64url").toString("utf8")) as { azp?: string; client_id?: string };
+    const binding = retryBinding({ kind: "oauth_token", userId: sam.userId, clientId: claims.azp ?? claims.client_id ?? "", scopes: [], surface: "mcp" });
+    const states = createRetryStates(harness.install.authSecret);
+    const mintedAt = (offsetDays: number) => {
+      const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() - offsetDays * 24 * 60 * 60 * 1000);
+      return states.mint({ proposal: call.proposal, call: callDigest(call.name, call.args) }, bindingContext(binding)).finally(() => now.mockRestore());
+    };
+    // One issued 7 days and 23 hours ago still answers; one issued 9 days ago is refused.
+    expect((await retry(sam, call, await mintedAt(7 + 23 / 24))).structuredContent).toMatchObject({ proposal: { id: call.proposal } });
+    const expired = await refusedRetry(sam, call, await mintedAt(9));
+    expect(expired).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused` }) });
   });
 });
