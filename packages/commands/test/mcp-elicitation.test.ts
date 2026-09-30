@@ -4,8 +4,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { bindingContext, callDigest, createRetryStates, expireProposals, REQUEST_STATE_TTL_SECONDS, retryBinding } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { connectMcp, LEGACY, mcpPerson, MODERN, PROBLEM, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
-import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
+import { addUser } from "./support/members.ts";
+import { connectMcp, LEGACY, mcpPerson, MODERN, PROBLEM, problemOf, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
+import { openRequestInTheWebUi, packetOf, sessionOf } from "./support/requests.ts";
 
 // URL-mode elicitation for MCP clients (agent-surfaces: URL-mode elicitation
 // for MCP clients; agent-safety: Notices that can reach a model carry only
@@ -545,6 +546,37 @@ describe("the retry of a call whose proposal came as an elicitation", () => {
     expect((await retry(sam, call, await mintedAt(7 + 23 / 24))).structuredContent).toMatchObject({ proposal: { id: call.proposal } });
     const expired = await refusedRetry(sam, call, await mintedAt(9));
     expect(expired).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused` }) });
+  });
+
+  it("answers a removed member's retry with the removal as a tool error, on either kind of token, before its state is checked", async () => {
+    const admin = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada-admin-retries" }));
+    for (const kind of ["access token", "personal access token"] as const) {
+      const person = await mcpPerson(harness, kind === "access token" ? "rex-fe" : "pia-fe", { teams: ["FE"] });
+      const token = kind === "access token" ? person.token : await harness.personalAccessToken({ userId: person.userId, cookie: person.cookie });
+      const request = await openToFe();
+      const args = { key: request.key, state: "declined" };
+      const client = await connectMcp(harness, { token, version: MODERN, capabilities: URL_ELICITATION });
+      let state: string;
+      try {
+        await client.listTools();
+        const elicited = await callManually(client, "set_status", args);
+        elicitationOf(elicited);
+        if (typeof elicited.requestState !== "string") throw new Error("The elicitation carried no request state.");
+        state = elicited.requestState;
+      } finally {
+        await client.close();
+      }
+      expect((await harness.install.confirm(admin, "members.remove", { userId: person.userId })).status).toBe(200);
+      // The state as it was issued, and one that was changed: either way the retry gets the removal, and no data.
+      for (const sent of [state, "not a state"]) {
+        const log: McpExchange[] = [];
+        const result = await retry(person, { name: "set_status", args }, sent, { token, log });
+        expect(log.filter(({ rpcMethod }) => rpcMethod === "tools/call").map(({ status }) => status), kind).toEqual([200]);
+        expect(result.isError, kind).toBe(true);
+        expect(problemOf(result), kind).toMatchObject({ type: `${PROBLEM}removed-member`, status: 403 });
+        expect(JSON.stringify(result), kind).not.toContain(request.key);
+      }
+    }
   });
 });
 

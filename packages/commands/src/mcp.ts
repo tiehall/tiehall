@@ -75,11 +75,14 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 //   with HTTP 403 insufficient_scope, naming the scope, before anything runs.
 // These are the OAuth refusals, which on /mcp are HTTP statuses and never tool
 // results, as the error model defines; they are RFC 9457 problems, whatever
-// the call accepts. A personal access token the token check refuses because
-// its person is not a member of the install is the one refusal of the check
-// that is no OAuth refusal: every tool call such a caller makes is answered
-// with that refusal as a tool error, and so returns no data of the install
-// (teams-and-roles: Membership is re-checked on every call).
+// the call accepts. A token whose person is not a member of the install, a
+// personal access token the token check refuses so or an access token the
+// re-check finds so, is the one refusal of the checks that is no OAuth
+// refusal: every tool call such a caller makes, a retry after an elicitation
+// included, is answered with that refusal as a tool error, whatever request
+// state it carries, and so returns no data of the install (teams-and-roles:
+// Membership is re-checked on every call; public-api: One error model for
+// Tiehall's own refusals).
 //
 // A call the checks admit acts for the token's user, on the surface mcp, and
 // every tool it calls runs its operation through execute() as that caller, so
@@ -119,7 +122,8 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // applied result, the operation's output as it is now beside the proposal,
 // once the commitment took effect; with the proposal and how it ended, once it
 // ended without taking effect; and otherwise with the proposal, waiting for
-// confirmation, whose outcome reaches the user later.
+// confirmation, whose outcome reaches the user later. A removed member's retry
+// is not checked: it gets the removal as a tool error, as their calls do.
 
 /** How the MCP server names itself to clients. */
 export const MCP_SERVER_NAME = "tiehall";
@@ -247,6 +251,8 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     args: unknown,
     context: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> {
+    // A removed member's call, a retry included, gets the removal as a tool error, whatever state it carries.
+    if ("refusal" in calling) return (await callTool(calling, name, args)).result;
     const state = context.mcpReq.requestState<unknown>();
     if (state !== undefined) return retried(calling, name, args, state);
     const { result, proposal } = await callTool(calling, name, args);
@@ -310,12 +316,13 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
    * it, found before the SDK sees the call: one that was changed, that has
    * expired, that is bound to another user or client, or that was issued for
    * another call; none when the body retries no call with a state, or every
-   * state it carries is valid. A removed member's retry gets that removal.
+   * state it carries is valid. A removed member's retry is not checked here:
+   * the tool call answers with the removal as a tool error, as every tool
+   * call of theirs does.
    */
   async function stateRefusal(calling: Calling, binding: string | undefined, body: Uint8Array): Promise<Refusal | undefined> {
     const retries = retriedCalls(body);
-    if (retries.length === 0) return undefined;
-    if ("refusal" in calling) return calling.refusal;
+    if (retries.length === 0 || "refusal" in calling) return undefined;
     const codec = statesOf();
     for (const { name, args, state } of retries) {
       if (codec === undefined || binding === undefined || typeof state !== "string") return stateRefused();
@@ -337,10 +344,9 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
       if (calling === undefined) throw new Error("The MCP route hands every call to the SDK with whoever it acts for.");
       const codec = statesOf();
       // A retry's state is checked by the codec before the tool's handler runs; a state that fails is refused.
-      const server = new Server(
-        { name: MCP_SERVER_NAME, version },
-        { capabilities: { tools: {} }, ...(codec === undefined ? {} : { requestState: { verify: codec.verify } }) },
-      );
+      // A removed member's state is not checked at all: their tool calls get the removal.
+      const verify = codec === undefined || "refusal" in calling ? {} : { requestState: { verify: codec.verify } };
+      const server = new Server({ name: MCP_SERVER_NAME, version }, { capabilities: { tools: {} }, ...verify });
       server.setRequestHandler("tools/list", async () => ({ tools: listed }));
       server.setRequestHandler("tools/call", async (request, context) =>
         answerToolCall(calling, era, request.params.name, request.params.arguments, context),
@@ -384,7 +390,7 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         extra: { calling, ...(binding === undefined ? {} : { binding }) },
       };
     } catch (error) {
-      // A person the token check found not to be a member gets a tool error for every tool call, and no data.
+      // A person the checks found not to be a member gets a tool error for every tool call, and no data.
       if (error instanceof Refusal && error.reason === "removed-member") {
         calling = { refusal: error };
         authInfo = { token: "", clientId: "removed-member", scopes: [], extra: { calling } };
@@ -415,8 +421,9 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
   /**
    * The refusal of an access token that a removal revoked, as execute()'s
    * membership re-check gives it, or of setup that is not complete; none for a
-   * caller the re-check lets through, or refuses otherwise, such as a removed
-   * member, whose tool calls get that refusal as a tool error.
+   * caller the re-check lets through, or refuses otherwise. A removed member's
+   * refusal is thrown, as the token check throws it for a personal access
+   * token, so that every tool call of theirs gets it as a tool error.
    */
   async function revokedByRemoval(caller: Caller): Promise<Refusal | undefined> {
     if (options.database === undefined || (caller.kind !== "oauth_token" && caller.kind !== "personal_access_token")) return undefined;
@@ -430,6 +437,7 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
       return undefined;
     } catch (error) {
       if (error instanceof Refusal && (error.reason === "invalid-token" || error.reason === "setup-required")) return error;
+      if (error instanceof Refusal && error.reason === "removed-member") throw error;
       if (error instanceof Refusal) return undefined;
       throw error;
     }
