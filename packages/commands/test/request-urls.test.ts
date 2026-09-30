@@ -282,3 +282,40 @@ describe("the negotiation matrix of /<KEY>", () => {
     });
   }
 });
+
+// Request URL response headers (agent-surfaces: Request URL response headers;
+// design.md, Design rules: Agent surfaces): every answer of a request URL, each
+// representation and every refusal and redirect, sends Vary: Accept,
+// Authorization, since the answer depends on both, Cache-Control: private,
+// no-store, since it holds a member's view of the install, and an ETag.
+
+/** The names a Vary header lists, in lower case. */
+function varied(answer: Answer): string[] {
+  const vary = answer.headers["vary"];
+  return (Array.isArray(vary) ? vary.join(",") : (vary ?? "")).split(",").map((name) => name.trim().toLowerCase());
+}
+
+const ANSWERS: { name: string; path: string; as: string; accept?: string; status: number; waitsFor?: "18.3" | "18.4" | "18.5" }[] = [
+  { name: "the HTML page", path: "/FE-1", as: "session:bob", accept: BROWSER, status: 200, waitsFor: "18.3" },
+  { name: "markdown by suffix", path: "/FE-1.md", as: "token:bob", status: 200, waitsFor: "18.3" },
+  { name: "markdown by Accept", path: "/FE-1", as: "token:bob", accept: "text/markdown", status: 200, waitsFor: "18.3" },
+  { name: "JSON by suffix", path: "/FE-1.json", as: "token:bob", status: 200, waitsFor: "18.3" },
+  { name: "JSON by Accept", path: "/FE-1", as: "token:bob", accept: "application/json", status: 200, waitsFor: "18.3" },
+  { name: "a removed member's 403", path: "/FE-1.json", as: "token:dana", status: 403, waitsFor: "18.3" },
+  { name: "the redirect to sign-in", path: "/FE-1", as: "none", accept: BROWSER, status: 303, waitsFor: "18.4" },
+  { name: "the 401 without credentials", path: "/FE-1.md", as: "none", status: 401, waitsFor: "18.4" },
+  { name: "the redirect from an old key", path: "/FE-2.json", as: "token:bob", status: 307, waitsFor: "18.5" },
+];
+
+describe("the headers of every answer of /<KEY>", () => {
+  for (const row of ANSWERS) {
+    const test = row.waitsFor === undefined ? it : it.fails;
+    test(`${row.name} sends Vary: Accept, Authorization, Cache-Control: private, no-store and an ETag`, async () => {
+      const answer = await call(row.path, { ...credentials(row.as), ...(row.accept === undefined ? {} : { accept: row.accept }) });
+      expect(answer.status).toBe(row.status);
+      expect(varied(answer)).toEqual(expect.arrayContaining(["accept", "authorization"]));
+      expect(answer.headers["cache-control"]).toBe("private, no-store");
+      expect(answer.headers["etag"]).toMatch(/^(W\/)?"[^"]+"$/);
+    });
+  }
+});
