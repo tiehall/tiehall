@@ -2,6 +2,7 @@ import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
+import { createAdminRoute } from "./admin-page.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -309,6 +310,11 @@ function pageOf(name: string, env: Environment, create: (options: PageRouteOptio
 /** The members page at /members, which every member may open, for the signed-in user's web session. */
 export function membersRoute(env: Environment): PageRoute {
   return pageOf("members", env, createMembersRoute);
+}
+
+/** The admin page at /admin, the first page of the admin UI, for the signed-in user's web session. */
+export function adminRoute(env: Environment): PageRoute {
+  return pageOf("admin", env, createAdminRoute);
 }
 
 /** The web form that opens a request, at /requests/new, which every member of a team may use, for the signed-in user's web session. */

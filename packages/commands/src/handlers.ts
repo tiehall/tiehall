@@ -10,6 +10,7 @@ import type { Handlers } from "./execute.ts";
 import { GITHUB_APP_KEY_HANDLERS } from "./github-app-key.ts";
 import { GITHUB_INSTALLATION_HANDLERS } from "./github-installation-changes.ts";
 import { GITHUB_MODE_HANDLERS, GITHUB_WEBHOOK_SECRET_HANDLERS } from "./github-mode.ts";
+import { INSTALL_STATUS_HANDLERS } from "./install-status.ts";
 import { INVITE_HANDLERS } from "./invites.ts";
 import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
@@ -65,4 +66,5 @@ export const HANDLERS: Handlers = {
   ...AGENT_GRANT_HANDLERS,
   ...DEVICE_APPROVAL_HANDLERS,
   ...PERSONAL_ACCESS_TOKEN_HANDLERS,
+  ...INSTALL_STATUS_HANDLERS,
 };

@@ -450,7 +450,9 @@ export {
 export { createHomeRoute, type HomeRoute, type HomeRouteOptions } from "./home-route.ts";
 export { ACTIVITY_LOG_PATH, createActivityLogRoute, type ActivityLogRoute, type ActivityLogRouteOptions } from "./activity-log-route.ts";
 export { createGitHubAdminRoute, GITHUB_ADMIN_PATH, type GitHubAdminRoute, type GitHubAdminRouteOptions } from "./github-admin-route.ts";
+export { createAdminRoute } from "./admin-page.ts";
 export {
+  ADMIN_PATH,
   createInvitesRoute,
   createMembersRoute,
   createPersonalAccessTokenSettingsRoute,

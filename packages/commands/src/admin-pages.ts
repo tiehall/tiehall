@@ -73,6 +73,8 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 
 /** Where the members list lives; every member may open it. */
 export const MEMBERS_PATH = "/members";
+/** The admin page, the first page of the admin UI (admin-page.ts). */
+export const ADMIN_PATH = "/admin";
 /** Where an admin invites people and revokes invites. */
 export const INVITES_PATH = "/admin/invites";
 /** Where an admin manages teams. */
@@ -87,8 +89,10 @@ type ListedTeam = z.output<typeof listedTeam>;
 type Invite = z.output<typeof invite>;
 
 /** The links between the admin pages, shown to admins. */
-function adminNav(): string {
+/** The admin UI's navigation, which every admin page shows. */
+export function adminNav(): string {
   const pages: [string, string][] = [
+    [ADMIN_PATH, "Admin"],
     [MEMBERS_PATH, "Members"],
     [INVITES_PATH, "Invites"],
     [TEAMS_PATH, "Teams"],

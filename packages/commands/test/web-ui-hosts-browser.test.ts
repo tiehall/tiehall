@@ -39,6 +39,7 @@ const PAGES: Readonly<Record<string, readonly string[]>> = {
   "requests/new/route.ts": ["/requests/new", "/requests/new?team=FE"],
   "[key]/page.tsx": ["/FE-1", "/FE", "/QA"],
   "tokens/route.ts": ["/tokens"],
+  "admin/route.ts": ["/admin"],
   "admin/invites/route.ts": ["/admin/invites"],
   "admin/teams/route.ts": ["/admin/teams"],
   "admin/sign-in-policy/route.ts": ["/admin/sign-in-policy"],
