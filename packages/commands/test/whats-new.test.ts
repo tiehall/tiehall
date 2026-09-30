@@ -55,7 +55,8 @@ interface Update {
 
 interface Updates {
   events: Update[];
-  requests: { id: string; key: string; untrusted: { title: string } }[];
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  "requests": { id: string; key: string; untrusted: { title: string } }[];
   cursor: number;
   more: boolean;
 }
