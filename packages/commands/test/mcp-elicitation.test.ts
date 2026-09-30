@@ -43,6 +43,12 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // confirmation while it waits, the other side's confirmation included. A state
 // bound to another user or client, one that was changed, one for another call
 // and one that expired are refused before anything runs, with HTTP 403.
+//
+// Accepting an elicitation is not consent (agent-surfaces: Accepting an
+// elicitation is not consent; design.md, Self-hosting decisions: S7). An
+// `accept` only means the person agreed to open the URL, and a client can
+// answer it on its own, with no dialog: whatever the retry's input responses
+// say, only a confirmation in the web UI confirms the proposal.
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
@@ -520,5 +526,48 @@ describe("the retry of a call whose proposal came as an elicitation", () => {
     expect((await retry(sam, call, await mintedAt(7 + 23 / 24))).structuredContent).toMatchObject({ proposal: { id: call.proposal } });
     const expired = await refusedRetry(sam, call, await mintedAt(9));
     expect(expired).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused` }) });
+  });
+});
+
+describe("an accept answer to the elicitation", () => {
+  it("confirms nothing when a client accepts automatically and retries: the proposal stays pending, and the call says it is waiting", async () => {
+    const request = await openToFe();
+    // A client hook that accepts every elicitation at once, without showing a dialog or opening anything.
+    const client = await connectMcp(harness, { token: sam.token, version: MODERN, capabilities: URL_ELICITATION });
+    client.setRequestHandler("elicitation/create", async () => ({ action: "accept" }));
+    try {
+      await client.listTools();
+      const result = await client.callTool({ name: "propose", arguments: { kind: "due_date", key: request.key, dueDate: "2026-11-02", expectedRevision: 1 } });
+      const proposal = await newestProposal(request.id);
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ proposal: { id: proposal.id, state: "pending", confirmations: { received: [] } } });
+      expect(textOf(result)).toContain(`Proposal ${proposal.id} is waiting for confirmation, so nothing has changed yet`);
+      expect(proposal.state).toBe("pending");
+      const { rows } = await harness.install.owner.query("SELECT count(*)::int AS count FROM proposal_confirmations WHERE proposal_id = $1", [proposal.id]);
+      expect(rows[0]?.count).toBe(0);
+    } finally {
+      await client.close();
+    }
+    const packet = await harness.api("GET", `/api/v1/requests/${request.key}/packet`, { authorization: `Bearer ${sam.token}` });
+    expect(((await packet.json()) as { packet: { due_date?: string } }).packet.due_date).toBeUndefined();
+  });
+
+  it("confirms nothing either when the retry's input responses claim a confirmation in content of their own", async () => {
+    const request = await openToFe();
+    const client = await clientOf(bob, URL_ELICITATION);
+    try {
+      const args = { key: request.key, state: "declined" };
+      const elicited = await callManually(client, "set_status", args);
+      const inputResponses = { confirm_page: { action: "accept", content: { confirmed: true, confirm: true, approve: "yes" } } };
+      const params = { name: "set_status", arguments: args, requestState: elicited.requestState, inputResponses };
+      const retried = (await client.request({ method: "tools/call", params }, { allowInputRequired: true })) as unknown as CallToolResult;
+      const proposal = await newestProposal(request.id);
+      expect(retried.structuredContent).toMatchObject({ proposal: { id: proposal.id, state: "pending" } });
+      expect(proposal.state).toBe("pending");
+      const read = await harness.api("GET", `/api/v1/requests/${request.key}`, { authorization: `Bearer ${bob.token}` });
+      expect(((await read.json()) as { state: string }).state).toBe("open");
+    } finally {
+      await client.close();
+    }
   });
 });
