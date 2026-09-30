@@ -22,7 +22,7 @@ import {
   Refusal,
   type Review,
 } from "@tiehall/core";
-import { installSettings, personalAccessTokens, type Database } from "@tiehall/db";
+import { installSettings, members, personalAccessTokens, type Database } from "@tiehall/db";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Caller, PersonalAccessTokenCaller } from "./caller.ts";
@@ -33,6 +33,7 @@ import { defineHandler, type Handlers } from "./execute.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
+import type { Writer } from "./write.ts";
 
 // Personal access tokens (agent-access: Personal access tokens are scoped,
 // expiring and created in the web UI; agent-access: Every token call is
@@ -310,17 +311,37 @@ export const PERSONAL_ACCESS_TOKEN_MESSAGES: ConfirmMessages = {
   },
 };
 
+/**
+ * Revokes, in a removal's write, every personal access token the removed
+ * person holds that was not revoked yet, each with its security event
+ * (teams-and-roles: Removing a member).
+ */
+export async function revokePersonalAccessTokensOf(writer: Writer, userId: string, at: Date): Promise<void> {
+  const revoked = await writer.tx
+    .update(personalAccessTokens)
+    .set({ revokedAt: at })
+    .where(and(eq(personalAccessTokens.orgId, writer.orgId), eq(personalAccessTokens.userId, userId), isNull(personalAccessTokens.revokedAt)))
+    .returning({ tokenId: personalAccessTokens.id, createdAt: personalAccessTokens.createdAt });
+  revoked.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.tokenId.localeCompare(b.tokenId));
+  for (const { tokenId } of revoked) await writer.record(personalAccessTokenRevoked, { userId, tokenId });
+}
+
 /** A personal access token a call named, as its check found it. */
 export interface FoundPersonalAccessToken {
   id: string;
   userId: string;
   scopes: readonly Scope[];
+  /** Whether it may be used: it has not expired and was not revoked. */
+  usable: boolean;
+  /** Whether its user is a member of the install now. */
+  member: boolean;
 }
 
 /**
  * The personal access token a call's bearer token names, looked up by its
- * digest in a read-only transaction: undefined for a value no token has, and
- * for a token that has expired, by the given clock, or was revoked.
+ * digest in a read-only transaction, with whether it may still be used, by the
+ * given clock, and whether its user is a member now; undefined for a value no
+ * token has.
  */
 export async function findPersonalAccessToken(database: Database, value: string, now: Date): Promise<FoundPersonalAccessToken | undefined> {
   const [row] = await withOrg(
@@ -333,13 +354,21 @@ export async function findPersonalAccessToken(database: Database, value: string,
           scopes: personalAccessTokens.scopes,
           expiresAt: personalAccessTokens.expiresAt,
           revokedAt: personalAccessTokens.revokedAt,
+          member: members.userId,
         })
         .from(personalAccessTokens)
+        .leftJoin(members, and(eq(members.orgId, personalAccessTokens.orgId), eq(members.userId, personalAccessTokens.userId)))
         .where(and(eq(personalAccessTokens.orgId, orgId), eq(personalAccessTokens.tokenHash, personalAccessTokenHash(value)))),
     { readOnly: true },
   );
-  if (row === undefined || row.revokedAt !== null || row.expiresAt.getTime() <= now.getTime()) return undefined;
-  return { id: row.id, userId: row.userId, scopes: SCOPES.filter((scope) => row.scopes.includes(scope)) };
+  if (row === undefined) return undefined;
+  return {
+    id: row.id,
+    userId: row.userId,
+    scopes: SCOPES.filter((scope) => row.scopes.includes(scope)),
+    usable: row.revokedAt === null && row.expiresAt.getTime() > now.getTime(),
+    member: row.member !== null,
+  };
 }
 
 /** The caller a found personal access token makes: its user, within its scopes, on /api/v1. */

@@ -150,9 +150,20 @@ async function removeMember(userId: string): Promise<void> {
 describe("withOrg() for a call made for a user", () => {
   it("hands the call the user's membership, read at the time of the call", async () => {
     const lee = await addUser(owner, { role: "member" });
-    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "member" });
+    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "member", joinedAt: expect.any(Date) });
     await owner.query("UPDATE members SET role = 'admin' WHERE user_id = $1", [lee]);
-    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "admin" });
+    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "admin", joinedAt: expect.any(Date) });
+  });
+
+  it("refuses a call whose access token was issued before the user's membership began with 401 invalid-token, and takes one issued since", async () => {
+    const lee = await addUser(owner, { role: "member" });
+    await owner.query("UPDATE members SET joined_at = '2026-09-30T10:00:00.400Z' WHERE user_id = $1", [lee]);
+    await expect(withOrg(db, async () => "ran", { forUser: lee, issuedAt: new Date("2026-09-30T09:59:59Z") })).rejects.toMatchObject({
+      reason: "invalid-token",
+    });
+    // An access token records whole seconds: one of the second the membership began is taken.
+    expect(await withOrg(db, async () => "ran", { forUser: lee, issuedAt: new Date("2026-09-30T10:00:00Z") })).toBe("ran");
+    expect(await withOrg(db, async () => "ran", { forUser: lee, issuedAt: new Date("2026-09-30T10:05:00Z") })).toBe("ran");
   });
 
   it("refuses a user who is no longer a member with 403 removed-member, before the handler runs", async () => {

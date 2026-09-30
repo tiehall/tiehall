@@ -25,6 +25,8 @@ export interface OAuthTokenCaller {
   clientId: string;
   scopes: readonly Scope[];
   surface: AgentSurface;
+  /** When the access token was issued; a token issued before its user's current membership began is refused as revoked. */
+  issuedAt?: Date;
 }
 
 /** A personal access token, acting for the user who created it. */

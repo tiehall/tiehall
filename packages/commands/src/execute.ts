@@ -291,6 +291,8 @@ export function createExecute(services: ExecuteServices): Execute {
     const forUser = actsForUser(caller) ? caller.userId : undefined;
     // A personal access token's call goes on only while the PAT switch is on, read at the time of the call.
     const personalAccessToken = caller.kind === "personal_access_token";
+    // An access token issued before the user's current membership began was revoked by a removal.
+    const issuedAt = caller.kind === "oauth_token" ? caller.issuedAt : undefined;
 
     /**
      * Steps 2 to 5 in the given transaction: the call's own refusal, the
@@ -365,7 +367,7 @@ export function createExecute(services: ExecuteServices): Execute {
       const authorized = await withOrg(
         store.database,
         async (context) => ({ ...(await authorize(context, "check")), caller: await asMemberOrNoUser(context, caller) }),
-        { readOnly: true, forUser, personalAccessToken },
+        { readOnly: true, forUser, personalAccessToken, issuedAt },
       );
       prepared = await handler.prepare(authorized.input, {
         caller: authorized.caller,
@@ -428,7 +430,7 @@ export function createExecute(services: ExecuteServices): Execute {
         };
         return options.around === undefined ? run() : options.around(context, run);
       },
-      { readOnly: options.readOnly === true, forUser, personalAccessToken },
+      { readOnly: options.readOnly === true, forUser, personalAccessToken, issuedAt },
     );
   };
 }

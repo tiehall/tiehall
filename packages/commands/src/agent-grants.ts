@@ -1,7 +1,7 @@
 import { approveAgentClient, listAgentGrants, revokeAgentGrant, SCOPES } from "@tiehall/catalog";
 import { agentClientApproved, agentGrantRevoked, Refusal } from "@tiehall/core";
-import { oauthAccessTokens, oauthClients, oauthConsents, oauthRefreshTokens } from "@tiehall/db";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { oauthAccessTokens, oauthClients, oauthConsents, oauthDeviceCodes, oauthRefreshTokens, signInVerifications } from "@tiehall/db";
+import { and, asc, eq, isNull, like, sql } from "drizzle-orm";
 import { REFRESH_SCOPE } from "./authorization-server.ts";
 import { actsForUser, type Caller } from "./caller.ts";
 import type { ConfirmRedirects } from "./confirm-route.ts";
@@ -136,33 +136,95 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     const userId = memberOf(context.caller);
     const at = context.now();
     return context.write(async (writer) => {
-      const [grant] = await writer.tx
-        .select({ clientId: oauthConsents.clientId, clientRecord: oauthClients.id })
-        .from(oauthConsents)
-        .innerJoin(oauthClients, and(eq(oauthClients.orgId, oauthConsents.orgId), eq(oauthClients.clientId, oauthConsents.clientId)))
-        .where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grantId), eq(oauthConsents.userId, userId)))
-        .for("update", { of: oauthConsents });
+      const [grant] = await lockGrants(writer, userId, grantId);
       if (grant === undefined) throw new Refusal("record-not-found", "You hold no agent grant with this id.");
-      await writer.tx.delete(oauthConsents).where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grantId)));
-      await writer.tx
-        .update(oauthRefreshTokens)
-        .set({ revoked: at })
-        .where(
-          and(
-            eq(oauthRefreshTokens.orgId, writer.orgId),
-            eq(oauthRefreshTokens.clientId, grant.clientId),
-            eq(oauthRefreshTokens.userId, userId),
-            isNull(oauthRefreshTokens.revoked),
-          ),
-        );
-      await writer.tx
-        .delete(oauthAccessTokens)
-        .where(and(eq(oauthAccessTokens.orgId, writer.orgId), eq(oauthAccessTokens.clientId, grant.clientId), eq(oauthAccessTokens.userId, userId)));
-      await writer.record(agentGrantRevoked, { userId, clientId: grant.clientRecord, grantId });
+      await revokeGrant(writer, userId, grant, at);
       return { grantId };
     });
   }),
 };
+
+/** A grant as a revocation locks it: its id, the client id it is for and Tiehall's own record of that client. */
+interface LockedGrant {
+  grantId: string;
+  clientId: string;
+  clientRecord: string;
+}
+
+/** Locks the user's grants, or the one with this id, in the writer's transaction. */
+function lockGrants(writer: Writer, userId: string, grantId?: string): Promise<LockedGrant[]> {
+  return writer.tx
+    .select({ grantId: oauthConsents.id, clientId: oauthConsents.clientId, clientRecord: oauthClients.id })
+    .from(oauthConsents)
+    .innerJoin(oauthClients, and(eq(oauthClients.orgId, oauthConsents.orgId), eq(oauthClients.clientId, oauthConsents.clientId)))
+    .where(
+      and(
+        eq(oauthConsents.orgId, writer.orgId),
+        eq(oauthConsents.userId, userId),
+        ...(grantId === undefined ? [] : [eq(oauthConsents.id, grantId)]),
+      ),
+    )
+    .orderBy(asc(oauthConsents.createdAt), asc(oauthConsents.id))
+    .for("update", { of: oauthConsents });
+}
+
+/**
+ * Revokes one grant in the writer's transaction: removes it, marks every
+ * refresh token of its client for the user revoked, so the next refresh gets
+ * invalid_grant, removes their stored access tokens, and appends the security
+ * event.
+ */
+async function revokeGrant(writer: Writer, userId: string, grant: LockedGrant, at: Date): Promise<void> {
+  await writer.tx.delete(oauthConsents).where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grant.grantId)));
+  await writer.tx
+    .update(oauthRefreshTokens)
+    .set({ revoked: at })
+    .where(
+      and(
+        eq(oauthRefreshTokens.orgId, writer.orgId),
+        eq(oauthRefreshTokens.clientId, grant.clientId),
+        eq(oauthRefreshTokens.userId, userId),
+        isNull(oauthRefreshTokens.revoked),
+      ),
+    );
+  await writer.tx
+    .delete(oauthAccessTokens)
+    .where(and(eq(oauthAccessTokens.orgId, writer.orgId), eq(oauthAccessTokens.clientId, grant.clientId), eq(oauthAccessTokens.userId, userId)));
+  await writer.record(agentGrantRevoked, { userId, clientId: grant.clientRecord, grantId: grant.grantId });
+}
+
+/**
+ * Revokes, in a removal's write, everything that lets an agent client act for
+ * the removed person (teams-and-roles: Removing a member): each of their
+ * grants, the tiehall CLI's included, with its security event; then any
+ * refresh token or stored access token of theirs that no grant covers; the
+ * device codes they approved that the CLI has not exchanged yet, which are
+ * denied; and the authorization codes issued to them that no client has
+ * exchanged yet, which are removed. So no client gets a token for them from
+ * anything they approved before the removal.
+ */
+export async function revokeAgentAccessOf(writer: Writer, userId: string, at: Date): Promise<void> {
+  for (const grant of await lockGrants(writer, userId)) await revokeGrant(writer, userId, grant, at);
+  await writer.tx
+    .update(oauthRefreshTokens)
+    .set({ revoked: at })
+    .where(and(eq(oauthRefreshTokens.orgId, writer.orgId), eq(oauthRefreshTokens.userId, userId), isNull(oauthRefreshTokens.revoked)));
+  await writer.tx.delete(oauthAccessTokens).where(and(eq(oauthAccessTokens.orgId, writer.orgId), eq(oauthAccessTokens.userId, userId)));
+  await writer.tx
+    .update(oauthDeviceCodes)
+    .set({ status: "denied" })
+    .where(and(eq(oauthDeviceCodes.orgId, writer.orgId), eq(oauthDeviceCodes.userId, userId), eq(oauthDeviceCodes.status, "approved")));
+  // An authorization code is kept as the sign-in service writes it: JSON that names its type and its user.
+  await writer.tx
+    .delete(signInVerifications)
+    .where(
+      and(
+        eq(signInVerifications.orgId, writer.orgId),
+        like(signInVerifications.value, '%"type":"authorization_code"%'),
+        like(signInVerifications.value, `%"userId":"${userId}"%`),
+      ),
+    );
+}
 
 /** The host of a metadata-document client's id, its document's URL. */
 function hostOf(url: string): string | undefined {

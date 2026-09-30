@@ -23,6 +23,13 @@ import { memberOf, type Member } from "./members.ts";
 // with the user's role at that moment, so a role change applies from the
 // user's next call too.
 //
+// For a call made with an access token that was issued before the user's
+// current membership began, it refuses the call with 401 invalid-token: a
+// removal revoked every grant the user gave, and an access token issued from
+// one is revoked however long it still has to live, 10 minutes at most, when
+// the user rejoins within them (teams-and-roles: Removing a member). A
+// personal access token is revoked in the removal's own write.
+//
 // For a call made with a personal access token, it then reads the install's
 // PAT switch at the time of the call, and refuses the call with 403
 // personal-access-tokens-off while the switch is off, before anything else
@@ -58,6 +65,16 @@ export interface WithOrgOptions {
   forUser?: string | undefined;
   /** Whether the call is made with a personal access token, which the PAT switch must allow. */
   personalAccessToken?: boolean;
+  /** When the call's access token was issued, which must not be before the user's current membership began. */
+  issuedAt?: Date | undefined;
+}
+
+/** The call's token was issued before its user's current membership began, so a removal revoked it: 401 invalid-token. */
+export class RevokedByRemovalError extends Refusal {
+  override name = "RevokedByRemovalError";
+  constructor() {
+    super("invalid-token", "The token is not valid: it was revoked when its user was removed from the install.");
+  }
 }
 
 /** Personal access tokens are switched off: the error model's 403 personal-access-tokens-off. */
@@ -94,6 +111,8 @@ export async function withOrg<T>(
       if (options.forUser === undefined) return handler({ tx, orgId: org.id });
       const member = await memberOf({ tx, orgId: org.id }, options.forUser);
       if (member === undefined) throw new RemovedMemberError();
+      // Membership starts are compared to the second, as a token's issue time is recorded.
+      if (options.issuedAt !== undefined && options.issuedAt.getTime() < Math.floor(member.joinedAt.getTime() / 1000) * 1000) throw new RevokedByRemovalError();
       if (options.personalAccessToken === true && !(await personalAccessTokensOn({ tx, orgId: org.id }))) throw new PersonalAccessTokensOffError();
       return handler({ tx, orgId: org.id, member });
     },

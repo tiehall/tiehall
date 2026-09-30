@@ -5,6 +5,7 @@ import { mcpResourceOf } from "./authorization-server.ts";
 import type { Database } from "@tiehall/db";
 import type { Caller } from "./caller.ts";
 import { findPersonalAccessToken, isPersonalAccessToken, personalAccessTokenCaller } from "./personal-access-tokens.ts";
+import { RemovedMemberError } from "./with-org.ts";
 
 // The access tokens agents call /api/v1 with (agent-access: Tiehall is the
 // authorization server for agent clients; agent-access: Six kinds of caller;
@@ -28,7 +29,11 @@ import { findPersonalAccessToken, isPersonalAccessToken, personalAccessTokenCall
 // the web UI; personal-access-tokens.ts): it is looked up by its digest in the
 // install's database, and acts for the user who created it, within its
 // scopes; one that is unknown, expired or revoked is refused with 401 and
-// invalid_token, like any other token that is not valid.
+// invalid_token, like any other token that is not valid, except that a
+// revoked or expired token of a person who is not a member now is refused with
+// 403, as every call for a removed member is (teams-and-roles: Removing a
+// member). An access token's caller carries when it was issued, which the
+// call's membership re-check compares with when the user's membership began.
 
 /** The install's public signing keys, as a JSON Web Key Set. */
 export interface SigningKeys {
@@ -78,6 +83,8 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     if (isPersonalAccessToken(token)) {
       const found = options.database === undefined ? undefined : await findPersonalAccessToken(options.database, token, now());
       if (found === undefined) throw invalidToken();
+      // A removed person's token is refused as theirs is while they are not a member; once they are again, as revoked.
+      if (!found.usable) throw found.member ? invalidToken() : new RemovedMemberError();
       return personalAccessTokenCaller(found);
     }
     // A token that is not a JWT at all is refused before any key is read.
@@ -101,7 +108,8 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     if (typeof userId !== "string" || !UUID.test(userId) || typeof clientId !== "string" || clientId === "") throw invalidToken();
     const granted = typeof claims["scope"] === "string" ? claims["scope"].split(" ") : [];
     const scopes = SCOPES.filter((scope): scope is Scope => granted.includes(scope));
-    return { kind: "oauth_token", userId, clientId, scopes, surface: "api" };
+    const issuedAt = typeof claims["iat"] === "number" ? new Date(claims["iat"] * 1000) : undefined;
+    return { kind: "oauth_token", userId, clientId, scopes, surface: "api", ...(issuedAt === undefined ? {} : { issuedAt }) };
   };
 }
 

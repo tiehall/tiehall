@@ -2,10 +2,12 @@ import { changeMemberRole, removeMember } from "@tiehall/catalog";
 import { leavesNoAdmin, memberRemoved, memberRoleChanged, Refusal, type Provenance, type Role } from "@tiehall/core";
 import { memberOrganizations, members, signInBlocks, teamMembers, teams, users, webSessions } from "@tiehall/db";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { revokeAgentAccessOf } from "./agent-grants.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import type { JobSender } from "./jobs.ts";
 import { userName } from "./members.ts";
+import { revokePersonalAccessTokensOf } from "./personal-access-tokens.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
 import type { OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Writer } from "./write.ts";
@@ -34,10 +36,16 @@ import { writeIn, type Origin, type Writer } from "./write.ts";
 // rejoining through organization membership. The removal ends every web
 // session the person holds, in its transaction (sign-in: Signing out and
 // ending sessions): a request that still carries one is refused with 403 and
-// no data, and none works again, even after the person rejoins. Revoking their
-// agent grants and personal access tokens joins the removal once those exist
-// (task 15.19); until then, and after, the membership re-check refuses every
-// call through them.
+// no data, and none works again, even after the person rejoins. It also
+// revokes, in its transaction, every agent grant they gave, the tiehall CLI's
+// included, and every personal access token they hold, each with its security
+// event, with the refresh tokens, the approved device codes and the unused
+// authorization codes of theirs (agent-grants.ts; personal-access-tokens.ts):
+// while they are not a member, a call with any of them gets 403 as for a
+// removed member, and once they are admitted again, 401 as a revoked token;
+// an access token issued before the removal, which lives 10 minutes, is
+// refused as revoked too, since it was issued before their current membership
+// began (with-org.ts).
 //
 // A member who joined through membership of a GitHub organization is also
 // removed when they leave it (sign-in: Leaving the GitHub organization ends
@@ -118,6 +126,9 @@ export async function removeMembership(writer: Writer, member: { userId: string;
     await writer.tx.insert(signInBlocks).values({ orgId: writer.orgId, githubAccountId: member.githubAccountId }).onConflictDoNothing();
   }
   await endWebSessionsOf(writer, userId);
+  // Every grant and personal access token they hold is revoked, so none of them works again.
+  await revokeAgentAccessOf(writer, userId, writer.now());
+  await revokePersonalAccessTokensOf(writer, userId, writer.now());
   await writer.record(
     memberRemoved,
     removal.cause === "admin"

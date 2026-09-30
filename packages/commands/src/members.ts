@@ -15,15 +15,17 @@ import type { OrgContext } from "./with-org.ts";
 export interface Member {
   userId: string;
   role: Role;
+  /** When this membership began: when the user joined, or joined again after a removal. */
+  joinedAt: Date;
 }
 
 /** The user's membership, read in the call's transaction; undefined when they are not a member. */
 export async function memberOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string): Promise<Member | undefined> {
   const [row] = await tx
-    .select({ role: members.role })
+    .select({ role: members.role, joinedAt: members.joinedAt })
     .from(members)
     .where(and(eq(members.orgId, orgId), eq(members.userId, userId)));
-  return row === undefined ? undefined : { userId, role: row.role as Role };
+  return row === undefined ? undefined : { userId, role: row.role as Role, joinedAt: row.joinedAt };
 }
 
 /**
