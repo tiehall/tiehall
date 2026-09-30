@@ -18,6 +18,8 @@ import {
   openSecretBox,
   REVIEWS,
   CONFIRM_DOWNLOADS,
+  CONFIRM_ENTRIES,
+  CONFIRM_MESSAGES,
   CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
   type ConfirmationStep,
@@ -143,7 +145,16 @@ export async function startTestInstall(
   });
   const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
-    createConfirmRoute({ step, downloads: CONFIRM_DOWNLOADS, redirects: CONFIRM_REDIRECTS, session, write: { execute, url, secret }, logger });
+    createConfirmRoute({
+      step,
+      downloads: CONFIRM_DOWNLOADS,
+      redirects: CONFIRM_REDIRECTS,
+      entries: CONFIRM_ENTRIES,
+      messages: CONFIRM_MESSAGES,
+      session,
+      write: { execute, url, secret },
+      logger,
+    });
   const confirmRoute = (caller: WebSessionCaller) => confirmRouteFor(async () => caller);
   const prepareConfirmation: TestInstall["prepareConfirmation"] = async (caller, commandId, input, headers = {}, entered = {}) => {
     const route = confirmRoute(caller);

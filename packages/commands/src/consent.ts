@@ -99,7 +99,7 @@ export interface ConsentView {
 }
 
 /** What each scope lets a client do, in Tiehall's own words. */
-const SCOPE_TEXTS: Readonly<Record<string, string>> = {
+export const SCOPE_TEXTS: Readonly<Record<string, string>> = {
   "requests:read": "requests:read: read the install's requests, their messages and packets, and what changed on them",
   "requests:write": "requests:write: open requests, post messages, and claim and work on requests, as you may",
   "contracts:report": "contracts:report: attach classified contract changes to a request",

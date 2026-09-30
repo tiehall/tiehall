@@ -9,6 +9,8 @@ import type { GitHubStub } from "@tiehall/testing/github";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import { createTestCertificate } from "@tiehall/testing/tls";
 import {
+  CONFIRM_ENTRIES,
+  CONFIRM_MESSAGES,
   CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
   createAgentTokenCheck,
@@ -17,6 +19,7 @@ import {
   resourceMetadataUrlOf,
   createConfirmationStep,
   createConfirmRoute,
+  createDeviceApprovalRoute,
   createExecute,
   createGitHubAdminRoute,
   createGitHubWebhookRoute,
@@ -166,6 +169,8 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const confirm = createConfirmRoute({
     step,
     redirects: CONFIRM_REDIRECTS,
+    entries: CONFIRM_ENTRIES,
+    messages: CONFIRM_MESSAGES,
     session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url, secret: authSecret },
     logger,
@@ -187,8 +192,10 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   });
   const pageOptions = { execute, session: (request: Request, renewal?: Headers) => signIn.session(request.headers, renewal), url, secret: () => authSecret, logger };
   const consent = createConsentRoute({ step, session: (request, renewal) => signIn.session(request.headers, renewal), secret: authSecret, logger });
+  const device = createDeviceApprovalRoute({ step, session: (request, renewal) => signIn.session(request.headers, renewal), url, secret: authSecret, logger });
   const pages: Readonly<Record<string, (request: Request) => Promise<Response>>> = {
     "/consent": consent,
+    "/device": device,
     [MEMBERS_PATH]: createMembersRoute(pageOptions),
     [INVITES_PATH]: createInvitesRoute(pageOptions),
     [TEAMS_PATH]: createTeamsRoute(pageOptions),

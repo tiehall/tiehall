@@ -6,6 +6,7 @@ import {
   ACTIVITY_LOG_PATH,
   createActivityLogRoute,
   createConsentRoute,
+  createDeviceApprovalRoute,
   createGitHubAdminRoute,
   createHomeRoute,
   createInvitesRoute,
@@ -31,11 +32,11 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // own refusals; sign-in: Who may sign in; github-layer-hardening: design.md,
 // Decisions this change rests on: D50 (7); Technical decisions: T5). On the
 // routes that serve the web UI's pages, the setup screen, the review pages and
-// confirmations under /confirm/…, the consent screen and GitHub's return to
-// either sign-in callback, a refusal to a request whose Accept header names text/html is an
-// HTML page: the refusal's status, its title and detail escaped, its problem
-// type in the markup, a link on, and the page headers (no script, nothing
-// loaded, no framing). The same request asking for JSON gets the RFC 9457
+// confirmations under /confirm/…, the consent screen, the device approval page
+// and GitHub's return to either sign-in callback, a refusal to a request whose
+// Accept header names text/html is an HTML page: the refusal's status, its
+// title and detail escaped, its problem type in the markup, a link on, and the
+// page headers (no script, nothing loaded, no framing). The same request asking for JSON gets the RFC 9457
 // problem, as does every call to /api/v1 and /mcp, whatever it accepts. The
 // setup gate's answers before setup completes are unchanged.
 
@@ -168,6 +169,13 @@ const CASES: Case[] = [
     request: () => ({ path: "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback" }),
     status: 404,
     wayOn: () => "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback",
+  },
+  {
+    name: "the device approval page for a code no sign-in is waiting with",
+    route: () => createDeviceApprovalRoute({ step: install.step, session: async () => dana, url: URL_OF_INSTALL, secret: install.authSecret, logger: install.logger }),
+    request: () => form("/device?user_code=ABCDEFGH", dana, { user_code: "ZZZZ-ZZZZ" }),
+    status: 404,
+    wayOn: () => "/device",
   },
   {
     name: "a form posted to the home page",

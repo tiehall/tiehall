@@ -38,7 +38,12 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // its output (activity-log: Exporting the activity log), or, for one listed
 // under redirects, such as an agent client's approval, by sending the browser
 // on to the path on the install its output names (agent-access: Approving an
-// agent client uses the confirmation step).
+// agent client uses the confirmation step), or, for one listed under messages,
+// such as the tiehall CLI's approval, with a page in its own words. The review
+// page of a command listed under entries, such as the CLI's approval, is served
+// only by a page of its own: a GET of its path here sends the browser to that
+// page, whatever input its link carried (agent-access: The device approval page
+// cannot be prefilled), and a refusal of its form leads back there.
 // A GET from a browser without a session shows nothing of the action: it is
 // sent to the sign-in page, which brings it back to the same page once it has
 // signed in (D28 #66; requests: The proposal's confirm page).
@@ -79,6 +84,23 @@ export interface Download {
 export type ConfirmDownloads = Readonly<Record<string, (output: unknown) => Download>>;
 
 /**
+ * The commands whose review page only a page of their own serves, by the
+ * command's id, with that page's path: a GET of the command's path under
+ * /confirm sends the browser to that page, so no link opens the review with
+ * an input of its own. The device approval page serves the review of a code
+ * the person typed there, never one a link carried (agent-access: The device
+ * approval page cannot be prefilled).
+ */
+export type ConfirmEntries = Readonly<Record<string, string>>;
+
+/**
+ * The commands whose confirmation answers with a page in their own words
+ * instead of the "Confirmed" page, by the command's id: an approval of the
+ * tiehall CLI tells the person to return to their terminal.
+ */
+export type ConfirmMessages = Readonly<Record<string, { title: string; text: string }>>;
+
+/**
  * The commands whose confirmation sends the browser on, to a path on the
  * install that the command's output names, instead of the "Confirmed" page,
  * by the command's id: an agent client's approval goes back to the
@@ -92,6 +114,10 @@ export interface ConfirmRouteOptions {
   downloads?: ConfirmDownloads;
   /** The commands whose confirmation sends the browser on to a path on the install instead of the "Confirmed" page. */
   redirects?: ConfirmRedirects;
+  /** The commands whose review page only a page of their own serves, with that page's path. */
+  entries?: ConfirmEntries;
+  /** The commands whose confirmation answers with a page in their own words instead of the "Confirmed" page. */
+  messages?: ConfirmMessages;
   /**
    * The signed-in user's web session, from the request's session cookie;
    * undefined when nobody is signed in. The read may renew the session, and
@@ -135,6 +161,9 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     try {
       if (request.method === "POST") return await apply(request, renewal, commandId, proposal, undo, back);
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
+      // A review page that only a page of its own serves is never opened from a link: the browser goes to that page.
+      const entry = proposal === undefined ? options.entries?.[commandId] : undefined;
+      if (entry !== undefined) return onTo(entry);
       const caller = await options.session(request, renewal);
       // A browser without a session signs in first, and comes back to this page (agent-surfaces: A browser without a session is sent to sign-in).
       if (caller === undefined) return signInFirst(`${url.pathname}${url.search}`);
@@ -171,8 +200,8 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     const caller = await signedIn(request, renewal);
     if (!options.step.needsConfirmation(commandId)) throw new Refusal("route-not-found", "There is no review page for this action.");
     const form = await formOf(request);
-    // A proposal's page is its own path; a command's review page is its path with the input its form posted.
-    if (proposal === undefined) back.path = `${CONFIRM_PATH}${commandId}?input=${encodeURIComponent(form.get("input") ?? "")}`;
+    // A proposal's page is its own path; a command's review page is its path with the input its form posted, or the page that serves it.
+    if (proposal === undefined) back.path = options.entries?.[commandId] ?? `${CONFIRM_PATH}${commandId}?input=${encodeURIComponent(form.get("input") ?? "")}`;
     const rejecting = proposal !== undefined && !undo && form.get("action") === "reject";
     assertWebWrite(
       { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
@@ -204,6 +233,8 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     if (download !== undefined) return file(download(output));
     const redirect = options.redirects?.[commandId];
     if (redirect !== undefined) return onTo(redirect(output));
+    const message = options.messages?.[commandId];
+    if (message !== undefined) return page(htmlPage(message.title, `      <h1>${escapeHtml(message.title)}</h1>\n      <p>${escapeHtml(message.text)}</p>`));
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
 }

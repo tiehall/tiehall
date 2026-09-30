@@ -96,7 +96,11 @@
           "command": "agent_clients.approve",
           "input": { "authorization": "response_type=code&client_id=agent-1&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback&scope=requests%3Aread" }
         },
-        { "action": "approving an agent client on the device approval page", "pending": "15.13" }
+        {
+          "action": "approving an agent client on the device approval page",
+          "command": "agent_clients.approve_device",
+          "input": { "userCode": "ABCDEFGH" }
+        }
       ]
     },
     {

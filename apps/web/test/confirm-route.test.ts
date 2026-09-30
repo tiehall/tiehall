@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ACTIVITY_LOG_PATH,
   CONFIRM_ROUTE_PATHS,
+  DEVICE_APPROVAL_PATH,
   GITHUB_ADMIN_PATH,
   INVITES_PATH,
   MANIFEST_REDIRECT_PATH,
@@ -107,6 +108,17 @@ describe("the app", () => {
   it.each([MEMBERS_PATH, INVITES_PATH, TEAMS_PATH])("mounts its page on %s, for a GET and a POST", async (path) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);
+    const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["GET"]).toBeTypeOf("function");
+    expect(module?.["POST"]).toBeTypeOf("function");
+  });
+
+  // The device approval page, where a member types the code `tiehall login`
+  // printed and posts it to the page itself (agent-access: The device approval
+  // page cannot be prefilled).
+  it("mounts the device approval page on its path, for a GET and a POST", async () => {
+    const files = routesOf(DEVICE_APPROVAL_PATH);
+    expect(files, `the route files ${DEVICE_APPROVAL_PATH} reaches`).toHaveLength(1);
     const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
     expect(module?.["GET"]).toBeTypeOf("function");
     expect(module?.["POST"]).toBeTypeOf("function");

@@ -1,6 +1,7 @@
 import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
+import { DEVICE_APPROVAL_HANDLERS } from "./device-approval.ts";
 import { EVENT_READ_HANDLERS } from "./event-reads.ts";
 import type { Handlers } from "./execute.ts";
 import { GITHUB_APP_KEY_HANDLERS } from "./github-app-key.ts";
@@ -47,4 +48,5 @@ export const HANDLERS: Handlers = {
   ...GITHUB_WEBHOOK_SECRET_HANDLERS,
   ...GITHUB_APP_KEY_HANDLERS,
   ...AGENT_GRANT_HANDLERS,
+  ...DEVICE_APPROVAL_HANDLERS,
 };

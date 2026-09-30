@@ -12,9 +12,9 @@ import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 // GitHub's return to either sign-in callback answer a browser's refusal with
 // a page (html.ts): every path but an API call, as the setup gate names them
 // (/api, /mcp, /.well-known, /webhooks and /schemas), and /healthz, with
-// GitHub's return to the sign-in callback, which lies under /api. The consent,
-// device approval, request URL and intake pages join when they are built. The
-// page's link leads on as the routes' own refusals do: for the sign-in page and
+// GitHub's return to the sign-in callback, which lies under /api. The consent
+// screen and the device approval page are among them; the request URL and
+// intake pages join when they are built. The page's link leads on as the routes' own refusals do: for the sign-in page and
 // GitHub's return to the sign-in callback, to the sign-in page; for the
 // setup screen and its own sign-in, back to the setup screen; for the sign-out
 // form, back to the home page, whose form it is; and for every other page, to

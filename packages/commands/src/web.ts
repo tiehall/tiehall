@@ -7,6 +7,7 @@ import { createConfirmationStep, type ConfirmationStep } from "./confirmation-st
 import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
 import { createConsentRoute, type ConsentRoute } from "./consent.ts";
+import { createDeviceApprovalRoute, type DeviceApprovalRoute } from "./device-approval.ts";
 import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
@@ -17,7 +18,7 @@ import { openJobQueue, type JobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
-import { CONFIRM_DOWNLOADS, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
@@ -163,6 +164,8 @@ export function confirmRoute(env: Environment): ConfirmRoute {
     step,
     downloads: CONFIRM_DOWNLOADS,
     redirects: CONFIRM_REDIRECTS,
+    entries: CONFIRM_ENTRIES,
+    messages: CONFIRM_MESSAGES,
     session: (request, renewal) => signIn.session(request.headers, renewal),
     write: { execute, url: installUrl(env["TIEHALL_URL"] ?? ""), secret: () => readAuthSecret(env) },
     logger,
@@ -274,6 +277,26 @@ export function consentRoute(env: Environment): ConsentRoute {
     logger,
   });
   return consent;
+}
+
+let deviceApproval: DeviceApprovalRoute | undefined;
+
+/**
+ * The device approval page at /device, where a signed-in member approves the
+ * code `tiehall login` printed (agent-access: The device approval page cannot
+ * be prefilled), built once per process, for the signed-in user's web session.
+ */
+export function deviceApprovalRoute(env: Environment): DeviceApprovalRoute {
+  if (deviceApproval !== undefined) return deviceApproval;
+  const { step, logger, signIn } = servicesOf(env);
+  deviceApproval = createDeviceApprovalRoute({
+    step,
+    session: (request, renewal) => signIn.session(request.headers, renewal),
+    url: installUrl(env["TIEHALL_URL"] ?? ""),
+    secret: () => readAuthSecret(env),
+    logger,
+  });
+  return deviceApproval;
 }
 
 let setup: SetupRoute | undefined;

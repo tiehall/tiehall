@@ -6,8 +6,10 @@ import { REFRESH_SCOPE } from "./authorization-server.ts";
 import { actsForUser, type Caller } from "./caller.ts";
 import type { ConfirmRedirects } from "./confirm-route.ts";
 import type { Reviews } from "./confirmation-step.ts";
+import type { AgentClient } from "./agent-clients.ts";
 import { authorizationRequestOf, consentReview, consentViewIn, continuePathOf } from "./consent.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import type { Writer } from "./write.ts";
 
 // A member's grants to agent clients (agent-access: Approving an agent client
 // uses the confirmation step; agent-access: Users list and revoke their own
@@ -36,8 +38,45 @@ import { defineHandler, type Handlers } from "./execute.ts";
 // Access tokens already issued stop working when they expire, within 10
 // minutes.
 
+/**
+ * Stores a member's grant to an agent client, in the approval's write, with
+ * the scopes and resources it approved, and appends the approval's security
+ * event with it: one grant per client and member, which a later approval
+ * updates. Returns the grant's id.
+ */
+export async function storeGrant(
+  writer: Writer,
+  grant: { client: Pick<AgentClient, "id" | "clientId">; userId: string; scopes: readonly string[]; resources: readonly string[]; at: Date },
+): Promise<string> {
+  const { client, userId, at } = grant;
+  const scopes = [...grant.scopes];
+  const resources = [...grant.resources];
+  // One grant per client and member: two approvals at once update the same one.
+  await writer.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tiehall.agent_grant:${client.clientId}:${userId}`}, 0))`);
+  const [existing] = await writer.tx
+    .select({ id: oauthConsents.id })
+    .from(oauthConsents)
+    .where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.clientId, client.clientId), eq(oauthConsents.userId, userId)));
+  let grantId: string;
+  if (existing !== undefined) {
+    grantId = existing.id;
+    await writer.tx
+      .update(oauthConsents)
+      .set({ scopes, resources, requestedUserInfoClaims: [], updatedAt: at })
+      .where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grantId)));
+  } else {
+    const [created] = await writer.tx
+      .insert(oauthConsents)
+      .values({ orgId: writer.orgId, clientId: client.clientId, userId, scopes, resources, requestedUserInfoClaims: [], createdAt: at, updatedAt: at })
+      .returning({ id: oauthConsents.id });
+    grantId = created?.id ?? "";
+  }
+  await writer.record(agentClientApproved, { userId, clientId: client.id, grantId });
+  return grantId;
+}
+
 /** The member a web UI call acts for; the confirmation step and the web UI run only for one. */
-function memberOf(caller: Caller): string {
+export function memberOf(caller: Caller): string {
   if (!actsForUser(caller)) throw new Refusal("forbidden", "Only a signed-in member approves or revokes an agent client.");
   return caller.userId;
 }
@@ -54,27 +93,7 @@ export const AGENT_GRANT_HANDLERS: Handlers = {
     const resources = request.parameters.getAll("resource");
     const at = context.now();
     return context.write(async (writer) => {
-      // One grant per client and member: two approvals at once update the same one.
-      await writer.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tiehall.agent_grant:${client.clientId}:${userId}`}, 0))`);
-      const [existing] = await writer.tx
-        .select({ id: oauthConsents.id })
-        .from(oauthConsents)
-        .where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.clientId, client.clientId), eq(oauthConsents.userId, userId)));
-      let grantId: string;
-      if (existing !== undefined) {
-        grantId = existing.id;
-        await writer.tx
-          .update(oauthConsents)
-          .set({ scopes, resources, requestedUserInfoClaims: [], updatedAt: at })
-          .where(and(eq(oauthConsents.orgId, writer.orgId), eq(oauthConsents.id, grantId)));
-      } else {
-        const [created] = await writer.tx
-          .insert(oauthConsents)
-          .values({ orgId: writer.orgId, clientId: client.clientId, userId, scopes, resources, requestedUserInfoClaims: [], createdAt: at, updatedAt: at })
-          .returning({ id: oauthConsents.id });
-        grantId = created?.id ?? "";
-      }
-      await writer.record(agentClientApproved, { userId, clientId: client.id, grantId });
+      const grantId = await storeGrant(writer, { client, userId, scopes, resources, at });
       return { grantId, continue: continuePathOf(new URLSearchParams(authorization)) };
     });
   }),

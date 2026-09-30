@@ -37,6 +37,12 @@ export {
   type CliDeviceFlowOptions,
 } from "./device-flow.ts";
 export {
+  createDeviceApprovalRoute,
+  normalizeUserCode,
+  type DeviceApprovalRoute,
+  type DeviceApprovalRouteOptions,
+} from "./device-approval.ts";
+export {
   ACCESS_TOKEN_LIFETIME_SECONDS,
   AUTHORIZATION_ENDPOINT_PATH,
   AUTHORIZATION_SIGN_IN_PATH,
@@ -353,6 +359,8 @@ export {
   createConfirmRoute,
   renderReviewPage,
   type ConfirmDownloads,
+  type ConfirmEntries,
+  type ConfirmMessages,
   type ConfirmRedirects,
   type ConfirmRoute,
   type ConfirmRouteOptions,
@@ -390,7 +398,7 @@ export {
   type ConfirmationNoncesOptions,
   type GatedRouteClaim,
 } from "./confirmations.ts";
-export { CONFIRM_DOWNLOADS, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+export { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
 export { AGENT_GRANT_HANDLERS, AGENT_GRANT_REDIRECTS, AGENT_GRANT_REVIEWS } from "./agent-grants.ts";
 export { expireProposals } from "./proposal-endings.ts";
 export { notifyWaitingProposals, waitingByProposal } from "./proposal-waiting.ts";

@@ -11,9 +11,10 @@ import type { TestInstall } from "./install.ts";
 // names another Chromium-based executable. A local server answers the
 // browser with the install's own routes, as the install at the server's
 // origin, so the browser sends what it sends to an install, such as its Origin
-// and Sec-Fetch-Site headers. Each person's browser is its own context, which
-// holds a cookie naming the web session it is signed in with, or none; the
-// sign-in service, which issues real sessions, is not part of these tests.
+// and Sec-Fetch-Site headers; a test may add pages of its own at their paths.
+// Each person's browser is its own context, which holds a cookie naming the
+// web session it is signed in with, or none; the sign-in service, which issues
+// real sessions, is not part of these tests.
 
 export interface BrowserHarness {
   /** The origin of the local server, which the install's routes take as the install's URL. */
@@ -25,7 +26,13 @@ export interface BrowserHarness {
 
 const COOKIE = "tiehall_test_session";
 
-export async function startBrowserHarness(install: TestInstall): Promise<BrowserHarness> {
+/** A page of the install besides the review pages, built for the harness's sessions and origin. */
+export type BrowserPage = (
+  session: (request: Request) => Promise<WebSessionCaller | undefined>,
+  origin: string,
+) => (request: Request) => Promise<Response>;
+
+export async function startBrowserHarness(install: TestInstall, options: { pages?: Readonly<Record<string, BrowserPage>> } = {}): Promise<BrowserHarness> {
   /** The web sessions the browsers are signed in with, by the value of their cookie. */
   const sessions = new Map<string, WebSessionCaller>();
   let origin = "";
@@ -48,7 +55,8 @@ export async function startBrowserHarness(install: TestInstall): Promise<Browser
       headers,
       ...(method === "GET" || method === "HEAD" ? {} : { body: Buffer.concat(chunks) }),
     });
-    const answered = await install.confirmRouteFor(sessionOf, origin)(request);
+    const page = options.pages?.[new URL(request.url).pathname];
+    const answered = await (page === undefined ? install.confirmRouteFor(sessionOf, origin) : page(sessionOf, origin))(request);
     outgoing.writeHead(answered.status, Object.fromEntries(answered.headers));
     outgoing.end(Buffer.from(await answered.arrayBuffer()));
   }
