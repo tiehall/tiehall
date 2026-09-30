@@ -5,6 +5,7 @@ import {
   linkPullRequest,
   listInbox,
   postMessage,
+  proposeTool,
   readDirectory,
   readRequest,
   setRequestStatus,
@@ -19,6 +20,7 @@ import {
   pullRequestLinkText,
   requestPageText,
   requestText,
+  revisedPacketText,
   whoamiText,
   type DirectoryJson,
   type InboxJson,
@@ -27,6 +29,7 @@ import {
   type Reader,
   type RequestJson,
   type RequestPageJson,
+  type RevisedPacketJson,
   type WhoamiJson,
 } from "@tiehall/packet/tool-text";
 
@@ -50,6 +53,7 @@ export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [setRequestStatus.id]: (output, reader) => requestText(output as RequestJson, reader),
   [postMessage.id]: (output, reader) => postedMessageText(output as MessagePostJson, reader),
   [linkPullRequest.id]: (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
+  [proposeTool.id]: (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
   [whoami.id]: (output) => whoamiText(output as WhoamiJson),
   [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),

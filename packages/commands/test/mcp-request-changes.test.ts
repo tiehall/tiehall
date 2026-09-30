@@ -17,10 +17,9 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // withdraws a pending proposal of the caller's user. The contract tests use
 // the official MCP SDK client on both protocol versions and waited as expected
 // failures until the tasks that build the tools turned them into plain tests:
-// claim, offered on MCP since 16.3, and post_message, set_status and link_pr
-// in 16.8; propose waits for 16.9. The inputs its tests send are the ones
-// these tests assume for a tool whose operation is not defined yet; 16.9
-// keeps them, or changes them here with its definition, tests first.
+// claim, offered on MCP since 16.3, post_message, set_status and link_pr in
+// 16.8, and propose in 16.9. A packet change through propose names the
+// revision it expects in expectedRevision, where REST takes it from If-Match.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
@@ -214,7 +213,7 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     return ((await response.json()) as { revision: number }).revision;
   }
 
-  it.fails("withdraws a pending proposal of the caller's user by its id: it can no longer be confirmed, and the due date is unchanged", async () => {
+  it("withdraws a pending proposal of the caller's user by its id: it can no longer be confirmed, and the due date is unchanged", async () => {
     const request = await openToFe();
     const proposed = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-15", expectedRevision: await revisionOf(request.key) });
     const proposalId = (proposed.structuredContent as { proposal: { id: string } }).proposal.id;
@@ -226,7 +225,7 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(packet.packet.due_date).toBeUndefined();
   });
 
-  it.fails("adds a scope change before a claim as the next packet revision at once, with no proposal", async () => {
+  it("adds a scope change before a claim as the next packet revision at once, with no proposal", async () => {
     const request = await openToFe();
     const before = await revisionOf(request.key);
     const packet = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings page.", acceptance_criteria: ["The toggle remembers the choice."] } };
@@ -237,7 +236,7 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(await proposalCount(request.id)).toBe(0);
   });
 
-  it.fails("proposes a due date that needs the requester's confirmation and then a member of the target team's, and changes nothing yet", async () => {
+  it("proposes a due date that needs the requester's confirmation and then a member of the target team's, and changes nothing yet", async () => {
     const request = await openToFe();
     const result = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-15", expectedRevision: await revisionOf(request.key) });
     expect(result.structuredContent).toMatchObject({
@@ -256,7 +255,7 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(packet.packet.due_date).toBeUndefined();
   });
 
-  it.fails("proposes a scope change after a claim that needs the requester's confirmation and then the claimant's", async () => {
+  it("proposes a scope change after a claim that needs the requester's confirmation and then the claimant's", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     const packet = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings page.", acceptance_criteria: ["It follows the system setting."] } };
@@ -269,7 +268,7 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     });
   });
 
-  it.fails("refuses a packet change that names a stale expected revision, or none, as REST refuses a mismatched or missing If-Match, and creates no proposal", async () => {
+  it("refuses a packet change that names a stale expected revision, or none, as REST refuses a mismatched or missing If-Match, and creates no proposal", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     const stale = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: "2026-10-15", expectedRevision: (await revisionOf(request.key)) + 5 });
@@ -279,12 +278,45 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     expect(await proposalCount(request.id)).toBe(0);
   });
 
-  it.fails("proposes a reassignment, as a member of the target team, and a withdrawal, as the requester side", async () => {
+  it("proposes a reassignment, as a member of the target team, and a withdrawal, as the requester side", async () => {
     const request = await openToFe();
     const reassign = await call(dana, version, "propose", { kind: "reassign", key: request.key, team: "BE" });
     expect(reassign.structuredContent).toMatchObject({ proposal: { kind: "reassign", change: { team: { key: "BE" } } } });
     const withdraw = await call(sam, version, "propose", { kind: "withdraw", key: request.key });
     expect(withdraw.structuredContent).toMatchObject({ proposal: { kind: "withdraw" } });
     expect(textOf(withdraw)).not.toContain(`${URL_OF_INSTALL}/confirm/`);
+  });
+
+  it("proposes removing a due date the request has, as a due-date proposal with no date", async () => {
+    const request = await openRequestInTheWebUi<RequestJson>(harness.install, sam.userId, {
+      targetTeam: "FE",
+      requestingTeam: "QA",
+      packet: { ...packetOf(), due_date: "2026-11-01" },
+    });
+    const result = await call(sam, version, "propose", { kind: "due_date", key: request.key, dueDate: null, expectedRevision: await revisionOf(request.key) });
+    expect(result.structuredContent).toMatchObject({ proposal: { kind: "due_date", change: { dueDate: null }, untrusted: { packet: expect.not.objectContaining({ due_date: expect.anything() }) } } });
+  });
+
+  it("refuses the side that may not make the commitment with 403, and creates no proposal", async () => {
+    const request = await openToFe();
+    expect(problemOf(await call(sam, version, "propose", { kind: "reassign", key: request.key, team: "BE" }))).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
+    expect(problemOf(await call(dana, version, "propose", { kind: "withdraw", key: request.key }))).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
+    expect(await proposalCount(request.id)).toBe(0);
+  });
+
+  it("refuses to withdraw a proposal another user proposed with 403, and leaves it pending", async () => {
+    const request = await openToFe();
+    const proposed = await call(sam, version, "propose", { kind: "withdraw", key: request.key });
+    const proposalId = (proposed.structuredContent as { proposal: { id: string } }).proposal.id;
+    expect(problemOf(await call(dana, version, "propose", { kind: "withdraw_proposal", proposal: proposalId }))).toMatchObject({ status: 403 });
+    const { rows } = await harness.install.owner.query("SELECT state FROM proposals WHERE id = $1", [proposalId]);
+    expect(rows[0]?.state).toBe("pending");
+  });
+
+  it("refuses an input that mixes two kinds as input that fails the schema, and creates nothing", async () => {
+    const request = await openToFe();
+    const mixed = await call(dana, version, "propose", { kind: "reassign", key: request.key, team: "BE", dueDate: "2026-10-15" });
+    expect(problemOf(mixed)).toMatchObject({ type: `${PROBLEM}invalid-input`, status: 400 });
+    expect(await proposalCount(request.id)).toBe(0);
   });
 });

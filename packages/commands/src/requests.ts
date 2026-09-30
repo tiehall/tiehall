@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
 import { insertPacketRevision } from "./packet-revisions.ts";
+import type { ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, stampOf, teamActedFor, transition } from "./request-changes.ts";
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
@@ -82,6 +83,33 @@ async function requestingTeamOf(context: HandlerContext, userId: string, named: 
     });
   }
   return only;
+}
+
+/** Proposes withdrawing the request, as its requester side, while its state allows a withdrawal. */
+export async function proposeWithdrawal(context: HandlerContext, key: string): Promise<ProposalAnswer> {
+  const userId = actingUserOf(context);
+  const row = await lockRequest(context, key);
+  await assertSideAllows(context, userId, row, "withdraw");
+  transition(await lifecycleOf(context, row), { kind: "withdraw" });
+  return context.propose(row, { kind: "withdraw", change: {} });
+}
+
+/** Proposes reassigning the request to another team of the install, as a member of its target team, while it has not ended. */
+export async function proposeReassignment(context: HandlerContext, key: string, teamKey: string): Promise<ProposalAnswer> {
+  const userId = actingUserOf(context);
+  const row = await lockRequest(context, key);
+  await assertSideAllows(context, userId, row, "reassign");
+  const team = await teamOfKey(context, teamKey);
+  if (team === undefined) throw new Refusal("record-not-found", "There is no such team.");
+  if (team.id === row.targetTeamId) {
+    const message = "A request is reassigned to another team than the one it is addressed to.";
+    throw new Refusal("invalid-input", message, { issues: [{ path: ["team"], message }] });
+  }
+  const current = await lifecycleOf(context, row);
+  if (isTerminalState(current.state)) {
+    throw new Refusal("conflict", `The request is ${current.state}, which is final, so it is no longer reassigned.`);
+  }
+  return context.propose(row, { kind: "reassign", change: { teamId: team.id } });
 }
 
 export const REQUEST_HANDLERS: Handlers = {
@@ -166,27 +194,9 @@ export const REQUEST_HANDLERS: Handlers = {
     }, { teamId });
   }),
 
-  [proposeCommitment.id]: defineHandler(proposeCommitment, async (input, context) => {
-    const userId = actingUserOf(context);
-    const row = await lockRequest(context, input.key);
-    if (input.kind === "withdraw") {
-      await assertSideAllows(context, userId, row, "withdraw");
-      transition(await lifecycleOf(context, row), { kind: "withdraw" });
-      return context.propose(row, { kind: "withdraw", change: {} });
-    }
-    await assertSideAllows(context, userId, row, "reassign");
-    const team = await teamOfKey(context, input.team);
-    if (team === undefined) throw new Refusal("record-not-found", "There is no such team.");
-    if (team.id === row.targetTeamId) {
-      const message = "A request is reassigned to another team than the one it is addressed to.";
-      throw new Refusal("invalid-input", message, { issues: [{ path: ["team"], message }] });
-    }
-    const current = await lifecycleOf(context, row);
-    if (isTerminalState(current.state)) {
-      throw new Refusal("conflict", `The request is ${current.state}, which is final, so it is no longer reassigned.`);
-    }
-    return context.propose(row, { kind: "reassign", change: { teamId: team.id } });
-  }),
+  [proposeCommitment.id]: defineHandler(proposeCommitment, async (input, context) =>
+    input.kind === "withdraw" ? proposeWithdrawal(context, input.key) : proposeReassignment(context, input.key, input.team),
+  ),
 
   [setRequestStatus.id]: defineHandler(setRequestStatus, async ({ key, state }, context) => {
     const userId = actingUserOf(context);

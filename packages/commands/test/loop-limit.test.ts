@@ -1,4 +1,5 @@
 import { CATALOG, toolReadsOnly } from "@tiehall/catalog";
+import { httpProblem, Refusal } from "@tiehall/core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { storePacketRevision, write, type Store } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
@@ -71,6 +72,17 @@ beforeEach(async () => {
 
 const comment = (user: string, on = key) =>
   callApi(install, tokenOf(user), "POST", `/api/v1/requests/${on}/messages`, { kind: "comment", body: "Any news on this?" });
+
+/** Runs an operation that only MCP offers as the user's agent on MCP, through execute(); a refusal comes back as its problem. */
+async function onMcp(user: string, commandId: string, input: unknown): Promise<{ status: number; body: any }> {
+  try {
+    return { status: 200, body: await install.execute(commandId, tokenOf(user, "mcp"), input) };
+  } catch (error) {
+    if (!(error instanceof Refusal)) throw error;
+    const { status, body } = httpProblem(error);
+    return { status, body };
+  }
+}
 
 /** Agents of Alice and Bob, taking turns, each post a comment at each of these times; returns the answers' statuses. */
 async function agentWrites(at_: readonly string[], on = key): Promise<number[]> {
@@ -211,6 +223,7 @@ describe("a flagged request", () => {
       "requests.set_status": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
       "requests.propose": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/proposals`, { kind: "reassign", team: "BE" }),
       "requests.link_pr": () => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/pull-requests`, { url: "https://github.com/acme/web/pull/88" }),
+      "proposals.propose": () => onMcp(bob, "proposals.propose", { kind: "reassign", key, team: "BE" }),
       "packets.add_revision": () =>
         sendApi(install, tokenOf(alice), "POST", `/api/v1/requests/${key}/packet/revisions`, {
           // A new link only, which changes no scope, so it would be no commitment on the claimed request.

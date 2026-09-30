@@ -7,6 +7,7 @@ import {
   postedMessageText,
   pullRequestLinkText,
   requestPageText,
+  revisedPacketText,
   requestText,
   ToolTextError,
   whoamiText,
@@ -274,5 +275,15 @@ describe("a linked pull request", () => {
     expect(() => pullRequestLinkText({ request, pullRequest: { ...link, url: "https://evil.example/acme/web/pull/88" } }, { teams: [] })).toThrow(
       ToolTextError,
     );
+  });
+});
+
+describe("a packet revised at once", () => {
+  it("says which revision the packet is at now and how to read it, in Tiehall's words, and states the request", () => {
+    const markdown = view(
+      revisedPacketText({ request, packet: { request: { id: request.id, key: "FE-142" }, revision: 3, createdAt: "2026-09-30T09:00:00.000Z", packet: {} } }, { teams: [] }),
+    );
+    expect(markdown).toContain("The packet of FE-142 is at revision 3 now, added at 2026-09-30T09:00:00.000Z; get_request reads it.");
+    expect(markdown).toContain("FE-142 is claimed, addressed to team FE.");
   });
 });

@@ -53,6 +53,7 @@ export {
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
+export { PROPOSE_COMMANDS, proposeTool } from "./propose.ts";
 export { GITHUB_REPOSITORY, linkPullRequest, PULL_REQUEST_COMMANDS, PULL_REQUEST_URL, pullRequestLink } from "./pull-requests.ts";
 export {
   CHARACTERS_PER_TOKEN,

@@ -1,7 +1,8 @@
-import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision } from "@tiehall/catalog";
+import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision, type Packet } from "@tiehall/catalog";
 import { changedPacketFields, jsonPatch, packetCommitments, Refusal } from "@tiehall/core";
-import { defineHandler, type Handlers } from "./execute.ts";
-import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
+import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
+import { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
+import type { ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lockRequest, teamActedFor } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
 
@@ -32,6 +33,54 @@ import { resolveRequestKey } from "./request-keys.ts";
 // because it carries what people wrote. A revision the request does not have
 // gets 404.
 
+/**
+ * Adds the next revision of the request's packet for the user the call acts
+ * for, or proposes it, as the requester side, naming the revision it expects:
+ * the packet the call makes from the current one, as it reads it with the
+ * request's row locked. Both packets.add_revision and the propose tool change
+ * a packet through it, so either refuses a missing or stale expected revision
+ * the same way.
+ */
+export async function revisePacket(
+  context: HandlerContext,
+  key: string,
+  expectedRevision: number | undefined,
+  next: (current: Packet) => Packet,
+): Promise<PacketRevisionView | ProposalAnswer> {
+  const userId = actingUserOf(context);
+  const row = await lockRequest(context, key);
+  await assertSideAllows(context, userId, row, "add_revision");
+  if (expectedRevision === undefined) {
+    throw new Refusal(
+      "if-match-required",
+      'Adding a revision names the revision you expect: send If-Match with the ETag of the packet\'s current revision, such as "3".',
+    );
+  }
+  const current = await packetRevisionOf(context, row.id);
+  if (current.revision !== expectedRevision) {
+    throw new Refusal(
+      "precondition-failed",
+      `The packet is at revision ${current.revision}, not ${expectedRevision}: read it again and send its ETag in If-Match.`,
+    );
+  }
+  const packet = next(current.packet as Packet);
+  if (packet.kind !== current.packet.kind) {
+    const message = `A revision keeps the packet's kind, which is ${current.packet.kind}.`;
+    throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
+  }
+  const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
+  if (commitments.length > 0) {
+    return context.propose(row, {
+      kind: commitments.includes("scope") ? "scope" : "due_date",
+      commitments,
+      change: { packet },
+      baseRevision: current.revision,
+    });
+  }
+  const teamId = await teamActedFor(context, userId, row);
+  return context.write(async (writer) => packetRevisionOf(writer, row.id, await storePacketRevision(writer, row.id, packet)), { teamId });
+}
+
 export const PACKET_HANDLERS: Handlers = {
   [getPacket.id]: defineHandler(getPacket, async ({ key }, context) => {
     const { requestId } = await resolveRequestKey(context, key);
@@ -56,37 +105,7 @@ export const PACKET_HANDLERS: Handlers = {
     };
   }),
 
-  [addPacketRevision.id]: defineHandler(addPacketRevision, async ({ key, expectedRevision, packet }, context) => {
-    const userId = actingUserOf(context);
-    const row = await lockRequest(context, key);
-    await assertSideAllows(context, userId, row, "add_revision");
-    if (expectedRevision === undefined) {
-      throw new Refusal(
-        "if-match-required",
-        'Adding a revision names the revision you expect: send If-Match with the ETag of the packet\'s current revision, such as "3".',
-      );
-    }
-    const current = await packetRevisionOf(context, row.id);
-    if (current.revision !== expectedRevision) {
-      throw new Refusal(
-        "precondition-failed",
-        `The packet is at revision ${current.revision}, not ${expectedRevision}: read it again and send its ETag in If-Match.`,
-      );
-    }
-    if (packet.kind !== current.packet.kind) {
-      const message = `A revision keeps the packet's kind, which is ${current.packet.kind}.`;
-      throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
-    }
-    const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
-    if (commitments.length > 0) {
-      return context.propose(row, {
-        kind: commitments.includes("scope") ? "scope" : "due_date",
-        commitments,
-        change: { packet },
-        baseRevision: current.revision,
-      });
-    }
-    const teamId = await teamActedFor(context, userId, row);
-    return context.write(async (writer) => packetRevisionOf(writer, row.id, await storePacketRevision(writer, row.id, packet)), { teamId });
-  }),
+  [addPacketRevision.id]: defineHandler(addPacketRevision, async ({ key, expectedRevision, packet }, context) =>
+    revisePacket(context, key, expectedRevision, () => packet),
+  ),
 };

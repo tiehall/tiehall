@@ -37,6 +37,11 @@ export async function endProposal(writer: Writer, requestId: string, proposalId:
   await writer.record(proposalEnded, { requestId, proposalId, how });
 }
 
+/** Withdraws the pending proposal for the user the call acts for, who proposed it; 403 for anyone else, 409 once it ended. */
+export function withdrawProposalFor(context: HandlerContext, proposalId: string): Promise<ProposalView> {
+  return end(context, proposalId, "withdrawn");
+}
+
 /** Rejects or withdraws the proposal for the user the call acts for, once the rules allow it. */
 async function end(context: HandlerContext, proposalId: string, how: "rejected" | "withdrawn"): Promise<ProposalView> {
   const userId = actingUserOf(context);

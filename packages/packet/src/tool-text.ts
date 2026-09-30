@@ -285,6 +285,23 @@ export function pullRequestLinkText(linked: LinkedPullRequestJson, reader: Reade
   ];
 }
 
+/** What a packet change answers when it made no commitment: the request and its packet's revision as they are now. */
+export interface RevisedPacketJson {
+  request: RequestJson;
+  packet: { request: { id: string; key: string }; revision: number; createdAt: string; packet: unknown };
+}
+
+/** A packet revised at once, in Tiehall's words: the revision it is at now and how to read it; then the request. */
+export function revisedPacketText(revised: RevisedPacketJson, reader: Reader): AgentText[] {
+  const key = checked(revised.request.key, REQUEST_KEY, "request key");
+  const revision = count(revised.packet.revision, "revision");
+  const at = checked(revised.packet.createdAt, DATE_TIME, "date");
+  return [
+    { origin: "tiehall", text: `The packet of ${key} is at revision ${revision} now, added at ${at}; get_request reads it.` },
+    ...requestText(revised.request, reader),
+  ];
+}
+
 /** The origin of an install, as TIEHALL_URL gives it: a scheme, a host and a port, and no path. */
 const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;
 
