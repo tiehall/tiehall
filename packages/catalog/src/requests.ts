@@ -111,7 +111,8 @@ export const createRequest = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
+  surfaces: ["rest", "mcp"],
+  tool: "open_request",
   stability: "alpha",
 });
 
@@ -146,6 +147,25 @@ export const listRequests = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
+  stability: "alpha",
+});
+
+export const listInbox = defineCommand({
+  id: "requests.inbox",
+  summary:
+    "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+  input: z.object({
+    state: z.enum(REQUEST_STATES).optional().meta({ description: "Only the requests in this state." }),
+    limit: z.coerce.number().int().min(1).max(50).optional().meta({ description: "How many requests to return, 1 to 50; 20 unless given." }),
+    offset: z.coerce.number().int().min(0).optional().meta({ description: "How many of the newest requests to skip; 0 unless given." }),
+  }),
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  output: z.object({ "requests": z.array(request) }),
+  scopes: ["requests:read"],
+  commitment: false,
+  confirm: false,
+  surfaces: ["mcp"],
+  tool: "list_inbox",
   stability: "alpha",
 });
 
@@ -215,4 +235,4 @@ export const proposeCommitment = defineCommand({
   stability: "alpha",
 });
 
-export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, claimRequest, setRequestStatus, proposeCommitment];
+export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, listInbox, claimRequest, setRequestStatus, proposeCommitment];

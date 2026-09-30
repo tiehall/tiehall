@@ -37,6 +37,7 @@ export {
   createRequest,
   DIRECT_STATES,
   getRequest,
+  listInbox,
   PROPOSED_STATES,
   proposeCommitment,
   listRequests,

@@ -276,3 +276,21 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
   }
   return texts;
 }
+
+/** The requests addressed to the reader's teams, as list_inbox returns them, newest first. */
+export interface InboxJson {
+  // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
+  "requests": RequestJson[];
+}
+
+/** Which of the reader's teams a list is for, and each request's summary, with its title fenced. */
+export function inboxText(inbox: InboxJson, reader: Reader): AgentText[] {
+  const teams = reader.teams.map((key) => checked(key, TEAM_KEY, "team key"));
+  const yours = `your team${teams.length === 1 ? "" : "s"} ${listed(teams)}`;
+  if (teams.length === 0) return [{ origin: "tiehall", text: "You belong to no team, so no request is addressed to you." }];
+  const { "requests": requests } = inbox;
+  if (requests.length === 0) return [{ origin: "tiehall", text: `No request is addressed to ${yours}.` }];
+  const heading =
+    requests.length === 1 ? `1 request is addressed to ${yours}.` : `${requests.length} requests are addressed to ${yours}, newest first.`;
+  return [{ origin: "tiehall", text: heading }, ...requests.flatMap((request) => requestText(request, reader))];
+}

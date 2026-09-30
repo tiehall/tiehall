@@ -1,12 +1,14 @@
-import { claimRequest, isProposalAnswer, readDirectory, readRequest, whoami } from "@tiehall/catalog";
+import { claimRequest, createRequest, isProposalAnswer, listInbox, readDirectory, readRequest, whoami } from "@tiehall/catalog";
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import type { AgentText } from "@tiehall/packet/render";
 import {
   directoryText,
+  inboxText,
   requestPageText,
   requestText,
   whoamiText,
   type DirectoryJson,
+  type InboxJson,
   type Reader,
   type RequestJson,
   type RequestPageJson,
@@ -27,6 +29,8 @@ export type ToolText = (output: unknown, reader: Reader) => AgentText[];
 
 /** The renderer of each tool's result, by its operation's id. */
 export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
+  [createRequest.id]: (output, reader) => requestText(output as RequestJson, reader),
+  [listInbox.id]: (output, reader) => inboxText(output as InboxJson, reader),
   [claimRequest.id]: (output, reader) => requestText(output as RequestJson, reader),
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
   [whoami.id]: (output) => whoamiText(output as WhoamiJson),

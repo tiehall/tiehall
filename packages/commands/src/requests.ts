@@ -1,7 +1,7 @@
-import { claimRequest, createRequest, getRequest, listRequests, proposeCommitment, setRequestStatus } from "@tiehall/catalog";
+import { claimRequest, createRequest, getRequest, listInbox, listRequests, proposeCommitment, setRequestStatus } from "@tiehall/catalog";
 import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted } from "@tiehall/core";
 import { requests } from "@tiehall/db";
-import { and, desc, eq, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
 import { insertPacketRevision } from "./packet-revisions.ts";
@@ -35,6 +35,11 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // team (requests: Reassignment gives a new key and the old key redirects), and
 // withdrawing it, a proposal of its requester side, each for a request that
 // has not ended.
+//
+// The inbox (agent-surfaces: The MCP tools; design.md, Decisions this change
+// rests on: D28 #56): list_inbox lists the requests addressed to the caller's
+// teams, newest first, in every state unless it names one; a member of no team
+// has none.
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -121,6 +126,28 @@ export const REQUEST_HANDLERS: Handlers = {
       .where(and(...where))
       .orderBy(desc(requests.createdAt), desc(requests.id))
       .limit(limit ?? 50)
+      .offset(offset ?? 0);
+    return { "requests": await requestViews(context, rows) };
+  }),
+
+  // The inbox of an agent's user: the requests addressed to any of the user's teams, newest first.
+  [listInbox.id]: defineHandler(listInbox, async ({ state, limit, offset }, context) => {
+    const mine = await teamsOfMember(context, actingUserOf(context));
+    if (mine.length === 0) return { "requests": [] };
+    const where: SQL[] = [
+      eq(requests.orgId, context.orgId),
+      inArray(
+        requests.targetTeamId,
+        mine.map(({ id }) => id),
+      ),
+    ];
+    if (state !== undefined) where.push(eq(requests.state, state));
+    const rows = await context.tx
+      .select()
+      .from(requests)
+      .where(and(...where))
+      .orderBy(desc(requests.createdAt), desc(requests.id))
+      .limit(limit ?? 20)
       .offset(offset ?? 0);
     return { "requests": await requestViews(context, rows) };
   }),

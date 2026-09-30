@@ -174,7 +174,7 @@ describe.each(PROTOCOL_VERSIONS)("directory, on protocol version %s", (version) 
 });
 
 describe.each(PROTOCOL_VERSIONS)("list_inbox, on protocol version %s", (version) => {
-  it.fails("lists the requests addressed to the caller's teams, and none addressed to another team", async () => {
+  it("lists the requests addressed to the caller's teams, and none addressed to another team", async () => {
     const toFe = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA", title: "Inbox check for FE" });
     const toOps = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "OPS", requestingTeam: "QA", title: "Inbox check for OPS" });
     const result = await call(dana, version, "list_inbox");
@@ -187,7 +187,7 @@ describe.each(PROTOCOL_VERSIONS)("list_inbox, on protocol version %s", (version)
     expect(text).not.toContain(toOps.key);
   });
 
-  it.fails("lists nothing for a member of no team", async () => {
+  it("lists nothing for a member of no team", async () => {
     const result = await call(nola, version, "list_inbox");
     expect(result.isError).not.toBe(true);
     // The key is quoted, so the source-citation check does not take the name and its colon for a citation.
@@ -196,7 +196,7 @@ describe.each(PROTOCOL_VERSIONS)("list_inbox, on protocol version %s", (version)
 });
 
 describe.each(PROTOCOL_VERSIONS)("open_request, on protocol version %s", (version) => {
-  it.fails("opens a request from the team a member of two teams names", async () => {
+  it("opens a request from the team a member of two teams names", async () => {
     const result = await call(sam, version, "open_request", { targetTeam: "FE", requestingTeam: "QA", title: "Add a dark mode", packet: packetOf() });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
@@ -208,13 +208,13 @@ describe.each(PROTOCOL_VERSIONS)("open_request, on protocol version %s", (versio
     });
   });
 
-  it.fails("opens a request from the only team of a member who names none", async () => {
+  it("opens a request from the only team of a member who names none", async () => {
     const result = await call(dana, version, "open_request", { targetTeam: "OPS", title: "Rotate the staging keys", packet: packetOf("Rotate the staging keys.") });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ targetTeam: { key: "OPS" }, requester: { user: { id: dana.userId }, team: { key: "FE" } } });
   });
 
-  it.fails("refuses a member of two teams who names none as input that fails the schema, naming the teams, and opens nothing", async () => {
+  it("refuses a member of two teams who names none as input that fails the schema, naming the teams, and opens nothing", async () => {
     const before = Number((await harness.install.owner.query("SELECT count(*) FROM requests")).rows[0].count);
     const result = await call(sam, version, "open_request", { targetTeam: "FE", title: "Add a dark mode", packet: packetOf() });
     const problem = problemOf(result);
@@ -224,7 +224,7 @@ describe.each(PROTOCOL_VERSIONS)("open_request, on protocol version %s", (versio
     expect(Number((await harness.install.owner.query("SELECT count(*) FROM requests")).rows[0].count)).toBe(before);
   });
 
-  it.fails("refuses a member of no team with 403, and opens nothing", async () => {
+  it("refuses a member of no team with 403, and opens nothing", async () => {
     const result = await call(nola, version, "open_request", { targetTeam: "FE", title: "Add a dark mode", packet: packetOf() });
     const problem = problemOf(result);
     expect(problem.type).toBe(`${PROBLEM}forbidden`);

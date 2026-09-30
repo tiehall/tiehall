@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { closingMarker, createAgentView, fencePreamble, openingMarker } from "../src/render.ts";
-import { directoryText, originOf, requestPageText, requestText, ToolTextError, whoamiText, type RequestJson, type RequestPageJson } from "../src/tool-text.ts";
+import { directoryText, inboxText, originOf, requestPageText, requestText, ToolTextError, whoamiText, type RequestJson, type RequestPageJson } from "../src/tool-text.ts";
 
 // What agents read of a request, as markdown (agent-surfaces: Tool results
 // carry structured content and fenced markdown; agent-safety: Every string
@@ -197,5 +197,21 @@ describe("the directory", () => {
     expect(markdown).toContain("API 00000000-0000-4000-8000-000000000030 of team QA, which team FE consumes, is named:");
     expect(markdown).toContain("payments-api");
     expect(markdown).toContain("Origin: other team.");
+  });
+});
+
+describe("a list of requests", () => {
+  it("says which of the reader's teams it lists for, and gives each request's summary with its title fenced", () => {
+    const agentView = createAgentView();
+    const markdown = agentView.markdown(inboxText({ "requests": [request, { ...request, key: "FE-143", untrusted: { title: "Fix the logo" } }] }, { teams: ["FE", "OPS"] }));
+    expect(markdown).toContain("2 requests are addressed to your teams FE and OPS, newest first.");
+    expect(markdown).toContain("FE-142 is claimed, addressed to team FE.");
+    expect(markdown).toContain("FE-143 is claimed, addressed to team FE.");
+    expect(markdown).toContain(fenced(agentView.nonce, "other team", "Fix the logo"));
+  });
+
+  it("says when nothing is addressed to the reader's teams, and when the reader is in no team", () => {
+    expect(view(inboxText({ "requests": [] }, { teams: ["FE"] }))).toBe("No request is addressed to your team FE.");
+    expect(view(inboxText({ "requests": [] }, { teams: [] }))).toBe("You belong to no team, so no request is addressed to you.");
   });
 });
