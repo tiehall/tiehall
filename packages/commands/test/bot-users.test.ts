@@ -7,6 +7,7 @@ import {
   createActivityLogRoute,
   createAgentTokenCheck,
   createRestHandler,
+  createMcpRoute,
   createMembersRoute,
   createTeamsRoute,
   MEMBERS_PATH,
@@ -17,6 +18,8 @@ import {
 } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
+import { mcpClient, PROTOCOL_VERSIONS, textOf } from "./support/mcp.ts";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // Bot users (teams-and-roles: Bot users; teams-and-roles: What admins and
 // members may do; design.md, Decisions this change rests on: D28 #94). An
@@ -140,8 +143,44 @@ describe("an admin", () => {
     }
   });
 
-  // whoami is built by task 16.5, which names the bot flag among what it returns.
-  it.todo("sees whoami, called with the user's personal access token, say that its user is a bot");
+  it("sees whoami, called with the user's personal access token, say that its user is a bot", async () => {
+    const botSession: WebSessionCaller = { kind: "web_session", userId: bot, sessionId: randomUUID() };
+    // The MCP endpoint, which checks personal access tokens as the web role's does.
+    const mcp = createMcpRoute({
+      catalog: CATALOG,
+      execute: install.execute,
+      authenticate: createAgentTokenCheck({ url: URL_OF_INSTALL, signingKeys: async () => undefined, database: install.db }),
+      database: install.db,
+      logger: install.logger,
+    });
+    await setFlag(ada, bot, true);
+    try {
+      const created = await install.confirm(botSession, "personal_access_tokens.create", { name: "whoami", scopes: ["requests:read"], expiresInDays: 30 });
+      expect(created.status).toBe(200);
+      const token = /<pre><code>(th_pat_[A-Za-z0-9_-]+)<\/code><\/pre>/.exec(await created.text())?.[1] ?? "";
+      for (const version of PROTOCOL_VERSIONS) {
+        const client = mcpClient({ version });
+        const fetchThroughRoute = (input: string | URL, init?: RequestInit) => {
+          const request = new Request(input, init);
+          request.headers.set("authorization", `Bearer ${token}`);
+          return mcp(request);
+        };
+        await client.connect(new StreamableHTTPClientTransport(new URL(`${URL_OF_INSTALL}/mcp`), { fetch: fetchThroughRoute }));
+        try {
+          const result = await client.callTool({ name: "whoami", arguments: {} });
+          expect(result.structuredContent, version).toEqual({
+            user: { id: bot, login: "acme-ci-bot", kind: "human", bot: true },
+            install: { url: URL_OF_INSTALL },
+          });
+          expect(textOf(result), version).toContain("acme-ci-bot (a bot user)");
+        } finally {
+          await client.close();
+        }
+      }
+    } finally {
+      await setFlag(ada, bot, false);
+    }
+  });
   it("sees a flagged user hold personal access tokens, which keep acting for them when the flag changes", async () => {
     const botSession: WebSessionCaller = { kind: "web_session", userId: bot, sessionId: randomUUID() };
     // A REST route that checks personal access tokens as the web role's does.
