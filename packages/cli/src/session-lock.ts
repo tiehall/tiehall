@@ -120,6 +120,11 @@ function askToGo(path: string): Promise<"gone" | "stale" | "silent"> {
   });
 }
 
+/** Removes a socket nobody listens on; a named pipe nobody listens on is gone already, so Windows has none to remove. */
+function removeStale(path: string): void {
+  if (process.platform !== "win32") rmSync(path, { force: true });
+}
+
 /**
  * Takes the lock of a session for this waiter: at once when it is free, after
  * asking the waiter that holds it to go, or after removing a socket nobody
@@ -133,7 +138,7 @@ export async function acquireSessionLock(configDir: string, sessionId: string): 
     const lock = await listen(path);
     if (lock !== undefined) return lock;
     const outcome = await askToGo(path);
-    if (outcome === "stale") rmSync(path, { force: true });
+    if (outcome === "stale") removeStale(path);
     if (outcome === "silent") return undefined;
   }
   return undefined;
@@ -143,5 +148,5 @@ export async function acquireSessionLock(configDir: string, sessionId: string): 
 export async function releaseSessionLock(configDir: string, sessionId: string): Promise<void> {
   const path = sessionLockPath(configDir, sessionId);
   if (process.platform !== "win32" && !existsSync(path)) return;
-  if ((await askToGo(path)) === "stale") rmSync(path, { force: true });
+  if ((await askToGo(path)) === "stale") removeStale(path);
 }
