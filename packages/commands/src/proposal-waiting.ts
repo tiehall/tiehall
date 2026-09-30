@@ -6,6 +6,7 @@ import { commitmentPhrase, installLink, PROPOSAL_NOTICE, requestKey, serverTime 
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { proposalView } from "./proposals.ts";
+import { personalAccessTokenReminderViews } from "./personal-access-token-reminders.ts";
 import { receiptViews } from "./receipts.ts";
 import { actingUserOf } from "./request-changes.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -101,7 +102,11 @@ export const PROPOSAL_WAITING_HANDLERS: Handlers = {
     const mine = [...waiting].filter(([, userIds]) => userIds.includes(userId)).map(([proposalId]) => proposalId);
     const views = [];
     for (const proposalId of mine) views.push(await proposalView(context, proposalId));
-    return { waiting: views, receipts: await receiptViews(context, userId) };
+    return {
+      waiting: views,
+      receipts: await receiptViews(context, userId),
+      reminders: await personalAccessTokenReminderViews(context, userId, context.now()),
+    };
   }),
 };
 

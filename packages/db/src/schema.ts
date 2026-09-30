@@ -1252,6 +1252,45 @@ export const personalAccessTokens = pgTable(
   ],
 );
 
+// The reminders of personal access tokens that expire soon (agent-access: PAT
+// owners are reminded before expiry): one row per token and reminder, 14 days
+// and 3 days before the token's expiry day, made by the reminder job on that
+// day, with when it was emailed, once SMTP is set up. The owner's web inbox
+// lists them while the token may still be used.
+export const personalAccessTokenReminders = pgTable(
+  "personal_access_token_reminders",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    tokenId: uuid("token_id").notNull(),
+    /** The token's owner, whom the reminder is for. */
+    userId: uuid("user_id").notNull(),
+    /** How many days before the token's expiry day the reminder is: 14 or 3. */
+    daysBefore: integer("days_before").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    /** When it was emailed; none until it is, and never without SMTP. */
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("personal_access_token_reminders_token_days").on(table.orgId, table.tokenId, table.daysBefore),
+    index("personal_access_token_reminders_user").on(table.orgId, table.userId, table.createdAt),
+    foreignKey({
+      name: "personal_access_token_reminders_token_fk",
+      columns: [table.orgId, table.tokenId],
+      foreignColumns: [personalAccessTokens.orgId, personalAccessTokens.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "personal_access_token_reminders_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("personal_access_token_reminders_days_known", sql`${table.daysBefore} IN (14, 3)`),
+  ],
+);
+
 // Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's
 // teams, kept in Tiehall's own records, each with its current key and a name.
 // Only admins change them, through the team operations; nothing is taken from

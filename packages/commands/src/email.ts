@@ -56,6 +56,18 @@ export function serverTime(time: Date): ServerText {
   return time.toISOString() as ServerText;
 }
 
+/** The UTC day of a time Tiehall recorded, such as when a personal access token expires, written as YYYY-MM-DD. */
+export function serverDay(time: Date): ServerText {
+  if (Number.isNaN(time.getTime())) throw new TypeError("A server day is the day of a valid time.");
+  return time.toISOString().slice(0, 10) as ServerText;
+}
+
+/** A whole number of days Tiehall counted, such as "14 days" or "1 day". */
+export function dayCount(days: number): ServerText {
+  if (!Number.isInteger(days) || days < 0) throw new TypeError("A day count is a whole number of days.");
+  return `${days} ${days === 1 ? "day" : "days"}` as ServerText;
+}
+
 /** What each kind of commitment proposes to do to its request, in Tiehall's words. */
 const COMMITMENT_PHRASES: Readonly<Record<string, string>> = {
   due_date: "change its due date",
@@ -208,6 +220,29 @@ export const RECEIPT_WITH_UNDO: EmailTemplate<{ key: ServerText; sentence: Serve
   subject: RECEIPT.subject,
   text: ({ sentence, until, page }) =>
     [sentence, "", `You can undo it until ${until} on its undo page: ${page}`, "It is also listed in the standing list of your web inbox.", ""].join("\n"),
+};
+
+/**
+ * The sentence of a reminder that a personal access token expires soon
+ * (agent-access: PAT owners are reminded before expiry), in Tiehall's words:
+ * when the token was created and when it expires, never its label or value.
+ */
+export function personalAccessTokenReminderSentence({ createdOn, expiresOn, days }: { createdOn: ServerText; expiresOn: ServerText; days: ServerText }): ServerText {
+  return `Your personal access token created on ${createdOn} expires on ${expiresOn} (UTC), in ${days}.` as ServerText;
+}
+
+/** The email of a reminder that a personal access token expires soon, with the page where a new one is created. */
+export const PERSONAL_ACCESS_TOKEN_REMINDER: EmailTemplate<{ createdOn: ServerText; expiresOn: ServerText; days: ServerText; page: ServerText }> = {
+  id: "email.personal_access_token_reminder",
+  subject: ({ expiresOn }) => `Tiehall: your personal access token expires on ${expiresOn}`,
+  text: (values) =>
+    [
+      personalAccessTokenReminderSentence(values),
+      "",
+      `Create a new one before then on your Connected agents and tokens page: ${values.page}`,
+      "The reminder is also listed in the standing list of your web inbox.",
+      "",
+    ].join("\n"),
 };
 
 /** The test message an admin sends from the admin page. */

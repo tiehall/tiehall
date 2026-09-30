@@ -47,6 +47,12 @@ export {
   type FoundPersonalAccessToken,
 } from "./personal-access-tokens.ts";
 export {
+  personalAccessTokenReminderViews,
+  REMINDER_DAYS_BEFORE,
+  remindPersonalAccessTokenOwners,
+  type PersonalAccessTokenReminderView,
+} from "./personal-access-token-reminders.ts";
+export {
   createDeviceApprovalRoute,
   normalizeUserCode,
   type DeviceApprovalRoute,
