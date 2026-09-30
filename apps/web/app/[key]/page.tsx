@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { readRequestPageAs, webCommands, type TeamIntakeView } from "@tiehall/commands/web";
+import { NEGOTIATED_KEY_HEADER, readRequestPageAs, webCommands, type TeamIntakeView } from "@tiehall/commands/web";
 import { IntakePage } from "../../lib/intake-page.tsx";
 import { RequestPage } from "../../lib/request-page.tsx";
 
@@ -12,7 +12,12 @@ import { RequestPage } from "../../lib/request-page.tsx";
 // JSON, redirects and refusals itself, and lets a call that negotiates HTML
 // reach this page only for a signed-in member and the request's or the team's
 // current key, with the headers of every answer of a negotiated URL and the
-// cookie that renews the session, which a server component cannot set. An
+// cookie that renews the session, which a server component cannot set. It
+// names that key to the page in a header of its own, which it takes from
+// every other call; the page renders only a call the proxy named its key for,
+// and is no page for any other, such as a path or a method Next.js would
+// bring here that the proxy did not negotiate, so nothing reaches it around
+// the negotiation. An
 // intake page reads the team through teams.get and shows it
 // (lib/intake-page.tsx). The page of a request is a
 // server component that reads the request with its thread, its packet and its
@@ -35,6 +40,8 @@ const TEAM_KEY = /^[A-Z][A-Z0-9]{1,9}$/;
 
 export default async function Page({ params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
+  // Only a call the proxy negotiated as this key's page.
+  if ((await headers()).get(NEGOTIATED_KEY_HEADER) !== key) notFound();
   const web = webCommands(process.env, async () => new Headers(await headers()));
   if (TEAM_KEY.test(key)) {
     // A team's intake page, which the proxy lets through only for a signed-in member and the team's current key.

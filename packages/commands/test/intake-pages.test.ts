@@ -76,11 +76,11 @@ interface Answer {
   body: string;
 }
 
-/** Calls the web app at this path with exactly these headers. */
-function call(path: string, headers: Record<string, string> = {}): Promise<Answer> {
+/** Calls the web app at this path with exactly these headers; with GET unless a method is named. */
+function call(path: string, headers: Record<string, string> = {}, method = "GET"): Promise<Answer> {
   const { hostname, port } = new URL(web.origin);
   return new Promise((resolve, reject) => {
-    const outgoing = httpRequest({ hostname, port, path, method: "GET", headers }, (incoming) => {
+    const outgoing = httpRequest({ hostname, port, path, method, headers }, (incoming) => {
       const chunks: Buffer[] = [];
       incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
       incoming.on("end", () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, body: Buffer.concat(chunks).toString("utf8") }));
@@ -209,5 +209,37 @@ describe("a team's intake page", () => {
   it("answers a key no team has with 404", async () => {
     expect((await call("/ZZ", asBob(BROWSER))).status).toBe(404);
     expect((await call("/ZZ.json", bobsToken())).status).toBe(404);
+  });
+
+  // /%46E is the same URL as /FE (RFC 3986, section 6.2.2.2), which Next.js decodes to the same page, so it is
+  // negotiated as that URL and the page is never reached around the negotiation.
+  it("negotiates a path written with percent-encoded characters as the same page", async () => {
+    const page = await call("/%46E", asBob(BROWSER));
+    expect(page.status).toBe(200);
+    expect(textOf(page.body)).toContain("FE: Frontend");
+    expect(String(page.headers["vary"])).toMatch(/Accept, Authorization/);
+    expect(page.headers["cache-control"]).toBe("private, no-store");
+    expect(page.headers["etag"]).toBeDefined();
+    expect(String(page.headers["content-security-policy"])).toMatch(/'nonce-/);
+    const removed = await call("/%46E", { cookie: browser["dana"] ?? "", accept: BROWSER });
+    expect(removed.status).toBe(403);
+    holdsNothingOfFe(removed);
+    expect((await call("/%4FPS", asBob(BROWSER))).status).toBe(307);
+  });
+
+  // An intake page is read with GET or HEAD; any other call is to no route, 404 whoever makes it (public-api: One
+  // error model for Tiehall's own refusals), with the headers of every answer of a negotiated URL.
+  it("answers every other method as no route, with nothing from the page", async () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      for (const headers of [asBob(BROWSER), { cookie: browser["dana"] ?? "", accept: BROWSER }, bobsToken("application/json")]) {
+        const answer = await call("/FE", { ...headers, "content-length": "0" }, method);
+        expect(answer.status, method).toBe(404);
+        expect(answer.body).toContain("https://tiehall.com/problems/route-not-found");
+        holdsNothingOfFe(answer);
+        expect(String(answer.headers["vary"])).toMatch(/Accept, Authorization/);
+        expect(answer.headers["cache-control"]).toBe("private, no-store");
+        expect(answer.headers["etag"]).toBeDefined();
+      }
+    }
   });
 });

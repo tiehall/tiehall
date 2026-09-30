@@ -108,11 +108,11 @@ interface Answer {
   body: string;
 }
 
-/** Calls the web app at this path with exactly these headers, and no Accept header unless they name one. */
-function call(path: string, headers: Record<string, string> = {}): Promise<Answer> {
+/** Calls the web app at this path with exactly these headers, and no Accept header unless they name one; with GET unless a method is named. */
+function call(path: string, headers: Record<string, string> = {}, method = "GET"): Promise<Answer> {
   const { hostname, port } = new URL(web.origin);
   return new Promise((resolve, reject) => {
-    const outgoing = httpRequest({ hostname, port, path, method: "GET", headers }, (incoming) => {
+    const outgoing = httpRequest({ hostname, port, path, method, headers }, (incoming) => {
       const chunks: Buffer[] = [];
       incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
       incoming.on("end", () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, body: Buffer.concat(chunks).toString("utf8") }));
@@ -335,6 +335,125 @@ describe("the headers of every answer of /<KEY>", () => {
       expect(answer.headers["etag"]).toMatch(/^(W\/)?"[^"]+"$/);
     });
   }
+});
+
+// A request URL written with percent-encoded letters, digits, hyphens or dots, such as /%46E-1, is the same URL as
+// /FE-1 (RFC 3986, section 6.2.2.2), and Next.js decodes it to the same page; so it is negotiated as that URL, with
+// every answer and header a request URL gives, and the web UI's page is never reached around the negotiation
+// (agent-surfaces: Negotiated request URLs; agent-surfaces: Request URL response headers; requests: Reassignment
+// gives a new key and the old key redirects).
+
+/** The headers of every answer of a request URL: Vary: Accept, Authorization, Cache-Control: private, no-store and an ETag. */
+function hasUrlHeaders(answer: Answer): void {
+  expect(varied(answer)).toEqual(expect.arrayContaining(["accept", "authorization"]));
+  expect(answer.headers["cache-control"]).toBe("private, no-store");
+  expect(answer.headers["etag"]).toMatch(/^(W\/)?"[^"]+"$/);
+}
+
+/** The web UI's page, with a content security policy whose script nonce is made for this answer. */
+function hasPagePolicy(answer: Answer): void {
+  expect(String(answer.headers["content-security-policy"] ?? "")).toMatch(/script-src 'self' 'nonce-[^']+'/);
+}
+
+describe("a request URL written with percent-encoded characters", () => {
+  it("is FE-1's page for a signed-in browser, with the headers of every answer and the page's policy", async () => {
+    for (const path of ["/%46E-1", "/FE%2D1", "/%46%45%2d%31"]) {
+      const answer = await call(path, { ...credentials("session:bob"), accept: BROWSER });
+      isPageOfFe1(answer);
+      hasUrlHeaders(answer);
+      hasPagePolicy(answer);
+    }
+  });
+
+  it("is FE-1's JSON and markdown for a token", async () => {
+    await isJsonOfFe1(await call("/%46E-1%2Ejson", credentials("token:bob")));
+    isMarkdownOfFe1(await call("/%46E-1", { ...credentials("token:bob"), accept: "text/markdown" }));
+  });
+
+  it("leads an old key to the canonical URL", async () => {
+    const answer = await call("/%4FPS-1", { ...credentials("session:bob"), accept: BROWSER });
+    leadsTo("/SRE-1")(answer);
+    hasUrlHeaders(answer);
+  });
+
+  it("gives a removed member 403 with nothing of the request", async () => {
+    isRemovedMember(true)(await call("/%46E-1", { ...credentials("session:dana"), accept: BROWSER }));
+  });
+
+  it("sends a browser without a session to sign-in, and gives an agent without credentials 401", async () => {
+    isSentToSignIn("/FE-1")(await call("/%46E-1", { accept: BROWSER }));
+    isToldWhatToUse(await call("/%46E-1%2Emd"));
+  });
+
+  it("gives the page's RSC payload, which Next.js also serves at /FE-1.rsc, the headers of every answer", async () => {
+    const answer = await call("/FE-1.rsc", { ...credentials("session:bob"), accept: "*/*" });
+    expect(answer.status).toBe(200);
+    expect(mediaType(answer)).toBe("text/x-component");
+    hasUrlHeaders(answer);
+    expect(answer.headers["x-tiehall-negotiated-key"]).toBeUndefined();
+    expect((await call("/FE-1.rsc", { ...credentials("session:dana"), accept: "*/*" })).status).toBe(403);
+  });
+});
+
+// The methods a request URL takes (public-api: One error model for Tiehall's own refusals; agent-surfaces: Request
+// URL response headers). Every representation is read with GET or HEAD, and the web UI's page also takes its forms'
+// posts, whose answer is the page again; a post is negotiated as the page is, so a removed member gets 403, a browser
+// without a session is sent to sign-in and an old key leads to the canonical URL, keeping the post. Any other call is
+// to no route, which is 404 whoever makes it, with nothing of the request. Every answer carries the headers of every
+// answer of a request URL.
+describe("the methods a request URL takes", () => {
+  for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
+    it(`answers ${method} as no route, 404, with nothing of the request, whoever calls`, async () => {
+      for (const as of ["session:bob", "session:dana", "none"]) {
+        const answer = await call("/FE-1", { ...credentials(as), accept: BROWSER, "content-length": "0" }, method);
+        expect(answer.status, as).toBe(404);
+        expect(mediaType(answer)).toBe("text/html");
+        expect(answer.body).toContain("https://tiehall.com/problems/route-not-found");
+        expect(answer.body).not.toContain(TITLE);
+        expect(answer.body).not.toContain(FE_TEXT);
+        hasUrlHeaders(answer);
+      }
+      const old = await call("/OPS-1", { ...credentials("token:bob"), accept: "application/json", "content-length": "0" }, method);
+      expect(old.status).toBe(404);
+      expect(mediaType(old)).toBe("application/problem+json");
+      expect(old.body).not.toContain("SRE-1");
+    });
+  }
+
+  it("answers a post to markdown or JSON as no route", async () => {
+    for (const path of ["/FE-1.json", "/FE-1.md"]) {
+      const answer = await call(path, { ...credentials("token:bob"), "content-length": "0" }, "POST");
+      expect(answer.status).toBe(404);
+      expect(mediaType(answer)).toBe("application/problem+json");
+      expect(answer.body).not.toContain(TITLE);
+      hasUrlHeaders(answer);
+    }
+  });
+
+  it("gives a removed member's post to the page 403, with nothing of the request", async () => {
+    const answer = await call("/FE-1", { ...credentials("session:dana"), accept: BROWSER, "content-length": "0" }, "POST");
+    isRemovedMember(true)(answer);
+    hasUrlHeaders(answer);
+  });
+
+  it("sends a post without a session to sign-in", async () => {
+    const answer = await call("/FE-1", { accept: BROWSER, "content-length": "0" }, "POST");
+    isSentToSignIn("/FE-1")(answer);
+    hasUrlHeaders(answer);
+  });
+
+  it("leads a post to an old key to the canonical URL, as a 307 that keeps the post", async () => {
+    const answer = await call("/OPS-1", { ...credentials("session:bob"), accept: BROWSER, "content-length": "0" }, "POST");
+    leadsTo("/SRE-1")(answer);
+    expect(answer.body).not.toContain("Rotate the logs");
+  });
+
+  it("answers a member's post to the page with the page, the headers of every answer and the page's policy", async () => {
+    const answer = await call("/FE-1", { ...credentials("session:bob"), accept: BROWSER, "content-length": "0" }, "POST");
+    isPageOfFe1(answer);
+    hasUrlHeaders(answer);
+    hasPagePolicy(answer);
+  });
 });
 
 // sign-in: Signing out and ending sessions (github-layer-hardening: design.md, Decisions this change rests on: D50 (6);

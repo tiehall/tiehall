@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type Page, type Response } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
@@ -58,10 +58,10 @@ afterAll(async () => {
   await install?.close();
 }, 60_000);
 
-/** A page of this person's own browser, signed in to the web app, at a request's URL. */
-async function pageOf(login: string, key: string): Promise<Page> {
+/** A page of this person's own browser, signed in to the web app, at a request's URL; a browser that runs no script when asked. */
+async function pageOf(login: string, key: string, options: { script?: boolean } = {}): Promise<Page> {
   const [name = "", value = ""] = ((await signIn.signIn(login)).jar.header().split("; ").find((pair) => pair.startsWith("tiehall.session_token=")) ?? "").split(/=(.*)/s);
-  const context = await browser.newContext();
+  const context = await browser.newContext({ javaScriptEnabled: options.script ?? true });
   await context.addCookies([{ name, value, url: web.url }]);
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
@@ -191,5 +191,33 @@ describe("the direct actions on a request's page", () => {
     expect(await page.getByRole("button", { name: "Post" }).count()).toBe(0);
     expect(await page.getByText("Only the two sides of the request post in its thread.").count()).toBe(1);
     await page.context().close();
+  });
+
+  // agent-surfaces: Request URL response headers. The answer to a form's post to the page, which the page's server
+  // action runs, is an answer of the request URL too: its RSC payload when the browser runs the page's script, and
+  // the page itself when it runs none.
+  it("answers the page's forms, with the page's script and without it, with the headers of every answer of a request URL", { timeout: 120_000 }, async () => {
+    const { key } = await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: "Request 6" });
+    const postTo = (page: Page): Promise<Response> =>
+      page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === `/${key}`);
+    function hasUrlHeaders(headers: Record<string, string>): void {
+      expect(headers["vary"]?.split(",").map((name) => name.trim().toLowerCase())).toEqual(expect.arrayContaining(["accept", "authorization"]));
+      expect(headers["cache-control"]).toBe("private, no-store");
+      expect(headers["etag"]).toMatch(/^(W\/)?"[^"]+"$/);
+      expect(headers["x-tiehall-negotiated-key"]).toBeUndefined();
+    }
+
+    const scripted = await pageOf("bob", key);
+    const [claimed] = await Promise.all([postTo(scripted), scripted.getByRole("button", { name: "Claim" }).click()]);
+    await scripted.getByText("Claimed by bob.").waitFor();
+    hasUrlHeaders(await claimed.allHeaders());
+    await scripted.context().close();
+
+    const plain = await pageOf("bob", key, { script: false });
+    const [released] = await Promise.all([postTo(plain), plain.getByRole("button", { name: "Release the claim" }).click()]);
+    expect(released.status()).toBe(200);
+    hasUrlHeaders(await released.allHeaders());
+    await plain.getByText("Nobody has claimed it.").waitFor();
+    await plain.context().close();
   });
 });

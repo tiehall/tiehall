@@ -1,7 +1,16 @@
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { negotiate, negotiatedUrlOf, requestUrlNegotiatesHtml, requestUrlOf, teamUrlOf, varyOnNegotiatedUrls, withNegotiatedVary } from "../src/index.ts";
+import {
+  NEGOTIATED_KEY_HEADER,
+  negotiate,
+  negotiatedUrlHeaders,
+  negotiatedUrlOf,
+  requestUrlNegotiatesHtml,
+  requestUrlOf,
+  teamUrlOf,
+  withNegotiatedVary,
+} from "../src/index.ts";
 
 // Content negotiation of request URLs (agent-surfaces: Negotiated request URLs;
 // agent-surfaces: A browser without a session is sent to sign-in;
@@ -31,6 +40,26 @@ describe("a request URL's path", () => {
       expect(requestUrlOf(path)).toBeUndefined();
     },
   );
+
+  // A letter, a digit, a hyphen or a dot written as its percent-encoding is the same character (RFC 3986, section
+  // 6.2.2.2), and Next.js decodes it before it picks the page, so the path is the same request URL.
+  it.each([
+    ["/%46E-142", { key: "FE-142", suffix: undefined }],
+    ["/%46%45%2D%31%34%32", { key: "FE-142", suffix: undefined }],
+    ["/FE%2d142.md", { key: "FE-142", suffix: "markdown" }],
+    ["/FE-142%2Ejson", { key: "FE-142", suffix: "json" }],
+  ])("%s, with percent-encoded letters, digits, hyphens or dots, names the same request", (path, named) => {
+    expect(requestUrlOf(path)).toEqual(named);
+    expect(negotiatedUrlOf(path)).toEqual({ kind: "request", ...named });
+  });
+
+  it.each(["/%66E-142", "/FE%2F142", "/FE-142%20", "/FE-142%2Fx", "/%2FFE-142", "/FE-142%", "/FE-142%zz"])(
+    "%s, which decodes to no key or to another path, names none",
+    (path) => {
+      expect(requestUrlOf(path)).toBeUndefined();
+      expect(negotiatedUrlOf(path)).toBeUndefined();
+    },
+  );
 });
 
 // agent-surfaces: Team intake pages.
@@ -47,6 +76,12 @@ describe("a team intake page's path", () => {
 
   it.each(["/api", "/Fe", "/F", "/ABCDEFGHIJK", "/FE-142", "/FE/", "/FE.txt", "/1FE", "/members", "/setup"])("%s names none", (path) => {
     expect(teamUrlOf(path)).toBeUndefined();
+  });
+
+  it("names the same team with percent-encoded letters, digits or dots", () => {
+    expect(teamUrlOf("/%46E")).toEqual({ key: "FE", suffix: undefined });
+    expect(negotiatedUrlOf("/%41PI%2Emd")).toEqual({ kind: "team", key: "API", suffix: "markdown" });
+    expect(teamUrlOf("/%61pi")).toBeUndefined();
   });
 
   it("tells a request URL from an intake page", () => {
@@ -90,6 +125,8 @@ describe("the representation a call negotiates", () => {
     expect(requestUrlNegotiatesHtml("/FE-142?x=1", "text/markdown")).toBe(false);
     expect(requestUrlNegotiatesHtml("/FE-142.json", BROWSER)).toBe(false);
     expect(requestUrlNegotiatesHtml("/members", BROWSER)).toBeUndefined();
+    expect(requestUrlNegotiatesHtml("/%46E-142", BROWSER)).toBe(true);
+    expect(requestUrlNegotiatesHtml("/%46E-142%2Emd", BROWSER)).toBe(false);
   });
 
   it("decides the same for a team's intake page", () => {
@@ -100,7 +137,10 @@ describe("the representation a call negotiates", () => {
   });
 });
 
-describe("the Vary of a request URL's answers", () => {
+// agent-surfaces: Request URL response headers. The web role gives every answer of a request URL or an intake page,
+// whatever its method and whatever set its headers, Vary: Accept, Authorization, Cache-Control: private, no-store and
+// an ETag, which Next.js may have set otherwise as it rendered the page or answered its server action.
+describe("the headers the web role gives a request URL's answers", () => {
   it("adds Accept and Authorization to what it lists, each once", () => {
     expect(withNegotiatedVary(undefined)).toBe("Accept, Authorization");
     expect(withNegotiatedVary("rsc, next-router-state-tree")).toBe("rsc, next-router-state-tree, Accept, Authorization");
@@ -112,15 +152,29 @@ describe("the Vary of a request URL's answers", () => {
   let origin: string;
 
   beforeAll(async () => {
-    // Answers as Next.js does for a page: its own Vary, set with setHeader as it renders, or given to writeHead.
+    // Answers as Next.js does for a page: its own Vary, set with setHeader as it renders, or given to writeHead. A
+    // path that asks for it carries the header the proxy marks a page it negotiated with, as Next.js passes on the
+    // proxy's headers, set with setHeader or given to writeHead.
+    // Next.js's own Cache-Control is set or given the same ways, and a path that asks for it has an ETag.
     server = createServer((request, response) => {
-      varyOnNegotiatedUrls(request, response);
+      negotiatedUrlHeaders(request, response);
+      const marked = request.url?.includes("marked") === true;
+      const tagged = request.url?.includes("etag") === true;
       if (request.url?.includes("writeHead") === true) {
-        response.writeHead(200, { Vary: "rsc", "content-type": "text/plain" });
+        response.writeHead(200, {
+          Vary: "rsc",
+          "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "text/plain",
+          ...(marked ? { [NEGOTIATED_KEY_HEADER]: "FE-142" } : {}),
+          ...(tagged ? { ETag: '"given"' } : {}),
+        });
         response.end("page");
         return;
       }
+      if (marked) response.setHeader(NEGOTIATED_KEY_HEADER, "FE-142");
+      if (tagged) response.setHeader("ETag", '"set"');
       response.setHeader("Vary", "rsc, next-router-state-tree");
+      response.setHeader("Cache-Control", "private, no-cache, no-store, max-age=0, must-revalidate");
       response.end("page");
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -150,8 +204,46 @@ describe("the Vary of a request URL's answers", () => {
     expect((await get("/FE"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
   });
 
+  it("names them on the answer of every method, a form's post to the page included, and on a percent-encoded path", async () => {
+    expect((await get("/FE-142", "POST"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect((await get("/FE-142", "PUT"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect((await get("/%46E-142"))["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
+  });
+
+  it("names them on a page the proxy negotiated at a path Next.js rewrote, and sends its mark to nobody", async () => {
+    const set = await get("/FE-142.rsc?marked");
+    expect(set["vary"]).toBe("rsc, next-router-state-tree, Accept, Authorization");
+    expect(set[NEGOTIATED_KEY_HEADER]).toBeUndefined();
+    const given = await get("/FE-142.rsc?marked&writeHead");
+    expect(given["vary"]).toBe("rsc, Accept, Authorization");
+    expect(given[NEGOTIATED_KEY_HEADER]).toBeUndefined();
+  });
+
+  it("sets Cache-Control: private, no-store and keeps an ETag the answer has, however it was set", async () => {
+    for (const path of ["/FE-142", "/FE-142?writeHead", "/FE", "/FE-142.rsc?marked&writeHead"]) {
+      expect((await get(path, "POST"))["cache-control"], path).toBe("private, no-store");
+    }
+    expect((await get("/FE-142?etag"))["etag"]).toBe('"set"');
+    expect((await get("/FE-142?etag&writeHead"))["etag"]).toBe('"given"');
+  });
+
+  it("gives an answer without an ETag one of its own, which no other answer shares", async () => {
+    const first = (await get("/FE-142", "POST"))["etag"];
+    const second = (await get("/FE-142", "POST"))["etag"];
+    expect(first).toMatch(/^W\/"[A-Za-z0-9_-]+"$/);
+    expect(second).toMatch(/^W\/"[A-Za-z0-9_-]+"$/);
+    expect(first).not.toBe(second);
+    expect((await get("/FE-142.rsc?marked&writeHead"))["etag"]).toMatch(/^W\/"/);
+  });
+
   it("leaves every other answer as it is", async () => {
-    expect((await get("/members"))["vary"]).toBe("rsc, next-router-state-tree");
-    expect((await get("/FE-142", "POST"))["vary"]).toBe("rsc, next-router-state-tree");
+    for (const answer of [await get("/members"), await get("/members", "POST"), await get("/FE-142.rsc")]) {
+      expect(answer["vary"]).toBe("rsc, next-router-state-tree");
+      expect(answer["cache-control"]).toBe("private, no-cache, no-store, max-age=0, must-revalidate");
+      expect(answer["etag"]).toBeUndefined();
+    }
+    const given = await get("/members?writeHead");
+    expect(given["vary"]).toBe("rsc");
+    expect(given["cache-control"]).toBe("no-cache, no-store, max-age=0, must-revalidate");
   });
 });

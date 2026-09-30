@@ -172,7 +172,7 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
   return requestUrls;
 }
 
-export { negotiatedUrlOf, requestUrlOf, teamUrlOf } from "./negotiation.ts";
+export { NEGOTIATED_KEY_HEADER, negotiatedUrlOf, requestUrlOf, teamUrlOf } from "./negotiation.ts";
 export { pageContentSecurityPolicy } from "./request-urls.ts";
 export { readRequestPageAs, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
 export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";

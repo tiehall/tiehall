@@ -2,7 +2,7 @@ import http, { type IncomingMessage, type RequestListener, type ServerResponse }
 import { syncBuiltinESMExports } from "node:module";
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
-import { bodyLimitFor, declaredLength, pageRouteNegotiatesHtml, payloadTooLarge, refusalAnswerAs, varyOnNegotiatedUrls, wayOnOfPageRoute } from "@tiehall/commands";
+import { bodyLimitFor, declaredLength, negotiatedUrlHeaders, pageRouteNegotiatesHtml, payloadTooLarge, refusalAnswerAs, wayOnOfPageRoute } from "@tiehall/commands";
 import { httpProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
@@ -64,11 +64,15 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // target lacks the review page's input, needs.
 //
 // Request URLs (agent-surfaces: Request URL response headers): every answer
-// of a request URL, /<KEY> with or without .md or .json, names Accept and
-// Authorization in its Vary, which the guard adds as the answer's head goes
-// out, since Next.js sets its own Vary as it renders the web UI's page of a
-// request, after the proxy that negotiates the URL has run
-// (varyOnNegotiatedUrls). The guard's own refusals get it too.
+// of a request URL, /<KEY> with or without .md or .json, or of an intake page,
+// whatever its method, names Accept and Authorization in its Vary and carries
+// Cache-Control: private, no-store and an ETag, which the guard sets as the
+// answer's head goes out, since Next.js sets its own Vary as it renders the
+// web UI's page of a request, and its own Cache-Control as it answers the
+// page's server action, after the proxy that negotiates the URL has run; so
+// does the page's answer at a path Next.js rewrote before the proxy ran, such
+// as its RSC payload's, which the proxy marks (negotiatedUrlHeaders). The
+// guard's own refusals get them too.
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
@@ -123,7 +127,7 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
   const guard = (listener: RequestListener): RequestListener => (request: IncomingMessage, response: ServerResponse) => {
     // Decided when the head arrives, not when a held body is complete.
     const newDuringShutdown = stopping;
-    varyOnNegotiatedUrls(request, response);
+    negotiatedUrlHeaders(request, response);
     inFlight += 1;
     response.once("close", () => {
       inFlight -= 1;

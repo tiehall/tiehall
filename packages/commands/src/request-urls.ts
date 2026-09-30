@@ -6,7 +6,7 @@ import type { Caller, WebSessionCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
 import { refusalAnswerAs, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
-import { MEDIA_TYPES, NEGOTIATED_VARY, negotiate, negotiatedUrlOf, type Representation, type RequestUrlPath } from "./negotiation.ts";
+import { MEDIA_TYPES, NEGOTIATED_CACHE_CONTROL, NEGOTIATED_VARY, negotiate, negotiatedUrlOf, plainPathOf, type Representation, type RequestUrlPath } from "./negotiation.ts";
 import { readRequestPage, requestPageFacts, type RequestWithThreadView } from "./request-page-data.ts";
 import { withSessionCookies } from "./session-renewal.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
@@ -18,7 +18,8 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 // rules: Agent surfaces; design.md, Technical decisions: T3; design.md,
 // Self-hosting decisions: S15). The web app's proxy, which runs before every
 // route, answers a GET or HEAD of a request's URL, /<KEY> with or without the
-// .md or .json suffix, in the representation it negotiates (negotiation.ts),
+// .md or .json suffix, written plainly or with percent-encoded characters, in
+// the representation it negotiates (negotiation.ts),
 // through execute('requests.get'), so a request URL reads a request exactly
 // as /api/v1 does, for the same caller:
 // - JSON is the body of the /api/v1 read, byte for byte, as agents read it;
@@ -62,16 +63,29 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 // team's earlier key leads with 307 to its current key, with the same
 // suffix.
 //
+// The methods (public-api: One error model for Tiehall's own refusals): a
+// request URL and an intake page are read with GET or HEAD, and the web UI's
+// page of a request also takes its forms' posts, which run the page's server
+// action and are answered with the page again. A post is negotiated as the
+// page is, for the browser's web session: without one it is sent to sign in, a
+// removed member gets 403, and an old key leads with 307, which keeps the
+// post, to the canonical URL. Any other call, a post to markdown, JSON or an
+// intake page included, is to no route: 404 whoever makes it, before any
+// credential or record is looked at, with nothing of the request or the team.
+// So no call reaches the page without the proxy's negotiation; the page also
+// renders only a call the proxy let through for its key (apps/web/app/[key]).
+//
 // Every answer sends Vary: Accept, Authorization, Cache-Control: private,
 // no-store and an ETag: a JSON body's is strong, from its bytes; markdown's
 // and the page's are weak, from the request as the caller reads it, the
 // page's from its packet and its proposals too (request-page-data.ts), since
 // each markdown answer fences with a nonce of its own and the page's forms
-// carry the caller's own tokens; a refusal's and a redirect's are from what
-// they answer. A read of the web session may renew it, and every answer then
-// carries the cookie that renews it, the page's included (sign-in: Signing out
-// and ending sessions; github-layer-hardening: design.md, Technical decisions:
-// T4).
+// carry the caller's own tokens; the page's answer to a post has one of its
+// own, since it shows the request as the post left it; a refusal's and a
+// redirect's are from what they answer. A read of the web session may renew
+// it, and every answer then carries the cookie that renews it, the page's
+// included (sign-in: Signing out and ending sessions; github-layer-hardening:
+// design.md, Technical decisions: T4).
 
 export interface RequestUrlOptions {
   execute: Execute;
@@ -100,7 +114,7 @@ export type RequestUrlRoute = (request: Request) => Promise<RequestUrlAnswer | u
 /** The headers every answer of a request URL carries. */
 const URL_HEADERS = {
   vary: NEGOTIATED_VARY.join(", "),
-  "cache-control": "private, no-store",
+  "cache-control": NEGOTIATED_CACHE_CONTROL,
   "x-content-type-options": "nosniff",
 } as const;
 
@@ -192,8 +206,7 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     const team = (await options.execute("teams.get", caller, { key: path.key }, { readOnly: true })) as TeamIntakeJson;
     if (team.key !== path.key) {
       // A team's earlier key: its current key, in the same representation.
-      const suffix = path.suffix === "markdown" ? ".md" : path.suffix === "json" ? ".json" : "";
-      return answer(redirect(307, new URL(`/${team.key}${suffix}`, options.url)));
+      return answer(redirect(307, new URL(plainPathOf({ ...path, key: team.key }), options.url)));
     }
     if (representation === "html") {
       const headers = new Headers({ ...URL_HEADERS, ...pageHeaders(), etag: requestEtag("html", caller, JSON.stringify(team)) });
@@ -212,19 +225,25 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
   }
 
   return async function requestUrl(request) {
-    if (request.method !== "GET" && request.method !== "HEAD") return undefined;
     const url = new URL(request.url);
     const path = negotiatedUrlOf(url.pathname);
     if (path === undefined) return undefined;
     const representation = negotiate(request.headers.get("accept"), path.suffix);
     const head = request.method === "HEAD";
+    const post = request.method === "POST";
+    // The URL as it is written plainly, where a browser signs in and comes back to, and which a refusal's page leads on to.
+    const plain = plainPathOf(path);
     const renewal = new Headers();
     const answer = (response: Response): RequestUrlAnswer => ({ response: withSessionCookies(response, renewal) });
     try {
+      // Read with GET or HEAD; a request's page also takes its forms' posts. Any other call is to no route, whoever makes it.
+      if (!(request.method === "GET" || head || (post && path.kind === "request" && representation === "html"))) {
+        throw new Refusal("route-not-found", "There is no such page here.");
+      }
       const caller = await callerOf(request, representation, renewal);
       if (caller === undefined) {
         // A browser signs in and comes back; an agent is told what reads a request, or the install's teams, for it.
-        if (representation === "html") return answer(redirect(303, new URL(`${SIGN_IN_PATH}?return=${encodeURIComponent(url.pathname)}`, options.url)));
+        if (representation === "html") return answer(redirect(303, new URL(`${SIGN_IN_PATH}?return=${encodeURIComponent(plain)}`, options.url)));
         throw new Refusal(
           "unauthenticated",
           path.kind === "team"
@@ -237,8 +256,13 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
       const read = (await options.execute("requests.get", caller, { key: path.key }, { readOnly: true })) as RequestWithThreadJson & RequestWithThreadView;
       if (read.key !== path.key) {
         // A key written with a team's earlier key, or from before a reassignment: the canonical URL, in the same representation.
-        const suffix = path.suffix === "markdown" ? ".md" : path.suffix === "json" ? ".json" : "";
-        return answer(redirect(307, new URL(`/${read.key}${suffix}`, options.url)));
+        return answer(redirect(307, new URL(plainPathOf({ ...path, key: read.key }), options.url)));
+      }
+      if (post) {
+        // A form's post to the page, which the page's server action runs and answers with the page as the post leaves it.
+        const headers = new Headers({ ...URL_HEADERS, ...pageHeaders(), etag: `W/"${digest("post", randomBytes(18).toString("base64"))}"` });
+        for (const cookie of renewal.getSetCookie()) headers.append("set-cookie", cookie);
+        return { page: { key: read.key, headers } };
       }
       if (representation === "html") {
         // The page's ETag follows everything the page shows of the request: its thread, its packet and its proposals.
@@ -259,7 +283,7 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     } catch (error) {
       if (!(error instanceof Refusal)) logger.error("request URL: the read failed", { error });
       const problem = error instanceof Refusal ? httpProblem(challenged(error)) : internalErrorProblem();
-      return answer(refused(representation === "html", problem, { href: url.pathname, text: "Open the page again" }, head));
+      return answer(refused(representation === "html", problem, { href: plain, text: "Open the page again" }, head));
     }
   };
 }

@@ -355,13 +355,16 @@ export { refusalAnswer, refusalAnswerAs, type RefusalAnswer, type WayOn } from "
 export { pageRouteNegotiatesHtml, wayOnOfPageRoute } from "./page-routes.ts";
 export {
   MEDIA_TYPES,
+  NEGOTIATED_CACHE_CONTROL,
+  NEGOTIATED_KEY_HEADER,
   NEGOTIATED_VARY,
   negotiate,
+  negotiatedUrlHeaders,
   negotiatedUrlOf,
+  plainPathOf,
   requestUrlNegotiatesHtml,
   requestUrlOf,
   teamUrlOf,
-  varyOnNegotiatedUrls,
   withNegotiatedVary,
   type Representation,
   type RequestUrlPath,
