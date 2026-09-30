@@ -82,7 +82,11 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // included, is answered with that refusal as a tool error, whatever request
 // state it carries, and so returns no data of the install (teams-and-roles:
 // Membership is re-checked on every call; public-api: One error model for
-// Tiehall's own refusals).
+// Tiehall's own refusals). Such a caller's subscriptions/listen, which would
+// hold an event stream open for them, is no tool call and gets the removal as
+// its HTTP status, 403; their initialize and tools/list, which carry no data of
+// the install, are still answered, so that a client reaches the tool call
+// whose tool error tells its agent of the removal.
 //
 // A call the checks admit acts for the token's user, on the surface mcp, and
 // every tool it calls runs its operation through execute() as that caller, so
@@ -401,6 +405,8 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         return internalError();
       }
     }
+    // A removed member holds no event stream open: their subscriptions/listen gets the removal as HTTP 403.
+    if ("refusal" in calling && messagesOf(body).some(({ method }) => method === "subscriptions/listen")) return problem(calling.refusal);
     // A retry's request state that is not valid for it is refused here, as an HTTP status, before anything runs.
     const refusedState = await stateRefusal(calling, authInfo.extra.binding, body);
     if (refusedState !== undefined) return problem(refusedState);
@@ -483,8 +489,8 @@ async function appliedOutput(definition: CommandDefinition, context: OrgContext,
   return output.success ? output.data : undefined;
 }
 
-/** The tool calls of a body's JSON-RPC messages that carry a request state: each one's tool, arguments and state as sent. */
-function retriedCalls(body: Uint8Array): { name: string; args: unknown; state: unknown }[] {
+/** The JSON-RPC messages of a body, a batch's included, each as an object; none for a body that is not JSON. */
+function messagesOf(body: Uint8Array): { method?: unknown; params?: unknown }[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(decoder.decode(body));
@@ -492,10 +498,13 @@ function retriedCalls(body: Uint8Array): { name: string; args: unknown; state: u
     return [];
   }
   const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  return messages.filter((message): message is { method?: unknown; params?: unknown } => typeof message === "object" && message !== null);
+}
+
+/** The tool calls of a body's JSON-RPC messages that carry a request state: each one's tool, arguments and state as sent. */
+function retriedCalls(body: Uint8Array): { name: string; args: unknown; state: unknown }[] {
   const retries: { name: string; args: unknown; state: unknown }[] = [];
-  for (const message of messages) {
-    if (typeof message !== "object" || message === null) continue;
-    const { method, params } = message as { method?: unknown; params?: unknown };
+  for (const { method, params } of messagesOf(body)) {
     if (method !== "tools/call" || typeof params !== "object" || params === null || !Object.hasOwn(params, "requestState")) continue;
     const { name, arguments: args, requestState } = params as { name?: unknown; arguments?: unknown; requestState?: unknown };
     retries.push({ name: typeof name === "string" ? name : "", args, state: requestState });
@@ -505,17 +514,8 @@ function retriedCalls(body: Uint8Array): { name: string; args: unknown; state: u
 
 /** The names of the tools the JSON-RPC messages of a body call; none for a body that is not JSON. */
 function calledTools(body: Uint8Array): string[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(decoder.decode(body));
-  } catch {
-    return [];
-  }
-  const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
   const names: string[] = [];
-  for (const message of messages) {
-    if (typeof message !== "object" || message === null) continue;
-    const { method, params } = message as { method?: unknown; params?: unknown };
+  for (const { method, params } of messagesOf(body)) {
     const name = typeof params === "object" && params !== null ? (params as { name?: unknown }).name : undefined;
     if (method === "tools/call" && typeof name === "string") names.push(name);
   }

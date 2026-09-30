@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
-import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
+import { connectMcp, mcpPerson, MODERN, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpExchange, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
 import { addUser } from "./support/members.ts";
 import { openRequestInTheWebUi, sessionOf } from "./support/requests.ts";
 
@@ -142,6 +142,29 @@ describe("a removed member's agent", () => {
       } finally {
         await client.close();
       }
+    }
+  });
+
+  it("opens no event stream: subscriptions/listen gets the removal as HTTP 403, with either kind of token", async () => {
+    const kim = await mcpPerson(harness, "kim-fe", { teams: ["FE"] });
+    const pat = await harness.personalAccessToken({ userId: kim.userId, cookie: kim.cookie }, { scopes: ["requests:read"] });
+    const admin = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada-admin-listen" }));
+    expect((await harness.install.confirm(admin, "members.remove", { userId: kim.userId })).status).toBe(200);
+    for (const [kind, token] of [
+      ["access token", kim.token],
+      ["personal access token", pat],
+    ] as const) {
+      const log: McpExchange[] = [];
+      const client = await connectMcp(harness, { token, version: MODERN, log });
+      try {
+        await expect(client.listen({ toolsListChanged: true }), kind).rejects.toThrow();
+      } finally {
+        await client.close();
+      }
+      const listen = log.find(({ rpcMethod }) => rpcMethod === "subscriptions/listen");
+      expect(listen?.status, kind).toBe(403);
+      expect(listen?.contentType, kind).toBe("application/problem+json");
+      expect(JSON.parse(listen?.body ?? "{}"), kind).toMatchObject({ type: `${PROBLEM}removed-member`, status: 403 });
     }
   });
 
