@@ -1,4 +1,4 @@
-import { getPacket, getRequest, listRequestProposals } from "@tiehall/catalog";
+import { getPacket, getRequest, listRequestProposals, whoami } from "@tiehall/catalog";
 import type { ProblemDetails } from "@tiehall/core";
 import type { PacketRevisionView } from "./packet-revisions.ts";
 import type { ProposalView } from "./proposals.ts";
@@ -10,8 +10,9 @@ import type { WebCommands, WebResult } from "./web-commands.ts";
 // people on the request; requests: What a proposal records and shows;
 // design.md, Technical decisions: T3): the request with its thread, as the
 // /api/v1 read returns it, its packet at its current revision, and its
-// proposals, newest first, each read through execute() as the reader, in a
-// read-only transaction. The page, a server component, reads them as the
+// proposals, newest first, and who reads it, with the reader's teams, which
+// decide the actions the page offers them, each read through execute() as the
+// reader, in a read-only transaction. The page, a server component, reads them as the
 // signed-in member's web session; the proxy that lets a browser through to it
 // reads them too, as the same session, for the page's ETag, which so changes
 // whenever what the page shows of the request does.
@@ -19,11 +20,18 @@ import type { WebCommands, WebResult } from "./web-commands.ts";
 /** A request with its thread, oldest message first. */
 export type RequestWithThreadView = RequestView & { messages: MessageView[] };
 
+/** Who reads the page, as whoami says: the user, by id, and the teams they belong to. */
+export interface RequestPageViewer {
+  user: { id: string };
+  teams: { id: string; key: string }[];
+}
+
 /** What the page of a request shows. */
 export interface RequestPageData {
   request: RequestWithThreadView;
   packet: PacketRevisionView;
   proposals: ProposalView[];
+  viewer: RequestPageViewer;
 }
 
 /** Runs one of the page's reads as its reader; a refusal is thrown. */
@@ -35,12 +43,13 @@ export async function readRequestPage(read: PageRead, key: string, request?: Req
   const packet = await read<PacketRevisionView>(getPacket.id, { key: found.key });
   // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
   const { "proposals": proposals } = await read<{ "proposals": ProposalView[] }>(listRequestProposals.id, { key: found.key });
-  return { request: found, packet, proposals };
+  const { user, teams } = await read<RequestPageViewer>(whoami.id, {});
+  return { request: found, packet, proposals, viewer: { user: { id: user.id }, teams: teams.map(({ id, key }) => ({ id, key })) } };
 }
 
-/** What the page's ETag is made from: the request, its packet and its proposals, as its reader reads them. */
-export function requestPageFacts({ request, packet, proposals }: RequestPageData): string[] {
-  return [JSON.stringify(request), JSON.stringify(packet), JSON.stringify(proposals)];
+/** What the page's ETag is made from: the request, its packet, its proposals and its reader's teams, as its reader reads them. */
+export function requestPageFacts({ request, packet, proposals, viewer }: RequestPageData): string[] {
+  return [JSON.stringify(request), JSON.stringify(packet), JSON.stringify(proposals), JSON.stringify(viewer)];
 }
 
 /** A web session's refusal of one of the page's reads, carried out of readRequestPage(). */

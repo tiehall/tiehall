@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { RequestPageData } from "@tiehall/commands/web";
+import { ActionForm } from "./action-form.tsx";
 
 // The web UI's page of a request, as a server component renders it
 // (agent-surfaces: Negotiated request URLs; agent-safety: The needs_human flag
@@ -16,6 +17,18 @@ import type { RequestPageData } from "@tiehall/commands/web";
 // escaped, so no markup in it runs or loads anything, and a packet's link is
 // an anchor to its http or https URL that tells the linked site nothing of the
 // page. Tiehall's own words say what the page states.
+//
+// The page offers the actions its reader may take on the request, as their
+// part in it and its state allow them (requests: Which side may act on a
+// request; requests: Claiming and starting work need no proposal): a member of
+// the target team claims an open request and starts work on a claimed one; the
+// claimant releases the claim, and so may a member of the target team when
+// the claimant is no longer a member; either side posts a comment, a question,
+// which may be blocking, or an answer that names its question. Each is a form
+// that runs through the page's server action (action-form.tsx), which runs the
+// operation through execute() as the reader's web session, so what the page
+// offers is only a convenience: execute() decides, and a refusal shows as the
+// same call over /api/v1 would get it.
 
 type Request = RequestPageData["request"];
 type Message = Request["messages"][number];
@@ -175,6 +188,58 @@ function messageLine(message: Message): string {
   return `${what}, from ${by}${through}, at ${message.postedAt}${edited}:`;
 }
 
+/** A question's text as the thread's form names it, to pick the question an answer answers: its first line, cut short. */
+function excerpt(text: string): string {
+  const line = text.split(/\r?\n/, 1)[0] ?? "";
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+}
+
+/** The form that posts a comment, a question or an answer in the thread. */
+function PostForm({ request, csrf }: { request: Request; csrf: string }): ReactNode {
+  const questions = request.messages.filter((message) => message.kind === "question");
+  return (
+    <ActionForm requestKey={request.key} action="post" csrf={csrf} button="Post">
+      <p>
+        <label htmlFor="kind">Kind</label>{" "}
+        <select id="kind" name="kind" defaultValue="comment">
+          <option value="comment">Comment</option>
+          <option value="question">Question</option>
+          <option value="answer">Answer</option>
+        </select>
+      </p>
+      <p>
+        <input type="checkbox" id="blocking" name="blocking" /> <label htmlFor="blocking">Blocking: the request waits for its answer (a question only)</label>
+      </p>
+      <p>
+        <label htmlFor="questionId">Question it answers (an answer only)</label>{" "}
+        <select id="questionId" name="questionId" defaultValue="">
+          <option value="">None</option>
+          {questions.map((question) => (
+            <option key={question.id} value={question.id}>
+              {`${question.provenance.user?.login ?? "Tiehall"}, ${question.postedAt}: ${excerpt(question.untrusted.body)}`}
+            </option>
+          ))}
+        </select>
+      </p>
+      <p>
+        <label htmlFor="body">Message</label>
+      </p>
+      <p>
+        <textarea id="body" name="body" required />
+      </p>
+    </ActionForm>
+  );
+}
+
+/** Where the two sides post in the thread; anyone else is told that only they do. */
+function PostSection({ request, parts, csrf }: { request: Request; parts: Parts; csrf: string }): ReactNode {
+  return (
+    <Section id="post" title="Write on the request">
+      {parts.targetTeam || parts.requesterSide ? <PostForm request={request} csrf={csrf} /> : <p>Only the two sides of the request post in its thread.</p>}
+    </Section>
+  );
+}
+
 function ThreadSection({ messages }: { messages: readonly Message[] }): ReactNode {
   return (
     <Section id="thread" title="Thread">
@@ -187,6 +252,45 @@ function ThreadSection({ messages }: { messages: readonly Message[] }): ReactNod
           </p>
         </article>
       ))}
+    </Section>
+  );
+}
+
+/** The reader's parts in the request, from the teams whoami gives them: the target team, the requester side, the claim. */
+interface Parts {
+  targetTeam: boolean;
+  requesterSide: boolean;
+  claimant: boolean;
+}
+
+function partsOf({ request, viewer }: Pick<RequestPageData, "request" | "viewer">): Parts {
+  const teams = new Set(viewer.teams.map(({ id }) => id));
+  return {
+    targetTeam: teams.has(request.targetTeam.id),
+    requesterSide: request.requester.user?.id === viewer.user.id || teams.has(request.requester.team.id),
+    claimant: request.claimant !== null && request.claimant.id === viewer.user.id,
+  };
+}
+
+/** The states that end a request. */
+const TERMINAL: ReadonlySet<string> = new Set(["done", "declined", "withdrawn"]);
+
+/** The direct actions the reader may take on the request as it is now, each a form with its one button. */
+function ActionsSection({ request, parts, csrf }: { request: Request; parts: Parts; csrf: string }): ReactNode {
+  const forms: ReactNode[] = [];
+  const { key, state, claimant, targetTeam } = request;
+  if (state === "open" && parts.targetTeam) forms.push(<ActionForm key="claim" requestKey={key} action="claim" csrf={csrf} button="Claim" />);
+  if (state === "claimed" && parts.targetTeam) forms.push(<ActionForm key="start" requestKey={key} action="start" csrf={csrf} button="Start work" />);
+  if (claimant !== null && !TERMINAL.has(state) && (parts.claimant || parts.targetTeam)) {
+    forms.push(
+      <ActionForm key="release" requestKey={key} action="release" csrf={csrf} button="Release the claim">
+        {parts.claimant ? null : <p>{`A member of team ${targetTeam.key} may release a claim held by someone who is no longer a member of the install.`}</p>}
+      </ActionForm>,
+    );
+  }
+  return (
+    <Section id="actions" title="Actions">
+      {forms.length === 0 ? <p>There is no action for you to take on it here now.</p> : forms}
     </Section>
   );
 }
@@ -249,16 +353,19 @@ function ProposalsSection({ proposals }: { proposals: readonly Proposal[] }): Re
   );
 }
 
-/** The page of a request. */
-export function RequestPage({ data }: { data: RequestPageData }): ReactNode {
+/** The page of a request, whose forms carry the reader's CSRF token. */
+export function RequestPage({ data, csrf }: { data: RequestPageData; csrf: string }): ReactNode {
   const { request, packet, proposals } = data;
+  const parts = partsOf(data);
   return (
     <main>
       <h1>{`${request.key}: ${request.untrusted.title}`}</h1>
       {request.needsHuman ? <WaitsForAPerson request={request} /> : null}
       <Summary request={request} />
+      <ActionsSection request={request} parts={parts} csrf={csrf} />
       <PacketSection packet={packet} />
       <ThreadSection messages={request.messages} />
+      <PostSection request={request} parts={parts} csrf={csrf} />
       <ProposalsSection proposals={proposals} />
     </main>
   );

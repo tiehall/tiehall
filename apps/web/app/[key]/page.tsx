@@ -14,7 +14,9 @@ import { RequestPage } from "../../lib/request-page.tsx";
 // server component that reads the request with its thread, its packet and its
 // proposals through execute() in this process, as the signed-in user's web
 // session, in read-only transactions (request-page-data.ts), and renders them
-// (lib/request-page.tsx). A path that is no request's key is no page. Should
+// (lib/request-page.tsx), with the forms of the actions the reader may take
+// there, which run through a server action (lib/request-actions.ts) and carry
+// the session's CSRF token. A path that is no request's key is no page. Should
 // the session end, or the request go, between the proxy's read and this one,
 // the page sends the browser to sign in, or says what refused it.
 
@@ -27,7 +29,8 @@ const REQUEST_KEY = /^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,9}$/;
 export default async function Page({ params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
   if (!REQUEST_KEY.test(key)) notFound();
-  const read = await readRequestPageAs(webCommands(process.env, async () => new Headers(await headers())), key);
+  const web = webCommands(process.env, async () => new Headers(await headers()));
+  const read = await readRequestPageAs(web, key);
   if (!read.ok) {
     if (read.problem.status === 401) redirect(`/sign-in?return=${encodeURIComponent(`/${key}`)}`);
     if (read.problem.status === 404) notFound();
@@ -38,5 +41,8 @@ export default async function Page({ params }: { params: Promise<{ key: string }
       </main>
     );
   }
-  return <RequestPage data={read.output} />;
+  // The CSRF token the page's forms carry, which each of their writes must send (web-writes.ts).
+  const csrf = await web.csrfToken();
+  if (csrf === undefined) redirect(`/sign-in?return=${encodeURIComponent(`/${key}`)}`);
+  return <RequestPage data={read.output} csrf={csrf} />;
 }

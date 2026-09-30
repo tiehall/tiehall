@@ -173,7 +173,8 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
 }
 
 export { requestUrlOf } from "./negotiation.ts";
-export { readRequestPageAs, type RequestPageData } from "./request-page-data.ts";
+export { readRequestPageAs, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
+export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";
 
 let mcp: McpRoute | undefined;
 

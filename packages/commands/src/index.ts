@@ -367,7 +367,23 @@ export {
 export { createRequestUrlRoute, requestEtag, type RequestUrlAnswer, type RequestUrlOptions, type RequestUrlRoute } from "./request-urls.ts";
 export { createNewRequestRoute, NEW_REQUEST_PATH } from "./new-request.ts";
 export { createRequestListsRoute, REQUEST_LIST_PAGE_SIZE, REQUEST_LISTS_PATH } from "./request-lists.ts";
-export { readRequestPage, readRequestPageAs, requestPageFacts, type PageRead, type RequestPageData, type RequestWithThreadView } from "./request-page-data.ts";
+export {
+  readRequestPage,
+  readRequestPageAs,
+  requestPageFacts,
+  type PageRead,
+  type RequestPageData,
+  type RequestPageViewer,
+  type RequestWithThreadView,
+} from "./request-page-data.ts";
+export {
+  REQUEST_PAGE_ACTIONS,
+  requestPageWrite,
+  runRequestPageAction,
+  type RequestPageAction,
+  type RequestPageActionState,
+  type RequestPageWrite,
+} from "./request-page-actions.ts";
 export {
   AUTH_BASE_PATH,
   createSignInService,
