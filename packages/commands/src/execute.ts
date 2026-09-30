@@ -26,6 +26,10 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    removed one with 403 before anything else about the call is judged or
 //    looked up, its input included (teams-and-roles: Membership is re-checked
 //    on every call; public-api: One error model for Tiehall's own refusals);
+//    then refuses a call made with an OAuth token or a personal access token
+//    that lacks a scope the operation needs, with 403 insufficient_scope
+//    naming that scope, before anything runs (agent-access: Missing and
+//    insufficient tokens get standard challenges);
 //    an integration event that acts for a mapped user is not refused: it acts
 //    for that user only while they are a member, as read in the call's
 //    transaction, and for no user otherwise, such as a person removed after
@@ -72,7 +76,6 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // limit and the install's daily budget, and gets 429 beyond either
 // (write-limits.ts); the write path counts it against the loop limit of the
 // request it writes on (loop-limit.ts).
-// Later tasks add the token's side of the rules (15.5).
 //
 // A step before the transaction (design.md, Technical decisions: T3 and T16).
 // No call to GitHub is made inside a transaction, so a slow GitHub holds no
@@ -290,6 +293,15 @@ export function createExecute(services: ExecuteServices): Execute {
      * parsed input, the membership and the values entered on the review page.
      */
     const authorize = async (context: OrgContext, nonce: "check" | "consume") => {
+      // A token acts only within its scopes: a call that needs a scope the token lacks is refused first (15.4).
+      if (caller.kind === "oauth_token" || caller.kind === "personal_access_token") {
+        const missing = definition.scopes.filter((scope) => !caller.scopes.includes(scope));
+        if (missing.length > 0) {
+          throw new Refusal("insufficient-scope", `This operation needs the scope ${missing.join(" and ")}, which this token does not carry.`, {
+            challenge: { scope: missing },
+          });
+        }
+      }
       if (options.refusal !== undefined) throw options.refusal;
 
       // 3. Nothing runs on input that fails the schema.

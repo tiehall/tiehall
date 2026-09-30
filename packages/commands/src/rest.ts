@@ -26,7 +26,14 @@ import { createLogger, type Logger } from "./log.ts";
 //   holds (public-api: Request bodies have a size limit). The web role's
 //   request guard refuses such a body before the route sees it; the route
 //   refuses it too, so the rule holds where the guard is not installed;
-// - it asks who is calling, and answers a call without credentials with 401;
+// - it asks who is calling, from the access token in the Authorization header
+//   alone, and answers a call without one with 401 and a challenge that
+//   points to the protected resource metadata, with the scopes the operation
+//   needs as its hint; a token that is not valid gets 401 invalid_token, and
+//   one that lacks a scope the operation needs 403 insufficient_scope with
+//   that scope, both pointing to the metadata too (agent-access: Missing and
+//   insufficient tokens get standard challenges; agent-access: Credentials are
+//   accepted only in the Authorization header);
 // - it builds the input from the path's parameters and, for GET and DELETE,
 //   the query string, or, for the other methods, the JSON object in the body,
 //   where a path parameter wins over a body field of the same name; a call
@@ -71,8 +78,10 @@ export interface RestOptions {
   /** The OpenAPI document served at /api/v1/openapi.json, as JSON text. */
   document: string;
   execute: Execute;
-  /** Who is calling, from the call's credentials; undefined when it carries none that are valid. */
+  /** Who is calling, from the call's credentials; undefined when it carries none; a refusal for a token that is not valid. */
   authenticate(request: Request): Promise<Caller | undefined>;
+  /** The URL of the protected resource metadata, which the challenge of a refused token points to. */
+  resourceMetadata?: string;
   logger?: Logger;
   /** The clock Idempotency-Keys are kept by; the system clock unless a test controls it. */
   now?: () => Date;
@@ -130,7 +139,9 @@ export function createRestHandler(options: RestOptions): RestHandler {
     try {
       const caller = await options.authenticate(request);
       if (caller === undefined) {
-        return problem(new Refusal("unauthenticated", "This operation needs a token in the Authorization header."));
+        return problem(
+          challenged(new Refusal("unauthenticated", "This operation needs a token in the Authorization header.", { challenge: { scope: definition.scopes } })),
+        );
       }
       // What is wrong with the call itself is refused by execute(), once it has re-checked the caller's membership.
       let refusal: Refusal | undefined;
@@ -181,12 +192,22 @@ export function createRestHandler(options: RestOptions): RestHandler {
         const output: unknown = JSON.parse(replayed.body);
         return json(replayed.status, JSON.stringify(agentJson(output)), replayed.status < 300 ? etagOf(definition, output) : undefined);
       }
-      if (error instanceof Refusal) return problem(error);
+      if (error instanceof Refusal) return problem(challenged(error));
       logger.error("rest: the operation failed", { operationId: definition.id, error });
       return response(internalErrorProblem());
     }
   }
+
+  /** A refusal of the call's token, whose challenge points to the protected resource metadata; any other refusal as it is. */
+  function challenged(refusal: Refusal): Refusal {
+    const { resourceMetadata } = options;
+    if (resourceMetadata === undefined || !CHALLENGED.has(refusal.reason)) return refusal;
+    return refusal.withChallenge({ resourceMetadata });
+  }
 }
+
+/** The refusals of a call's token, whose challenge points to the protected resource metadata. */
+const CHALLENGED: ReadonlySet<string> = new Set(["unauthenticated", "invalid-token", "insufficient-scope"]);
 
 function routeOf(definition: CommandDefinition): Route {
   const parameters: string[] = [];

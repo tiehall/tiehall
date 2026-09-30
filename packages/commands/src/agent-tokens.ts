@@ -63,6 +63,8 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     // Another scheme names no access token.
     if (bearer === null) return undefined;
     const token = bearer[1] ?? "";
+    // A token that is not a JWT at all is refused before any key is read.
+    if (!isJwt(token)) throw invalidToken();
     let claims: Record<string, unknown>;
     try {
       claims = await verifyJwsAccessToken(token, {
@@ -82,6 +84,18 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     const scopes = SCOPES.filter((scope): scope is Scope => granted.includes(scope));
     return { kind: "oauth_token", userId, clientId, scopes, surface: "api" };
   };
+}
+
+/** Whether a token has the form of a signed JWT: three base64url parts, whose first is a JSON object that names an algorithm. */
+function isJwt(token: string): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return false;
+  try {
+    const header: unknown = JSON.parse(Buffer.from(parts[0] ?? "", "base64url").toString("utf8"));
+    return typeof header === "object" && header !== null && typeof (header as { alg?: unknown }).alg === "string";
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a failure of the check is the token's: a JOSE error, such as a malformed token, a bad signature, a wrong claim or an expired token. */

@@ -13,8 +13,8 @@ import { MCP_RESOURCE, pkcePair, startAgentAccess, type AgentAccessHarness, type
 // signed-in person has approved it, and the client runs the authorization
 // code flow with PKCE and the install's MCP resource, then calls /api/v1 with
 // the access token. The cases waited as expected failures until the tasks that
-// build each rule turned them into plain tests; the rest still wait (15.4 and
-// 15.11), and the /mcp cases join when the MCP endpoint is built (16.2).
+// build each rule turned them into plain tests; the /mcp cases join when the
+// MCP endpoint is built (16.2).
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
@@ -91,7 +91,7 @@ describe("Authorization requests use PKCE S256, resource indicators and the iss 
 });
 
 describe("Missing and insufficient tokens get standard challenges", () => {
-  it.fails("answers a call without a token with 401 and a challenge that points to the protected resource metadata and carries a scope hint", async () => {
+  it("answers a call without a token with 401 and a challenge that points to the protected resource metadata and carries a scope hint", async () => {
     const answer = await harness.api("GET", "/api/v1/requests");
     expect(answer.status).toBe(401);
     const challenge = answer.headers.get("www-authenticate") ?? "";
@@ -106,7 +106,7 @@ describe("Missing and insufficient tokens get standard challenges", () => {
     expect(answer.headers.get("www-authenticate")).toContain('error="invalid_token"');
   });
 
-  it.fails("answers a token without the scope the operation needs with 403 insufficient_scope naming that scope, and runs nothing", async () => {
+  it("answers a token without the scope the operation needs with 403 insufficient_scope naming that scope, and runs nothing", async () => {
     const { accessToken } = await harness.tokens(ana, ["requests:read"]);
     const before = Number((await harness.install.owner.query("SELECT count(*) FROM events")).rows[0].count);
     const answer = await harness.api("POST", "/api/v1/requests", { authorization: `Bearer ${accessToken}` }, { title: "Add a dark mode", targetTeam: "FE" });
@@ -144,7 +144,7 @@ describe("Access tokens live 10 minutes and refresh tokens rotate", () => {
     }
   });
 
-  it.fails("rotates the refresh token on each use and refuses a used one with invalid_grant", async () => {
+  it("rotates the refresh token on each use and refuses a used one with invalid_grant", async () => {
     const { client, refreshToken } = await harness.tokens(ana, ["requests:read"]);
     expect(refreshToken).toBeTypeOf("string");
     const first = await harness.refresh(client, refreshToken ?? "");

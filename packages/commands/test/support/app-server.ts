@@ -12,6 +12,7 @@ import {
   CONFIRMATION_SUBJECTS,
   createAgentTokenCheck,
   createConfirmationNonces,
+  resourceMetadataUrlOf,
   createConfirmationStep,
   createConfirmRoute,
   createExecute,
@@ -170,6 +171,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     document: OPENAPI_JSON,
     execute,
     authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys() }),
+    resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });
   const githubAdmin = createGitHubAdminRoute({

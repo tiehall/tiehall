@@ -100,6 +100,19 @@ export type RefusalReason = keyof typeof REFUSAL_REASONS;
 /** The mark the logger looks for on an error whose message is server text (the logger's LOGGABLE). */
 const SERVER_TEXT: unique symbol = Symbol.for("tiehall.loggable");
 
+/**
+ * What an OAuth challenge adds to its WWW-Authenticate header (agent-access:
+ * Missing and insufficient tokens get standard challenges): where the
+ * protected resource metadata is (RFC 9728), and which scopes the operation
+ * needs (RFC 6750). Only a refusal whose row challenges carries them.
+ */
+export interface ChallengeParameters {
+  /** The URL of the protected resource metadata of the resource the call was made to. */
+  resourceMetadata?: string;
+  /** The scopes the operation needs, as a hint for a call without a token or the ones a token lacks. */
+  scope?: readonly string[];
+}
+
 /** Where the input fails its schema: the path to the value and what is wrong with it, never the value itself. */
 export interface RefusalIssue {
   path: (string | number)[];
@@ -111,6 +124,8 @@ export interface RefusalOptions {
   issues?: readonly RefusalIssue[];
   /** For a limit: how many seconds to wait before retrying. */
   retryAfterSeconds?: number;
+  /** For an OAuth refusal: what its challenge adds. */
+  challenge?: ChallengeParameters;
 }
 
 /**
@@ -127,6 +142,8 @@ export class Refusal extends Error {
   readonly issues: readonly RefusalIssue[];
   /** When to retry, in seconds, for the rows that say. */
   readonly retryAfterSeconds: number | undefined;
+  /** What the refusal's OAuth challenge adds, for the rows that challenge. */
+  readonly challenge: ChallengeParameters;
   readonly [SERVER_TEXT] = true;
 
   constructor(reason: RefusalReason, detail: string, options: RefusalOptions = {}) {
@@ -140,6 +157,16 @@ export class Refusal extends Error {
       throw new TypeError(`A ${reason} refusal names when to retry, in retryAfterSeconds.`);
     }
     this.retryAfterSeconds = typeof row.retryAfter === "number" ? row.retryAfter : options.retryAfterSeconds;
+    this.challenge = options.challenge ?? {};
+  }
+
+  /** The same refusal, whose challenge also carries these parameters, such as where the surface's resource metadata is. */
+  withChallenge(challenge: ChallengeParameters): Refusal {
+    return new Refusal(this.reason, this.message, {
+      issues: this.issues,
+      ...(this.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: this.retryAfterSeconds }),
+      challenge: { ...this.challenge, ...challenge },
+    });
   }
 }
 
@@ -169,7 +196,7 @@ export function httpProblem(refusal: Refusal): HttpProblem {
   const row: Row = REFUSAL_REASONS[refusal.reason];
   const headers: Record<string, string> = { ...PROBLEM_HEADERS };
   if (refusal.retryAfterSeconds !== undefined) headers["retry-after"] = String(refusal.retryAfterSeconds);
-  if (row.challenge !== undefined) headers["www-authenticate"] = row.challenge;
+  if (row.challenge !== undefined) headers["www-authenticate"] = challengeOf(row.challenge, refusal.challenge);
   return {
     status: refusal.status,
     headers,
@@ -182,6 +209,28 @@ export function httpProblem(refusal: Refusal): HttpProblem {
       ...(refusal.retryAfterSeconds === undefined ? {} : { retryAfter: refusal.retryAfterSeconds }),
     },
   };
+}
+
+/**
+ * A row's challenge with the parameters a refusal adds, in the order the
+ * authorization server's own challenges give them: for a call without a
+ * token, where the resource metadata is, then the scope hint; for a refused
+ * token, the row's error, the scope it lacks, then where the resource
+ * metadata is.
+ */
+function challengeOf(base: string, { scope, resourceMetadata }: ChallengeParameters): string {
+  const scopeParameter = scope === undefined || scope.length === 0 ? [] : [`scope="${quoted(scope.join(" "))}"`];
+  const metadataParameter = resourceMetadata === undefined ? [] : [`resource_metadata="${quoted(resourceMetadata)}"`];
+  if (base === "Bearer") {
+    const parameters = [...metadataParameter, ...scopeParameter];
+    return parameters.length === 0 ? base : `Bearer ${parameters.join(", ")}`;
+  }
+  return [base, ...scopeParameter, ...metadataParameter].join(", ");
+}
+
+/** A value for a quoted-string of a header, whose quotes and backslashes are escaped. */
+function quoted(value: string): string {
+  return value.replace(/[\\"]/g, "\\$&");
 }
 
 /** The HTTP answer to a failure that is not one of Tiehall's refusals: a 500 that says nothing about it. */

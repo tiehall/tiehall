@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
-import { createAgentTokenCheck, createRestHandler, type AgentTokenCheck, type RestHandler } from "../../src/index.ts";
+import { createAgentTokenCheck, createRestHandler, resourceMetadataUrlOf, type AgentTokenCheck, type RestHandler } from "../../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./install.ts";
 import { addUser } from "./members.ts";
 import { startSignIn, type SignInHarness } from "./sign-in.ts";
@@ -123,6 +123,7 @@ export async function startAgentAccess(): Promise<AgentAccessHarness> {
     document: OPENAPI_JSON,
     execute: install.execute,
     authenticate: freshTokenCheck(),
+    resourceMetadata: resourceMetadataUrlOf(URL_OF_INSTALL),
     logger: install.logger,
   });
 

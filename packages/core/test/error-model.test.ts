@@ -152,6 +152,36 @@ describe("the error model", () => {
     );
   });
 
+  // agent-access: Missing and insufficient tokens get standard challenges: a
+  // challenge points to the protected resource metadata (RFC 9728) and says
+  // which scope the operation needs (RFC 6750).
+  it("adds to a challenge where the protected resource metadata is and which scope the operation needs", () => {
+    const metadata = "https://tiehall.example.com/.well-known/oauth-protected-resource/mcp";
+    const missing = new Refusal("unauthenticated", "This operation needs a token.", { challenge: { resourceMetadata: metadata, scope: ["requests:read"] } });
+    expect(httpProblem(missing).headers["www-authenticate"]).toBe(`Bearer resource_metadata="${metadata}", scope="requests:read"`);
+    const invalid = new Refusal("invalid-token", "This token is not valid.", { challenge: { resourceMetadata: metadata } });
+    expect(httpProblem(invalid).headers["www-authenticate"]).toBe(`Bearer error="invalid_token", resource_metadata="${metadata}"`);
+    const insufficient = new Refusal("insufficient-scope", "This token lacks requests:write.", {
+      challenge: { scope: ["requests:write", "contracts:report"], resourceMetadata: metadata },
+    });
+    expect(httpProblem(insufficient)).toMatchObject({
+      status: 403,
+      headers: { "www-authenticate": `Bearer error="insufficient_scope", scope="requests:write contracts:report", resource_metadata="${metadata}"` },
+    });
+  });
+
+  it("carries a challenge's parameters only on a refusal that challenges, and keeps them when a refusal gains more", () => {
+    const refusal = new Refusal("forbidden", "Only an admin may do this.", { challenge: { scope: ["requests:read"] } });
+    expect(httpProblem(refusal).headers["www-authenticate"]).toBeUndefined();
+    const scoped = new Refusal("insufficient-scope", "This token lacks requests:write.", { challenge: { scope: ["requests:write"] } });
+    const withMetadata = scoped.withChallenge({ resourceMetadata: "https://tiehall.example.com/.well-known/oauth-protected-resource/mcp" });
+    expect(withMetadata).toBeInstanceOf(Refusal);
+    expect(withMetadata.message).toBe(scoped.message);
+    expect(httpProblem(withMetadata).headers["www-authenticate"]).toBe(
+      'Bearer error="insufficient_scope", scope="requests:write", resource_metadata="https://tiehall.example.com/.well-known/oauth-protected-resource/mcp"',
+    );
+  });
+
   it("gives an unexpected failure a 500 problem that says nothing about it", () => {
     expect(internalErrorProblem()).toEqual({
       status: 500,

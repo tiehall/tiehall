@@ -1,6 +1,7 @@
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
+import { resourceMetadataUrlOf } from "./authorization-server.ts";
 import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -104,13 +105,15 @@ function servicesOf(env: Environment): Services {
 export function restRoute(env: Environment): RestHandler {
   if (rest !== undefined) return rest;
   const { execute, logger, signIn } = servicesOf(env);
+  const url = installUrl(env["TIEHALL_URL"] ?? "");
   rest = createRestHandler({
     catalog: CATALOG,
     document: OPENAPI_JSON,
     execute,
     // A call acts for the user its access token names, checked against the keys the sign-in service signs them
     // with, read in this process (agent-access: Tiehall is the authorization server for agent clients).
-    authenticate: createAgentTokenCheck({ url: installUrl(env["TIEHALL_URL"] ?? ""), signingKeys: () => signIn.signingKeys() }),
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys() }),
+    resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });
   return rest;

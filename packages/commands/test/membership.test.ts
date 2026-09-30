@@ -248,7 +248,8 @@ describe("a removed member's next call", () => {
 
   it("gets 403 on /api/v1 for a call whose input, body, Idempotency-Key or If-Match a member gets refused for", async () => {
     const dana = await addUser(owner, { role: "member" });
-    const caller: Caller = { kind: "personal_access_token", userId: dana, tokenId: randomUUID(), scopes: ["requests:write"], surface: "api" };
+    // The token carries the scopes the operations need, so what refuses a member's call is its input, body or headers.
+    const caller: Caller = { kind: "personal_access_token", userId: dana, tokenId: randomUUID(), scopes: ["requests:read", "requests:write"], surface: "api" };
     const rest = createRestHandler({ catalog, document: "{}\n", execute, authenticate: async () => caller, logger: createLogger({ write: () => {} }) });
     const revise = (headers: Record<string, string>, body: string) =>
       new Request(`${INSTALL}/api/v1/notes/${noteId}/revisions`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
