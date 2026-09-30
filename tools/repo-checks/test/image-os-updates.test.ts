@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { osUpdateProblems } from "../src/dockerfile.ts";
+import { instructions, osUpdateProblems } from "../src/dockerfile.ts";
 
 // The Dockerfile's part of self-host-install: Release pipeline integrity (D53): the runtime stage applies the
 // operating system's security updates when the image is built, in one step that runs without asking, installs no
@@ -134,6 +134,28 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
       "USER 1000:1000",
     );
     expect(osUpdateProblems(dockerfile)).toEqual([]);
+  });
+
+  it("skips blank lines inside a continued instruction, as Docker does", () => {
+    // Docker skips an empty continuation line, with a warning, and goes on reading the instruction.
+    const dockerfile = withRuntime(
+      "RUN export DEBIAN_FRONTEND=noninteractive \\",
+      "    && apt-get update --error-on=any \\",
+      "",
+      "    && apt-get upgrade --yes --no-install-recommends \\",
+      "   ",
+      "    && apt-get clean && rm -rf /var/lib/apt/lists/*",
+      "USER 1000:1000",
+    );
+    expect(osUpdateProblems(dockerfile)).toEqual([]);
+    expect(instructions(dockerfile).slice(-2)).toEqual([
+      {
+        keyword: "RUN",
+        args: "export DEBIAN_FRONTEND=noninteractive && apt-get update --error-on=any && apt-get upgrade --yes --no-install-recommends && apt-get clean && rm -rf /var/lib/apt/lists/*",
+        line: 5,
+      },
+      { keyword: "USER", args: "1000:1000", line: 11 },
+    ]);
   });
 });
 

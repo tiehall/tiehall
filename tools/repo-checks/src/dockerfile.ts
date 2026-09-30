@@ -31,16 +31,16 @@ export interface Instruction {
   line: number;
 }
 
-/** The instructions of a Dockerfile, with continued lines joined and comment lines left out, as Docker reads them. */
+/** The instructions of a Dockerfile, with continued lines joined and comment and blank lines left out, as Docker reads them. */
 export function instructions(dockerfile: string): Instruction[] {
   const lines = dockerfile.split("\n");
   const result: Instruction[] = [];
   let current: { parts: string[]; line: number } | undefined;
   lines.forEach((raw, index) => {
     const text = raw.replace(/\r$/, "");
-    // A comment line is left out, inside a continued instruction too.
-    if (/^\s*#/.test(text)) return;
-    if (current === undefined && text.trim() === "") return;
+    // A comment line or a blank line is left out, inside a continued instruction too: Docker skips an empty
+    // continuation line, with a warning, and goes on reading the instruction.
+    if (/^\s*#/.test(text) || text.trim() === "") return;
     const continued = /\\\s*$/.test(text);
     const part = continued ? text.replace(/\\\s*$/, "") : text;
     if (current === undefined) current = { parts: [], line: index + 1 };
