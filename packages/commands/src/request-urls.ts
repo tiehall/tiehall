@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestWithThreadText, type RequestWithThreadJson } from "@tiehall/packet/tool-text";
@@ -27,7 +27,10 @@ import { SIGN_IN_PATH } from "./sign-in.ts";
 //   reader's teams make it;
 // - HTML is the web UI's request page, which the app renders once the proxy
 //   has let the call through, with the headers the proxy gives it: those of
-//   every answer of a request URL, and those of every page of the web UI.
+//   every answer of a request URL, and those of every page of the web UI,
+//   among them a content security policy whose script nonce is made for that
+//   answer, which the proxy also hands Next.js with the call, so Next.js puts
+//   it on the page's scripts.
 // Who calls: HTML is the web UI, for a browser signed in with its web
 // session; markdown and JSON take an agent's access token from the
 // Authorization header alone, never from the query string, or a browser's web
@@ -91,14 +94,40 @@ const URL_HEADERS = {
 } as const;
 
 /**
- * The headers the web UI's page of a request gets besides, as every page of
- * the web UI has them: no other site frames it, and its URL goes to no other
- * site as a referrer.
+ * The content security policy of a page of the web UI that the Next.js app
+ * renders, such as a request's page (agent-safety: The web UI renders no raw
+ * HTML and no remote images; self-host-install: No telemetry and a
+ * documented list of outbound connections): scripts run only when they carry
+ * the nonce made for this answer, which Next.js puts on its own scripts once
+ * the proxy hands it the policy with the call, and the scripts they load;
+ * images, styles, fonts and connections come only from the install; the page
+ * embeds no object, sets no base URL, posts its forms only to the install, and
+ * no other site frames it. So no text the page shows, whoever wrote it, can
+ * make the browser run a script or fetch anything from another host.
  */
-const PAGE_HEADERS = {
-  "content-security-policy": "frame-ancestors 'none'",
-  "referrer-policy": "same-origin",
-} as const;
+export function pageContentSecurityPolicy(nonce: string = randomBytes(18).toString("base64")): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+/**
+ * The headers the web UI's page of a request gets besides, as every page of
+ * the web UI has them: its content security policy, with a nonce of its own,
+ * and its URL goes to no other site as a referrer.
+ */
+function pageHeaders(): Record<string, string> {
+  return { "content-security-policy": pageContentSecurityPolicy(), "referrer-policy": "same-origin" };
+}
 
 /** The content type each representation is answered with. */
 const CONTENT_TYPES: Readonly<Record<Exclude<Representation, "html">, string>> = {
@@ -169,7 +198,7 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
       if (representation === "html") {
         // The page's ETag follows everything the page shows of the request: its thread, its packet and its proposals.
         const page = await readRequestPage((commandId, input) => options.execute(commandId, caller, input, { readOnly: true }) as never, read.key, read);
-        const headers = new Headers({ ...URL_HEADERS, ...PAGE_HEADERS, etag: requestEtag("html", caller, ...requestPageFacts(page)) });
+        const headers = new Headers({ ...URL_HEADERS, ...pageHeaders(), etag: requestEtag("html", caller, ...requestPageFacts(page)) });
         for (const cookie of renewal.getSetCookie()) headers.append("set-cookie", cookie);
         return { page: { key: read.key, headers } };
       }

@@ -364,7 +364,14 @@ export {
   type Representation,
   type RequestUrlPath,
 } from "./negotiation.ts";
-export { createRequestUrlRoute, requestEtag, type RequestUrlAnswer, type RequestUrlOptions, type RequestUrlRoute } from "./request-urls.ts";
+export {
+  createRequestUrlRoute,
+  pageContentSecurityPolicy,
+  requestEtag,
+  type RequestUrlAnswer,
+  type RequestUrlOptions,
+  type RequestUrlRoute,
+} from "./request-urls.ts";
 export { createNewRequestRoute, NEW_REQUEST_PATH, packetLinesOf, packetTextOf, type PacketText } from "./new-request.ts";
 export { createRequestListsRoute, REQUEST_LIST_PAGE_SIZE, REQUEST_LISTS_PATH } from "./request-lists.ts";
 export {

@@ -173,6 +173,7 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
 }
 
 export { requestUrlOf } from "./negotiation.ts";
+export { pageContentSecurityPolicy } from "./request-urls.ts";
 export { readRequestPageAs, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
 export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";
 export { packetLinesOf } from "./new-request.ts";
