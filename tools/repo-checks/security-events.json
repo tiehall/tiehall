@@ -128,7 +128,14 @@
     {
       "item": "a personal access token created or revoked;",
       "actions": [
-        { "action": "a personal access token created", "pending": "15.14" },
+        {
+          "action": "a personal access token created",
+          "event": "personal_access_token.created",
+          "test": {
+            "file": "packages/commands/test/personal-access-tokens.test.ts",
+            "case": "records a security event that names the member and the token, never the value"
+          }
+        },
         { "action": "a personal access token revoked", "pending": "15.17" }
       ]
     },

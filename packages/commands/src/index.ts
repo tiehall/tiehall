@@ -37,6 +37,16 @@ export {
   type CliDeviceFlowOptions,
 } from "./device-flow.ts";
 export {
+  createTokensRoute,
+  findPersonalAccessToken,
+  newPersonalAccessToken,
+  PERSONAL_ACCESS_TOKEN_MAX_DAYS,
+  personalAccessTokenHash,
+  personalAccessTokenSettingsIn,
+  TOKENS_PATH,
+  type FoundPersonalAccessToken,
+} from "./personal-access-tokens.ts";
+export {
   createDeviceApprovalRoute,
   normalizeUserCode,
   type DeviceApprovalRoute,
@@ -360,6 +370,7 @@ export {
   renderReviewPage,
   type ConfirmDownloads,
   type ConfirmEntries,
+  type ConfirmMessage,
   type ConfirmMessages,
   type ConfirmRedirects,
   type ConfirmRoute,

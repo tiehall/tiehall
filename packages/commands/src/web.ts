@@ -19,6 +19,7 @@ import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createRestHandler, type RestHandler } from "./rest.ts";
 import { CONFIRM_DOWNLOADS, CONFIRM_ENTRIES, CONFIRM_MESSAGES, CONFIRM_REDIRECTS, CONFIRMATION_SUBJECTS, REVIEWS } from "./reviews.ts";
+import { createTokensRoute } from "./personal-access-tokens.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
 import { installUrl, readAppDatabase, readAuthSecret, readClientMetadataFetch, readSecretKey, type Environment } from "./settings.ts";
 import { createSetupRoute, type SetupRoute } from "./setup-route.ts";
@@ -118,15 +119,16 @@ export function agentClientsOf(env: Environment): AgentClientOptions {
 /** The REST route under /api/v1, built once per process from the install's settings. */
 export function restRoute(env: Environment): RestHandler {
   if (rest !== undefined) return rest;
-  const { execute, logger, signIn } = servicesOf(env);
+  const { execute, logger, signIn, database } = servicesOf(env);
   const url = installUrl(env["TIEHALL_URL"] ?? "");
   rest = createRestHandler({
     catalog: CATALOG,
     document: OPENAPI_JSON,
     execute,
     // A call acts for the user its access token names, checked against the keys the sign-in service signs them
-    // with, read in this process (agent-access: Tiehall is the authorization server for agent clients).
-    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys() }),
+    // with, read in this process (agent-access: Tiehall is the authorization server for agent clients), or its
+    // personal access token names, looked up in the install's database.
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
     resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });
@@ -233,6 +235,14 @@ export function invitesRoute(env: Environment): PageRoute {
 /** The teams page of the admin UI under /admin/teams, for the signed-in admin's web session. */
 export function teamsRoute(env: Environment): PageRoute {
   return pageOf("teams", env, createTeamsRoute);
+}
+
+/**
+ * The "Connected agents and tokens" page at /tokens, where every member creates
+ * their personal access tokens, for the signed-in user's web session.
+ */
+export function tokensRoute(env: Environment): PageRoute {
+  return pageOf("tokens", env, createTokensRoute);
 }
 
 /** The sign-in policy page of the admin UI under /admin/sign-in-policy, for the signed-in admin's web session. */

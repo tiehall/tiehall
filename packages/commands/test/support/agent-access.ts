@@ -6,7 +6,9 @@ import {
   createConsentRoute,
   createDeviceApprovalRoute,
   createRestHandler,
+  createTokensRoute,
   resourceMetadataUrlOf,
+  TOKENS_PATH,
   type AgentClientOptions,
   type AgentTokenCheck,
   type RestHandler,
@@ -23,7 +25,8 @@ import { startSignIn, type SignInHarness } from "./sign-in.ts";
 // /.well-known go to the sign-in service, which is the install's OAuth
 // authorization server, /api/v1 to the REST route, which checks the access
 // token a call carries, and the sign-in page, the consent screen, the device
-// approval page and the review pages of the confirmation step to their pages.
+// approval page, the Connected agents and tokens page and the review pages of
+// the confirmation step to their pages.
 // An agent client plays its part through plain HTTP: it registers, sends the
 // person's browser to the authorization endpoint with PKCE and a resource,
 // and exchanges the code it gets back.
@@ -98,6 +101,19 @@ export interface AgentAccessHarness {
   freshTokenCheck(): AgentTokenCheck;
   /** Calls /api/v1 with these headers. */
   api(method: string, path: string, headers?: Record<string, string>, body?: unknown): Promise<Response>;
+  /**
+   * Creates a personal access token for a signed-in member as they do in the
+   * web UI: the form of the Connected agents and tokens page, its review page
+   * and its confirmation, which carries these headers besides, such as the
+   * client address the web role's request guard names; returns the value the
+   * confirmation's page shows, and fails the test when a step does not answer
+   * as it should.
+   */
+  personalAccessToken(
+    person: SignedIn,
+    input?: { name?: string; scopes?: readonly string[]; expiresInDays?: number },
+    headers?: Record<string, string>,
+  ): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -137,7 +153,8 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     },
   };
   // /api/v1 checks access tokens as the web role does: against the keys the sign-in service signs them with.
-  const freshTokenCheck = () => createAgentTokenCheck({ url: URL_OF_INSTALL, signingKeys: () => signIn.service.signingKeys(), now: clock.now });
+  const freshTokenCheck = () =>
+    createAgentTokenCheck({ url: URL_OF_INSTALL, signingKeys: () => signIn.service.signingKeys(), now: clock.now, database: install.db });
   const rest: RestHandler = createRestHandler({
     catalog: CATALOG,
     document: OPENAPI_JSON,
@@ -153,6 +170,8 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
   const confirm = install.confirmRouteFor(session);
   // The device approval page, where a member approves the code `tiehall login` printed.
   const device = createDeviceApprovalRoute({ step: install.step, session, url: URL_OF_INSTALL, secret: install.authSecret, logger: install.logger });
+  // The Connected agents and tokens page, where a member creates a personal access token.
+  const tokens = createTokensRoute({ execute: install.execute, session, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
 
   const handle = async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -160,6 +179,7 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     if (pathname.startsWith("/api/v1/")) return rest(request);
     if (pathname === "/consent") return consent(request);
     if (pathname === "/device") return device(request);
+    if (pathname === TOKENS_PATH) return tokens(request);
     if (pathname.startsWith("/confirm/")) return confirm(request);
     if (pathname === "/sign-in") return signIn.service.page(request);
     return new Response("Not found", { status: 404 });
@@ -262,10 +282,41 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         }),
       ),
+    async personalAccessToken(person, input = {}, headers = {}) {
+      const fromThePage = { cookie: person.cookie, accept: "text/html", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" };
+      const page = await (await handle(new Request(`${URL_OF_INSTALL}${TOKENS_PATH}`, { headers: { cookie: person.cookie, accept: "text/html" } }))).text();
+      const form = new URLSearchParams({ name: input.name ?? "A script", expiresInDays: String(input.expiresInDays ?? 30), csrf: hiddenField(page, "csrf") });
+      for (const scope of input.scopes ?? ["requests:read", "requests:write"]) form.append("scope", scope);
+      const posted = await handle(
+        new Request(`${URL_OF_INSTALL}${TOKENS_PATH}`, { method: "POST", headers: { ...fromThePage, "content-type": "application/x-www-form-urlencoded" }, body: form.toString() }),
+      );
+      const reviewPath = posted.headers.get("location") ?? "";
+      if (posted.status !== 303) throw new Error(`the form answered ${posted.status}: ${await posted.text()}`);
+      const review = await handle(new Request(`${URL_OF_INSTALL}${reviewPath}`, { headers: { cookie: person.cookie, accept: "text/html" } }));
+      const html = await review.text();
+      if (review.status !== 200) throw new Error(`the review page answered ${review.status}: ${html}`);
+      const confirmed = await handle(
+        new Request(`${URL_OF_INSTALL}/confirm/personal_access_tokens.create`, {
+          method: "POST",
+          headers: { ...headers, ...fromThePage, "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+        }),
+      );
+      const shown = await confirmed.text();
+      const token = /<pre><code>(th_pat_[A-Za-z0-9_-]+)<\/code><\/pre>/.exec(shown)?.[1];
+      if (confirmed.status !== 200 || token === undefined) throw new Error(`the confirmation answered ${confirmed.status}: ${shown}`);
+      return token;
+    },
     async close() {
       await stub.close();
       await install.close();
     },
   };
   return harness;
+}
+
+/** A hidden field's value on a page, as the page escaped it. */
+export function hiddenField(html: string, name: string): string {
+  const value = new RegExp(`<input type="hidden" name="${name}" value="([^"]*)">`).exec(html)?.[1] ?? "";
+  return value.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code))).replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 }

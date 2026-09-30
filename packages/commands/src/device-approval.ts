@@ -180,10 +180,10 @@ export const DEVICE_APPROVAL_ENTRIES: ConfirmEntries = { [approveDevice.id]: DEV
 
 /** A confirmed approval tells the person to go back to the terminal, where the CLI goes on by itself. */
 export const DEVICE_APPROVAL_MESSAGES: ConfirmMessages = {
-  [approveDevice.id]: {
+  [approveDevice.id]: () => ({
     title: "The tiehall CLI is signed in",
     text: "The tiehall CLI is signed in for you. Return to your terminal: tiehall login finishes by itself.",
-  },
+  }),
 };
 
 export interface DeviceApprovalRouteOptions {

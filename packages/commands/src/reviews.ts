@@ -8,6 +8,7 @@ import { GITHUB_INSTALLATION_REVIEWS } from "./github-installation-changes.ts";
 import { GITHUB_MODE_REVIEWS } from "./github-mode.ts";
 import { INVITE_REVIEWS } from "./invites.ts";
 import { MEMBER_REVIEWS } from "./member-changes.ts";
+import { PERSONAL_ACCESS_TOKEN_MESSAGES, PERSONAL_ACCESS_TOKEN_REVIEWS } from "./personal-access-tokens.ts";
 import { PROPOSAL_CONFIRMATION_SUBJECTS, PROPOSAL_REVIEWS } from "./proposal-confirmations.ts";
 import { UNDO_REVIEWS } from "./proposal-undo.ts";
 import { SIGN_IN_POLICY_REVIEWS } from "./sign-in-policy.ts";
@@ -30,6 +31,7 @@ export const REVIEWS: Reviews = {
   ...GITHUB_APP_KEY_REVIEWS,
   ...AGENT_GRANT_REVIEWS,
   ...DEVICE_APPROVAL_REVIEWS,
+  ...PERSONAL_ACCESS_TOKEN_REVIEWS,
 };
 
 // What a command's confirmation nonce is bound to, where it is not the
@@ -56,5 +58,6 @@ export const CONFIRM_ENTRIES: ConfirmEntries = { ...DEVICE_APPROVAL_ENTRIES };
 
 // The commands whose confirmation answers with a page in their own words
 // instead of the "Confirmed" page: the tiehall CLI's approval sends the person
-// back to their terminal.
-export const CONFIRM_MESSAGES: ConfirmMessages = { ...DEVICE_APPROVAL_MESSAGES };
+// back to their terminal, and a new personal access token's page shows its
+// value, this once.
+export const CONFIRM_MESSAGES: ConfirmMessages = { ...DEVICE_APPROVAL_MESSAGES, ...PERSONAL_ACCESS_TOKEN_MESSAGES };

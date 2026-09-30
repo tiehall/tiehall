@@ -2,7 +2,9 @@ import { verifyJwsAccessToken } from "better-auth/oauth2";
 import { SCOPES, type Scope } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { mcpResourceOf } from "./authorization-server.ts";
+import type { Database } from "@tiehall/db";
 import type { Caller } from "./caller.ts";
+import { findPersonalAccessToken, isPersonalAccessToken, personalAccessTokenCaller } from "./personal-access-tokens.ts";
 
 // The access tokens agents call /api/v1 with (agent-access: Tiehall is the
 // authorization server for agent clients; agent-access: Six kinds of caller;
@@ -20,6 +22,13 @@ import type { Caller } from "./caller.ts";
 // in the same process, from the sign-in service, and kept for a few minutes;
 // a token signed with a key they do not hold makes the check read them again,
 // since a key the service made since then may have signed it.
+//
+// A bearer token that starts with th_pat_ is a personal access token
+// (agent-access: Personal access tokens are scoped, expiring and created in
+// the web UI; personal-access-tokens.ts): it is looked up by its digest in the
+// install's database, and acts for the user who created it, within its
+// scopes; one that is unknown, expired or revoked is refused with 401 and
+// invalid_token, like any other token that is not valid.
 
 /** The install's public signing keys, as a JSON Web Key Set. */
 export interface SigningKeys {
@@ -33,6 +42,8 @@ export interface AgentTokenCheckOptions {
   signingKeys(): Promise<SigningKeys | undefined>;
   /** The clock tokens expire by; the system clock unless a test controls it. */
   now?: () => Date;
+  /** The app's database, where personal access tokens are looked up by their digest; without it, every one is refused. */
+  database?: Database;
 }
 
 /** Who a call's access token acts for: undefined for a call without one; a refusal for a token that is not valid. */
@@ -64,6 +75,11 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     // Another scheme names no access token.
     if (bearer === null) return undefined;
     const token = bearer[1] ?? "";
+    if (isPersonalAccessToken(token)) {
+      const found = options.database === undefined ? undefined : await findPersonalAccessToken(options.database, token, now());
+      if (found === undefined) throw invalidToken();
+      return personalAccessTokenCaller(found);
+    }
     // A token that is not a JWT at all is refused before any key is read.
     if (!isJwt(token)) throw invalidToken();
     let claims: Record<string, unknown>;

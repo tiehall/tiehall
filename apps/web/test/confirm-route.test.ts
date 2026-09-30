@@ -18,6 +18,7 @@ import {
   SIGN_IN_POLICY_PATH,
   SIGN_OUT_PATH,
   TEAMS_PATH,
+  TOKENS_PATH,
   WEBHOOKS_GITHUB_PATH,
 } from "@tiehall/commands";
 import { GET } from "../app/confirm/[...command]/route.ts";
@@ -119,6 +120,17 @@ describe("the app", () => {
   it("mounts the device approval page on its path, for a GET and a POST", async () => {
     const files = routesOf(DEVICE_APPROVAL_PATH);
     expect(files, `the route files ${DEVICE_APPROVAL_PATH} reaches`).toHaveLength(1);
+    const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
+    expect(module?.["GET"]).toBeTypeOf("function");
+    expect(module?.["POST"]).toBeTypeOf("function");
+  });
+
+  // The "Connected agents and tokens" page, whose form creates a personal
+  // access token (agent-access: Personal access tokens are scoped, expiring and
+  // created in the web UI).
+  it("mounts the Connected agents and tokens page on its path, for a GET and a POST", async () => {
+    const files = routesOf(TOKENS_PATH);
+    expect(files, `the route files ${TOKENS_PATH} reaches`).toHaveLength(1);
     const module = (await routeFiles[files[0] ?? ""]?.()) as Record<string, unknown> | undefined;
     expect(module?.["GET"]).toBeTypeOf("function");
     expect(module?.["POST"]).toBeTypeOf("function");

@@ -34,10 +34,12 @@ import {
   createSignInPolicyRoute,
   createSignInService,
   createTeamsRoute,
+  createTokensRoute,
   HANDLERS,
   INVITES_PATH,
   MEMBERS_PATH,
   SIGN_IN_POLICY_PATH,
+  TOKENS_PATH,
   TEAMS_PATH,
   migrate,
   openDatabase,
@@ -179,7 +181,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     catalog: CATALOG,
     document: OPENAPI_JSON,
     execute,
-    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys() }),
+    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database: db }),
     resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });
@@ -200,6 +202,7 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     [INVITES_PATH]: createInvitesRoute(pageOptions),
     [TEAMS_PATH]: createTeamsRoute(pageOptions),
     [SIGN_IN_POLICY_PATH]: createSignInPolicyRoute(pageOptions),
+    [TOKENS_PATH]: createTokensRoute(pageOptions),
   };
   handle = async (request) => {
     const refused = await gate(request);

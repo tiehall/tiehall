@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
-import { callApi, tokenOf } from "./support/requests.ts";
 
 // Every token call is checked against the install's current state
 // (agent-access: Every token call is checked against the install's current
@@ -15,20 +14,31 @@ import { callApi, tokenOf } from "./support/requests.ts";
 // tokens work again. The OAuth token's lifetime and the refresh token's
 // rotation are the conformance tests' (oauth-conformance.test.ts).
 //
-// Until personal access tokens are created in the web UI (15.14), a PAT's
-// call is the caller the PAT check will give; until an admin changes the
-// switch in the web UI with the confirmation step (15.15), the tests set it as
-// that change stores it.
+// The personal access tokens are created in the web UI with the confirmation
+// step, and their calls go through the install's token check. Until an admin
+// changes the switch in the web UI with the confirmation step (15.15), the
+// tests set it as that change stores it.
 
 let harness: AgentAccessHarness;
 let ana: SignedIn;
 let bob: SignedIn;
+/** Ana's and Bob's personal access tokens, which may read and write requests. */
+let anaPat: string;
+let bobPat: string;
 
 beforeAll(async () => {
   harness = await startAgentAccess();
   ana = await harness.member("ana-k");
   bob = await harness.member("bob-k");
+  anaPat = await harness.personalAccessToken(ana, { scopes: ["requests:read", "requests:write"] });
+  bobPat = await harness.personalAccessToken(bob, { scopes: ["requests:read", "requests:write"] });
 }, 60_000);
+
+/** Calls /api/v1 with a personal access token, as a script does. */
+async function callApi<T = any>(token: string, method: string, path: string, body?: unknown): Promise<{ status: number; body: T }> {
+  const answer = await harness.api(method, path, { authorization: `Bearer ${token}` }, body);
+  return { status: answer.status, body: (await answer.json()) as T };
+}
 
 afterAll(async () => {
   await harness?.close();
@@ -47,17 +57,17 @@ describe("the PAT switch", () => {
   it("is on in a new install: a member's personal access token is accepted", async () => {
     const { rows } = await harness.install.owner.query("SELECT count(*)::int AS n FROM install_settings");
     expect(rows[0].n).toBe(0);
-    const answer = await callApi(harness.install, tokenOf(ana.userId), "GET", "/api/v1/requests");
+    const answer = await callApi(anaPat, "GET", "/api/v1/requests");
     expect(answer.status).toBe(200);
   });
 
   it("applies to the next call: once it is off, the script's next call with the same token gets 403 and no data", async () => {
-    const pat = tokenOf(ana.userId);
-    const before = await callApi(harness.install, pat, "GET", "/api/v1/requests");
+    const pat = anaPat;
+    const before = await callApi(pat, "GET", "/api/v1/requests");
     expect(before.status).toBe(200);
     await patSwitch(false);
     try {
-      const answer = await callApi<Record<string, unknown>>(harness.install, pat, "GET", "/api/v1/requests");
+      const answer = await callApi<Record<string, unknown>>(pat, "GET", "/api/v1/requests");
       expect(answer.status).toBe(403);
       expect(answer.body).toEqual({
         type: "https://tiehall.com/problems/personal-access-tokens-off",
@@ -74,7 +84,7 @@ describe("the PAT switch", () => {
     await patSwitch(false);
     try {
       const { rows: before } = await harness.install.owner.query("SELECT count(*)::int AS n FROM events");
-      const answer = await callApi(harness.install, tokenOf(ana.userId), "POST", "/api/v1/requests", { title: "Add a dark mode", targetTeam: "FE" });
+      const answer = await callApi(anaPat, "POST", "/api/v1/requests", { title: "Add a dark mode", targetTeam: "FE" });
       expect(answer.status).toBe(403);
       const { rows: after } = await harness.install.owner.query("SELECT count(*)::int AS n FROM events");
       expect(after[0].n).toBe(before[0].n);
@@ -84,11 +94,11 @@ describe("the PAT switch", () => {
   });
 
   it("revokes nothing: turned on again, an unexpired token that was never revoked is accepted again", async () => {
-    const pat = tokenOf(ana.userId);
+    const pat = anaPat;
     await patSwitch(false);
-    expect((await callApi(harness.install, pat, "GET", "/api/v1/requests")).status).toBe(403);
+    expect((await callApi(pat, "GET", "/api/v1/requests")).status).toBe(403);
     await patSwitch(true);
-    expect((await callApi(harness.install, pat, "GET", "/api/v1/requests")).status).toBe(200);
+    expect((await callApi(pat, "GET", "/api/v1/requests")).status).toBe(200);
   });
 
   it("does not touch OAuth tokens: an agent client's access token is accepted while PATs are off", async () => {
@@ -120,11 +130,11 @@ describe("the membership re-check", () => {
   });
 
   it("refuses a personal access token of a user who is no longer a member with 403, whether the switch is on or off", async () => {
-    const pat = tokenOf(bob.userId);
-    expect((await callApi(harness.install, pat, "GET", "/api/v1/requests")).body).toMatchObject({ status: 403, type: "https://tiehall.com/problems/removed-member" });
+    const pat = bobPat;
+    expect((await callApi(pat, "GET", "/api/v1/requests")).body).toMatchObject({ status: 403, type: "https://tiehall.com/problems/removed-member" });
     await patSwitch(false);
     try {
-      expect((await callApi(harness.install, pat, "GET", "/api/v1/requests")).status).toBe(403);
+      expect((await callApi(pat, "GET", "/api/v1/requests")).status).toBe(403);
     } finally {
       await patSwitch(true);
     }

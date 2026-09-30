@@ -12,6 +12,7 @@ import { MEMBER_HANDLERS } from "./member-changes.ts";
 import { MESSAGE_HANDLERS } from "./messages.ts";
 import { SIGN_IN_POLICY_HANDLERS } from "./sign-in-policy.ts";
 import { PACKET_HANDLERS } from "./packets.ts";
+import { PERSONAL_ACCESS_TOKEN_HANDLERS } from "./personal-access-tokens.ts";
 import { PROPOSAL_CONFIRMATION_HANDLERS } from "./proposal-confirmations.ts";
 import { PROPOSAL_ENDING_HANDLERS } from "./proposal-endings.ts";
 import { PROPOSAL_UNDO_HANDLERS } from "./proposal-undo.ts";
@@ -49,4 +50,5 @@ export const HANDLERS: Handlers = {
   ...GITHUB_APP_KEY_HANDLERS,
   ...AGENT_GRANT_HANDLERS,
   ...DEVICE_APPROVAL_HANDLERS,
+  ...PERSONAL_ACCESS_TOKEN_HANDLERS,
 };

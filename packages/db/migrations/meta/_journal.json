@@ -358,6 +358,13 @@
       "when": 1790729984560,
       "tag": "0050_add_device_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790731774678,
+      "tag": "0051_add_personal_access_tokens",
+      "breakpoints": true
     }
   ]
 }

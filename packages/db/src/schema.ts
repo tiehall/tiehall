@@ -1212,6 +1212,46 @@ export const oauthClientAssertions = pgTable(
   (table) => [primaryKey({ columns: [table.orgId, table.id] })],
 );
 
+// Personal access tokens (agent-access: Personal access tokens are scoped,
+// expiring and created in the web UI): one row per token a user created in the
+// web UI, with the label they gave it, its scopes and its expiry. Only a
+// SHA-256 digest of the token's value is kept, so the value is shown once, at
+// creation, and never again; a call names its token by that digest. A revoked
+// token keeps its row, with the time it was revoked.
+export const personalAccessTokens = pgTable(
+  "personal_access_tokens",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    /** The user the token acts for: the one who created it. */
+    userId: uuid("user_id").notNull(),
+    /** The label its user gave it, their own words. */
+    name: text("name").notNull(),
+    /** One or more of the three OAuth scopes. */
+    scopes: text("scopes").array().notNull(),
+    /** The SHA-256 digest of the token's value, in hex; never the value. */
+    tokenHash: text("token_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** When the token was revoked; none while it may still be used. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("personal_access_tokens_token_hash").on(table.tokenHash),
+    index("personal_access_tokens_user").on(table.orgId, table.userId),
+    foreignKey({
+      name: "personal_access_tokens_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("personal_access_tokens_scopes_given", sql`cardinality(${table.scopes}) >= 1`),
+    check("personal_access_tokens_expiry_after_creation", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
 // Teams (teams-and-roles: Teams; teams-and-roles: Team keys). The install's
 // teams, kept in Tiehall's own records, each with its current key and a name.
 // Only admins change them, through the team operations; nothing is taken from
@@ -1681,8 +1721,8 @@ export const agentWriteDays = pgTable(
 // has its default. The daily write budget is 5,000 agent writes by default
 // (agent-safety: Agent writes are limited per token and budgeted per install),
 // the sign-in policy admits organization members and invited people, and
-// personal access tokens are switched on (agent-access: An admin sets the PAT
-// switch and the maximum lifetime).
+// personal access tokens are switched on with a longest lifetime of 90 days
+// (agent-access: An admin sets the PAT switch and the maximum lifetime).
 export const installSettings = pgTable(
   "install_settings",
   {
@@ -1702,9 +1742,16 @@ export const installSettings = pgTable(
      * work again, since it is read at each call and revokes nothing.
      */
     personalAccessTokensOn: boolean("personal_access_tokens_on").notNull().default(true),
+    /**
+     * The longest lifetime a new personal access token may have, in days
+     * (agent-access: An admin sets the PAT switch and the maximum lifetime):
+     * 90 until an admin sets a shorter one, and never more.
+     */
+    personalAccessTokenMaxDays: integer("personal_access_token_max_days").notNull().default(90),
   },
   (table) => [
     check("install_settings_daily_write_budget_range", sql`${table.dailyWriteBudget} BETWEEN 1 AND 1000000`),
+    check("install_settings_personal_access_token_max_days_range", sql`${table.personalAccessTokenMaxDays} BETWEEN 1 AND 90`),
     check("install_settings_sign_in_policy_known", sql`${table.signInPolicy} IN ('organization_members_and_invited', 'invited_only')`),
   ],
 );

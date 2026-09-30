@@ -39,11 +39,12 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // under redirects, such as an agent client's approval, by sending the browser
 // on to the path on the install its output names (agent-access: Approving an
 // agent client uses the confirmation step), or, for one listed under messages,
-// such as the tiehall CLI's approval, with a page in its own words. The review
-// page of a command listed under entries, such as the CLI's approval, is served
-// only by a page of its own: a GET of its path here sends the browser to that
-// page, whatever input its link carried (agent-access: The device approval page
-// cannot be prefilled), and a refusal of its form leads back there.
+// such as the tiehall CLI's approval or a new personal access token, with a
+// page in its own words made from its output. The review page of a command
+// listed under entries, such as the CLI's approval, is served only by a page
+// of its own: a GET of its path here sends the browser to that page, whatever
+// input its link carried (agent-access: The device approval page cannot be
+// prefilled), and a refusal of its form leads back there.
 // A GET from a browser without a session shows nothing of the action: it is
 // sent to the sign-in page, which brings it back to the same page once it has
 // signed in (D28 #66; requests: The proposal's confirm page).
@@ -94,11 +95,26 @@ export type ConfirmDownloads = Readonly<Record<string, (output: unknown) => Down
 export type ConfirmEntries = Readonly<Record<string, string>>;
 
 /**
- * The commands whose confirmation answers with a page in their own words
- * instead of the "Confirmed" page, by the command's id: an approval of the
- * tiehall CLI tells the person to return to their terminal.
+ * The page a confirmation answers with in its command's own words: a title, a
+ * sentence, a value it shows, such as a new personal access token's, and a
+ * link on.
  */
-export type ConfirmMessages = Readonly<Record<string, { title: string; text: string }>>;
+export interface ConfirmMessage {
+  title: string;
+  text: string;
+  /** A value the page shows once, such as a new personal access token. */
+  value?: string;
+  wayOn?: { href: string; text: string };
+}
+
+/**
+ * The commands whose confirmation answers with a page in their own words,
+ * made from the command's output, instead of the "Confirmed" page, by the
+ * command's id: an approval of the tiehall CLI tells the person to return to
+ * their terminal, and a new personal access token's page shows its value, this
+ * once.
+ */
+export type ConfirmMessages = Readonly<Record<string, (output: unknown) => ConfirmMessage>>;
 
 /**
  * The commands whose confirmation sends the browser on, to a path on the
@@ -234,13 +250,26 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     const redirect = options.redirects?.[commandId];
     if (redirect !== undefined) return onTo(redirect(output));
     const message = options.messages?.[commandId];
-    if (message !== undefined) return page(htmlPage(message.title, `      <h1>${escapeHtml(message.title)}</h1>\n      <p>${escapeHtml(message.text)}</p>`));
+    if (message !== undefined) return page(messagePage(message(output)));
     return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
   }
 }
 
 /** The largest value a file field of a review page takes, such as a PEM key of a few kilobytes. */
 const SEALED_FILE_MAX_BYTES = 64 * 1024;
+
+/** The page of a confirmation in its command's own words. */
+function messagePage({ title, text, value, wayOn }: ConfirmMessage): string {
+  return htmlPage(
+    title,
+    [
+      `      <h1>${escapeHtml(title)}</h1>`,
+      `      <p>${escapeHtml(text)}</p>`,
+      ...(value === undefined ? [] : [`      <pre><code>${escapeHtml(value)}</code></pre>`]),
+      ...(wayOn === undefined ? [] : [`      <p><a href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`]),
+    ].join("\n"),
+  );
+}
 
 /** A review page's form as it was posted: its fields, and the values entered in its own fields, text or file. */
 interface PostedForm {

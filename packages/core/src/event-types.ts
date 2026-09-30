@@ -550,6 +550,22 @@ export const agentGrantRevoked = defineEventType({
   },
 });
 
+/**
+ * A user created a personal access token in the web UI, with the confirmation
+ * step (agent-access: Personal access tokens are scoped, expiring and created
+ * in the web UI; activity-log: Which actions are security events). It names
+ * the user it acts for and the token, never its value, its label or its hash;
+ * its provenance names the user, whose web session confirmed it.
+ */
+export const personalAccessTokenCreated = defineEventType({
+  type: "personal_access_token.created",
+  class: "security",
+  fields: {
+    userId: { kind: "id", of: "user" },
+    tokenId: { kind: "id", of: "token" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -585,4 +601,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   githubPrivateKeyUploaded,
   agentClientApproved,
   agentGrantRevoked,
+  personalAccessTokenCreated,
 ];

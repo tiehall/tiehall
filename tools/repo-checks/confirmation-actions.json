@@ -86,7 +86,13 @@
     },
     {
       "item": "creating a personal access token;",
-      "actions": [{ "action": "creating a personal access token", "pending": "15.14" }]
+      "actions": [
+        {
+          "action": "creating a personal access token",
+          "command": "personal_access_tokens.create",
+          "input": { "name": "A script", "scopes": ["requests:read"], "expiresInDays": 30 }
+        }
+      ]
     },
     {
       "item": "approving an agent client on the consent screen or on the device approval page;",
