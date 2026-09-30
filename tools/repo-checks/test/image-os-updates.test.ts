@@ -115,7 +115,7 @@ describe("the check of the operating-system updates in a Dockerfile", () => {
 });
 
 describe("the repository's Dockerfile", () => {
-  it.fails("applies the operating system's security updates in its runtime stage (image-os-security-updates 1.2 builds the step)", () => {
+  it("applies the operating system's security updates in its runtime stage", () => {
     expect(osUpdateProblems(read("Dockerfile"))).toEqual([]);
   });
 });

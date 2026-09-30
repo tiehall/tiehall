@@ -243,6 +243,30 @@ describe("the image", () => {
     ]);
   });
 
+  // self-host-install: Release pipeline integrity (D53): the build applies the operating system's security updates in
+  // one step that removes the package lists and apt's caches before it ends, so the image holds no package index and no
+  // downloaded package, and the upgrade left no package half-installed. apt's own user runs the look, because only it
+  // may read the folder apt downloads into.
+  it("holds no package index and no downloaded package, and no package left half-installed", () => {
+    const run = docker([
+      "run",
+      "--rm",
+      ...confined,
+      "--network",
+      "none",
+      "--user",
+      "_apt",
+      "--entrypoint",
+      "sh",
+      image,
+      "-c",
+      "find /var/lib/apt/lists /var/cache/apt -type f ! -name lock && dpkg --audit",
+    ]);
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe("");
+  });
+
   it("exits non-zero on an unknown role, and names the roles it knows", () => {
     const run = docker(["run", "--rm", ...confined, image, "api"]);
     expect(run.status).toBe(2);

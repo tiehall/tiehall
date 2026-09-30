@@ -34,6 +34,20 @@ RUN test -n "$TIEHALL_COMMIT_SHA" || { echo "Build with --build-arg TIEHALL_COMM
 RUN export BETTER_AUTH_TELEMETRY=0 && pnpm --filter @tiehall/web build && pnpm --filter @tiehall/server build
 
 FROM base
+# The operating system's security updates, applied when the image is built (D53;
+# self-host-install: Release pipeline integrity): apt fetches them from the Debian
+# archives the base image names, whose signatures it checks with the keyring the
+# base image carries, and upgrades only the packages the base image has, installing
+# and removing none. They do not wait for the 7-day release age; the base image
+# does, pinned by digest above. One step, which removes the package lists and apt's
+# caches before it ends, so the image holds no package index. It runs first, as
+# root, before the package managers are removed; tools/repo-checks checks it.
+RUN export DEBIAN_FRONTEND=noninteractive \
+    && apt-get update \
+    && apt-get upgrade --yes --no-install-recommends \
+       -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 # The app needs only node at run time: remove the package managers the base
 # image ships, so nothing in a running container can fetch and install code.
 RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
