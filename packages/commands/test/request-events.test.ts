@@ -104,6 +104,8 @@ describe("every request change so far", () => {
     "requests.claim": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/claim`),
     "requests.set_status": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/status`, { state: "in_progress" }),
     "requests.propose": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/proposals`, { kind: "reassign", team: "BE" }),
+    "requests.link_pr": async (key) =>
+      callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/pull-requests`, { url: "https://github.com/acme/web/pull/88" }),
     "messages.post": async (key) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Blocking?", blocking: true }),
     "messages.edit": async (key) => {
       const [first] = (await callApi(install, tokenOf(bob), "GET", `/api/v1/requests/${key}`)).body.messages;

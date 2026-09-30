@@ -206,7 +206,8 @@ export const setRequestStatus = defineCommand({
   scopes: ["requests:write"],
   commitment: true,
   confirm: false,
-  surfaces: ["rest"],
+  surfaces: ["rest", "mcp"],
+  tool: "set_status",
   stability: "alpha",
 });
 

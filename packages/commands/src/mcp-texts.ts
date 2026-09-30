@@ -1,14 +1,29 @@
-import { claimRequest, createRequest, isProposalAnswer, listInbox, readDirectory, readRequest, whoami } from "@tiehall/catalog";
+import {
+  claimRequest,
+  createRequest,
+  isProposalAnswer,
+  linkPullRequest,
+  listInbox,
+  postMessage,
+  readDirectory,
+  readRequest,
+  setRequestStatus,
+  whoami,
+} from "@tiehall/catalog";
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import type { AgentText } from "@tiehall/packet/render";
 import {
   directoryText,
   inboxText,
+  postedMessageText,
+  pullRequestLinkText,
   requestPageText,
   requestText,
   whoamiText,
   type DirectoryJson,
   type InboxJson,
+  type LinkedPullRequestJson,
+  type MessagePostJson,
   type Reader,
   type RequestJson,
   type RequestPageJson,
@@ -32,6 +47,9 @@ export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [createRequest.id]: (output, reader) => requestText(output as RequestJson, reader),
   [listInbox.id]: (output, reader) => inboxText(output as InboxJson, reader),
   [claimRequest.id]: (output, reader) => requestText(output as RequestJson, reader),
+  [setRequestStatus.id]: (output, reader) => requestText(output as RequestJson, reader),
+  [postMessage.id]: (output, reader) => postedMessageText(output as MessagePostJson, reader),
+  [linkPullRequest.id]: (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
   [whoami.id]: (output) => whoamiText(output as WhoamiJson),
   [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),

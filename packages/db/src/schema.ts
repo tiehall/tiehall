@@ -1681,6 +1681,71 @@ export const packetRevisions = pgTable(
   ],
 );
 
+// The pull requests linked to each request (requests: Linked PRs and done on
+// merge; design.md, Design rules: Requests and events). One row per pull
+// request and request: the repository on GitHub.com, as owner and name, kept
+// in lower case, since GitHub names repositories without regard to case, and
+// the pull request's number; when it was linked, which close on merge
+// compares with the merge; and who linked it, as the server stamped it from
+// the caller, as for a message. A pull request is linked to a request once.
+export const pullRequestLinks = pgTable(
+  "pull_request_links",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    requestId: uuid("request_id").notNull(),
+    /** The repository's owner on GitHub.com, a user or an organization, in lower case. */
+    repositoryOwner: text("repository_owner").notNull(),
+    /** The repository's name, in lower case. */
+    repositoryName: text("repository_name").notNull(),
+    /** The pull request's number in its repository. */
+    number: integer("number").notNull(),
+    actorKind: text("actor_kind").notNull(),
+    /** The accountable human, by their Tiehall user id. */
+    actorUserId: uuid("actor_user_id"),
+    /** The client: its Client ID Metadata Document URL, the OAuth client, or the CLI version. */
+    client: text("client"),
+    surface: text("surface"),
+    /** The team the user acted for. */
+    teamId: uuid("team_id"),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("pull_request_links_request_pull_request").on(table.orgId, table.requestId, table.repositoryOwner, table.repositoryName, table.number),
+    index("pull_request_links_pull_request").on(table.orgId, table.repositoryOwner, table.repositoryName, table.number),
+    foreignKey({
+      name: "pull_request_links_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "pull_request_links_actor_user_fk",
+      columns: [table.orgId, table.actorUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "pull_request_links_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("pull_request_links_number_positive", sql`${table.number} > 0`),
+    check("pull_request_links_owner_lower_case", sql`${table.repositoryOwner} = lower(${table.repositoryOwner})`),
+    check("pull_request_links_name_lower_case", sql`${table.repositoryName} = lower(${table.repositoryName})`),
+    check("pull_request_links_actor_kind_known", sql`${table.actorKind} IN ('agent', 'web_session', 'system', 'integration')`),
+    check(
+      "pull_request_links_surface_known",
+      sql`${table.surface} IS NULL OR ${table.surface} IN ('web', 'mcp', 'cli', 'api', 'github', 'jira')`,
+    ),
+    check(
+      "pull_request_links_actor_names_user",
+      sql`${table.actorKind} NOT IN ('agent', 'web_session') OR (${table.actorUserId} IS NOT NULL AND ${table.surface} IS NOT NULL)`,
+    ),
+  ],
+);
+
 // Read cursors (requests: Read cursors move only on acknowledgement; design.md,
 // Design rules: Requests and events). One row per user and reader, where a
 // reader is one client of theirs: an OAuth client, such as the CLI or an MCP

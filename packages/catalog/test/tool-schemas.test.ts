@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { catalogProblems, CATALOG, defineCatalog, defineCommand, type CommandDefinition } from "../src/index.ts";
 import { committedToolSnapshotPath } from "../src/committed-files.ts";
+import { proposalAnswer } from "../src/proposals.ts";
 import {
+  dropUnknownVariantKeys,
   lowerToolSchema,
   serializeToolSnapshot,
   STABILITY_META_KEY,
@@ -113,6 +115,27 @@ describe("lowering a tool schema", () => {
   });
 });
 
+// An input with variants (agent-surfaces: Tool schemas that current clients accept; requests: Provenance is
+// stamped by the server). Its variants are strict, so a field of another variant is refused; a key that no
+// variant has is dropped before the input is parsed, as for any other input, such as provenance a payload claims.
+describe("an input with variants", () => {
+  it("loses the keys no variant has, and keeps a key of another variant, which parsing then refuses", () => {
+    const input = { kind: "bug", title: "It breaks", steps: ["Open it"], goal: "Faster", surface: "web", actorKind: "human" };
+    const dropped = dropUnknownVariantKeys(report, input);
+    expect(dropped).toEqual({ kind: "bug", title: "It breaks", steps: ["Open it"], goal: "Faster" });
+    expect(report.safeParse(dropped).success).toBe(false);
+    expect(report.safeParse(dropUnknownVariantKeys(report, { kind: "bug", title: "It breaks", steps: ["Open it"], surface: "web" })).success).toBe(true);
+  });
+
+  it("leaves an input that is not an object, and an input without variants, as it is", () => {
+    const plain = z.strictObject({ title: z.string() });
+    const input = { title: "It breaks", surface: "web" };
+    expect(dropUnknownVariantKeys(plain, input)).toBe(input);
+    expect(dropUnknownVariantKeys(report, "bug")).toBe("bug");
+    expect(dropUnknownVariantKeys(report, ["bug"])).toEqual(["bug"]);
+  });
+});
+
 describe("the catalog", () => {
   it("refuses a tool whose schemas cannot be lowered", () => {
     expect(catalogProblems([tool({ input: z.union([z.string(), z.number()]) })])).toEqual([
@@ -129,6 +152,27 @@ describe("the tool descriptions", () => {
     expect(tools.map(({ name }) => name)).toEqual(["file_report", "list_reports"]);
     expect(tools[0]).toMatchObject({ name: "file_report", description: "File a report on a request.", inputSchema: { type: "object" } });
     expect(toolSnapshotProblems(tools)).toEqual([]);
+  });
+
+  // agent-surfaces: Commitment tools return proposals. A commitment's call that makes one answers with
+  // { proposal } instead of the operation's own output, so the listed output schema admits both, with no
+  // composition at its root: an object with the output's fields and the proposal's, none of them required.
+  it("list a commitment tool's output as one object that admits the operation's output or, instead, only the proposal it created", () => {
+    const own = z.object({ reportId: z.string(), author: Person });
+    const [listed] = toolDescriptions(defineCatalog([tool({ commitment: true, output: own })]));
+    const ownLowered = lowerToolSchema(own, "output");
+    const proposalLowered = lowerToolSchema(proposalAnswer, "output");
+    expect(listed?.outputSchema).toEqual({
+      type: "object",
+      description: expect.stringContaining("only proposal"),
+      properties: {
+        ...(ownLowered["properties"] as object),
+        proposal: (proposalLowered["properties"] as Record<string, unknown>)["proposal"],
+      },
+    });
+    expect(toolSnapshotProblems(listed === undefined ? [] : [listed])).toEqual([]);
+    // A tool that is no commitment lists its output as it is.
+    expect(toolDescriptions(defineCatalog([tool({ output: own })]))[0]?.outputSchema).toEqual(ownLowered);
   });
 
   it("are computed once per catalog", () => {

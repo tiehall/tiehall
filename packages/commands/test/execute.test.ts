@@ -276,6 +276,18 @@ describe("execute", () => {
     expect(await counts()).toEqual({ messages: 0, events: 0 });
   });
 
+  // requests: Provenance is stamped by the server: "the provenance fields in the payload are ignored". A key that no
+  // variant has is dropped, as for any other input, while a field of another variant still mixes them.
+  it("drops a key that no variant has, such as provenance a payload claims, before it parses an input with variants", async () => {
+    const requestId = randomUUID();
+    expect(await execute("probes.report", oauthToken, { kind: "bug", requestId, steps: ["Open the page"], surface: "web", actorKind: "human" })).toEqual({
+      kind: "bug",
+    });
+    const refusal = await refusalOf(execute("probes.report", oauthToken, { kind: "bug", requestId, steps: ["Open the page"], goal: "Faster", surface: "web" }));
+    expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
+    expect(await counts()).toEqual({ messages: 0, events: 0 });
+  });
+
   // agent-surfaces: Tool schemas that current clients accept: "the same input sent to the tool's /api/v1 operation
   // gets HTTP 400, and nothing changes".
   it("refuses the same input that mixes variants with 400 on the tool's /api/v1 operation, and runs a valid one", async () => {

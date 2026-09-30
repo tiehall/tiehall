@@ -1,4 +1,4 @@
-import { isProposalAnswer, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { dropUnknownVariantKeys, isProposalAnswer, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
 import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
@@ -43,7 +43,8 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    is not JSON, is given next;
 // 3. parses the input against the operation's input schema, refusing input
 //    that fails it with 400 before anything runs, and drops keys it does not
-//    know;
+//    know: for an input whose variants are strict, which refuse a field of
+//    another variant, the keys no variant has are dropped first;
 // 4. lets each kind of caller run only what its kind may run: a CI caller
 //    only contract.report, a system job or an integration event only
 //    internal commands, and a system action, which takes effect with no
@@ -317,7 +318,7 @@ export function createExecute(services: ExecuteServices): Execute {
       if (options.refusal !== undefined) throw options.refusal;
 
       // 3. Nothing runs on input that fails the schema.
-      const parsed = definition.input.safeParse(input);
+      const parsed = definition.input.safeParse(dropUnknownVariantKeys(definition.input, input));
       if (!parsed.success) {
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
       }

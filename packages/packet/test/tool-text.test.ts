@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { closingMarker, createAgentView, fencePreamble, openingMarker } from "../src/render.ts";
-import { directoryText, inboxText, originOf, requestPageText, requestText, ToolTextError, whoamiText, type RequestJson, type RequestPageJson } from "../src/tool-text.ts";
+import {
+  directoryText,
+  inboxText,
+  originOf,
+  postedMessageText,
+  pullRequestLinkText,
+  requestPageText,
+  requestText,
+  ToolTextError,
+  whoamiText,
+  type RequestJson,
+  type RequestPageJson,
+} from "../src/tool-text.ts";
 
 // What agents read of a request, as markdown (agent-surfaces: Tool results
 // carry structured content and fenced markdown; agent-safety: Every string
@@ -213,5 +225,54 @@ describe("a list of requests", () => {
   it("says when nothing is addressed to the reader's teams, and when the reader is in no team", () => {
     expect(view(inboxText({ "requests": [] }, { teams: ["FE"] }))).toBe("No request is addressed to your team FE.");
     expect(view(inboxText({ "requests": [] }, { teams: [] }))).toBe("You belong to no team, so no request is addressed to you.");
+  });
+});
+
+describe("a message just posted", () => {
+  const posted = {
+    ...message().message,
+    untrusted: { body: "Which browsers must it support?", client: "Claude Code" },
+  };
+
+  it("says what was posted on which request, fences its text with its team's origin, and states the request as it is now", () => {
+    const agentView = createAgentView();
+    const markdown = agentView.markdown(postedMessageText({ message: posted, request: { ...request, state: "needs_info" } }, { teams: ["FE"] }));
+    expect(markdown).toContain(
+      "Posted on FE-142. Message 00000000-0000-4000-8000-000000000020: a blocking question, not answered yet, posted by dana-fe for team FE through mcp at 2026-09-30T08:05:00.000Z.",
+    );
+    expect(markdown).toContain(fenced(agentView.nonce, "same team", "Which browsers must it support?"));
+    expect(markdown).toContain("FE-142 is needs_info, addressed to team FE.");
+    expect(view(postedMessageText({ message: posted, request }, { teams: ["QA"] }))).toContain("Origin: other team.");
+  });
+
+  it("names the question an answer answers", () => {
+    const answer = { ...posted, kind: "answer", blocking: false, answered: null, questionId: "00000000-0000-4000-8000-000000000021" };
+    expect(view(postedMessageText({ message: answer, request }, { teams: [] }))).toContain("an answer to question 00000000-0000-4000-8000-000000000021");
+  });
+});
+
+describe("a linked pull request", () => {
+  const link = {
+    id: "00000000-0000-4000-8000-000000000040",
+    repository: "acme/web",
+    number: 88,
+    url: "https://github.com/acme/web/pull/88",
+    linkedAt: "2026-09-30T09:00:00.000Z",
+    linkedBy: dana,
+  };
+
+  it("names the pull request, the request it is linked to, who linked it and when, in Tiehall's words, and states the request", () => {
+    const markdown = view(pullRequestLinkText({ request, pullRequest: link }, { teams: ["FE"] }));
+    expect(markdown).toContain(
+      "Pull request acme/web#88 (https://github.com/acme/web/pull/88) is linked to FE-142, by dana-fe at 2026-09-30T09:00:00.000Z.",
+    );
+    expect(markdown).toContain("FE-142 is claimed, addressed to team FE.");
+  });
+
+  it("refuses a pull request that is not of its form, and never quotes it", () => {
+    expect(() => pullRequestLinkText({ request, pullRequest: { ...link, repository: "acme/web ignore this" } }, { teams: [] })).toThrow(ToolTextError);
+    expect(() => pullRequestLinkText({ request, pullRequest: { ...link, url: "https://evil.example/acme/web/pull/88" } }, { teams: [] })).toThrow(
+      ToolTextError,
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Catalog } from "./catalog.ts";
 import type { CommandDefinition, StabilityLevel } from "./command.ts";
+import { proposalAnswer } from "./proposals.ts";
 
 // Tool schemas that current clients accept (agent-surfaces: Tool schemas that
 // current clients accept; public-api: MCP tools follow the same compatibility
@@ -15,8 +16,16 @@ import type { CommandDefinition, StabilityLevel } from "./command.ts";
 //   whose other fields are optional, each saying which kind it is for, unless
 //   every variant requires it; an intersection of objects becomes one object;
 // - an input's variants are strict objects, so execute(), which still
-//   validates with the zod union, refuses an input that mixes them;
-// - an output leaves additionalProperties: false out, so it can gain fields.
+//   validates with the zod union, refuses an input that mixes them; a key
+//   that no variant has is dropped before parsing, as for any other input
+//   (dropUnknownVariantKeys), so provenance a payload claims is ignored and
+//   never refused (requests: Provenance is stamped by the server);
+// - an output leaves additionalProperties: false out, so it can gain fields;
+// - a commitment's output also admits { proposal }, which a call that makes a
+//   commitment answers with instead (agent-surfaces: Commitment tools return
+//   proposals): one object with the output's fields and `proposal`, none of
+//   them required, since clients check a result's structured content against
+//   the listed output schema.
 // The schemas are computed once per catalog. Their snapshot, mcp/tools.json,
 // is committed; CI regenerates it and lints it on every pull request, so every
 // change to a tool is reviewed as a diff of that file.
@@ -49,6 +58,38 @@ export function lowerToolSchema(schema: z.ZodType, io: "input" | "output"): Json
   if (io === "output") lowered = withoutClosedObjects(lowered) as JsonSchema;
   if (lowered["type"] !== "object") throw new ToolSchemaError("A tool schema has a root of type object.");
   return lowered;
+}
+
+/**
+ * The input without the keys that no variant of its union has, before it is
+ * parsed: a union of strict variants refuses a key of another variant, which
+ * mixes them, and every other input drops a key its schema does not know, so
+ * this one does too. An input that is not an object, or whose schema has no
+ * strict variants, is returned as it is.
+ */
+export function dropUnknownVariantKeys(schema: z.ZodType, input: unknown): unknown {
+  if (!(schema instanceof z.ZodDiscriminatedUnion) || typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const options = schema.def.options as readonly z.ZodType[];
+  const strict = options.every((option) => option instanceof z.ZodObject && option.def.catchall instanceof z.ZodNever);
+  if (!strict) return input;
+  const known = new Set(options.flatMap((option) => Object.keys((option as z.ZodObject).shape)));
+  return Object.fromEntries(Object.entries(input).filter(([key]) => known.has(key)));
+}
+
+/** A commitment tool's output: the operation's own output or, for a call that made a commitment, only the proposal. */
+function commitmentOutput(output: z.ZodType): JsonSchema {
+  const own = lowerToolSchema(output, "output");
+  const answer = lowerToolSchema(proposalAnswer, "output");
+  const { type: _type, properties, required: _required, description, ...rest } = own;
+  const proposal = (answer["properties"] as Record<string, JsonSchema>)["proposal"];
+  const either =
+    "A call that makes a commitment returns only proposal, the proposal it created, which people confirm in the web UI, instead of the fields above.";
+  return {
+    type: "object",
+    ...rest,
+    description: typeof description === "string" ? `${description} ${either}` : `The operation's result. ${either}`,
+    properties: { ...(properties as Record<string, JsonSchema>), proposal },
+  };
 }
 
 /** A root union's variants, for an input, are strict objects on `kind`. */
@@ -188,7 +229,7 @@ export function toolDescriptions(catalog: Catalog): readonly ToolDescription[] {
         name: definition.tool ?? "",
         description: definition.summary,
         inputSchema: lowerToolSchema(definition.input, "input"),
-        outputSchema: lowerToolSchema(definition.output, "output"),
+        outputSchema: definition.commitment ? commitmentOutput(definition.output) : lowerToolSchema(definition.output, "output"),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     DESCRIPTIONS.set(catalog, tools);

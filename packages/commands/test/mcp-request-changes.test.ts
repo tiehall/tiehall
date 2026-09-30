@@ -15,13 +15,12 @@ import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
 // a proposal instead, which the result carries with the confirmations it needs
 // and when it expires; propose makes the commitments no other tool makes, and
 // withdraws a pending proposal of the caller's user. The contract tests use
-// the official MCP SDK client on both protocol versions and wait as expected
-// failures until the tasks that build the tools turn them into plain tests:
-// post_message, claim, set_status and link_pr in 16.8, propose in 16.9; claim
-// is offered on MCP since 16.3, so its test is a plain one since. The
-// inputs they send are the ones these tests assume for tools whose operations
-// are not defined yet (link_pr and propose); the task that defines each keeps
-// them, or changes them here with its definition, tests first.
+// the official MCP SDK client on both protocol versions and waited as expected
+// failures until the tasks that build the tools turned them into plain tests:
+// claim, offered on MCP since 16.3, and post_message, set_status and link_pr
+// in 16.8; propose waits for 16.9. The inputs its tests send are the ones
+// these tests assume for a tool whose operation is not defined yet; 16.9
+// keeps them, or changes them here with its definition, tests first.
 
 let harness: AgentAccessHarness;
 let dana: McpPerson;
@@ -91,7 +90,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect(await proposalCount(request.id)).toBe(0);
   });
 
-  it.fails("post_message: a blocking question moves an in-progress request to needs_info, and an answer that names it returns it", async () => {
+  it("post_message: a blocking question moves an in-progress request to needs_info, and an answer that names it returns it", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     await inTheWebUi(dana, "requests.set_status", { key: request.key, state: "in_progress" });
@@ -103,14 +102,14 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect(answered.structuredContent).toMatchObject({ message: { kind: "answer", questionId }, request: { state: "in_progress" } });
   });
 
-  it.fails("post_message: an answer without the question it answers is refused as input that fails the schema, and nothing is added", async () => {
+  it("post_message: an answer without the question it answers is refused as input that fails the schema, and nothing is added", async () => {
     const request = await openToFe();
     const result = await call(sam, version, "post_message", { key: request.key, kind: "answer", body: "Chrome only." });
     expect(problemOf(result).type).toBe(`${PROBLEM}invalid-input`);
     expect((await current(dana, request.key)).messages).toEqual([]);
   });
 
-  it.fails("post_message: an input that mixes two kinds is refused on MCP with a validation error and on /api/v1 with 400, and nothing changes", async () => {
+  it("post_message: an input that mixes two kinds is refused on MCP with a validation error and on /api/v1 with 400, and nothing changes", async () => {
     const request = await openToFe();
     const mixed = { kind: "comment", body: "Noted.", questionId: "00000000-0000-4000-8000-000000000000" };
     const result = await call(sam, version, "post_message", { key: request.key, ...mixed });
@@ -120,7 +119,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect((await current(dana, request.key)).messages).toEqual([]);
   });
 
-  it.fails("set_status to open: the claimant releases the claim, with no proposal", async () => {
+  it("set_status to open: the claimant releases the claim, with no proposal", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     const result = await call(dana, version, "set_status", { key: request.key, state: "open" });
@@ -128,7 +127,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect(await proposalCount(request.id)).toBe(0);
   });
 
-  it.fails("set_status to open: a member of the target team releases the claim of someone who was removed, with no proposal", async () => {
+  it("set_status to open: a member of the target team releases the claim of someone who was removed, with no proposal", async () => {
     const request = await openToFe();
     await inTheWebUi(lee, "requests.claim", { key: request.key });
     await harness.install.owner.query("DELETE FROM members WHERE user_id = $1", [lee.userId]);
@@ -143,7 +142,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     }
   });
 
-  it.fails("set_status to open while the request waits on a blocking question: it stays needs_info with no claimant until the answer", async () => {
+  it("set_status to open while the request waits on a blocking question: it stays needs_info with no claimant until the answer", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     await inTheWebUi(dana, "requests.set_status", { key: request.key, state: "in_progress" });
@@ -155,7 +154,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect(await current(dana, request.key)).toMatchObject({ state: "open", claimant: null });
   });
 
-  it.fails("set_status to declined: the result carries a new decline proposal, which needs Bob's confirmation and says when it expires, and the state stays", async () => {
+  it("set_status to declined: the result carries a new decline proposal, which needs Bob's confirmation and says when it expires, and the state stays", async () => {
     const request = await openToFe();
     const result = await call(bob, version, "set_status", { key: request.key, state: "declined" });
     expect(result.isError).not.toBe(true);
@@ -172,7 +171,7 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect((await current(bob, request.key)).state).toBe("open");
   });
 
-  it.fails("set_status to done with no qualifying merged pull request: the result carries a new done proposal, and the state stays", async () => {
+  it("set_status to done with no qualifying merged pull request: the result carries a new done proposal, and the state stays", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     const result = await call(dana, version, "set_status", { key: request.key, state: "done" });
@@ -180,13 +179,31 @@ describe.each(PROTOCOL_VERSIONS)("the tools that change a request directly, on p
     expect((await current(dana, request.key)).state).toBe("claimed");
   });
 
-  it.fails("link_pr: an agent links a pull request, which creates no proposal", async () => {
+  it("link_pr: an agent links a pull request, which creates no proposal", async () => {
     const request = await openToFe();
     await inTheWebUi(dana, "requests.claim", { key: request.key });
     const result = await call(dana, version, "link_pr", { key: request.key, url: "https://github.com/acme/web/pull/88" });
     expect(result.isError).not.toBe(true);
-    expect(JSON.stringify(result.structuredContent)).toContain("88");
+    expect(result.structuredContent).toMatchObject({
+      request: { key: request.key, state: "claimed" },
+      pullRequest: { repository: "acme/web", number: 88, url: "https://github.com/acme/web/pull/88", linkedBy: { id: dana.userId } },
+    });
+    expect(textOf(result)).toContain(`Pull request acme/web#88 (https://github.com/acme/web/pull/88) is linked to ${request.key}, by dana-fe`);
     expect(await proposalCount(request.id)).toBe(0);
+  });
+
+  // requests: Provenance is stamped by the server: "a payload cannot fake provenance".
+  it("post_message: provenance the payload claims is ignored, and the message is the agent's, on mcp, for its user and team", async () => {
+    const request = await openToFe();
+    const forged = { surface: "web", actorKind: "human", client: "https://forged.example/client.json", userId: sam.userId };
+    const result = await call(dana, version, "post_message", { key: request.key, kind: "comment", body: "Posted by an agent.", ...forged });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      message: { kind: "comment", provenance: { actorKind: "agent", surface: "mcp", user: { id: dana.userId }, team: { key: "FE" } } },
+    });
+    const text = textOf(result);
+    expect(text).toContain(`Posted on ${request.key}.`);
+    expect(text).toContain("posted by dana-fe for team FE through mcp");
   });
 });
 

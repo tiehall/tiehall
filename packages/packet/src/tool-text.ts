@@ -220,6 +220,71 @@ export function requestPageText(page: RequestPageJson, reader: Reader): AgentTex
   return texts;
 }
 
+/** A message as post_message returns it, with the text of its latest version. */
+export interface PostedMessageJson extends MessageFactsJson {
+  untrusted: { body: string; client: string | null };
+}
+
+/** What post_message returns: the message it posted and the request as it is now. */
+export interface MessagePostJson {
+  message: PostedMessageJson;
+  request: RequestJson;
+}
+
+/**
+ * A message just posted: which request it is on, what it is and who posted
+ * it, in Tiehall's words, its text, fenced with its origin as the reader sees
+ * it, and the request as it is now.
+ */
+export function postedMessageText(posted: MessagePostJson, reader: Reader): AgentText[] {
+  const key = checked(posted.request.key, REQUEST_KEY, "request key");
+  return [
+    { origin: "tiehall", text: `Posted on ${key}. ${messageLine(posted.message, 1, 1)}` },
+    { origin: messageOrigin(posted.message, reader), text: posted.message.untrusted.body },
+    ...requestText(posted.request, reader),
+  ];
+}
+
+/** A GitHub account's name, a user's or an organization's: letters, digits and hyphens, not starting with a hyphen. */
+const OWNER = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
+/** A repository's name: letters, digits, dots, hyphens and underscores, other than "." and "..". */
+const NAME = "(?!\\.\\.?(?:/|$))[A-Za-z0-9\\._-]{1,100}";
+/** A repository on GitHub.com, as owner/name, of GitHub's own form, which holds no space. */
+const REPOSITORY = new RegExp(`^${OWNER}/${NAME}$`);
+/** A pull request's URL on GitHub.com. */
+const PULL_REQUEST_URL = new RegExp(`^https://github\\.com/${OWNER}/${NAME}/pull/[1-9][0-9]{0,8}$`);
+
+/** A pull request linked to a request, as link_pr returns it. */
+export interface PullRequestLinkJson {
+  id: string;
+  repository: string;
+  number: number;
+  url: string;
+  linkedAt: string;
+  linkedBy: UserJson | null;
+}
+
+/** What link_pr returns: the request as it is now and the pull request linked to it. */
+export interface LinkedPullRequestJson {
+  request: RequestJson;
+  pullRequest: PullRequestLinkJson;
+}
+
+/** A linked pull request, in Tiehall's words: the pull request, the request, who linked it and when; then the request. */
+export function pullRequestLinkText(linked: LinkedPullRequestJson, reader: Reader): AgentText[] {
+  const key = checked(linked.request.key, REQUEST_KEY, "request key");
+  const { pullRequest } = linked;
+  const repository = checked(pullRequest.repository, REPOSITORY, "repository");
+  const url = checked(pullRequest.url, PULL_REQUEST_URL, "pull request URL");
+  const number = count(pullRequest.number, "pull request number");
+  const at = checked(pullRequest.linkedAt, DATE_TIME, "date");
+  const by = pullRequest.linkedBy === null ? "" : `, by ${person(pullRequest.linkedBy)}`;
+  return [
+    { origin: "tiehall", text: `Pull request ${repository}#${number} (${url}) is linked to ${key}${by} at ${at}.` },
+    ...requestText(linked.request, reader),
+  ];
+}
+
 /** The origin of an install, as TIEHALL_URL gives it: a scheme, a host and a port, and no path. */
 const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;
 

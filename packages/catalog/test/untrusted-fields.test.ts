@@ -6,6 +6,7 @@ import { defineCommand } from "../src/command.ts";
 import { CATALOG } from "../src/commands.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
 import { proposalAnswer } from "../src/proposals.ts";
+import { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "../src/pull-requests.ts";
 import { getRequest } from "../src/requests.ts";
 import { GITHUB_LOGIN, INSTALL_URL } from "../src/schemas.ts";
 import { agentOutputSchemas, outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
@@ -26,6 +27,8 @@ const IDENTIFIERS: readonly RegExp[] = [
   EVENT_FIELD_NAME,
   EVENT_STRING_VALUE,
   PACKET_FIELD_NAME,
+  GITHUB_REPOSITORY,
+  PULL_REQUEST_URL,
 ];
 const patterns = new Set(IDENTIFIERS.map(({ source }) => source));
 const problemsOf = (schema: z.ZodType) => outputSchemaProblems(schema, patterns).map(({ path }) => path);

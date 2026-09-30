@@ -4,9 +4,13 @@ import { message, request, requestKey, requestRef, teamRef } from "./requests.ts
 
 // The operations on a request's thread (requests: Thread messages and blocking
 // questions; requests: Requests only, with questions in the request's thread;
-// requests: Provenance is stamped by the server). A message is a comment, a
+// requests: Provenance is stamped by the server; agent-surfaces: Tools that
+// change a request directly). A message is a comment, a
 // question, which may be blocking, or an answer, which names the question it
-// answers; an answer without one fails the schema and gets 400. There is no
+// answers; an answer without one fails the schema and gets 400. The kinds are
+// strict variants, so a field of another kind, such as a comment that names a
+// question, fails the schema too, on REST and on the post_message tool alike
+// (agent-surfaces: Tool schemas that current clients accept). There is no
 // thread outside a request, so every message is posted on one. Provenance is
 // never part of the input: the server stamps it from the caller, and any key
 // a payload sends for it is dropped with every other key the schema does not
@@ -33,14 +37,14 @@ export const postMessage = defineCommand({
   summary:
     "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
   input: z.discriminatedUnion("kind", [
-    z.object({ key: requestKey, kind: z.literal("comment"), body: messageBody, blocking: noBlocking }),
-    z.object({
+    z.strictObject({ key: requestKey, kind: z.literal("comment"), body: messageBody, blocking: noBlocking }),
+    z.strictObject({
       key: requestKey,
       kind: z.literal("question"),
       body: messageBody,
       blocking: z.boolean().optional().meta({ description: "Whether the request waits for the answer; false unless given." }),
     }),
-    z.object({
+    z.strictObject({
       key: requestKey,
       kind: z.literal("answer"),
       body: messageBody,
@@ -54,7 +58,8 @@ export const postMessage = defineCommand({
   scopes: ["requests:write"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
+  surfaces: ["rest", "mcp"],
+  tool: "post_message",
   stability: "alpha",
 });
 

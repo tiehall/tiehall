@@ -53,6 +53,7 @@ export {
   setRequestStatus,
   teamRef,
 } from "./requests.ts";
+export { GITHUB_REPOSITORY, linkPullRequest, PULL_REQUEST_COMMANDS, PULL_REQUEST_URL, pullRequestLink } from "./pull-requests.ts";
 export {
   CHARACTERS_PER_TOKEN,
   PAGE_CHARACTERS,
@@ -135,6 +136,7 @@ export { OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
 export {
+  dropUnknownVariantKeys,
   lowerToolSchema,
   STABILITY_META_KEY,
   toolDescriptions,

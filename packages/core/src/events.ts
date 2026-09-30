@@ -41,6 +41,7 @@ export const RECORD_KINDS = [
   "api",
   "change_set",
   "sign_in_refusal",
+  "pull_request_link",
 ] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 

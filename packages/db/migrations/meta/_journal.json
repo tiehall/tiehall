@@ -372,6 +372,13 @@
       "when": 1790732727185,
       "tag": "0052_add_personal_access_token_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790748172070,
+      "tag": "0053_add_pull_request_links",
+      "breakpoints": true
     }
   ]
 }

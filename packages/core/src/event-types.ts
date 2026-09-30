@@ -110,6 +110,21 @@ export const requestPacketRevised = defineEventType({
 });
 
 /**
+ * A pull request was linked to a request (requests: Linked PRs and done on
+ * merge; requests: The event log). It names the request and the link, which
+ * holds the pull request's repository and number; its provenance names who
+ * linked it.
+ */
+export const requestPullRequestLinked = defineEventType({
+  type: "request.pull_request_linked",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    pullRequestLinkId: { kind: "id", of: "pull_request_link" },
+  },
+});
+
+/**
  * A request's state changed as the side effect of another change, such as a
  * blocking question moving it to needs_info or the last answer returning it
  * (requests: Thread messages and blocking questions; requests: The event
@@ -619,6 +634,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   messagePosted,
   messageEdited,
   requestPacketRevised,
+  requestPullRequestLinked,
   requestStateChanged,
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,
