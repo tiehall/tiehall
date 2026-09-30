@@ -12,6 +12,7 @@ import {
   CONFIRMATION_SUBJECTS,
   createAgentTokenCheck,
   createConfirmationNonces,
+  createConsentRoute,
   resourceMetadataUrlOf,
   createConfirmationStep,
   createConfirmRoute,
@@ -182,7 +183,9 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
     logger,
   });
   const pageOptions = { execute, session: (request: Request, renewal?: Headers) => signIn.session(request.headers, renewal), url, secret: () => authSecret, logger };
+  const consent = createConsentRoute({ database: db, session: (request, renewal) => signIn.session(request.headers, renewal), logger });
   const pages: Readonly<Record<string, (request: Request) => Promise<Response>>> = {
+    "/consent": consent,
     [MEMBERS_PATH]: createMembersRoute(pageOptions),
     [INVITES_PATH]: createInvitesRoute(pageOptions),
     [TEAMS_PATH]: createTeamsRoute(pageOptions),

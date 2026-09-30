@@ -5,6 +5,7 @@ import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import {
   ACTIVITY_LOG_PATH,
   createActivityLogRoute,
+  createConsentRoute,
   createGitHubAdminRoute,
   createHomeRoute,
   createInvitesRoute,
@@ -30,8 +31,8 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // own refusals; sign-in: Who may sign in; github-layer-hardening: design.md,
 // Decisions this change rests on: D50 (7); Technical decisions: T5). On the
 // routes that serve the web UI's pages, the setup screen, the review pages and
-// confirmations under /confirm/… and GitHub's return to either sign-in
-// callback, a refusal to a request whose Accept header names text/html is an
+// confirmations under /confirm/…, the consent screen and GitHub's return to
+// either sign-in callback, a refusal to a request whose Accept header names text/html is an
 // HTML page: the refusal's status, its title and detail escaped, its problem
 // type in the markup, a link on, and the page headers (no script, nothing
 // loaded, no framing). The same request asking for JSON gets the RFC 9457
@@ -153,6 +154,20 @@ const CASES: Case[] = [
     }),
     status: 403,
     wayOn: () => `/confirm/members.change_role?input=${encodeURIComponent(JSON.stringify({ userId: dana.userId, role: "admin" }))}`,
+  },
+  {
+    name: "the consent screen for a request that names no client",
+    route: () => createConsentRoute({ database: install.db, session: async () => dana, logger: install.logger }),
+    request: () => ({ path: "/consent?response_type=code" }),
+    status: 400,
+    wayOn: () => "/consent?response_type=code",
+  },
+  {
+    name: "the consent screen for a client the install does not know",
+    route: () => createConsentRoute({ database: install.db, session: async () => dana, logger: install.logger }),
+    request: () => ({ path: "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback" }),
+    status: 404,
+    wayOn: () => "/consent?response_type=code&client_id=no-such-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback",
   },
   {
     name: "a form posted to the home page",

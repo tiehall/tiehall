@@ -28,6 +28,7 @@ import {
 } from "@tiehall/db";
 import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
+import { continuePathOf, isAuthorizationRequest } from "./consent.ts";
 import { authorizationServerPlugins, type AgentClientOptions } from "./authorization-server.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
@@ -766,7 +767,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       try {
         const url = new URL(request.url);
         if (request.method === "GET" || request.method === "HEAD") {
-          const back = returnPath(url.searchParams.get("return"));
+          // An agent client's authorization that reached the sign-in page goes on once the person has signed in.
+          const back = isAuthorizationRequest(url.searchParams) ? continuePathOf(url.searchParams) : returnPath(url.searchParams.get("return"));
           const error = url.searchParams.get("error");
           return pageResponse(signInPage(back, error), 200, {
             // The form posts here, and its answer sends the browser on to GitHub's authorize page.

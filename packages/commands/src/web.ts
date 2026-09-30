@@ -6,6 +6,7 @@ import { createInvitesRoute, createMembersRoute, createSignInPolicyRoute, create
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
 import { createConfirmRoute, type ConfirmRoute } from "./confirm-route.ts";
+import { createConsentRoute, type ConsentRoute } from "./consent.ts";
 import { openAppDatabase } from "./database.ts";
 import { createExecute, type Execute } from "./execute.ts";
 import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-route.ts";
@@ -253,6 +254,20 @@ export function signInServiceRoute(env: Environment): (request: Request) => Prom
 export function wellKnownRoute(env: Environment): (request: Request) => Promise<Response> {
   const { signIn } = servicesOf(env);
   return (request) => signIn.handler(request);
+}
+
+let consent: ConsentRoute | undefined;
+
+/**
+ * The consent screen at /consent, where a signed-in member approves an agent
+ * client (agent-access: The consent screen shows who is asking), built once
+ * per process, for the signed-in user's web session.
+ */
+export function consentRoute(env: Environment): ConsentRoute {
+  if (consent !== undefined) return consent;
+  const { database, logger, signIn } = servicesOf(env);
+  consent = createConsentRoute({ database, session: (request, renewal) => signIn.session(request.headers, renewal), logger });
+  return consent;
 }
 
 let setup: SetupRoute | undefined;

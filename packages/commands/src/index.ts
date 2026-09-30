@@ -10,9 +10,23 @@ export {
   type AgentClient,
   type ClientRegistrationOptions,
 } from "./agent-clients.ts";
+export {
+  authorizationRequestOf,
+  clientParametersOf,
+  consentReview,
+  continuePathOf,
+  createConsentRoute,
+  isAuthorizationRequest,
+  readConsentView,
+  type AuthorizationRequest,
+  type ConsentRoute,
+  type ConsentRouteOptions,
+  type ConsentView,
+} from "./consent.ts";
 export { createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOptions, type SigningKeys } from "./agent-tokens.ts";
 export {
   ACCESS_TOKEN_LIFETIME_SECONDS,
+  AUTHORIZATION_ENDPOINT_PATH,
   AUTHORIZATION_SIGN_IN_PATH,
   METADATA_FETCHES_PER_HOST_PER_MINUTE,
   authorizationServerPlugins,

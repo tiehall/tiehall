@@ -3,6 +3,7 @@ import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import {
   createAgentTokenCheck,
+  createConsentRoute,
   createRestHandler,
   resourceMetadataUrlOf,
   type AgentClientOptions,
@@ -19,8 +20,9 @@ import { startSignIn, type SignInHarness } from "./sign-in.ts";
 // one handler that answers as the web role routes a call: the sign-in
 // service's routes under /api/auth and the discovery documents under
 // /.well-known go to the sign-in service, which is the install's OAuth
-// authorization server, and /api/v1 to the REST route, which checks the
-// access token a call carries. An agent client plays its part through plain
+// authorization server, /api/v1 to the REST route, which checks the access
+// token a call carries, and the sign-in page and the consent screen to their
+// pages. An agent client plays its part through plain
 // HTTP: it registers, sends the person's browser to the authorization
 // endpoint with PKCE and a resource, and exchanges the code it gets back.
 
@@ -143,10 +145,18 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
     logger: install.logger,
   });
 
+  const consent = createConsentRoute({
+    database: install.db,
+    session: (request, renewal) => signIn.service.session(request.headers, renewal),
+    logger: install.logger,
+  });
+
   const handle = async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith("/api/auth/") || pathname.startsWith("/.well-known/")) return signIn.service.handler(request);
     if (pathname.startsWith("/api/v1/")) return rest(request);
+    if (pathname === "/consent") return consent(request);
+    if (pathname === "/sign-in") return signIn.service.page(request);
     return new Response("Not found", { status: 404 });
   };
 

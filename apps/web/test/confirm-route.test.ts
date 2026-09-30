@@ -129,6 +129,7 @@ describe("the app", () => {
     { name: "the protected resource metadata of the MCP resource", path: "/.well-known/oauth-protected-resource/mcp" },
     { name: "the protected resource metadata at the root", path: "/.well-known/oauth-protected-resource" },
     { name: "the authorization server metadata", path: "/.well-known/oauth-authorization-server" },
+    { name: "the consent screen", path: "/consent" },
   ])("mounts $name on $path, for a GET", async ({ path }) => {
     const files = routesOf(path);
     expect(files, `the route files ${path} reaches`).toHaveLength(1);

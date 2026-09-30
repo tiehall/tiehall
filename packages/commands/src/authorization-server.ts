@@ -76,6 +76,8 @@ const NOT_OFFERED = "not-offered:";
 export const AUTHORIZATION_SIGN_IN_PATH = "/sign-in";
 /** The consent screen, where a signed-in member approves an agent client. */
 export const CONSENT_PATH = "/consent";
+/** The authorization endpoint, under the sign-in service's routes at /api/auth. */
+export const AUTHORIZATION_ENDPOINT_PATH = "/api/auth/oauth2/authorize";
 
 /** The install's MCP resource, the audience of every access token it issues: TIEHALL_URL/mcp. */
 export function mcpResourceOf(url: string): string {
