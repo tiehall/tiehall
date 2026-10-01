@@ -22,12 +22,12 @@ import { callTool, connectAgent } from "../../src/mcp.ts";
 // - Omar's agent opens a request to FE over MCP;
 // - Dana's CLI claims it, starts work and asks a blocking question;
 // - Omar's `tiehall hook wait`, as the Stop hook runs it, exits with code 2,
-//   and whats_new lists the question to his agent;
-// - his agent's answer over MCP returns the request to in_progress;
-// - a due date his agent proposes takes effect once Omar, then Dana, confirm
-//   it in the web UI;
-// - a decline Dana proposes with `tiehall status` takes effect once she
-//   confirms it in the web UI; her receipt links its undo, which restores
+//   and whats_new lists the question to Omar's agent;
+// - the agent's answer over MCP returns the request to in_progress;
+// - a due date Omar's agent proposes takes effect once Omar, then Dana,
+//   confirm it in the web UI;
+// - a decline Dana proposes with `tiehall status` takes effect once Dana
+//   confirms it in the web UI; the receipt links its undo, which restores
 //   in_progress.
 // CI runs it on every pull request, and on main against the pushed image.
 
@@ -124,7 +124,7 @@ describe("It works: a fresh install, two people in two teams, and their agents",
     const url = install.url;
     const code = await waitFor("the setup code in the app's log", () => /enter the setup code ([0-9A-Z]{4}(?:-[0-9A-Z]{4}){6})/.exec(install.logs("app"))?.[1]);
 
-    // Omar, the operator, sets the install up in his browser, signed in to GitHub, and is its first admin.
+    // Omar, the operator, sets the install up in their browser, signed in to GitHub, and is its first admin.
     github.stub.signIn("omar");
     const page = await browserOf();
     await page.goto(`${url}/setup`);
@@ -147,7 +147,7 @@ describe("It works: a fresh install, two people in two teams, and their agents",
     await page.getByText("You are signed in.").waitFor();
     omar = { login: "omar", page, cli: tiehall.machine() };
 
-    // Dana signs in with GitHub in her own browser, as a member of the organization that installed the App.
+    // Dana signs in with GitHub in their own browser, as a member of the organization that installed the App.
     github.stub.signIn("dana");
     const danasPage = await browserOf();
     await danasPage.goto(`${url}/`);
@@ -284,7 +284,7 @@ describe("It works: a fresh install, two people in two teams, and their agents",
     );
   });
 
-  it("declines the request once Dana confirms the decline her CLI proposed, and her receipt's undo within the window restores in_progress", async () => {
+  it("declines the request once Dana confirms the decline their CLI proposed, and the receipt's undo within the window restores in_progress", async () => {
     const proposed = await dana.cli.run(["status", key, "declined"]);
     expect(proposed.code, proposed.stderr).toBe(0);
     expect(proposed.stdout).toMatch(/Proposal [0-9a-f-]{36}: decline /);
