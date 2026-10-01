@@ -11,7 +11,7 @@
 # database when the backup finished, which the admin page shows.
 #
 # Run it every day, for example from cron:
-#   15 3 * * * cd /srv/tiehall && ./backup.sh >> backups/backup.log 2>&1
+#   15 3 * * * cd /srv/tiehall && ./backup.sh >> backup.log 2>&1
 # and before every upgrade. Copy the dumps off the host. Back up .env apart from
 # the dumps, and keep it secret: a dump alone cannot use the integration secrets
 # Tiehall stores, because TIEHALL_SECRET_KEY is not in it.

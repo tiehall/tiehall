@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, inject, it } from "vitest";
-import { documented } from "../../src/docs.ts";
-import { Install, openRequest, readRequest, seed } from "../../src/install.ts";
+import { documented, documentedCronCommand } from "../../src/docs.ts";
+import { Install, openRequest, quote, readRequest, seed } from "../../src/install.ts";
 
 // The backup-and-restore round trip (self-host-install: Backups with the
 // shipped scripts; design.md, Self-hosting decisions: S11; design.md,
@@ -118,11 +118,11 @@ describe("backup.sh and restore.sh", () => {
     expect(install.shell(documented("backup-run")).status).toBe(0);
     const [file] = dumps(install);
     const whole = readFileSync(join(install.dir, "backups", file!));
-    // A copy cut short early, one cut short in its data, and a file that is no dump at all, such as a log.
+    // A copy cut short early, one cut short in its data, and a file that is no dump at all, such as the log of the docs' cron line.
     const broken: Record<string, Buffer> = {
       "backups/cut-early.dump": whole.subarray(0, 2000),
       "backups/cut-late.dump": whole.subarray(0, whole.length - 64),
-      "backups/backup.log": Buffer.from(`Backed up to backups/${file}\n`),
+      "backup.log": Buffer.from(`Backed up to backups/${file}\n`),
     };
 
     for (const [path, content] of Object.entries(broken)) {
@@ -139,6 +139,19 @@ describe("backup.sh and restore.sh", () => {
     // The database the dumps were restored into for the check is gone, and the install's own is the one it had.
     expect(install.sql("SELECT string_agg(datname, ',' ORDER BY datname) FROM pg_database WHERE NOT datistemplate")).toBe("postgres,tiehall");
     expect(install.sql("SELECT string_agg(key, ',' ORDER BY key) FROM teams")).toBe("BE,FE");
+  });
+
+  // The docs' cron example, as cron runs it, with sh, on an install whose first backup it is.
+  it("backs up an install on which backup.sh has not run yet, with the docs' cron line", async () => {
+    const install = await started(image, "tiehall-backup-cron");
+    await seed(install);
+    expect(existsSync(join(install.dir, "backups"))).toBe(false);
+
+    const run = install.shell(`sh -c ${quote(documentedCronCommand(install.dir))}`);
+
+    expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(dumps(install)).toHaveLength(1);
+    expect(install.sql("SELECT count(*) FROM backups")).toBe("1");
   });
 
   it("brings a dump from the previous release's image, or before the first release the image last built from main, up to date with migrate", async () => {

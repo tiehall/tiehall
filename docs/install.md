@@ -129,7 +129,7 @@ The install's links follow `TIEHALL_URL`. To move it, change `TIEHALL_URL` in `.
 ./backup.sh
 ```
 
-- Run it every day, for example from cron, with a line such as `15 3 * * * cd /srv/tiehall && ./backup.sh >> backups/backup.log 2>&1`.
+- Run it every day, for example from cron, with a line such as `15 3 * * * cd /srv/tiehall && ./backup.sh >> backup.log 2>&1`, which keeps its output in `backup.log` beside `.env`.
 - Run it before every upgrade.
 - Copy the dumps off the host, to storage that a failure of the host does not take with it.
 - Back up `.env` separately, and keep it secret. A dump without `TIEHALL_SECRET_KEY` cannot use the integration secrets Tiehall stores.
