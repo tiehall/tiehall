@@ -13,6 +13,7 @@ export {
 export {
   authorizationRequestOf,
   clientParametersOf,
+  consentPolicy,
   consentReview,
   consentViewIn,
   continuePathOf,

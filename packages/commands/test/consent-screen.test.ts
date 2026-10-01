@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { connect as netConnect, type AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { consentReview, continuePathOf, createOutboundFetcher, type ConsentView } from "../src/index.ts";
+import { consentPolicy, consentReview, continuePathOf, createOutboundFetcher, type ConsentView } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { CLIENT_REDIRECT_URI, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
@@ -104,6 +104,33 @@ describe("the consent screen's content", () => {
     expect(textOf(mixed)).not.toMatch(/every address/i);
   });
 
+  // A browser applies a page's form-action to every redirect that follows its form's post, and the approval's last
+  // redirect sends the browser to the client's redirect URI; a web origin is named as such, a native client's own
+  // scheme by its scheme, and an address on [::1], which a policy cannot name, by its scheme.
+  // agent-client-approval-browser.test.ts follows the approval to the client in a real browser.
+  it("lets its form lead to the redirect URI the approval sends the browser to, as well as to the install", () => {
+    const formAction = (uri: string) => /(?:^|; )(form-action [^;]*)/.exec(consentPolicy(uri))?.[1];
+    expect(formAction("http://127.0.0.1:53682/callback")).toBe("form-action 'self' http://127.0.0.1:53682");
+    expect(formAction("https://agent.vendor.example/oauth/callback?x=1")).toBe("form-action 'self' https://agent.vendor.example");
+    expect(formAction("cursor://anysphere.cursor-retrieval/oauth/callback")).toBe("form-action 'self' cursor:");
+    expect(formAction("http://[::1]:4000/cb")).toBe("form-action 'self' http:");
+    expect(consentPolicy("http://127.0.0.1:53682/callback")).toContain("frame-ancestors 'none'");
+  });
+
+  // A URL's host may hold characters that a policy reads as its own, such as ; and *, and a client registers its
+  // redirect URIs itself: such a host is named by its scheme, so the policy keeps its directives and sources.
+  it("adds nothing but a source to its form-action for a redirect URI whose host a policy would read as more of itself", () => {
+    for (const [uri, scheme] of [
+      ["http://a;frame-ancestors/cb", "http:"],
+      ["https://*/cb", "https:"],
+      ["http://agent.example'/cb", "http:"],
+      ["http://a,b/cb", "http:"],
+    ] as const) {
+      const policy = consentPolicy(uri);
+      expect(policy, uri).toBe(`default-src 'none'; base-uri 'none'; form-action 'self' ${scheme}; frame-ancestors 'none'`);
+    }
+  });
+
   it("says what the client may do, and asks for no choice of org", () => {
     const text = textOf({ ...REGISTERED, scopes: ["requests:read", "requests:write", "contracts:report"] });
     expect(text).toContain("requests:read");
@@ -131,6 +158,8 @@ describe("the consent screen", () => {
     const page = await consentPage(url);
     expect(page.status).toBe(200);
     expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    // Its form may lead to the client's redirect URI, where the approval sends the browser.
+    expect(page.headers.get("content-security-policy")).toBe(consentPolicy(CLIENT_REDIRECT_URI));
     const html = await page.text();
     expect(html).toContain("Claims to be &#60;Claude&#62;");
     expect(html).not.toContain("<Claude>");

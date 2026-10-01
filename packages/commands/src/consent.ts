@@ -40,6 +40,13 @@ import type { OrgContext } from "./with-org.ts";
 // step, /confirm/agent_clients.approve, with a nonce bound to the member,
 // their web session and this approval, and the session's CSRF token.
 //
+// A browser applies the page's form-action to every redirect that follows its
+// form's post, and a confirmed approval ends in one to the client's redirect
+// URI, with the code: the confirmation step sends the browser back to the
+// authorization, which sends it on to the client. So the page's form may lead
+// to the install and to the redirect URI of the request it shows, which the
+// client registered, and to nowhere else (consentPolicy()).
+//
 // An authorization started before its person signed in reaches the sign-in
 // page, which brings the browser back to the authorization once it has signed
 // in: continuePathOf() gives the authorization request as the client sent it,
@@ -190,6 +197,22 @@ export async function consentViewIn(context: Pick<OrgContext, "tx" | "orgId">, r
   return { client, redirectUri: request.redirectUri, scopes: request.scopes };
 }
 
+/**
+ * The consent screen's Content-Security-Policy: the pages' own, whose form may
+ * also lead to the client's redirect URI, where the approval ends. A web
+ * address is named by its origin, and a native client's own scheme, such as
+ * cursor:, by the scheme. A host a policy cannot name, such as [::1], or one
+ * whose characters would be read as more of the policy, such as ; or *, which
+ * a URL's host may hold, is named by its scheme instead, so the client's
+ * registration never adds anything else to the policy.
+ */
+export function consentPolicy(redirectUri: string): string {
+  const url = new URL(redirectUri);
+  const web = url.protocol === "http:" || url.protocol === "https:";
+  const source = web && /^[a-z0-9.-]+$/i.test(url.hostname) ? url.origin : url.protocol;
+  return PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", `form-action 'self' ${source}`);
+}
+
 export interface ConsentRouteOptions {
   /** The confirmation step, whose review of the approval the page shows, with its nonce. */
   step: ConfirmationStep;
@@ -229,7 +252,7 @@ export function createConsentRoute(options: ConsentRouteOptions): ConsentRoute {
         reviewed.nonce,
         csrfTokenFor(secret(), caller.sessionId),
       );
-      return new Response(page, { headers: PAGE_HEADERS });
+      return new Response(page, { headers: { ...PAGE_HEADERS, "content-security-policy": consentPolicy(authorization.redirectUri) } });
     } catch (error) {
       if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), back);
       logger.error("consent: the consent screen failed", { error });
