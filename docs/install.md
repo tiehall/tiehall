@@ -22,11 +22,10 @@ chmod +x backup.sh restore.sh
 
 ## Write `.env` with `init`
 
-The image's `init` role prints a complete `.env` with fresh random secrets. Give it the install's URL and the image reference from the release notes, `<image>` below:
+The image's `init` role prints a complete `.env` with fresh random secrets. Give it the install's URL and the image reference from the release notes, `<image>` below. The `umask` makes `.env`, which holds the install's secrets, readable by you only, from the moment it is written:
 
 ```sh docs-test=install-init
-docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env
-chmod 600 .env
+(umask 077 && docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env)
 ```
 
 Read the file before you start. It holds every install setting, each with a comment:

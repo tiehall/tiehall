@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { documented } from "../../src/docs.ts";
 import { waitFor } from "../../src/docker.ts";
 import { stubGitHubFor, type StubbedGitHub } from "../../src/github.ts";
-import { freePort, Install, RELEASE_FILES } from "../../src/install.ts";
+import { freePort, Install, quote, RELEASE_FILES } from "../../src/install.ts";
 
 // The fresh-install test (self-host-install: Compose runs Tiehall and
 // Postgres; self-host-install: Setup names the company and makes the first
@@ -238,3 +238,29 @@ function getOverTls(url: string, ca: string): Promise<{ status: number; body: st
     request.end();
   });
 }
+
+describe("the .env that init writes, as the install docs write it", () => {
+  // .env holds the install's secrets from the moment init prints them: nobody but its owner may read it at any time,
+  // whatever the umask of the operator's shell, and not only once a later chmod has run.
+  it("can be read by its owner only, while init writes it as well as after", async () => {
+    const target = await Install.empty({ name: "tiehall-env" });
+    try {
+      const bin = join(target.dir, "stand-in");
+      mkdirSync(bin);
+      // Stands in for `docker run ... init`: prints a secret, then takes a moment to exit, as a pull or a slow start does.
+      writeFileSync(join(bin, "docker"), "#!/bin/sh\necho TIEHALL_SECRET_KEY=stand-in-secret\nsleep 3\n", { mode: 0o755 });
+      const env = join(target.dir, ".env");
+
+      const writing = target.shellAsync(`umask 022; PATH=${quote(bin)}:"$PATH"; ${documented("install-init", { "<image>": "example/tiehall:1.0.0" })}`);
+      await waitFor(".env to hold the secret", () => (existsSync(env) && readFileSync(env, "utf8").includes("stand-in-secret") ? true : undefined), 30);
+      const whileWriting = statSync(env).mode & 0o777;
+      const written = await writing;
+
+      expect(written.status, written.stderr).toBe(0);
+      expect(whileWriting.toString(8)).toBe("600");
+      expect((statSync(env).mode & 0o777).toString(8)).toBe("600");
+    } finally {
+      rmSync(target.dir, { recursive: true, force: true });
+    }
+  });
+});

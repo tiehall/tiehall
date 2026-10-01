@@ -3,7 +3,7 @@
 # (self-host-install: Compose runs Tiehall and Postgres). Every setting comes
 # from the .env file beside this one, which init prints with fresh secrets
 # (self-host-install: One `.env` holds the install settings):
-#   docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env
+#   (umask 077 && docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env)
 #   docker compose up -d                   # the app on 127.0.0.1:3000, for your own reverse proxy
 #   docker compose --profile caddy up -d   # with Caddy in front, and TLS for TIEHALL_URL
 # To upgrade, back up, set the new TIEHALL_IMAGE in .env and run

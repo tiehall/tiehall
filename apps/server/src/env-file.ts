@@ -85,7 +85,7 @@ export function exampleEnv(): string {
   return render(
     [
       "Tiehall's install settings. Print a complete .env with fresh secrets instead of copying this file:",
-      "  docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env",
+      "  (umask 077 && docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env)",
       "Keep .env secret, and back it up apart from the database.",
       ...FILE_FORMS,
     ],
