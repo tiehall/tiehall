@@ -10,8 +10,8 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // to its source (self-host-install: The running version links to its source;
 // design.md, Self-hosting decisions: S12 and S16), in the web app as the image
 // runs it: on the pages the web role renders itself, such as the members page
-// and the sign-in page, on the page of a request, which Next.js renders, and
-// on the admin page. The link points to the release's source in the public
+// and the sign-in page, on the pages Next.js renders, the page of a request and
+// the page for a path no route serves, and on the admin page. The link points to the release's source in the public
 // repository the image was built from, or to TIEHALL_SOURCE_URL when .env sets
 // it, as an operator who runs a modified server does.
 
@@ -68,6 +68,13 @@ describe("the running version and its source", { timeout: 300_000 }, () => {
       }
       // A visitor who is not signed in sees it too, on the sign-in page.
       expect((await pageOf(web, "/sign-in")).footer).toContain(source);
+      // So does the page Next.js answers a path no route serves with, which it renders for each call too.
+      for (const cookieOf of [undefined, cookie]) {
+        const missing = await pageOf(web, "/no/such/page", cookieOf);
+        expect(missing.status).toBe(404);
+        expect(missing.footer).toContain("Tiehall 1.3.0");
+        expect(missing.footer).toContain(source);
+      }
       // The admin page says which version runs, and where its source is.
       const admin = await pageOf(web, "/admin", cookie);
       const section = /<h2>Version<\/h2>([\s\S]*?)(?:<h2>|<\/main>)/.exec(admin.html)?.[1] ?? "";
@@ -82,11 +89,12 @@ describe("the running version and its source", { timeout: 300_000 }, () => {
     const { web, cookie } = await webAppWith({ ...RELEASE, TIEHALL_SOURCE_URL: "https://git.acme.example/tiehall-fork" });
     try {
       const fork = 'href="https://git.acme.example/tiehall-fork"';
-      for (const path of ["/members", "/FE-1", "/admin"]) {
+      for (const path of ["/members", "/FE-1", "/admin", "/no/such/page"]) {
         const { footer } = await pageOf(web, path, cookie);
         expect(footer, path).toContain(fork);
         expect(footer, path).not.toContain("github.com/acme-oss");
       }
+      expect((await pageOf(web, "/no/such/page")).footer).toContain(fork);
       const admin = await pageOf(web, "/admin", cookie);
       expect(/<h2>Version<\/h2>([\s\S]*?)(?:<h2>|<\/main>)/.exec(admin.html)?.[1]).toContain(fork);
     } finally {
