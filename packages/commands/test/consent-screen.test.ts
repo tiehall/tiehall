@@ -259,4 +259,36 @@ describe("an authorization started before its person signed in", () => {
     const again = await harness.handle(new Request(returning, { headers: { cookie: ana.cookie, accept: "text/html" } }));
     expect(new URL(again.headers.get("location") ?? "", URL_OF_INSTALL).pathname).toBe("/consent");
   });
+
+  // The sign-in page's form leads through GitHub back to the authorization, which sends the browser of a person who
+  // approved the client before on to the client's redirect URI at once, and a browser applies the form's
+  // form-action to that last redirect too. agent-client-sign-in-browser.test.ts follows it in a real browser.
+  it("lets the sign-in page's form lead on to the redirect URI the client registered, as well as to GitHub", async () => {
+    const client = await harness.registerClient();
+    const started = await harness.authorize("", client, pkcePair());
+    const page = await harness.handle(new Request(new URL(started.headers.get("location") ?? "", URL_OF_INSTALL), { headers: { accept: "text/html" } }));
+    expect(page.status).toBe(200);
+    expect(formActionOf(page)).toBe(`form-action 'self' ${harness.stub.webUrl} http://127.0.0.1:53682`);
+  });
+
+  it("names no other address in the sign-in page's form-action: not one the client did not register, nor one of a client the install does not know", async () => {
+    const client = await harness.registerClient();
+    const started = await harness.authorize("", client, pkcePair());
+    const signInUrl = new URL(started.headers.get("location") ?? "", URL_OF_INSTALL);
+    for (const [name, value] of [
+      ["redirect_uri", "https://elsewhere.example/callback"],
+      ["redirect_uri", "http://127.0.0.1:53682/elsewhere"],
+      ["client_id", "no-such-client"],
+    ] as const) {
+      const crafted = new URL(signInUrl);
+      crafted.searchParams.set(name, value);
+      const page = await harness.handle(new Request(crafted, { headers: { accept: "text/html" } }));
+      expect(formActionOf(page), `${name}=${value}`).toBe(`form-action 'self' ${harness.stub.webUrl}`);
+    }
+  });
 });
+
+/** The form-action directive of a page's Content-Security-Policy. */
+function formActionOf(page: Response): string | undefined {
+  return /(?:^|; )(form-action [^;]*)/.exec(page.headers.get("content-security-policy") ?? "")?.[1];
+}

@@ -51,7 +51,11 @@ import type { OrgContext } from "./with-org.ts";
 // page, which brings the browser back to the authorization once it has signed
 // in: continuePathOf() gives the authorization request as the client sent it,
 // without the signature the authorization server added to it for the page,
-// and without the refresh scope the server adds itself.
+// and without the refresh scope the server adds itself. When the person
+// approved the client before, that authorization sends the browser on to the
+// client's redirect URI at once, as the last redirect after the sign-in
+// page's form's post; so the sign-in page's form may lead to that redirect
+// URI too, when the client registered it (registeredRedirectIn()).
 
 /** The parameters the authorization server adds to the request it sends to the sign-in page or the consent screen. */
 const SIGNATURE_PARAMETERS: ReadonlySet<string> = new Set(["sig", "exp", "ba_iat", "ba_param", "ba_pl"]);
@@ -198,19 +202,45 @@ export async function consentViewIn(context: Pick<OrgContext, "tx" | "orgId">, r
 }
 
 /**
- * The consent screen's Content-Security-Policy: the pages' own, whose form may
- * also lead to the client's redirect URI, where the approval ends. A web
- * address is named by its origin, and a native client's own scheme, such as
- * cursor:, by the scheme. A host a policy cannot name, such as [::1], or one
- * whose characters would be read as more of the policy, such as ; or *, which
- * a URL's host may hold, is named by its scheme instead, so the client's
+ * How a page's form-action names a client's redirect URI, where a form's post
+ * may end: a web address by its origin, and a native client's own scheme, such
+ * as cursor:, by the scheme. A host a policy cannot name, such as [::1], or
+ * one whose characters would be read as more of the policy, such as ; or *,
+ * which a URL's host may hold, is named by its scheme instead, so the client's
  * registration never adds anything else to the policy.
  */
-export function consentPolicy(redirectUri: string): string {
+export function redirectSourceOf(redirectUri: string): string {
   const url = new URL(redirectUri);
   const web = url.protocol === "http:" || url.protocol === "https:";
-  const source = web && /^[a-z0-9.-]+$/i.test(url.hostname) ? url.origin : url.protocol;
-  return PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", `form-action 'self' ${source}`);
+  return web && /^[a-z0-9.-]+$/i.test(url.hostname) ? url.origin : url.protocol;
+}
+
+/** The pages' own Content-Security-Policy, whose form may also lead to these sources. */
+export function policyWithFormAction(sources: readonly string[]): string {
+  return PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", ["form-action 'self'", ...sources].join(" "));
+}
+
+/**
+ * The consent screen's Content-Security-Policy: the pages' own, whose form may
+ * also lead to the client's redirect URI, where the approval ends.
+ */
+export function consentPolicy(redirectUri: string): string {
+  return policyWithFormAction([redirectSourceOf(redirectUri)]);
+}
+
+/**
+ * The redirect URI of the authorization request a page's query holds, when
+ * the install knows the client, has not disabled it and the client registered
+ * that redirect URI; undefined for any other, such as one crafted into the
+ * page's address, which no form's post may then lead to.
+ */
+export async function registeredRedirectIn(context: Pick<OrgContext, "tx" | "orgId">, query: URLSearchParams): Promise<string | undefined> {
+  const clientId = query.get("client_id") ?? "";
+  const redirectUri = query.get("redirect_uri") ?? "";
+  if (clientId === "" || redirectUri === "") return undefined;
+  const client = await readAgentClient(context, clientId);
+  if (client === undefined || client.disabled) return undefined;
+  return client.redirectUris.some((registered) => isRegisteredRedirect(registered, redirectUri)) ? redirectUri : undefined;
 }
 
 export interface ConsentRouteOptions {

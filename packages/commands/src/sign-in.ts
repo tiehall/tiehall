@@ -31,7 +31,7 @@ import {
 import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { grantChecks } from "./agent-grants.ts";
-import { continuePathOf, isAuthorizationRequest } from "./consent.ts";
+import { continuePathOf, isAuthorizationRequest, policyWithFormAction, redirectSourceOf, registeredRedirectIn } from "./consent.ts";
 import { AUTHORIZATION_ENDPOINT_PATH, authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
 import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
 import type { WebSessionCaller } from "./caller.ts";
@@ -51,7 +51,7 @@ import { readSetupState, SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { setupCookieName } from "./setup-route.ts";
 import { routeInventory, servedOverHttp, servedOverHttpAt } from "./sign-in-routes.ts";
-import { RemovedMemberError } from "./with-org.ts";
+import { RemovedMemberError, withOrg } from "./with-org.ts";
 import { assertWebWrite } from "./web-writes.ts";
 import { write, type Origin, type Store, type Writer } from "./write.ts";
 
@@ -336,6 +336,16 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       send: () => Promise.reject(new Error("the sign-in service's writes start no job")),
     },
   };
+
+  /** The redirect URI of the authorization request the sign-in page's query holds, when its client registered it; undefined before setup completes. */
+  async function registeredRedirect(query: URLSearchParams): Promise<string | undefined> {
+    try {
+      return await withOrg(options.database, (context) => registeredRedirectIn(context, query), { readOnly: true });
+    } catch (error) {
+      if (error instanceof Refusal) return undefined;
+      throw error;
+    }
+  }
 
   /** Which credentials are stored now: one small read per request, so a change reaches the next request. */
   async function storedCredentials(): Promise<StoredCredentials | undefined> {
@@ -879,12 +889,16 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         const url = new URL(request.url);
         if (request.method === "GET" || request.method === "HEAD") {
           // An agent client's authorization that reached the sign-in page goes on once the person has signed in.
-          const back = isAuthorizationRequest(url.searchParams) ? continuePathOf(url.searchParams) : returnPath(url.searchParams.get("return"));
+          const authorization = isAuthorizationRequest(url.searchParams);
+          const back = authorization ? continuePathOf(url.searchParams) : returnPath(url.searchParams.get("return"));
           const error = url.searchParams.get("error");
-          return pageResponse(signInPage(back, error), 200, {
-            // The form posts here, and its answer sends the browser on to GitHub's authorize page.
-            "content-security-policy": PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", `form-action 'self' ${new URL(webUrl).origin}`),
-          });
+          // The form posts here, and its answer sends the browser on to GitHub's authorize page. A browser applies the
+          // form-action to every redirect after the post, and for a client the person approved before, the
+          // authorization's last one goes on to the client's redirect URI, when the client registered it (consent.ts).
+          const sources = [new URL(webUrl).origin];
+          const redirectUri = authorization ? await registeredRedirect(url.searchParams) : undefined;
+          if (redirectUri !== undefined) sources.push(redirectSourceOf(redirectUri));
+          return pageResponse(signInPage(back, error), 200, { "content-security-policy": policyWithFormAction(sources) });
         }
         if (request.method !== "POST") return refused(request, new Refusal("route-not-found", "There is no such page here."), TO_SIGN_IN);
         if (originOf(request.headers.get("origin")) !== options.url) {
