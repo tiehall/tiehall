@@ -3,11 +3,15 @@
 # (self-host-install: Backups with the shipped scripts). Run it on the host, in
 # the folder that holds compose.yaml and .env:
 #   ./restore.sh backups/tiehall-20261001T031500Z.dump
-# It stops the app, replaces the bundled Postgres's database with an empty one
-# and restores the dump into it, as the database owner, whose credentials
-# Compose gives the Postgres container from .env; then it starts the app again,
-# whose migrate step first brings a dump from an older release up to the
-# running release. Everything written since the dump was taken is lost, so take
+# It checks that the file is a dump, stops the app, and restores the dump into
+# a new, empty database beside the bundled Postgres's database, as the database
+# owner, whose credentials Compose gives the Postgres container from .env. Only
+# once the whole dump is in does that database replace the install's; then it
+# starts the app again, whose migrate step first brings a dump from an older
+# release up to the running release. A file that is not a whole dump, such as
+# a copy that broke off, changes nothing: the app starts again on the database
+# it had. The restore needs room on the disk for a second copy of the database
+# while it runs. Everything written since the dump was taken is lost, so take
 # a backup first if the database still holds anything to keep.
 #
 # The dump holds the integration secrets Tiehall stores only encrypted with
@@ -41,15 +45,31 @@ in_postgres() {
     exec "$@"' sh "$@"
 }
 
+docker compose up --detach --wait postgres
+# A file whose table of contents pg_restore cannot read is no dump, and nothing is stopped for it.
+if ! in_postgres pg_restore --list < "$dump" > /dev/null; then
+  echo "restore.sh: $1 is not a dump that backup.sh wrote, or it is cut short, so nothing changed." >&2
+  exit 1
+fi
+
 echo "Stopping the app"
 docker compose stop app
-docker compose up --detach --wait postgres
 
 echo "Restoring $dump into an empty database"
-# The database is dropped and made again from the maintenance database, then the dump goes into it.
-in_postgres sh -c 'dropdb --maintenance-db=postgres --if-exists --force "$PGDATABASE" && createdb --maintenance-db=postgres --owner="$PGUSER" "$PGDATABASE"'
-# Ownership and rights come from this install, not the dump: the owner owns everything, and the migrate step grants the app role its rights.
-in_postgres sh -c 'exec pg_restore --dbname="$PGDATABASE" --no-owner --no-privileges --exit-on-error' < "$dump"
+# The dump goes into a new database beside the install's, made from the maintenance database; one a restore that
+# stopped left behind goes first. Ownership and rights come from this install, not the dump: the owner owns
+# everything, and the migrate step grants the app role its rights.
+in_postgres sh -c 'PGOPTIONS="-c client_min_messages=warning" dropdb --maintenance-db=postgres --if-exists --force "${PGDATABASE}_restore" && createdb --maintenance-db=postgres --owner="$PGUSER" "${PGDATABASE}_restore"'
+if ! in_postgres sh -c 'exec pg_restore --dbname="${PGDATABASE}_restore" --no-owner --no-privileges --exit-on-error' < "$dump"; then
+  in_postgres sh -c 'dropdb --maintenance-db=postgres --if-exists --force "${PGDATABASE}_restore"'
+  echo "restore.sh: $1 could not be restored, for the reason above, so the database is as it was. A dump that is cut short, such as a copy that broke off, cannot be restored." >&2
+  echo "Starting the app again on the database it had"
+  docker compose up --detach --wait
+  exit 1
+fi
+# The whole dump is in: the restored database replaces the install's.
+echo 'DROP DATABASE IF EXISTS :"live" WITH (FORCE); ALTER DATABASE :"restored" RENAME TO :"live";' |
+  in_postgres sh -c 'exec psql --dbname=postgres --quiet -v ON_ERROR_STOP=1 -v live="$PGDATABASE" -v restored="${PGDATABASE}_restore"'
 
 echo "Starting the app: the migrate step runs first"
 docker compose up --detach --wait

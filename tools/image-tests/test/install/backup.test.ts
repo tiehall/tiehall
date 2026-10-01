@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, inject, it } from "vitest";
 import { documented } from "../../src/docs.ts";
@@ -11,11 +11,13 @@ import { Install, openRequest, readRequest, seed } from "../../src/install.ts";
 // backup.sh dumps the bundled Postgres in its custom format from inside the
 // Postgres container, so the dump matches the server's major version, into a
 // timestamped file only its owner can read in the backups folder, then records
-// in the database when the backup finished; restore.sh stops the app, restores
-// a dump into an empty database and starts the app again, whose migrate step
-// brings a dump of an older release up to the running one. The test runs the
-// commands as the install docs write them (docs.ts). CI runs this on every
-// pull request and every build of main, and before each release.
+// in the database when the backup finished; restore.sh checks that the file
+// is a dump, stops the app, restores the dump into an empty database, which
+// replaces the install's only once the whole dump is in, and starts the app
+// again, whose migrate step brings a dump of an older release up to the
+// running one; a file that is not a whole dump changes nothing. The test runs
+// the commands as the install docs write them (docs.ts). CI runs this on
+// every pull request and every build of main, and before each release.
 
 const image = inject("image");
 const previousImage = inject("previousImage");
@@ -40,7 +42,7 @@ async function started(from: string, name: string): Promise<Install> {
 /** The dumps in the install's backups folder. */
 function dumps(install: Install): string[] {
   const folder = join(install.dir, "backups");
-  return existsSync(folder) ? readdirSync(folder).sort() : [];
+  return existsSync(folder) ? readdirSync(folder).filter((name) => name.endsWith(".dump")).sort() : [];
 }
 
 describe("backup.sh and restore.sh", () => {
@@ -106,6 +108,37 @@ describe("backup.sh and restore.sh", () => {
     expect(restore.status).toBe(1);
     expect(restore.stderr).toContain("restore.sh: cannot read backups/no-such.dump");
     expect((await readRequest(install, token, requestKey)).status).toBe(200);
+  });
+
+  // restore.sh replaces the database only with a whole dump: it checks the file before it stops the app, restores it
+  // into a database of its own beside the install's, and replaces the install's only once the whole dump is in.
+  it("restores nothing from a file that is not a whole dump, and keeps the install running on its data", async () => {
+    const install = await started(image, "tiehall-restore-broken");
+    const { token, requestKey, requestTitle } = await seed(install);
+    expect(install.shell(documented("backup-run")).status).toBe(0);
+    const [file] = dumps(install);
+    const whole = readFileSync(join(install.dir, "backups", file!));
+    // A copy cut short early, one cut short in its data, and a file that is no dump at all, such as a log.
+    const broken: Record<string, Buffer> = {
+      "backups/cut-early.dump": whole.subarray(0, 2000),
+      "backups/cut-late.dump": whole.subarray(0, whole.length - 64),
+      "backups/backup.log": Buffer.from(`Backed up to backups/${file}\n`),
+    };
+
+    for (const [path, content] of Object.entries(broken)) {
+      writeFileSync(join(install.dir, path), content, { mode: 0o600 });
+      const restore = install.shell(restoreCommand(path), { timeoutSeconds: 600 });
+
+      writeFileSync(`/tmp/scratchpad/fix21/restore-${path.replace(/\//g, "_")}.txt`, restore.stdout + "\n----\n" + restore.stderr);
+      expect(restore.status, `${path}\n${restore.stdout}\n${restore.stderr}`).toBe(1);
+      expect(restore.stderr, path).toContain(`restore.sh: ${path} `);
+      await install.healthy();
+      expect(install.compose(["ps", "--format", "{{.Service}} {{.State}}", "app"]).stdout.trim(), path).toBe("app running");
+      expect(await readRequest(install, token, requestKey), path).toEqual({ status: 200, title: requestTitle });
+    }
+    // The database the dumps were restored into for the check is gone, and the install's own is the one it had.
+    expect(install.sql("SELECT string_agg(datname, ',' ORDER BY datname) FROM pg_database WHERE NOT datistemplate")).toBe("postgres,tiehall");
+    expect(install.sql("SELECT string_agg(key, ',' ORDER BY key) FROM teams")).toBe("BE,FE");
   });
 
   it("brings a dump from the previous release's image, or before the first release the image last built from main, up to date with migrate", async () => {

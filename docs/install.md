@@ -138,7 +138,9 @@ For point-in-time recovery, use your own Postgres tooling, or a managed Postgres
 
 ## Restore
 
-`restore.sh` stops the app, restores a dump into an empty database and starts the app again. Its `migrate` step brings a dump from an older release up to the running release. Everything written since the dump was taken is lost. Restore with the `.env` the dump was taken with.
+`restore.sh` checks that the file is a dump, stops the app, restores the dump into a new, empty database and starts the app again. Its `migrate` step brings a dump from an older release up to the running release. Everything written since the dump was taken is lost. Restore with the `.env` the dump was taken with.
+
+The restored database replaces the install's only once the whole dump is in. A file that is not a whole dump, such as a copy that broke off, changes nothing: `restore.sh` says why, and the app starts again on the database it had. While it runs, the restore needs room on the disk for a second copy of the database.
 
 ```sh docs-test=backup-restore
 ./restore.sh backups/tiehall-20261001T031500Z.dump
