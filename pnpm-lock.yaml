@@ -539,6 +539,9 @@ importers:
 
   tools/image-tests:
     devDependencies:
+      '@modelcontextprotocol/client':
+        specifier: 2.0.0
+        version: 2.0.0
       '@tiehall/repo-checks':
         specifier: workspace:*
         version: link:../repo-checks
@@ -551,6 +554,12 @@ importers:
       playwright-core:
         specifier: 1.63.0
         version: 1.63.0
+      rolldown:
+        specifier: 1.2.9
+        version: 1.2.9
+      tiehall:
+        specifier: workspace:*
+        version: link:../../packages/cli
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

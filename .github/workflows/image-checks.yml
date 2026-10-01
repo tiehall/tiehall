@@ -8,10 +8,13 @@ name: Image checks
 # self-host-install: Setup names the company and makes the first admin;
 # self-host-install: Backups with the shipped scripts; self-host-install:
 # Upgrades apply migrations before the app starts; self-host-install:
-# Migrations expand, then contract). The operator tests that need the previous
-# image take the image last built from main before the commit under test
-# (get-previous-image.sh): the pull request's base, or the commit main was at
-# before the push.
+# Migrations expand, then contract), and the end-to-end "It works" test of a
+# fresh install (agent-surfaces: Four agent surfaces; requester-loop: Pull is
+# the contract; requests: Commitments become proposals; requests: Cross-team
+# commitments need a confirmation from each side). The operator tests that
+# need the previous image take the image last built from main before the
+# commit under test (get-previous-image.sh): the pull request's base, or the
+# commit main was at before the push.
 
 on:
   workflow_call:
@@ -105,6 +108,37 @@ jobs:
       # app`, the setup screen and the App's manifest flow against the GitHub stub in the runner's Chrome, the first
       # admin, a team and a request, and the commands on the host.
       - run: pnpm test:install fresh-install
+
+  it-works-test:
+    name: It works
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      # The GitHub stub, the tiehall CLI, which the test builds from the repository, and the MCP SDK client come with
+      # the image tests' workspace dependencies.
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      # A fresh install set up through the setup screen against the GitHub stub in the runner's Chrome; two people in
+      # two teams signed in with GitHub, their CLIs signed in through the device flow and an MCP SDK client approved on
+      # the consent screen; then a request, a blocking question that wakes `tiehall hook wait`, its answer, a due date
+      # confirmed by both sides and a decline confirmed and undone in the web UI.
+      - run: pnpm test:install it-works
 
   backup-test:
     name: Backup and restore

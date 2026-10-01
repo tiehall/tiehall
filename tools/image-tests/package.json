@@ -2,7 +2,7 @@
   "name": "@tiehall/image-tests",
   "version": "0.0.0",
   "private": true,
-  "description": "Container tests of the Tiehall image, the self-host boot test, and the operator tests that run whole installs with Docker Compose: a fresh install through the setup screen, backup and restore, upgrades and rollbacks. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset, and for some TIEHALL_PREVIOUS_IMAGE. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone) and `pnpm test:install <file>`; `pnpm test` leaves them out.",
+  "description": "Container tests of the Tiehall image, the self-host boot test, and the operator tests that run whole installs with Docker Compose: a fresh install through the setup screen, backup and restore, upgrades and rollbacks, and the end-to-end \"It works\" test of two people and their agents on a fresh install. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset, and for some TIEHALL_PREVIOUS_IMAGE. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone) and `pnpm test:install <file>`; `pnpm test` leaves them out.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
@@ -14,10 +14,13 @@
     "test:install": "vitest run --config vitest.install.config.ts"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@tiehall/repo-checks": "workspace:*",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "playwright-core": "1.63.0",
+    "rolldown": "1.2.9",
+    "tiehall": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
