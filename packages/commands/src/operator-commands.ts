@@ -1,3 +1,4 @@
+import { GITHUB_LOGIN } from "@tiehall/catalog";
 import { memberRoleChanged, operatorCommandRun, Refusal, setupReopened, type Role } from "@tiehall/core";
 import { members, orgs, users, type Database } from "@tiehall/db";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -36,10 +37,12 @@ import { write } from "./write.ts";
 // the step, and the time it opened. Before setup completes, the setup screen
 // is open already, and the command runs nothing.
 
-/** A GitHub login: 1 to 39 letters, digits and single hyphens, neither first nor last. */
-const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
-
-/** Whether a text can be a GitHub login, as GitHub gives them out. */
+/**
+ * Whether a text can be a GitHub login, in the form every input that names a
+ * login takes (@tiehall/catalog), such as an invite's: letters, digits and
+ * hyphens, and the underscore before the enterprise's shortcode in the login
+ * of an account an enterprise manages, such as ana_acme.
+ */
 export function isGitHubLogin(text: string): boolean {
   return GITHUB_LOGIN.test(text);
 }

@@ -50,6 +50,8 @@ const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, passwor
 /** The settings the app reads, as Compose hands them to the app service: the app role's connection, never the owner's. */
 let appSettings: Record<string, string>;
 const dana = randomUUID();
+/** A member whose account an enterprise manages on GitHub: their login ends in the enterprise's shortcode after an underscore. */
+const ana = randomUUID();
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -62,6 +64,11 @@ beforeAll(async () => {
     [dana],
   );
   await owner.query("INSERT INTO members (org_id, user_id, role) SELECT id, $1, 'member' FROM orgs", [dana]);
+  await owner.query(
+    `INSERT INTO users (org_id, id, github_account_id, github_login, sign_in_key) SELECT id, $1, 4343, 'ana_acme', 'github:4343' FROM orgs`,
+    [ana],
+  );
+  await owner.query("INSERT INTO members (org_id, user_id, role) SELECT id, $1, 'member' FROM orgs", [ana]);
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";
@@ -119,8 +126,14 @@ describe("admin grant", () => {
     expect(run.code).toBe(0);
   });
 
+  it("makes a member whose account an enterprise manages an admin, by the login with the enterprise's shortcode", async () => {
+    const run = await runAdmin(["grant", "ana_acme"], appSettings);
+    expect(run).toEqual({ code: 0, stdout: "ana_acme is now an admin of this install.\n", stderr: "" });
+    expect((await owner.query("SELECT role FROM members WHERE user_id = $1", [ana])).rows).toEqual([{ role: "admin" }]);
+  });
+
   it("refuses a login GitHub never gives out, as a usage error that reads no setting", async () => {
-    for (const login of ["-dana", "dana gh", "a".repeat(40), ""]) {
+    for (const login of ["-dana", "_acme", "dana gh", "a".repeat(101), ""]) {
       const run = await runAdmin(["grant", login], {});
       expect(run, login).toEqual({ code: 2, stdout: "", stderr: `tiehall admin grant: ${JSON.stringify(login)} is not a GitHub login.\n${USAGE}\n` });
     }

@@ -19,6 +19,7 @@ let install: TestInstall;
 let ada: string;
 let dana: string;
 let lee: string;
+let ana: string;
 
 beforeAll(async () => {
   install = await startTestInstall();
@@ -26,6 +27,8 @@ beforeAll(async () => {
   dana = await addUser(install.owner, { role: "member", login: "dana-gh" });
   // Lee was removed: a user of the install who is no member.
   lee = await addUser(install.owner, { role: null, login: "octo-lee" });
+  // Ana's account is one their company's enterprise manages on GitHub, whose login ends in the enterprise's shortcode after an underscore.
+  ana = await addUser(install.owner, { role: "member", login: "ana_acme" });
 });
 
 afterAll(async () => {
@@ -92,6 +95,20 @@ describe("admin grant", () => {
     const result = await grantAdmin(install.db, "Dana-GH");
     expect(result).toEqual({ outcome: "granted", userId: dana, login: "dana-gh" });
     expect(await roleOf(dana)).toBe("admin");
+  });
+
+  it("makes a member whose account an enterprise manages an admin, by the login with the enterprise's shortcode", async () => {
+    const result = await grantAdmin(install.db, "ana_acme");
+    expect(result).toEqual({ outcome: "granted", userId: ana, login: "ana_acme" });
+    expect(await roleOf(ana)).toBe("admin");
+  });
+
+  it("refuses a text that cannot be a GitHub login, and changes and records nothing", async () => {
+    const before = await lastEvent();
+    for (const login of ["-dana", "_acme", "dana gh", "dana/gh", "a".repeat(101), ""]) {
+      await expect(grantAdmin(install.db, login), login).rejects.toThrow("is not a GitHub login.");
+    }
+    expect(await eventsAfter(before)).toEqual([]);
   });
 
   it("changes nothing for a login that belongs to no member and says so, recording the run as a security event operator.command_run that names the command and no user", async () => {
