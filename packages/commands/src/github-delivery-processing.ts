@@ -6,6 +6,7 @@ import type { GitHubAppAccess } from "./github-installations.ts";
 import { readInstallations } from "./github-installations.ts";
 import { memberOfGitHubAccount } from "./github-users.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import { processIssuesEvent } from "./github-issue-processing.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { processOrganizationEvent } from "./organization-departures.ts";
 import { processPullRequestEvent } from "./pull-request-processing.ts";
@@ -58,7 +59,8 @@ import { withOrg } from "./with-org.ts";
 // organization processor asks whether the member is still in the
 // organization (organization-departures.ts); the pull request processor reads
 // the pull request again (pull-request-processing.ts), and the issues
-// processor a later task adds the issue, and each acts on its state now. A replay, a redelivery and an out-of-order
+// processor the mirror issue (github-issue-processing.ts), and each acts on
+// its state now. A replay, a redelivery and an out-of-order
 // delivery then change nothing that the current state does not call for.
 // Deliveries are not deduplicated by a digest of their body: two genuine
 // deliveries can be byte for byte the same, such as two reports of one person
@@ -104,12 +106,17 @@ export type GitHubEventProcessors = Readonly<Record<string, GitHubEventProcessor
  * The processors of the events a connected installation's deliveries carry.
  * Each task that acts on an event adds its processor here: pull requests for
  * provider pull requests, PR links and close on merge
- * (pull-request-processing.ts), issues for the GitHub Issues mirror, and
+ * (pull-request-processing.ts), issues for the GitHub Issues mirror
+ * (github-issue-processing.ts), and
  * organization for membership (organization-departures.ts). Each reads the
  * current state from GitHub before it acts, as the rule above says. An event
  * with no processor changes nothing.
  */
-export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = { organization: processOrganizationEvent, pull_request: processPullRequestEvent };
+export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = {
+  issues: processIssuesEvent,
+  organization: processOrganizationEvent,
+  pull_request: processPullRequestEvent,
+};
 
 /** The job a processor's system actions run as: the processing of the delivery, which applies what GitHub reported. */
 const PROCESSING_JOB = "github.process_delivery";

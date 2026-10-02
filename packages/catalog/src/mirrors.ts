@@ -87,4 +87,37 @@ export const removeTrackerMapping = defineCommand({
   stability: "beta",
 });
 
-export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, removeTrackerMapping];
+/** An account in a tracker, by the tracker's own id and the name it shows. */
+const trackerAccount = z.object({ id: z.string().min(1).max(100), login: z.string().min(1).max(100) });
+
+/**
+ * What a mirror issue shows now, read from its tracker by the processing of a
+ * tracker's change (tracker-mirrors: Mirror writes are idempotent and never
+ * echo; tracker-mirrors: Inbound tracker changes are recorded, not applied).
+ * Only a verified integration event runs it: it records the changes the read
+ * shows that Tiehall did not make itself, and drops the echoes of its own
+ * writes.
+ */
+export const recordTrackerChange = defineCommand({
+  id: "mirrors.record_tracker_change",
+  summary: "Record what a mirror issue shows now, as read from its tracker: a close, a reopen or new assignees that Tiehall did not write.",
+  input: z.object({
+    mirrorId: z.uuid(),
+    issue: z.object({
+      open: z.boolean(),
+      closeReason: z.enum(["completed", "not_planned", "duplicate"]).nullable(),
+      assignees: z.array(trackerAccount).max(100),
+      closedBy: trackerAccount.nullable(),
+    }),
+  }),
+  output: z.object({
+    changes: z.array(z.enum(["closed", "reopened", "assignees_changed"])).meta({ description: "The changes the read showed that Tiehall did not write itself." }),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, removeTrackerMapping, recordTrackerChange];

@@ -1,0 +1,61 @@
+import { recordTrackerChange } from "@tiehall/catalog";
+import { mirrors } from "@tiehall/db";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import type { GitHubEventProcessor } from "./github-delivery-processing.ts";
+import { createGitHubIssues, MirrorPlaceUnavailableError } from "./github-issues.ts";
+import { withOrg } from "./with-org.ts";
+
+// The processor of `issues` deliveries (tracker-mirrors: Mirror writes are
+// idempotent and never echo; tracker-mirrors: Inbound tracker changes are
+// recorded, not applied; tracker-mirrors: Tracker comments are not imported;
+// design.md, Technical decisions: T16). A delivery about an issue of a
+// connected installation's repository counts only when the issue is the
+// mirror issue of a request, which Tiehall's mirrors name by the repository's
+// id and the issue's number; every other issue is none of Tiehall's, and its
+// delivery changes nothing. As for every delivery, Tiehall does not act on
+// what the payload says happened: it reads the mirror issue from GitHub, with
+// the token of the installation that covers its repository now, and records
+// what the issue shows (mirrors.record_tracker_change), as the integration
+// event from GitHub. What Tiehall wrote itself, or is writing, comes back
+// this way too, as the App's bot: a label added or taken off, a close, the
+// issue's opening. The read then shows what Tiehall knows the issue shows, or
+// what its write under way will leave it showing, and nothing is added to the
+// request. Edits of an issue's title or body, and comments, which Tiehall's
+// App does not even subscribe to, show nothing Tiehall reads back, so they
+// change nothing either. A mirror issue whose repository no connected
+// installation covers now is not read.
+
+const PAYLOAD = z.looseObject({
+  repository: z.looseObject({ id: z.number().int().positive() }),
+  issue: z.looseObject({ number: z.number().int().positive(), pull_request: z.unknown().optional() }),
+});
+
+export const processIssuesEvent: GitHubEventProcessor = async (event, context) => {
+  const payload = PAYLOAD.safeParse(event.payload);
+  if (!payload.success || payload.data.issue.pull_request !== undefined) return;
+  const target = String(payload.data.repository.id);
+  const issue = String(payload.data.issue.number);
+  const mirror = await withOrg(
+    context.database,
+    async ({ tx, orgId }) => {
+      const [row] = await tx
+        .select({ id: mirrors.id })
+        .from(mirrors)
+        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.tracker, "github"), eq(mirrors.target, target), eq(mirrors.issue, issue)));
+      return row;
+    },
+    { readOnly: true },
+  );
+  if (mirror === undefined) return;
+  let now;
+  try {
+    now = await createGitHubIssues({ app: context.app, database: context.database }).readIssue(target, issue);
+  } catch (error) {
+    if (error instanceof MirrorPlaceUnavailableError) return;
+    throw error;
+  }
+  // An issue GitHub no longer has shows nothing to record.
+  if (now === undefined) return;
+  await context.run(recordTrackerChange.id, { mirrorId: mirror.id, issue: now });
+};

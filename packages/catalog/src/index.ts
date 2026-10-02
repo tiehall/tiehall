@@ -57,6 +57,7 @@ export {
   listTrackerMappings,
   mapIntakeRepository,
   MIRROR_COMMANDS,
+  recordTrackerChange,
   removeTrackerMapping,
   setMirrorOnOpen,
   TRACKER_NAMES,
