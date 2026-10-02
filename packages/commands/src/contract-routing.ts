@@ -11,7 +11,6 @@ import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan
 import { requestingUserOf } from "./contract-requesters.ts";
 import { recordWarnDigestEntries } from "./contract-warn-digests.ts";
 import { lifecycleOf, lockRequestById, saveLifecycle, stampOf, transition } from "./request-changes.ts";
-import type { RequestRow } from "./request-views.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -413,7 +412,6 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   // A new report updates every request of the change set: a revision where it has not ended, a notice where it has;
   // a team's withdrawn request that a new one replaces gets nothing more.
   const toUpdate = report === undefined ? [] : existing.filter(({ teamId }) => !toOpen.some(({ id }) => id === teamId)).sort(byId(({ requestId }) => requestId));
-  const toRevise = toUpdate.filter(({ state }) => !isTerminalState(state));
   // The requester of the requests it opens: the pull request's author while a member of the install, or the provider team alone.
   const requestingUserId = toOpen.length === 0 ? null : await requestingUserOf(context, current.authorGitHubId);
   if (toUpdate.length === 0 && toOpen.length === 0) {
@@ -422,13 +420,20 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   }
   return context.write(async (writer) => {
     // Every lock before the update's first event: the requests' rows, the pending proposals of those it revises, then the teams' next numbers.
-    const rows = new Map<string, RequestRow>();
-    for (const { requestId } of toUpdate) rows.set(requestId, await lockRequestById(writer, requestId));
-    for (const { requestId } of toRevise) await lockPendingProposals(writer, requestId);
+    // Which it revises the locked rows say, not the read before the locks: a request that ended meanwhile gets only a notice.
+    const lifecycles = new Map<string, RequestLifecycle>();
+    for (const { requestId } of toUpdate) lifecycles.set(requestId, await lifecycleOf(writer, await lockRequestById(writer, requestId)));
+    for (const { requestId } of toUpdate) {
+      const lifecycle = lifecycles.get(requestId);
+      if (lifecycle !== undefined && !isTerminalState(lifecycle.state)) await lockPendingProposals(writer, requestId);
+    }
     const numbers = new Map<string, number>();
     for (const team of [...toOpen].sort(byId(({ id }) => id))) numbers.set(team.id, await takeRequestNumber(writer, team.id));
 
-    for (const request of toUpdate) {
+    for (const listed of toUpdate) {
+      const lifecycle = lifecycles.get(listed.requestId);
+      if (lifecycle === undefined) throw new Error("The update locks every request it changes before its first event.");
+      const request = { ...listed, state: lifecycle.state };
       const { packet: currentPacket, revision } = await packetRevisionOf(writer, request.requestId);
       const before = breakingIn(currentPacket as Packet);
       if (isTerminalState(request.state)) {
@@ -436,9 +441,6 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
         await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before }, { kind: "notice", revision }));
         continue;
       }
-      const row = rows.get(request.requestId);
-      if (row === undefined) throw new Error("The update locks every request it changes before its first event.");
-      const lifecycle = await lifecycleOf(writer, row);
       const revised = await storePacketRevision(
         writer,
         request.requestId,

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
+import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CiCaller, WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
@@ -239,4 +241,43 @@ describe("a request in a terminal state", () => {
     // The other request of the change set, still open, gets its revision.
     expect((await revisionsOf((await requestTo("MOBILE")).id)).map(({ number }) => number)).toEqual([1, 2]);
   });
+
+  it("gets only a notice when it ends while the update waits for its row", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+    await install.execute("contract.report", ciRun(), reportOf("payments-api", threeBreaking(), { pullRequest, head: "c".repeat(40) }));
+    clock = new Date(clock.getTime() + 3 * 60 * 1000);
+
+    // Another write holds the request's row while the update starts, and ends the request before it lets go.
+    const holder = new pg.Client({ connectionString: install.databaseUrl });
+    await holder.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM requests WHERE id = $1 FOR UPDATE", [fe.id]);
+      const applying = runDueUpdates(install, clock);
+      await waitForAWaitingLock(holder);
+      await holder.query("UPDATE requests SET state = 'withdrawn' WHERE id = $1", [fe.id]);
+      await holder.query("COMMIT");
+      await applying;
+    } finally {
+      await holder.end();
+    }
+
+    expect((await revisionsOf(fe.id)).map(({ number }) => number)).toEqual([1]);
+    const thread = await threadOf(fe.id);
+    expect(thread.map(({ body }) => body)).toEqual([expect.stringContaining(`${fe.key} is withdrawn, so its packet stays at revision 1.`)]);
+    expect((await revisionsOf((await requestTo("MOBILE")).id)).map(({ number }) => number)).toEqual([1, 2]);
+  });
 });
+
+/** Waits until a session of the database waits for a lock, such as the update for a row another write holds. */
+async function waitForAWaitingLock(client: pg.Client): Promise<void> {
+  for (let tries = 0; tries < 300; tries += 1) {
+    const { rows } = await client.query<{ waiting: number }>(
+      "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+    );
+    if ((rows[0]?.waiting ?? 0) > 0) return;
+    await sleep(50);
+  }
+  throw new Error("No session waited for a lock within 15 seconds.");
+}
