@@ -224,6 +224,10 @@ export interface TeamApisView {
   apis: {
     id: string;
     provider: { id: string; key: string };
+    /** Whether the team is the API's provider team, whose members flip its WARN switch. */
+    provides: boolean;
+    /** The API's WARN switch: whether its WARN-level changes open requests rather than going to the daily WARN digests. */
+    warnOpensRequests: boolean;
     declaration: { declaredBy: { login: string; bot: boolean }; declaredAt: string; lastConfirmedAt: string; stale: boolean } | null;
     untrusted: { name: string };
   }[];

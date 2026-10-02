@@ -3,8 +3,10 @@ import { startSmtpSink, type ReceivedMessage, type SmtpSink } from "@tiehall/tes
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as email from "../src/email.ts";
 import {
+  applyChangeSets,
   emailAdminAlerts,
   emailDigests,
+  emailWarnDigests,
   emailQuestion,
   emailReceipts,
   notifyWaitingProposals,
@@ -34,7 +36,8 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // expires soon, the request to re-confirm a team's declaration that it consumes
 // an API, whose team and API are named with the canary where their names
 // allow it, the admins' alerts about GitHub's webhook and a waiting
-// contract-change fan-out, and the admin's test message. The canary appears in no email
+// contract-change fan-out, a team's daily WARN digest of a change whose id
+// and operation hold the canary, and the admin's test message. The canary appears in no email
 // subject, nor in any email's text, and every template the email module
 // defines was sent at least once, so a template added later joins this test.
 
@@ -139,6 +142,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.DIGEST.id;
   if (/^Tiehall: your personal access token expires on \d{4}-\d{2}-\d{2}$/.test(subject)) return email.PERSONAL_ACCESS_TOKEN_REMINDER.id;
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9} is asked to re-confirm an API it consumes$/.test(subject)) return email.RECONFIRMATION_REQUEST.id;
+  if (/^Tiehall: [A-Z][A-Z0-9]{1,9}'s WARN digest of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.WARN_DIGEST.id;
   if (subject === "Tiehall: test message") return email.TEST_MESSAGE.id;
   if (subject === "Tiehall: GitHub's webhook deliveries to the install fail") return email.GITHUB_WEBHOOK_ALERT.id;
   if (subject === "Tiehall: consumer teams wait for an admin to confirm a contract-change fan-out") return email.CONTRACT_FAN_OUT_ALERT.id;
@@ -200,7 +204,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     for (const { data } of alerts.filter(({ queue }) => queue === emailAdminAlerts.type.queue)) await runJob(emailAdminAlerts, new Date(), data);
     // A team named with the canary declares that it consumes an API, and is asked to re-confirm it 90 days later.
     await install.owner.query("UPDATE teams SET name = $1 WHERE key = 'FE'", [CANARY.slice(0, 100)]);
-    await addInstallation(install.owner, { account: "acme", repositories: [{ fullName: "acme/payments", id: 7001 }] });
+    const { accountId: acmeId } = await addInstallation(install.owner, { account: "acme", repositories: [{ fullName: "acme/payments", id: 7001 }] });
     const { rows: teamRows } = await install.owner.query<{ id: string; key: string }>("SELECT id, key FROM teams");
     const teamId = (key: string) => teamRows.find((team) => team.key === key)?.id ?? "";
     expect((await install.confirm(sessionOf(id("pia")), "apis.register", { name: "payments-api", team: teamId("BE"), repository: "acme/payments" })).status).toBe(200);
@@ -215,6 +219,30 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     const changeSet = changeSets[0];
     await install.owner.query("INSERT INTO contract_fan_out_waits (org_id, change_set_id, team_id, waiting_since) SELECT id, $1, $2, now() FROM orgs", [changeSet?.id, teamId("FE")]);
     await runJob(emailAdminAlerts, new Date(), { alert: "contract_fan_out", raisedAt: changeSet?.since.toISOString(), changeSetId: changeSet?.id });
+    // A potentially breaking change, whose id and operation hold the canary, goes to FE's daily WARN digest, emailed once the day ends.
+    await install.execute(
+      "contract.report",
+      { kind: "ci", repositoryId: "7001", repositoryOwnerId: String(acmeId), jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main" },
+      {
+        api: "payments-api",
+        pullRequest: { number: 311 },
+        base: { ref: "main", sha: "a".repeat(40) },
+        head: { ref: "canary", sha: "b".repeat(40) },
+        engine: { name: "oasdiff", version: "1.32.1" },
+        changes: [{ id: CANARY, level: "WARN", operation: CANARY }],
+      },
+    );
+    // Its burst ended 3 minutes ago, so the worker applies it now.
+    const { rows: reported } = await install.owner.query<{ id: string }>(
+      "UPDATE contract_change_sets SET burst_started_at = now() - interval '3 minutes' WHERE pull_request_number = 311 RETURNING id",
+    );
+    await install.owner.query("UPDATE contract_reports SET received_at = now() - interval '3 minutes' WHERE pull_request_number = 311");
+    await applyChangeSets.handle(
+      { id: randomUUID(), queue: applyChangeSets.type.queue, data: { changeSetId: reported[0]?.id ?? "" }, signal: new AbortController().signal },
+      { database: install.db, now: () => new Date(), execute: install.execute },
+    );
+    const today = new Date();
+    await runJob(emailWarnDigests, new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1, 0, 7)));
     // And the admin's test message.
     await sendTestMessage(mailer, { to: "pia@example.com", installUrl: URL_OF_INSTALL });
   }, 60_000);
@@ -250,6 +278,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
         "email.receipt_with_undo",
         "email.reconfirmation_request",
         "email.test_message",
+        "email.warn_digest",
       ].sort(),
     );
   });

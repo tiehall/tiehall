@@ -68,6 +68,8 @@ export const registeredApi = z.object({
   jobWorkflowRef: z.string().nullable(),
   registeredAt: z.iso.datetime(),
   registeredBy: user,
+  /** The API's WARN switch: whether its WARN-level changes open requests, rather than going to the consuming teams' daily WARN digests. */
+  warnOpensRequests: z.boolean(),
 });
 
 export const registerApi = defineCommand({
@@ -183,11 +185,40 @@ export const listTeamApis = defineCommand({
       z.object({
         id: z.uuid(),
         provider: teamRef,
+        /** Whether the team is the API's provider team, whose members flip its WARN switch. */
+        provides: z.boolean(),
+        /** The API's WARN switch: whether its WARN-level changes open requests, rather than going to the daily WARN digests. */
+        warnOpensRequests: z.boolean(),
         declaration: consumerDeclaration.nullable(),
         untrusted: z.object({ name: z.string() }),
       }),
     ),
   }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+// The WARN switch of an API (contract-changes: Potentially breaking changes
+// go to a daily digest; design.md, Decisions this change rests on: D28 #72).
+// Each registered API has one, off until someone turns it on: on, the API's
+// WARN-level changes open and update requests as ERR-level ones do; off, they
+// go to the consuming teams' daily WARN digests. An admin, or a member of the
+// API's provider team, turns it on or off in the web UI, on the APIs page or
+// the provider team's page; anyone else gets 403, and an API that is
+// unregistered gets 409. No agent surface offers it.
+
+export const setWarnSwitch = defineCommand({
+  id: "apis.set_warn_switch",
+  summary:
+    "Turn an API's WARN switch on, so that its WARN-level changes open requests to the teams that consume it as ERR-level changes do, or off, so that they go to the teams' daily WARN digests; as an admin or a member of the API's provider team.",
+  input: z.object({
+    api: z.uuid().meta({ description: "The registered API." }),
+    on: z.boolean().meta({ description: "true turns the switch on, false off." }),
+  }),
+  output: z.object({ api: z.uuid(), warnOpensRequests: z.boolean() }),
   scopes: [],
   commitment: false,
   confirm: false,
@@ -214,4 +245,4 @@ export const reconfirmConsumer = defineCommand({
   stability: "beta",
 });
 
-export const API_COMMANDS = [registerApi, listApis, unregisterApi, declareConsumer, removeConsumer, listTeamApis, reconfirmConsumer];
+export const API_COMMANDS = [registerApi, listApis, unregisterApi, declareConsumer, removeConsumer, listTeamApis, reconfirmConsumer, setWarnSwitch];

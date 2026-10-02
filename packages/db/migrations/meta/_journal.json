@@ -526,6 +526,13 @@
       "when": 1790951444591,
       "tag": "0074_add_request_claim_times",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790952490373,
+      "tag": "0075_add_contract_warn_digests",
+      "breakpoints": true
     }
   ]
 }

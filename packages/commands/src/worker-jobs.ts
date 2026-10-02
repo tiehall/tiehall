@@ -3,6 +3,7 @@ import { removeUnusedAgentClients } from "./agent-clients.ts";
 import { requestConsumerReconfirmations } from "./api-consumers.ts";
 import { pruneUsedCiTokens } from "./ci-tokens.ts";
 import { applyChangeSets } from "./contract-routing.ts";
+import { emailWarnDigests } from "./contract-warn-digests.ts";
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
 import { removeExpiredDeviceCodes } from "./device-flow.ts";
 import { remindPersonalAccessTokenOwners } from "./personal-access-token-reminders.ts";
@@ -50,4 +51,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   emailAdminAlerts,
   requestConsumerReconfirmations,
   applyChangeSets,
+  emailWarnDigests,
 ];

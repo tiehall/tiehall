@@ -1,4 +1,5 @@
 import { reconfirmationViews } from "./api-consumers.ts";
+import { warnDigestViews } from "./contract-warn-digests.ts";
 import { standingList } from "@tiehall/catalog";
 import { formatRequestKey, mayGiveSecondConfirmation, type SecondConfirmer } from "@tiehall/core";
 import { members, proposalConfirmations, proposalNotices, proposals, requests, teamMembers, teams, users } from "@tiehall/db";
@@ -114,6 +115,7 @@ export const PROPOSAL_WAITING_HANDLERS: Handlers = {
       waiting: views,
       receipts: await receiptViews(context, userId),
       reminders: await personalAccessTokenReminderViews(context, userId, context.now()),
+      warnDigests: await warnDigestViews(context, userId, context.now()),
       reconfirmations: await reconfirmationViews(context, userId),
     };
   }),

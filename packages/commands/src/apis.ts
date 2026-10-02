@@ -1,11 +1,13 @@
-import { listApis, registerApi, unregisterApi, type registeredApi } from "@tiehall/catalog";
+import { listApis, registerApi, setWarnSwitch, unregisterApi, type registeredApi } from "@tiehall/catalog";
 import { apiRegistered, apiUnregistered, Refusal } from "@tiehall/core";
 import { apis, githubCoveredRepositories, githubInstallations, teams, users } from "@tiehall/db";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { CiCaller } from "./caller.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
+import { inTeam } from "./api-consumers.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { actingUserOf } from "./request-changes.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // Registering APIs for contract reports (contract-changes: Admins register
@@ -29,6 +31,13 @@ import type { OrgContext } from "./with-org.ts";
 // deleted covers gets 409, as the error model gives a state conflict, and so
 // does a name another registered API has; a team that does not exist gets
 // 404. The registration and its security event commit together.
+//
+// The WARN switch (contract-changes: Potentially breaking changes go to a
+// daily digest; design.md, Decisions this change rests on: D28 #72): an
+// admin, or a member of the API's provider team, turns it on or off; anyone
+// else gets 403, and an unregistered API, which has no switch until it is
+// registered again, 409. It changes no request, so it records no event, and is
+// no security event. Registering an API again keeps its switch as it was.
 //
 // Unregistering (contract-changes: Admins unregister APIs; design.md,
 // Readings to confirm with the founder: R19): an admin unregisters an API
@@ -119,6 +128,7 @@ async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, i
       repository: apis.repositoryFullName,
       jobWorkflowRef: apis.jobWorkflowRef,
       registeredAt: apis.registeredAt,
+      warnOpensRequests: apis.warnOpensRequests,
       userId: users.id,
       login: users.githubLogin,
       bot: users.bot,
@@ -136,6 +146,7 @@ async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, i
     jobWorkflowRef: row.jobWorkflowRef,
     registeredAt: row.registeredAt.toISOString(),
     registeredBy: { id: row.userId, login: row.login, kind: "human" as const, bot: row.bot },
+    warnOpensRequests: row.warnOpensRequests,
   }));
 }
 
@@ -148,6 +159,26 @@ function notCovered(repository: string): Refusal {
 }
 
 export const API_HANDLERS: Handlers = {
+  // The WARN switch: an admin's, or a provider team member's; 403 for anyone else, 409 for an unregistered API.
+  [setWarnSwitch.id]: defineHandler(setWarnSwitch, async ({ api, on }, context) => {
+    const userId = actingUserOf(context);
+    const [row] = await context.tx
+      .select({ providerTeamId: apis.providerTeamId, unregisteredAt: apis.unregisteredAt })
+      .from(apis)
+      .where(and(eq(apis.orgId, context.orgId), eq(apis.id, api)))
+      .for("update");
+    if (row === undefined) throw new Refusal("record-not-found", "There is no such API.");
+    if (context.member?.role !== "admin" && !(await inTeam(context, userId, row.providerTeamId))) {
+      throw new Refusal("forbidden", "Only an admin or a member of the API's provider team may turn its WARN switch on or off.");
+    }
+    if (row.unregisteredAt !== null) throw new Refusal("conflict", "The API is unregistered, so it has no WARN switch until an admin registers it again.");
+    await context.tx
+      .update(apis)
+      .set({ warnOpensRequests: on })
+      .where(and(eq(apis.orgId, context.orgId), eq(apis.id, api)));
+    return { api, warnOpensRequests: on };
+  }),
+
   [registerApi.id]: defineHandler(registerApi, async ({ name, team, repository, jobWorkflowRef }, context) => {
     if ((await teamKeyOf(context, team)) === undefined) throw new Refusal("record-not-found", "There is no such team.");
     const covered = await coveredRepositoryNamed(context, repository);

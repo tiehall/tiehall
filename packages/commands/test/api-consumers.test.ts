@@ -180,10 +180,12 @@ describe("the team's page", () => {
     expect(forMember.member).toBe(true);
     expect(forOther.member).toBe(false);
     expect(forMember.apis).toEqual([
-      { id: billingApi, provider: { id: pay, key: "PAY" }, declaration: null, untrusted: { name: "billing-api" } },
+      { id: billingApi, provider: { id: pay, key: "PAY" }, provides: false, warnOpensRequests: false, declaration: null, untrusted: { name: "billing-api" } },
       {
         id: paymentsApi,
         provider: { id: pay, key: "PAY" },
+        provides: false,
+        warnOpensRequests: false,
         declaration: { declaredBy: expect.objectContaining({ login: "ayse" }), declaredAt: expect.any(String), lastConfirmedAt: expect.any(String), stale: false },
         untrusted: { name: "payments-api" },
       },

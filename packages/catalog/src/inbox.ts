@@ -13,13 +13,15 @@ import { teamRef } from "./requests.ts";
 // tokens expire soon, while each token may still be used (agent-access: PAT
 // owners are reminded before expiry), and the requests to re-confirm the
 // declarations of their teams that they consume an API, while each waits
-// (contract-changes: Declarations are re-confirmed every 90 days). Only the
-// web UI reads it.
+// (contract-changes: Declarations are re-confirmed every 90 days), and their
+// teams' daily WARN digests, newest first, each listed once its UTC day has
+// ended (contract-changes: Potentially breaking changes go to a daily
+// digest). Only the web UI reads it.
 
 export const standingList = defineCommand({
   id: "inbox.standing_list",
   summary:
-    "The standing list of your web inbox: the proposals that wait for a confirmation you may give now, the receipts of your confirmations, the reminders that your personal access tokens expire soon, and the requests to re-confirm the APIs your teams declared they consume, oldest first.",
+    "The standing list of your web inbox: the proposals that wait for a confirmation you may give now, the receipts of your confirmations, the reminders that your personal access tokens expire soon, your teams' daily WARN digests, and the requests to re-confirm the APIs your teams declared they consume.",
   input: z.object({}),
   output: z.object({
     waiting: z.array(proposal),
@@ -46,6 +48,26 @@ export const standingList = defineCommand({
         text: z.string(),
         expiresAt: z.iso.datetime(),
         createdAt: z.iso.datetime(),
+      }),
+    ),
+    warnDigests: z.array(
+      z.object({
+        /** The reader's team the digest is for, and the UTC day it covers, which has ended. */
+        team: teamRef,
+        day: z.iso.date(),
+        /** What the digest says, in Tiehall's words. */
+        text: z.string(),
+        /** Each change set whose WARN-level changes opened no request that day: the API, the provider pull request and the changes. */
+        changeSets: z.array(
+          z.object({
+            api: z.string(),
+            pullRequest: z.object({ repository: z.string(), number: z.int(), url: z.string() }),
+            untrusted: z.object({
+              /** The WARN-level changes of the day's latest report, as the diff engine classified them: its id for each and the operation it touches. */
+              changes: z.array(z.object({ id: z.string(), operation: z.string() })),
+            }),
+          }),
+        ),
       }),
     ),
     reconfirmations: z.array(

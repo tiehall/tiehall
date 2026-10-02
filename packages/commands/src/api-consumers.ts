@@ -78,7 +78,7 @@ export async function consumersOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId"
 }
 
 /** Whether the user is a member of the team. */
-async function inTeam({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string, teamId: string): Promise<boolean> {
+export async function inTeam({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string, teamId: string): Promise<boolean> {
   const [row] = await tx
     .select({ userId: teamMembers.userId })
     .from(teamMembers)
@@ -178,7 +178,7 @@ export const API_CONSUMER_HANDLERS: Handlers = {
     if (found === undefined) throw new Refusal("record-not-found", "There is no such team.");
     const provider = teams;
     const rows = await context.tx
-      .select({ id: apis.id, name: apis.name, providerId: provider.id, providerKey: provider.key })
+      .select({ id: apis.id, name: apis.name, providerId: provider.id, providerKey: provider.key, warnOpensRequests: apis.warnOpensRequests })
       .from(apis)
       .innerJoin(provider, and(eq(provider.orgId, apis.orgId), eq(provider.id, apis.providerTeamId)))
       .where(and(eq(apis.orgId, context.orgId), isNull(apis.unregisteredAt)))
@@ -188,6 +188,8 @@ export const API_CONSUMER_HANDLERS: Handlers = {
       listed.push({
         id: row.id,
         provider: { id: row.providerId, key: row.providerKey },
+        provides: row.providerId === found.id,
+        warnOpensRequests: row.warnOpensRequests,
         declaration: (await declarationOf(context, row.id, found.id)) ?? null,
         untrusted: { name: row.name },
       });

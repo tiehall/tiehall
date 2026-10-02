@@ -46,6 +46,7 @@ export {
   registeredApi,
   registerApi,
   removeConsumer,
+  setWarnSwitch,
   unregisterApi,
 } from "./apis.ts";
 export { BACKUP_WARNING_DAYS, banner, getBanners, getInstallStatus, INSTALL_COMMANDS } from "./install.ts";

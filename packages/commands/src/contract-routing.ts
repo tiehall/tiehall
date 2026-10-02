@@ -9,6 +9,7 @@ import { insertPacketRevision, packetRevisionOf, storePacketRevision } from "./p
 import { cancelProposals, lockPendingProposals } from "./proposals.ts";
 import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan-out.ts";
 import { requestingUserOf } from "./contract-requesters.ts";
+import { recordWarnDigestEntries } from "./contract-warn-digests.ts";
 import { lifecycleOf, lockRequestById, saveLifecycle, stampOf, transition } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
@@ -69,9 +70,14 @@ import type { Writer } from "./write.ts";
 //   disappear; requests: System withdrawals never touch a claimed request).
 //   A later report of the change set that brings breaking changes back opens
 //   no second request for a team, whose withdrawn request gets a notice;
-// - the changes that open requests are the report's ERR-level ones; when there
-//   are some, each team that declared it consumes the API, while the API is
-//   registered, and has no request for the change set gets one, within the
+// - the changes that open requests are the report's ERR-level ones, and its
+//   WARN-level ones while the API's WARN switch is on; a report whose
+//   WARN-level changes open nothing lists them in the daily WARN digest of each
+//   team that declared it consumes the API (contract-warn-digests.ts;
+//   contract-changes: Potentially breaking changes go to a daily digest);
+//   when there are changes that open requests, each team that declared it
+//   consumes the API, while the API is registered, and has no request for the
+//   change set gets one, within the
 //   limit of 10 consumer teams a pull request reaches without an admin
 //   (contract-fan-out.ts): addressed to the team, from the pull request's
 //   author while a member of the install, with the API's provider team as the
@@ -81,8 +87,8 @@ import type { Writer } from "./write.ts";
 //   section carries the report's API, refs and SHAs, engine, provider pull
 //   request, and every classified change with its level, ERR, WARN and INFO
 //   alike, so INFO-level changes appear only in the change lists of the
-//   requests other changes opened; a report with no ERR-level change opens
-//   nothing, whatever it holds.
+//   requests other changes opened; a report with no change that opens
+//   requests opens nothing, whatever it holds.
 // A team has one request for the change set, its latest, which the updates
 // revise or notify: while the provider pull request is closed without
 // merging, an update opens nothing, and once it is reopened, a team whose
@@ -377,7 +383,7 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   const current = report ?? (changeSet.appliedReportId === null ? undefined : await reportById(context, changeSet.appliedReportId));
   if (current === undefined) return { opened: [] };
   const [api] = await tx
-    .select({ name: apis.name, providerTeamId: apis.providerTeamId, repositoryFullName: apis.repositoryFullName })
+    .select({ name: apis.name, providerTeamId: apis.providerTeamId, repositoryFullName: apis.repositoryFullName, warnOpensRequests: apis.warnOpensRequests })
     .from(apis)
     .where(and(eq(apis.orgId, orgId), eq(apis.id, changeSet.apiId)));
   if (api === undefined) throw new Error("A change set names an API the install does not have.");
@@ -388,7 +394,13 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
 
   const section = contractSectionOf(current, api);
   const existing = await requestsOfChangeSet(context, changeSet.id);
-  const opening = current.changes.some(({ level }) => level === "ERR");
+  // The changes that open requests are the ERR-level ones, and the WARN-level ones while the API's WARN switch is on.
+  const opening = current.changes.some(({ level }) => level === "ERR" || (level === "WARN" && api.warnOpensRequests));
+  // A new report whose WARN-level changes open nothing goes to the consuming teams' daily WARN digests.
+  if (report !== undefined && !opening && report.changes.some(({ level }) => level === "WARN")) {
+    const consumers = await consumingTeams(context, changeSet.apiId);
+    await recordWarnDigestEntries(context, { changeSetId: changeSet.id, reportId: report.id, teamIds: consumers.map(({ id }) => id), now: context.now() });
+  }
   // Who may get a request: a consuming team that has none for the change set, or whose request the provider pull
   // request's close withdrew before this report came, once the pull request is open again; nobody while it is closed.
   const opensFor = (teamId: string) => {

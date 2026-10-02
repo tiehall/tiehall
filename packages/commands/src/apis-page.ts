@@ -1,4 +1,4 @@
-import { listApis, listGitHubInstallations, listTeams, registerApi, unregisterApi, type githubInstallation, type listedTeam, type registeredApi } from "@tiehall/catalog";
+import { listApis, listGitHubInstallations, listTeams, registerApi, setWarnSwitch, unregisterApi, type githubInstallation, type listedTeam, type registeredApi } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { adminNav, APIS_PATH, reviewPath } from "./admin-pages.ts";
@@ -20,7 +20,9 @@ import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type P
 // signed-in session, so a member who opens the page, or posts its forms, gets
 // 403 and changes nothing. Each registered API also has a form that
 // unregisters it, with no confirmation step (contract-changes: Admins
-// unregister APIs).
+// unregister APIs), and one that turns its WARN switch on or off, which says
+// where its WARN-level changes go (contract-changes: Potentially breaking
+// changes go to a daily digest).
 
 type RegisteredApi = z.output<typeof registeredApi>;
 type ListedTeam = z.output<typeof listedTeam>;
@@ -49,6 +51,10 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
         await write(unregisterApi.id, { api: field(form, "api") });
         return seeOther(APIS_PATH);
       }
+      if (form.get("action") === "warn_on" || form.get("action") === "warn_off") {
+        await write(setWarnSwitch.id, { api: field(form, "api"), on: form.get("action") === "warn_on" });
+        return seeOther(APIS_PATH);
+      }
       if (form.get("action") !== "register") throw new Refusal("route-not-found", "The APIs page offers no such action.");
       // Only an admin's form leads on: a member gets 403, as for the page.
       await read(listApis.id, {});
@@ -74,7 +80,9 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       `          <td>${escapeHtml(api.repository)}</td>`,
       `          <td>${escapeHtml(api.jobWorkflowRef ?? "Any workflow of its repository")}</td>`,
       `          <td>${escapeHtml(`${userName(api.registeredBy)}, ${api.registeredAt}`)}</td>`,
+      `          <td>${escapeHtml(api.warnOpensRequests ? "On: they open requests" : "Off: they go to the daily WARN digests")}</td>`,
       "          <td>",
+      postForm(APIS_PATH, { action: api.warnOpensRequests ? "warn_off" : "warn_on", api: api.id }, csrf, `Turn the WARN switch of ${api.name} ${api.warnOpensRequests ? "off" : "on"}`, "            "),
       postForm(APIS_PATH, { action: "unregister", api: api.id }, csrf, `Unregister ${api.name}`, "            "),
       "          </td>",
       "        </tr>",
@@ -91,8 +99,9 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
         ? "      <p>No API is registered.</p>"
         : [
             "      <p>Unregistering an API needs no confirmation: it then takes no more reports, the teams' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew.</p>",
+            "      <p>Each API's WARN switch says where its potentially breaking (WARN-level) changes go: off, the default, to the daily WARN digests of the teams that consume it; on, they open requests as breaking changes do. An admin or a member of the provider team flips it.</p>",
             "      <table>",
-            "        <thead><tr><th>API</th><th>Provider team</th><th>Repository</th><th>Workflow</th><th>Registered by</th><th>Actions</th></tr></thead>",
+            "        <thead><tr><th>API</th><th>Provider team</th><th>Repository</th><th>Workflow</th><th>Registered by</th><th>WARN-level changes</th><th>Actions</th></tr></thead>",
             "        <tbody>",
             ...registered,
             "        </tbody>",

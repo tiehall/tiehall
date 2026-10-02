@@ -31,7 +31,10 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 // UI's write checks; the receipts of their confirmations and undos, whose
 // words show how a proposal that waited for the other side ended, each with
 // its undo page while the commitment can still be undone; and the reminders
-// that their personal access tokens expire soon; and the requests to re-confirm
+// that their personal access tokens expire soon; their teams' daily WARN
+// digests, each with the potentially breaking changes it lists as text and a
+// link to its provider pull request (contract-changes: Potentially breaking
+// changes go to a daily digest); and the requests to re-confirm
 // the declarations of their teams that they consume an API, each in Tiehall's
 // words, with a link to the team's page and a form that re-confirms it, which
 // needs no confirmation step but passes the web UI's write checks
@@ -85,6 +88,12 @@ interface StandingList {
   waiting: ProposalView[];
   receipts: { id: string; text: string; undoUntil: string | null; proposal: ProposalView }[];
   reminders: { id: string; text: string }[];
+  warnDigests: {
+    team: { id: string; key: string };
+    day: string;
+    text: string;
+    changeSets: { api: string; pullRequest: { repository: string; number: number; url: string }; untrusted: { changes: { id: string; operation: string }[] } }[];
+  }[];
   reconfirmations: { api: { id: string; name: string }; team: { id: string; key: string }; text: string }[];
 }
 
@@ -173,7 +182,32 @@ function standingSection(list: StandingList, csrf: string): string {
           ),
           "      </ul>",
         ];
-  return ["      <h2>Waiting for your confirmation</h2>", ...waiting, "      <h2>Receipts</h2>", ...receipts, ...reminders, ...reconfirmations].join("\n");
+  // The changes come from the diff engine in the provider's CI: text, escaped, as everything people and other systems wrote.
+  const warnDigests =
+    list.warnDigests.length === 0
+      ? []
+      : [
+          "      <h2>WARN digests</h2>",
+          '      <ul id="warn-digests">',
+          ...list.warnDigests.map(({ text, changeSets }) =>
+            [
+              "        <li>",
+              `          <p>${escapeHtml(text)}</p>`,
+              "          <ul>",
+              ...changeSets.map(({ api, pullRequest, untrusted }) =>
+                [
+                  `            <li>${escapeHtml(`${api} in ${pullRequest.repository}#${pullRequest.number}`)} (<a href="${escapeHtml(pullRequest.url)}" rel="noreferrer">the provider pull request</a>):`,
+                  `              <ul>${untrusted.changes.map(({ id, operation }) => `<li>${escapeHtml(`${id}: ${operation}`)}</li>`).join("")}</ul>`,
+                  "            </li>",
+                ].join("\n"),
+              ),
+              "          </ul>",
+              "        </li>",
+            ].join("\n"),
+          ),
+          "      </ul>",
+        ];
+  return ["      <h2>Waiting for your confirmation</h2>", ...waiting, "      <h2>Receipts</h2>", ...receipts, ...reminders, ...warnDigests, ...reconfirmations].join("\n");
 }
 
 export function createInboxRoute(options: PageRouteOptions): PageRoute {

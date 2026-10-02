@@ -18,7 +18,10 @@ import { TEAM_APIS_PATH, type TeamApisView, type TeamIntakeView, type TeamPageAc
 // that declares that the team consumes the API, or re-confirms the team's
 // declaration and one that removes it; each posts
 // to the forms' own target, /teams/apis, with the session's CSRF token, which
-// leads back here (team-page-actions.ts).
+// leads back here (team-page-actions.ts). Beside each API the team provides,
+// the page says where its WARN-level changes go, and a member of the team
+// finds a form that turns its WARN switch on or off (contract-changes:
+// Potentially breaking changes go to a daily digest).
 
 /** How Tiehall names each field a team may require. */
 const FIELD_WORDS: Readonly<Record<string, string>> = {
@@ -83,6 +86,23 @@ function ConsumedApis({ teamKey, apis, csrf }: { teamKey: string; apis: TeamApis
                     action="reconfirm_api"
                     csrf={csrf}
                     button={`Re-confirm that ${teamKey} consumes ${api.untrusted.name}`}
+                  />
+                ) : null}
+                {api.provides ? (
+                  <p>
+                    {api.warnOpensRequests
+                      ? `Its WARN switch is on: its potentially breaking (WARN-level) changes open requests to the teams that consume it, as its breaking changes do.`
+                      : `Its WARN switch is off: its potentially breaking (WARN-level) changes go to the daily WARN digests of the teams that consume it.`}
+                  </p>
+                ) : null}
+                {forms && api.provides ? (
+                  <TeamForm
+                    teamKey={teamKey}
+                    team={apis.team.id}
+                    api={api.id}
+                    action={api.warnOpensRequests ? "warn_off" : "warn_on"}
+                    csrf={csrf}
+                    button={api.warnOpensRequests ? `Turn the WARN switch of ${api.untrusted.name} off` : `Turn the WARN switch of ${api.untrusted.name} on`}
                   />
                 ) : null}
                 {forms ? (

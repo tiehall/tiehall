@@ -2344,6 +2344,13 @@ export const apis = pgTable(
      */
     unregisteredAt: timestamp("unregistered_at", { withTimezone: true }),
     unregisteredByUserId: uuid("unregistered_by"),
+    /**
+     * The API's WARN switch (contract-changes: Potentially breaking changes go
+     * to a daily digest): on, its WARN-level changes open and update requests
+     * as ERR-level ones do; off, the default, they go to the consuming teams'
+     * daily WARN digests. An admin or a member of the provider team flips it.
+     */
+    warnOpensRequests: boolean("warn_opens_requests").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -2744,6 +2751,80 @@ export const teamRequesterEmails = pgTable(
       name: "team_requester_emails_team_fk",
       columns: [table.orgId, table.teamId],
       foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);
+
+// The daily WARN digests of the consuming teams (contract-changes: Potentially
+// breaking changes go to a daily digest; requester-loop: The web inbox;
+// design.md, Decisions this change rests on: D28 #61, #73; D29 (6)). When a
+// change set's update applies a report whose WARN-level changes open no
+// request, because the API's WARN switch is off and the report holds no
+// ERR-level change, each team that declared it consumes the API gets an entry
+// in its digest of that UTC day: one per change set and day, naming the
+// latest such report of the day, whose WARN-level changes it lists. Once the
+// day ends, the team's digest of it, its entries, is listed in the standing
+// list of each member's web inbox, and, when SMTP is set, emailed once to each
+// member who has not turned the daily digest off, which the second table
+// records.
+export const contractWarnDigestEntries = pgTable(
+  "contract_warn_digest_entries",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    changeSetId: uuid("change_set_id").notNull(),
+    /** The UTC day of the update, whose digest lists the entry. */
+    day: date("day").notNull(),
+    /** The latest report of the day whose WARN-level changes the entry lists. */
+    reportId: uuid("report_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId, table.changeSetId, table.day] }),
+    index("contract_warn_digest_entries_team_day").on(table.orgId, table.teamId, table.day),
+    foreignKey({
+      name: "contract_warn_digest_entries_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "contract_warn_digest_entries_change_set_fk",
+      columns: [table.orgId, table.changeSetId],
+      foreignColumns: [contractChangeSets.orgId, contractChangeSets.id],
+    }),
+    foreignKey({
+      name: "contract_warn_digest_entries_report_fk",
+      columns: [table.orgId, table.reportId],
+      foreignColumns: [contractReports.orgId, contractReports.id],
+    }),
+  ],
+);
+
+export const contractWarnDigestEmails = pgTable(
+  "contract_warn_digest_emails",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    /** The UTC day the digest covers. */
+    day: date("day").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId, table.userId, table.day] }),
+    foreignKey({
+      name: "contract_warn_digest_emails_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "contract_warn_digest_emails_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
     }),
   ],
 );

@@ -1,4 +1,4 @@
-import { declareConsumer, reconfirmConsumer, removeConsumer } from "@tiehall/catalog";
+import { declareConsumer, reconfirmConsumer, removeConsumer, setWarnSwitch } from "@tiehall/catalog";
 import { Refusal, TEAM_KEY } from "@tiehall/core";
 import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
@@ -16,6 +16,9 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 // - reconfirm_api runs apis.reconfirm_consumer for them, which a member uses
 //   when the team is asked to re-confirm its declaration, or at any time
 //   (contract-changes: Declarations are re-confirmed every 90 days);
+// - warn_on and warn_off run apis.set_warn_switch for the form's API, which
+//   the page offers beside each API the team provides (contract-changes:
+//   Potentially breaking changes go to a daily digest);
 // and leads the browser back to the team's page, which then shows the team's
 // declarations as they are. The form passes the checks every web UI write
 // passes (the session's CSRF token, an Origin equal to TIEHALL_URL and
@@ -29,19 +32,27 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 export const TEAM_APIS_PATH = "/teams/apis";
 
 /** The actions the page's forms take, by the name their `action` field gives. */
-export const TEAM_PAGE_ACTIONS = ["declare_api", "remove_api", "reconfirm_api"] as const;
+export const TEAM_PAGE_ACTIONS = ["declare_api", "remove_api", "reconfirm_api", "warn_on", "warn_off"] as const;
 export type TeamPageAction = (typeof TEAM_PAGE_ACTIONS)[number];
 
-const COMMANDS: Readonly<Record<TeamPageAction, string>> = { declare_api: declareConsumer.id, remove_api: removeConsumer.id, reconfirm_api: reconfirmConsumer.id };
+const COMMANDS: Readonly<Record<TeamPageAction, string>> = {
+  declare_api: declareConsumer.id,
+  remove_api: removeConsumer.id,
+  reconfirm_api: reconfirmConsumer.id,
+  warn_on: setWarnSwitch.id,
+  warn_off: setWarnSwitch.id,
+};
 
 /** The operation a form of the page runs, and its input; a form the page does not have is refused with 400. */
-export function teamPageWrite(fields: URLSearchParams): { commandId: string; input: { api: string; team: string } } {
+export function teamPageWrite(fields: URLSearchParams): { commandId: string; input: { api: string; team: string } | { api: string; on: boolean } } {
   const action = fields.get("action") ?? "";
   if (!(TEAM_PAGE_ACTIONS as readonly string[]).includes(action)) {
     const message = "The form names no action this page takes.";
     throw new Refusal("invalid-input", message, { issues: [{ path: ["action"], message }] });
   }
-  return { commandId: COMMANDS[action as TeamPageAction], input: { api: fields.get("api") ?? "", team: fields.get("team") ?? "" } };
+  const api = fields.get("api") ?? "";
+  if (action === "warn_on" || action === "warn_off") return { commandId: COMMANDS[action], input: { api, on: action === "warn_on" } };
+  return { commandId: COMMANDS[action as TeamPageAction], input: { api, team: fields.get("team") ?? "" } };
 }
 
 /** The target of a team's page's forms, for the signed-in member's web session; it leads back to the team's page. */

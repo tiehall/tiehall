@@ -342,6 +342,56 @@ export function apiNameText(name: string): ServerText {
   return name as ServerText;
 }
 
+/** A provider pull request as Tiehall's text names it, such as acme/payments#310, and its URL on GitHub.com; both of GitHub's own form. */
+export function pullRequestText(repository: string, number: number): { name: ServerText; url: ServerText } {
+  const owner = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
+  const name = "(?!\\.\\.?(?:/|$))[A-Za-z0-9\\._-]{1,100}";
+  if (!new RegExp(`^${owner}/${name}$`).test(repository) || !Number.isSafeInteger(number) || number < 1) {
+    throw new TypeError("A pull request is named by its repository, as owner/name, and its number.");
+  }
+  return { name: `${repository}#${number}` as ServerText, url: `https://github.com/${repository}/pull/${number}` as ServerText };
+}
+
+/** One change set of a WARN digest, in Tiehall's words: the API, the provider pull request and how many WARN-level changes it reported. */
+export interface WarnDigestChangeSet {
+  api: ServerText;
+  pullRequest: ServerText;
+  url: ServerText;
+  changes: number;
+}
+
+/**
+ * The text of a team's daily WARN digest (contract-changes: Potentially
+ * breaking changes go to a daily digest): for each change set whose WARN-level
+ * changes opened no request that day, the API, the provider pull request and
+ * how many such changes it has, all in Tiehall's words; the changes
+ * themselves, as the diff engine classified them, are listed in the standing
+ * list of the web inbox, since nothing anyone wrote goes into an email.
+ */
+export function warnDigestText({ team, day, changeSets, inbox, settings }: { team: ServerText; day: ServerText; changeSets: readonly WarnDigestChangeSet[]; inbox: ServerText; settings: ServerText }): ServerText {
+  const lines = [
+    `Potentially breaking changes (WARN level) were reported on ${day} (UTC) to APIs that ${team} declared it consumes. They open no request while each API's WARN switch is off:`,
+    "",
+  ];
+  for (const { api, pullRequest, url, changes } of changeSets) {
+    lines.push(`- ${api} in ${pullRequest}: ${changes === 1 ? "1 potentially breaking change" : `${changes} potentially breaking changes`}: ${url}`);
+  }
+  lines.push(
+    "",
+    `The standing list of your web inbox lists each change, with the operation it touches: ${inbox}`,
+    `This email comes with your daily digest; turn the digest off in your email settings: ${settings}`,
+    "",
+  );
+  return lines.join("\n") as ServerText;
+}
+
+/** A team's daily WARN digest email, whose subject names only the team and the day it covers. */
+export const WARN_DIGEST: EmailTemplate<{ team: ServerText; day: ServerText; text: ServerText }> = {
+  id: "email.warn_digest",
+  subject: ({ team, day }) => `Tiehall: ${team}'s WARN digest of ${day} (UTC)`,
+  text: ({ text }) => text,
+};
+
 /**
  * The request to re-confirm a declaration (contract-changes: Declarations are
  * re-confirmed every 90 days), emailed to each member of the consuming team
