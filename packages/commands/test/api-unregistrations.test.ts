@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApisRoute, reportableApi, withOrg, type CiCaller, type WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
@@ -176,7 +177,8 @@ describe("unregistering an API", () => {
   });
 
   it("gets 404 for an API that does not exist", async () => {
-    await expect(install.execute("apis.unregister", ada, { api: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" })).rejects.toMatchObject({ status: 404 });
+    const noSuchApi = randomUUID();
+    await expect(install.execute("apis.unregister", ada, { api: noSuchApi })).rejects.toMatchObject({ status: 404 });
   });
 
   it("lets an admin register it again, bound anew, which is how its provider team, repository or workflow changes", async () => {

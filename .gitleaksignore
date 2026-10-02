@@ -1,0 +1,3 @@
+# Reviewed false positives of the secret scan (tools/repo-checks/src/scan-secrets.ts), one gitleaks fingerprint per line.
+# A test's example API id, a UUID under the key "api", which gitleaks takes for a generic API key.
+823cf39580acf2078d03d15f9052b9e4ded536e5:packages/commands/test/api-unregistrations.test.ts:generic-api-key:179
