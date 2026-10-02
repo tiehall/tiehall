@@ -519,6 +519,13 @@
       "when": 1790950769626,
       "tag": "0073_add_provider_pull_request_merges",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790951444591,
+      "tag": "0074_add_request_claim_times",
+      "breakpoints": true
     }
   ]
 }

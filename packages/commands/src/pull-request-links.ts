@@ -1,7 +1,7 @@
 import { linkPullRequest, type pullRequestLink } from "@tiehall/catalog";
 import { requestPullRequestLinked } from "@tiehall/core";
 import { pullRequestLinks, users } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { actingUserOf, lockRequest, stampOf, teamActedFor } from "./request-changes.ts";
@@ -28,10 +28,12 @@ import type { OrgContext } from "./with-org.ts";
 // the same pull request linked again, in any case, answers with the link it
 // has, and changes and records nothing.
 //
-// Not built yet: reading the pull request from GitHub, with an installation
-// token of the install's GitHub App, which tells whether it had already
-// merged; a target-team member's link of a merged pull request then creates a
-// done proposal, which the call answers with instead (tasks 23.15, 23.16).
+// Close on merge reads the links (close-on-merge.ts), each with the time it
+// was made by the database's clock, which it compares with GitHub's merge
+// time. Not built yet: reading the pull request from GitHub, with an
+// installation token of the install's GitHub App, which tells whether it had
+// already merged; a target-team member's link of a merged pull request then
+// creates a done proposal, which the call answers with instead (task 23.16).
 
 /** A pull request linked to a request, as the operations return it. */
 export type PullRequestLinkView = z.input<typeof pullRequestLink>;
@@ -93,7 +95,8 @@ export const PULL_REQUEST_LINK_HANDLERS: Handlers = {
           repositoryName: pullRequest.name,
           number: pullRequest.number,
           ...stampOf(writer.provenance, teamId),
-          linkedAt: writer.now(),
+          // By the database's clock, which close on merge compares GitHub's merge times with (close-on-merge.ts).
+          linkedAt: sql`now()`,
         })
         .returning({ id: pullRequestLinks.id });
       if (created === undefined) throw new Error("The new pull request link was not returned.");

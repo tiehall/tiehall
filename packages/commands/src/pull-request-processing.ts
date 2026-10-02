@@ -1,4 +1,5 @@
-import { applyProviderPullRequest } from "@tiehall/catalog";
+import { applyProviderPullRequest, closeOnMerge } from "@tiehall/catalog";
+import { mentionedKeys } from "./close-on-merge.ts";
 import { z } from "zod";
 import { installationCovering } from "./contract-requesters.ts";
 import type { GitHubEventProcessor } from "./github-delivery-processing.ts";
@@ -23,7 +24,10 @@ import { withOrg } from "./with-org.ts";
 //
 // What it does with the pull request: as a provider pull request of contract
 // change sets, it runs contract.apply_provider_pull_request as the system from
-// GitHub (provider-pull-requests.ts).
+// GitHub (provider-pull-requests.ts); then, once it merged, it runs
+// requests.close_on_merge as the integration event, acting for the member who
+// merged it, or for no user (close-on-merge.ts), with the request keys its
+// title, body and branch name mention.
 
 const PAYLOAD = z.looseObject({
   repository: z.looseObject({ id: z.number().int().positive() }),
@@ -40,4 +44,13 @@ export const processPullRequestEvent: GitHubEventProcessor = async (event, conte
   const pullRequest = await readPullRequest(context.app.client, covering.installationId, covering.fullName, number);
   if (pullRequest === undefined) return;
   await context.runAsSystem(applyProviderPullRequest.id, { repositoryId, number, state: pullRequest.state, mergedAt: pullRequest.mergedAt?.toISOString() ?? null });
+  if (pullRequest.mergedAt === null) return;
+  // Close on merge, as the integration event: for the member who merged it, or for no user.
+  await context.run(closeOnMerge.id, {
+    repositoryId,
+    repository: covering.fullName,
+    number,
+    mergedAt: pullRequest.mergedAt.toISOString(),
+    mentions: mentionedKeys(pullRequest.title, pullRequest.body, pullRequest.headRef),
+  });
 };

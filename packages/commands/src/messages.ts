@@ -95,7 +95,7 @@ async function nextMessageNumber({ tx, orgId }: OrgContext, requestId: string): 
  * caller, so no side rule limits them; the caller has locked the request's
  * row.
  */
-export async function addSystemMessage(writer: Writer, requestId: string, body: string, provenance?: { actorKind: "system" }): Promise<string> {
+export async function addSystemMessage(writer: Writer, requestId: string, body: string, provenance?: { actorKind: "system"; surface?: "github" }): Promise<string> {
   const author = provenance ?? writer.provenance;
   if (author.actorKind !== "system") throw new Error("Tiehall's own messages are recorded as the system's.");
   const { tx, orgId } = writer;

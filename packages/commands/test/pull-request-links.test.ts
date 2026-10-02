@@ -14,8 +14,8 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // request once: GitHub names repositories without regard to case, so the
 // same pull request written in another case is the same link. A URL that is
 // not a pull request's on GitHub.com fails the schema and gets 400. The done
-// proposal for a pull request that had already merged comes with close on
-// merge (tasks 23.15 and 23.16).
+// proposal for a pull request that had already merged comes with task 23.16;
+// close on merge, which reads the links, is close-on-merge.test.ts.
 
 let install: TestInstall;
 const team: Record<string, string> = {};

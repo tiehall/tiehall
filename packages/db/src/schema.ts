@@ -1503,6 +1503,13 @@ export const requests = pgTable(
     state: text("state").notNull().default("open"),
     /** The user who holds the claim; none while the request is unclaimed. */
     claimantUserId: uuid("claimant_user_id"),
+    /**
+     * When the request was last claimed, by the database's clock, which close
+     * on merge compares a pull request's merge with; it outlasts the claim,
+     * and the next claim sets it again. Null for a request never claimed
+     * since the column was added, whose claim's event gives the time.
+     */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     /** While the request waits on blocking questions, the state it returns to once they are answered. */
     resumeState: text("resume_state"),
     /** The user who opened the request; none only where the contract-changes capability names a team alone. */

@@ -13,7 +13,7 @@ import {
 import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted, type RefusalIssue } from "@tiehall/core";
 import { requests, teams } from "@tiehall/db";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
-import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
 import { insertPacketRevision } from "./packet-revisions.ts";
@@ -252,6 +252,11 @@ export const REQUEST_HANDLERS: Handlers = {
     return context.write(async (writer) => {
       await writer.changesRequest(row.id);
       await saveLifecycle(writer, row.id, next);
+      // When it was claimed, by the database's clock, which close on merge compares a merge with (close-on-merge.ts).
+      await writer.tx
+        .update(requests)
+        .set({ claimedAt: sql`now()` })
+        .where(and(eq(requests.orgId, writer.orgId), eq(requests.id, row.id)));
       await writer.record(requestClaimed, { requestId: row.id, userId });
       return requestView(writer, row.id);
     }, { teamId });

@@ -95,19 +95,27 @@ export interface StubProvider {
  * which the install stores and calls GitHub as, as the setup screen and the
  * admin's connection leave it. With a hook, the App has a webhook at the
  * install, which GitHub cannot reach here: the stub logs each delivery, with
- * what GitHub sent, for the test to store; without one, it sends none.
+ * what GitHub sent, for the test to store; without one, it sends none. The
+ * installation covers the other repositories given too.
  */
-export async function providerOnStub(install: TestInstall, stub: GitHubStub, logins: readonly string[], options: { hook?: boolean } = {}): Promise<StubProvider> {
+export async function providerOnStub(
+  install: TestInstall,
+  stub: GitHubStub,
+  logins: readonly string[],
+  options: { hook?: boolean; repositories?: readonly string[] } = {},
+): Promise<StubProvider> {
   const accounts: Record<string, number> = {};
   for (const login of logins) accounts[login] = stub.addUser({ login }).id;
   // The organization's owner, who installs the App.
   stub.addUser({ login: "acme-owner" });
   const org = stub.addOrg({ login: "acme", members: { "acme-owner": "admin", ...Object.fromEntries(logins.map((login) => [login, "member" as const])) } });
   const repository = stub.addRepo("acme/payments");
+  // Other repositories of acme the installation covers, such as a consumer's.
+  for (const fullName of options.repositories ?? []) stub.addRepo(fullName);
   const app = stub.createApp({ owner: "acme", ...(options.hook === true ? { hook: { url: "https://tiehall.example.com/webhooks/github" } } : {}) });
   const { github } = await storeStubApp(install, stub, app);
   install.useGitHub(github);
-  await stub.install(app, { account: "acme", repositories: ["acme/payments"] });
+  await stub.install(app, { account: "acme", repositories: ["acme/payments", ...(options.repositories ?? [])] });
   const access = await github.app();
   if (access === undefined) throw new Error("The install stored no App.");
   await readInstallations({ database: install.db, app: access });

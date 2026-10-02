@@ -2,6 +2,7 @@ import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ADMIN_ALERT_HANDLERS } from "./admin-alerts.ts";
 import { API_CONSUMER_HANDLERS } from "./api-consumers.ts";
 import { API_HANDLERS } from "./apis.ts";
+import { CLOSE_ON_MERGE_HANDLERS } from "./close-on-merge.ts";
 import { CONTRACT_ATTACHMENT_HANDLERS } from "./contract-attachments.ts";
 import { CONTRACT_FAN_OUT_HANDLERS } from "./contract-fan-out.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
@@ -49,6 +50,7 @@ export const HANDLERS: Handlers = {
   ...USER_HANDLERS,
   ...REQUEST_HANDLERS,
   ...PULL_REQUEST_LINK_HANDLERS,
+  ...CLOSE_ON_MERGE_HANDLERS,
   ...REQUEST_PAGE_HANDLERS,
   ...DIRECTORY_HANDLERS,
   ...MESSAGE_HANDLERS,

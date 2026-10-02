@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
-import { request, requestKey } from "./requests.ts";
+import { request, requestKey, requestKeyOutput } from "./requests.ts";
 import { GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 
 // Linking a pull request to a request (requests: Linked PRs and done on
@@ -11,8 +11,7 @@ import { GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 // request's URL, with no proposal; the link is what close on merge later
 // looks for. The operation is flagged as a commitment, because linking a pull
 // request that had already merged creates a done proposal, which the call
-// then answers with instead (tasks 23.15 and 23.16 build close on merge and
-// that proposal).
+// then answers with instead (task 23.16 builds that proposal).
 //
 // A repository and a pull request's URL are identifiers of GitHub's own form,
 // which holds no space, so an output names them outside an untrusted object
@@ -58,4 +57,39 @@ export const linkPullRequest = defineCommand({
   stability: "alpha",
 });
 
-export const PULL_REQUEST_COMMANDS = [linkPullRequest];
+// Close on merge (requests: Linked PRs and done on merge; requests: System
+// actions need no proposal or confirmation; contract-changes: Consumers close
+// requests with their own PR; design.md, Decisions this change rests on: D23;
+// design.md, Design rules: Requests and events). An internal system command,
+// which only the worker runs, as the integration event from GitHub, once a
+// delivery of the install's GitHub App or the poll of polling mode has shown a
+// merged pull request of a covered repository, read from GitHub as it is now:
+// it moves to done each request the pull request was linked to, or whose key
+// it mentions, before it merged, that was claimed before it merged and is
+// claimed, in_progress or needs_info, and that is not a request of the pull
+// request's own contract change sets. No person and no agent runs it.
+
+/** The most request keys one merged pull request's title, body and branch name are read for. */
+export const MENTIONS_MAX = 50;
+
+export const closeOnMerge = defineCommand({
+  id: "requests.close_on_merge",
+  summary:
+    "Move to done the requests a merged pull request closes: those it was linked to, or whose key it mentions in its title, body or branch name, that were claimed before it merged and are claimed, in_progress or needs_info.",
+  input: z.object({
+    repositoryId: z.int().min(1).meta({ description: "The pull request's repository, by GitHub's id." }),
+    repository: z.string().regex(GITHUB_REPOSITORY).meta({ description: "The pull request's repository, as owner/name." }),
+    number: z.int().min(1).max(2_147_483_647).meta({ description: "The pull request's number." }),
+    mergedAt: z.iso.datetime().meta({ description: "When the pull request merged, as GitHub gives it." }),
+    mentions: z.array(requestKey).max(MENTIONS_MAX).meta({ description: "The request keys its title, body and branch name mention, in upper case." }),
+  }),
+  output: z.object({ done: z.array(requestKeyOutput).meta({ description: "The keys of the requests the merge moved to done." }) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  system: true,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const PULL_REQUEST_COMMANDS = [linkPullRequest, closeOnMerge];

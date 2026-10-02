@@ -35,8 +35,11 @@ import type { WorkerJob } from "./worker.ts";
 //   which the `organization` event would otherwise have started.
 // Every read is a conditional request (github-client.ts): an unchanged answer
 // is a 304, which does not count against GitHub's rate limit. The pull
-// requests linked to open requests and the mirror issues join the poll with
-// the tasks that build links and mirrors. A poll that could not read a
+// requests linked to open requests are among those it reads when their
+// repository is covered, and a pull request of a repository no connected
+// installation covers closes no request (close-on-merge.ts), so it reads
+// none there; the mirror issues join the poll with the task that builds the
+// mirrors. A poll that could not read a
 // repository keeps the previous poll's time, so the next one reads that
 // repository's changes again. In webhook mode the poll does nothing.
 
