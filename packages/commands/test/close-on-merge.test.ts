@@ -94,7 +94,11 @@ async function deliver(repository: string, number: number, action: string): Prom
   await processDelivery({ database: install.db, github: provider.github, execute: install.execute, now: () => clock }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
 }
 
-/** A pull request on a repository of acme, by this GitHub user, merged by another or the same; its merge delivery is processed. */
+/**
+ * A pull request on a repository of acme, by this GitHub user, merged by
+ * another or the same: the delivery of its opening is processed, as the
+ * worker does while it is open, then its merge delivery.
+ */
 async function mergedPullRequest(
   repository: string,
   input: { title?: string; body?: string; head?: string; author?: string; mergedBy?: string },
@@ -106,6 +110,7 @@ async function mergedPullRequest(
     head: input.head ?? "update-header",
     author: input.author ?? "bob",
   });
+  await deliver(repository, opened.number, "opened");
   await before?.(opened.number);
   await stub.mergePullRequest(repository, opened.number, { by: input.mergedBy ?? input.author ?? "bob" });
   await deliver(repository, opened.number, "closed");
@@ -206,6 +211,7 @@ describe("a pull request that does not qualify", () => {
   it("leaves a request alone when the pull request merged before it was claimed", async () => {
     const request = await feRequest();
     const opened = await stub.openPullRequest("acme/web", { title: `Fix ${request.key}`, head: "fix-early", author: "bob" });
+    await deliver("acme/web", opened.number, "opened");
     await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
     // GitHub's merge times are to the second: the claim comes in a later second.
     await sleep(1_100);
@@ -232,6 +238,35 @@ describe("a pull request that does not qualify", () => {
 
     expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
     expect(await stateChangesOf(request.id)).toEqual([]);
+  });
+
+  it("leaves a claimed request alone when its key is written into a merged pull request before Tiehall processes the merge", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    // Mallory opens a pull request that mentions nothing, which Tiehall reads while it is open.
+    const opened = await stub.openPullRequest("acme/web", { title: "Bump a dependency", head: "bump-another-dependency", author: "mallory" });
+    await deliver("acme/web", opened.number, "opened");
+    await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+    // Right after the merge, before Tiehall has processed it, Mallory writes the key into its title and body.
+    await stub.editPullRequest("acme/web", opened.number, { title: `Bump a dependency (${request.key})`, body: `Closes ${request.key}` });
+
+    // Whichever delivery Tiehall processes first, GitHub then gives the edited text with the merge.
+    await deliver("acme/web", opened.number, "edited");
+    await deliver("acme/web", opened.number, "closed");
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect(await stateChangesOf(request.id)).toEqual([]);
+  });
+
+  it("leaves a claimed request alone when its key was taken out of the pull request before it merged", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    await mergedPullRequest("acme/web", { body: `Closes ${request.key}`, head: "a-mistaken-key" }, async (number) => {
+      await stub.editPullRequest("acme/web", number, { body: "Closes nothing yet." });
+      await deliver("acme/web", number, "edited");
+    });
+
+    expect((await stateOf(request.id)).state).toBe("claimed");
   });
 
   it("leaves an open request that a merged pull request was linked to open", async () => {
@@ -279,6 +314,7 @@ describe("a pull request that does not qualify", () => {
     await install.execute("requests.set_status", sessionOf(bob), { key: fe.key, state: "in_progress" });
     await install.execute("requests.link_pr", sessionOf(bob), { key: fe.key, url: `https://github.com/acme/payments/pull/${opened.number}` });
     await stub.editPullRequest("acme/payments", opened.number, { body: `FE asked for this in ${fe.key}.` });
+    await deliver("acme/payments", opened.number, "edited");
 
     await stub.mergePullRequest("acme/payments", opened.number, { by: "deniz" });
     await deliver("acme/payments", opened.number, "closed");
@@ -368,6 +404,35 @@ describe("a merge on a trial install, whose GitHub App has no webhook", () => {
       [request.id],
     );
     expect(events).toEqual([{ actor_kind: "integration", actor_user_id: null }]);
+  });
+
+  it("moves a claimed request whose key the body mentioned while the poll read the pull request open to done", async () => {
+    const { rows } = await trial.owner.query<{ id: string }>("SELECT id FROM users WHERE github_login = 'alice'");
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(trial, rows[0]!.id, { targetTeam: "FE" });
+    await trial.execute("requests.claim", sessionOf(carol), { key: request.key });
+    const opened = await trialStub.openPullRequest("acme/web", { title: "Sidebar", body: `Closes ${request.key}`, head: "sidebar", author: "carol" });
+    await pollAndProcess();
+    await trialStub.mergePullRequest("acme/web", opened.number, { by: "carol" });
+
+    await pollAndProcess();
+
+    const { rows: states } = await trial.owner.query("SELECT state FROM requests WHERE id = $1", [request.id]);
+    expect(states).toEqual([{ state: "done" }]);
+  });
+
+  it("leaves a claimed request alone when its key is written into the pull request after it merged and before the poll finds the merge", async () => {
+    const { rows } = await trial.owner.query<{ id: string }>("SELECT id FROM users WHERE github_login = 'alice'");
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(trial, rows[0]!.id, { targetTeam: "FE" });
+    await trial.execute("requests.claim", sessionOf(carol), { key: request.key });
+    const opened = await trialStub.openPullRequest("acme/web", { title: "Banner", head: "banner", author: "carol" });
+    await pollAndProcess();
+    await trialStub.mergePullRequest("acme/web", opened.number, { by: "carol" });
+    await trialStub.editPullRequest("acme/web", opened.number, { title: `Banner (${request.key})`, body: `Closes ${request.key}` });
+
+    await pollAndProcess();
+
+    const { rows: states } = await trial.owner.query("SELECT state FROM requests WHERE id = $1", [request.id]);
+    expect(states).toEqual([{ state: "claimed" }]);
   });
 
   it("leaves a claimed request alone when the poll finds its key written into a pull request after the pull request merged", async () => {

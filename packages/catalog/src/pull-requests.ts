@@ -69,7 +69,9 @@ export const linkPullRequest = defineCommand({
 // it moves to done each request the pull request was linked to, or whose key
 // it mentions, before it merged, that was claimed before it merged and is
 // claimed, in_progress or needs_info, and that is not a request of the pull
-// request's own contract change sets. It runs once per merge: a later
+// request's own contract change sets. The keys it mentioned before it merged
+// are those its title, body and branch name mentioned when Tiehall last read
+// it open, and those its branch name mentions. It runs once per merge: a later
 // processing of the same merge closes nothing. No person and no agent runs it.
 
 /** The most request keys one merged pull request's title, body and branch name are read for. */
@@ -84,7 +86,10 @@ export const closeOnMerge = defineCommand({
     repository: z.string().regex(GITHUB_REPOSITORY).meta({ description: "The pull request's repository, as owner/name." }),
     number: z.int().min(1).max(2_147_483_647).meta({ description: "The pull request's number." }),
     mergedAt: z.iso.datetime().meta({ description: "When the pull request merged, as GitHub gives it." }),
-    mentions: z.array(requestKey).max(MENTIONS_MAX).meta({ description: "The request keys its title, body and branch name mention, in upper case." }),
+    mentions: z
+      .array(requestKey)
+      .max(MENTIONS_MAX)
+      .meta({ description: "The request keys it mentioned before it merged: in its title, body and branch name when Tiehall last read it open, and in its branch name; in upper case." }),
   }),
   output: z.object({ done: z.array(requestKeyOutput).meta({ description: "The keys of the requests the merge moved to done." }) }),
   scopes: [],

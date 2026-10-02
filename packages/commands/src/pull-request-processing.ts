@@ -1,6 +1,6 @@
-import { applyProviderPullRequest, closeOnMerge } from "@tiehall/catalog";
-import { mentionedKeys } from "./close-on-merge.ts";
+import { applyProviderPullRequest, closeOnMerge, MENTIONS_MAX } from "@tiehall/catalog";
 import { z } from "zod";
+import { mentionedKeys, openMentionsOf, recordOpenMentions } from "./close-on-merge.ts";
 import { installationCovering } from "./contract-requesters.ts";
 import type { GitHubEventProcessor } from "./github-delivery-processing.ts";
 import { readPullRequest } from "./github-pull-requests.ts";
@@ -24,12 +24,15 @@ import { withOrg } from "./with-org.ts";
 //
 // What it does with the pull request: as a provider pull request of contract
 // change sets, it runs contract.apply_provider_pull_request as the system from
-// GitHub (provider-pull-requests.ts); then, once it merged, it runs
-// requests.close_on_merge as the integration event, acting for the member who
-// merged it, or for no user (close-on-merge.ts), with the request keys its
-// title, body and branch name mention, which the command reads only at the
-// first processing of the merge: a later one, such as a delivery about an
-// edit after the merge, closes nothing.
+// GitHub (provider-pull-requests.ts). While it is open, it records the request
+// keys its title, body and branch name mention, as this read finds them; once
+// it merged, it runs requests.close_on_merge as the integration event, acting
+// for the member who merged it, or for no user (close-on-merge.ts), with the
+// keys it mentioned before it merged: those the latest read that found it
+// open recorded, and those its branch name mentions. GitHub gives a merged
+// pull request's title and body as they are now, so a key written into them
+// after the merge, even before Tiehall processes the merge, is not read as a
+// mention; and the command runs at the first processing of the merge alone.
 
 const PAYLOAD = z.looseObject({
   repository: z.looseObject({ id: z.number().int().positive() }),
@@ -46,13 +49,20 @@ export const processPullRequestEvent: GitHubEventProcessor = async (event, conte
   const pullRequest = await readPullRequest(context.app.client, covering.installationId, covering.fullName, number);
   if (pullRequest === undefined) return;
   await context.runAsSystem(applyProviderPullRequest.id, { repositoryId, number, state: pullRequest.state, mergedAt: pullRequest.mergedAt?.toISOString() ?? null });
+  if (pullRequest.state === "open") {
+    // What it mentions while it is open, which close on merge counts as mentioned before it merged.
+    const keys = mentionedKeys(pullRequest.title, pullRequest.body, pullRequest.headRef);
+    await withOrg(context.database, (orgContext) => recordOpenMentions(orgContext, { repositoryId, number, keys, updatedAt: pullRequest.updatedAt ?? new Date() }));
+    return;
+  }
   if (pullRequest.mergedAt === null) return;
+  const opened = await withOrg(context.database, (orgContext) => openMentionsOf(orgContext, repositoryId, number), { readOnly: true });
   // Close on merge, as the integration event: for the member who merged it, or for no user.
   await context.run(closeOnMerge.id, {
     repositoryId,
     repository: covering.fullName,
     number,
     mergedAt: pullRequest.mergedAt.toISOString(),
-    mentions: mentionedKeys(pullRequest.title, pullRequest.body, pullRequest.headRef),
+    mentions: [...new Set([...opened, ...mentionedKeys(pullRequest.headRef)])].slice(0, MENTIONS_MAX),
   });
 };

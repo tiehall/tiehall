@@ -26,6 +26,8 @@ export interface PullRequestNow {
   body: string;
   /** The name of its head branch. */
   headRef: string;
+  /** When GitHub last updated it, to the second; null when GitHub gives no such time. */
+  updatedAt: Date | null;
 }
 
 const PULL_REQUEST = z.object({
@@ -36,6 +38,7 @@ const PULL_REQUEST = z.object({
   title: z.string(),
   body: z.string().nullable().optional(),
   head: z.object({ ref: z.string() }),
+  updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
 });
 
 /**
@@ -65,6 +68,7 @@ export async function readPullRequest(client: GitHubClient, installationId: numb
     title: pr.title,
     body: pr.body ?? "",
     headRef: pr.head.ref,
+    updatedAt: pr.updated_at === null || pr.updated_at === undefined ? null : new Date(pr.updated_at),
   };
 }
 

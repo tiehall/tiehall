@@ -1859,6 +1859,40 @@ export const pullRequestMerges = pgTable(
   ],
 );
 
+// The request keys an open pull request mentions (requests: Linked PRs and
+// done on merge; design.md, Design rules: Requests and events). Close on merge
+// counts a key in a pull request's title or body only when Tiehall knows it was
+// there before the pull request merged: GitHub gives a merged pull request's
+// title and body as they are now, edits made after the merge included, so they
+// are read while the pull request is open. One row per open pull request of a
+// covered repository whose title, body or branch name mentions a request key,
+// by GitHub's id of the repository and the pull request's number: the keys of
+// the latest read of it that found it open, and GitHub's update time of the
+// pull request that read gave, which orders reads that end out of order. A
+// later read that finds it open and mentioning no key removes the row
+// (close-on-merge.ts).
+export const pullRequestMentions = pgTable(
+  "pull_request_mentions",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The pull request's repository, by GitHub's id, which stays when the repository is renamed. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    /** The pull request's number in its repository. */
+    number: integer("number").notNull(),
+    /** The request keys its title, body and branch name mentioned at that read, in upper case. */
+    keys: text("keys").array().notNull(),
+    /** When GitHub last updated the pull request, as that read gave it. */
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.repositoryId, table.number] }),
+    check("pull_request_mentions_ids_positive", sql`${table.repositoryId} > 0 AND ${table.number} > 0`),
+    check("pull_request_mentions_keys_bounded", sql`cardinality(${table.keys}) BETWEEN 1 AND 50`),
+  ],
+);
+
 // Read cursors (requests: Read cursors move only on acknowledgement; design.md,
 // Design rules: Requests and events). One row per user and reader, where a
 // reader is one client of theirs: an OAuth client, such as the CLI or an MCP

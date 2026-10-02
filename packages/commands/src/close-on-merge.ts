@@ -1,7 +1,7 @@
 import { closeOnMerge, MENTIONS_MAX } from "@tiehall/catalog";
 import { REQUEST_KEY, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
-import { contractChangeRequests, contractChangeSets, events, pullRequestLinks, pullRequestMerges } from "@tiehall/db";
-import { and, eq, sql } from "drizzle-orm";
+import { contractChangeRequests, contractChangeSets, events, pullRequestLinks, pullRequestMentions, pullRequestMerges } from "@tiehall/db";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { coveringInstallation } from "./github-installations.ts";
 import { addSystemMessage } from "./messages.ts";
@@ -9,6 +9,7 @@ import { cancelProposals, lockPendingProposals } from "./proposals.ts";
 import { lifecycleOf, lockRequestById, saveLifecycle, transition } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
 import { requestView, type RequestRow } from "./request-views.ts";
+import type { OrgContext } from "./with-org.ts";
 
 // Close on merge (requests: Linked PRs and done on merge; requests: System
 // actions need no proposal or confirmation; contract-changes: Consumers close
@@ -18,16 +19,16 @@ import { requestView, type RequestRow } from "./request-views.ts";
 // request processor (pull-request-processing.ts) reads from GitHub that a pull
 // request of a covered repository has merged, it runs requests.close_on_merge
 // with the pull request's repository, number and merge time, and the request
-// keys its title, body and branch name mention (mentionedKeys), as the
-// integration event from GitHub: it acts for the Tiehall user of the delivery's
-// sender while that user is a member of the install, and for no user
-// otherwise, as for a merge the poll found, so a removed person's merge
-// closes the request in nobody's name. The command moves a request to done, as
-// a system action with no proposal and no confirmation, when:
+// keys it mentioned before it merged (below), as the integration event from
+// GitHub: it acts for the Tiehall user of the delivery's sender while that
+// user is a member of the install, and for no user otherwise, as for a merge
+// the poll found, so a removed person's merge closes the request in nobody's
+// name. The command moves a request to done, as a system action with no
+// proposal and no confirmation, when:
 // - the pull request was linked to it at or before the second it merged, or
-//   its title, body or branch name mentions its key, a key written with its
-//   team's current key, an earlier key of its team, or a key it had before a
-//   confirmed reassignment, in either case;
+//   mentioned its key in its title, body or branch name before it merged, a
+//   key written with its team's current key, an earlier key of its team, or a
+//   key it had before a confirmed reassignment, in either case;
 // - it was claimed at or before the second the pull request merged, and is
 //   claimed still: GitHub gives merge times to the second, so a claim taken in
 //   the second a pull request merged counts as taken before the merge;
@@ -41,16 +42,26 @@ import { requestView, type RequestRow } from "./request-views.ts";
 // every terminal state does, and adds a notice in Tiehall's words that names
 // the pull request.
 //
-// Close on merge runs once per merge: at the first processing that reads the
-// pull request merged in a covered repository, which records the merge
+// Only a mention made before the merge counts, and GitHub gives a merged pull
+// request's title and body as they are now, with any edit made after the
+// merge, even one made before Tiehall processes the merge. So the processor
+// reads them while the pull request is open: each read that finds it open
+// records the keys its title, body and branch name mention then
+// (pull_request_mentions, recordOpenMentions), the latest read by GitHub's
+// update time replacing what an earlier one recorded, and a read that finds
+// it open and mentioning no key removing the record. A merged pull request's
+// mentions are the keys of the latest read that found it open, and the keys
+// its branch name mentions, which GitHub gives as the branch the pull request
+// was opened from and which no edit of the pull request changes. A key written
+// into the title or body after the merge, or before the merge but read by no
+// processing while the pull request was open, closes nothing; a link counts
+// when it was made at or before the second the pull request merged.
+//
+// Close on merge also runs once per merge: at the first processing that reads
+// the pull request merged in a covered repository, which records the merge
 // (pull_request_merges) in the transaction that closes its requests. A later
 // processing of the same merge, which a redelivery, a delivery about an edit
-// or the poll brings, changes nothing, so a key written into the title or
-// body after the pull request merged, which GitHub then gives as its text,
-// closes no request: the spec counts only a mention made before the merge.
-// Mentions are read from the text GitHub gives at that first processing, as
-// close to the merge as Tiehall hears of it; a link counts when it was made at
-// or before the second the pull request merged.
+// or the poll brings, changes nothing.
 //
 // Reading: "mentions the key" is read without regard to case, since branch
 // names are often written in lower case, such as fe-142-new-fields; the
@@ -77,6 +88,41 @@ export function mentionedKeys(...texts: readonly string[]): string[] {
     }
   }
   return keys;
+}
+
+/**
+ * Records the request keys an open pull request's title, body and branch name
+ * mention as a read found them, the read GitHub updated last winning: a read
+ * that GitHub gave an earlier update time than the record's changes nothing,
+ * and one that mentions no key removes the record. Close on merge counts
+ * these keys as mentioned before the pull request merged.
+ */
+export async function recordOpenMentions(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  read: { repositoryId: number; number: number; keys: readonly string[]; updatedAt: Date },
+): Promise<void> {
+  const row = and(eq(pullRequestMentions.orgId, orgId), eq(pullRequestMentions.repositoryId, read.repositoryId), eq(pullRequestMentions.number, read.number));
+  if (read.keys.length === 0) {
+    await tx.delete(pullRequestMentions).where(and(row, lte(pullRequestMentions.updatedAt, read.updatedAt)));
+    return;
+  }
+  await tx
+    .insert(pullRequestMentions)
+    .values({ orgId, repositoryId: read.repositoryId, number: read.number, keys: [...read.keys], updatedAt: read.updatedAt })
+    .onConflictDoUpdate({
+      target: [pullRequestMentions.orgId, pullRequestMentions.repositoryId, pullRequestMentions.number],
+      set: { keys: sql`excluded.keys`, updatedAt: sql`excluded.updated_at` },
+      setWhere: lte(pullRequestMentions.updatedAt, sql`excluded.updated_at`),
+    });
+}
+
+/** The request keys the latest read that found the pull request open recorded, or none. */
+export async function openMentionsOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, repositoryId: number, number: number): Promise<string[]> {
+  const [row] = await tx
+    .select({ keys: pullRequestMentions.keys })
+    .from(pullRequestMentions)
+    .where(and(eq(pullRequestMentions.orgId, orgId), eq(pullRequestMentions.repositoryId, repositoryId), eq(pullRequestMentions.number, number)));
+  return row?.keys ?? [];
 }
 
 /** When the request's current claim was taken: its recorded time, or, for a claim taken before Tiehall recorded it, its claim's event. */
