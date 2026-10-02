@@ -115,3 +115,38 @@ describe("the compatibility check", () => {
     expect(await compareDocuments(committed, committed)).toEqual({ passed: true, errors: [] });
   });
 });
+
+// contract.report is stable from its first release (public-api: Each operation
+// carries a stability level; public-api: `contract.report` has its own version
+// floor; contract-changes: The Action fails open), because pinned Actions in
+// companies' repositories call it: the committed document marks it stable, so
+// the compatibility check gives it the 180 days of notice a stable operation
+// gets.
+describe("contract.report in the committed document", () => {
+  const committed = readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8");
+
+  /** The committed document with contract.report deprecated and a sunset this many days from today. */
+  function deprecatedFor(days: number): string {
+    const document = JSON.parse(committed) as { paths: Record<string, Record<string, Record<string, unknown>>> };
+    const operation = document.paths["/api/v1/contract-reports"]?.["post"];
+    if (operation === undefined) throw new Error("The committed document has no contract.report at POST /api/v1/contract-reports.");
+    operation["deprecated"] = true;
+    operation["x-sunset"] = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return JSON.stringify(document, null, 2);
+  }
+
+  it("is stable", () => {
+    const document = JSON.parse(committed) as { paths: Record<string, Record<string, Record<string, unknown>>> };
+    expect(document.paths["/api/v1/contract-reports"]?.["post"]?.["x-stability-level"]).toBe("stable");
+  });
+
+  it("fails a deprecation with a 30-day sunset, which the 180-day rule refuses", async () => {
+    const result = await compareDocuments(committed, deprecatedFor(30));
+    expect(result.passed).toBe(false);
+    expect(ids(result)).toContain("api-sunset-date-too-small");
+  });
+
+  it("passes a deprecation with a 200-day sunset", async () => {
+    expect(await compareDocuments(committed, deprecatedFor(200))).toEqual({ passed: true, errors: [] });
+  });
+});

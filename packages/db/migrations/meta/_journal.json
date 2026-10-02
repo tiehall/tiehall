@@ -449,6 +449,13 @@
       "when": 1790931350809,
       "tag": "0063_add_used_ci_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1790932773938,
+      "tag": "0064_add_contract_reports",
+      "breakpoints": true
     }
   ]
 }

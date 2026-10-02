@@ -117,6 +117,83 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "proposes": false
   },
   {
+    "command": "contract report",
+    "operationId": "contract.report",
+    "summary": "Report the classified changes that a provider pull request makes to a registered API, from a CI run of the contract Action in the API's repository, authenticated with the run's GitHub Actions OIDC token; it takes no OpenAPI document.",
+    "method": "POST",
+    "path": "/api/v1/contract-reports",
+    "stability": "stable",
+    "arguments": [],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "api",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The registered API the changes are to, such as payments-api."
+      },
+      {
+        "name": "base",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true,
+        "description": "The ref and commit the changes are compared against: the pull request's base."
+      },
+      {
+        "name": "changes",
+        "in": "body",
+        "types": [
+          "array"
+        ],
+        "required": true,
+        "description": "The classified changes, each with the engine's id for it, its level and its operation; at most 1000, and none when the pull request changes nothing of the API."
+      },
+      {
+        "name": "engine",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true,
+        "description": "The diff engine that classified the changes."
+      },
+      {
+        "name": "head",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true,
+        "description": "The ref and commit that make the changes: the pull request's head."
+      },
+      {
+        "name": "pullRequest",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true,
+        "description": "The provider pull request that makes the changes, in the repository the API is registered to, which is the run's own."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      }
+    ],
+    "proposes": false
+  },
+  {
     "command": "get",
     "operationId": "requests.read",
     "summary": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",

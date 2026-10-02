@@ -2386,3 +2386,51 @@ export const usedCiTokens = pgTable(
     check("used_ci_tokens_hash_length", sql`octet_length(${table.jtiHash}) = 32`),
   ],
 );
+
+// The contract reports Tiehall accepted (contract-changes: One report
+// operation that never takes a whole spec; contract-changes: Admins register
+// APIs, each bound to one repository; design.md, Design rules: Contract
+// changes). Each row is one report of a CI run of the contract Action, as it
+// was sent: the registered API it reports for, the provider pull request's
+// number in the API's repository, the base and head refs with their commit
+// SHAs, the diff engine's name and version, and the engine's classified
+// changes, each with its id, its level and its operation; with the run's
+// repository, its owner and its workflow, as its OIDC token named them, since
+// Tiehall trusts the diff the provider's CI computed. No row holds an OpenAPI
+// document. Routing reads them.
+export const contractReports = pgTable(
+  "contract_reports",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    apiId: uuid("api_id").notNull(),
+    /** The run's repository and its owner, by GitHub's ids, and its workflow, as the run's OIDC token named them. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    repositoryOwnerId: bigint("repository_owner_id", { mode: "number" }).notNull(),
+    jobWorkflowRef: text("job_workflow_ref").notNull(),
+    pullRequestNumber: integer("pull_request_number").notNull(),
+    baseRef: text("base_ref").notNull(),
+    baseSha: text("base_sha").notNull(),
+    headRef: text("head_ref").notNull(),
+    headSha: text("head_sha").notNull(),
+    engineName: text("engine_name").notNull(),
+    engineVersion: text("engine_version").notNull(),
+    /** The classified changes, as the report gave them: a JSON list of { id, level, operation }. */
+    changes: jsonb("changes").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    foreignKey({
+      name: "contract_reports_api_fk",
+      columns: [table.orgId, table.apiId],
+      foreignColumns: [apis.orgId, apis.id],
+    }),
+    index("contract_reports_change_set").on(table.orgId, table.apiId, table.pullRequestNumber, table.receivedAt),
+    check("contract_reports_pull_request_number_positive", sql`${table.pullRequestNumber} > 0`),
+    check("contract_reports_shas", sql`${table.baseSha} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$' AND ${table.headSha} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'`),
+    check("contract_reports_changes_is_list", sql`jsonb_typeof(${table.changes}) = 'array'`),
+  ],
+);

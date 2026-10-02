@@ -31,6 +31,7 @@ export {
 } from "./personal-access-tokens.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
+export { CONTRACT_COMMANDS, REPORT_CHANGES_MAX, reportContractChanges } from "./contract.ts";
 export { API_COMMANDS, API_NAME, apiName, JOB_WORKFLOW_REF, jobWorkflowRef, listApis, registeredApi, registerApi, unregisterApi } from "./apis.ts";
 export { BACKUP_WARNING_DAYS, banner, getBanners, getInstallStatus, INSTALL_COMMANDS } from "./install.ts";
 export { deprecationHeaders } from "./deprecation.ts";

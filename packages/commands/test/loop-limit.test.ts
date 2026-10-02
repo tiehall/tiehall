@@ -236,6 +236,7 @@ describe("a flagged request", () => {
       "requests.create": "opens a request, which the caps on opened requests limit instead",
       "events.acknowledge": "moves a read cursor, which is no write on a request",
       "updates.read": "reads the user's updates and moves a read cursor, which is no write on a request",
+      "contract.report": "takes a CI run's report, which no agent makes and which changes no request itself",
     };
     // An operation that only reads, such as get_request, which MCP alone offers, is no write.
     const agentWrites_ = CATALOG.commands

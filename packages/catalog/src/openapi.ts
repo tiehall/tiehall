@@ -191,7 +191,9 @@ function operationOf(shape: RestShape): ZodOpenApiOperationObject {
   // The field REST fills from If-Match is a header, never a field of the query or the body.
   const fields = Object.entries((variants?.[0] ?? (input as z.ZodObject)).shape).filter(([key]) => key !== definition.ifMatch);
   const inPath = z.object(Object.fromEntries(fields.filter(([key]) => pathKeys.has(key))));
-  const rest = z.object(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
+  // A strict input, which refuses a field it does not know, stays strict in the query or the body that carries it.
+  const strict = variants === undefined && (input as z.ZodObject).def.catchall instanceof z.ZodNever;
+  const rest = (strict ? z.strictObject : z.object)(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
   const hasBody = BODY_METHODS.has(method);
   const notInBody = new Set([...pathKeys, ...(definition.ifMatch === undefined ? [] : [definition.ifMatch])]);
   const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(input, variants, notInBody);

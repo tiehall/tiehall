@@ -28,7 +28,7 @@ import { user } from "./schemas.ts";
 // declarations route again.
 
 /** An API's name: 1 to 100 lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, such as payments-api. */
-export const API_NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
+export const API_NAME = /^[a-z0-9][a-z0-9\._-]{0,99}$/;
 
 export const apiName = z
   .string()

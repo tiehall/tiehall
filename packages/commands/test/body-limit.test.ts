@@ -54,13 +54,14 @@ async function send(caller: Caller, method: string, path: string, body: string, 
   return { status: response.status, headers: response.headers, body: (await response.json()) as Record<string, unknown> };
 }
 
-/** The install's requests, events and kept Idempotency-Keys, which a body over the limit leaves as they were. */
+/** The install's requests, events, kept Idempotency-Keys and contract reports, which a body over the limit leaves as they were. */
 async function counts(): Promise<unknown> {
   const { rows } = await install.owner.query(
     `SELECT (SELECT count(*) FROM requests) AS requests,
             (SELECT count(*) FROM packet_revisions) AS revisions,
             (SELECT count(*) FROM events) AS events,
-            (SELECT count(*) FROM idempotency_keys) AS idempotency_keys`,
+            (SELECT count(*) FROM idempotency_keys) AS idempotency_keys,
+            (SELECT count(*) FROM contract_reports) AS contract_reports`,
   );
   return rows[0];
 }
@@ -87,9 +88,9 @@ describe("a packet revision at the limit", LARGE_BODIES, () => {
   });
 });
 
-// contract.report is defined by add-tiehall-oss-v1's task 22.5. Until then the
-// catalog holds no such operation, every path gets 2 MiB, and these cases fail
-// as expected; they become plain tests in the commit that adds it.
+// contract.report, which add-tiehall-oss-v1's task 22.5 defines, takes a body
+// of up to 16 MiB, because it carries classified OpenAPI diffs, which can be
+// large; a body under it reaches the operation's input validation.
 describe("a contract report, whose limit is 16 MiB", LARGE_BODIES, () => {
   const ci: Caller = { kind: "ci", repositoryId: "100200300", repositoryOwnerId: "9919", jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main" };
 
@@ -100,7 +101,7 @@ describe("a contract report, whose limit is 16 MiB", LARGE_BODIES, () => {
     return { method: report?.method ?? "", path: report?.path ?? "" };
   }
 
-  it.fails("is not refused for its size at 10 MiB, and reaches the operation's input validation", async () => {
+  it("is not refused for its size at 10 MiB, and reaches the operation's input validation", async () => {
     const { method, path } = reportOperation();
     const answer = await send(ci, method, path, bodyOf({}, 10 * MiB));
     expect(answer.status).not.toBe(413);
@@ -108,7 +109,7 @@ describe("a contract report, whose limit is 16 MiB", LARGE_BODIES, () => {
     expect(answer.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}invalid-input`, errors: expect.any(Array) });
   });
 
-  it.fails("gets 413 at 17 MiB, with a detail that names 16 MiB, and opens nothing", async () => {
+  it("gets 413 at 17 MiB, with a detail that names 16 MiB, and opens nothing", async () => {
     const { method, path } = reportOperation();
     const before = await counts();
     const answer = await send(ci, method, path, bodyOf({}, 17 * MiB));

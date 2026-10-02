@@ -2,6 +2,23 @@
 // CI regenerates it with `pnpm check:client` and fails when it differs (public-api: The client package `@tiehall/client`).
 
 export interface paths {
+    "/api/v1/contract-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report the classified changes that a provider pull request makes to a registered API, from a CI run of the contract Action in the API's repository, authenticated with the run's GitHub Actions OIDC token; it takes no OpenAPI document. */
+        post: operations["contract.report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -659,6 +676,172 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "contract.report": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The registered API the changes are to, such as payments-api. */
+                    api: string;
+                    /** @description The ref and commit the changes are compared against: the pull request's base. */
+                    base: {
+                        /** @description The branch or tag, such as main. */
+                        ref: string;
+                        /** @description The full commit sha. */
+                        sha: string;
+                    };
+                    /** @description The classified changes, each with the engine's id for it, its level and its operation; at most 1000, and none when the pull request changes nothing of the API. */
+                    changes: {
+                        /** @description The diff engine's id for the kind of change, such as response-property-removed. */
+                        id: string;
+                        /**
+                         * @description ERR for a breaking change, WARN for a potentially breaking one, INFO for any other.
+                         * @enum {string}
+                         */
+                        level: "ERR" | "WARN" | "INFO";
+                        /** @description The operation the change touches, such as GET /payments/{id}. */
+                        operation: string;
+                    }[];
+                    /** @description The diff engine that classified the changes. */
+                    engine: {
+                        /** @description The diff engine's name, such as oasdiff. */
+                        name: string;
+                        /** @description The diff engine's version, such as 1.32.1. */
+                        version: string;
+                    };
+                    /** @description The ref and commit that make the changes: the pull request's head. */
+                    head: {
+                        /** @description The branch or tag, such as main. */
+                        ref: string;
+                        /** @description The full commit sha. */
+                        sha: string;
+                    };
+                    /** @description The provider pull request that makes the changes, in the repository the API is registered to, which is the run's own. */
+                    pullRequest: {
+                        /** @description The pull request's number, such as 310. */
+                        number: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The operation's result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The registered API the report is for. */
+                        api: string;
+                        /**
+                         * Format: uuid
+                         * @description The report's id.
+                         */
+                        id: string;
+                        /**
+                         * Format: date-time
+                         * @description When Tiehall accepted the report.
+                         */
+                        receivedAt: string;
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request's state does not allow this action. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than 16 MiB, the limit on this operation's body; it is not read, and nothing runs. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "events.read": {
         parameters: {
             query?: {

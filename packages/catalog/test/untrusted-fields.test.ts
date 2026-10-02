@@ -4,6 +4,7 @@ import { z } from "zod";
 import { defineCatalog } from "../src/catalog.ts";
 import { defineCommand } from "../src/command.ts";
 import { CATALOG } from "../src/commands.ts";
+import { API_NAME } from "../src/apis.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
 import { proposalAnswer } from "../src/proposals.ts";
 import { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "../src/pull-requests.ts";
@@ -34,6 +35,8 @@ const IDENTIFIERS: readonly RegExp[] = [
   PULL_REQUEST_URL,
   // A version, such as the Tiehall skill's that whoami warns about, holds no space.
   SEMANTIC_VERSION,
+  // A registered API's name, such as payments-api, which contract.report answers with: lower-case letters, digits, dots, hyphens and underscores.
+  API_NAME,
 ];
 const patterns = new Set(IDENTIFIERS.map(({ source }) => source));
 const problemsOf = (schema: z.ZodType) => outputSchemaProblems(schema, patterns).map(({ path }) => path);

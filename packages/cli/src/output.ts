@@ -49,6 +49,11 @@ export const RENDERERS: Readonly<Record<string, Render>> = {
   "requests.link_pr": (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
   "proposals.propose": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   "updates.read": (output, reader) => updatesText(output as UpdatesJson, reader, "cli"),
+  // The answer to a contract report names the API it was taken for, by its name, which holds no space, and the report's id.
+  "contract.report": (output) => {
+    const { api, id } = output as { api: string; id: string };
+    return [{ origin: "tiehall", text: `Tiehall took the contract report for ${api}, as report ${id}.` }];
+  },
 };
 
 /** Whether an answer is the proposal a commitment became, or the proposal a withdrawal ended. */
