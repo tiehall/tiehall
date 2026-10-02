@@ -98,6 +98,7 @@ describe("a mirror issue", () => {
     expect(stub.issue("acme/fe-intake", number).labels).toEqual(["frontend", "tiehall:in_progress"]);
     const writes = stub.received.slice(from).filter(({ host, path }) => host === "api" && path.startsWith("/repos/acme/fe-intake/issues"));
     expect(writes.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      `POST /repos/acme/fe-intake/issues/${number}/comments`,
       `POST /repos/acme/fe-intake/issues/${number}/labels`,
       `DELETE /repos/acme/fe-intake/issues/${number}/labels/tiehall%3Aclaimed`,
     ]);

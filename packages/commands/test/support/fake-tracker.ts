@@ -19,11 +19,12 @@ export interface FakeIssue {
   assignees: TrackerAccount[];
   closedBy: TrackerAccount | null;
   createdAt: Date;
+  comments: { text: string; marker: string }[];
 }
 
 /** A call that fails: before the tracker applies it, or after, as one whose answer never arrives. */
 export interface Failure {
-  call: "createIssue" | "updateIssue";
+  call: "createIssue" | "updateIssue" | "addComment";
   when: "before" | "after";
 }
 
@@ -86,6 +87,7 @@ export class FakeTracker implements TrackerAdapter {
       assignees: [],
       closedBy: null,
       createdAt: new Date(),
+      comments: [],
     };
     this.issues.push(issue);
     this.failure("createIssue", "after");
@@ -102,7 +104,21 @@ export class FakeTracker implements TrackerAdapter {
     if (update.label !== undefined) {
       issue.labels = [...issue.labels.filter((label) => label !== update.label?.remove), update.label.add];
     }
+    if (update.state !== undefined) Object.assign(issue, { open: update.state.open, closeReason: update.state.closeReason, closedBy: null });
     this.failure("updateIssue", "after");
+  }
+
+  async addComment(target: string, number: string, text: string, marker: string): Promise<void> {
+    this.calls.push("addComment");
+    this.writes.push("addComment");
+    this.failure("addComment", "before");
+    this.issue(target, number).comments.push({ text, marker });
+    this.failure("addComment", "after");
+  }
+
+  async findComment(target: string, number: string, marker: string): Promise<boolean> {
+    this.calls.push("findComment");
+    return this.issue(target, number).comments.some((comment) => comment.marker === marker);
   }
 
   async readIssue(target: string, number: string): Promise<IssueNow | undefined> {

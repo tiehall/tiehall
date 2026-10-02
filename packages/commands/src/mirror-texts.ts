@@ -13,6 +13,10 @@ import { installLink, requestKey, teamKey, type ServerText } from "./email.ts";
 // email templates make. The one text a person wrote that a mirror carries is
 // the request's title, which the issue's title holds, as the tracker-mirrors
 // capability asks; it is kept apart from the summary, which never holds it.
+// The comments Tiehall adds for a state change or a question are made the
+// same way, from the key, the state and the link: a question's comment says
+// that a question waits, never what it asks (tracker-mirrors: One comment per
+// state change and per question notice).
 
 /** The label that names a request's state on its mirror issue, such as tiehall:in_progress. */
 export function stateLabel(state: RequestState): ServerText {
@@ -41,7 +45,7 @@ export function mirrorSummary(input: { installUrl: string; key: string; targetTe
     paragraphs: [
       opened as ServerText,
       `The request lives in Tiehall, with its packet and its thread: ${link}` as ServerText,
-      "Tiehall keeps this issue up to date: its label shows the request's state. Closing or reopening this issue, or changing its assignees, is recorded on the request in Tiehall, and does not change the request by itself." as ServerText,
+      "Tiehall keeps this issue up to date: its label shows the request's state, and a comment marks each change of that state and each question that waits for an answer. Closing or reopening this issue, or changing its assignees, is recorded on the request in Tiehall, and does not change the request by itself." as ServerText,
     ],
   };
 }
@@ -49,4 +53,30 @@ export function mirrorSummary(input: { installUrl: string; key: string; targetTe
 /** A mirror issue's title: the request's key, then its title as the requester wrote it, which is the one text of theirs a mirror carries. */
 export function mirrorTitle(key: string, title: string): string {
   return `${requestKey(key)}: ${title}`;
+}
+
+/** A request state, checked, as a comment names it. */
+function stateName(state: RequestState): ServerText {
+  if (!(REQUEST_STATES as readonly string[]).includes(state)) throw new TypeError("A mirror comment names one of the request states.");
+  return state as ServerText;
+}
+
+/** The comment that marks a state change of a mirrored request: its key, the state it is in now, and its link. */
+export function stateComment(input: { key: string; state: RequestState; link: ServerText }): ServerText {
+  const key = requestKey(input.key);
+  return `${key} is now ${stateName(input.state)} in Tiehall: ${input.link}` as ServerText;
+}
+
+/**
+ * The comment that marks a question on a mirrored request: that a question
+ * waits, and the request's link, never the question's text; with the state
+ * the request is in now when the question changed it, such as a blocking one.
+ */
+export function questionComment(input: { key: string; link: ServerText; state?: RequestState }): ServerText {
+  const key = requestKey(input.key);
+  return (
+    input.state === undefined
+      ? `A question on ${key} waits for an answer in Tiehall: ${input.link}`
+      : `A question on ${key} waits for an answer in Tiehall, and ${key} is now ${stateName(input.state)}: ${input.link}`
+  ) as ServerText;
 }

@@ -27,7 +27,10 @@ import { withOrg } from "./with-org.ts";
 // the create carries it, and a retried create finds the issue by it among the
 // repository's issues made since the mirror's row was written, newest first.
 // The state label is added and the one Tiehall set before taken off, so the
-// labels people add stay.
+// labels people add stay. A comment Tiehall adds ends with a comment of the
+// same kind that names its own marker, by which a retried comment is found
+// among the issue's comments. The issue's state is set with GitHub's state
+// and state_reason: closed as completed or not_planned, or open again.
 
 /** The line a mirror issue's body ends with, which names its marker; GitHub's Markdown does not show it. */
 export function markerLine(marker: string): string {
@@ -38,6 +41,12 @@ export function markerLine(marker: string): string {
 /** A mirror issue's body: the summary's paragraphs, then the marker's line. */
 export function issueBody(summary: MirrorSummary, marker: string): string {
   return [...summary.paragraphs, markerLine(marker)].join("\n\n");
+}
+
+/** The line a comment Tiehall adds ends with, which names the comment's own marker. */
+export function commentMarkerLine(marker: string): string {
+  if (!/^[0-9a-f-]{36}$/.test(marker)) throw new TypeError("A comment's marker is a UUID.");
+  return `<!-- tiehall:mirror-comment ${marker} -->`;
 }
 
 /** The team's intake repository is covered by no working connected installation now, so its mirror issue is not written. */
@@ -63,6 +72,8 @@ const ISSUE = z.looseObject({
 });
 
 const ISSUES = z.array(ISSUE);
+
+const COMMENTS = z.array(z.looseObject({ body: z.string().nullable().optional() }));
 
 /** Why GitHub says a closed issue was closed: completed unless it names another reason Tiehall tells apart. */
 function closeReasonOf(stateReason: string | null | undefined): CloseReason {
@@ -147,13 +158,15 @@ export function createGitHubIssues({ app, database }: GitHubIssuesOptions): Trac
       const { octokit, owner, repo } = await repositoryOf(target);
       const issue_number = Number(issue);
       try {
-        if (update.title !== undefined || update.summary !== undefined) {
+        if (update.title !== undefined || update.summary !== undefined || update.state !== undefined) {
+          const state = update.state;
           await octokit.request("PATCH /repos/{owner}/{repo}/issues/{issue_number}", {
             owner,
             repo,
             issue_number,
             ...(update.title === undefined ? {} : { title: update.title }),
             ...(update.summary === undefined ? {} : { body: issueBody(update.summary, marker) }),
+            ...(state === undefined ? {} : state.open ? { state: "open" } : { state: "closed", state_reason: state.closeReason ?? "completed" }),
           });
         }
         if (update.label !== undefined) {
@@ -171,6 +184,41 @@ export function createGitHubIssues({ app, database }: GitHubIssuesOptions): Trac
       } catch (error) {
         throw gitHubUnavailable("an update of a mirror issue", error);
       }
+    },
+
+    async addComment(target, issue, text, marker) {
+      const { octokit, owner, repo } = await repositoryOf(target);
+      try {
+        await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+          owner,
+          repo,
+          issue_number: Number(issue),
+          body: `${text}\n\n${commentMarkerLine(marker)}`,
+        });
+      } catch (error) {
+        throw gitHubUnavailable("a comment on a mirror issue", error);
+      }
+    },
+
+    async findComment(target, issue, marker, since) {
+      const { octokit, owner, repo } = await repositoryOf(target);
+      const line = commentMarkerLine(marker);
+      try {
+        for await (const page of pagesOf(octokit, "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+          owner,
+          repo,
+          issue_number: Number(issue),
+          since: since.toISOString(),
+          per_page: 100,
+        })) {
+          const comments = COMMENTS.safeParse(page);
+          if (!comments.success) throw new GitHubUnavailableError("GitHub's answer to the listing of a mirror issue's comments lists no comments.");
+          if (comments.data.some(({ body }) => (body ?? "").includes(line))) return true;
+        }
+      } catch (error) {
+        throw gitHubUnavailable("the listing of a mirror issue's comments", error);
+      }
+      return false;
     },
 
     async readIssue(target, issue): Promise<IssueNow | undefined> {

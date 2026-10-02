@@ -42,9 +42,11 @@ const MIRRORED_EVENTS: ReadonlySet<string> = new Set([
   "request.reassigned",
 ]);
 
-/** Whether an event can change what its request's mirror issue shows, such as a change of the request's state. */
+/** Whether an event can change what its request's mirror issue shows: a change of the request, such as of its state, or a question on it. */
 export function changesMirror(type: string, data: Readonly<Record<string, unknown>>): boolean {
-  return typeof data["requestId"] === "string" && MIRRORED_EVENTS.has(type);
+  if (typeof data["requestId"] !== "string") return false;
+  if (type === "request.message_posted") return data["kind"] === "question";
+  return MIRRORED_EVENTS.has(type);
 }
 
 /**

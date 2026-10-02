@@ -1,13 +1,13 @@
-import { createHash } from "node:crypto";
-import { formatRequestKey, isTerminalState, type RequestState } from "@tiehall/core";
-import { mirrors, requests, teams, trackerMappings, type Database } from "@tiehall/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { formatRequestKey, isTerminalState, REQUEST_STATES, type RequestState } from "@tiehall/core";
+import { events, eventSequence, mirrors, requests, teams, trackerMappings, type Database } from "@tiehall/db";
+import { and, asc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { ServerText } from "./email.ts";
 import { createGitHubIssues } from "./github-issues.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { mirrorRequest } from "./mirror-jobs.ts";
-import { mirrorSummary, mirrorTitle, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
+import { mirrorSummary, mirrorTitle, questionComment, stateComment, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob, WorkerServices } from "./worker.ts";
 
@@ -38,9 +38,23 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   with no issue yet, asks the tracker for an issue that carries the marker,
 //   and takes that one: a retried create never makes a second issue.
 // - Updating it: the row keeps digests of the title and body Tiehall last
-//   wrote and the state label it last set; the job writes only what differs
-//   from them, so when nothing the mirror shows has changed, it writes
-//   nothing at all.
+//   wrote, the state label it last set, and whether it left the issue open
+//   or closed, and why; the job writes only what differs from them, so when
+//   nothing the mirror shows has changed, it writes nothing at all. A request
+//   that is done closes its issue as completed, one that is declined or
+//   withdrawn closes it as not planned, and a decline undone reopens it.
+// - Comments (tracker-mirrors: One comment per state change and per question
+//   notice): each write that changed the request's state, or posted a
+//   question on it, adds one comment Tiehall writes, naming the new state or
+//   saying that a question waits, with the request's link, never the
+//   question's text. The job reads the request's events after the last one
+//   its comments cover, and tells one write from the next by their
+//   transaction's time, which every event of a write shares; so a blocking
+//   question and the move to needs_info it causes are one comment, and
+//   changes that land before a job runs still get one comment each, in
+//   order. Each comment, like a create, has a marker written before the call
+//   and carried by the comment, so a retried comment is found, not made
+//   twice.
 // - Echoes: a change Tiehall makes in the tracker comes back as a webhook
 //   delivery, a poll or a reconciliation, like a change a person makes. The
 //   row keeps what the issue shows as far as Tiehall knows, and, while a write
@@ -64,6 +78,10 @@ export interface MirrorProjection {
   label: ServerText;
   /** The request's state, which the label names. */
   state: RequestState;
+  /** Whether the issue is open: until the request ends. */
+  open: boolean;
+  /** Why the issue is closed: completed for a request that is done, not planned for one declined or withdrawn; null while open. */
+  closeReason: "completed" | "not_planned" | null;
 }
 
 /** Why a tracker says a closed issue was closed. */
@@ -95,6 +113,8 @@ export interface IssueUpdate {
   summary?: MirrorSummary;
   /** The state label to add, and the one Tiehall set before, which it takes off. */
   label?: { add: ServerText; remove: ServerText | null };
+  /** Whether the issue is open, and why it is closed. */
+  state?: { open: boolean; closeReason: "completed" | "not_planned" | null };
 }
 
 /**
@@ -112,13 +132,27 @@ export interface TrackerAdapter {
   updateIssue(target: string, issue: string, marker: string, update: IssueUpdate): Promise<void>;
   /** The issue as the tracker shows it now; undefined when the tracker no longer has it. */
   readIssue(target: string, issue: string): Promise<IssueNow | undefined>;
+  /** Adds a comment to the issue, carrying the marker. */
+  addComment(target: string, issue: string, text: ServerText, marker: string): Promise<void>;
+  /** Whether the issue has a comment carrying this marker, looking among the comments made since then. */
+  findComment(target: string, issue: string, marker: string, since: Date): Promise<boolean>;
 }
 
-/** What Tiehall last wrote to a mirror issue: digests of its title and body, and its state label. */
+/** What Tiehall last wrote to a mirror issue: digests of its title and body, its state label, and whether it left it open or closed, and why. */
 export interface Pushed {
   title: string;
   body: string;
   label: string;
+  open: boolean;
+  closeReason: "completed" | "not_planned" | null;
+}
+
+/** The comment under way on a mirror issue: the last event it covers, the state it names, its marker, and when it started. */
+export interface PendingComment {
+  through: number;
+  state: RequestState;
+  marker: string;
+  at: string;
 }
 
 /** A mirror's row, as the job reads it. */
@@ -134,6 +168,9 @@ export interface MirrorRow {
   pushed: Pushed | null;
   trackerState: IssueState | null;
   expectedState: Pick<IssueState, "open" | "closeReason"> | null;
+  commentedThrough: number;
+  shownState: RequestState | null;
+  pendingComment: PendingComment | null;
 }
 
 /** A team's mapping, as the job reads it: the tracker, the place, and whether it mirrors on open. */
@@ -172,12 +209,20 @@ export function projectionOf(request: MirroredRequest, installUrl: string): Mirr
     summary: mirrorSummary({ installUrl, key: request.key, targetTeam: request.targetKey, requestingTeam: request.requestingKey }),
     label: stateLabel(request.state),
     state: request.state,
+    open: !isTerminalState(request.state),
+    closeReason: request.state === "done" ? "completed" : isTerminalState(request.state) ? "not_planned" : null,
   };
 }
 
 /** The record of what a write of this projection leaves on the issue. */
 export function pushedOf(projection: MirrorProjection): Pushed {
-  return { title: digest(projection.title), body: digest(bodyText(projection.summary)), label: projection.label };
+  return {
+    title: digest(projection.title),
+    body: digest(bodyText(projection.summary)),
+    label: projection.label,
+    open: projection.open,
+    closeReason: projection.closeReason,
+  };
 }
 
 /** What differs between what Tiehall last wrote and the projection now; undefined when nothing does. */
@@ -187,6 +232,7 @@ export function updateOf(pushed: Pushed | null, projection: MirrorProjection): I
   if (pushed?.title !== now.title) update.title = projection.title;
   if (pushed?.body !== now.body) update.summary = projection.summary;
   if (pushed?.label !== now.label) update.label = { add: projection.label, remove: (pushed?.label as ServerText | undefined) ?? null };
+  if (pushed?.open !== now.open || pushed.closeReason !== now.closeReason) update.state = { open: projection.open, closeReason: projection.closeReason };
   return Object.keys(update).length === 0 ? undefined : update;
 }
 
@@ -234,15 +280,93 @@ function mirrorRowOf(row: typeof mirrors.$inferSelect): MirrorRow {
     pushed: row.pushed as Pushed | null,
     trackerState: row.trackerState as IssueState | null,
     expectedState: row.expectedState as MirrorRow["expectedState"],
+    commentedThrough: row.commentedThrough,
+    shownState: row.shownState as RequestState | null,
+    pendingComment: row.pendingComment as PendingComment | null,
   };
 }
 
-/** The request, its target team's mapping, and its mirror in the place that mapping names, as the job reads them now. */
-async function planOf(
-  context: OrgContext,
-  requestId: string,
-): Promise<{ request: MirroredRequest; mapping: MirrorMapping | undefined; mirror: MirrorRow | undefined } | undefined> {
+/** An event of the request, as the comments read it: its number, type and data, and its transaction's time, which groups one write's events. */
+export interface RequestEvent {
+  number: number;
+  type: string;
+  data: Readonly<Record<string, unknown>>;
+  /** The time of the transaction that recorded it, exactly as stored: every event of one write has the same. */
+  at: string;
+}
+
+/** What one write did to a mirrored request, as its comment tells it. */
+export interface WriteSeen {
+  /** The number of the write's last event, which the mirror's comments then cover. */
+  through: number;
+  /** The request's state after the write. */
+  state: RequestState;
+  /** Whether the write changed the request's state. */
+  changed: boolean;
+  /** Whether the write posted a question. */
+  question: boolean;
+}
+
+/** The state an event leaves the request in, from the state before it; the state before for an event that changes none. */
+function stateAfter(event: RequestEvent, before: RequestState): RequestState {
+  switch (event.type) {
+    case "request.claimed":
+      return "claimed";
+    case "request.started":
+      return "in_progress";
+    case "request.released":
+      // A release while the request waits on questions keeps it waiting.
+      return before === "needs_info" ? "needs_info" : "open";
+    case "request.state_changed":
+      return (REQUEST_STATES as readonly string[]).includes(String(event.data["state"])) ? (event.data["state"] as RequestState) : before;
+    default:
+      return before;
+  }
+}
+
+/**
+ * What each write after the ones a mirror's comments cover did to its
+ * request, in order, from the request's events: one entry per write, whose
+ * events share their transaction's time, with the state it left the request
+ * in, whether it changed the state, and whether it posted a question.
+ */
+export function writesOf(events: readonly RequestEvent[], shown: RequestState): WriteSeen[] {
+  const writes: WriteSeen[] = [];
+  let state = shown;
+  for (let index = 0; index < events.length; ) {
+    const at = events[index]?.at;
+    const before = state;
+    let question = false;
+    let through = 0;
+    for (; index < events.length && events[index]?.at === at; index += 1) {
+      const event = events[index]!;
+      state = stateAfter(event, state);
+      if (event.type === "request.message_posted" && event.data["kind"] === "question") question = true;
+      through = event.number;
+    }
+    writes.push({ through, state, changed: state !== before, question });
+  }
+  return writes;
+}
+
+/** What the job reads first: the request, its target team's mapping, its mirror in the place that mapping names, and its events since the comments. */
+interface MirrorPlan {
+  request: MirroredRequest;
+  mapping: MirrorMapping | undefined;
+  mirror: MirrorRow | undefined;
+  /** The number of the install's last event when the job read, which every event of the request it read is at or before. */
+  latest: number;
+  /** The request's events after the ones the mirror's comments cover, up to the latest, oldest first. */
+  events: RequestEvent[];
+}
+
+/** The request, its target team's mapping, its mirror in the place that mapping names, and its events since, as the job reads them now. */
+async function planOf(context: OrgContext, requestId: string): Promise<MirrorPlan | undefined> {
   const { tx, orgId } = context;
+  // The last event number first: every committed event of the request is at or before it, as the sequence's row is
+  // held until its writer commits, so the events read below up to it are all the request has, and none is skipped.
+  const [sequence] = await tx.select({ lastNumber: eventSequence.lastNumber }).from(eventSequence).where(eq(eventSequence.orgId, orgId));
+  const latest = sequence?.lastNumber ?? 0;
   const target = alias(teams, "target_team");
   const requesting = alias(teams, "requesting_team");
   const [row] = await tx
@@ -267,8 +391,8 @@ async function planOf(
     .from(trackerMappings)
     .where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.teamId, request.targetTeamId)));
   const mapping = mapped === undefined ? undefined : { tracker: mapped.tracker as Tracker, target: mapped.target, mirrorOnOpen: mapped.mirrorOnOpen };
-  if (mapping === undefined) return { request, mapping, mirror: undefined };
-  const [mirror] = await tx
+  if (mapping === undefined) return { request, mapping, mirror: undefined, latest, events: [] };
+  const [found] = await tx
     .select()
     .from(mirrors)
     .where(
@@ -280,7 +404,22 @@ async function planOf(
         eq(mirrors.target, mapping.target),
       ),
     );
-  return { request, mapping, mirror: mirror === undefined ? undefined : mirrorRowOf(mirror) };
+  const mirror = found === undefined ? undefined : mirrorRowOf(found);
+  if (mirror?.issue === null || mirror?.issue === undefined || mirror.shownState === null) return { request, mapping, mirror, latest, events: [] };
+  const rows = await tx
+    .select({ number: events.number, type: events.type, data: events.data, at: sql<string>`${events.occurredAt}::text` })
+    .from(events)
+    .where(
+      and(
+        eq(events.orgId, orgId),
+        eq(events.class, "domain"),
+        gt(events.number, mirror.commentedThrough),
+        lte(events.number, latest),
+        sql`${events.data} ->> 'requestId' = ${requestId}`,
+      ),
+    )
+    .orderBy(asc(events.number));
+  return { request, mapping, mirror, latest, events: rows.map((event) => ({ ...event, data: event.data as Record<string, unknown> })) };
 }
 
 /** The trackers' adapters the job writes through, by tracker; a tracker with none is not written to. */
@@ -295,13 +434,28 @@ export interface MirrorServices {
   logger?: Logger;
 }
 
-/** How far back from a create's start the retry looks for the issue it may have made, for clocks that differ. */
+/** How far back from a create's or a comment's start a retry looks for what it may have made, for clocks that differ. */
 const CREATE_LOOKBACK_MS = 10 * 60_000;
+
+/** Stores what a mirror job learned or did, on the mirror's row, in a short transaction of its own. */
+async function saveMirror(database: Database, mirrorId: string, changes: Partial<typeof mirrors.$inferInsert>): Promise<void> {
+  await withOrg(database, async ({ tx, orgId }) => {
+    await tx.update(mirrors).set(changes).where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)));
+  });
+}
+
+/** The comment a write gets, in Tiehall's words; undefined for a write that changed no state and asked nothing. */
+function commentOf(write: WriteSeen, key: string, link: ServerText): ServerText | undefined {
+  if (write.question) return questionComment({ key, link, ...(write.changed ? { state: write.state } : {}) });
+  return write.changed ? stateComment({ key, state: write.state, link }) : undefined;
+}
 
 /**
  * Brings the request's mirror issue up to date with the request as it is
- * now: creates it, once, when the request should have one, and writes what
- * changed since Tiehall last wrote it, or nothing.
+ * now: creates it, once, when the request should have one; adds one comment
+ * for each write that changed its state or asked a question since the
+ * comments it has; and writes what changed since Tiehall last wrote it, or
+ * nothing.
  */
 export async function syncMirror(services: MirrorServices, requestId: string): Promise<void> {
   const logger = (services.logger ?? createLogger()).child({ job: mirrorRequest.name, requestId });
@@ -347,24 +501,55 @@ export async function syncMirror(services: MirrorServices, requestId: string): P
     const found = fresh ? undefined : await adapter.findCreated(mirror.target, mirror.marker, new Date(mirror.createdAt.getTime() - CREATE_LOOKBACK_MS));
     const issue = found ?? (await adapter.createIssue(mirror.target, projection, mirror.marker));
     const known: IssueState = { open: true, closeReason: null, assignees: [] };
+    // The issue shows the request as it was read, so its comments start after every event that read covered.
     await withOrg(services.database, async ({ tx, orgId }) => {
       await tx
         .update(mirrors)
-        .set({ issue, issueCreatedAt: sql`now()`, pushed: pushedOf(projection), trackerState: known })
+        .set({ issue, issueCreatedAt: sql`now()`, pushed: pushedOf(projection), trackerState: known, commentedThrough: plan.latest, shownState: request.state })
         .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id), isNull(mirrors.issue)));
     });
     logger.info(found === undefined ? "mirror: created the mirror issue" : "mirror: found the mirror issue a create made before", { mirrorId: mirror.id });
     return;
   }
+  const issue = mirror.issue;
+  const { id: mirrorId, target, marker } = mirror;
+
+  if (mirror.shownState === null) {
+    // A mirror made before its comments were kept: they start from the request as it is now.
+    await saveMirror(services.database, mirrorId, { commentedThrough: plan.latest, shownState: request.state });
+  }
+  // One comment per write that changed the request's state or asked a question, in order.
+  let written = false;
+  for (const write of writesOf(plan.events, mirror.shownState ?? request.state)) {
+    const text = commentOf(write, request.key, projection.summary.link);
+    if (text !== undefined) {
+      const pending = mirror.pendingComment?.through === write.through ? mirror.pendingComment : undefined;
+      const made = pending !== undefined && (await adapter.findComment(target, issue, pending.marker, new Date(Date.parse(pending.at) - CREATE_LOOKBACK_MS)));
+      if (!made) {
+        const comment: PendingComment = pending ?? { through: write.through, state: write.state, marker: randomUUID(), at: new Date().toISOString() };
+        await saveMirror(services.database, mirrorId, { pendingComment: comment });
+        await adapter.addComment(target, issue, text, comment.marker);
+      }
+      written = true;
+    }
+    await saveMirror(services.database, mirrorId, { commentedThrough: write.through, shownState: write.state, pendingComment: null });
+  }
 
   const update = updateOf(mirror.pushed, projection);
-  // Nothing the mirror shows has changed since Tiehall last wrote it: nothing is written.
-  if (update === undefined) return;
-  await adapter.updateIssue(mirror.target, mirror.issue, mirror.marker, update);
-  await withOrg(services.database, async ({ tx, orgId }) => {
-    await tx.update(mirrors).set({ pushed: pushedOf(projection) }).where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id)));
+  // Nothing the mirror shows has changed since Tiehall last wrote it: nothing more is written.
+  if (update === undefined) {
+    if (written) logger.info("mirror: commented on the mirror issue", { mirrorId });
+    return;
+  }
+  // A change of the issue's state, read back meanwhile, is this write's own.
+  if (update.state !== undefined) await saveMirror(services.database, mirrorId, { expectedState: update.state });
+  await adapter.updateIssue(target, issue, marker, update);
+  const known: IssueState = mirror.trackerState ?? { open: true, closeReason: null, assignees: [] };
+  await saveMirror(services.database, mirrorId, {
+    pushed: pushedOf(projection),
+    ...(update.state === undefined ? {} : { trackerState: { ...known, ...update.state }, expectedState: null }),
   });
-  logger.info("mirror: updated the mirror issue", { mirrorId: mirror.id });
+  logger.info("mirror: updated the mirror issue", { mirrorId });
 }
 
 /** The trackers' adapters the worker writes through: GitHub Issues, as the install's App, once an App is stored. */

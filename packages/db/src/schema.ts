@@ -2956,7 +2956,11 @@ export const trackerMappings = pgTable(
 //   its state label;
 // - what the issue shows as far as Tiehall knows, open or closed and its
 //   assignees, from Tiehall's own writes and the changes it read from the
-//   tracker, and what a write under way will leave it showing.
+//   tracker, and what a write under way will leave it showing;
+// - the last event of the request that its comments cover, the request state
+//   they reached, and the comment under way, with a marker of its own that
+//   the comment carries, so a comment retried after the tracker made it is
+//   found rather than made twice.
 // Nothing of the packet or the thread is kept here.
 export const mirrors = pgTable(
   "mirrors",
@@ -2978,12 +2982,18 @@ export const mirrors = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** When Tiehall learned the issue's reference from the tracker. */
     issueCreatedAt: timestamp("issue_created_at", { withTimezone: true }),
-    /** What Tiehall last wrote to the issue: digests of its title and body, and its state label. */
+    /** What Tiehall last wrote to the issue: digests of its title and body, its state label, and whether it is open or closed and why. */
     pushed: jsonb("pushed"),
     /** What the issue shows as far as Tiehall knows: open or closed, why, and its assignees. */
     trackerState: jsonb("tracker_state"),
     /** What a write under way will leave the issue showing, which a change read meanwhile is compared with. */
     expectedState: jsonb("expected_state"),
+    /** The number of the request's last event the issue's comments cover. */
+    commentedThrough: bigint("commented_through", { mode: "number" }).notNull().default(0),
+    /** The request's state as the issue's comments reached it; null for a mirror made before comments were kept. */
+    shownState: text("shown_state"),
+    /** The comment under way: the last event it covers, the state it names, its marker, and when it was started. */
+    pendingComment: jsonb("pending_comment"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -3005,5 +3015,11 @@ export const mirrors = pgTable(
     check("mirrors_pushed_is_object", sql`${table.pushed} IS NULL OR jsonb_typeof(${table.pushed}) = 'object'`),
     check("mirrors_tracker_state_is_object", sql`${table.trackerState} IS NULL OR jsonb_typeof(${table.trackerState}) = 'object'`),
     check("mirrors_expected_state_is_object", sql`${table.expectedState} IS NULL OR jsonb_typeof(${table.expectedState}) = 'object'`),
+    check("mirrors_commented_through_not_negative", sql`${table.commentedThrough} >= 0`),
+    check(
+      "mirrors_shown_state_known",
+      sql`${table.shownState} IS NULL OR ${table.shownState} IN ('open', 'claimed', 'in_progress', 'needs_info', 'done', 'declined', 'withdrawn')`,
+    ),
+    check("mirrors_pending_comment_is_object", sql`${table.pendingComment} IS NULL OR jsonb_typeof(${table.pendingComment}) = 'object'`),
   ],
 );

@@ -112,7 +112,7 @@ describe("the calls Tiehall makes to GitHub's API", () => {
     await install.execute("requests.set_status", session as WebSessionCaller, { key: request.key, state: "in_progress" });
     await mirror();
     const mirrorWrites = stub.received.slice(from).filter(({ path }) => path.startsWith("/repos/acme/web/issues"));
-    expect(mirrorWrites.map(({ method }) => method)).toEqual(["POST", "POST", "DELETE"]);
+    expect(mirrorWrites.map(({ method }) => method)).toEqual(["POST", "POST", "POST", "DELETE"]);
 
     // An agent presents its token to Tiehall.
     const presented = `th_pat_${randomUUID().replaceAll("-", "")}`;
