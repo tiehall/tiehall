@@ -456,7 +456,7 @@ export { createAdminRoute, type AdminRouteOptions } from "./admin-page.ts";
 export { bannersFor, emailAdminAlerts, type AdminAlert, type AdminAlertEmailData, type Banner } from "./admin-alerts.ts";
 export { DEFAULT_SOURCE_REPOSITORY, runningVersion, type RunningVersion } from "./running-version.ts";
 export { createApisRoute } from "./apis-page.ts";
-export { API_HANDLERS, API_REVIEWS, normalJobWorkflowRef } from "./apis.ts";
+export { API_HANDLERS, API_REVIEWS, normalJobWorkflowRef, reportableApi, type ReportableApi } from "./apis.ts";
 export {
   ADMIN_PATH,
   APIS_PATH,

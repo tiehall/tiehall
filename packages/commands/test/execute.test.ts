@@ -175,7 +175,7 @@ const personalAccessToken: Caller = {
   scopes: ["requests:read", "requests:write", "contracts:report"],
   surface: "api",
 };
-const ciCaller: Caller = { kind: "ci", repositoryId: "1296269" };
+const ciCaller: Caller = { kind: "ci", repositoryId: "1296269", repositoryOwnerId: "9919", jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main" };
 const systemJob: Caller = { kind: "system_job", job: "requests.close_on_merge" };
 const integrationEvent: Caller = { kind: "integration_event", source: "github" };
 

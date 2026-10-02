@@ -435,6 +435,13 @@
       "when": 1790930552524,
       "tag": "0061_add_apis",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1790930952973,
+      "tag": "0062_add_api_unregistration",
+      "breakpoints": true
     }
   ]
 }

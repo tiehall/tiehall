@@ -1,8 +1,9 @@
-import { listApis, registerApi, type registeredApi } from "@tiehall/catalog";
-import { apiRegistered, Refusal } from "@tiehall/core";
+import { listApis, registerApi, unregisterApi, type registeredApi } from "@tiehall/catalog";
+import { apiRegistered, apiUnregistered, Refusal } from "@tiehall/core";
 import { apis, githubCoveredRepositories, githubInstallations, teams, users } from "@tiehall/db";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
+import type { CiCaller } from "./caller.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -26,8 +27,27 @@ import type { OrgContext } from "./with-org.ts";
 //
 // A repository that no connected installation that is neither suspended nor
 // deleted covers gets 409, as the error model gives a state conflict, and so
-// does a name another API has; a team that does not exist gets 404. The
-// registration and its security event commit together.
+// does a name another registered API has; a team that does not exist gets
+// 404. The registration and its security event commit together.
+//
+// Unregistering (contract-changes: Admins unregister APIs; design.md,
+// Readings to confirm with the founder: R19): an admin unregisters an API
+// with no confirmation step, which marks it unregistered and appends its
+// security event; an API that is unregistered already changes nothing and
+// records nothing. A name keeps naming the same API: registering an
+// unregistered API's name again binds that API anew, with its provider team,
+// repository and workflow, so the declarations that teams consume it route
+// again, and the requests its reports opened keep naming it.
+//
+// Which API a CI run may report for (contract-changes: Admins register APIs,
+// each bound to one repository; agent-access: CI authenticates with GitHub
+// Actions OIDC bound to registered repositories): a registered API, by the
+// name the report gives, whose repository's GitHub id and owner's GitHub id
+// are the ones the run's OIDC token names, and, for an API bound to a
+// workflow, whose workflow is the run's. Any other report, one for an API
+// that is unregistered or does not exist included, is refused with 403, as
+// the error model gives a CI caller acting outside what it may call, so a
+// CI caller learns nothing of the APIs of other repositories.
 
 type RegisteredApi = z.input<typeof registeredApi>;
 
@@ -69,13 +89,13 @@ async function teamKeyOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, teamId
   return row?.key;
 }
 
-/** Whether an API has this name. */
-async function nameTaken({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, name: string): Promise<boolean> {
+/** The API with this name, registered or unregistered; undefined when no API has it. */
+async function apiNamed({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, name: string): Promise<{ id: string; registered: boolean } | undefined> {
   const [row] = await tx
-    .select({ id: apis.id })
+    .select({ id: apis.id, unregisteredAt: apis.unregisteredAt })
     .from(apis)
     .where(and(eq(apis.orgId, orgId), eq(apis.name, name)));
-  return row !== undefined;
+  return row === undefined ? undefined : { id: row.id, registered: row.unregisteredAt === null };
 }
 
 /**
@@ -88,7 +108,7 @@ export function normalJobWorkflowRef(ref: string): string {
   return [owner.toLowerCase(), repository.toLowerCase(), ...rest].join("/");
 }
 
-/** The registered APIs, with their provider teams and the admins who registered them, by name; or the one with this id. */
+/** The registered APIs, with their provider teams and the admins who registered them, by name; or the one with this id, registered or not. */
 async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, id?: string): Promise<RegisteredApi[]> {
   const rows = await tx
     .select({
@@ -106,7 +126,7 @@ async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, i
     .from(apis)
     .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
     .innerJoin(users, and(eq(users.orgId, apis.orgId), eq(users.id, apis.registeredByUserId)))
-    .where(and(eq(apis.orgId, orgId), ...(id === undefined ? [] : [eq(apis.id, id)])))
+    .where(and(eq(apis.orgId, orgId), id === undefined ? isNull(apis.unregisteredAt) : eq(apis.id, id)))
     .orderBy(asc(apis.name));
   return rows.map((row) => ({
     id: row.id,
@@ -133,22 +153,25 @@ export const API_HANDLERS: Handlers = {
     const covered = await coveredRepositoryNamed(context, repository);
     if (covered === undefined) throw notCovered(repository);
     const taken = () => new Refusal("conflict", `An API named ${name} is registered already.`);
-    if (await nameTaken(context, name)) throw taken();
+    if ((await apiNamed(context, name))?.registered === true) throw taken();
     const id = await context.write(async (writer) => {
       if (context.caller.kind !== "web_session") throw new Error("Only a web session registers an API.");
+      const binding = {
+        providerTeamId: team,
+        repositoryId: covered.repositoryId,
+        repositoryOwnerId: covered.ownerId,
+        repositoryFullName: covered.fullName,
+        jobWorkflowRef: jobWorkflowRef === undefined ? null : normalJobWorkflowRef(jobWorkflowRef),
+        registeredAt: new Date(),
+        registeredByUserId: context.caller.userId,
+        unregisteredAt: null,
+        unregisteredByUserId: null,
+      };
+      // A new name is a new API; an unregistered API's name binds that API anew. A registered one keeps its binding.
       const [row] = await writer.tx
         .insert(apis)
-        .values({
-          orgId: writer.orgId,
-          name,
-          providerTeamId: team,
-          repositoryId: covered.repositoryId,
-          repositoryOwnerId: covered.ownerId,
-          repositoryFullName: covered.fullName,
-          jobWorkflowRef: jobWorkflowRef === undefined ? null : normalJobWorkflowRef(jobWorkflowRef),
-          registeredByUserId: context.caller.userId,
-        })
-        .onConflictDoNothing()
+        .values({ orgId: writer.orgId, name, ...binding })
+        .onConflictDoUpdate({ target: [apis.orgId, apis.name], set: binding, setWhere: isNotNull(apis.unregisteredAt) })
         .returning({ id: apis.id });
       // Another registration took the name since it was read.
       if (row === undefined) throw taken();
@@ -161,7 +184,65 @@ export const API_HANDLERS: Handlers = {
   }),
 
   [listApis.id]: defineHandler(listApis, async (_input, context) => ({ apis: await registeredApis(context) })),
+
+  [unregisterApi.id]: defineHandler(unregisterApi, async ({ api }, context) => {
+    const [row] = await context.tx
+      .select({ unregisteredAt: apis.unregisteredAt })
+      .from(apis)
+      .where(and(eq(apis.orgId, context.orgId), eq(apis.id, api)))
+      .for("update");
+    if (row === undefined) throw new Refusal("record-not-found", "There is no such API.");
+    if (row.unregisteredAt !== null) return { api, unregistered: true as const };
+    return context.write(async (writer) => {
+      if (context.caller.kind !== "web_session") throw new Error("Only a web session unregisters an API.");
+      await writer.tx
+        .update(apis)
+        .set({ unregisteredAt: new Date(), unregisteredByUserId: context.caller.userId })
+        .where(and(eq(apis.orgId, writer.orgId), eq(apis.id, api)));
+      await writer.record(apiUnregistered, { apiId: api });
+      return { api, unregistered: true as const };
+    });
+  }),
 };
+
+/** A registered API a CI run may report for: its id, its name and its provider team. */
+export interface ReportableApi {
+  id: string;
+  name: string;
+  providerTeamId: string;
+}
+
+/**
+ * The registered API with this name that the CI run may report for: bound to
+ * the repository, and the repository's owner, that the run's OIDC token
+ * names, and, for an API bound to a workflow, to the run's workflow; refused
+ * with 403 otherwise.
+ */
+export async function reportableApi({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, caller: CiCaller, name: string): Promise<ReportableApi> {
+  const [row] = await tx
+    .select({
+      id: apis.id,
+      name: apis.name,
+      providerTeamId: apis.providerTeamId,
+      repositoryId: apis.repositoryId,
+      repositoryOwnerId: apis.repositoryOwnerId,
+      jobWorkflowRef: apis.jobWorkflowRef,
+    })
+    .from(apis)
+    .where(and(eq(apis.orgId, orgId), eq(apis.name, name), isNull(apis.unregisteredAt)));
+  const allowed =
+    row !== undefined &&
+    String(row.repositoryId) === caller.repositoryId &&
+    String(row.repositoryOwnerId) === caller.repositoryOwnerId &&
+    (row.jobWorkflowRef === null || row.jobWorkflowRef === normalJobWorkflowRef(caller.jobWorkflowRef));
+  if (!allowed) {
+    throw new Refusal(
+      "ci-caller-refused",
+      "This CI run may not report for that API: it is not registered to the run's repository, or it is bound to another workflow.",
+    );
+  }
+  return { id: row.id, name: row.name, providerTeamId: row.providerTeamId };
+}
 
 export const API_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
   [registerApi.id]: async (input, context) => {
@@ -179,13 +260,17 @@ export const API_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
         ],
       };
     }
-    if (await nameTaken(context, name)) {
+    const named = await apiNamed(context, name);
+    if (named?.registered === true) {
       return { title, lines: [{ text: `An API named ${name} is registered already, so confirming registers nothing.` }] };
     }
     return {
       title,
       lines: [
         { text: `Register the API ${name} for the team ${key}, bound to the GitHub repository ${covered.fullName}.` },
+        ...(named === undefined
+          ? []
+          : [{ text: `${name} was registered before and then unregistered: registering it again binds it anew, and the teams' declarations that they consume it route again.` }]),
         {
           text:
             jobWorkflowRef === undefined

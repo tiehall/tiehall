@@ -2308,7 +2308,8 @@ export const appliedCommitments = pgTable(
 // Actions OIDC token of a CI run in it names (repository_id and
 // repository_owner_id), with its full name as shown then. The admin may bind
 // the API to one workflow, by the job_workflow_ref of the runs that may report
-// for it. A name names one API at a time.
+// for it. A name names one API, which keeps its id when an admin unregisters
+// it and registers it again.
 export const apis = pgTable(
   "apis",
   {
@@ -2328,6 +2329,14 @@ export const apis = pgTable(
     jobWorkflowRef: text("job_workflow_ref"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     registeredByUserId: uuid("registered_by").notNull(),
+    /**
+     * When an admin unregistered the API, and who (contract-changes: Admins
+     * unregister APIs): it then takes no report, and the declarations that
+     * teams consume it route nothing, until an admin registers it again, which
+     * binds it anew and clears both.
+     */
+    unregisteredAt: timestamp("unregistered_at", { withTimezone: true }),
+    unregisteredByUserId: uuid("unregistered_by"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -2347,5 +2356,11 @@ export const apis = pgTable(
     check("apis_repository_ids_positive", sql`${table.repositoryId} > 0 AND ${table.repositoryOwnerId} > 0`),
     check("apis_repository_full_name_length", sql`char_length(${table.repositoryFullName}) BETWEEN 3 AND 200`),
     check("apis_job_workflow_ref_length", sql`char_length(${table.jobWorkflowRef}) BETWEEN 1 AND 1024`),
+    foreignKey({
+      name: "apis_unregistered_by_fk",
+      columns: [table.orgId, table.unregisteredByUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    check("apis_unregistered_by_someone", sql`(${table.unregisteredAt} IS NULL) = (${table.unregisteredByUserId} IS NULL)`),
   ],
 );

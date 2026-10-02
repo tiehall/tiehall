@@ -697,6 +697,20 @@ export const apiRegistered = defineEventType({
   },
 });
 
+/**
+ * An admin unregistered an API, with no confirmation step, since it only stops
+ * its reports (contract-changes: Admins unregister APIs; activity-log: Which
+ * actions are security events). It names the API; its provenance names the
+ * admin.
+ */
+export const apiUnregistered = defineEventType({
+  type: "api.unregistered",
+  class: "security",
+  fields: {
+    apiId: { kind: "id", of: "api" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -741,4 +755,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   personalAccessTokenCreated,
   personalAccessTokenRevoked,
   apiRegistered,
+  apiUnregistered,
 ];

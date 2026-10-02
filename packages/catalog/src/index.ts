@@ -30,7 +30,7 @@ export {
 } from "./personal-access-tokens.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
-export { API_COMMANDS, API_NAME, apiName, JOB_WORKFLOW_REF, jobWorkflowRef, listApis, registeredApi, registerApi } from "./apis.ts";
+export { API_COMMANDS, API_NAME, apiName, JOB_WORKFLOW_REF, jobWorkflowRef, listApis, registeredApi, registerApi, unregisterApi } from "./apis.ts";
 export { BACKUP_WARNING_DAYS, banner, getBanners, getInstallStatus, INSTALL_COMMANDS } from "./install.ts";
 export { deprecationHeaders } from "./deprecation.ts";
 export { acknowledgeEvents, EVENT_COMMANDS, eventView, readEvents } from "./events.ts";

@@ -184,7 +184,7 @@ describe("the actor kind human", () => {
       pia,
       { kind: "oauth_token", userId: pia.userId, clientId: "https://client.example/metadata.json", scopes: [], surface: "mcp" },
       { kind: "personal_access_token", userId: pia.userId, tokenId: randomUUID(), scopes: [], surface: "api" },
-      { kind: "ci", repositoryId: "1296269" },
+      { kind: "ci", repositoryId: "1296269", repositoryOwnerId: "9919", jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main" },
       { kind: "system_job", job: "requests.close_on_merge" },
       { kind: "integration_event", source: "github", userId: pia.userId },
     ];

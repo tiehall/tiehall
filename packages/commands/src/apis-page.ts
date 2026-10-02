@@ -1,10 +1,10 @@
-import { listApis, listGitHubInstallations, listTeams, registerApi, type githubInstallation, type listedTeam, type registeredApi } from "@tiehall/catalog";
+import { listApis, listGitHubInstallations, listTeams, registerApi, unregisterApi, type githubInstallation, type listedTeam, type registeredApi } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { adminNav, APIS_PATH, reviewPath } from "./admin-pages.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
 import { userName } from "./members.ts";
-import { createPageRoute, htmlAnswer, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The APIs page of the admin UI, /admin/apis (contract-changes: Admins
 // register APIs, each bound to one repository; teams-and-roles: What admins
@@ -17,8 +17,10 @@ import { createPageRoute, htmlAnswer, seeOther, type PageRoute, type PageRouteOp
 // offers the repositories the connected installations cover; a repository no
 // connected installation covers can be named too, and its review page says
 // that confirming registers nothing. Every read runs through execute() as the
-// signed-in session, so a member who opens the page, or posts its form, gets
-// 403 and registers nothing.
+// signed-in session, so a member who opens the page, or posts its forms, gets
+// 403 and changes nothing. Each registered API also has a form that
+// unregisters it, with no confirmation step (contract-changes: Admins
+// unregister APIs).
 
 type RegisteredApi = z.output<typeof registeredApi>;
 type ListedTeam = z.output<typeof listedTeam>;
@@ -42,7 +44,11 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
       const covered = installations.filter(({ connected, suspended, deleted }) => connected && !suspended && !deleted).flatMap(({ repositories }) => repositories);
       return htmlAnswer(apisPage(apis, teams, [...new Set(covered)].sort(), csrf));
     },
-    async post(form, { read }) {
+    async post(form, { read, write }) {
+      if (form.get("action") === "unregister") {
+        await write(unregisterApi.id, { api: field(form, "api") });
+        return seeOther(APIS_PATH);
+      }
       if (form.get("action") !== "register") throw new Refusal("route-not-found", "The APIs page offers no such action.");
       // Only an admin's form leads on: a member gets 403, as for the page.
       await read(listApis.id, {});
@@ -59,6 +65,7 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
 }
 
 function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], covered: readonly string[], csrf: string): string {
+  // Unregistering needs no confirmation step: it only stops an API's reports.
   const registered = apis.map((api) =>
     [
       "        <tr>",
@@ -67,6 +74,9 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       `          <td>${escapeHtml(api.repository)}</td>`,
       `          <td>${escapeHtml(api.jobWorkflowRef ?? "Any workflow of its repository")}</td>`,
       `          <td>${escapeHtml(`${userName(api.registeredBy)}, ${api.registeredAt}`)}</td>`,
+      "          <td>",
+      postForm(APIS_PATH, { action: "unregister", api: api.id }, csrf, `Unregister ${api.name}`, "            "),
+      "          </td>",
       "        </tr>",
     ].join("\n"),
   );
@@ -80,8 +90,9 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       apis.length === 0
         ? "      <p>No API is registered.</p>"
         : [
+            "      <p>Unregistering an API needs no confirmation: it then takes no more reports, the teams' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew.</p>",
             "      <table>",
-            "        <thead><tr><th>API</th><th>Provider team</th><th>Repository</th><th>Workflow</th><th>Registered by</th></tr></thead>",
+            "        <thead><tr><th>API</th><th>Provider team</th><th>Repository</th><th>Workflow</th><th>Registered by</th><th>Actions</th></tr></thead>",
             "        <tbody>",
             ...registered,
             "        </tbody>",

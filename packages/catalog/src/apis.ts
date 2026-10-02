@@ -16,8 +16,16 @@ import { user } from "./schemas.ts";
 // that a connected installation of the install's GitHub App covers, and, if
 // the admin names one, to one workflow, by the job_workflow_ref of the runs
 // that may report for it. A repository that no connected installation covers
-// gets 409, as a name that another API has does. The admin page lists the
-// registered APIs, to admins only.
+// gets 409, as a name that another registered API has does. The admin page
+// lists the registered APIs, to admins only.
+//
+// An admin unregisters an API with no confirmation step, because that only
+// stops its reports (contract-changes: Admins unregister APIs; design.md,
+// Self-hosting decisions: S6): it then takes no report, and the declarations
+// that teams consume it route nothing, while the requests its reports opened
+// stay as they are. Registering it again, by its name, is how its provider
+// team, repository or workflow changes: the API keeps its id, and the teams'
+// declarations route again.
 
 /** An API's name: 1 to 100 lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, such as payments-api. */
 export const API_NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -94,4 +102,18 @@ export const listApis = defineCommand({
   stability: "beta",
 });
 
-export const API_COMMANDS = [registerApi, listApis];
+export const unregisterApi = defineCommand({
+  id: "apis.unregister",
+  summary:
+    "Unregister an API, so that it takes no more contract reports and the declarations that teams consume it route nothing; the requests its reports opened stay as they are.",
+  input: z.object({ api: z.uuid().meta({ description: "The API to unregister." }) }),
+  output: z.object({ api: z.uuid(), unregistered: z.literal(true) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "apis",
+  surfaces: [],
+  stability: "beta",
+});
+
+export const API_COMMANDS = [registerApi, listApis, unregisterApi];

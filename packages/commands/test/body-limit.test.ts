@@ -91,7 +91,7 @@ describe("a packet revision at the limit", LARGE_BODIES, () => {
 // catalog holds no such operation, every path gets 2 MiB, and these cases fail
 // as expected; they become plain tests in the commit that adds it.
 describe("a contract report, whose limit is 16 MiB", LARGE_BODIES, () => {
-  const ci: Caller = { kind: "ci", repositoryId: "100200300" };
+  const ci: Caller = { kind: "ci", repositoryId: "100200300", repositoryOwnerId: "9919", jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main" };
 
   /** contract.report's method and path, from the catalog. */
   function reportOperation(): { method: string; path: string } {

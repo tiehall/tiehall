@@ -237,7 +237,14 @@
             "case": "registers it once an admin confirms it on its review page, bound to the repository's GitHub ids, and records a security event"
           }
         },
-        { "action": "an API unregistered", "pending": "22.2" }
+        {
+          "action": "an API unregistered",
+          "event": "api.unregistered",
+          "test": {
+            "file": "packages/commands/test/api-unregistrations.test.ts",
+            "case": "needs no confirmation step: an admin's form on the APIs page unregisters it, and a security event records it"
+          }
+        }
       ]
     },
     {
