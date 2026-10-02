@@ -18,8 +18,11 @@ import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputErr
 // 1. installs the pinned oasdiff, whose release archive it checks against its
 //    pinned SHA-256 before it extracts or runs anything from it: a binary that
 //    is not the pinned one never runs, and the step fails without a report;
-// 2. reads the document at the pull request's base and head commits with git,
-//    from the checkout, and writes each to a folder of its own;
+// 2. reads the document with git, from the checkout, at the pull request's
+//    head commit and at the commit it branched off its base branch, the merge
+//    base of its base and head commits, so the changes are the pull request's
+//    own and none the base branch made since; and writes each to a folder of
+//    its own;
 // 3. runs oasdiff there on the two documents: `oasdiff breaking`, the
 //    breaking changes as text, for the job summary, and `oasdiff changelog
 //    --format json`, every classified change with its level, for the report;
@@ -166,20 +169,57 @@ function toolEnv(env: ActionRuntime["env"]): Record<string, string | undefined> 
   return { PATH: env["PATH"], HOME: env["HOME"], GIT_TERMINAL_PROMPT: "0" };
 }
 
+/** Makes sure the checkout holds a commit, and throws when it does not. */
+async function ensureCommit(runtime: ActionRuntime, workspace: string, sha: string): Promise<void> {
+  const env = toolEnv(runtime.env);
+  const has = async () => (await runtime.exec("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: workspace, env })).status === 0;
+  if (await has()) return;
+  // A shallow checkout lacks the commit: fetch it alone, which works where the checkout kept its credentials or the repository is public.
+  await runtime.exec("git", ["fetch", "--no-tags", "--depth=1", "origin", sha], { cwd: workspace, env });
+  if (!(await has())) {
+    throw new StepError(
+      "Commit not in the checkout",
+      `The checkout does not hold the commit ${sha}. Check the repository out with fetch-depth: 0, so the pull request's base and head commits and their history are there.`,
+    );
+  }
+}
+
+/**
+ * The commit the pull request branched off its base branch at: the merge base
+ * of its base and head commits, as GitHub's own diff of a pull request takes
+ * it. GitHub's event names the base branch's latest commit as the base, which
+ * holds what the base branch changed since the pull request branched off; the
+ * Action compares the head with the merge base, so it reports the pull
+ * request's own changes alone.
+ */
+async function mergeBaseOf(runtime: ActionRuntime, workspace: string, base: string, head: string): Promise<string> {
+  const env = toolEnv(runtime.env);
+  await ensureCommit(runtime, workspace, base);
+  await ensureCommit(runtime, workspace, head);
+  const find = async () => {
+    const found = await runtime.exec("git", ["merge-base", base, head], { cwd: workspace, env });
+    const sha = found.stdout.trim();
+    return found.status === 0 && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha) ? sha : undefined;
+  };
+  let found = await find();
+  if (found === undefined) {
+    // A shallow checkout lacks the history back to where the two meet: fetch it, as for a commit it lacks.
+    await runtime.exec("git", ["fetch", "--no-tags", "--unshallow", "origin", base, head], { cwd: workspace, env });
+    found = await find();
+  }
+  if (found === undefined) {
+    throw new StepError(
+      "Merge base not found",
+      `The checkout does not hold the history of the pull request back to where its head ${short(head)} branched off its base ${short(base)}. Check the repository out with fetch-depth: 0, so the history is there.`,
+    );
+  }
+  return found;
+}
+
 /** The document at a commit, read with git from the checkout; undefined when the commit has no such file. */
 async function documentAt(runtime: ActionRuntime, workspace: string, sha: string, spec: string): Promise<string | undefined> {
   const env = toolEnv(runtime.env);
-  const has = async () => (await runtime.exec("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: workspace, env })).status === 0;
-  if (!(await has())) {
-    // A shallow checkout lacks the commit: fetch it alone, which works where the checkout kept its credentials or the repository is public.
-    await runtime.exec("git", ["fetch", "--no-tags", "--depth=1", "origin", sha], { cwd: workspace, env });
-    if (!(await has())) {
-      throw new StepError(
-        "Commit not in the checkout",
-        `The checkout does not hold the commit ${sha}. Check the repository out with fetch-depth: 0, so both the pull request's base and head commits are there.`,
-      );
-    }
-  }
+  await ensureCommit(runtime, workspace, sha);
   const listed = await runtime.exec("git", ["ls-tree", "--name-only", sha, "--", spec], { cwd: workspace, env });
   if (listed.status !== 0 || listed.stdout.trim() === "") return undefined;
   const shown = await runtime.exec("git", ["show", `${sha}:${spec}`], { cwd: workspace, env });
@@ -316,7 +356,7 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
       throw new StepError("oasdiff not installed", `The pinned oasdiff ${OASDIFF.version} could not be downloaded: ${(error as Error).message}`);
     }
 
-    // 2. The document at the base and head commits, in a folder of their own.
+    // 2. The document at the commit the pull request branched off and at its head commit, in a folder of their own.
     const documents = join(temporary, "documents");
     mkdirSync(documents, { recursive: true });
     const extension = [".json", ".yaml", ".yml"].includes(extname(spec).toLowerCase()) ? extname(spec).toLowerCase() : ".yaml";
@@ -324,7 +364,8 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     if (head === undefined) {
       throw new StepError("Document not found", `The pull request's head commit ${short(event.head.sha)} has no ${spec}; the input spec names the API's OpenAPI document in the repository.`);
     }
-    const base = await documentAt(runtime, workspace, event.base.sha, spec);
+    const mergeBase = await mergeBaseOf(runtime, workspace, event.base.sha, event.head.sha);
+    const base = await documentAt(runtime, workspace, mergeBase, spec);
 
     // 3. The breaking changes and the changelog, from the pinned engine alone.
     let breaking = "";
@@ -394,7 +435,7 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
         "",
         base === undefined
           ? `Pull request #${event.number} adds ${spec}, so there is no earlier version to compare.`
-          : `Pull request #${event.number} compared ${spec} at ${event.base.ref} (${short(event.base.sha)}) with ${event.head.ref} (${short(event.head.sha)}), with oasdiff ${OASDIFF.version}. ${found}`,
+          : `Pull request #${event.number} compared ${spec} at ${short(mergeBase)}, where ${event.head.ref} branched off ${event.base.ref}, with ${event.head.ref} (${short(event.head.sha)}), with oasdiff ${OASDIFF.version}. ${found}`,
         "",
         ...reported,
         ...(failing ? ["", "The step fails because of the breaking changes, as fail-on-breaking asks."] : []),

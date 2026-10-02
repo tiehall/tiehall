@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,8 @@ import { archiveHolding, INPUTS, runActionWith, SPEC } from "./support/runner.ts
 // the workflow says otherwise. It installs the pinned oasdiff, whose release
 // archive it checks against the pinned SHA-256 before anything in it runs,
 // computes the breaking changes and the changelog of the API's document
-// between the pull request's base and head, and reports them with the pinned
+// between the commit the pull request branched off its base branch and its
+// head, so they are the pull request's own, and reports them with the pinned
 // tiehall CLI's `contract report`. It uploads no document, and it fails the
 // check for breaking changes only when an input asks for it. Here the Action
 // runs in this process with a runner of the test's own: git and oasdiff run
@@ -28,6 +29,13 @@ import { archiveHolding, INPUTS, runActionWith, SPEC } from "./support/runner.ts
 const scratch = mkdtempSync(join(tmpdir(), "tiehall-contract-action-"));
 
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/** Runs git in a folder, as a fixed author, and throws when it fails. */
+function git(cwd: string, ...args: string[]): string {
+  const run = spawnSync("git", ["-c", "user.name=Provider CI", "-c", "user.email=ci@acme.example", ...args], { cwd, encoding: "utf8" });
+  if (run.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${run.stderr}`);
+  return run.stdout.trim();
+}
 
 /** The recorded changelog of a fixture pair. */
 const recordedChangelog = (pair: string) => readFileSync(join(OASDIFF_FIXTURES, pair, "changelog.json"), "utf8");
@@ -120,6 +128,33 @@ describe("the changes it computes", () => {
     expect(run.code).toBe(0);
     expect(run.reports[0]?.changes).toBe("[]");
     expect(run.summary).toContain(`adds ${SPEC}`);
+  });
+
+  it("compares the head with the commit the pull request branched off, so what the base branch changed since is not the pull request's", async () => {
+    // The pull request changes only the README; after it branched off, main changed the document as the breaking pair's revision undoes.
+    const path = mkdtempSync(join(scratch, "repository-moved-base-"));
+    git(path, "init", "--quiet", "--initial-branch=main");
+    mkdirSync(join(path, "openapi"));
+    copyFileSync(join(OASDIFF_FIXTURES, "breaking", "revision.yaml"), join(path, SPEC));
+    writeFileSync(join(path, "README.md"), "The payments service.\n");
+    git(path, "add", "--all");
+    git(path, "commit", "--quiet", "--message", "Where the pull request branches off");
+    const branchPoint = git(path, "rev-parse", "HEAD");
+    git(path, "checkout", "--quiet", "-b", "readme-only");
+    writeFileSync(join(path, "README.md"), "The payments service, which takes payments.\n");
+    git(path, "commit", "--quiet", "--all", "--message", "The pull request");
+    const head = git(path, "rev-parse", "HEAD");
+    git(path, "checkout", "--quiet", "main");
+    copyFileSync(join(OASDIFF_FIXTURES, "breaking", "base.yaml"), join(path, SPEC));
+    git(path, "commit", "--quiet", "--all", "--message", "main moves on");
+    const base = git(path, "rev-parse", "HEAD");
+
+    const run = await runActionWith(scratch, { repository: { path, base, head }, inputs: { "fail-on-breaking": "true" } });
+
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.reports[0]?.changes ?? "")).toEqual([]);
+    expect(run.outputs["breaking-changes"]).toBe("0");
+    expect(run.summary).toContain(`compared ${SPEC} at ${branchPoint.slice(0, 7)}, where new-payment-fields branched off main, with new-payment-fields (${head.slice(0, 7)})`);
   });
 
   it("fails the step when the head commit has no document at the path the spec input names", async () => {

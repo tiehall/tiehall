@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The pull request's base and head commits, which the Action compares.
+          # The pull request's history back to where it branched off its base branch, which the Action compares with its head.
           fetch-depth: 0
           persist-credentials: false
       # The commit of the release you pin, with the release as a comment, so dependency-update tools can bump both.
@@ -71,4 +71,4 @@ The Action fails open: it never fails the check because Tiehall could not take i
 
 ## What it runs
 
-The Action runs its source on the runner's own Node.js 24, with nothing to build. Each run downloads the pinned oasdiff release from GitHub and checks the archive against its pinned SHA-256 before it extracts or runs anything from it; a binary that is not the pinned one never runs. oasdiff compares the document at the pull request's base and head commits, with external `$refs` off, in the runner's temporary folder, which the Action removes afterwards. The pinned `tiehall` CLI reports the result, with `npx`, so the runner needs Node.js with npm on its `PATH`, as GitHub-hosted runners have.
+The Action runs its source on the runner's own Node.js 24, with nothing to build. Each run downloads the pinned oasdiff release from GitHub and checks the archive against its pinned SHA-256 before it extracts or runs anything from it; a binary that is not the pinned one never runs. oasdiff compares the document at the pull request's head commit with the document at the commit the pull request branched off its base branch, their merge base, as GitHub's own diff of a pull request does, so a change the base branch made since is not taken for the pull request's; it runs with external `$refs` off, in the runner's temporary folder, which the Action removes afterwards. The pinned `tiehall` CLI reports the result, with `npx`, so the runner needs Node.js with npm on its `PATH`, as GitHub-hosted runners have.
