@@ -127,11 +127,17 @@ export const unregisterApi = defineCommand({
 // declares nothing for one. A declaration made again changes nothing. No agent
 // surface offers them; routing reads the declarations alone.
 
-/** A team's declaration that it consumes an API: who declared it and when, and when it was last confirmed. */
+/**
+ * A team's declaration that it consumes an API: who declared it and when, when
+ * it was last confirmed, and whether it is stale, unconfirmed for 120 days
+ * since then (contract-changes: Declarations are re-confirmed every 90 days).
+ */
 export const consumerDeclaration = z.object({
   declaredBy: user,
   declaredAt: z.iso.datetime(),
   lastConfirmedAt: z.iso.datetime(),
+  /** Unconfirmed 120 days after its last confirmation: it keeps routing like any other declaration until it is re-confirmed. */
+  stale: z.boolean(),
 });
 
 /** The API and the team a declaration is about, by their ids. */
@@ -190,4 +196,23 @@ export const listTeamApis = defineCommand({
   stability: "beta",
 });
 
-export const API_COMMANDS = [registerApi, listApis, unregisterApi, declareConsumer, removeConsumer, listTeamApis];
+// Re-confirmation (contract-changes: Declarations are re-confirmed every 90
+// days): any member of the consuming team re-confirms a declaration, which
+// moves its last confirmation to now, keeps its declarer, and clears the
+// request to re-confirm it and its stale mark; anyone else gets 403.
+
+export const reconfirmConsumer = defineCommand({
+  id: "apis.reconfirm_consumer",
+  summary: "Re-confirm that a team you are a member of still consumes an API it declared, which moves the declaration's last confirmation to now.",
+  input: declarationInput,
+  output: z.object({
+    declaration: consumerDeclaration.extend({ api: z.object({ id: z.uuid(), name: z.string() }), team: teamRef }),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const API_COMMANDS = [registerApi, listApis, unregisterApi, declareConsumer, removeConsumer, listTeamApis, reconfirmConsumer];

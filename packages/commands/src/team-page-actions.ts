@@ -1,4 +1,4 @@
-import { declareConsumer, removeConsumer } from "@tiehall/catalog";
+import { declareConsumer, reconfirmConsumer, removeConsumer } from "@tiehall/catalog";
 import { Refusal, TEAM_KEY } from "@tiehall/core";
 import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
@@ -13,6 +13,9 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 // field:
 // - declare_api runs apis.declare_consumer for the form's team and API;
 // - remove_api runs apis.remove_consumer for them;
+// - reconfirm_api runs apis.reconfirm_consumer for them, which a member uses
+//   when the team is asked to re-confirm its declaration, or at any time
+//   (contract-changes: Declarations are re-confirmed every 90 days);
 // and leads the browser back to the team's page, which then shows the team's
 // declarations as they are. The form passes the checks every web UI write
 // passes (the session's CSRF token, an Origin equal to TIEHALL_URL and
@@ -26,10 +29,10 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 export const TEAM_APIS_PATH = "/teams/apis";
 
 /** The actions the page's forms take, by the name their `action` field gives. */
-export const TEAM_PAGE_ACTIONS = ["declare_api", "remove_api"] as const;
+export const TEAM_PAGE_ACTIONS = ["declare_api", "remove_api", "reconfirm_api"] as const;
 export type TeamPageAction = (typeof TEAM_PAGE_ACTIONS)[number];
 
-const COMMANDS: Readonly<Record<TeamPageAction, string>> = { declare_api: declareConsumer.id, remove_api: removeConsumer.id };
+const COMMANDS: Readonly<Record<TeamPageAction, string>> = { declare_api: declareConsumer.id, remove_api: removeConsumer.id, reconfirm_api: reconfirmConsumer.id };
 
 /** The operation a form of the page runs, and its input; a form the page does not have is refused with 400. */
 export function teamPageWrite(fields: URLSearchParams): { commandId: string; input: { api: string; team: string } } {

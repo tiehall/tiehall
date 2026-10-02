@@ -13,8 +13,10 @@ import { TEAM_APIS_PATH, type TeamApisView, type TeamIntakeView, type TeamPageAc
 // The page also lists the registered APIs, each with its provider team and
 // whether the team declared that it consumes it, with who declared it, when,
 // and when it was last confirmed (contract-changes: Teams declare the APIs
-// they consume). A member of the team finds a form beside each that declares
-// that the team consumes the API, or removes the team's declaration; it posts
+// they consume), and whether it is stale (contract-changes: Declarations are
+// re-confirmed every 90 days). A member of the team finds a form beside each
+// that declares that the team consumes the API, or re-confirms the team's
+// declaration and one that removes it; each posts
 // to the forms' own target, /teams/apis, with the session's CSRF token, which
 // leads back here (team-page-actions.ts).
 
@@ -71,7 +73,18 @@ function ConsumedApis({ teamKey, apis, csrf }: { teamKey: string; apis: TeamApis
                   {declaration === null
                     ? `${teamKey} has not declared that it consumes it.`
                     : `${teamKey} consumes it, as ${declarer} declared on ${dayOf(declaration.declaredAt)}; last confirmed on ${dayOf(declaration.lastConfirmedAt)}.`}
+                  {declaration?.stale === true ? ` It is stale: nobody re-confirmed it within 120 days of its last confirmation, and changes to ${api.untrusted.name} still reach ${teamKey}.` : null}
                 </p>
+                {forms && declaration !== null ? (
+                  <TeamForm
+                    teamKey={teamKey}
+                    team={apis.team.id}
+                    api={api.id}
+                    action="reconfirm_api"
+                    csrf={csrf}
+                    button={`Re-confirm that ${teamKey} consumes ${api.untrusted.name}`}
+                  />
+                ) : null}
                 {forms ? (
                   <TeamForm
                     teamKey={teamKey}

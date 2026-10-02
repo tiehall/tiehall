@@ -1,4 +1,4 @@
-import { readInboxUpdates, rejectProposal, standingList, type proposal } from "@tiehall/catalog";
+import { readInboxUpdates, reconfirmConsumer, rejectProposal, standingList, type proposal } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { updateDescription } from "@tiehall/packet/tool-text";
 import type { z } from "zod";
@@ -31,7 +31,11 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 // UI's write checks; the receipts of their confirmations and undos, whose
 // words show how a proposal that waited for the other side ended, each with
 // its undo page while the commitment can still be undone; and the reminders
-// that their personal access tokens expire soon. The confirm URL reaches the
+// that their personal access tokens expire soon; and the requests to re-confirm
+// the declarations of their teams that they consume an API, each in Tiehall's
+// words, with a link to the team's page and a form that re-confirms it, which
+// needs no confirmation step but passes the web UI's write checks
+// (contract-changes: Declarations are re-confirmed every 90 days). The confirm URL reaches the
 // member here, in the web UI, and never an agent (agent-safety: The confirm
 // URL never reaches the model). The page reads through execute(), as the
 // member's web session, in read-only transactions.
@@ -81,6 +85,7 @@ interface StandingList {
   waiting: ProposalView[];
   receipts: { id: string; text: string; undoUntil: string | null; proposal: ProposalView }[];
   reminders: { id: string; text: string }[];
+  reconfirmations: { api: { id: string; name: string }; team: { id: string; key: string }; text: string }[];
 }
 
 /** How a surface is named in the web UI's words. */
@@ -152,7 +157,23 @@ function standingSection(list: StandingList, csrf: string): string {
         ];
   const reminders =
     list.reminders.length === 0 ? [] : ["      <h2>Reminders</h2>", '      <ul id="reminders">', ...list.reminders.map(({ text }) => `        <li>${escapeHtml(text)}</li>`), "      </ul>"];
-  return ["      <h2>Waiting for your confirmation</h2>", ...waiting, "      <h2>Receipts</h2>", ...receipts, ...reminders].join("\n");
+  const reconfirmations =
+    list.reconfirmations.length === 0
+      ? []
+      : [
+          "      <h2>Declarations to re-confirm</h2>",
+          '      <ul id="reconfirmations">',
+          ...list.reconfirmations.map(({ api, team, text }) =>
+            [
+              "        <li>",
+              `          ${escapeHtml(text)} ${link(`/${team.key}`, `The page of ${team.key}`)}`,
+              postForm(INBOX_PATH, { action: "reconfirm", api: api.id, team: team.id }, csrf, `Re-confirm that ${team.key} consumes ${api.name}`, "          "),
+              "        </li>",
+            ].join("\n"),
+          ),
+          "      </ul>",
+        ];
+  return ["      <h2>Waiting for your confirmation</h2>", ...waiting, "      <h2>Receipts</h2>", ...receipts, ...reminders, ...reconfirmations].join("\n");
 }
 
 export function createInboxRoute(options: PageRouteOptions): PageRoute {
@@ -172,7 +193,12 @@ export function createInboxRoute(options: PageRouteOptions): PageRoute {
         await write(rejectProposal.id, { proposal: form.get("proposal") ?? "" });
         return seeOther(INBOX_PATH);
       }
-      if (action !== "acknowledge") throw new Refusal("invalid-input", "The form acknowledges the updates it shows, or rejects a proposal.");
+      if (action === "reconfirm") {
+        // Re-confirming a declaration moves its last confirmation alone, so it needs no confirmation step; who may, apis.reconfirm_consumer decides.
+        await write(reconfirmConsumer.id, { api: form.get("api") ?? "", team: form.get("team") ?? "" });
+        return seeOther(INBOX_PATH);
+      }
+      if (action !== "acknowledge") throw new Refusal("invalid-input", "The form acknowledges the updates it shows, rejects a proposal, or re-confirms a declaration.");
       const upTo = form.get("upTo") ?? "";
       if (!/^[1-9][0-9]{0,15}$/.test(upTo)) throw new Refusal("invalid-input", "The form names the last update it shows by its number.");
       await write(readInboxUpdates.id, { acknowledge: Number(upTo), limit: 1 });

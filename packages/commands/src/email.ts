@@ -336,6 +336,34 @@ export const PERSONAL_ACCESS_TOKEN_REMINDER: EmailTemplate<{ createdOn: ServerTe
     ].join("\n"),
 };
 
+/** A registered API's name, such as payments-api: lower-case letters, digits, dots, hyphens and underscores, which holds no space. */
+export function apiNameText(name: string): ServerText {
+  if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(name)) throw new TypeError("An API's name is lower-case letters, digits, dots, hyphens and underscores, such as payments-api.");
+  return name as ServerText;
+}
+
+/**
+ * The request to re-confirm a declaration (contract-changes: Declarations are
+ * re-confirmed every 90 days), emailed to each member of the consuming team
+ * when it comes due, whatever their digest setting: the team, the API, the
+ * day it was last confirmed, the day it is marked stale unless it is
+ * re-confirmed before, and the team's page, where a member re-confirms it or
+ * removes it. Only server text: the subject names the team alone.
+ */
+export const RECONFIRMATION_REQUEST: EmailTemplate<{ team: ServerText; api: ServerText; lastConfirmedOn: ServerText; lastDay: ServerText; staleOn: ServerText; page: ServerText }> = {
+  id: "email.reconfirmation_request",
+  subject: ({ team }) => `Tiehall: ${team} is asked to re-confirm an API it consumes`,
+  text: ({ team, api, lastConfirmedOn, lastDay, staleOn, page }) =>
+    [
+      `${team} declared in Tiehall that it consumes the API ${api}, last confirmed on ${lastConfirmedOn}. Tiehall asks a member of ${team} to re-confirm such a declaration every 90 days, because the consumer map is kept by hand.`,
+      "",
+      `Re-confirm that ${team} still consumes it, or remove the declaration, on ${team}'s page: ${page}`,
+      `Unless a member of ${team} re-confirms it by ${lastDay}, it is marked stale on ${staleOn}; changes to ${api} still reach ${team} either way.`,
+      "The request is also listed in the standing list of your web inbox.",
+      "",
+    ].join("\n"),
+};
+
 /**
  * The alert to every admin when Tiehall gave up a GitHub webhook delivery
  * (tracker-mirrors: Broken integrations are surfaced): sent once while its

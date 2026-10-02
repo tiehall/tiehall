@@ -184,7 +184,7 @@ describe("the team's page", () => {
       {
         id: paymentsApi,
         provider: { id: pay, key: "PAY" },
-        declaration: { declaredBy: expect.objectContaining({ login: "ayse" }), declaredAt: expect.any(String), lastConfirmedAt: expect.any(String) },
+        declaration: { declaredBy: expect.objectContaining({ login: "ayse" }), declaredAt: expect.any(String), lastConfirmedAt: expect.any(String), stale: false },
         untrusted: { name: "payments-api" },
       },
     ]);
@@ -199,6 +199,12 @@ describe("the team's page", () => {
 
     expect((await teamPageForm(zeynep, { action: "remove_api", key: "FE", team: fe, api: billingApi })).status).toBe(403);
     expect(await routedTo(billingApi)).toEqual(["FE"]);
+
+    const before = (await install.owner.query("SELECT last_confirmed_at FROM api_consumers WHERE api_id = $1", [billingApi])).rows[0].last_confirmed_at;
+    expect((await teamPageForm(ayse, { action: "reconfirm_api", key: "FE", team: fe, api: billingApi })).status).toBe(303);
+    const after = (await install.owner.query("SELECT last_confirmed_at, declared_by FROM api_consumers WHERE api_id = $1", [billingApi])).rows[0];
+    expect(after.last_confirmed_at.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(after.declared_by).toBe(mehmet.userId);
 
     expect((await teamPageForm(ayse, { action: "remove_api", key: "FE", team: fe, api: billingApi })).status).toBe(303);
     expect(await routedTo(billingApi)).toEqual([]);

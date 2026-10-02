@@ -42,6 +42,7 @@ export {
   jobWorkflowRef,
   listApis,
   listTeamApis,
+  reconfirmConsumer,
   registeredApi,
   registerApi,
   removeConsumer,

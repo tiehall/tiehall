@@ -468,7 +468,16 @@ export { createAdminRoute, type AdminRouteOptions } from "./admin-page.ts";
 export { bannersFor, emailAdminAlerts, type AdminAlert, type AdminAlertEmailData, type Banner } from "./admin-alerts.ts";
 export { DEFAULT_SOURCE_REPOSITORY, runningVersion, type RunningVersion } from "./running-version.ts";
 export { createApisRoute } from "./apis-page.ts";
-export { API_CONSUMER_HANDLERS, consumersOf } from "./api-consumers.ts";
+export {
+  API_CONSUMER_HANDLERS,
+  consumersOf,
+  RECONFIRM_AFTER_DAYS,
+  reconfirmationText,
+  reconfirmationViews,
+  requestConsumerReconfirmations,
+  STALE_AFTER_DAYS,
+  type ReconfirmationView,
+} from "./api-consumers.ts";
 export { createTeamApisRoute, TEAM_APIS_PATH, TEAM_PAGE_ACTIONS, teamPageWrite, type TeamPageAction } from "./team-page-actions.ts";
 export { API_HANDLERS, API_REVIEWS, normalJobWorkflowRef, reportableApi, type ReportableApi } from "./apis.ts";
 export {

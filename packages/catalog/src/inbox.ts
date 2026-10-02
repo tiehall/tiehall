@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { proposal } from "./proposals.ts";
+import { teamRef } from "./requests.ts";
 
 // The standing list of a person's web inbox (requester-loop: The web inbox;
 // requests: Where a proposal waits). It holds what stays listed whether or not
@@ -10,12 +11,15 @@ import { proposal } from "./proposals.ts";
 // the receipts of their confirmations, each with its sentence in Tiehall's
 // words (requests: Receipts), and the reminders that their personal access
 // tokens expire soon, while each token may still be used (agent-access: PAT
-// owners are reminded before expiry). Only the web UI reads it.
+// owners are reminded before expiry), and the requests to re-confirm the
+// declarations of their teams that they consume an API, while each waits
+// (contract-changes: Declarations are re-confirmed every 90 days). Only the
+// web UI reads it.
 
 export const standingList = defineCommand({
   id: "inbox.standing_list",
   summary:
-    "The standing list of your web inbox: the proposals that wait for a confirmation you may give now, the receipts of your confirmations, and the reminders that your personal access tokens expire soon, oldest first.",
+    "The standing list of your web inbox: the proposals that wait for a confirmation you may give now, the receipts of your confirmations, the reminders that your personal access tokens expire soon, and the requests to re-confirm the APIs your teams declared they consume, oldest first.",
   input: z.object({}),
   output: z.object({
     waiting: z.array(proposal),
@@ -42,6 +46,19 @@ export const standingList = defineCommand({
         text: z.string(),
         expiresAt: z.iso.datetime(),
         createdAt: z.iso.datetime(),
+      }),
+    ),
+    reconfirmations: z.array(
+      z.object({
+        /** The API the declaration is about, and the reader's team that declared it consumes it. */
+        api: z.object({ id: z.uuid(), name: z.string() }),
+        team: teamRef,
+        lastConfirmedAt: z.iso.datetime(),
+        /** When the daily job asked the team to re-confirm it. */
+        requestedAt: z.iso.datetime(),
+        stale: z.boolean(),
+        /** What the request says, in Tiehall's words. */
+        text: z.string(),
       }),
     ),
   }),

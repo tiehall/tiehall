@@ -2453,6 +2453,15 @@ export const apiConsumers = pgTable(
     declaredByUserId: uuid("declared_by").notNull(),
     declaredAt: timestamp("declared_at", { withTimezone: true }).notNull(),
     lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }).notNull(),
+    /**
+     * When the daily job asked the team to re-confirm the declaration, on the
+     * UTC day 90 days after the day it was last confirmed (contract-changes:
+     * Declarations are re-confirmed every 90 days); null until then, and again
+     * once a member re-confirms it.
+     */
+    reconfirmationRequestedAt: timestamp("reconfirmation_requested_at", { withTimezone: true }),
+    /** When the daily job marked the declaration stale, 120 days after its last confirmation; null until then, and once it is re-confirmed. */
+    staleAt: timestamp("stale_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.apiId, table.teamId] }),
@@ -2473,5 +2482,38 @@ export const apiConsumers = pgTable(
     }),
     index("api_consumers_team").on(table.orgId, table.teamId),
     check("api_consumers_confirmed_after_declared", sql`${table.lastConfirmedAt} >= ${table.declaredAt}`),
+  ],
+);
+
+// The re-confirmation emails sent (contract-changes: Declarations are
+// re-confirmed every 90 days; self-host-install: Optional email through SMTP):
+// one row per member of the consuming team who was emailed the request to
+// re-confirm a declaration, for the request the daily job made at its time,
+// so each member is emailed once for it. The rows go with their declaration.
+export const apiConsumerReconfirmationEmails = pgTable(
+  "api_consumer_reconfirmation_emails",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    apiId: uuid("api_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    /** The request the email was about, by the time the job made it. */
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ name: "api_consumer_reconfirmation_emails_pk", columns: [table.orgId, table.apiId, table.teamId, table.requestedAt, table.userId] }),
+    foreignKey({
+      name: "api_consumer_reconfirmation_emails_declaration_fk",
+      columns: [table.orgId, table.apiId, table.teamId],
+      foreignColumns: [apiConsumers.orgId, apiConsumers.apiId, apiConsumers.teamId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "api_consumer_reconfirmation_emails_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
   ],
 );

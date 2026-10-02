@@ -11,10 +11,12 @@ import {
   openMailer,
   recordGivenUpDelivery,
   remindPersonalAccessTokenOwners,
+  requestConsumerReconfirmations,
   sendTestMessage,
   withOrg,
   type Mailer,
 } from "../src/index.ts";
+import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
@@ -29,7 +31,9 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // out, through the jobs and functions that send it, against the SMTP test
 // server: proposal notices, receipts with and without an undo page, question
 // notices, the daily digest, the reminders that a personal access token
-// expires soon, and the admin's test message. The canary appears in no email
+// expires soon, the request to re-confirm a team's declaration that it consumes
+// an API, whose team and API are named with the canary where their names
+// allow it, and the admin's test message. The canary appears in no email
 // subject, nor in any email's text, and every template the email module
 // defines was sent at least once, so a template added later joins this test.
 
@@ -130,6 +134,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9}-\d+ request\.message_posted \(team [A-Z][A-Z0-9]{1,9}\)$/.test(subject)) return email.QUESTION_NOTICE.id;
   if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.DIGEST.id;
   if (/^Tiehall: your personal access token expires on \d{4}-\d{2}-\d{2}$/.test(subject)) return email.PERSONAL_ACCESS_TOKEN_REMINDER.id;
+  if (/^Tiehall: [A-Z][A-Z0-9]{1,9} is asked to re-confirm an API it consumes$/.test(subject)) return email.RECONFIRMATION_REQUEST.id;
   if (subject === "Tiehall: test message") return email.TEST_MESSAGE.id;
   if (subject === "Tiehall: GitHub's webhook deliveries to the install fail") return email.GITHUB_WEBHOOK_ALERT.id;
   return undefined;
@@ -188,6 +193,15 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     const alerts: { queue: string; data: unknown }[] = [];
     await withOrg(install.db, (context) => recordGivenUpDelivery(context, { send: async (_tx, queue, data) => void alerts.push({ queue, data }) }, 4242));
     for (const { data } of alerts.filter(({ queue }) => queue === emailAdminAlerts.type.queue)) await runJob(emailAdminAlerts, new Date(), data);
+    // A team named with the canary declares that it consumes an API, and is asked to re-confirm it 90 days later.
+    await install.owner.query("UPDATE teams SET name = $1 WHERE key = 'FE'", [CANARY.slice(0, 100)]);
+    await addInstallation(install.owner, { account: "acme", repositories: [{ fullName: "acme/payments", id: 7001 }] });
+    const { rows: teamRows } = await install.owner.query<{ id: string; key: string }>("SELECT id, key FROM teams");
+    const teamId = (key: string) => teamRows.find((team) => team.key === key)?.id ?? "";
+    expect((await install.confirm(sessionOf(id("pia")), "apis.register", { name: "payments-api", team: teamId("BE"), repository: "acme/payments" })).status).toBe(200);
+    const { rows: apiRows } = await install.owner.query<{ id: string }>("SELECT id FROM apis");
+    await install.execute("apis.declare_consumer", sessionOf(id("bob")), { api: apiRows[0]?.id ?? "", team: teamId("FE") });
+    await runJob(requestConsumerReconfirmations, new Date(Date.now() + 91 * 24 * 3_600_000));
     // And the admin's test message.
     await sendTestMessage(mailer, { to: "pia@example.com", installUrl: URL_OF_INSTALL });
   }, 60_000);
@@ -220,6 +234,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
         "email.question_notice",
         "email.receipt",
         "email.receipt_with_undo",
+        "email.reconfirmation_request",
         "email.test_message",
       ].sort(),
     );

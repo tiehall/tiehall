@@ -223,7 +223,7 @@ export interface TeamApisView {
   apis: {
     id: string;
     provider: { id: string; key: string };
-    declaration: { declaredBy: { login: string; bot: boolean }; declaredAt: string; lastConfirmedAt: string } | null;
+    declaration: { declaredBy: { login: string; bot: boolean }; declaredAt: string; lastConfirmedAt: string; stale: boolean } | null;
     untrusted: { name: string };
   }[];
 }

@@ -1,5 +1,6 @@
 import { emailAdminAlerts } from "./admin-alerts.ts";
 import { removeUnusedAgentClients } from "./agent-clients.ts";
+import { requestConsumerReconfirmations } from "./api-consumers.ts";
 import { pruneUsedCiTokens } from "./ci-tokens.ts";
 import { pruneUsedConfirmationNonces } from "./confirmations.ts";
 import { removeExpiredDeviceCodes } from "./device-flow.ts";
@@ -46,4 +47,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   removeExpiredDeviceCodes,
   remindPersonalAccessTokenOwners,
   emailAdminAlerts,
+  requestConsumerReconfirmations,
 ];
