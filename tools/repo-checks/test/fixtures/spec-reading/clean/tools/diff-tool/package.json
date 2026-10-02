@@ -1,0 +1,1 @@
+{ "name": "@acme/diff-tool", "private": true, "devDependencies": { "oasdiff": "1.0.0", "openapi-diff": "0.24.1" } }

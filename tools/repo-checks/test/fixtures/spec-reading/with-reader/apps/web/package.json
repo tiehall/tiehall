@@ -1,0 +1,1 @@
+{ "name": "@acme/web", "private": true, "dependencies": { "@acme/catalog": "workspace:*", "next": "16.3.6" } }

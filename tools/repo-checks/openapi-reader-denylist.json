@@ -1,0 +1,34 @@
+{
+  "description": "Packages that parse, dereference, validate or diff OpenAPI documents, which no server package may depend on (contract-changes: Contract diffs run only where the specs already are; design.md, Design rules: Contract changes; design.md, Technical decisions: T12). The server packages are the apps the image runs, apps/server and apps/web, and every workspace package they depend on. Tiehall generates its own document with zod-openapi and serves it to the API reference page, which renders it in the browser; neither reads a provider's spec, so neither is listed. Add new parsers and diff tools here; tools/repo-checks/src/check-spec-reading.ts enforces the list in CI.",
+  "scopes": {
+    "@oasdiff": "oasdiff, an OpenAPI diff tool",
+    "@pb33f": "pb33f's OpenAPI tools, openapi-changes among them",
+    "@useoptic": "Optic, an OpenAPI diff tool"
+  },
+  "packages": {
+    "@apidevtools/swagger-parser": "an OpenAPI parser and dereferencer",
+    "@ibm-cloud/openapi-ruleset": "an OpenAPI linter's rules",
+    "@readme/openapi-parser": "an OpenAPI parser and dereferencer",
+    "@redocly/cli": "an OpenAPI linter and bundler",
+    "@redocly/openapi-core": "an OpenAPI parser and bundler",
+    "@scalar/openapi-parser": "an OpenAPI parser and dereferencer",
+    "@seriousme/openapi-schema-validator": "an OpenAPI document validator",
+    "@stoplight/spectral-cli": "an OpenAPI linter",
+    "@stoplight/spectral-core": "an OpenAPI linter",
+    "@stoplight/spectral-rulesets": "an OpenAPI linter's rules",
+    "api-spec-converter": "an OpenAPI converter",
+    "express-openapi-validator": "a validator that reads an OpenAPI document",
+    "oas": "ReadMe's OpenAPI tooling",
+    "oas-normalize": "an OpenAPI parser and validator",
+    "oasdiff": "oasdiff, an OpenAPI diff tool",
+    "openapi-backend": "a framework that reads an OpenAPI document",
+    "openapi-changes": "pb33f's OpenAPI diff tool",
+    "openapi-diff": "an OpenAPI diff tool",
+    "openapi-request-validator": "a validator that reads an OpenAPI document",
+    "openapi-schema-validator": "an OpenAPI document validator",
+    "swagger-client": "a client that resolves OpenAPI documents",
+    "swagger-diff": "an OpenAPI diff tool",
+    "swagger-parser": "an OpenAPI parser and dereferencer",
+    "swagger2openapi": "an OpenAPI converter"
+  }
+}
