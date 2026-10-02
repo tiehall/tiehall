@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { CLI_VERSION_HEADER, cliVersionRefusal, compareVersions, isVersion, MINIMUM_CLI_VERSION, MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION } from "../src/index.ts";
+import {
+  CLI_VERSION_HEADER,
+  cliVersionRefusal,
+  compareVersions,
+  contractReportCliRefusal,
+  isVersion,
+  MINIMUM_CLI_VERSION,
+  MINIMUM_CONTRACT_REPORT_CLI_VERSION,
+  MINIMUM_PLUGIN_VERSION,
+  MINIMUM_SKILL_VERSION,
+} from "../src/index.ts";
 
 // The CLI sends its version and the server keeps a minimum (public-api: The
 // CLI sends its version and the server keeps a minimum; public-api: One error
@@ -63,3 +73,26 @@ describe("CLI versions", () => {
     expect(refusal?.message).not.toContain("ignore");
   });
 });
+
+// public-api: `contract.report` has its own version floor. Companies' CI runs a pinned CLI through the contract
+// Action, so contract.report keeps a floor of its own, which is never above the general minimum: a pinned CLI that
+// the general minimum has left behind keeps reporting. The floor is raised only with 180 days' notice in the
+// changelog.
+describe("the contract.report floor", () => {
+  it("is a version that is never above the general minimum", () => {
+    expect(isVersion(MINIMUM_CONTRACT_REPORT_CLI_VERSION)).toBe(true);
+    expect(compareVersions(MINIMUM_CONTRACT_REPORT_CLI_VERSION, MINIMUM_CLI_VERSION)).toBeLessThanOrEqual(0);
+  });
+
+  it("refuses a CLI below it with upgrade-required, whose detail says to raise the version the contract Action pins", () => {
+    const refusal = contractReportCliRefusal("0.0.9", "0.1.0");
+    expect(refusal).toMatchObject({ reason: "upgrade-required", status: 400 });
+    expect(refusal?.message).toBe(
+      "This tiehall CLI is version 0.0.9, and this install needs version 0.1.0 or later to take contract reports: raise the tiehall version the contract Action pins in your workflow, or update the Action, and run the workflow again.",
+    );
+    expect(contractReportCliRefusal("0.1.0", "0.1.0")).toBeUndefined();
+    expect(contractReportCliRefusal(null, "0.1.0")).toBeUndefined();
+    expect(contractReportCliRefusal("latest", "0.1.0")).toMatchObject({ reason: "invalid-input" });
+  });
+});
+

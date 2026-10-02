@@ -19,6 +19,16 @@ export const CLI_VERSION_HEADER = "tiehall-cli-version";
 export const MINIMUM_CLI_VERSION = "0.1.0";
 
 /**
+ * The oldest CLI that contract.report takes a report from, its own floor
+ * (public-api: `contract.report` has its own version floor; design.md, Design
+ * rules: Public API). Companies' CI runs the CLI version the contract Action
+ * pins, so the floor is never above MINIMUM_CLI_VERSION, and it is raised only
+ * with at least 180 days' notice in the API changelog: a pinned CLI that the
+ * general minimum has left behind keeps reporting until then.
+ */
+export const MINIMUM_CONTRACT_REPORT_CLI_VERSION = "0.1.0";
+
+/**
  * The oldest Claude Code plugin Tiehall supports (agent-surfaces: The Claude
  * Code plugin). The plugin's hooks run the CLI, so its minimum holds through
  * the CLI's: a plugin release that needs a newer CLI raises MINIMUM_CLI_VERSION
@@ -88,13 +98,28 @@ function comparePreReleases(a: readonly string[], b: readonly string[]): number 
 
 /** The refusal of a call that names this CLI version, or none; a call that names no version is not the CLI's. */
 export function cliVersionRefusal(version: string | null, minimum: string = MINIMUM_CLI_VERSION): Refusal | undefined {
+  return versionRefusal(version, minimum, (named) =>
+    `This tiehall CLI is version ${named}, and this install needs version ${minimum} or later: upgrade it with npm install --global tiehall@latest, and run the command again.`,
+  );
+}
+
+/**
+ * The refusal of a contract report from a CLI of this version, or none, under
+ * contract.report's own floor: its detail says to raise the version the
+ * contract Action pins, which is where companies' CI takes the CLI from.
+ */
+export function contractReportCliRefusal(version: string | null, floor: string = MINIMUM_CONTRACT_REPORT_CLI_VERSION): Refusal | undefined {
+  return versionRefusal(version, floor, (named) =>
+    `This tiehall CLI is version ${named}, and this install needs version ${floor} or later to take contract reports: raise the tiehall version the contract Action pins in your workflow, or update the Action, and run the workflow again.`,
+  );
+}
+
+/** A version below the minimum, refused with upgrade-required in these words; one that cannot be read fails the input, unquoted. */
+function versionRefusal(version: string | null, minimum: string, detail: (version: string) => string): Refusal | undefined {
   if (version === null) return undefined;
   if (!isVersion(version.trim())) {
     return new Refusal("invalid-input", "The Tiehall-CLI-Version header names the CLI's version, a semantic version such as 0.1.0.");
   }
   if (compareVersions(version.trim(), minimum) >= 0) return undefined;
-  return new Refusal(
-    "upgrade-required",
-    `This tiehall CLI is version ${version.trim()}, and this install needs version ${minimum} or later: upgrade it with npm install --global tiehall@latest, and run the command again.`,
-  );
+  return new Refusal("upgrade-required", detail(version.trim()));
 }
