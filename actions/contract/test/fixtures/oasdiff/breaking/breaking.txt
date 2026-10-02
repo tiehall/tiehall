@@ -1,0 +1,15 @@
+3 changes: 2 error, 1 warning, 0 info
+error	[request-parameter-became-required] at revision.yaml
+	in API POST /payments
+		the `query` request parameter `currency` became required
+
+error	[response-required-property-removed] at revision.yaml
+	in API GET /payments/{id}
+		removed the required property `amount` from the response with the `200` status
+
+warning	[request-parameter-removed] at revision.yaml
+	in API GET /payments
+		deleted the `query` request parameter `limit`
+		This is a warning because some clients may return an error when receiving an unexpected parameter. It is recommended to deprecate the parameter first.
+
+

@@ -36,7 +36,8 @@
     "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",
     "check:tool-compat": "node tools/repo-checks/src/check-tool-compat.ts",
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
-    "changelog:release": "node tools/repo-checks/src/record-release.ts"
+    "changelog:release": "node tools/repo-checks/src/record-release.ts",
+    "oasdiff:fixtures": "pnpm --filter @tiehall/contract-action oasdiff:fixtures"
   },
   "devDependencies": {
     "@types/node": "catalog:",

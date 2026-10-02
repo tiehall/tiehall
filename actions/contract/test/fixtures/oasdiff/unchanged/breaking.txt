@@ -1,0 +1,2 @@
+No breaking changes to report, but the specs are different.
+Run 'oasdiff diff' to see structural differences.
