@@ -129,7 +129,6 @@ describe("backup.sh and restore.sh", () => {
       writeFileSync(join(install.dir, path), content, { mode: 0o600 });
       const restore = install.shell(restoreCommand(path), { timeoutSeconds: 600 });
 
-      writeFileSync(`/tmp/scratchpad/fix21/restore-${path.replace(/\//g, "_")}.txt`, restore.stdout + "\n----\n" + restore.stderr);
       expect(restore.status, `${path}\n${restore.stdout}\n${restore.stderr}`).toBe(1);
       expect(restore.stderr, path).toContain(`restore.sh: ${path} `);
       await install.healthy();
