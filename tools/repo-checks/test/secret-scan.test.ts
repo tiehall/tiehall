@@ -15,7 +15,12 @@ const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/scan-secrets.ts", import.meta.url));
 
 function scan(repo: string, ...extra: string[]) {
-  const run = spawnSync(process.execPath, [script, repo, ...extra], { encoding: "utf8" });
+  return scanIn(repoRoot, repo, ...extra);
+}
+
+/** Runs the scan from the folder given, with the arguments given, as `pnpm run scan:secrets` passes them. */
+function scanIn(cwd: string, ...args: string[]) {
+  const run = spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8" });
   if (run.error) throw run.error;
   return { status: run.status, output: run.stdout + run.stderr };
 }
@@ -49,8 +54,9 @@ describe("the secret scan", { timeout: 120_000 }, () => {
     return repo;
   }
 
-  it("fails on a commit that holds a private key, even after a later commit deletes it", () => {
-    const repo = repository("with-key");
+  /** A repository whose history holds a fake private key that a later commit deletes; and the key. */
+  function repositoryWithKey(name: string): { repo: string; pem: string } {
+    const repo = repository(name);
     // A fake key, generated for this test only and never used anywhere.
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -60,6 +66,11 @@ describe("the secret scan", { timeout: 120_000 }, () => {
     git(repo, "commit", "--quiet", "-m", "Add a deploy key");
     git(repo, "rm", "--quiet", "config/deploy_key.pem");
     git(repo, "commit", "--quiet", "-m", "Remove the deploy key");
+    return { repo, pem };
+  }
+
+  it("fails on a commit that holds a private key, even after a later commit deletes it", () => {
+    const { repo, pem } = repositoryWithKey("with-key");
 
     const result = scan(repo);
     expect(result.status).toBe(1);
@@ -69,6 +80,33 @@ describe("the secret scan", { timeout: 120_000 }, () => {
     const body = pem.split("\n")[1] ?? "";
     expect(body.length).toBeGreaterThan(20);
     expect(result.output).not.toContain(body.slice(0, 20));
+  });
+
+  it("given gitleaks options alone, scans the repository it runs in, as `pnpm run scan:secrets --log-opts=HEAD` asks", () => {
+    const { repo } = repositoryWithKey("options-only");
+
+    const result = scanIn(repo, "--log-opts=HEAD");
+    expect(result.output).toMatch(/ [1-9]\d* commits scanned\./);
+    expect(result.output).toContain("RuleID:      private-key");
+    expect(result.status).toBe(1);
+  });
+
+  it.each([
+    ["a folder that is no git repository", () => {
+      const folder = join(scratch, "no-repository");
+      mkdirSync(folder);
+      return folder;
+    }],
+    ["a folder inside a repository, whose history the scan cannot see", () => {
+      const inside = join(repository("with-folder"), "docs");
+      mkdirSync(inside);
+      return inside;
+    }],
+  ])("fails on %s, rather than passing with no commit scanned", (_case, folder) => {
+    const result = scan(folder());
+    expect(result.output).not.toContain("no leaks found");
+    expect(result.output).toContain("is not the top folder of a git repository");
+    expect(result.status).toBe(1);
   });
 
   it("passes a history without secrets", () => {
