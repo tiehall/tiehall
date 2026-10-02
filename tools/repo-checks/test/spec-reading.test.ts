@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findContentsCalls, findReaderDependencies, loadReaderDenylist, serverPackages } from "../src/spec-reading.ts";
+import { findContentsCalls, findReaderDependencies, loadReaderDenylist, serverPackages, WORKSPACE_FOLDERS } from "../src/spec-reading.ts";
 
 // Nothing on the server reads OpenAPI documents (contract-changes: Contract
 // diffs run only where the specs already are; design.md, Design rules:
@@ -31,6 +32,23 @@ describe("the server packages", () => {
       "packages/db",
       "packages/packet",
     ]);
+  });
+});
+
+describe("the workspace packages", () => {
+  it("are found one folder deep in each folder pnpm-workspace.yaml makes workspace packages of, and nowhere else", () => {
+    const listed = readFileSync(new URL("pnpm-workspace.yaml", `file://${repoRoot}`), "utf8")
+      .split("\n")
+      .flatMap((line) => /^ {2}- "?([^"!][^"]*)"?$/.exec(line)?.[1] ?? []);
+    expect(listed).toEqual(WORKSPACE_FOLDERS.map((folder) => `${folder}/*`));
+  });
+
+  it("leave out a package kept outside those folders, even one a server app names", () => {
+    const root = fixture("outside-workspace");
+    expect(serverPackages(root).map(({ folder }) => folder)).toEqual(["apps/server"]);
+    expect(findReaderDependencies(root, loadReaderDenylist())).toEqual([]);
+    expect(findContentsCalls(root)).toEqual([]);
+    expect(check(root).status).toBe(0);
   });
 });
 

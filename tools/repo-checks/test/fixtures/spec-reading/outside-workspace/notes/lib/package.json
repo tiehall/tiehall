@@ -1,0 +1,1 @@
+{ "name": "@acme/notes-lib", "private": true, "dependencies": { "@apidevtools/swagger-parser": "12.0.0" } }

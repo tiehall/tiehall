@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 // Nothing on the server reads OpenAPI documents (contract-changes: Contract
@@ -18,7 +18,9 @@ import { join, relative, sep } from "node:path";
 // and every workspace package they depend on, directly or through another;
 // their tests, test fixtures and build output are no server code. Developer
 // tools, the CLI and the contract Action are not server packages, and run
-// diffs on purpose.
+// diffs on purpose. The workspace packages are the ones pnpm-workspace.yaml
+// makes: one folder deep in apps, packages, actions and tools, so a package
+// kept anywhere else, such as a spike, is none of them.
 
 export interface Denylist {
   /** npm scopes such as "@useoptic"; every package in them is denied. */
@@ -30,12 +32,11 @@ export interface Denylist {
 /** The apps the image runs, by their folders, whose workspace dependencies are server packages too. */
 export const SERVER_APPS = ["apps/server", "apps/web"] as const;
 
+/** The folders whose subfolders pnpm-workspace.yaml makes workspace packages, as its apps/*, packages/*, actions/* and tools/* say. */
+export const WORKSPACE_FOLDERS = ["apps", "packages", "actions", "tools"] as const;
+
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
 
-/** Folders that hold no workspace package: installs, VCS data and build output. */
-const SKIPPED_FOLDERS = new Set(["node_modules", ".git", ".next", "dist"]);
-/** Top-level folders that are never workspace packages: agent state, spikes and the OpenSpec plan. */
-const SKIPPED_TOP_LEVEL = new Set([".claude", "spikes", "openspec", "private"]);
 /** Folders of a server package that hold no server code. */
 const NOT_SERVER_CODE = new Set(["node_modules", ".next", "dist", "test", "tests", "fixtures", "__tests__"]);
 const CODE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
@@ -161,17 +162,14 @@ function denylistEntry(name: string, denylist: Denylist): string | undefined {
   return undefined;
 }
 
-function* packageJsonFiles(root: string, folder = root): Generator<string> {
-  for (const entry of readdirSync(folder, { withFileTypes: true })) {
-    const path = join(folder, entry.name);
-    if (entry.isDirectory()) {
-      if (SKIPPED_FOLDERS.has(entry.name)) continue;
-      if (folder === root && SKIPPED_TOP_LEVEL.has(entry.name)) continue;
-      // Test fixtures are not workspace packages, and some break these rules on purpose.
-      if (entry.name === "fixtures" && folder.endsWith(`${sep}test`)) continue;
-      yield* packageJsonFiles(root, path);
-    } else if (entry.name === "package.json") {
-      yield path;
+/** The package.json of each workspace package under root: one folder deep in each workspace folder. */
+function* packageJsonFiles(root: string): Generator<string> {
+  for (const workspaceFolder of WORKSPACE_FOLDERS) {
+    const parent = join(root, workspaceFolder);
+    if (!existsSync(parent)) continue;
+    for (const entry of readdirSync(parent, { withFileTypes: true })) {
+      const manifest = join(parent, entry.name, "package.json");
+      if (entry.isDirectory() && existsSync(manifest)) yield manifest;
     }
   }
 }
