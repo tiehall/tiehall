@@ -1,5 +1,6 @@
 import { COMMAND_TABLE, type CommandEntry } from "@tiehall/client";
 import { forgetAnnounced } from "./announced.ts";
+import { CONTRACT_COMMANDS, contractReport, contractReportHelp } from "./contract.ts";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { HOOK_COMMANDS, hookSessionEnd, hookSessionStart, hookWait } from "./hooks.ts";
@@ -48,8 +49,14 @@ const RUNNING: readonly { usage: string; summary: string }[] = [
 /** The commands that serve the Claude Code plugin's hooks, which `tiehall hook` lists. */
 const HOOKS: readonly { usage: string; summary: string }[] = HOOK_COMMANDS.map(({ command, summary }) => ({ usage: `tiehall ${command}`, summary }));
 
+/** The commands of `tiehall contract`, which the CLI runs itself, with their usage and what they do. */
+const CONTRACT: readonly { usage: string; summary: string }[] = CONTRACT_COMMANDS.map(({ usage, summary }) => ({ usage, summary }));
+
 /** The names of the CLI's own commands of more than one word, and the words that lead to them, such as "hook". */
-const OWN_NAMES: readonly string[] = ["hook", ...HOOK_COMMANDS.map(({ command }) => command)];
+const OWN_NAMES: readonly string[] = ["hook", ...HOOK_COMMANDS.map(({ command }) => command), "contract", ...CONTRACT_COMMANDS.map(({ command }) => command)];
+
+/** The request commands of the command table that the CLI runs itself instead, such as contract report, which needs no login. */
+const RUN_ITSELF: ReadonlySet<string> = new Set(CONTRACT_COMMANDS.map(({ command }) => command));
 
 /** Runs one `tiehall` command; returns its exit code: 0 once it has done what it was asked, 1 otherwise. */
 export async function run(environment: CliEnvironment): Promise<number> {
@@ -76,6 +83,7 @@ async function dispatch(environment: CliEnvironment): Promise<number> {
   }
   if (words.join(" ") === "login") return login(environment, globals, rest);
   if (words[0] === "hook") return hook(environment, globals, words.join(" "));
+  if (words[0] === "contract") return contract(environment, globals, words.join(" "), rest);
   if (words.join(" ") === "watch") {
     if (globals.help) {
       environment.stdout(listing("Usage: tiehall watch [--install <url>]\n", RUNNING));
@@ -120,6 +128,22 @@ async function hook(environment: CliEnvironment, globals: Globals, command: stri
   if (command === "hook wait") return hookWait(environment, globals.install);
   if (command === "hook session-end") return hookSessionEnd(environment);
   return 0;
+}
+
+/**
+ * `tiehall contract <name>`: the contract commands, which the contract Action
+ * and developers run; `tiehall contract` lists them.
+ */
+async function contract(environment: CliEnvironment, globals: Globals, command: string, rest: readonly string[]): Promise<number> {
+  if (command === "contract report") {
+    if (globals.help) {
+      environment.stdout(contractReportHelp());
+      return 0;
+    }
+    return contractReport(environment, globals, rest);
+  }
+  environment.stdout(listing("Usage: tiehall contract <name>\n\nThe contract commands:", CONTRACT));
+  return globals.help ? 0 : 1;
 }
 
 /** A heading and commands, each with what it does, in two columns. */
@@ -220,7 +244,8 @@ function usageOf(entry: CommandEntry): string {
 
 /** `tiehall --help`: every command, with what it does. */
 function overview(): string {
-  const commands = [...OWN_COMMANDS, ...COMMAND_TABLE.map((entry) => ({ usage: usageOf(entry), summary: entry.summary })), ...RUNNING, ...HOOKS];
+  const requests = COMMAND_TABLE.filter(({ command }) => !RUN_ITSELF.has(command)).map((entry) => ({ usage: usageOf(entry), summary: entry.summary }));
+  const commands = [...OWN_COMMANDS, ...requests, ...CONTRACT, ...RUNNING, ...HOOKS];
   const width = Math.max(...commands.map(({ usage }) => usage.length)) + 2;
   return [
     `tiehall ${CLI_VERSION}: the command line of Tiehall, for people and their agents.`,

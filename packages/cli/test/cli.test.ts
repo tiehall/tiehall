@@ -115,6 +115,12 @@ describe("the package", () => {
     expect(child.stdout).toMatch(/^  tiehall hook wait\b/m);
   });
 
+  it("lists contract report, which task 22.11 added, once", () => {
+    const child = tiehall(["--help"]);
+    expect(child.status).toBe(0);
+    expect(child.stdout.match(/^  tiehall contract report\b/gm)).toHaveLength(1);
+  });
+
   it.fails("lists updates, contract diff, contract report, hook session-start and hook wait, which tasks 19.3, 19.11, 19.13, 22.11 and 23.5 add", () => {
     const child = tiehall(["--help"]);
     for (const command of ["updates", "contract diff", "contract report", "hook session-start", "hook wait"]) {
