@@ -81,7 +81,7 @@ const otherOperation = defineCommand({
   id: "requests.list_stand_in",
   summary: "List requests.",
   input: z.object({}),
-  output: z.object({ requests: z.array(z.string()) }),
+  output: z.object({ items: z.array(z.string()) }),
   method: "GET",
   path: "/api/v1/requests",
   scopes: ["requests:read"],
@@ -104,7 +104,7 @@ function api(options: Partial<CiTokenCheckOptions> = {}): (request: Request) => 
         expect(context.provenance).toEqual({ actorKind: "system", surface: "github" });
         return { api: (await reportableApi(context, context.caller, name)).id };
       }),
-      [otherOperation.id]: defineHandler(otherOperation, async () => ({ requests: [] })),
+      [otherOperation.id]: defineHandler(otherOperation, async () => ({ items: [] })),
     },
     store: { database: install.db, jobs: { send: async () => {} } },
   });
