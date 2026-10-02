@@ -209,6 +209,7 @@ export {
 export { REDELIVERY_ASKS, redeliverFailedDeliveries, redeliverGitHubDeliveries, type RedeliveryOptions } from "./github-redelivery.ts";
 export { changeKeyOf, polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
 export { changesMirror, mirrorRequest, wakeMirror } from "./mirror-jobs.ts";
+export { createGitHubIssues, issueBody, markerLine, MirrorPlaceUnavailableError, type GitHubIssuesOptions } from "./github-issues.ts";
 export { mirrorSummary, mirrorTitle, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
 export {
   adaptersOf,

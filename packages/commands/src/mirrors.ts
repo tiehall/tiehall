@@ -4,6 +4,7 @@ import { mirrors, requests, teams, trackerMappings, type Database } from "@tieha
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { ServerText } from "./email.ts";
+import { createGitHubIssues } from "./github-issues.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { mirrorRequest } from "./mirror-jobs.ts";
 import { mirrorSummary, mirrorTitle, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
@@ -107,8 +108,8 @@ export interface TrackerAdapter {
   findCreated(target: string, marker: string, since: Date): Promise<string | undefined>;
   /** Creates the issue, carrying the marker, and returns the tracker's reference of it. */
   createIssue(target: string, projection: MirrorProjection, marker: string): Promise<string>;
-  /** Changes what Tiehall shows on the issue. */
-  updateIssue(target: string, issue: string, update: IssueUpdate): Promise<void>;
+  /** Changes what Tiehall shows on the issue, whose body keeps carrying the mirror's marker. */
+  updateIssue(target: string, issue: string, marker: string, update: IssueUpdate): Promise<void>;
   /** The issue as the tracker shows it now; undefined when the tracker no longer has it. */
   readIssue(target: string, issue: string): Promise<IssueNow | undefined>;
 }
@@ -359,16 +360,17 @@ export async function syncMirror(services: MirrorServices, requestId: string): P
   const update = updateOf(mirror.pushed, projection);
   // Nothing the mirror shows has changed since Tiehall last wrote it: nothing is written.
   if (update === undefined) return;
-  await adapter.updateIssue(mirror.target, mirror.issue, update);
+  await adapter.updateIssue(mirror.target, mirror.issue, mirror.marker, update);
   await withOrg(services.database, async ({ tx, orgId }) => {
     await tx.update(mirrors).set({ pushed: pushedOf(projection) }).where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id)));
   });
   logger.info("mirror: updated the mirror issue", { mirrorId: mirror.id });
 }
 
-/** The trackers' adapters the worker has: none until a tracker's adapter is built. */
-export function adaptersOf(_services: WorkerServices): TrackerAdapters {
-  return {};
+/** The trackers' adapters the worker writes through: GitHub Issues, as the install's App, once an App is stored. */
+export async function adaptersOf(services: Pick<WorkerServices, "database" | "github">): Promise<TrackerAdapters> {
+  const app = await services.github?.app();
+  return app === undefined ? {} : { github: createGitHubIssues({ app, database: services.database }) };
 }
 
 /** The worker's mirror job: brings one request's mirror issue up to date. */
@@ -378,7 +380,7 @@ export const mirrorRequests: WorkerJob<{ requestId: string }> = {
   async handle(job, services) {
     if (services.installUrl === undefined) throw new Error("The worker gives this job no install URL to link the request with.");
     try {
-      await syncMirror({ database: services.database, adapters: adaptersOf(services), installUrl: services.installUrl }, job.data.requestId);
+      await syncMirror({ database: services.database, adapters: await adaptersOf(services), installUrl: services.installUrl }, job.data.requestId);
     } catch (error) {
       // Before setup completes there is no request to mirror.
       if (!(error instanceof SetupRequiredError)) throw error;

@@ -5,15 +5,18 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type RecordedRequest } from "@tiehall/testing/github";
 import {
+  createGitHubIssues,
   createInstallGitHub,
   processDelivery,
   readInstallations,
   syncGitHubInstallations,
+  syncMirror,
   type InstallGitHub,
   type WebSessionCaller,
 } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
+import { addTeam, joinTeams, openRequestInTheWebUi } from "./support/requests.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 
 // Every outbound GitHub call uses Tiehall's own credentials (agent-access:
@@ -28,7 +31,9 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // token). The App's client secret goes only into the sign-in's exchange of its
 // code for that token, on GitHub's web host (github-layer-hardening: D50 (1)).
 // A token a client presented to Tiehall never reaches GitHub, nor does a web
-// session's cookie.
+// session's cookie. The writes of the GitHub Issues mirror carry an
+// installation token too, as the App's bot (tracker-mirrors: GitHub writes
+// appear as the App's bot).
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -93,6 +98,21 @@ describe("the calls Tiehall makes to GitHub's API", () => {
       ]);
       await processDelivery({ database: install.db, github, execute: install.execute }, deliveryId);
     }
+
+    // The GitHub Issues mirror: FE's intake repository is acme/web, where its request's mirror issue is made and updated.
+    const fe = await addTeam(install.owner, "FE");
+    await joinTeams(install.owner, session.userId, fe);
+    await install.execute("mirrors.map_repository", session as WebSessionCaller, { teamId: fe, repository: "acme/web" });
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, session.userId, { targetTeam: "FE" });
+    await install.execute("requests.claim", session as WebSessionCaller, { key: request.key });
+    const access = (await github.app())!;
+    const mirror = () =>
+      syncMirror({ database: install.db, adapters: { github: createGitHubIssues({ app: access, database: install.db }) }, installUrl: URL_OF_INSTALL, logger: install.logger }, request.id);
+    await mirror();
+    await install.execute("requests.set_status", session as WebSessionCaller, { key: request.key, state: "in_progress" });
+    await mirror();
+    const mirrorWrites = stub.received.slice(from).filter(({ path }) => path.startsWith("/repos/acme/web/issues"));
+    expect(mirrorWrites.map(({ method }) => method)).toEqual(["POST", "POST", "DELETE"]);
 
     // An agent presents its token to Tiehall.
     const presented = `th_pat_${randomUUID().replaceAll("-", "")}`;

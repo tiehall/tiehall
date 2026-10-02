@@ -92,7 +92,7 @@ export class FakeTracker implements TrackerAdapter {
     return String(issue.number);
   }
 
-  async updateIssue(target: string, number: string, update: IssueUpdate): Promise<void> {
+  async updateIssue(target: string, number: string, _marker: string, update: IssueUpdate): Promise<void> {
     this.calls.push("updateIssue");
     this.writes.push("updateIssue");
     this.failure("updateIssue", "before");
