@@ -2297,3 +2297,55 @@ export const appliedCommitments = pgTable(
     check("applied_commitments_undone_by_someone", sql`(${table.undoneAt} IS NULL) = (${table.undoneByUserId} IS NULL)`),
   ],
 );
+
+// The APIs registered for contract reports (contract-changes: Admins register
+// APIs, each bound to one repository; design.md, Decisions this change rests
+// on: D28 #4, #44). An admin registers each API, by a name of lower-case
+// letters, digits, dots, hyphens and underscores, such as payments-api, to one
+// provider team, bound to one GitHub repository that a connected installation
+// covered when it was registered. The repository is kept by GitHub's numeric
+// ids, its own and its owner's, which a rename keeps and which the GitHub
+// Actions OIDC token of a CI run in it names (repository_id and
+// repository_owner_id), with its full name as shown then. The admin may bind
+// the API to one workflow, by the job_workflow_ref of the runs that may report
+// for it. A name names one API at a time.
+export const apis = pgTable(
+  "apis",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    name: text("name").notNull(),
+    providerTeamId: uuid("provider_team_id").notNull(),
+    /** GitHub's numeric id of the repository the API is bound to. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    /** GitHub's numeric id of the account that owns that repository. */
+    repositoryOwnerId: bigint("repository_owner_id", { mode: "number" }).notNull(),
+    /** The repository's owner and name as GitHub gave them when the API was registered, such as acme/payments, to show it by. */
+    repositoryFullName: text("repository_full_name").notNull(),
+    /** The one workflow whose runs may report for the API, as their OIDC tokens' job_workflow_ref names it; null for any workflow of the repository. */
+    jobWorkflowRef: text("job_workflow_ref"),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    registeredByUserId: uuid("registered_by").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("apis_name").on(table.orgId, table.name),
+    foreignKey({
+      name: "apis_provider_team_fk",
+      columns: [table.orgId, table.providerTeamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "apis_registered_by_fk",
+      columns: [table.orgId, table.registeredByUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    index("apis_repository").on(table.orgId, table.repositoryId),
+    check("apis_name_format", sql`${table.name} ~ '^[a-z0-9][a-z0-9._-]{0,99}$'`),
+    check("apis_repository_ids_positive", sql`${table.repositoryId} > 0 AND ${table.repositoryOwnerId} > 0`),
+    check("apis_repository_full_name_length", sql`char_length(${table.repositoryFullName}) BETWEEN 3 AND 200`),
+    check("apis_job_workflow_ref_length", sql`char_length(${table.jobWorkflowRef}) BETWEEN 1 AND 1024`),
+  ],
+);

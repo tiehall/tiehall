@@ -70,7 +70,13 @@
     },
     {
       "item": "registering an API for contract reports;",
-      "actions": [{ "action": "registering an API for contract reports", "pending": "22.1" }]
+      "actions": [
+        {
+          "action": "registering an API for contract reports",
+          "command": "apis.register",
+          "input": { "name": "payments-api", "team": "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "repository": "acme/payments" }
+        }
+      ]
     },
     {
       "item": "turning personal access tokens on or off, setting the longest lifetime a personal access token may have, and setting the daily write budget;",

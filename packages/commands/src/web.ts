@@ -5,6 +5,7 @@ import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-ro
 import { createAgentTokenCheck } from "./agent-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
 import { createAdminRoute } from "./admin-page.ts";
+import { createApisRoute } from "./apis-page.ts";
 import { showRunningVersion } from "./html.ts";
 import { runningVersion } from "./running-version.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
@@ -360,6 +361,11 @@ export function teamsRoute(env: Environment): PageRoute {
  */
 export function tokensRoute(env: Environment): PageRoute {
   return pageOf("tokens", env, createTokensRoute);
+}
+
+/** The APIs page of the admin UI under /admin/apis, for the signed-in admin's web session. */
+export function apisRoute(env: Environment): PageRoute {
+  return pageOf("APIs", env, createApisRoute);
 }
 
 /** The sign-in policy page of the admin UI under /admin/sign-in-policy, for the signed-in admin's web session. */

@@ -1,5 +1,6 @@
 import { ACTIVITY_LOG_DOWNLOADS, ACTIVITY_LOG_REVIEWS } from "./activity-log-export.ts";
 import { AGENT_GRANT_REDIRECTS, AGENT_GRANT_REVIEWS } from "./agent-grants.ts";
+import { API_REVIEWS } from "./apis.ts";
 import type { ConfirmDownloads, ConfirmEntries, ConfirmMessages, ConfirmRedirects } from "./confirm-route.ts";
 import type { ConfirmationSubjects, Reviews } from "./confirmation-step.ts";
 import { DEVICE_APPROVAL_ENTRIES, DEVICE_APPROVAL_MESSAGES, DEVICE_APPROVAL_REVIEWS } from "./device-approval.ts";
@@ -33,6 +34,7 @@ export const REVIEWS: Reviews = {
   ...DEVICE_APPROVAL_REVIEWS,
   ...PERSONAL_ACCESS_TOKEN_REVIEWS,
   ...PERSONAL_ACCESS_TOKEN_SETTINGS_REVIEWS,
+  ...API_REVIEWS,
 };
 
 // What a command's confirmation nonce is bound to, where it is not the

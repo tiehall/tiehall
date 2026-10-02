@@ -1,5 +1,6 @@
 import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ADMIN_ALERT_HANDLERS } from "./admin-alerts.ts";
+import { API_HANDLERS } from "./apis.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
 import { DEVICE_APPROVAL_HANDLERS } from "./device-approval.ts";
@@ -69,4 +70,5 @@ export const HANDLERS: Handlers = {
   ...PERSONAL_ACCESS_TOKEN_HANDLERS,
   ...INSTALL_STATUS_HANDLERS,
   ...ADMIN_ALERT_HANDLERS,
+  ...API_HANDLERS,
 };

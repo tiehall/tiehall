@@ -83,6 +83,8 @@ export const TEAMS_PATH = "/admin/teams";
 export const SIGN_IN_POLICY_PATH = "/admin/sign-in-policy";
 /** Where an admin switches personal access tokens on or off and sets their longest lifetime. */
 export const PERSONAL_ACCESS_TOKEN_SETTINGS_PATH = "/admin/personal-access-tokens";
+/** Where an admin registers APIs for contract reports (apis-page.ts). */
+export const APIS_PATH = "/admin/apis";
 
 type ListedMember = z.output<typeof listedMember>;
 type ListedTeam = z.output<typeof listedTeam>;
@@ -99,13 +101,14 @@ export function adminNav(): string {
     [SIGN_IN_POLICY_PATH, "Sign-in policy"],
     [PERSONAL_ACCESS_TOKEN_SETTINGS_PATH, "Personal access tokens"],
     [GITHUB_ADMIN_PATH, "GitHub"],
+    [APIS_PATH, "APIs"],
     [ACTIVITY_LOG_PATH, "Activity log"],
   ];
   return `      <nav>${pages.map(([href, text]) => link(href, text)).join(" · ")}</nav>`;
 }
 
 /** The review page of an action that needs the confirmation step, for its exact input. */
-function reviewPath(commandId: string, input: unknown): string {
+export function reviewPath(commandId: string, input: unknown): string {
   return `${CONFIRM_PATH}${commandId}?input=${encodeURIComponent(JSON.stringify(input))}`;
 }
 

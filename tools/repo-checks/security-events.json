@@ -229,7 +229,14 @@
     {
       "item": "an API registered for contract reports, and an API unregistered;",
       "actions": [
-        { "action": "an API registered for contract reports", "pending": "22.1" },
+        {
+          "action": "an API registered for contract reports",
+          "event": "api.registered",
+          "test": {
+            "file": "packages/commands/test/api-registrations.test.ts",
+            "case": "registers it once an admin confirms it on its review page, bound to the repository's GitHub ids, and records a security event"
+          }
+        },
         { "action": "an API unregistered", "pending": "22.2" }
       ]
     },

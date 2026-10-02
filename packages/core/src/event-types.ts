@@ -681,6 +681,22 @@ export const personalAccessTokenRevoked = defineEventType({
   },
 });
 
+/**
+ * An admin registered an API for contract reports, with the confirmation step
+ * (contract-changes: Admins register APIs, each bound to one repository;
+ * activity-log: Which actions are security events). It names the API and its
+ * provider team; the repository and the workflow it is bound to are the API's
+ * record, which the event names by id. Its provenance names the admin.
+ */
+export const apiRegistered = defineEventType({
+  type: "api.registered",
+  class: "security",
+  fields: {
+    apiId: { kind: "id", of: "api" },
+    providerTeamId: { kind: "id", of: "team" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -724,4 +740,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   agentGrantRevoked,
   personalAccessTokenCreated,
   personalAccessTokenRevoked,
+  apiRegistered,
 ];

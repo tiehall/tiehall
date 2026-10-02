@@ -45,6 +45,7 @@ const PAGES: Readonly<Record<string, readonly string[]>> = {
   "admin/sign-in-policy/route.ts": ["/admin/sign-in-policy"],
   "admin/personal-access-tokens/route.ts": ["/admin/personal-access-tokens"],
   "admin/github/route.ts": ["/admin/github"],
+  "admin/apis/route.ts": ["/admin/apis"],
   "admin/activity-log/route.ts": ["/admin/activity-log"],
   // A proposal's confirm page and an admin action's review page; the paths are filled in once they exist.
   "confirm/[...command]/route.ts": [],
