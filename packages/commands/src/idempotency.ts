@@ -68,7 +68,9 @@ export function parseIdempotencyKey(header: string): string | undefined {
  * Whose keys a caller's keys are: one token, one client for its user, or one
  * workflow of a CI repository, as the run's token names both, so that a repeat
  * from another workflow, which an API bound to a workflow refuses, never gets
- * the answer a run of that workflow got.
+ * the answer a run of that workflow got. The workflow is kept as the SHA-256
+ * of its ref: the token check takes a ref of up to 1,024 characters, which
+ * can be about 3 KB in UTF-8, more than an entry of the index on keys holds.
  */
 export function idempotencyCallerOf(caller: Caller): string {
   switch (caller.kind) {
@@ -77,7 +79,7 @@ export function idempotencyCallerOf(caller: Caller): string {
     case "oauth_token":
       return `oauth:${caller.userId}:${caller.clientId}`;
     case "ci":
-      return `ci:${caller.repositoryId}:${caller.jobWorkflowRef}`;
+      return `ci:${caller.repositoryId}:${sha256Hex(caller.jobWorkflowRef)}`;
     case "web_session":
       return `web:${caller.userId}`;
     case "system_job":
@@ -85,6 +87,11 @@ export function idempotencyCallerOf(caller: Caller): string {
     case "integration_event":
       return `integration:${caller.source}`;
   }
+}
+
+/** The SHA-256 of the text's UTF-8 bytes, in hex. */
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 /** The digest a call's key is bound to: its method, its path and its body, byte for byte. */

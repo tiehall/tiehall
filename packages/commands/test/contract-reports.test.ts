@@ -58,6 +58,22 @@ function reportOf(changes: unknown[] = CHANGES, api = "payments-api"): Record<st
   };
 }
 
+/**
+ * A job_workflow_ref of 1,012 characters, under the 1,024 the token check
+ * accepts, whose workflow file name is 960 CJK characters picked by a fixed
+ * xorshift sequence: about 2.9 KB in UTF-8 that do not compress.
+ */
+function longWorkflowRef(): string {
+  let state = 0x2545f491;
+  const name = Array.from({ length: 960 }, () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return String.fromCodePoint(0x4e00 + ((state >>> 0) % 0x5000));
+  }).join("");
+  return `acme/payments/.github/workflows/${name}.yml@refs/heads/main`;
+}
+
 const CHANGES = [
   { id: "response-property-removed", level: "ERR", operation: "GET /payments/{id}" },
   { id: "request-parameter-became-required", level: "ERR", operation: "POST /payments" },
@@ -190,6 +206,20 @@ describe("a contract report", () => {
     expect(nightly.status).toBe(403);
     expect(nightly.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
     expect(await stored()).toHaveLength(1);
+  });
+
+  it("repeated with its Idempotency-Key from a workflow whose ref is as long as a token may name gets the first answer", async () => {
+    const jobWorkflowRef = longWorkflowRef();
+    // Within the token check's 1,024 characters, but more bytes than a Postgres index entry holds.
+    expect(jobWorkflowRef.length).toBeLessThanOrEqual(1024);
+    expect(Buffer.byteLength(jobWorkflowRef)).toBeGreaterThan(2800);
+    const key = { "idempotency-key": "contract-run-9100200301" };
+
+    const first = await report(oidc.token(paymentsRun({ jobWorkflowRef })), reportOf(), key);
+    expect(first.status).toBe(200);
+
+    expect(await report(oidc.token(paymentsRun({ jobWorkflowRef })), reportOf(), key)).toEqual(first);
+    expect(await stored()).toEqual([expect.objectContaining({ job_workflow_ref: jobWorkflowRef })]);
   });
 
   it("with a token for another audience, or a replayed one, is refused with 401 invalid_token and stores nothing more", async () => {
