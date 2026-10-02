@@ -76,7 +76,7 @@ const problem = z
     errors: z
       .array(z.object({ path: z.array(z.union([z.string(), z.number()])), message: z.string() }))
       .optional()
-      .meta({ description: "For input that fails the schema: where it fails." }),
+      .meta({ description: "For input that fails the schema: where it fails, at most the first 100 places." }),
     retryAfter: z.number().int().optional().meta({ description: "For a limit or a shutdown: the seconds to wait, as Retry-After says." }),
   })
   .meta({ id: "Problem", description: "An RFC 9457 problem details object." });

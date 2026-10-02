@@ -9,7 +9,7 @@
             "type": "string"
           },
           "errors": {
-            "description": "For input that fails the schema: where it fails.",
+            "description": "For input that fails the schema: where it fails, at most the first 100 places.",
             "items": {
               "properties": {
                 "message": {

@@ -218,6 +218,34 @@ describe("a contract report", () => {
     expect(await stored()).toEqual([]);
   });
 
+  it("with more changes than a report holds is refused with 400 that names the list, and stays small whatever the body holds", async () => {
+    // 100,000 empty changes: a body of 0.29 MiB, far under the limit, that would fail the schema 300,000 times.
+    const response = await api()(
+      new Request(`${URL_OF_INSTALL}/api/v1/contract-reports`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${oidc.token(paymentsRun())}`, "content-type": "application/json" },
+        body: JSON.stringify(reportOf(Array.from({ length: 100_000 }, () => ({})))),
+      }),
+    );
+    const text = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(text.length).toBeLessThan(1024 * 1024);
+    expect(JSON.parse(text)).toMatchObject({
+      type: `${PROBLEM_TYPE_BASE}invalid-input`,
+      errors: [{ path: ["changes"], message: "Too big: expected array to have <=1000 items" }],
+    });
+    expect(await stored()).toEqual([]);
+  }, 60_000);
+
+  it("with as many changes as a report holds, each failing the schema, is refused with 400 that names at most 100 places", async () => {
+    const answer = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf(Array.from({ length: 1000 }, () => ({}))));
+
+    expect(answer.status).toBe(400);
+    expect(answer.body.errors).toHaveLength(100);
+    expect(await stored()).toEqual([]);
+  });
+
   it("with no change at all is accepted, since a fix can remove every breaking change", async () => {
     const answer = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf([]));
     expect(answer.status).toBe(200);

@@ -175,6 +175,7 @@ export {
   storeGitHubWebhookSecret,
   uploadGitHubPrivateKey,
 } from "./github.ts";
+export { overlongArrays } from "./input-bounds.ts";
 export { OPENAPI_DOCUMENTS, OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";

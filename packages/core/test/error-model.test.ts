@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { httpProblem, internalErrorProblem, PROBLEM_TYPE_BASE, Refusal, REFUSAL_REASONS, toolError, type RefusalReason } from "../src/index.ts";
+import { httpProblem, internalErrorProblem, PROBLEM_TYPE_BASE, Refusal, REFUSAL_ISSUES_MAX, REFUSAL_REASONS, toolError, type RefusalReason } from "../src/index.ts";
 
 // The error model (public-api: One error model for Tiehall's own refusals;
 // public-api: Errors are RFC 9457 problem details). One module maps each
@@ -82,6 +82,13 @@ describe("the error model", () => {
       detail: "The input does not match its schema.",
       errors: issues,
     });
+  });
+
+  it("names at most the first 100 places where the input fails, however many there are", () => {
+    const issues = Array.from({ length: 300_000 }, (_, index) => ({ path: ["changes", index, "id"], message: "Invalid input: expected string, received undefined" }));
+    const { body } = httpProblem(new Refusal("invalid-input", "The input does not match its schema.", { issues }));
+    expect(REFUSAL_ISSUES_MAX).toBe(100);
+    expect(body.errors).toEqual(issues.slice(0, 100));
   });
 
   it("answers a state conflict with 409", () => {

@@ -115,6 +115,19 @@ const catalog = defineCatalog([
     stability: "alpha",
   }),
   defineCommand({
+    id: "probes.batch",
+    summary: "Post up to 50 notes on a request at once.",
+    input: z.object({ requestId: z.uuid(), notes: z.array(z.strictObject({ body: z.string().min(1) })).max(50) }),
+    output: z.object({ count: z.number() }),
+    method: "POST",
+    path: "/api/v1/probes/{requestId}/batch",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+  }),
+  defineCommand({
     id: "probes.change_role",
     summary: "A command that needs the confirmation step.",
     input: z.object({ requestId: z.uuid(), body: z.string() }),
@@ -158,6 +171,7 @@ const handlers: Handlers = {
   "probes.report": async (input) => ({ kind: (input as { kind: string }).kind }),
   "probes.sneak_proposal": async (_input, context) => context.propose({} as never, { kind: "decline", change: {} }),
   "probes.propose": async () => ({ proposal: { id: "not a proposal" } }),
+  "probes.batch": async (input) => ({ count: (input as { notes: unknown[] }).notes.length }),
 };
 
 const webSession: Caller = { kind: "web_session", userId: PIA, sessionId: randomUUID() };
@@ -262,6 +276,26 @@ describe("execute", () => {
     await refusalOf(execute("probes.post", webSession, undefined));
     await refusalOf(execute("probes.post", webSession, { requestId: randomUUID(), body: "" }));
     expect(await counts()).toEqual({ messages: 0, events: 0 });
+  });
+
+  // public-api: Request bodies have a size limit. A body within the limit is bounded work: zod judges every element of an
+  // array before it checks the array's length, so an array longer than its schema allows is refused before that.
+  it("refuses an array longer than its schema allows with one issue, before any of its elements is judged", async () => {
+    const refusal = await refusalOf(execute("probes.batch", personalAccessToken, { requestId: randomUUID(), notes: Array.from({ length: 100_000 }, () => ({})) }));
+
+    expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
+    expect(refusal.issues).toEqual([{ path: ["notes"], message: "Too big: expected array to have <=50 items" }]);
+  });
+
+  it("names at most 100 of the places where an input fails its schema, so a refusal stays small whatever the input holds", async () => {
+    // 50 notes, each empty and with a field the schema does not know: 100 places, and the request id is a 101st.
+    const notes = Array.from({ length: 50 }, () => ({ body: "", extra: true }));
+
+    const refusal = await refusalOf(execute("probes.batch", personalAccessToken, { requestId: "FE-142", notes }));
+
+    expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
+    expect(refusal.issues).toHaveLength(100);
+    expect(refusal.issues[0]).toEqual({ path: ["requestId"], message: expect.any(String) });
   });
 
   // agent-surfaces: Tool schemas that current clients accept. The tool's schema is a kind enum plus optional

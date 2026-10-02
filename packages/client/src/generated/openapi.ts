@@ -653,7 +653,7 @@ export interface components {
         Problem: {
             /** @description What happened, in Tiehall's own words. */
             detail: string;
-            /** @description For input that fails the schema: where it fails. */
+            /** @description For input that fails the schema: where it fails, at most the first 100 places. */
             errors?: {
                 message: string;
                 path: (string | number)[];

@@ -1,5 +1,5 @@
-import { dropUnknownVariantKeys, isProposalAnswer, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
-import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
+import { dropUnknownVariantKeys, isProposalAnswer, overlongArrays, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { Refusal, REFUSAL_ISSUES_MAX, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
@@ -45,7 +45,13 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // 3. parses the input against the operation's input schema, refusing input
 //    that fails it with 400 before anything runs, and drops keys it does not
 //    know: for an input whose variants are strict, which refuse a field of
-//    another variant, the keys no variant has are dropped first;
+//    another variant, the keys no variant has are dropped first; an array
+//    longer than its schema allows is refused before any of its elements is
+//    judged, since zod judges them all before it checks the array's length,
+//    and a refusal names at most the first 100 places where the input fails,
+//    so the work a body within its size limit causes, and the refusal it
+//    gets, stay bounded whatever it holds (public-api: Request bodies have a
+//    size limit; input-bounds.ts);
 // 4. lets each kind of caller run only what its kind may run: a CI caller
 //    only contract.report, which it is refused before its input or the
 //    call's own refusal is judged, so it gets 403 whatever it sends to any
@@ -369,7 +375,14 @@ export function createExecute(services: ExecuteServices): Execute {
       if (options.refusal !== undefined) throw options.refusal;
 
       // 3. Nothing runs on input that fails the schema: an earlier shape's, then, carried to it, the current one's.
-      let parsed = (earlier?.input ?? definition.input).safeParse(dropUnknownVariantKeys(earlier?.input ?? definition.input, input));
+      const schema = earlier?.input ?? definition.input;
+      const known = dropUnknownVariantKeys(schema, input);
+      // An array longer than its schema allows is refused before zod judges each of its elements.
+      const overlong = overlongArrays(schema, known);
+      if (overlong.length > 0) {
+        throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: overlong });
+      }
+      let parsed = schema.safeParse(known);
       if (!parsed.success) {
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
       }
@@ -516,9 +529,9 @@ async function asMemberOrNoUser(context: OrgContext, caller: Caller): Promise<Ca
   return { kind: caller.kind, source: caller.source };
 }
 
-/** Where the input fails its schema, by path and by the schema's own message, never with the value. */
+/** Where the input fails its schema, the first places a refusal names, by path and by the schema's own message, never with the value. */
 function issuesOf(error: z.ZodError): RefusalIssue[] {
-  return error.issues.map((issue) => ({
+  return error.issues.slice(0, REFUSAL_ISSUES_MAX).map((issue) => ({
     path: issue.path.map((part) => (typeof part === "number" ? part : String(part))),
     message: issue.message,
   }));

@@ -113,6 +113,13 @@ export interface ChallengeParameters {
   scope?: readonly string[];
 }
 
+/**
+ * The most places a refusal names where the input fails its schema: the first
+ * ones, so that a refusal stays small whatever the input holds, however many
+ * places fail.
+ */
+export const REFUSAL_ISSUES_MAX = 100;
+
 /** Where the input fails its schema: the path to the value and what is wrong with it, never the value itself. */
 export interface RefusalIssue {
   path: (string | number)[];
@@ -120,7 +127,7 @@ export interface RefusalIssue {
 }
 
 export interface RefusalOptions {
-  /** For invalid input: each place the input fails its schema. */
+  /** For invalid input: each place the input fails its schema; the refusal keeps the first REFUSAL_ISSUES_MAX. */
   issues?: readonly RefusalIssue[];
   /** For a limit: how many seconds to wait before retrying. */
   retryAfterSeconds?: number;
@@ -152,7 +159,7 @@ export class Refusal extends Error {
     this.reason = reason;
     this.status = row.status;
     this.type = `${PROBLEM_TYPE_BASE}${reason}`;
-    this.issues = options.issues ?? [];
+    this.issues = (options.issues ?? []).slice(0, REFUSAL_ISSUES_MAX);
     if (row.retryAfter === "required" && options.retryAfterSeconds === undefined) {
       throw new TypeError(`A ${reason} refusal names when to retry, in retryAfterSeconds.`);
     }
