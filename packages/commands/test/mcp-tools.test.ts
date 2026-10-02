@@ -4,7 +4,8 @@ import { MINIMUM_SKILL_VERSION } from "@tiehall/core";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
-import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
+import { addInstallation } from "./support/apis.ts";
+import { openRequestInTheWebUi, packetOf, sessionOf } from "./support/requests.ts";
 
 // The MCP tools (agent-surfaces: The MCP tools; agent-surfaces: Tool
 // annotations and stability levels; agent-surfaces: Tool schemas that current
@@ -204,7 +205,7 @@ describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => 
 });
 
 describe.each(PROTOCOL_VERSIONS)("directory, on protocol version %s", (version) => {
-  it("lists each team of the install with its key, and the registered APIs, none yet", async () => {
+  it("lists each team of the install with its key, and the registered APIs, none while none is registered", async () => {
     const result = await call(dana, version, "directory");
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as { teams: { key: string; untrusted: { name: string } }[]; apis: unknown[] };
@@ -212,6 +213,52 @@ describe.each(PROTOCOL_VERSIONS)("directory, on protocol version %s", (version) 
     expect(structured.apis).toEqual([]);
     const text = textOf(result);
     for (const key of ["BE", "FE", "OPS", "QA"]) expect(text).toContain(key);
+  });
+
+  // contract-changes: Teams declare the APIs they consume. directory lists each registered API, with its provider team
+  // and the teams declared as its consumers, and no API that is unregistered.
+  it("lists each registered API with its provider team and the teams declared as its consumers, and no unregistered API", async () => {
+    const { install } = harness;
+    const { rows: teams } = await install.owner.query<{ id: string; key: string }>("SELECT id, key FROM teams");
+    const team = (key: string) => teams.find((row) => row.key === key)?.id ?? "";
+    await addInstallation(install.owner, {
+      account: "acme",
+      repositories: [
+        { fullName: "acme/payments", id: 7001 },
+        { fullName: "acme/billing", id: 7002 },
+        { fullName: "acme/ledger", id: 7003 },
+      ],
+    });
+    try {
+      for (const [name, repository] of [
+        ["payments-api", "acme/payments"],
+        ["billing-api", "acme/billing"],
+        ["ledger-api", "acme/ledger"],
+      ]) {
+        expect((await install.confirm(sessionOf(erin.userId), "apis.register", { name, team: team("BE"), repository })).status).toBe(200);
+      }
+      const { rows: apis } = await install.owner.query<{ id: string; name: string }>("SELECT id, name FROM apis");
+      const api = (name: string) => apis.find((row) => row.name === name)?.id ?? "";
+      await install.execute("apis.declare_consumer", sessionOf(dana.userId), { api: api("payments-api"), team: team("FE") });
+      await install.execute("apis.declare_consumer", sessionOf(sam.userId), { api: api("payments-api"), team: team("QA") });
+      await install.execute("apis.declare_consumer", sessionOf(kim.userId), { api: api("ledger-api"), team: team("OPS") });
+      await install.execute("apis.unregister", sessionOf(erin.userId), { api: api("ledger-api") });
+
+      const result = await call(dana, version, "directory");
+
+      expect(result.isError).not.toBe(true);
+      const listedApis = (result.structuredContent as { apis: { id: string; provider: { key: string }; consumers: { key: string }[]; untrusted: { name: string } }[] }).apis;
+      expect(listedApis.map(({ id, provider, consumers, untrusted }) => ({ id, provider: provider.key, consumers: consumers.map(({ key }) => key), name: untrusted.name }))).toEqual([
+        { id: api("billing-api"), provider: "BE", consumers: [], name: "billing-api" },
+        { id: api("payments-api"), provider: "BE", consumers: ["FE", "QA"], name: "payments-api" },
+      ]);
+      const text = textOf(result);
+      expect(text).toContain(`API ${api("payments-api")} of team BE, which teams FE and QA consume, is named:`);
+      expect(text).toContain(`API ${api("billing-api")} of team BE, which no team consumes yet, is named:`);
+      expect(text).not.toContain("ledger-api");
+    } finally {
+      await install.owner.query("DELETE FROM api_consumers; DELETE FROM apis; DELETE FROM github_covered_repositories; DELETE FROM github_connected_installations; DELETE FROM github_installations");
+    }
   });
 });
 

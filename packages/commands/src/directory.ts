@@ -1,7 +1,8 @@
 import { getTeam, readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
 import { compareVersions, MINIMUM_SKILL_VERSION, Refusal } from "@tiehall/core";
-import { teams, users } from "@tiehall/db";
-import { and, asc, eq } from "drizzle-orm";
+import { apis, teams, users } from "@tiehall/db";
+import { and, asc, eq, isNull } from "drizzle-orm";
+import { consumersOf } from "./api-consumers.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
 import { actingUserOf } from "./request-changes.ts";
@@ -14,9 +15,10 @@ import { teamOfKey } from "./request-keys.ts";
 // when the version of the Tiehall skill the call names is older than
 // MINIMUM_SKILL_VERSION (agent-surfaces: The Claude Code plugin). directory lists the install's teams by key,
 // with their names, their intake notes and the fields they require (agent-surfaces: Admins set a team's intake
-// notes and required fields), and the registered APIs with the teams declared as their
-// consumers: none yet, since registering an API comes with the contract-change
-// flow. teams.get reads one team as directory lists it, by its current key or
+// notes and required fields), and the registered APIs, each with its provider team and the teams declared as its
+// consumers, as contract-change routing reads them, and its name, which an admin
+// wrote, under untrusted; an unregistered API is not listed (contract-changes:
+// Teams declare the APIs they consume). teams.get reads one team as directory lists it, by its current key or
 // an earlier one, for its intake page (agent-surfaces: Team intake pages); a
 // key no team has or had gets 404. All three only read, and every member may
 // run them.
@@ -56,6 +58,21 @@ export const DIRECTORY_HANDLERS: Handlers = {
       .from(teams)
       .where(eq(teams.orgId, context.orgId))
       .orderBy(asc(teams.key));
+    const registered = await context.tx
+      .select({ id: apis.id, name: apis.name, providerId: teams.id, providerKey: teams.key })
+      .from(apis)
+      .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
+      .where(and(eq(apis.orgId, context.orgId), isNull(apis.unregisteredAt)))
+      .orderBy(asc(apis.name));
+    const listedApis = [];
+    for (const api of registered) {
+      listedApis.push({
+        id: api.id,
+        provider: { id: api.providerId, key: api.providerKey },
+        consumers: await consumersOf(context, api.id),
+        untrusted: { name: api.name },
+      });
+    }
     return {
       teams: rows.map(({ id, key, name, intakeNotes, requiredFields }) => ({
         id,
@@ -63,7 +80,7 @@ export const DIRECTORY_HANDLERS: Handlers = {
         requiredFields: requiredFields as IntakeField[],
         untrusted: { name, intakeNotes },
       })),
-      apis: [],
+      apis: listedApis,
     };
   }),
 };

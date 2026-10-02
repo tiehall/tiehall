@@ -18,7 +18,8 @@ import { INSTALL_URL, user } from "./schemas.ts";
 // directory lists the install's teams, each with its key, the address of its
 // requests, its name and its intake notes, which an admin wrote and so sit
 // under `untrusted`, and the packet fields it requires, and the registered APIs, each with its provider team and the teams declared
-// as its consumers (contract-changes), none until APIs can be registered.
+// as its consumers (contract-changes: Teams declare the APIs they consume), and
+// its name, which an admin wrote, under `untrusted`; an unregistered API is not listed.
 // teams.get reads one team as directory lists it, by its key or an earlier
 // key, which is what the team's intake page shows, and the JSON of that page
 // is its body (agent-surfaces: Team intake pages). Every member may read them,
