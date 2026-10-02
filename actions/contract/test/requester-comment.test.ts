@@ -10,9 +10,9 @@ import { runActionWith, type Npx, type RunOptions } from "./support/runner.ts";
 // Contract changes). When Tiehall answers a report that the provider team
 // alone requests its changes, because the pull request's author is no member
 // of the install, the contract Action comments on the pull request with the
-// workflow's own GITHUB_TOKEN, once per pull request and API, and updates that
-// comment in place on later runs, so the pull request keeps exactly one such
-// comment, which shows the latest run. Here GitHub's API is a fake that keeps
+// workflow's own GITHUB_TOKEN, once per pull request, and updates that comment
+// in place on later runs, so the pull request keeps exactly one such comment,
+// which shows the latest run for each API the workflow checks. Here GitHub's API is a fake that keeps
 // the pull request's comments, and the CLI a stand-in that answers as the
 // install does.
 
@@ -104,8 +104,27 @@ describe("a report whose requester is the provider team", () => {
     expect(calls.filter(({ method }) => method === "PATCH")).toHaveLength(1);
   });
 
+  it("keeps one comment on the pull request for every API the workflow checks, each API's part showing its latest run", async () => {
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    const github = fakeGitHub(comments, calls);
+
+    await runWith({ npx: answering("team"), runId: "7011", github });
+    await runWith({ npx: answering("team"), runId: "7012", inputs: { api: "billing-api" }, github });
+    await runWith({ npx: answering("team"), runId: "7013", action: "synchronize", github });
+
+    const ours = comments.filter(({ user }) => user.login === "github-actions[bot]");
+    expect(ours).toHaveLength(1);
+    const body = ours[0]?.body ?? "";
+    expect(body).toContain("Tiehall contract check: payments-api");
+    expect(body).toContain("Tiehall contract check: billing-api");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7012");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7013");
+    expect(body).not.toContain("actions/runs/7011");
+  });
+
   it("leaves a comment that someone else wrote with the Action's marker alone, and comments itself", async () => {
-    const marker = "<!-- tiehall-contract-action: payments-api -->";
+    const marker = "<!-- tiehall-contract-action -->";
     const comments: FakeComment[] = [{ id: 2, body: `${marker} spoofed`, user: { login: "mallory", type: "User" } }];
     const calls: { method: string; url: string; authorization: string | null }[] = [];
 

@@ -56,7 +56,7 @@ The Action runs on `pull_request` events of the types `opened`, `synchronize`, `
 
 ## Who requests the changes
 
-The requests Tiehall opens to the consuming teams come from the author of the pull request, when the GitHub account that opened it belongs to a member of the Tiehall install, with the API's provider team as the requesting team; the consuming teams' questions then reach the author. Otherwise the provider team alone is the requester, its members answer the questions, and the Action says so in a comment on the pull request. It posts that comment once per pull request and API, and updates it in place on later runs, so it always shows the latest report. Without `pull-requests: write`, the Action skips the comment with a warning.
+The requests Tiehall opens to the consuming teams come from the author of the pull request, when the GitHub account that opened it belongs to a member of the Tiehall install, with the API's provider team as the requesting team; the consuming teams' questions then reach the author. Otherwise the provider team alone is the requester, its members answer the questions, and the Action says so in a comment on the pull request. It posts that comment once per pull request and updates it in place on later runs; a workflow that checks several APIs on the pull request keeps one comment with a part per API, each showing its latest report. Without `pull-requests: write`, the Action skips the comment with a warning.
 
 ## Where the runner must be
 
