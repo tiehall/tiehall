@@ -39,9 +39,11 @@ import { addTeam, sessionOf } from "./support/requests.ts";
 // nothing but contract.report (403 elsewhere), and neither the membership
 // re-check nor the PAT switch applies to it.
 //
-// contract.report itself is defined by task 22.5; until then these tests call
-// a stand-in of it, a REST operation with its id that takes the API's name and
-// answers with the API the run may report for, as the real one decides it.
+// These tests call a stand-in of contract.report, a REST operation with its
+// id that takes only the API's name and answers with the API the run may
+// report for, as the real one decides it, so that they judge the CI caller
+// alone, whatever a report holds; contract-reports.test.ts runs the real
+// operation, with the PAT switch off too.
 
 let install: TestInstall;
 let oidc: ActionsOidc;
@@ -63,7 +65,7 @@ const paymentsRun = (run: Partial<ActionsRun> = {}): ActionsRun => ({
   ...run,
 });
 
-/** A stand-in of contract.report (task 22.5): the API's name in, the API the CI run may report for out. */
+/** A stand-in of contract.report: the API's name in, the API the CI run may report for out. */
 const report = defineCommand({
   id: "contract.report",
   summary: "Report the classified changes of a provider pull request to a registered API.",

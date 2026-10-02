@@ -203,6 +203,21 @@ describe("a contract report", () => {
     expect(await stored()).toHaveLength(1);
   });
 
+  it("from a CI run is accepted while the admin has switched personal access tokens off, which applies to no CI caller", async () => {
+    await install.owner.query("DELETE FROM install_settings");
+    await install.owner.query("INSERT INTO install_settings (org_id, personal_access_tokens_on) SELECT id, false FROM orgs");
+    try {
+      // A member's token is refused while the switch is off.
+      const member = await callApi(install, { ...tokenOf(danaId), scopes: ["requests:read", "requests:write", "contracts:report"] }, "POST", "/api/v1/contract-reports", reportOf());
+      expect(member.body).toMatchObject({ status: 403, type: `${PROBLEM_TYPE_BASE}personal-access-tokens-off` });
+
+      expect((await report(oidc.token(paymentsRun()), reportOf())).status).toBe(200);
+      expect(await stored()).toHaveLength(1);
+    } finally {
+      await install.owner.query("DELETE FROM install_settings");
+    }
+  });
+
   it("from a member's personal access token or OAuth token, whatever scopes it carries, is refused with 403 and stores nothing", async () => {
     const allScopes = ["requests:read", "requests:write", "contracts:report"] as const;
     for (const caller of [
