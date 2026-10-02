@@ -1,4 +1,4 @@
-import { API_PREFIX, deprecationHeaders, isProposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
+import { API_PATH, API_PREFIX, deprecationHeaders, isProposalAnswer, restShapesOf, type Catalog, type CommandDefinition, type RestShape } from "@tiehall/catalog";
 import { CLI_VERSION_HEADER, cliVersionRefusal, httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { agentJson } from "@tiehall/packet/render";
 import { bodyLimitFor, readBoundedBody } from "./body-limit.ts";
@@ -66,7 +66,16 @@ import { createLogger, type Logger } from "./log.ts";
 //   itself; the log records it by its name and stack, never its message;
 // - GET /api/v1/openapi.json answers anyone, without authentication, with
 //   the OpenAPI document, the same for every reader (public-api: Every
-//   install serves the OpenAPI 3.1 document without authentication);
+//   install serves the OpenAPI 3.1 document without authentication), and
+//   /api/vN/openapi.json the document of each later major version N the
+//   install serves;
+// - each major version of the API lives under its own path, /api/vN
+//   (public-api: The major version is in the path; public-api: After
+//   graduation, breaking changes go to a new major version; design.md, Where
+//   the specs leave room: Two API versions): an operation answers at its
+//   current path, and an earlier major version keeps answering at its earlier
+//   shape's path, through execute(), which carries the call between the
+//   shapes;
 // - an operation that adds a packet revision takes the revision the caller
 //   expects from the If-Match header, as the ETag of that revision, such as
 //   "3", and never from the body; a header that is not one such ETag, such as
@@ -83,6 +92,8 @@ export interface RestOptions {
   catalog: Catalog;
   /** The OpenAPI document served at /api/v1/openapi.json, as JSON text. */
   document: string;
+  /** The documents of later major versions, as JSON text, by major version: 2 for /api/v2/openapi.json; none while only /api/v1 exists. */
+  documents?: Readonly<Record<number, string>>;
   execute: Execute;
   /** Who is calling, from the call's credentials; undefined when it carries none; a refusal for a token that is not valid. */
   authenticate(request: Request): Promise<Caller | undefined>;
@@ -97,10 +108,12 @@ export type RestHandler = (request: Request) => Promise<Response>;
 
 interface Route {
   definition: CommandDefinition;
+  /** The shape of the operation this path serves: its current shape, or an earlier one. */
+  shape: RestShape;
   pattern: RegExp;
   parameters: string[];
   /** Per path segment, 0 for a literal and 1 for a parameter, by which literal paths sort first. */
-  shape: number[];
+  segments: number[];
 }
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
@@ -114,10 +127,10 @@ export const DOCUMENT_PATH = `${API_PREFIX}openapi.json`;
 export function createRestHandler(options: RestOptions): RestHandler {
   const logger = options.logger ?? createLogger();
   const now = options.now ?? (() => new Date());
-  const routes = options.catalog.commands
-    .filter(({ surfaces }) => surfaces.includes("rest"))
+  const routes = restShapesOf(options.catalog)
     .map(routeOf)
-    .sort((a, b) => literalFirst(a.shape, b.shape));
+    .sort((a, b) => literalFirst(a.segments, b.segments));
+  const documents: Readonly<Record<number, string>> = { ...options.documents, 1: options.document };
 
   return async function handle(request) {
     const url = new URL(request.url);
@@ -129,9 +142,10 @@ export function createRestHandler(options: RestOptions): RestHandler {
       if (!(error instanceof Refusal)) logger.error("rest: the body could not be read", { operationId: found?.definition.id, error });
       return withDeprecation(error instanceof Refusal ? problem(error) : response(internalErrorProblem()), found);
     }
-    if (url.pathname === DOCUMENT_PATH && (request.method === "GET" || request.method === "HEAD")) {
+    const document = documentOf(url.pathname, documents);
+    if (document !== undefined && (request.method === "GET" || request.method === "HEAD")) {
       // Needs no authentication and holds nothing of the install, so it is the same for every reader.
-      return new Response(request.method === "HEAD" ? null : options.document, {
+      return new Response(request.method === "HEAD" ? null : document, {
         status: 200,
         headers: { "content-type": "application/json", "cache-control": "no-cache" },
       });
@@ -192,6 +206,8 @@ export function createRestHandler(options: RestOptions): RestHandler {
         };
         executeOptions.around = (context, run) => runOnce(context, claim, run, (output) => ({ status: statusOf(output), body: JSON.stringify(output) }));
       }
+      // A call to an earlier shape's path runs the operation in that shape.
+      if (found.shape.earlier !== undefined) executeOptions.major = found.shape.major;
       const output = await options.execute(definition.id, caller, input, executeOptions);
       const status = statusOf(output);
       return json(status, JSON.stringify(agentJson(output)), status === 200 ? etagOf(definition, output) : undefined);
@@ -218,20 +234,26 @@ export function createRestHandler(options: RestOptions): RestHandler {
 /** The refusals of a call's token, whose challenge points to the protected resource metadata. */
 const CHALLENGED: ReadonlySet<string> = new Set(["unauthenticated", "invalid-token", "insufficient-scope"]);
 
-function routeOf(definition: CommandDefinition): Route {
+function routeOf(shape: RestShape): Route {
   const parameters: string[] = [];
-  const shape: number[] = [];
-  const source = (definition.path ?? "")
+  const segments: number[] = [];
+  const source = shape.path
     .split("/")
     .map((segment) => {
       const parameter = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(segment)?.[1];
-      shape.push(parameter === undefined ? 0 : 1);
+      segments.push(parameter === undefined ? 0 : 1);
       if (parameter === undefined) return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       parameters.push(parameter);
       return "([^/]+)";
     })
     .join("/");
-  return { definition, pattern: new RegExp(`^${source}$`), parameters, shape };
+  return { definition: shape.definition, shape, pattern: new RegExp(`^${source}$`), parameters, segments };
+}
+
+/** The document a path serves: /api/v1/openapi.json, or that of a later major version the install serves. */
+function documentOf(pathname: string, documents: Readonly<Record<number, string>>): string | undefined {
+  const major = /^\/api\/v([1-9][0-9]{0,2})\/openapi\.json$/.exec(pathname)?.[1];
+  return major === undefined || !Object.hasOwn(documents, major) ? undefined : documents[Number(major)];
 }
 
 /** Orders two paths so that, at the first segment where one has a literal and the other a parameter, the literal comes first. */
@@ -244,17 +266,18 @@ function literalFirst(a: readonly number[], b: readonly number[]): number {
   return a.length - b.length;
 }
 
-/** An operation found by method and path, with the path's parameters, decoded. */
+/** An operation found by method and path, in the shape that path serves, with the path's parameters, decoded. */
 interface ResolvedRoute {
   definition: CommandDefinition;
+  shape: RestShape;
   parameters: Record<string, string>;
 }
 
 /** The operation at this method and path; none when no REST operation is there. */
 function resolve(routes: readonly Route[], method: string, pathname: string): ResolvedRoute | undefined {
-  if (!pathname.startsWith(API_PREFIX)) return undefined;
+  if (!API_PATH.test(pathname)) return undefined;
   for (const route of routes) {
-    if (route.definition.method !== method) continue;
+    if (route.shape.method !== method) continue;
     const match = route.pattern.exec(pathname);
     if (match === null) continue;
     const parameters: Record<string, string> = {};
@@ -266,7 +289,7 @@ function resolve(routes: readonly Route[], method: string, pathname: string): Re
       // A path segment that is not valid percent-encoding names nothing.
       return undefined;
     }
-    return { definition: route.definition, parameters };
+    return { definition: route.definition, shape: route.shape, parameters };
   }
   return undefined;
 }
@@ -315,9 +338,9 @@ function json(status: number, body: string, etag?: string): Response {
   return new Response(body, { status, headers });
 }
 
-/** The answer, with the Deprecation and Sunset headers of a deprecated operation. */
+/** The answer, with the Deprecation and Sunset headers of a deprecated operation, in the shape its path serves. */
 function withDeprecation(answer: Response, found: ResolvedRoute | undefined): Response {
-  if (found !== undefined) for (const [name, value] of Object.entries(deprecationHeaders(found.definition))) answer.headers.set(name, value);
+  if (found !== undefined) for (const [name, value] of Object.entries(deprecationHeaders(found.shape))) answer.headers.set(name, value);
   return answer;
 }
 

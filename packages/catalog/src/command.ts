@@ -84,6 +84,37 @@ export interface CliCommand {
   readonly defaults?: Readonly<Record<string, CliValue>>;
 }
 
+/**
+ * An operation's earlier shape, which an earlier major version of the API
+ * keeps serving after a breaking change moved the operation to a later one
+ * (public-api: After graduation, breaking changes go to a new major version;
+ * design.md, Where the specs leave room: Two API versions). It holds what the
+ * earlier version's document states and its path answers: its method and path
+ * under /api/v<major>/, its input and output schemas, its stability level and
+ * deprecation, and the CLI commands that version's document names; and the two
+ * functions that carry a call between the shapes: `toCurrent` turns an input
+ * that passed the earlier schema into the operation's current input, and
+ * `fromCurrent` turns the current output into the earlier one. The handler
+ * runs the current shape alone.
+ */
+export interface EarlierShape {
+  /** The earlier major version, such as 1 for /api/v1, below the operation's own. */
+  readonly major: number;
+  readonly method: HttpMethod;
+  /** The path, under /api/v<major>/. */
+  readonly path: string;
+  readonly input: z.ZodType;
+  readonly output: z.ZodType;
+  /** Carries a parsed earlier input to the operation's current input, which its schema then parses. */
+  readonly toCurrent: (input: never) => unknown;
+  /** Carries the current output, as its schema passed it, to the earlier output, which the earlier schema then checks. */
+  readonly fromCurrent: (output: never) => unknown;
+  /** The CLI commands the earlier version's document names, for an operation the CLI offers. */
+  readonly cli?: readonly CliCommand[];
+  readonly stability: StabilityLevel;
+  readonly deprecated?: Deprecation;
+}
+
 export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output extends z.ZodType = z.ZodType> {
   /** A dotted lower-case name, such as requests.create; the OpenAPI operationId. */
   readonly id: string;
@@ -136,6 +167,12 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   readonly etag?: string;
   /** The values the person enters on the action's review page, for a command that needs the confirmation step. */
   readonly sealed?: readonly SealedField[];
+  /**
+   * The operation's earlier shapes, one per earlier major version of the API
+   * that still serves it, for a REST operation that a breaking change moved
+   * to a later major version; its path names its current one.
+   */
+  readonly earlier?: readonly EarlierShape[];
 }
 
 /** A definition, typed by its schemas; the catalog checks it when it registers it. */

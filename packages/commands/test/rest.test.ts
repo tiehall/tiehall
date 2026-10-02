@@ -437,16 +437,17 @@ describe("paths that overlap", () => {
 });
 
 describe("the catalog's REST paths", () => {
-  it("start with /api/v1/, which a definition that breaks the rule fails", () => {
+  it("start with the API's major version, /api/v1/ for every operation until one moves to a later one, which a definition that breaks the rule fails", () => {
     for (const definition of CATALOG.commands.filter(({ surfaces }) => surfaces.includes("rest"))) {
       expect(definition.path, definition.id).toMatch(/^\/api\/v1\//);
     }
     const [first] = catalog.commands;
-    expect(catalogProblems([{ ...first!, path: "/api/v2/probes/{key}" }])).toEqual([
-      "probes.get: its path /api/v2/probes/{key} does not start with /api/v1/, where the API's major version 1 lives.",
-    ]);
+    expect(catalogProblems([{ ...first!, path: "/api/v2/probes/{key}" }])).toEqual([]);
     expect(catalogProblems([{ ...first!, path: "/probes/{key}" }])).toEqual([
-      "probes.get: its path /probes/{key} does not start with /api/v1/, where the API's major version 1 lives.",
+      "probes.get: its path /probes/{key} does not start with /api/v<N>/, where the API's major version N lives.",
+    ]);
+    expect(catalogProblems([{ ...first!, path: "/api/version1/probes/{key}" }])).toEqual([
+      "probes.get: its path /api/version1/probes/{key} does not start with /api/v<N>/, where the API's major version N lives.",
     ]);
   });
 

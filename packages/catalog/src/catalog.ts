@@ -1,6 +1,6 @@
 import { ADMIN_ACTIONS } from "@tiehall/core";
 import { z } from "zod";
-import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CommandDefinition } from "./command.ts";
+import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CliCommand, type CommandDefinition, type Deprecation, type EarlierShape, type HttpMethod, type StabilityLevel } from "./command.ts";
 import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 
 // Registering definitions (public-api: One definition per operation, the same
@@ -52,8 +52,89 @@ const EVENT_LOG_REFUSED_METHODS: ReadonlySet<string> = new Set(["DELETE", "PUT",
 const CHANGES_EVENTS =
   /(?<!\b(?:a|an|the|its|their|this|that|of|no|each|every)\s)\b(delete|remove|change|edit|rewrite|update|purge|redact|clear|erase|drop|truncate|alter|modify|overwrite)(?:s|d|ed|ing)?\b(?:\s+\S+){0,3}?\s+(?:(?:a|an|the|its|their|every|all|these|those)\s+)?(?:events?|activity log)\b/i;
 
-/** Where every REST path starts: the API's major version is in the path (public-api: The major version is in the path). */
+/** Where every path of /api/v1 starts, the API's first major version (public-api: The major version is in the path). */
 export const API_PREFIX = "/api/v1/";
+
+/**
+ * Where every REST path starts: /api/v<N>/, with the API's major version N in
+ * the path (public-api: The major version is in the path; public-api: After
+ * graduation, breaking changes go to a new major version).
+ */
+export const API_PATH = /^\/api\/v([1-9][0-9]{0,2})\//;
+
+/** The major version of the API a path lies under, such as 2 for /api/v2/requests; undefined for any other path. */
+export function apiMajorOfPath(path: string): number | undefined {
+  const match = API_PATH.exec(path);
+  return match === null ? undefined : Number(match[1]);
+}
+
+/** The major version of the API whose path a REST operation's current shape has, such as 1; undefined for an operation with no such path. */
+export function apiMajorOf(definition: Pick<CommandDefinition, "path">): number | undefined {
+  return definition.path === undefined ? undefined : apiMajorOfPath(definition.path);
+}
+
+/**
+ * One shape of a REST operation, as the document of its major version states
+ * it and its path answers (design.md, Where the specs leave room: Two API
+ * versions): the operation's current shape, or one of its earlier shapes,
+ * which `earlier` then holds.
+ */
+export interface RestShape {
+  readonly definition: CommandDefinition;
+  readonly major: number;
+  readonly method: HttpMethod;
+  readonly path: string;
+  readonly input: z.ZodType;
+  readonly output: z.ZodType;
+  readonly stability: StabilityLevel;
+  readonly deprecated: Deprecation | undefined;
+  /** The CLI commands this shape's document names; none for a shape the CLI does not offer. */
+  readonly cli: readonly CliCommand[];
+  /** The earlier shape this is, for one an earlier major version keeps serving; undefined for the current shape. */
+  readonly earlier: EarlierShape | undefined;
+}
+
+/** The major versions of the API that the catalog's operations are served under, in order, such as [1] or [1, 2]. */
+export function apiMajorsOf(catalog: Pick<Catalog, "commands">): number[] {
+  return [...new Set(restShapesOf(catalog).map(({ major }) => major))].sort((a, b) => a - b);
+}
+
+/** Every REST shape of the catalog's operations, that is each operation offered on REST, at its current path, and each of its earlier shapes. */
+export function restShapesOf(catalog: Pick<Catalog, "commands">): RestShape[] {
+  return catalog.commands.flatMap((definition) => {
+    const { method, path } = definition;
+    const major = apiMajorOf(definition);
+    if (!definition.surfaces.includes("rest") || method === undefined || path === undefined || major === undefined) return [];
+    const cli = definition.surfaces.includes("cli") ? (definition.cli ?? []) : [];
+    const current: RestShape = {
+      definition,
+      major,
+      method,
+      path,
+      input: definition.input,
+      output: definition.output,
+      stability: definition.stability,
+      deprecated: definition.deprecated,
+      cli,
+      earlier: undefined,
+    };
+    const earlier = (definition.earlier ?? []).map(
+      (shape): RestShape => ({
+        definition,
+        major: shape.major,
+        method: shape.method,
+        path: shape.path,
+        input: shape.input,
+        output: shape.output,
+        stability: shape.stability,
+        deprecated: shape.deprecated,
+        cli: definition.surfaces.includes("cli") ? (shape.cli ?? []) : [],
+        earlier: shape,
+      }),
+    );
+    return [current, ...earlier];
+  });
+}
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Every rule the definitions break, as a sentence; none when they keep them. */
@@ -149,7 +230,7 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       if (method === undefined || path === undefined) {
         problem("it is offered on REST, so it names its method and its path.");
       } else {
-        if (!path.startsWith(API_PREFIX)) problem(`its path ${path} does not start with ${API_PREFIX}, where the API's major version 1 lives.`);
+        if (!API_PATH.test(path)) problem(`its path ${path} does not start with /api/v<N>/, where the API's major version N lives.`);
         const fields = inputFields(definition.input);
         if (fields === undefined) {
           problem("it is offered on REST, so its input is an object, or variants of objects, whose fields the path, query or body carry.");
@@ -231,6 +312,77 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       problem("its deprecation dates are calendar dates, such as 2026-12-15.");
     }
     if (duplicate) problem("two definitions have this id.");
+  }
+  // The earlier shapes, once every operation's current path is claimed, so a shape that takes another's path is the one named.
+  for (const definition of definitions) {
+    for (const text of earlierShapeProblems(definition, routes)) problems.push(`${definition.id}: ${text}`);
+  }
+  return problems;
+}
+
+/**
+ * What an operation's earlier shapes break (design.md, Where the specs leave
+ * room: Two API versions): only a REST operation has them, one per earlier
+ * major version below its own, each at a path of its own major version that
+ * no other operation takes, with an input its path and its CLI commands can
+ * be built from; an operation with If-Match or an ETag has none yet.
+ */
+function earlierShapeProblems(definition: CommandDefinition, routes: Map<string, string>): string[] {
+  const earlier = definition.earlier ?? [];
+  if (earlier.length === 0) return [];
+  if (!definition.surfaces.includes("rest")) return ["it has an earlier shape, which only an operation offered on REST has."];
+  const problems: string[] = [];
+  if (definition.ifMatch !== undefined || definition.etag !== undefined) {
+    problems.push("it has an earlier shape and names If-Match or an ETag, which earlier shapes do not carry yet.");
+  }
+  const own = apiMajorOf(definition);
+  const seen = new Set<number>();
+  for (const shape of earlier) {
+    const version = `/api/v${shape.major}`;
+    if (!Number.isInteger(shape.major) || shape.major < 1) {
+      problems.push(`its earlier shape names the major version ${shape.major}, which is not a whole number from 1.`);
+      continue;
+    }
+    if (seen.has(shape.major)) {
+      problems.push(`it has two earlier shapes for ${version}.`);
+      continue;
+    }
+    seen.add(shape.major);
+    if (own !== undefined && shape.major >= own) problems.push(`its earlier shape for ${version} is not under an earlier major version than its own, /api/v${own}.`);
+    if (!shape.path.startsWith(`${version}/`)) problems.push(`the path ${shape.path} of its earlier shape for ${version} does not start with ${version}/.`);
+    if (!(STABILITY_LEVELS as readonly string[]).includes(shape.stability)) {
+      problems.push(`its earlier shape for ${version} has the stability level ${shape.stability}, which is not one of ${STABILITY_LEVELS.join(", ")}.`);
+    }
+    const fields = inputFields(shape.input);
+    if (fields === undefined) {
+      problems.push(`its earlier shape for ${version} has an input that is not an object, or variants of objects, whose fields the path, query or body carry.`);
+    } else if (fields.variants && !BODY_METHODS.has(shape.method)) {
+      problems.push(`its earlier shape for ${version} has an input with variants, which only a JSON body carries, so it is offered with POST, PUT or PATCH.`);
+    }
+    for (const [, parameter = ""] of shape.path.matchAll(/\{([^}]*)\}/g)) {
+      if (fields !== undefined && !fields.names.includes(parameter)) {
+        problems.push(`the path ${shape.path} of its earlier shape names {${parameter}}, which is not a field of its input.`);
+      }
+    }
+    const route = `${shape.method} ${shape.path.replace(/\{[^}]*\}/g, "{}")}`;
+    const other = routes.get(route);
+    if (other === undefined) routes.set(route, definition.id);
+    else problems.push(`${shape.method} ${shape.path}, the path of its earlier shape for ${version}, is also the path of ${other}.`);
+    const cli = shape.cli ?? [];
+    if (cli.length > 0 && !definition.surfaces.includes("cli")) problems.push(`its earlier shape for ${version} names CLI commands, so it is offered on the CLI.`);
+    const names = inputFieldsOfAnyVariant(shape.input);
+    for (const command of cli) {
+      for (const argument of command.arguments ?? []) {
+        if (!names.has(argument)) problems.push(`its earlier shape's CLI command ${command.command} takes ${argument} as an argument, which is not a field of its input.`);
+      }
+      for (const field of [...Object.keys(command.input ?? {}), ...Object.keys(command.defaults ?? {})]) {
+        if (!names.has(field)) problems.push(`its earlier shape's CLI command ${command.command} sets ${field}, which is not a field of its input.`);
+      }
+    }
+    const { deprecated } = shape;
+    if (deprecated !== undefined && (!isDate(deprecated.since) || (deprecated.sunset !== undefined && !isDate(deprecated.sunset)))) {
+      problems.push(`the deprecation dates of its earlier shape for ${version} are calendar dates, such as 2026-12-15.`);
+    }
   }
   return problems;
 }

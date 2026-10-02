@@ -10,9 +10,9 @@ import { fileURLToPath } from "node:url";
 // server component that runs execute() cannot resolve a file path from
 // import.meta.url (apps/web/test/server-component-build.test.ts).
 
-/** openapi/v1.json, the committed OpenAPI document of /api/v1, at the repository's root. */
-export function committedDocumentPath(): string {
-  return fileURLToPath(new URL("../../../openapi/v1.json", import.meta.url));
+/** openapi/v<N>.json, the committed OpenAPI document of /api/vN, at the repository's root: openapi/v1.json unless another major version is named. */
+export function committedDocumentPath(major = 1): string {
+  return fileURLToPath(new URL(`../../../openapi/v${major}.json`, import.meta.url));
 }
 
 /** openapi/changelog.json, next to the document it describes. */

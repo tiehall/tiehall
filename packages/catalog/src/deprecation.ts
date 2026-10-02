@@ -9,7 +9,7 @@ import type { CommandDefinition } from "./command.ts";
 // that gives the OpenAPI document its `deprecated: true` and `x-sunset`.
 
 /** The Deprecation and Sunset headers of an operation, by lower-case name; none when it is not deprecated. */
-export function deprecationHeaders(definition: Pick<CommandDefinition, "deprecated">): Record<string, string> {
+export function deprecationHeaders(definition: { readonly deprecated?: CommandDefinition["deprecated"] | undefined }): Record<string, string> {
   const { deprecated } = definition;
   if (deprecated === undefined) return {};
   const since = startOfDay(deprecated.since);

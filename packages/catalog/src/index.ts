@@ -12,12 +12,13 @@ export {
   type CommandOutput,
   type CommandSurface,
   type Deprecation,
+  type EarlierShape,
   type HttpMethod,
   type Scope,
   type SealedField,
   type StabilityLevel,
 } from "./command.ts";
-export { API_PREFIX, CatalogError, catalogProblems, defineCatalog, type Catalog } from "./catalog.ts";
+export { API_PATH, API_PREFIX, apiMajorOf, apiMajorsOf, CatalogError, catalogProblems, defineCatalog, restShapesOf, type Catalog, type RestShape } from "./catalog.ts";
 export { BODY_LIMIT, bodyLimitOf, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB } from "./body-limits.ts";
 export { AGENT_CLIENT_COMMANDS, approveAgentClient, approveDevice, listAgentGrants, revokeAgentGrant } from "./agent-clients.ts";
 export {
@@ -158,7 +159,7 @@ export {
   storeGitHubWebhookSecret,
   uploadGitHubPrivateKey,
 } from "./github.ts";
-export { OPENAPI_JSON } from "./openapi-json.ts";
+export { OPENAPI_DOCUMENTS, OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
 export {

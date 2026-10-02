@@ -1,4 +1,4 @@
-import { BODY_LIMIT, CATALOG, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB, type Catalog } from "@tiehall/catalog";
+import { BODY_LIMIT, CATALOG, CONTRACT_REPORT_BODY_LIMIT, CONTRACT_REPORT_ID, MIB, restShapesOf, type Catalog } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 
@@ -41,36 +41,37 @@ interface ReportRoute {
   pattern: RegExp;
 }
 
-const reportRoutes = new WeakMap<Catalog, ReportRoute | null>();
+const reportRoutes = new WeakMap<Catalog, readonly ReportRoute[]>();
 
-/** The method and path of the catalog's contract.report, as a pattern whose parameters match one path segment. */
-function reportRouteOf(catalog: Catalog): ReportRoute | undefined {
-  let route = reportRoutes.get(catalog);
-  if (route === undefined) {
-    const definition = catalog.get(CONTRACT_REPORT_ID);
-    route =
-      definition?.method === undefined || definition.path === undefined
-        ? null
-        : {
-            method: definition.method,
-            pattern: new RegExp(
-              `^${definition.path
-                .split("/")
-                .map((segment) => (/^\{[^}]*\}$/.test(segment) ? "[^/]+" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-                .join("/")}$`,
-            ),
-          };
-    reportRoutes.set(catalog, route);
+/**
+ * The methods and paths of the catalog's contract.report, in each major
+ * version of the API that serves it, as patterns whose parameters match one
+ * path segment.
+ */
+function reportRoutesOf(catalog: Catalog): readonly ReportRoute[] {
+  let routes = reportRoutes.get(catalog);
+  if (routes === undefined) {
+    routes = restShapesOf(catalog)
+      .filter(({ definition }) => definition.id === CONTRACT_REPORT_ID)
+      .map(({ method, path }) => ({
+        method,
+        pattern: new RegExp(
+          `^${path
+            .split("/")
+            .map((segment) => (/^\{[^}]*\}$/.test(segment) ? "[^/]+" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+            .join("/")}$`,
+        ),
+      }));
+    reportRoutes.set(catalog, routes);
   }
-  return route ?? undefined;
+  return routes;
 }
 
 /** The most bytes a request with this method and path may carry in its body. */
 export function bodyLimitFor(method: string, pathname: string, catalog: Catalog = CATALOG): number {
   const webhook = Object.hasOwn(WEBHOOK_BODY_LIMITS, pathname) ? WEBHOOK_BODY_LIMITS[pathname] : undefined;
   if (webhook !== undefined) return webhook;
-  const report = reportRouteOf(catalog);
-  if (report !== undefined && method.toUpperCase() === report.method && report.pattern.test(pathname)) return CONTRACT_REPORT_BODY_LIMIT;
+  if (reportRoutesOf(catalog).some((report) => method.toUpperCase() === report.method && report.pattern.test(pathname))) return CONTRACT_REPORT_BODY_LIMIT;
   return BODY_LIMIT;
 }
 

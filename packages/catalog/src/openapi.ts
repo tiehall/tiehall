@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
 import { bodyLimitOf, MIB } from "./body-limits.ts";
-import { variantsOf, type Catalog } from "./catalog.ts";
-import type { CliCommand, CommandDefinition } from "./command.ts";
+import { restShapesOf, variantsOf, type Catalog, type RestShape } from "./catalog.ts";
+import type { CliCommand } from "./command.ts";
 import { packet, PACKET_COMPONENT } from "./packet.ts";
 import { proposalAnswer } from "./proposals.ts";
 
@@ -42,6 +42,13 @@ import { proposalAnswer } from "./proposals.ts";
 // packet is the component Packet wherever an operation takes or returns one
 // (handoff-packet: One definition for the schema and the API). The document
 // holds no data of any install and is the same for every reader.
+//
+// Each major version of the API has a document of its own (public-api: After
+// graduation, breaking changes go to a new major version; design.md, Where
+// the specs leave room: Two API versions): the document of /api/vN lists the
+// operations whose current path lies under it and the earlier shapes kept for
+// it, each as that shape states it. So the v1 document stays as it was when an
+// operation gains a breaking shape under /api/v2 and keeps its earlier shape.
 
 /** The API's version while it is beta: 0.N.0, bumped with every breaking change (D28 #27). */
 export const API_VERSION = "0.1.0";
@@ -52,6 +59,8 @@ const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 export interface OpenApiOptions {
   /** info.version, of the form 0.N.0 while the API is beta. */
   version?: string;
+  /** The API's major version whose document this is, such as 2 for /api/v2; 1 unless given. */
+  major?: number;
 }
 
 /** The document as JSON. */
@@ -129,11 +138,12 @@ const POST_ERRORS: Readonly<Record<string, string>> = { "422": "The Idempotency-
 export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}): OpenApiDocument {
   const version = options.version ?? API_VERSION;
   if (!BETA_VERSION.test(version)) throw new Error(`The API's version is ${version}; while the API is beta it has the form 0.N.0.`);
+  const major = options.major ?? 1;
   const paths: ZodOpenApiPathsObject = {};
-  for (const definition of catalog.commands) {
-    if (!definition.surfaces.includes("rest") || definition.method === undefined || definition.path === undefined) continue;
-    const item = (paths[definition.path] ??= {});
-    item[definition.method.toLowerCase() as "get"] = operationOf(definition, definition.method);
+  // The shapes this major version serves: the operations whose current path lies under it, and the earlier shapes kept for it.
+  for (const shape of restShapesOf(catalog).filter((candidate) => candidate.major === major)) {
+    const item = (paths[shape.path] ??= {});
+    item[shape.method.toLowerCase() as "get"] = operationOf(shape);
   }
   const document = createDocument(
     {
@@ -142,7 +152,7 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
         title: "Tiehall API",
         version,
         description:
-          "The REST API of a Tiehall install, under /api/v1. It is beta: each operation carries its stability level, and breaking changes follow the notice rules on the changelog page at /docs/api/changelog.",
+          `The REST API of a Tiehall install, under /api/v${major}. It is beta: each operation carries its stability level, and breaking changes follow the notice rules on the changelog page at /docs/api/changelog.`,
       },
       paths,
       components: {
@@ -171,25 +181,27 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
   return document;
 }
 
-function operationOf(definition: CommandDefinition, method: string): ZodOpenApiOperationObject {
-  const pathKeys = new Set([...(definition.path ?? "").matchAll(/\{([^}]*)\}/g)].map(([, name]) => name ?? ""));
+/** The operation of one REST shape, as its major version's document states it. */
+function operationOf(shape: RestShape): ZodOpenApiOperationObject {
+  const { definition, method, input } = shape;
+  const pathKeys = new Set([...shape.path.matchAll(/\{([^}]*)\}/g)].map(([, name]) => name ?? ""));
   // The catalog checks that a REST operation's input is an object, or, for a method with a body, variants of
   // objects, and that each variant holds every parameter its path names.
-  const variants = variantsOf(definition.input);
+  const variants = variantsOf(input);
   // The field REST fills from If-Match is a header, never a field of the query or the body.
-  const fields = Object.entries((variants?.[0] ?? (definition.input as z.ZodObject)).shape).filter(([key]) => key !== definition.ifMatch);
+  const fields = Object.entries((variants?.[0] ?? (input as z.ZodObject)).shape).filter(([key]) => key !== definition.ifMatch);
   const inPath = z.object(Object.fromEntries(fields.filter(([key]) => pathKeys.has(key))));
   const rest = z.object(Object.fromEntries(fields.filter(([key]) => !pathKeys.has(key))));
   const hasBody = BODY_METHODS.has(method);
   const notInBody = new Set([...pathKeys, ...(definition.ifMatch === undefined ? [] : [definition.ifMatch])]);
-  const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(definition.input, variants, notInBody);
+  const body = variants === undefined ? (Object.keys(rest.shape).length > 0 ? rest : undefined) : bodyVariants(input, variants, notInBody);
   // An input with variants takes If-Match only in the variants that change the packet, so there it is optional.
   const ifMatch = variants === undefined ? ifMatchHeader : optionalIfMatchHeader;
   const operation: ZodOpenApiOperationObject & Record<`x-${string}`, unknown> = {
     operationId: definition.id,
     summary: definition.summary,
     security: [{ bearer: [...definition.scopes] }],
-    "x-stability-level": definition.stability,
+    "x-stability-level": shape.stability,
     requestParams: {
       ...(pathKeys.size > 0 ? { path: inPath } : {}),
       ...(!hasBody && Object.keys(rest.shape).length > 0 ? { query: rest } : {}),
@@ -198,13 +210,16 @@ function operationOf(definition: CommandDefinition, method: string): ZodOpenApiO
         : {}),
     },
     ...(hasBody && body !== undefined ? { requestBody: { content: { "application/json": { schema: body } } } } : {}),
-    responses: responsesOf(definition, method),
+    responses: responsesOf(shape),
   };
-  if (definition.deprecated !== undefined) {
+  if (shape.deprecated !== undefined) {
     operation.deprecated = true;
-    if (definition.deprecated.sunset !== undefined) operation["x-sunset"] = definition.deprecated.sunset;
+    if (shape.deprecated.sunset !== undefined) operation["x-sunset"] = shape.deprecated.sunset;
   }
-  if (definition.surfaces.includes("cli")) operation["x-tiehall-cli"] = { commands: (definition.cli ?? []).map(cliCommandOf) };
+  // The current shape of an operation the CLI offers always names its commands; an earlier shape, those its document named.
+  if (definition.surfaces.includes("cli") && (shape.earlier === undefined || shape.cli.length > 0)) {
+    operation["x-tiehall-cli"] = { commands: shape.cli.map(cliCommandOf) };
+  }
   return operation;
 }
 
@@ -230,12 +245,13 @@ function bodyVariants(input: z.ZodType, variants: readonly z.ZodObject[], notInB
   return input instanceof z.ZodDiscriminatedUnion ? z.discriminatedUnion(input.def.discriminator, options) : z.union(options);
 }
 
-function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiResponsesObject {
+function responsesOf(shape: RestShape): ZodOpenApiResponsesObject {
+  const { definition, method } = shape;
   const responses: ZodOpenApiResponsesObject = {
     "200": {
       description: definition.commitment ? "The operation's result, for a call that makes no commitment." : "The operation's result.",
       ...(definition.etag === undefined ? {} : { headers: etagHeader }),
-      content: { "application/json": { schema: definition.output } },
+      content: { "application/json": { schema: shape.output } },
     },
   };
   if (definition.commitment) {
@@ -263,7 +279,7 @@ function responsesOf(definition: CommandDefinition, method: string): ZodOpenApiR
 }
 
 /** The 413 of an operation that takes a body, which names the limit on its body. */
-function payloadTooLargeOf(definition: CommandDefinition): string {
+function payloadTooLargeOf(definition: RestShape["definition"]): string {
   return `The request body is larger than ${bodyLimitOf(definition.id) / MIB} MiB, the limit on this operation's body; it is not read, and nothing runs.`;
 }
 

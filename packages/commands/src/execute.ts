@@ -79,6 +79,15 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 // 7. returns only output that passes the operation's output schema, or, for a
 //    call that made a commitment, the proposal schema: any other output rolls
 //    the call back and is never returned.
+// A call made in an operation's earlier shape, which an earlier major version
+// of the API keeps serving (public-api: After graduation, breaking changes go
+// to a new major version; design.md, Where the specs leave room: Two API
+// versions), has its input parsed against that shape's schema in step 3, and
+// refused there as any input that fails its schema is, then carried to the
+// current shape, which the handler alone runs; its output, once it passes the
+// current output schema, is carried back to the earlier shape and returned
+// only when it passes that shape's schema. A major version in which the
+// operation has no shape serves no such operation (404).
 // A call made with an OAuth token or a personal access token that writes is
 // counted, in its transaction and before its change, against the token's
 // limit and the install's daily budget, and gets 429 beyond either
@@ -281,6 +290,12 @@ export interface ExecuteOptions {
    * re-check, so a removed member's call gets 403 whatever it sends.
    */
   refusal?: Refusal;
+  /**
+   * The earlier major version of the API whose shape of the operation the
+   * call was made in, such as 1 for a call to /api/v1 after a breaking change
+   * moved the operation to /api/v2; the operation's current shape unless given.
+   */
+  major?: number;
 }
 
 export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
@@ -315,6 +330,9 @@ export function createExecute(services: ExecuteServices): Execute {
     const definition = catalog.get(commandId);
     const handler = handlers[commandId];
     if (definition === undefined || handler === undefined) throw notOffered();
+    // The earlier shape the call was made in, if any.
+    const earlier = options.major === undefined ? undefined : definition.earlier?.find(({ major }) => major === options.major);
+    if (options.major !== undefined && earlier === undefined) throw notOffered();
 
     // 1. A token or CI call reaches only what the surface it came through offers.
     const surface = catalogSurfaceOf(caller);
@@ -350,10 +368,14 @@ export function createExecute(services: ExecuteServices): Execute {
       }
       if (options.refusal !== undefined) throw options.refusal;
 
-      // 3. Nothing runs on input that fails the schema.
-      const parsed = definition.input.safeParse(dropUnknownVariantKeys(definition.input, input));
+      // 3. Nothing runs on input that fails the schema: an earlier shape's, then, carried to it, the current one's.
+      let parsed = (earlier?.input ?? definition.input).safeParse(dropUnknownVariantKeys(earlier?.input ?? definition.input, input));
       if (!parsed.success) {
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
+      }
+      if (earlier !== undefined) {
+        parsed = definition.input.safeParse(earlier.toCurrent(parsed.data as never));
+        if (!parsed.success) throw new Error(`The input of ${commandId}'s shape for /api/v${earlier.major} does not carry to its current shape.`);
       }
 
       // 4. What each kind of caller may run; a CI caller was refused any other operation than contract.report already.
@@ -463,10 +485,14 @@ export function createExecute(services: ExecuteServices): Execute {
         const run = async () => {
           const result = await handler(parsedInput, handlerContext);
           // A commitment's call that made one answers with its proposal instead of the operation's output.
-          const schema = definition.commitment && isProposalAnswer(result) ? proposalAnswer : definition.output;
-          const output = schema.safeParse(result);
+          const proposed = definition.commitment && isProposalAnswer(result);
+          const output = (proposed ? proposalAnswer : definition.output).safeParse(result);
           if (!output.success) throw new OutputSchemaError(commandId);
-          return output.data;
+          if (earlier === undefined || proposed) return output.data;
+          // The current output, carried back to the earlier shape the call was made in.
+          const answer = earlier.output.safeParse(earlier.fromCurrent(output.data as never));
+          if (!answer.success) throw new OutputSchemaError(commandId);
+          return answer.data;
         };
         return options.around === undefined ? run() : options.around(context, run);
       },

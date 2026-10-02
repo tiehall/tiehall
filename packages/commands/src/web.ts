@@ -1,4 +1,4 @@
-import { CATALOG, getBanners, OPENAPI_JSON } from "@tiehall/catalog";
+import { CATALOG, getBanners, OPENAPI_DOCUMENTS, OPENAPI_JSON } from "@tiehall/catalog";
 import type { Banner } from "./admin-alerts.ts";
 import { emailStatus } from "./email.ts";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
@@ -153,6 +153,7 @@ export function restRoute(env: Environment): RestHandler {
   rest = createRestHandler({
     catalog: CATALOG,
     document: OPENAPI_JSON,
+    documents: OPENAPI_DOCUMENTS,
     execute,
     // A call acts for the user its access token names, checked against the keys the sign-in service signs them
     // with, read in this process (agent-access: Tiehall is the authorization server for agent clients), or its
