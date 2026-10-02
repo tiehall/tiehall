@@ -4,6 +4,7 @@ import { Refusal } from "@tiehall/core";
 import { jiraSiteUrl } from "@tiehall/catalog";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  createGitHubActionsFetch,
   createGitHubFetch,
   createJiraFetch,
   createOutboundFetcher,
@@ -23,7 +24,8 @@ import {
 // recording each address the fetcher connects to. GitHub calls go only to
 // GitHub's hosts, and Jira calls only to a site of the form
 // https://<name>.atlassian.net, whose URL is refused as invalid input
-// otherwise, before any call.
+// otherwise, before any call. The keys that sign GitHub Actions' OIDC tokens
+// are read only from GitHub Actions' OIDC issuer.
 
 const HOSTS: Readonly<Record<string, string[]>> = {
   "client.example": ["93.184.215.14"],
@@ -252,6 +254,27 @@ describe("calls to GitHub", () => {
       "https://github.com/login/oauth/access_token",
       "https://api.github.com/app-manifests/abc/conversions",
     ]);
+  });
+});
+
+describe("calls to GitHub Actions' OIDC issuer", () => {
+  it("go only to its own host, over https, which serves the keys that sign the tokens of CI runs", async () => {
+    const called: string[] = [];
+    const issuer = createGitHubActionsFetch(async (input) => {
+      called.push(String(input instanceof Request ? input.url : input));
+      return new Response("{}");
+    });
+    await issuer("https://token.actions.githubusercontent.com/.well-known/jwks");
+    for (const url of [
+      "http://token.actions.githubusercontent.com/.well-known/jwks",
+      "https://token.actions.githubusercontent.com.evil.example/.well-known/jwks",
+      "https://api.github.com/app",
+      "https://raw.githubusercontent.com/acme/payments/main/openapi.yaml",
+      "https://user@token.actions.githubusercontent.com/.well-known/jwks",
+    ]) {
+      await expect(issuer(url)).rejects.toBeInstanceOf(OutboundRefused);
+    }
+    expect(called).toEqual(["https://token.actions.githubusercontent.com/.well-known/jwks"]);
   });
 });
 

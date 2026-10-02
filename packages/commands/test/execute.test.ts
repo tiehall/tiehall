@@ -355,6 +355,11 @@ describe("execute", () => {
     expect(await counts()).toEqual({ messages: 0, events: 0 });
   });
 
+  it("refuses a CI caller another operation before its input is judged, whatever it sends", async () => {
+    const refusal = await refusalOf(execute("probes.post", ciCaller, { body: 42 }));
+    expect(refusal).toMatchObject({ status: 403, reason: "ci-caller-refused" });
+  });
+
   it("never runs an operation offered on a surface for a system job or an integration event", async () => {
     for (const caller of [systemJob, integrationEvent]) {
       const refusal = await refusalOf(execute("probes.post", caller, { requestId: randomUUID(), body: "from the worker" }));

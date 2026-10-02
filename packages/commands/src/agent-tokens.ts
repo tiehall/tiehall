@@ -64,6 +64,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A bearer token, as RFC 6750 allows its characters. */
 const BEARER = /^Bearer +([A-Za-z0-9\-._~+/]+=*)$/i;
 
+/** The bearer token in a call's Authorization header; undefined for a call without one, or with another scheme. */
+export function bearerTokenOf(request: Request): string | undefined {
+  const header = request.headers.get("authorization");
+  if (header === null) return undefined;
+  return BEARER.exec(header.trim())?.[1];
+}
+
 function invalidToken(): Refusal {
   return new Refusal("invalid-token", "The access token is not valid: it is expired, malformed or not issued by this install.");
 }
@@ -79,12 +86,9 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
   };
 
   return async function checkToken(request) {
-    const header = request.headers.get("authorization");
-    if (header === null) return undefined;
-    const bearer = BEARER.exec(header.trim());
-    // Another scheme names no access token.
-    if (bearer === null) return undefined;
-    const token = bearer[1] ?? "";
+    // A call without a bearer token, or with another scheme, names no access token.
+    const token = bearerTokenOf(request);
+    if (token === undefined) return undefined;
     if (isPersonalAccessToken(token)) {
       const found = options.database === undefined ? undefined : await findPersonalAccessToken(options.database, token, now());
       if (found === undefined) throw invalidToken();

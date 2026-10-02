@@ -409,6 +409,9 @@ importers:
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(kysely@0.29.6)(pg@8.23.0)
+      jose:
+        specifier: 6.2.12
+        version: 6.2.12
       nodemailer:
         specifier: 10.0.10
         version: 10.0.10

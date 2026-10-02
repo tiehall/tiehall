@@ -47,7 +47,9 @@ import { writeIn, type Origin, type Store, type Writer } from "./write.ts";
 //    know: for an input whose variants are strict, which refuse a field of
 //    another variant, the keys no variant has are dropped first;
 // 4. lets each kind of caller run only what its kind may run: a CI caller
-//    only contract.report, a system job or an integration event only
+//    only contract.report, which it is refused before its input or the
+//    call's own refusal is judged, so it gets 403 whatever it sends to any
+//    other operation; a system job or an integration event only
 //    internal commands, and a system action, which takes effect with no
 //    proposal and no confirmation, only a system job or an integration event
 //    (requests: System actions need no proposal or confirmation);
@@ -342,6 +344,10 @@ export function createExecute(services: ExecuteServices): Execute {
           });
         }
       }
+      // A CI caller may call contract.report alone, whatever it sends (step 4).
+      if (caller.kind === "ci" && commandId !== "contract.report") {
+        throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
+      }
       if (options.refusal !== undefined) throw options.refusal;
 
       // 3. Nothing runs on input that fails the schema.
@@ -350,10 +356,7 @@ export function createExecute(services: ExecuteServices): Execute {
         throw new Refusal("invalid-input", `The input of ${commandId} does not match its schema.`, { issues: issuesOf(parsed.error) });
       }
 
-      // 4. What each kind of caller may run.
-      if (caller.kind === "ci" && commandId !== "contract.report") {
-        throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
-      }
+      // 4. What each kind of caller may run; a CI caller was refused any other operation than contract.report already.
       const worker = caller.kind === "system_job" || caller.kind === "integration_event";
       if (worker && definition.surfaces.length > 0) {
         throw new Refusal("forbidden", "Only internal commands run for a system job or an integration event.");

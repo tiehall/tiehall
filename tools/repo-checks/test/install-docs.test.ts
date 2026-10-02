@@ -182,7 +182,15 @@ describe("the install docs", () => {
 
   it("list the outbound hosts, which name no model vendor", () => {
     const outbound = section("What an install connects to");
-    for (const host of ["github.com", "api.github.com", "<name>.atlassian.net", "SMTP server", "Client ID Metadata Documents", "TIEHALL_CLIENT_METADATA_FETCH=off"]) {
+    for (const host of [
+      "github.com",
+      "api.github.com",
+      "token.actions.githubusercontent.com",
+      "<name>.atlassian.net",
+      "SMTP server",
+      "Client ID Metadata Documents",
+      "TIEHALL_CLIENT_METADATA_FETCH=off",
+    ]) {
       expect(outbound).toContain(host);
     }
     const vendors = [

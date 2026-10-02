@@ -2364,3 +2364,25 @@ export const apis = pgTable(
     check("apis_unregistered_by_someone", sql`(${table.unregisteredAt} IS NULL) = (${table.unregisteredByUserId} IS NULL)`),
   ],
 );
+
+// The GitHub Actions OIDC tokens Tiehall has seen, by a SHA-256 digest of
+// their jti (agent-access: CI authenticates with GitHub Actions OIDC bound to
+// registered repositories): a token whose jti is here is refused as replayed.
+// Each row is kept until its token has expired, after which no call can
+// present it anyway, and a job then removes it.
+export const usedCiTokens = pgTable(
+  "used_ci_tokens",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    jtiHash: bytea("jti_hash").notNull(),
+    /** When the token expires, as its exp claim says. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.jtiHash] }),
+    index("used_ci_tokens_expires_at").on(table.orgId, table.expiresAt),
+    check("used_ci_tokens_hash_length", sql`octet_length(${table.jtiHash}) = 32`),
+  ],
+);

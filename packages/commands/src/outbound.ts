@@ -291,6 +291,25 @@ export function createGitHubFetch(fetchImpl: Fetch = fetch): Fetch {
 }
 
 /**
+ * GitHub Actions' OIDC issuer, the one GitHub host besides its API and web
+ * that Tiehall calls: to read the public keys that sign the tokens of CI runs
+ * (agent-access: CI authenticates with GitHub Actions OIDC bound to
+ * registered repositories).
+ */
+export const GITHUB_ACTIONS_OIDC_ORIGIN = "https://token.actions.githubusercontent.com";
+
+/** A fetch that calls only GitHub Actions' OIDC issuer, over https; any other call is refused before it is made. */
+export function createGitHubActionsFetch(fetchImpl: Fetch = fetch): Fetch {
+  return async (input, init) => {
+    const url = urlOf(input);
+    if (url.origin !== GITHUB_ACTIONS_OIDC_ORIGIN || url.username !== "" || url.password !== "") {
+      throw new OutboundRefused("host", "The keys of GitHub Actions' tokens are read only from GitHub Actions' OIDC issuer.");
+    }
+    return fetchImpl(input, init);
+  };
+}
+
+/**
  * A fetch that calls only the connected Jira site. A site URL that is not of
  * the form https://<name>.atlassian.net is refused as invalid input, before
  * any call.

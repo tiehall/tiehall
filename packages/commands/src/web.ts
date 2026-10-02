@@ -3,6 +3,7 @@ import type { Banner } from "./admin-alerts.ts";
 import { emailStatus } from "./email.ts";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
 import { createAgentTokenCheck } from "./agent-tokens.ts";
+import { createApiCallerCheck, createCiTokenCheck } from "./ci-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
 import { createAdminRoute } from "./admin-page.ts";
 import { createApisRoute } from "./apis-page.ts";
@@ -155,8 +156,13 @@ export function restRoute(env: Environment): RestHandler {
     execute,
     // A call acts for the user its access token names, checked against the keys the sign-in service signs them
     // with, read in this process (agent-access: Tiehall is the authorization server for agent clients), or its
-    // personal access token names, looked up in the install's database.
-    authenticate: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
+    // personal access token names, looked up in the install's database; a GitHub Actions OIDC token's call is a
+    // CI caller's, checked against GitHub Actions' published keys (agent-access: CI authenticates with GitHub
+    // Actions OIDC bound to registered repositories).
+    authenticate: createApiCallerCheck({
+      agent: createAgentTokenCheck({ url, signingKeys: () => signIn.signingKeys(), database }),
+      ci: createCiTokenCheck({ url, database }),
+    }),
     resourceMetadata: resourceMetadataUrlOf(url),
     logger,
   });

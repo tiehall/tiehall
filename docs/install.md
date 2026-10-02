@@ -206,7 +206,7 @@ docker compose run --rm app admin setup reopen
 
 An install sends nothing to the Tiehall project: no usage statistics, no update check, no error reports and no license check. It calls no language model, and sends no data to a model vendor. Its only outbound connections are:
 
-- GitHub: `github.com` and `api.github.com`, for sign-in, the GitHub App, pull requests and the GitHub Issues mirror.
+- GitHub: `github.com` and `api.github.com`, for sign-in, the GitHub App, pull requests and the GitHub Issues mirror, and `token.actions.githubusercontent.com`, for the published keys that check the tokens of the contract Action's runs when they report.
 - The Jira Cloud site an admin connects, `<name>.atlassian.net`, when one is connected.
 - The SMTP server in `.env`, when one is set.
 - The Client ID Metadata Documents of the agent clients that connect, on the hosts their client ids name, fetched through a fetcher that refuses internal addresses. Set `TIEHALL_CLIENT_METADATA_FETCH=off` in `.env` to stop these fetches; agent clients then register with Dynamic Client Registration.

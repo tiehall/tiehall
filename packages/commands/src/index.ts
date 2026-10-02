@@ -25,7 +25,17 @@ export {
   type ConsentRouteOptions,
   type ConsentView,
 } from "./consent.ts";
-export { createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOptions, type SigningKeys } from "./agent-tokens.ts";
+export { bearerTokenOf, createAgentTokenCheck, type AgentTokenCheck, type AgentTokenCheckOptions, type SigningKeys } from "./agent-tokens.ts";
+export {
+  createApiCallerCheck,
+  createCiTokenCheck,
+  GITHUB_ACTIONS_ISSUER,
+  GITHUB_ACTIONS_JWKS_URL,
+  isGitHubActionsToken,
+  pruneUsedCiTokens,
+  type CiTokenCheck,
+  type CiTokenCheckOptions,
+} from "./ci-tokens.ts";
 export {
   CLI_CLIENT_ID,
   cliDeviceFlow,
@@ -272,8 +282,10 @@ export { openDatabase, type Database } from "./database.ts";
 export { HANDLERS } from "./handlers.ts";
 export { noticeOfEvent, type NoticeEvent } from "./notices.ts";
 export {
+  createGitHubActionsFetch,
   createGitHubFetch,
   createJiraFetch,
+  GITHUB_ACTIONS_OIDC_ORIGIN,
   createOutboundFetcher,
   GITHUB_ORIGINS,
   isPublicAddress,
