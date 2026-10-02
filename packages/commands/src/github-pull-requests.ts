@@ -71,12 +71,16 @@ export async function readPullRequest(client: GitHubClient, installationId: numb
 /**
  * The connected installation of the App, neither suspended nor deleted, that
  * covers the repository with this owner/name, which GitHub compares without
- * regard to case, and the repository's name as GitHub gave it; undefined when
- * none does.
+ * regard to case, and the repository's name as GitHub gave it, with GitHub's
+ * id of it; undefined when none does.
  */
-export async function installationCoveringNamed({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number, fullName: string): Promise<{ installationId: number; fullName: string } | undefined> {
+export async function installationCoveringNamed(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  appId: number,
+  fullName: string,
+): Promise<{ installationId: number; fullName: string; repositoryId: number } | undefined> {
   const [row] = await tx
-    .select({ installationId: githubInstallations.installationId, fullName: githubCoveredRepositories.fullName })
+    .select({ installationId: githubInstallations.installationId, fullName: githubCoveredRepositories.fullName, repositoryId: githubCoveredRepositories.repositoryId })
     .from(githubCoveredRepositories)
     .innerJoin(githubInstallations, and(eq(githubInstallations.orgId, githubCoveredRepositories.orgId), eq(githubInstallations.id, githubCoveredRepositories.installationId)))
     .innerJoin(

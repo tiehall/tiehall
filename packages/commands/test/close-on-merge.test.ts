@@ -289,6 +289,32 @@ describe("a pull request that does not qualify", () => {
   });
 });
 
+describe("linking the merged provider pull request", () => {
+  it("creates no done proposal, even for a member of the target team while the state allows done: it is only linked", async () => {
+    const opened = await stub.openPullRequest("acme/payments", { title: "Payment fields", head: "deniz-more-payment-fields", author: "deniz" });
+    await install.execute("contract.report", ciRun(), reportOf("payments-api", changesOf("breaking"), { pullRequest: opened.number }));
+    clock = new Date(clock.getTime() + 3 * 60 * 1000);
+    await runDueUpdates(install, clock);
+    const { rows } = await install.owner.query<{ id: string; key: string }>(
+      `SELECT r.id, t.key || '-' || r.number AS key FROM contract_change_requests c
+         JOIN contract_change_sets s ON s.id = c.change_set_id JOIN requests r ON r.id = c.request_id JOIN teams t ON t.id = r.target_team_id
+        WHERE s.pull_request_number = $1`,
+      [opened.number],
+    );
+    const fe = rows[0]!;
+    await install.execute("requests.claim", sessionOf(bob), { key: fe.key });
+    await install.execute("requests.set_status", sessionOf(bob), { key: fe.key, state: "in_progress" });
+    await stub.mergePullRequest("acme/payments", opened.number, { by: "deniz" });
+
+    const answer = (await install.execute("requests.link_pr", sessionOf(bob), { key: fe.key, url: `https://github.com/acme/payments/pull/${opened.number}` })) as Record<string, unknown>;
+
+    expect(answer).toMatchObject({ pullRequest: { repository: "acme/payments", number: opened.number } });
+    expect(answer).not.toHaveProperty("proposal");
+    expect(await proposalCount(fe.id)).toBe(0);
+    expect((await stateOf(fe.id)).state).toBe("in_progress");
+  });
+});
+
 describe("a merge on a trial install, whose GitHub App has no webhook", () => {
   let trial: TestInstall;
   let trialStub: GitHubStub;

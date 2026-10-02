@@ -1,6 +1,6 @@
 import { linkPullRequest, type pullRequestLink } from "@tiehall/catalog";
 import { changeRequest, Refusal, requestPullRequestLinked } from "@tiehall/core";
-import { pullRequestLinks, users } from "@tiehall/db";
+import { contractChangeRequests, contractChangeSets, pullRequestLinks, users } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
@@ -50,18 +50,22 @@ import type { OrgContext } from "./with-org.ts";
 // 202 on REST: a person confirms it in the web UI. Linked by anyone else, or
 // to a request whose state does not allow done, it is only linked. A pull
 // request of a repository no connected installation covers cannot be read, so
-// it is only linked: it could not close the request on merge either.
+// it is only linked: it could not close the request on merge either. Nor does
+// the provider pull request of a contract-change request's own change set
+// count as a merged pull request that closes it (contract-changes: Consumers
+// close requests with their own PR), so linked to that request it is only
+// linked, as close on merge never closes the request for it either.
 
 /**
  * When the pull request merged, as GitHub gives it now, read before the
  * call's transaction through the connected installation that covers its
- * repository: null when it has not merged, or when Tiehall cannot read it,
- * because no connected installation covers the repository, the install has no
- * App, or GitHub knows no such pull request; undefined when the request has
- * the link already, whose call reads nothing. GitHub failing the read is
- * refused with 502, and nothing is linked.
+ * repository, with GitHub's id of the repository: null when it has not
+ * merged, or when Tiehall cannot read it, because no connected installation
+ * covers the repository, the install has no App, or GitHub knows no such pull
+ * request; undefined when the request has the link already, whose call reads
+ * nothing. GitHub failing the read is refused with 502, and nothing is linked.
  */
-async function mergedAtOf(input: { key: string; url: string }, context: PrepareContext): Promise<{ mergedAt: string | null } | undefined> {
+async function mergedAtOf(input: { key: string; url: string }, context: PrepareContext): Promise<{ mergedAt: string | null; repositoryId?: number } | undefined> {
   const pullRequest = pullRequestOf(input.url);
   const known = await context.read(async (orgContext) => {
     try {
@@ -80,13 +84,31 @@ async function mergedAtOf(input: { key: string; url: string }, context: PrepareC
   if (covering === undefined) return { mergedAt: null };
   try {
     const read = await readPullRequest(app.client, covering.installationId, covering.fullName, pullRequest.number);
-    return { mergedAt: read?.mergedAt?.toISOString() ?? null };
+    return { mergedAt: read?.mergedAt?.toISOString() ?? null, repositoryId: covering.repositoryId };
   } catch (error) {
     if (error instanceof GitHubUnavailableError) {
       throw new Refusal("integration-unavailable", `${error.message} Tiehall reads a pull request before it links it, to know whether it has merged; nothing was linked, so link it again.`);
     }
     throw error;
   }
+}
+
+/** Whether the pull request is the provider pull request of the contract change set that opened the request. */
+async function isOwnProviderPullRequest({ tx, orgId }: OrgContext, requestId: string, repositoryId: number, number: number): Promise<boolean> {
+  const [own] = await tx
+    .select({ requestId: contractChangeRequests.requestId })
+    .from(contractChangeRequests)
+    .innerJoin(contractChangeSets, and(eq(contractChangeSets.orgId, contractChangeRequests.orgId), eq(contractChangeSets.id, contractChangeRequests.changeSetId)))
+    .where(
+      and(
+        eq(contractChangeRequests.orgId, orgId),
+        eq(contractChangeRequests.requestId, requestId),
+        eq(contractChangeSets.repositoryId, repositoryId),
+        eq(contractChangeSets.pullRequestNumber, number),
+      ),
+    )
+    .limit(1);
+  return own !== undefined;
 }
 
 /** A pull request linked to a request, as the operations return it. */
@@ -160,9 +182,12 @@ export const PULL_REQUEST_LINK_HANDLERS: Handlers = {
       return { request: await requestView(writer, row.id), pullRequest: link };
     }, { teamId });
     // A pull request that had already merged, linked by a member of the target team while the state allows done: a done proposal too.
-    if (context.prepared?.mergedAt === undefined || context.prepared.mergedAt === null) return answer;
+    const prepared = context.prepared;
+    if (prepared?.mergedAt === undefined || prepared.mergedAt === null) return answer;
     const ofTargetTeam = (await teamsOfMember(context, userId)).some(({ id }) => id === row.targetTeamId);
     if (!ofTargetTeam || !changeRequest(await lifecycleOf(context, row), { kind: "done" }).ok) return answer;
+    // The provider pull request of the request's own change set never counts as one that closes it.
+    if (prepared.repositoryId !== undefined && (await isOwnProviderPullRequest(context, row.id, prepared.repositoryId, pullRequest.number))) return answer;
     return context.propose(row, { kind: "done", change: {} });
   }),
 };
