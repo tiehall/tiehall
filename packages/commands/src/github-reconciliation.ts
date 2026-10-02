@@ -1,5 +1,6 @@
 import { defineJobType } from "./jobs.ts";
 import { readInstallations } from "./github-installations.ts";
+import { reconcileMirrorIssues } from "./github-mirror-issues.ts";
 import { createLogger } from "./log.ts";
 import { checkDepartures } from "./organization-departures.ts";
 import { SetupRequiredError } from "./with-org.ts";
@@ -18,7 +19,13 @@ import type { WorkerJob } from "./worker.ts";
 // - then checks every member Tiehall saw in an organization against the
 //   whole member list of each working connected organization, and removes
 //   those GitHub positively reports gone (organization-departures.ts), as the
-//   system.
+//   system;
+// - then asks GitHub, with its `since` parameter, for the issues updated since
+//   its last read of each repository that holds mirror issues, and hands each
+//   mirror issue among them to the processing a delivery about it goes to
+//   (github-mirror-issues.ts; tracker-mirrors: Reconciliation catches missed
+//   changes), so a change whose delivery was lost is recorded within 15
+//   minutes, and once.
 // Before setup completes there is nothing to reconcile.
 
 export const reconcileGitHub: WorkerJob<Record<string, never>> = {
@@ -30,14 +37,15 @@ export const reconcileGitHub: WorkerJob<Record<string, never>> = {
     expireInSeconds: 600,
   }),
   schedule: "*/15 * * * *",
-  async handle(_job, { database, github }) {
-    if (github === undefined) throw new Error("The worker gives this job no GitHub App to reconcile.");
+  async handle(_job, { database, github, jobs, now }) {
+    if (github === undefined || jobs === undefined) throw new Error("The worker gives this job no GitHub App or job queue to reconcile with.");
     const app = await github.app();
     if (app === undefined) return;
     const logger = createLogger().child({ job: "github.reconcile" });
     try {
       await readInstallations({ database, app, logger });
       await checkDepartures({ database, app, logger, provenance: { actorKind: "system" } }, { every: true });
+      await reconcileMirrorIssues({ database, app, jobs, now, logger });
     } catch (error) {
       if (!(error instanceof SetupRequiredError)) throw error;
     }

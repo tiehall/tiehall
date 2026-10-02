@@ -55,7 +55,7 @@ afterEach(async () => {
 async function reconcile(): Promise<void> {
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date(), github, execute: install.execute },
+    { database: install.db, now: () => new Date(), github, execute: install.execute, jobs: { send: async () => undefined } },
   );
 }
 

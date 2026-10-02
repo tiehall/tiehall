@@ -582,6 +582,13 @@
       "when": 1790984635473,
       "tag": "0082_add_tracker_done_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790985326249,
+      "tag": "0083_add_github_issue_reconciliations",
+      "breakpoints": true
     }
   ]
 }

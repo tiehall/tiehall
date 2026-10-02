@@ -81,7 +81,7 @@ async function roleOf(userId: string): Promise<string | undefined> {
 async function reconcile(): Promise<void> {
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute },
+    { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute, jobs: { send: async () => undefined } },
   );
 }
 
@@ -90,7 +90,7 @@ async function reconcileThrough(options: PublicMembersOptions): Promise<void> {
   const reading = await startSignIn(install, stub, { sameAppAs: harness, fetch: publicMembersOnly(options) });
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date(), github: reading.github, execute: install.execute },
+    { database: install.db, now: () => new Date(), github: reading.github, execute: install.execute, jobs: { send: async () => undefined } },
   );
 }
 
@@ -263,7 +263,7 @@ describe("the reconciliation", () => {
     });
     await reconcileGitHub.handle(
       { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-      { database: install.db, now: () => new Date(), github: erroring.github, execute: install.execute },
+      { database: install.db, now: () => new Date(), github: erroring.github, execute: install.execute, jobs: { send: async () => undefined } },
     );
     expect(await isMember(lee)).toBe(true);
   });

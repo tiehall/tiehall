@@ -87,7 +87,7 @@ describe("a new member", () => {
     await stub.removeMember("acme", "lee-acme", { delivery: "none" });
     await reconcileGitHub.handle(
       { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-      { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute },
+      { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute, jobs: { send: async () => undefined } },
     );
     expect(await membershipOf("lee-acme")).toEqual({ role: "admin", teams: [] });
     expect((await harness.signIn("lee-acme")).response.status).toBe(302);

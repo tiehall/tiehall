@@ -98,7 +98,7 @@ async function inTurn<A, B>(row: [sql: string, ...params: unknown[]], first: () 
 async function reconcile(): Promise<"done"> {
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute },
+    { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute, jobs: { send: async () => undefined } },
   );
   return "done";
 }

@@ -140,6 +140,8 @@ export interface StubIssue {
   readonly createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  /** Who closed it last: a user, or an App's bot; null for an issue never closed. */
+  closedBy: Author | null;
 }
 
 export interface StubPullRequest {
@@ -614,6 +616,7 @@ export class GitHubWorld {
       createdAt: now,
       updatedAt: now,
       closedAt: null,
+      closedBy: null,
     };
     this.items.set(`${repo.id}#${issue.number}`, issue);
     return issue;

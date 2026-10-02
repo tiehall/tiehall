@@ -3,6 +3,7 @@ import { looksLikeJwt, verifyAppJwt } from "./jwt.ts";
 import {
   accountJson,
   appJson,
+  authorJson,
   commentJson,
   conversionJson,
   installationJson,
@@ -1003,7 +1004,10 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "read"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          return issue === undefined ? NOT_FOUND() : json(200, issueJson(context.urls(), world, issue));
+          if (issue === undefined) return NOT_FOUND();
+          // GitHub names who closed an issue when it is read on its own, not in a listing or a delivery.
+          const closedBy = issue.kind === "issue" && issue.closedBy !== null ? authorJson(context.urls(), issue.closedBy) : null;
+          return json(200, { ...issueJson(context.urls(), world, issue), ...(issue.kind === "issue" ? { closed_by: closedBy } : {}) });
         }),
     ],
     [
@@ -1032,6 +1036,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           if ((state === "open" || state === "closed") && state !== issue.state) {
             issue.state = state;
             issue.closedAt = state === "closed" ? world.timestamp() : null;
+            if (issue.kind === "issue" && state === "closed") issue.closedBy = authorOf(found.author);
             if (issue.kind === "issue") {
               const reason = body["state_reason"];
               issue.stateReason =

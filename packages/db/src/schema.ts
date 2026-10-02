@@ -3080,3 +3080,28 @@ export const trackerChangeRecords = pgTable(
     ),
   ],
 );
+
+// The repositories whose GitHub mirror issues the 15-minute reconciliation
+// read (tracker-mirrors: Reconciliation catches missed changes; design.md,
+// Design rules: Tracker mirrors). One row per repository, by GitHub's id, with
+// the start of the last run that read its issues to the end; the next run
+// reads the issues updated since shortly before then. A run that could not
+// read a repository, because GitHub failed the listing or no working connected
+// installation covers it now, leaves its row as it was, so a later run reads
+// the changes it missed.
+export const githubIssueReconciliations = pgTable(
+  "github_issue_reconciliations",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** GitHub's numeric id of the repository, which a rename keeps. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    /** When the last run that read the repository's issues to the end started. */
+    reconciledAt: timestamp("reconciled_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.repositoryId] }),
+    check("github_issue_reconciliations_repository_id_positive", sql`${table.repositoryId} > 0`),
+  ],
+);

@@ -488,7 +488,7 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
     async closeIssue(fullName, number, input, options) {
       const found = issue(fullName, number);
       const now = world.timestamp();
-      Object.assign(found, { state: "closed", stateReason: input.reason ?? "completed", closedAt: now, updatedAt: now });
+      Object.assign(found, { state: "closed", stateReason: input.reason ?? "completed", closedAt: now, closedBy: { kind: "user", user: world.user(input.by) }, updatedAt: now });
       await deliveries.issue("closed", found, world.user(input.by), mode(options));
       return found;
     },
