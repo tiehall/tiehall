@@ -2757,7 +2757,9 @@ export const contractFanOutApprovals = pgTable(
 // it and the notices that ask its side for a confirmation, go only to the
 // members who opted in to that team's emails. A row is a member's opt-in for
 // one team, which they make and take back in their email settings; without
-// it, the choice is off.
+// it, the choice is off. It holds while they are in the team: their leaving
+// the team, or the install, which takes their teams with it, deletes it, so a
+// member added to the team again starts with the choice off.
 export const teamRequesterEmails = pgTable(
   "team_requester_emails",
   {
@@ -2781,6 +2783,11 @@ export const teamRequesterEmails = pgTable(
       columns: [table.orgId, table.teamId],
       foreignColumns: [teams.orgId, teams.id],
     }),
+    foreignKey({
+      name: "team_requester_emails_team_member_fk",
+      columns: [table.orgId, table.teamId, table.userId],
+      foreignColumns: [teamMembers.orgId, teamMembers.teamId, teamMembers.userId],
+    }).onDelete("cascade"),
   ],
 );
 

@@ -540,6 +540,13 @@
       "when": 1790954887818,
       "tag": "0076_add_pull_request_merges",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790955947063,
+      "tag": "0077_cascade_team_requester_emails",
+      "breakpoints": true
     }
   ]
 }

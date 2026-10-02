@@ -42,6 +42,7 @@ const person: Record<string, string> = {};
 const team: Record<string, string> = {};
 let acmeId: number;
 let pullRequest = 600;
+let ada: WebSessionCaller;
 
 beforeAll(async () => {
   install = await startTestInstall({ now: () => clock });
@@ -52,7 +53,7 @@ beforeAll(async () => {
     await install.owner.query("UPDATE users SET email = $2 WHERE id = $1", [person[login], `${login}@acme.example`]);
     await joinTeams(install.owner, person[login] ?? "", team[teamKey] ?? "");
   }
-  const ada = sessionOf(await addUser(install.owner, { role: "admin", login: "ada" }));
+  ada = sessionOf(await addUser(install.owner, { role: "admin", login: "ada" }));
   ({ accountId: acmeId } = await addInstallation(install.owner, { account: "acme", repositories: [PAYMENTS_REPOSITORY] }));
   expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: team["PAY"], repository: PAYMENTS_REPOSITORY.fullName })).status).toBe(200);
   await install.owner.query(
@@ -182,6 +183,35 @@ describe("a question on a request whose requester is a team", () => {
     await bobAsks(request.key);
     expect(emailed().map(({ to }) => to).sort()).toEqual(["lee@acme.example", "lee@acme.example", "nia@acme.example"]);
     expect(await optIn("nia", false)).toEqual({ status: 303 });
+  });
+
+  it("is emailed to a member who opted in, left the team and was added to it again, only once they opt in again", async () => {
+    person["omar"] = await addUser(install.owner, { login: "omar" });
+    await install.owner.query("UPDATE users SET email = 'omar@acme.example' WHERE id = $1", [id("omar")]);
+    await joinTeams(install.owner, id("omar"), team["PAY"] ?? "");
+    expect(await optIn("omar", true)).toEqual({ status: 303 });
+    // An admin removes Omar from PAY and adds them to it again; Omar changes no setting.
+    const membership = { teamId: team["PAY"], userId: id("omar") };
+    expect((await install.web(ada).write("teams.remove_member", membership, install.fromThePage(ada))).ok).toBe(true);
+    expect((await install.web(ada).write("teams.add_member", membership, install.fromThePage(ada))).ok).toBe(true);
+    const request = await teamRequestedRequest();
+
+    await bobAsks(request.key);
+
+    expect(emailed().map(({ to }) => to)).toEqual(["lee@acme.example"]);
+    const settings = (await install.execute("users.email_settings", sessionOf(id("omar")), {}, { readOnly: true })) as { teams: { team: { key: string }; requesterEmails: boolean }[] };
+    expect(settings.teams).toEqual([{ team: { id: team["PAY"], key: "PAY" }, requesterEmails: false }]);
+  });
+
+  it("is off again for a member removed from the install, whose teams go with the membership", async () => {
+    person["noor"] = await addUser(install.owner, { login: "noor" });
+    await joinTeams(install.owner, id("noor"), team["PAY"] ?? "");
+    expect(await optIn("noor", true)).toEqual({ status: 303 });
+
+    expect((await install.confirm(ada, "members.remove", { userId: id("noor") })).status).toBe(200);
+
+    const { rows } = await install.owner.query("SELECT count(*)::int AS count FROM team_requester_emails WHERE user_id = $1", [id("noor")]);
+    expect(rows[0]).toEqual({ count: 0 });
   });
 
   it("is emailed to no member while none opted in, and still reaches every member's web inbox", async () => {

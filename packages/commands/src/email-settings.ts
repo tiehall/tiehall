@@ -18,8 +18,11 @@ import type { OrgContext } from "./with-org.ts";
 // also turns on or off, for each of their own teams, the emails that go to
 // that team as the requester of a request, which are off until they turn them
 // on (requester-loop: When the requester is a team); a team that is not
-// theirs gets 403. The settings are the user's own, change no request and so
-// record no event, and need no confirmation step.
+// theirs gets 403. The choice lasts while they are in the team: leaving it, or
+// the install, deletes it (the foreign key to the team membership cascades),
+// so a member added to the team again starts with it off. The settings are the
+// user's own, change no request and so record no event, and need no
+// confirmation step.
 
 type EmailSettings = z.input<typeof emailSettings>;
 

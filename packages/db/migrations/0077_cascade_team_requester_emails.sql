@@ -1,0 +1,1 @@
+ALTER TABLE "team_requester_emails" ADD CONSTRAINT "team_requester_emails_team_member_fk" FOREIGN KEY ("org_id","team_id","user_id") REFERENCES "public"."team_members"("org_id","team_id","user_id") ON DELETE cascade ON UPDATE no action;
