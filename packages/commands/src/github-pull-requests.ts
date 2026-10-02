@@ -1,5 +1,8 @@
+import { githubConnectedInstallations, githubCoveredRepositories, githubInstallations } from "@tiehall/db";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { gitHubUnavailable, GitHubUnavailableError, statusOfCall, type GitHubClient } from "./github-client.ts";
+import type { OrgContext } from "./with-org.ts";
 
 // Reading a pull request from GitHub (tracker-mirrors: The GitHub App asks
 // for narrow permissions and every event up front; agent-access: Outbound
@@ -63,4 +66,33 @@ export async function readPullRequest(client: GitHubClient, installationId: numb
     body: pr.body ?? "",
     headRef: pr.head.ref,
   };
+}
+
+/**
+ * The connected installation of the App, neither suspended nor deleted, that
+ * covers the repository with this owner/name, which GitHub compares without
+ * regard to case, and the repository's name as GitHub gave it; undefined when
+ * none does.
+ */
+export async function installationCoveringNamed({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number, fullName: string): Promise<{ installationId: number; fullName: string } | undefined> {
+  const [row] = await tx
+    .select({ installationId: githubInstallations.installationId, fullName: githubCoveredRepositories.fullName })
+    .from(githubCoveredRepositories)
+    .innerJoin(githubInstallations, and(eq(githubInstallations.orgId, githubCoveredRepositories.orgId), eq(githubInstallations.id, githubCoveredRepositories.installationId)))
+    .innerJoin(
+      githubConnectedInstallations,
+      and(eq(githubConnectedInstallations.orgId, githubCoveredRepositories.orgId), eq(githubConnectedInstallations.installationId, githubCoveredRepositories.installationId)),
+    )
+    .where(
+      and(
+        eq(githubCoveredRepositories.orgId, orgId),
+        sql`lower(${githubCoveredRepositories.fullName}) = ${fullName.toLowerCase()}`,
+        eq(githubInstallations.appId, appId),
+        isNull(githubInstallations.suspendedAt),
+        isNull(githubInstallations.deletedAt),
+      ),
+    )
+    .orderBy(asc(githubInstallations.installationId))
+    .limit(1);
+  return row;
 }

@@ -10,8 +10,10 @@ import { GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 // the web UI, links a pull request on GitHub.com to a request by the pull
 // request's URL, with no proposal; the link is what close on merge later
 // looks for. The operation is flagged as a commitment, because linking a pull
-// request that had already merged creates a done proposal, which the call
-// then answers with instead (task 23.16 builds that proposal).
+// request that had already merged, as a member of the request's target team
+// while its state allows done, creates a done proposal too, which the call
+// then answers with instead; Tiehall reads the pull request from GitHub to
+// know, and answers 502 when GitHub fails that read.
 //
 // A repository and a pull request's URL are identifiers of GitHub's own form,
 // which holds no space, so an output names them outside an untrusted object
@@ -37,7 +39,7 @@ export const pullRequestLink = z.object({
 export const linkPullRequest = defineCommand({
   id: "requests.link_pr",
   summary:
-    "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link.",
+    "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. Linking one that has already merged, as a member of the request's target team while the request is claimed, in_progress or needs_info, also creates a done proposal, answered with 202, which people confirm in the web UI.",
   input: z.object({
     key: requestKey,
     url: z

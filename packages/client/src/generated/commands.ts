@@ -344,7 +344,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
   {
     "command": "link-pr",
     "operationId": "requests.link_pr",
-    "summary": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link.",
+    "summary": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. Linking one that has already merged, as a member of the request's target team while the request is claimed, in_progress or needs_info, also creates a done proposal, answered with 202, which people confirm in the web UI.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/pull-requests",
     "stability": "alpha",

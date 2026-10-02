@@ -335,7 +335,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. */
+        /** Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. Linking one that has already merged, as a member of the request's target team while the request is claimed, in_progress or needs_info, also creates a done proposal, answered with 202, which people confirm in the web UI. */
         post: operations["requests.link_pr"];
         delete?: never;
         options?: never;
@@ -4557,6 +4557,15 @@ export interface operations {
                 headers: {
                     /** @description The seconds to wait before retrying. */
                     "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description GitHub, which Tiehall asks whether the pull request has merged, failed the read or did not answer: nothing was linked, so the same call can be sent again. */
+            502: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

@@ -143,6 +143,17 @@ const CI_ERRORS: Readonly<Record<string, string>> = {
   "502": "GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read: nothing ran and the token was not recorded, so the same token can be sent again.",
 };
 
+/**
+ * The error of an operation that reads GitHub before its transaction, with
+ * the install's App: requests.link_pr reads the pull request, to know whether
+ * it has merged (requests: Linked PRs and done on merge).
+ */
+const GITHUB_READ_ERRORS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "requests.link_pr": {
+    "502": "GitHub, which Tiehall asks whether the pull request has merged, failed the read or did not answer: nothing was linked, so the same call can be sent again.",
+  },
+};
+
 export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}): OpenApiDocument {
   const version = options.version ?? API_VERSION;
   if (!BETA_VERSION.test(version)) throw new Error(`The API's version is ${version}; while the API is beta it has the form 0.N.0.`);
@@ -278,6 +289,7 @@ function responsesOf(shape: RestShape): ZodOpenApiResponsesObject {
     ...(BODY_METHODS.has(method) ? { "413": payloadTooLargeOf(definition) } : {}),
     ...(definition.ifMatch === undefined ? {} : IF_MATCH_ERRORS),
     ...(definition.id === CONTRACT_REPORT_ID ? CI_ERRORS : {}),
+    ...(GITHUB_READ_ERRORS[definition.id] ?? {}),
   };
   for (const [status, description] of Object.entries(errors)) {
     responses[status as "400"] = {
