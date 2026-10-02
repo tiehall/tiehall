@@ -140,6 +140,32 @@ describe("backup.sh and restore.sh", () => {
     expect(install.sql("SELECT string_agg(key, ',' ORDER BY key) FROM teams")).toBe("BE,FE");
   });
 
+  // A restore that fails leaves the install as it found it: an app that was not running, as after its database was
+  // lost, stays stopped rather than starting on an empty database, and the whole dump then restores as usual.
+  it("leaves an app that was not running stopped when the restore fails", async () => {
+    const install = await started(image, "tiehall-restore-stopped");
+    const { token, requestKey, requestTitle } = await seed(install);
+    expect(install.shell(documented("backup-run")).status).toBe(0);
+    const [file] = dumps(install);
+    const whole = readFileSync(join(install.dir, "backups", file!));
+    writeFileSync(join(install.dir, "backups/cut-late.dump"), whole.subarray(0, whole.length - 64), { mode: 0o600 });
+    const lost = install.compose(["down", "--volumes"], { timeoutSeconds: 120 });
+    expect(lost.status, lost.stderr).toBe(0);
+
+    const failed = install.shell(restoreCommand("backups/cut-late.dump"), { timeoutSeconds: 600 });
+
+    expect(failed.status, `${failed.stdout}\n${failed.stderr}`).toBe(1);
+    expect(failed.stderr).toContain("restore.sh: backups/cut-late.dump could not be restored");
+    expect(failed.stdout).not.toContain("Starting the app");
+    expect(install.compose(["ps", "--all", "--format", "{{.Service}}"]).stdout.trim()).toBe("postgres");
+
+    const restore = install.shell(restoreCommand(`backups/${file}`), { timeoutSeconds: 600 });
+
+    expect(restore.status, `${restore.stdout}\n${restore.stderr}`).toBe(0);
+    await install.healthy();
+    expect(await readRequest(install, token, requestKey)).toEqual({ status: 200, title: requestTitle });
+  });
+
   // The docs' cron example, as cron runs it, with sh, on an install whose first backup it is.
   it("backs up an install on which backup.sh has not run yet, with the docs' cron line", async () => {
     const install = await started(image, "tiehall-backup-cron");

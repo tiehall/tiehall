@@ -9,10 +9,11 @@
 # once the whole dump is in does that database replace the install's; then it
 # starts the app again, whose migrate step first brings a dump from an older
 # release up to the running release. A file that is not a whole dump, such as
-# a copy that broke off, changes nothing: the app starts again on the database
-# it had. The restore needs room on the disk for a second copy of the database
-# while it runs. Everything written since the dump was taken is lost, so take
-# a backup first if the database still holds anything to keep.
+# a copy that broke off, changes nothing: an app that was running starts again
+# on the database it had, and one that was not, such as after the database was
+# lost, stays stopped. The restore needs room on the disk for a second copy of
+# the database while it runs. Everything written since the dump was taken is
+# lost, so take a backup first if the database still holds anything to keep.
 #
 # The dump holds the integration secrets Tiehall stores only encrypted with
 # TIEHALL_SECRET_KEY, which is not in it: restore with the .env the dump was
@@ -52,6 +53,8 @@ if ! in_postgres pg_restore --list < "$dump" > /dev/null; then
   exit 1
 fi
 
+# Whether the app runs now, so that a restore that fails leaves it as it was.
+app_was_running="$(docker compose ps --status running --quiet app)"
 echo "Stopping the app"
 docker compose stop app
 
@@ -63,8 +66,10 @@ in_postgres sh -c 'PGOPTIONS="-c client_min_messages=warning" dropdb --maintenan
 if ! in_postgres sh -c 'exec pg_restore --dbname="${PGDATABASE}_restore" --no-owner --no-privileges --exit-on-error' < "$dump"; then
   in_postgres sh -c 'dropdb --maintenance-db=postgres --if-exists --force "${PGDATABASE}_restore"'
   echo "restore.sh: $1 could not be restored, for the reason above, so the database is as it was. A dump that is cut short, such as a copy that broke off, cannot be restored." >&2
-  echo "Starting the app again on the database it had"
-  docker compose up --detach --wait
+  if [ -n "$app_was_running" ]; then
+    echo "Starting the app again on the database it had"
+    docker compose up --detach --wait
+  fi
   exit 1
 fi
 # The whole dump is in: the restored database replaces the install's.
