@@ -769,6 +769,16 @@ export interface operations {
                          * @description When Tiehall accepted the report.
                          */
                         receivedAt: string;
+                        /** @description Who requests the contract changes of the requests the report opens. */
+                        requester: {
+                            /**
+                             * @description author: the pull request's author, a member of the install, is the requester of the requests the report opens, with the provider team as the requesting team; team: the provider team alone is the requester, because the author is no member of the install, and the contract Action comments on the pull request to say so.
+                             * @enum {string}
+                             */
+                            kind: "author" | "team";
+                            /** @description The API's provider team, by its key. */
+                            team: string;
+                        };
                     };
                 };
             };

@@ -1,0 +1,1 @@
+ALTER TABLE "contract_reports" ADD COLUMN "author_github_id" bigint;

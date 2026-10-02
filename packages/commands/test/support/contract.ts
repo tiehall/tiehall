@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { applyChangeSets } from "../../src/index.ts";
+import type { GitHubStub, StubApp } from "@tiehall/testing/github";
+import { applyChangeSets, connectInstallations, knownInstallations, readInstallations, withOrg } from "../../src/index.ts";
+import { storeStubApp } from "./github-app.ts";
 import type { TestInstall } from "./install.ts";
 
 // The classified changes of the recorded oasdiff outputs (task 23.1) for the
@@ -72,4 +74,52 @@ export async function runDueUpdates(install: Pick<TestInstall, "db" | "execute" 
       );
     }
   }
+}
+
+/** The provider's repository on the GitHub stub, as the install's App sees it. */
+export interface StubProvider {
+  app: StubApp;
+  /** acme/payments, by GitHub's id. */
+  repositoryId: number;
+  /** acme, by GitHub's id: the repository's owner. */
+  ownerId: number;
+  /** The GitHub account's id of one of these people of acme, by login. */
+  account(login: string): number;
+}
+
+/**
+ * acme/payments on the GitHub stub, with these people in the acme
+ * organization, covered by a connected installation of an App the stub made,
+ * which the install stores and calls GitHub as, as the setup screen and the
+ * admin's connection leave it.
+ */
+export async function providerOnStub(install: TestInstall, stub: GitHubStub, logins: readonly string[]): Promise<StubProvider> {
+  const accounts: Record<string, number> = {};
+  for (const login of logins) accounts[login] = stub.addUser({ login }).id;
+  // The organization's owner, who installs the App.
+  stub.addUser({ login: "acme-owner" });
+  const org = stub.addOrg({ login: "acme", members: { "acme-owner": "admin", ...Object.fromEntries(logins.map((login) => [login, "member" as const])) } });
+  const repository = stub.addRepo("acme/payments");
+  const app = stub.createApp({ owner: "acme" });
+  const { github } = await storeStubApp(install, stub, app);
+  install.useGitHub(github);
+  await stub.install(app, { account: "acme", repositories: ["acme/payments"] });
+  const access = await github.app();
+  if (access === undefined) throw new Error("The install stored no App.");
+  await readInstallations({ database: install.db, app: access });
+  await withOrg(install.db, async (context) => {
+    const known = await knownInstallations(context);
+    await connectInstallations(
+      context,
+      known.filter(({ account: { login } }) => login === "acme").map(({ id }) => id),
+    );
+  });
+  // The connected installation's repositories, read as a sync does once it is connected.
+  await readInstallations({ database: install.db, app: access });
+  const account = (login: string) => {
+    const id = accounts[login];
+    if (id === undefined) throw new Error(`The stub has no account ${login} of acme.`);
+    return id;
+  };
+  return { app, repositoryId: repository.id, ownerId: org.id, account };
 }

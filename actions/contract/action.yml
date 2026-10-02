@@ -25,6 +25,10 @@ inputs:
     description: Whether draft pull requests are checked and reported too. They are not by default, and are reported once marked ready for review.
     required: false
     default: "false"
+  github-token:
+    description: The token the Action comments on the pull request with when Tiehall answers that the provider team is the requester, because the pull request's author is no member of the install; the workflow's own GITHUB_TOKEN by default, which needs the permission pull-requests write.
+    required: false
+    default: ${{ github.token }}
 outputs:
   breaking-changes:
     description: How many breaking (ERR-level) changes oasdiff found.

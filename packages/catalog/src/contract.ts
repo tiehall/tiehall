@@ -24,7 +24,12 @@ import { teamKey } from "./teams.ts";
 // it has no field for an OpenAPI document and a body with any field it does
 // not know is refused with 400, and Tiehall never receives or parses a spec.
 // Its texts are refused with 400 when they hold what no text Tiehall stores
-// may hold: a NUL character, or a surrogate without its pair.
+// may hold: a NUL character, or a surrogate without its pair. Its answer says
+// who requests the changes of the requests it opens: the pull request's
+// author, a member of the install, or the provider team alone, for the
+// contract Action to comment on the pull request then; Tiehall reads the
+// author from GitHub with the install's App, and answers 502 when GitHub
+// fails that read.
 // It accepts the CI caller alone, authenticated with its run's GitHub Actions
 // OIDC token, and a report only for an API registered to the run's repository
 // and, for an API bound to a workflow, from that workflow; every other caller,
@@ -98,6 +103,15 @@ export const reportContractChanges = defineCommand({
     id: z.uuid().meta({ description: "The report's id." }),
     api: z.string().regex(API_NAME).meta({ description: "The registered API the report is for." }),
     receivedAt: z.iso.datetime().meta({ description: "When Tiehall accepted the report." }),
+    requester: z
+      .object({
+        kind: z.enum(["author", "team"]).meta({
+          description:
+            "author: the pull request's author, a member of the install, is the requester of the requests the report opens, with the provider team as the requesting team; team: the provider team alone is the requester, because the author is no member of the install, and the contract Action comments on the pull request to say so.",
+        }),
+        team: teamKey.meta({ description: "The API's provider team, by its key." }),
+      })
+      .meta({ description: "Who requests the contract changes of the requests the report opens." }),
   }),
   method: "POST",
   path: "/api/v1/contract-reports",

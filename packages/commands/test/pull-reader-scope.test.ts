@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { expireProposals } from "../src/index.ts";
+import { expireProposals, type CiCaller } from "../src/index.ts";
+import { changesOf, CONTRACT_WORKFLOW, providerOnStub, reportOf, runDueUpdates } from "./support/contract.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
@@ -211,8 +213,46 @@ describe("whats_new (task 19.2)", () => {
     expect(on(await whatsNew("erin"), request.id)).toEqual(["request.reassigned"]);
   });
 
-  // requester-loop: What whats_new covers, "The author of a provider PR gets the consumers' questions".
-  it.todo("holds the consumers' questions on a contract-change request whose provider PR the user authored, from task 23.9");
+  // requester-loop: What whats_new covers, "The author of a provider PR gets the consumers' questions", which task 23.9 built.
+  describe("on a contract-change request whose provider PR the user authored", () => {
+    let stub: GitHubStub;
+
+    beforeAll(async () => {
+      stub = await startGitHubStub();
+      const provider = await providerOnStub(install, stub, ["deniz"]);
+      // Deniz, of BE, signs in with the GitHub account that opens the provider pull request.
+      person["deniz"] = await addUser(install.owner, { login: "deniz", githubAccountId: provider.account("deniz") });
+      await joinTeams(install.owner, id("deniz"), team["BE"] ?? "");
+      const admin = sessionOf(await addUser(install.owner, { role: "admin", login: "pia" }));
+      expect((await install.confirm(admin, "apis.register", { name: "payments-api", team: team["BE"], repository: "acme/payments" })).status).toBe(200);
+      await install.owner.query(
+        `INSERT INTO api_consumers (org_id, api_id, team_id, declared_by, declared_at, last_confirmed_at)
+           SELECT apis.org_id, apis.id, $1, $2, now(), now() FROM apis WHERE apis.name = 'payments-api'`,
+        [team["FE"], id("dana")],
+      );
+      const pullRequest = await stub.openPullRequest("acme/payments", { title: "New payment fields", head: "payment-fields", author: "deniz" });
+      const ci: CiCaller = { kind: "ci", repositoryId: String(provider.repositoryId), repositoryOwnerId: String(provider.ownerId), jobWorkflowRef: CONTRACT_WORKFLOW };
+      install.sentJobs.splice(0);
+      await install.execute("contract.report", ci, reportOf("payments-api", changesOf("breaking"), { pullRequest: pullRequest.number }));
+      at(new Date(clock.getTime() + 3 * 60 * 1000).toISOString());
+      await runDueUpdates(install, clock);
+    }, 60_000);
+
+    afterAll(async () => {
+      await stub?.close();
+    });
+
+    it("holds the consumers' questions, though the user did not open the request", async () => {
+      const { rows } = await install.owner.query<{ id: string; key: string }>(
+        "SELECT r.id, 'FE-' || r.number AS key FROM requests r WHERE r.requesting_user_id = $1",
+        [id("deniz")],
+      );
+      const [request] = rows;
+      expect(request).toBeDefined();
+      await post("dana", request?.key ?? "", { kind: "question", body: "Does amount move to amount_minor?", blocking: true });
+      expect(on(await whatsNew("deniz"), request?.id ?? "")).toContain("request.message_posted:question");
+    });
+  });
 });
 
 describe("the web inbox's update feed (task 19.6)", () => {

@@ -920,12 +920,36 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
                       "type": "string"
+                    },
+                    "requester": {
+                      "description": "Who requests the contract changes of the requests the report opens.",
+                      "properties": {
+                        "kind": {
+                          "description": "author: the pull request's author, a member of the install, is the requester of the requests the report opens, with the provider team as the requesting team; team: the provider team alone is the requester, because the author is no member of the install, and the contract Action comments on the pull request to say so.",
+                          "enum": [
+                            "author",
+                            "team"
+                          ],
+                          "type": "string"
+                        },
+                        "team": {
+                          "description": "The API's provider team, by its key.",
+                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "team"
+                      ],
+                      "type": "object"
                     }
                   },
                   "required": [
                     "id",
                     "api",
-                    "receivedAt"
+                    "receivedAt",
+                    "requester"
                   ],
                   "type": "object"
                 }

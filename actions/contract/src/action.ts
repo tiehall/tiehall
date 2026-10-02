@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, normalize } from "node:path";
+import { commentOnPullRequest } from "./comment.ts";
 import { breakingArguments, changelogArguments, ChecksumError, installOasdiff, OASDIFF, UnsupportedPlatformError } from "./oasdiff.ts";
 import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputError, setOutputs } from "./workflow.ts";
 
@@ -30,8 +31,11 @@ import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputErr
 //    take, for whatever reason, is said in a warning and the job summary and
 //    never fails the step, and an install that asks for a newer CLI gets a
 //    warning that says how to upgrade;
-// 5. says what it found and reported in the job summary and its outputs, and
-//    fails the step for ERR-level changes only when the workflow sets
+// 5. says what it found and reported in the job summary and its outputs, and,
+//    when Tiehall answers that the provider team alone requests the changes,
+//    because the pull request's author is no member of the install, says so in
+//    one comment on the pull request, which later runs update (comment.ts);
+// 6. fails the step for ERR-level changes only when the workflow sets
 //    fail-on-breaking.
 // It uploads no document anywhere: the documents stay in the runner's
 // temporary folder, which it removes, and oasdiff never runs with --open.
@@ -204,8 +208,22 @@ function counted(count: number, what: string): string {
 /** The short form of a commit. */
 const short = (sha: string) => sha.slice(0, 7);
 
+/** Who requests the changes, as Tiehall's answer says: the pull request's author, or the provider team alone. */
+interface Requester {
+  kind: "author" | "team";
+  team: string;
+}
+
 /** How a report went: Tiehall took it, as the report with this id, or it did not, and why; or it asks for a newer CLI. */
-type Delivery = { delivered: true; id: string } | { delivered: false; reason: string; upgrade?: string };
+type Delivery = { delivered: true; id: string; requester?: Requester } | { delivered: false; reason: string; upgrade?: string };
+
+/** The requester Tiehall's answer names, when it names one as it should. */
+function requesterOf(answer: Record<string, unknown>): Requester | undefined {
+  const requester = answer["requester"] as { kind?: unknown; team?: unknown } | undefined;
+  if (typeof requester !== "object" || requester === null) return undefined;
+  if ((requester.kind !== "author" && requester.kind !== "team") || typeof requester.team !== "string" || !/^[A-Z][A-Z0-9]{1,9}$/.test(requester.team)) return undefined;
+  return { kind: requester.kind, team: requester.team };
+}
 
 /** What a problem the install answered says, in one line: its title and its detail. */
 function problemLine(problem: { title?: unknown; detail?: unknown; status?: unknown }): string {
@@ -238,7 +256,10 @@ async function report(runtime: ActionRuntime, workspace: string, args: readonly 
   } catch {
     answer = undefined;
   }
-  if (result.status === 0 && typeof answer?.["id"] === "string") return { delivered: true, id: answer["id"] };
+  if (result.status === 0 && typeof answer?.["id"] === "string") {
+    const requester = requesterOf(answer);
+    return { delivered: true, id: answer["id"], ...(requester === undefined ? {} : { requester }) };
+  }
   if (answer !== undefined && typeof answer["type"] === "string") {
     const detail = problemLine(answer);
     if (answer["type"].endsWith("/upgrade-required")) return { delivered: false, reason: detail, upgrade: detail };
@@ -381,6 +402,20 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
         "",
       ].join("\n"),
     );
+    // The provider team alone requests the changes: the Action says so on the pull request, in one comment it keeps up to date.
+    if (delivery.delivered && delivery.requester?.kind === "team") {
+      const notPosted = await commentOnPullRequest(runtime, {
+        token: inputOf(env, "github-token"),
+        api,
+        install,
+        team: delivery.requester.team,
+        pullRequest: event.number,
+        headSha: event.head.sha,
+      });
+      if (notPosted !== undefined) {
+        runtime.stdout(annotation("warning", "Comment not posted", `The Action did not comment on pull request #${event.number} that the provider team ${delivery.requester.team} is the requester: ${notPosted}`));
+      }
+    }
     if (failing) {
       runtime.stdout(annotation("error", "Breaking changes", `${counted(counts.errors, "breaking change")} to ${api} in ${spec}; the step fails because fail-on-breaking is set.`));
       return 1;

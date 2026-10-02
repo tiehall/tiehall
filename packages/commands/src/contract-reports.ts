@@ -1,10 +1,12 @@
 import { reportContractChanges } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
-import { contractChangeSets, contractReports } from "@tiehall/db";
+import { contractChangeSets, contractReports, teams } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import { reportableApi } from "./apis.ts";
+import { authorUnavailable, installationCovering, pullRequestAuthor, requestingUserOf } from "./contract-requesters.ts";
 import { applyChangeSets, burstEnd } from "./contract-routing.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
+import { GitHubUnavailableError } from "./github-client.ts";
 
 // Taking contract reports (contract-changes: One report operation that never
 // takes a whole spec; contract-changes: Admins register APIs, each bound to
@@ -28,14 +30,51 @@ import { defineHandler, type Handlers } from "./execute.ts";
 // report that comes once they are over while the update has not been applied
 // yet, such as while the worker was stopped, starts a job at once, whose
 // update applies the waiting burst and then starts the next with this report.
+// Before the report's transaction, Tiehall reads the provider pull request's
+// author from GitHub (contract-requesters.ts), keeps the author's GitHub
+// account with the report, and answers who requests the changes of the
+// requests the report opens.
+
+/**
+ * The provider pull request's author, read from GitHub before the report's
+ * transaction (contract-requesters.ts), for a report the run may make: its
+ * GitHub account's id, or null when it cannot be known; undefined for a call
+ * the handler refuses anyway, which reads nothing from GitHub.
+ */
+async function authorOf(input: { api: string; pullRequest: { number: number } }, context: PrepareContext): Promise<{ authorGitHubId: number | null } | undefined> {
+  const { caller } = context;
+  if (caller.kind !== "ci") return undefined;
+  const reportable = await context.read(async (orgContext) =>
+    reportableApi(orgContext, caller, input.api).then(
+      () => true,
+      (error: unknown) => {
+        if (error instanceof Refusal) return false;
+        throw error;
+      },
+    ),
+  );
+  if (!reportable) return undefined;
+  const app = await context.github?.app();
+  if (app === undefined) return { authorGitHubId: null };
+  const covering = await context.read((orgContext) => installationCovering(orgContext, app.appId, Number(caller.repositoryId)));
+  if (covering === undefined) return { authorGitHubId: null };
+  try {
+    const author = await pullRequestAuthor(app.client, covering.installationId, covering.fullName, input.pullRequest.number);
+    return { authorGitHubId: author?.id ?? null };
+  } catch (error) {
+    if (error instanceof GitHubUnavailableError) throw authorUnavailable(error);
+    throw error;
+  }
+}
 
 export const CONTRACT_REPORT_HANDLERS: Handlers = {
-  [reportContractChanges.id]: defineHandler(reportContractChanges, async (input, context) => {
+  [reportContractChanges.id]: definePreparedHandler(reportContractChanges, authorOf, async (input, context) => {
     const { caller } = context;
     if (caller.kind !== "ci") {
       throw new Refusal("forbidden", "Only a CI run of the contract Action reports contract changes, with its run's GitHub Actions OIDC token.");
     }
     const api = await reportableApi(context, caller, input.api);
+    const authorGitHubId = context.prepared?.authorGitHubId ?? null;
     const receivedAt = context.now();
     // The change set: made by its first report, and locked by every report until its transaction ends.
     const [changeSet] = await context.tx
@@ -64,6 +103,7 @@ export const CONTRACT_REPORT_HANDLERS: Handlers = {
         engineVersion: input.engine.version,
         changes: input.changes,
         receivedAt,
+        authorGitHubId,
       })
       .returning({ id: contractReports.id, receivedAt: contractReports.receivedAt });
     if (row === undefined) throw new Error("A contract report was not stored.");
@@ -78,6 +118,9 @@ export const CONTRACT_REPORT_HANDLERS: Handlers = {
       // The waiting burst is over and its update not applied yet: apply it now, which starts the next burst with this report.
       await context.enqueue(applyChangeSets.type, { changeSetId: changeSet.id }, { startAfter: receivedAt });
     }
-    return { id: row.id, api: api.name, receivedAt: row.receivedAt.toISOString() };
+    const requester = await requestingUserOf(context, authorGitHubId);
+    const [provider] = await context.tx.select({ key: teams.key }).from(teams).where(and(eq(teams.orgId, context.orgId), eq(teams.id, api.providerTeamId)));
+    if (provider === undefined) throw new Error("A registered API names a provider team the install does not have.");
+    return { id: row.id, api: api.name, receivedAt: row.receivedAt.toISOString(), requester: { kind: requester === null ? ("team" as const) : ("author" as const), team: provider.key } };
   }),
 };

@@ -7,6 +7,7 @@ import { defineJobType } from "./jobs.ts";
 import { insertPacketRevision, packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { lockPendingProposals } from "./proposals.ts";
 import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan-out.ts";
+import { requestingUserOf } from "./contract-requesters.ts";
 import { lockRequestById, stampOf } from "./request-changes.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -51,9 +52,13 @@ import type { WorkerJob } from "./worker.ts";
 //   adds the system message and the notice on requests in a terminal state);
 // - the changes that open requests are the report's ERR-level ones; when there
 //   are some, each team that declared it consumes the API, while the API is
-//   registered, and has no request for the change set gets one: addressed to
-//   the team, from the API's provider team, with a title and a need in
-//   Tiehall's words, and a packet of the kind contract_change whose contract
+//   registered, and has no request for the change set gets one, within the
+//   limit of 10 consumer teams a pull request reaches without an admin
+//   (contract-fan-out.ts): addressed to the team, from the pull request's
+//   author while a member of the install, with the API's provider team as the
+//   requesting team, or else from the provider team alone
+//   (contract-requesters.ts), with a title and a need in Tiehall's words, and
+//   a packet of the kind contract_change whose contract
 //   section carries the report's API, refs and SHAs, engine, provider pull
 //   request, and every classified change with its level, ERR, WARN and INFO
 //   alike, so INFO-level changes appear only in the change lists of the
@@ -63,10 +68,11 @@ import type { WorkerJob } from "./worker.ts";
 // fields, which apply to the requests people and agents open (design.md,
 // Readings to confirm with the founder: R10).
 //
-// The locks follow the lock order (event-sequence.ts): the change set's row,
-// then the rows of its requests that get a revision, in the order of their
-// ids, then their pending proposals, then the teams' next request numbers, in
-// the order of the teams' ids, all before the update's first event.
+// The locks follow the lock order (event-sequence.ts): the rows of the pull
+// request's change sets, in the order of their ids, then the rows of the
+// change set's requests that get a revision, in the order of their ids, then
+// their pending proposals, then the teams' next request numbers, in the order
+// of the teams' ids, all before the update's first event.
 
 /** How long a burst of reports for one change set lasts, from its first report. */
 export const BURST_MS = 2 * 60 * 1000;
@@ -107,6 +113,8 @@ interface StoredReport {
   engineVersion: string;
   changes: ContractSection["changes"];
   receivedAt: Date;
+  /** The provider pull request's author, by GitHub's id, as the App read it when the report came; null when it could not be known. */
+  authorGitHubId: number | null;
 }
 
 type ChangeSetRow = Awaited<ReturnType<typeof lockPullRequestChangeSets>>;
@@ -122,6 +130,7 @@ const REPORT_COLUMNS = {
   engineVersion: contractReports.engineVersion,
   changes: contractReports.changes,
   receivedAt: contractReports.receivedAt,
+  authorGitHubId: contractReports.authorGitHubId,
 };
 
 /** The reports of the change set, as a condition. */
@@ -278,6 +287,8 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   const candidates = opening ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => !existing.some(({ teamId }) => teamId === id)) : [];
   const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
   await recordWaiting(context, changeSet, waiting);
+  // The requester of the requests it opens: the pull request's author while a member of the install, or the provider team alone.
+  const requestingUserId = toOpen.length === 0 ? null : await requestingUserOf(context, current.authorGitHubId);
   if (toRevise.length === 0 && toOpen.length === 0) {
     await markApplied();
     return { opened: [] };
@@ -298,7 +309,7 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
       const number = numbers.get(team.id) ?? 0;
       const [row] = await writer.tx
         .insert(requests)
-        .values({ orgId: writer.orgId, targetTeamId: team.id, number, title: titleOf(section), requestingUserId: null, requestingTeamId: api.providerTeamId })
+        .values({ orgId: writer.orgId, targetTeamId: team.id, number, title: titleOf(section), requestingUserId, requestingTeamId: api.providerTeamId })
         .returning({ id: requests.id });
       if (row === undefined) throw new Error("The new request was not returned.");
       await insertPacketRevision(writer, row.id, 1, packetOf(section, team.key), stampOf(writer.provenance, undefined));

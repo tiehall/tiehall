@@ -2420,6 +2420,13 @@ export const contractReports = pgTable(
     /** The classified changes, as the report gave them: a JSON list of { id, level, operation }. */
     changes: jsonb("changes").notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The GitHub account that authored the provider pull request, by GitHub's
+     * id, as the install's App read it from GitHub when the report came; null
+     * when it could not be known, such as while no connected installation
+     * covers the repository.
+     */
+    authorGitHubId: bigint("author_github_id", { mode: "number" }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

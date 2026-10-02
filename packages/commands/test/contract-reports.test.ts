@@ -151,7 +151,8 @@ describe("a contract report", () => {
     const answer = await report(oidc.token(paymentsRun()), reportOf());
 
     expect(answer.status).toBe(200);
-    expect(answer.body).toEqual({ id: expect.any(String), api: "payments-api", receivedAt: expect.any(String) });
+    // The install has no GitHub App to read the pull request's author through, so the provider team requests the changes.
+    expect(answer.body).toEqual({ id: expect.any(String), api: "payments-api", receivedAt: expect.any(String), requester: { kind: "team", team: "PAY" } });
     expect(await stored()).toEqual([
       {
         api_id: paymentsApi,

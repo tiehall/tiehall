@@ -491,6 +491,13 @@
       "when": 1790947247623,
       "tag": "0069_add_contract_fan_out",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790947922018,
+      "tag": "0070_add_contract_report_authors",
+      "breakpoints": true
     }
   ]
 }

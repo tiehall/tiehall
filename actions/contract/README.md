@@ -19,6 +19,8 @@ permissions:
   contents: read
   # The run's OpenID Connect token, which proves to Tiehall which repository and workflow report.
   id-token: write
+  # The comment the Action keeps on the pull request when its author is not a member of the Tiehall install.
+  pull-requests: write
 
 jobs:
   contract:
@@ -48,8 +50,13 @@ Pin the Action by its full commit SHA, as every action should be: a tag can be m
 | `spec` | yes | The API's OpenAPI document in the repository, relative to its root. |
 | `fail-on-breaking` | no | `true` fails the step when the pull request makes breaking (ERR-level) changes. `false` by default: breaking changes alone never fail the check. |
 | `include-drafts` | no | `true` checks draft pull requests too. `false` by default: a draft is checked once it is marked ready for review. |
+| `github-token` | no | The token the Action comments on the pull request with, when the provider team is the requester; the workflow's own `GITHUB_TOKEN` by default, which needs `pull-requests: write`. |
 
 The Action runs on `pull_request` events of the types `opened`, `synchronize`, `reopened` and `ready_for_review`, and skips any other.
+
+## Who requests the changes
+
+The requests Tiehall opens to the consuming teams come from the author of the pull request, when the GitHub account that opened it belongs to a member of the Tiehall install, with the API's provider team as the requesting team; the consuming teams' questions then reach the author. Otherwise the provider team alone is the requester, its members answer the questions, and the Action says so in a comment on the pull request. It posts that comment once per pull request and API, and updates it in place on later runs, so it always shows the latest report. Without `pull-requests: write`, the Action skips the comment with a warning.
 
 ## Where the runner must be
 
