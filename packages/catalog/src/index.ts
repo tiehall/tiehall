@@ -135,7 +135,7 @@ export {
 } from "./proposals.ts";
 export { GITHUB_LOGIN, INSTALL_URL, role, user } from "./schemas.ts";
 export { DIRECTORY_COMMANDS, getTeam, readDirectory, whoami } from "./directory.ts";
-export { EMAIL_SETTINGS_COMMANDS, emailSettings, readEmailSettings, setEmailSettings } from "./email-settings.ts";
+export { EMAIL_SETTINGS_COMMANDS, emailSettings, readEmailSettings, setEmailSettings, setRequesterEmails } from "./email-settings.ts";
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
 export { readInboxUpdates, readUpdates, REQUEST_URL, update, UPDATE_COMMANDS, updateRequest, updatesInput, updatesPage, waitEntry, waitForEvents } from "./updates.ts";
 export {

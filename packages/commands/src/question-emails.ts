@@ -1,7 +1,8 @@
 import { formatRequestKey } from "@tiehall/core";
 import { members, messages, questionNotices, requests, teams, users } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { installLink, QUESTION_NOTICE, requestKey, teamKey, updateSubject } from "./email.ts";
+import { optedInMembersOf } from "./email-settings.ts";
 import { defineJobType } from "./jobs.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -26,24 +27,27 @@ import type { WorkerJob } from "./worker.ts";
 // request's key, the event's type and the request's target team, and the text
 // only Tiehall's words and the request's URL. Without SMTP, or without an
 // address, nothing is sent, and the question waits in the web inbox. A request
-// whose requester is a team alone, which only a contract report opens, is
-// routed to the members who opted in once task 23.10 builds that.
+// whose requester is a team alone, which only a contract report opens, asks
+// that team: its question goes by email to each member of the team who opted
+// in to the team's emails as a requester, and to no one else, while every
+// member finds it in their web inbox (requester-loop: When the requester is a
+// team).
 
 export interface QuestionEmailData extends Record<string, unknown> {
   messageId: string;
 }
 
-/** The email about a question to send now: to whom, and what it names. */
+/** The emails about a question to send now: to whom, and what they name. */
 interface QuestionNotice {
-  userId: string;
-  email: string;
+  recipients: { userId: string; email: string }[];
   key: string;
   targetTeam: string;
   asker: string;
 }
 
-/** Whom a question is asked of, and what the email about it names; undefined when it goes to nobody, or went already. */
-async function noticeOf({ tx, orgId }: OrgContext, messageId: string): Promise<QuestionNotice | undefined> {
+/** Whom a question is asked of, and what the email about it names; undefined when it goes to nobody, or went already to each. */
+async function noticeOf(context: OrgContext, messageId: string): Promise<QuestionNotice | undefined> {
+  const { tx, orgId } = context;
   const [question] = await tx
     .select({
       kind: messages.kind,
@@ -59,23 +63,33 @@ async function noticeOf({ tx, orgId }: OrgContext, messageId: string): Promise<Q
     .innerJoin(requests, and(eq(requests.orgId, messages.orgId), eq(requests.id, messages.requestId)))
     .where(and(eq(messages.orgId, orgId), eq(messages.id, messageId)));
   if (question === undefined || question.kind !== "question" || question.teamId === null) return undefined;
-  // The target team asks the requester; the requester side asks the claimant, or no one while nobody holds the claim.
-  const askedOf = question.teamId === question.targetTeamId ? question.requestingUserId : question.teamId === question.requestingTeamId ? question.claimantUserId : null;
-  if (askedOf === null || askedOf === question.poster) return undefined;
-  const [sent] = await tx
+  // The target team asks the requester: its requesting user, or, for a team alone, the members who opted in to its emails.
+  // The requester side asks the claimant, or no one while nobody holds the claim.
+  let askedOf: string[] = [];
+  if (question.teamId === question.targetTeamId) {
+    askedOf = question.requestingUserId !== null ? [question.requestingUserId] : await optedInMembersOf(context, question.requestingTeamId);
+  } else if (question.teamId === question.requestingTeamId && question.claimantUserId !== null) {
+    askedOf = [question.claimantUserId];
+  }
+  askedOf = askedOf.filter((userId) => userId !== question.poster);
+  if (askedOf.length === 0) return undefined;
+  const sent = await tx
     .select({ userId: questionNotices.userId })
     .from(questionNotices)
-    .where(and(eq(questionNotices.orgId, orgId), eq(questionNotices.messageId, messageId), eq(questionNotices.userId, askedOf)));
-  if (sent !== undefined) return undefined;
-  const [recipient] = await tx
-    .select({ email: users.email })
+    .where(and(eq(questionNotices.orgId, orgId), eq(questionNotices.messageId, messageId), inArray(questionNotices.userId, askedOf)));
+  const unsent = askedOf.filter((userId) => !sent.some((notice) => notice.userId === userId));
+  if (unsent.length === 0) return undefined;
+  const addressed = await tx
+    .select({ userId: users.id, email: users.email })
     .from(users)
     .innerJoin(members, and(eq(members.orgId, users.orgId), eq(members.userId, users.id)))
-    .where(and(eq(users.orgId, orgId), eq(users.id, askedOf)));
-  if (recipient?.email === undefined || recipient.email === null) return undefined;
+    .where(and(eq(users.orgId, orgId), inArray(users.id, unsent)))
+    .orderBy(asc(users.email));
+  const recipients = addressed.flatMap(({ userId, email }) => (email === null ? [] : [{ userId, email }]));
+  if (recipients.length === 0) return undefined;
   const keyOf = async (teamId: string) => (await tx.select({ key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, teamId))))[0]?.key ?? "";
   const targetTeam = await keyOf(question.targetTeamId);
-  return { userId: askedOf, email: recipient.email, key: formatRequestKey(targetTeam, question.number), targetTeam, asker: await keyOf(question.teamId) };
+  return { recipients, key: formatRequestKey(targetTeam, question.number), targetTeam, asker: await keyOf(question.teamId) };
 }
 
 export const emailQuestion: WorkerJob<QuestionEmailData> = {
@@ -95,21 +109,23 @@ export const emailQuestion: WorkerJob<QuestionEmailData> = {
       throw error;
     }
     if (notice === undefined) return;
-    const { userId, email, key, targetTeam, asker } = notice;
-    await withOrg(database, async ({ tx, orgId }) => {
-      const recorded = await tx
-        .insert(questionNotices)
-        .values({ orgId, messageId: job.data.messageId, userId, sentAt: now() })
-        .onConflictDoNothing()
-        .returning({ userId: questionNotices.userId });
-      // Another run recorded it first, and sends it.
-      if (recorded.length === 0) return;
-      await mailer.send(email, QUESTION_NOTICE, {
-        subject: updateSubject({ installUrl, key, eventType: "request.message_posted", team: targetTeam }),
-        key: requestKey(key),
-        asker: teamKey(asker),
-        page: installLink(installUrl, `/${key}`),
+    const { recipients, key, targetTeam, asker } = notice;
+    for (const { userId, email } of recipients) {
+      await withOrg(database, async ({ tx, orgId }) => {
+        const recorded = await tx
+          .insert(questionNotices)
+          .values({ orgId, messageId: job.data.messageId, userId, sentAt: now() })
+          .onConflictDoNothing()
+          .returning({ userId: questionNotices.userId });
+        // Another run recorded it first, and sends it.
+        if (recorded.length === 0) return;
+        await mailer.send(email, QUESTION_NOTICE, {
+          subject: updateSubject({ installUrl, key, eventType: "request.message_posted", team: targetTeam }),
+          key: requestKey(key),
+          asker: teamKey(asker),
+          page: installLink(installUrl, `/${key}`),
+        });
       });
-    });
+    }
   },
 };

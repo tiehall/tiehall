@@ -2681,3 +2681,39 @@ export const contractFanOutApprovals = pgTable(
     }),
   ],
 );
+
+// Each member's opt-in to the emails that go to one of their teams as a
+// requester (requester-loop: When the requester is a team; requests: Where a
+// proposal waits; design.md, Decisions this change rests on: D28 #62;
+// design.md, Readings to confirm with the founder: R16). When a team alone is
+// the requester of a request, as for a contract-change request whose provider
+// PR's author is no member of the install, its emails, the questions asked of
+// it and the notices that ask its side for a confirmation, go only to the
+// members who opted in to that team's emails. A row is a member's opt-in for
+// one team, which they make and take back in their email settings; without
+// it, the choice is off.
+export const teamRequesterEmails = pgTable(
+  "team_requester_emails",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    optedInAt: timestamp("opted_in_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.teamId] }),
+    index("team_requester_emails_team").on(table.orgId, table.teamId),
+    foreignKey({
+      name: "team_requester_emails_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "team_requester_emails_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);

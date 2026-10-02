@@ -1,4 +1,4 @@
-import { readEmailSettings, setEmailSettings } from "@tiehall/catalog";
+import { readEmailSettings, setEmailSettings, setRequesterEmails } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { escapeHtml, htmlPage } from "./html.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -8,8 +8,11 @@ import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type P
 // D28 #61; D29 (6); design.md, Self-hosting decisions: S10). The page says
 // where Tiehall emails the member, the primary verified address of their
 // GitHub account, whether the install sends email at all, and whether the
-// daily digest is on, with the one form there is: it turns the digest off or
-// on again, passes the web UI's write checks and leads back to the page. No
+// daily digest is on, with the form that turns the digest off or on again;
+// and, for each of the member's teams, whether they get the emails that go to
+// that team as a requester, with the form that turns them on or off
+// (requester-loop: When the requester is a team). Each form passes the web
+// UI's write checks and leads back to the page. No
 // setting stops transactional email, and the page says so: proposal notices,
 // receipts and the questions asked of the member are always emailed when the
 // install sends email. The page reads through execute(), as the member's web
@@ -28,7 +31,10 @@ export function createEmailSettingsRoute(options: PageRouteOptions, { emailSetUp
     path: EMAIL_SETTINGS_PATH,
     name: "email settings",
     async get(_query, { read, csrf }) {
-      const { address, digest } = await read<{ address: string | null; digest: boolean }>(readEmailSettings.id, {});
+      const { address, digest, teams } = await read<{ address: string | null; digest: boolean; teams: { team: { id: string; key: string }; requesterEmails: boolean }[] }>(
+        readEmailSettings.id,
+        {},
+      );
       const lines = [
         "      <h1>Email settings</h1>",
         emailSetUp
@@ -40,12 +46,32 @@ export function createEmailSettingsRoute(options: PageRouteOptions, { emailSetUp
         "      <h2>Daily digest</h2>",
         `      <p>${digest ? "The daily digest is on." : "The daily digest is off."} It gathers your updates of each UTC day that were not emailed as they came, once the day has ended, and turning it off also stops your teams' WARN digest emails.</p>`,
         postForm(EMAIL_SETTINGS_PATH, { digest: digest ? "off" : "on" }, csrf, digest ? "Turn the daily digest off" : "Turn the daily digest on"),
+        "      <h2>Emails to your teams as requesters</h2>",
+        "      <p>When one of your teams alone is the requester of a request, such as a contract-change request whose provider pull request's author is not a member of this install, the questions asked of the team and the proposals that wait for its side go to your web inbox, and by email only when you turn that team's emails on.</p>",
+        ...(teams.length === 0
+          ? ["      <p>You belong to no team.</p>"]
+          : teams.flatMap(({ team, requesterEmails }) => [
+              `      <p>${escapeHtml(team.key)}: ${requesterEmails ? "on" : "off"}.</p>`,
+              postForm(
+                EMAIL_SETTINGS_PATH,
+                { team: team.id, requesterEmails: requesterEmails ? "off" : "on" },
+                csrf,
+                `Turn ${requesterEmails ? "off" : "on"} ${team.key}'s emails`,
+              ),
+            ])),
         "      <h2>Always emailed</h2>",
         "      <p>Proposal notices, receipts and the questions asked of you are always emailed; no setting turns them off.</p>",
       ];
       return htmlAnswer(htmlPage("Email settings", lines.join("\n")));
     },
     async post(form, { write }) {
+      const team = form.get("team");
+      if (team !== null) {
+        const choice = form.get("requesterEmails");
+        if (choice !== "on" && choice !== "off") throw new Refusal("invalid-input", "The form turns a team's emails as a requester on or off.");
+        await write(setRequesterEmails.id, { team, on: choice === "on" });
+        return seeOther(EMAIL_SETTINGS_PATH);
+      }
       const digest = form.get("digest");
       if (digest !== "on" && digest !== "off") throw new Refusal("invalid-input", "The form turns the daily digest on or off.");
       await write(setEmailSettings.id, { digest: digest === "on" });

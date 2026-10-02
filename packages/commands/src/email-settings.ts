@@ -1,7 +1,10 @@
-import { readEmailSettings, setEmailSettings } from "@tiehall/catalog";
-import { users } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { readEmailSettings, setEmailSettings, setRequesterEmails, type emailSettings } from "@tiehall/catalog";
+import { Refusal } from "@tiehall/core";
+import { members, teamMembers, teamRequesterEmails, users } from "@tiehall/db";
+import { and, asc, eq } from "drizzle-orm";
+import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
+import { teamsOfMember } from "./members.ts";
 import { actingUserOf } from "./request-changes.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -11,17 +14,49 @@ import type { OrgContext } from "./with-org.ts";
 // them, the primary verified address of their GitHub account, which sign-in
 // read, and turns their daily digest on or off; nothing else can be set, so
 // transactional email, such as proposal notices, receipts and the questions
-// asked of them, always goes out when the install sends email. The setting is
-// the user's own, changes no request and so records no event, and needs no
-// confirmation step.
+// asked of them, always goes out when the install sends email. The member
+// also turns on or off, for each of their own teams, the emails that go to
+// that team as the requester of a request, which are off until they turn them
+// on (requester-loop: When the requester is a team); a team that is not
+// theirs gets 403. The settings are the user's own, change no request and so
+// record no event, and need no confirmation step.
 
-async function settingsOf({ tx, orgId }: OrgContext, userId: string): Promise<{ address: string | null; digest: boolean }> {
+type EmailSettings = z.input<typeof emailSettings>;
+
+async function settingsOf(context: OrgContext, userId: string): Promise<EmailSettings> {
+  const { tx, orgId } = context;
   const [row] = await tx
     .select({ address: users.email, digest: users.digestEnabled })
     .from(users)
     .where(and(eq(users.orgId, orgId), eq(users.id, userId)));
   if (row === undefined) throw new Error("A signed-in member has no user.");
-  return row;
+  const optedIn = await tx
+    .select({ teamId: teamRequesterEmails.teamId })
+    .from(teamRequesterEmails)
+    .where(and(eq(teamRequesterEmails.orgId, orgId), eq(teamRequesterEmails.userId, userId)));
+  const mine = await teamsOfMember(context, userId);
+  return {
+    ...row,
+    teams: [...mine]
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      .map(({ id, key }) => ({ team: { id, key }, requesterEmails: optedIn.some(({ teamId }) => teamId === id) })),
+  };
+}
+
+/**
+ * The members of a requesting team who get its emails as a requester: those
+ * who opted in to that team's emails, while they are members of the install
+ * and of the team (requester-loop: When the requester is a team).
+ */
+export async function optedInMembersOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, teamId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ userId: teamRequesterEmails.userId })
+    .from(teamRequesterEmails)
+    .innerJoin(teamMembers, and(eq(teamMembers.orgId, teamRequesterEmails.orgId), eq(teamMembers.teamId, teamRequesterEmails.teamId), eq(teamMembers.userId, teamRequesterEmails.userId)))
+    .innerJoin(members, and(eq(members.orgId, teamRequesterEmails.orgId), eq(members.userId, teamRequesterEmails.userId)))
+    .where(and(eq(teamRequesterEmails.orgId, orgId), eq(teamRequesterEmails.teamId, teamId)))
+    .orderBy(asc(teamRequesterEmails.userId));
+  return rows.map(({ userId }) => userId);
 }
 
 export const EMAIL_SETTINGS_HANDLERS: Handlers = {
@@ -33,6 +68,21 @@ export const EMAIL_SETTINGS_HANDLERS: Handlers = {
       .update(users)
       .set({ digestEnabled: digest })
       .where(and(eq(users.orgId, context.orgId), eq(users.id, userId)));
+    return settingsOf(context, userId);
+  }),
+
+  [setRequesterEmails.id]: defineHandler(setRequesterEmails, async ({ team, on }, context) => {
+    const userId = actingUserOf(context);
+    if (!(await teamsOfMember(context, userId)).some(({ id }) => id === team)) {
+      throw new Refusal("forbidden", "You choose the emails of your own teams only.");
+    }
+    if (on) {
+      await context.tx.insert(teamRequesterEmails).values({ orgId: context.orgId, userId, teamId: team, optedInAt: context.now() }).onConflictDoNothing();
+    } else {
+      await context.tx
+        .delete(teamRequesterEmails)
+        .where(and(eq(teamRequesterEmails.orgId, context.orgId), eq(teamRequesterEmails.userId, userId), eq(teamRequesterEmails.teamId, team)));
+    }
     return settingsOf(context, userId);
   }),
 };

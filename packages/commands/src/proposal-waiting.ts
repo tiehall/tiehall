@@ -4,6 +4,7 @@ import { formatRequestKey, mayGiveSecondConfirmation, type SecondConfirmer } fro
 import { members, proposalConfirmations, proposalNotices, proposals, requests, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { commitmentPhrase, installLink, PROPOSAL_NOTICE, requestKey, serverTime } from "./email.ts";
+import { optedInMembersOf } from "./email-settings.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { proposalView } from "./proposals.ts";
@@ -30,7 +31,13 @@ import type { WorkerJob } from "./worker.ts";
 //   the proposal proposes and when it expires, and links its confirm page; it
 //   goes to the address sign-in read from their GitHub account. Without SMTP
 //   settings, or without an address, nothing is sent, and the standing list is
-//   where they find it.
+//   where they find it. When a team alone is the requester of the request, as
+//   for a contract-change request whose provider PR's author is no member of
+//   the install, the email that asks the requester side for its confirmation
+//   goes only to the members of that team who opted in to its emails, while
+//   every member who may confirm finds the proposal in their standing list;
+//   the accountable human's own email has no such exception (requester-loop:
+//   When the requester is a team).
 
 /** Who each pending proposal waits for now, by proposal, in the order the proposals were created. */
 export async function waitingByProposal(context: OrgContext, now: Date): Promise<Map<string, string[]>> {
@@ -169,15 +176,31 @@ async function noticesToSend(context: OrgContext, now: Date): Promise<Notice[]> 
       .select({ userId: proposalNotices.userId })
       .from(proposalNotices)
       .where(and(eq(proposalNotices.orgId, orgId), eq(proposalNotices.proposalId, proposalId)));
-    const unsent = userIds.filter((userId) => !sent.some((notice) => notice.userId === userId));
+    let unsent = userIds.filter((userId) => !sent.some((notice) => notice.userId === userId));
     if (unsent.length === 0) continue;
     const [about] = await tx
-      .select({ kind: proposals.kind, expiresAt: proposals.expiresAt, number: requests.number, teamKey: teams.key })
+      .select({
+        kind: proposals.kind,
+        expiresAt: proposals.expiresAt,
+        number: requests.number,
+        teamKey: teams.key,
+        accountableUserId: proposals.accountableUserId,
+        second: proposals.secondConfirmation,
+        requestingUserId: requests.requestingUserId,
+        requestingTeamId: requests.requestingTeamId,
+      })
       .from(proposals)
       .innerJoin(requests, and(eq(requests.orgId, proposals.orgId), eq(requests.id, proposals.requestId)))
       .innerJoin(teams, and(eq(teams.orgId, requests.orgId), eq(teams.id, requests.targetTeamId)))
       .where(and(eq(proposals.orgId, orgId), eq(proposals.id, proposalId)));
     if (about === undefined) continue;
+    // A team alone is the requester, and the proposal asks its side to confirm: only its members who opted in get the email.
+    const asksRequestingTeam = about.requestingUserId === null && (about.second as SecondConfirmer[]).includes("requester_side");
+    if (asksRequestingTeam) {
+      const optedIn = await optedInMembersOf(context, about.requestingTeamId);
+      unsent = unsent.filter((userId) => userId === about.accountableUserId || optedIn.includes(userId));
+      if (unsent.length === 0) continue;
+    }
     const addresses = await tx
       .select({ id: users.id, email: users.email })
       .from(users)
