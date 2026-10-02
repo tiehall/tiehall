@@ -2434,3 +2434,44 @@ export const contractReports = pgTable(
     check("contract_reports_changes_is_list", sql`jsonb_typeof(${table.changes}) = 'array'`),
   ],
 );
+
+// The consumer map (contract-changes: Teams declare the APIs they consume;
+// design.md, Decisions this change rests on: D15, D28 #72). Each row is one
+// team's declaration that it consumes one registered API, made by a member of
+// that team in the web UI: who declared it and when, and when it was last
+// confirmed, which a re-confirmation moves and nothing else does. Removing the
+// declaration deletes the row. Contract-change routing reads these rows alone,
+// of the APIs that are registered.
+export const apiConsumers = pgTable(
+  "api_consumers",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    apiId: uuid("api_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    declaredByUserId: uuid("declared_by").notNull(),
+    declaredAt: timestamp("declared_at", { withTimezone: true }).notNull(),
+    lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.apiId, table.teamId] }),
+    foreignKey({
+      name: "api_consumers_api_fk",
+      columns: [table.orgId, table.apiId],
+      foreignColumns: [apis.orgId, apis.id],
+    }),
+    foreignKey({
+      name: "api_consumers_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "api_consumers_declared_by_fk",
+      columns: [table.orgId, table.declaredByUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    index("api_consumers_team").on(table.orgId, table.teamId),
+    check("api_consumers_confirmed_after_declared", sql`${table.lastConfirmedAt} >= ${table.declaredAt}`),
+  ],
+);

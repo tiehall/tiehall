@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { GITHUB_REPOSITORY } from "./pull-requests.ts";
 import { teamRef } from "./requests.ts";
+import { teamKey } from "./teams.ts";
 import { user } from "./schemas.ts";
 
 // The APIs registered for contract reports (contract-changes: Admins register
@@ -116,4 +117,77 @@ export const unregisterApi = defineCommand({
   stability: "beta",
 });
 
-export const API_COMMANDS = [registerApi, listApis, unregisterApi];
+// The consumer map (contract-changes: Teams declare the APIs they consume;
+// teams-and-roles: What admins and members may do; design.md, Decisions this
+// change rests on: D15, D28 #4, #72). Each declaration states that one team
+// consumes one registered API. Any member of the team declares it, in the web
+// UI on the team's page, which records who declared it and when it was last
+// confirmed; any member of the team removes it. Someone who is not a member of
+// that team, whatever their role, gets 403: an admin who is in no team
+// declares nothing for one. A declaration made again changes nothing. No agent
+// surface offers them; routing reads the declarations alone.
+
+/** A team's declaration that it consumes an API: who declared it and when, and when it was last confirmed. */
+export const consumerDeclaration = z.object({
+  declaredBy: user,
+  declaredAt: z.iso.datetime(),
+  lastConfirmedAt: z.iso.datetime(),
+});
+
+/** The API and the team a declaration is about, by their ids. */
+const declarationInput = z.object({
+  api: z.uuid().meta({ description: "The registered API." }),
+  team: z.uuid().meta({ description: "The team that consumes it." }),
+});
+
+export const declareConsumer = defineCommand({
+  id: "apis.declare_consumer",
+  summary: "Declare that a team you are a member of consumes a registered API, so that breaking changes to it open requests to the team.",
+  input: declarationInput,
+  output: z.object({
+    declaration: consumerDeclaration.extend({ api: z.object({ id: z.uuid(), name: z.string() }), team: teamRef }),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const removeConsumer = defineCommand({
+  id: "apis.remove_consumer",
+  summary: "Remove the declaration that a team you are a member of consumes an API, so that changes to it no longer route to the team.",
+  input: declarationInput,
+  output: z.object({ api: z.uuid(), team: z.uuid(), declared: z.literal(false) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const listTeamApis = defineCommand({
+  id: "apis.list_for_team",
+  summary: "List the registered APIs, each with its provider team and the team's declaration that it consumes it, if any, as the team's page shows them.",
+  input: z.object({ team: teamKey.meta({ description: "The team's key, such as FE, or one it had before." }) }),
+  output: z.object({
+    team: teamRef,
+    /** Whether the reader is a member of the team, and so may declare and remove its declarations. */
+    member: z.boolean(),
+    apis: z.array(
+      z.object({
+        id: z.uuid(),
+        provider: teamRef,
+        declaration: consumerDeclaration.nullable(),
+        untrusted: z.object({ name: z.string() }),
+      }),
+    ),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const API_COMMANDS = [registerApi, listApis, unregisterApi, declareConsumer, removeConsumer, listTeamApis];

@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { NEGOTIATED_KEY_HEADER, readRequestPageAs, webCommands, type TeamIntakeView } from "@tiehall/commands/web";
+import { NEGOTIATED_KEY_HEADER, readRequestPageAs, webCommands, type TeamApisView, type TeamIntakeView } from "@tiehall/commands/web";
 import { IntakePage } from "../../lib/intake-page.tsx";
 import { RequestPage } from "../../lib/request-page.tsx";
 
@@ -18,8 +18,9 @@ import { RequestPage } from "../../lib/request-page.tsx";
 // and is no page for any other, such as a path or a method Next.js would
 // bring here that the proxy did not negotiate, so nothing reaches it around
 // the negotiation. An
-// intake page reads the team through teams.get and shows it
-// (lib/intake-page.tsx). The page of a request is a
+// intake page reads the team through teams.get and shows it, with the
+// registered APIs and the team's declarations that it consumes them, which
+// apis.list_for_team reads, and their forms (lib/intake-page.tsx). The page of a request is a
 // server component that reads the request with its thread, its packet and its
 // proposals through execute() in this process, as the signed-in user's web
 // session, in read-only transactions (request-page-data.ts), and renders them
@@ -47,7 +48,10 @@ export default async function Page({ params }: { params: Promise<{ key: string }
     // A team's intake page, which the proxy lets through only for a signed-in member and the team's current key.
     const team = await web.read<TeamIntakeView>("teams.get", { key });
     if (!team.ok) return refusal(team.problem, key);
-    return <IntakePage team={team.output} />;
+    // The registered APIs with the team's declarations, and the CSRF token its members' forms carry.
+    const apis = await web.read<TeamApisView>("apis.list_for_team", { team: key });
+    const csrf = await web.csrfToken();
+    return <IntakePage team={team.output} apis={apis.ok ? apis.output : undefined} csrf={csrf} />;
   }
   if (!REQUEST_KEY.test(key)) notFound();
   const read = await readRequestPageAs(web, key);

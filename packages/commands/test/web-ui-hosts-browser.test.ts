@@ -76,6 +76,7 @@ const NOT_PAGES: Readonly<Record<string, string>> = {
   "schemas/packet/v1-beta.json/route.ts": "the packet schema, a JSON document",
   "healthz/route.ts": "the health check",
   "sign-out/route.ts": "the sign-out form's target, which only answers its post",
+  "teams/apis/route.ts": "the target of the forms of a team's page, which only answers their posts",
   "docs/api/reference.js/route.ts": "a script of the API reference page, which that page loads",
   "docs/api/scalar.js/route.ts": "a script of the API reference page, which that page loads",
 };

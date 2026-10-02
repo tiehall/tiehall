@@ -7,6 +7,7 @@ import { createApiCallerCheck, createCiTokenCheck } from "./ci-tokens.ts";
 import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-server.ts";
 import { createAdminRoute } from "./admin-page.ts";
 import { createApisRoute } from "./apis-page.ts";
+import { createTeamApisRoute } from "./team-page-actions.ts";
 import { showRunningVersion } from "./html.ts";
 import { runningVersion } from "./running-version.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
@@ -208,6 +209,25 @@ export interface TeamIntakeView {
   untrusted: { name: string; intakeNotes: string };
 }
 
+export { TEAM_APIS_PATH, TEAM_PAGE_ACTIONS, type TeamPageAction } from "./team-page-actions.ts";
+
+/**
+ * The registered APIs as a team's page shows them, with the team's
+ * declarations that it consumes them, as apis.list_for_team reads them
+ * (contract-changes: Teams declare the APIs they consume).
+ */
+export interface TeamApisView {
+  team: { id: string; key: string };
+  /** Whether the reader is a member of the team, and so may declare and remove its declarations. */
+  member: boolean;
+  apis: {
+    id: string;
+    provider: { id: string; key: string };
+    declaration: { declaredBy: { login: string; bot: boolean }; declaredAt: string; lastConfirmedAt: string } | null;
+    untrusted: { name: string };
+  }[];
+}
+
 let mcp: McpRoute | undefined;
 
 /**
@@ -368,6 +388,11 @@ export function teamsRoute(env: Environment): PageRoute {
  */
 export function tokensRoute(env: Environment): PageRoute {
   return pageOf("tokens", env, createTokensRoute);
+}
+
+/** The target of the forms of a team's page, /teams/apis, which declare and remove the team's declarations, for the signed-in member's web session. */
+export function teamApisRoute(env: Environment): PageRoute {
+  return pageOf("team APIs", env, createTeamApisRoute);
 }
 
 /** The APIs page of the admin UI under /admin/apis, for the signed-in admin's web session. */

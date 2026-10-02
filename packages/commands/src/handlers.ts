@@ -1,5 +1,6 @@
 import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ADMIN_ALERT_HANDLERS } from "./admin-alerts.ts";
+import { API_CONSUMER_HANDLERS } from "./api-consumers.ts";
 import { API_HANDLERS } from "./apis.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
@@ -72,5 +73,6 @@ export const HANDLERS: Handlers = {
   ...INSTALL_STATUS_HANDLERS,
   ...ADMIN_ALERT_HANDLERS,
   ...API_HANDLERS,
+  ...API_CONSUMER_HANDLERS,
   ...CONTRACT_REPORT_HANDLERS,
 };

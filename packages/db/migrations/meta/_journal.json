@@ -456,6 +456,13 @@
       "when": 1790932773938,
       "tag": "0064_add_contract_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1790933764176,
+      "tag": "0065_add_api_consumers",
+      "breakpoints": true
     }
   ]
 }
