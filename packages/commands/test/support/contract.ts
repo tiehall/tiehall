@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { applyChangeSets } from "../../src/index.ts";
+import type { TestInstall } from "./install.ts";
 
 // The classified changes of the recorded oasdiff outputs (task 23.1) for the
 // contract tests: the changelog the pinned oasdiff wrote for a fixture pair of
@@ -50,4 +53,23 @@ export function reportOf(api: string, changes: readonly ClassifiedChange[], opti
     engine: { name: "oasdiff", version: "1.32.1" },
     changes,
   };
+}
+
+/**
+ * Runs, as the worker does at this time, every sent job that applies a change
+ * set's update and whose time has come, and the jobs those send whose time has
+ * come too; the install's execute() must tell the same time.
+ */
+export async function runDueUpdates(install: Pick<TestInstall, "db" | "execute" | "sentJobs">, now: Date): Promise<void> {
+  for (;;) {
+    const due = install.sentJobs.filter(({ queue, startAfter }) => queue === applyChangeSets.type.queue && (startAfter === undefined || startAfter <= now));
+    if (due.length === 0) return;
+    for (const job of due) install.sentJobs.splice(install.sentJobs.indexOf(job), 1);
+    for (const job of due) {
+      await applyChangeSets.handle(
+        { id: randomUUID(), queue: job.queue, data: job.data as { changeSetId: string }, signal: new AbortController().signal },
+        { database: install.db, now: () => now, execute: install.execute },
+      );
+    }
+  }
 }

@@ -31,6 +31,7 @@ import {
   type Execute,
   type InstallGitHub,
   type JobData,
+  type JobOptions,
   type RestHandler,
   type SecretBox,
   type WebCommands,
@@ -64,7 +65,7 @@ export interface TestInstall {
   db: Database;
   execute: Execute;
   /** The jobs the install's writes sent, in order. */
-  sentJobs: { queue: string; data: JobData }[];
+  sentJobs: { queue: string; data: JobData; startAfter?: Date }[];
   /** The REST route under /api/v1, for calls whose credentials stand for the given caller; none answers 401. */
   api(caller: Caller | undefined): RestHandler;
   /** The web UI's commands, for the given signed-in session. */
@@ -135,8 +136,14 @@ export async function startTestInstall(
   const box = openSecretBox(secretKey);
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
-  const sentJobs: { queue: string; data: JobData }[] = [];
-  const store = { database: db, jobs: { send: async (_tx: unknown, queue: string, data: JobData) => void sentJobs.push({ queue, data }) } };
+  const sentJobs: { queue: string; data: JobData; startAfter?: Date }[] = [];
+  const store = {
+    database: db,
+    jobs: {
+      send: async (_tx: unknown, queue: string, data: JobData, options: JobOptions = {}) =>
+        void sentJobs.push({ queue, data, ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }) }),
+    },
+  };
   const subjects = CONFIRMATION_SUBJECTS;
   let installGitHub: InstallGitHub | undefined;
   const github: InstallGitHub = {

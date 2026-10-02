@@ -1,0 +1,1 @@
+ALTER TABLE "contract_change_sets" ADD COLUMN "burst_started_at" timestamp with time zone;

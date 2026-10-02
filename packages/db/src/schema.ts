@@ -2526,9 +2526,10 @@ export const apiConsumerReconfirmationEmails = pgTable(
 // repository the API is bound to, which a report names by GitHub's id, so a
 // pull request that changes two APIs makes two change sets, and an API bound
 // anew to another repository starts new ones. Each update applies a report of
-// the change set, and the row holds the last report an update applied. The
-// worker's job that applies an update locks the row first, so the updates of
-// one change set take turns.
+// the change set, and the row holds the last report an update applied, and
+// when the burst of reports that its next update merges started. The worker's
+// job that applies an update locks the row first, as each report does, so the
+// updates and reports of one change set take turns.
 export const contractChangeSets = pgTable(
   "contract_change_sets",
   {
@@ -2543,6 +2544,12 @@ export const contractChangeSets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** The last report an update of the change set applied; null until the first update. */
     appliedReportId: uuid("applied_report_id"),
+    /**
+     * When the first report of the change set's waiting burst was received:
+     * its update is applied 2 minutes later, with the latest report received
+     * by then; null while no burst waits.
+     */
+    burstStartedAt: timestamp("burst_started_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

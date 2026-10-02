@@ -271,6 +271,7 @@ export {
   JobTypeError,
   type DefinedJobType,
   type JobData,
+  type JobOptions,
   type JobSender,
   type JobSettings,
   type JobType,

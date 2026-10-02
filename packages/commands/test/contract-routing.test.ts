@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { applyChangeSets, type CiCaller, type WebSessionCaller } from "../src/index.ts";
+import type { CiCaller, WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
-import { changesOf, CONTRACT_WORKFLOW, PAYMENTS_REPOSITORY, reportOf } from "./support/contract.ts";
+import { changesOf, CONTRACT_WORKFLOW, PAYMENTS_REPOSITORY, reportOf, runDueUpdates } from "./support/contract.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams } from "./support/requests.ts";
@@ -23,9 +23,12 @@ import { addTeam, joinTeams } from "./support/requests.ts";
 // a request from a report is a system action, recorded with the actor kind
 // system and the surface github. The changes are those the pinned oasdiff
 // classified for the fixture pairs of task 23.1. A CI run reports through
-// the real contract.report, and the worker's job applies its change set.
+// the real contract.report, and the worker's job applies its change set's
+// update once its burst of reports has ended, 2 minutes after its first
+// report (contract-bursts.test.ts), on the test's clock.
 
 let install: TestInstall;
+let clock = new Date("2026-10-05T08:00:00Z");
 let ada: WebSessionCaller;
 let deniz: string;
 let acmeId: number;
@@ -35,7 +38,7 @@ const teams: Record<string, string> = {};
 const ciRun = (): CiCaller => ({ kind: "ci", repositoryId: String(PAYMENTS_REPOSITORY.id), repositoryOwnerId: String(acmeId), jobWorkflowRef: CONTRACT_WORKFLOW });
 
 beforeAll(async () => {
-  install = await startTestInstall();
+  install = await startTestInstall({ now: () => clock });
   ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
   deniz = await addUser(install.owner, { login: "deniz" });
   for (const key of ["PAY", "FE", "MOBILE", "OPS"]) teams[key] = await addTeam(install.owner, key);
@@ -67,12 +70,10 @@ async function report(body: Record<string, unknown>): Promise<void> {
   await install.execute("contract.report", ciRun(), body);
 }
 
-/** Runs the jobs that apply the change sets the reports started, as the worker does. */
+/** Runs the jobs that apply the change sets' updates once the reports' bursts have ended, as the worker does. */
 async function applyReports(): Promise<void> {
-  const jobs = install.sentJobs.splice(0).filter(({ queue }) => queue === applyChangeSets.type.queue);
-  for (const job of jobs) {
-    await applyChangeSets.handle({ id: randomUUID(), queue: job.queue, data: job.data as never, signal: new AbortController().signal }, { database: install.db, now: () => new Date(), execute: install.execute });
-  }
+  clock = new Date(clock.getTime() + 3 * 60 * 1000);
+  await runDueUpdates(install, clock);
 }
 
 interface OpenedRequest {
