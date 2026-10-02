@@ -20,9 +20,14 @@ import {
   setSignInPolicy,
   setTeamIntake,
   INTAKE_FIELDS,
+  listTrackerMappings,
+  mapIntakeRepository,
+  removeTrackerMapping,
+  setMirrorOnOpen,
   type invite,
   type listedMember,
   type listedTeam,
+  type trackerMapping,
 } from "@tiehall/catalog";
 import { Refusal, SIGN_IN_POLICIES, signInPolicyText, type SignInPolicy } from "@tiehall/core";
 import type { z } from "zod";
@@ -57,8 +62,14 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   its key, add a member of the install to it or remove them, and set its
 //   intake settings: the notes that say how it wants requests filed and the
 //   packet fields it requires (agent-surfaces: Admins set a team's intake
-//   notes and required fields). None of these needs the confirmation step
-//   (agent-safety: Actions that need the confirmation step).
+//   notes and required fields), and map it to the tracker its requests are
+//   mirrored into (tracker-mirrors: Each team maps to one tracker;
+//   tracker-mirrors: Mirror issues are created on claim by default): an
+//   intake repository on GitHub, picked among those a connected installation
+//   covers, with mirroring on claim unless the admin ticks mirroring on open;
+//   a mapped team's forms switch mirroring on open and remove the mapping.
+//   None of these needs the confirmation step (agent-safety: Actions that
+//   need the confirmation step).
 // - /admin/sign-in-policy is an admin's: the policy in force, and a link to
 //   the review page that changes it, with the confirmation step.
 // - /admin/personal-access-tokens is an admin's (agent-access: An admin sets
@@ -88,6 +99,9 @@ export const APIS_PATH = "/admin/apis";
 
 type ListedMember = z.output<typeof listedMember>;
 type ListedTeam = z.output<typeof listedTeam>;
+type TrackerMapping = z.output<typeof trackerMapping>;
+/** The teams' mappings, and the repositories a team can map as its intake repository. */
+type Mappings = { mappings: TrackerMapping[]; repositories: string[] };
 type Invite = z.output<typeof invite>;
 
 /** The links between the admin pages, shown to admins. */
@@ -257,7 +271,57 @@ const TEAM_ACTIONS: Readonly<Record<string, { commandId: string; input: (form: U
     commandId: setTeamIntake.id,
     input: (form) => ({ teamId: field(form, "teamId"), notes: field(form, "notes"), requiredFields: form.getAll("requiredField") }),
   },
+  map_repository: {
+    commandId: mapIntakeRepository.id,
+    input: (form) => ({ teamId: field(form, "teamId"), repository: field(form, "repository"), mirrorOnOpen: form.get("mirrorOnOpen") === "true" }),
+  },
+  set_mirror_on_open: { commandId: setMirrorOnOpen.id, input: (form) => ({ teamId: field(form, "teamId"), on: form.get("on") === "true" }) },
+  remove_mapping: { commandId: removeTrackerMapping.id, input: (form) => ({ teamId: field(form, "teamId") }) },
 };
+
+/** How a mapping names the tracker its team's mirror issues go to. */
+const TRACKER_NAMES: Readonly<Record<TrackerMapping["tracker"], string>> = { github: "GitHub Issues", jira: "Jira" };
+
+/** The team's tracker mirror: its mapping with the forms that change it, or the form that maps it to an intake repository. */
+function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): string {
+  const mapping = mappings.mappings.find(({ teamId }) => teamId === team.id);
+  const heading = `      <h3>${escapeHtml(`Where ${team.key}'s requests are mirrored`)}</h3>`;
+  if (mapping !== undefined) {
+    const when = mapping.mirrorOnOpen ? "when a request is opened" : "when a request is claimed";
+    return [
+      heading,
+      `      <p>${escapeHtml(`${team.key}'s requests are mirrored into ${TRACKER_NAMES[mapping.tracker]}, as issues in ${mapping.place}, each created ${when}.`)}</p>`,
+      postForm(
+        TEAMS_PATH,
+        { action: "set_mirror_on_open", teamId: team.id, on: mapping.mirrorOnOpen ? "false" : "true" },
+        csrf,
+        mapping.mirrorOnOpen ? `Create ${team.key}'s mirror issues when a request is claimed` : `Create ${team.key}'s mirror issues when a request is opened`,
+        "      ",
+      ),
+      postForm(TEAMS_PATH, { action: "remove_mapping", teamId: team.id }, csrf, `Stop mirroring ${team.key}'s requests`, "      "),
+      `      <p>${escapeHtml(`Removing the mapping leaves the issues made so far in ${mapping.place}; Tiehall writes to them no more. A team mirrors into one tracker only, so remove this mapping before mapping another.`)}</p>`,
+    ].join("\n");
+  }
+  if (mappings.repositories.length === 0) {
+    return [
+      heading,
+      `      <p>${escapeHtml(`${team.key}'s requests are mirrored nowhere. No connected installation of the install's GitHub App covers a repository, so there is no intake repository to map yet.`)}</p>`,
+    ].join("\n");
+  }
+  const options = mappings.repositories.map((repository) => `<option value="${escapeHtml(repository)}">${escapeHtml(repository)}</option>`).join("");
+  return [
+    heading,
+    `      <p>${escapeHtml(`${team.key}'s requests are mirrored nowhere. Map an intake repository to mirror each of them as a GitHub issue there, which shows a summary, a link and the request's state, never its packet or thread.`)}</p>`,
+    `      <form method="post" action="${TEAMS_PATH}">`,
+    '        <input type="hidden" name="action" value="map_repository">',
+    `        <input type="hidden" name="teamId" value="${escapeHtml(team.id)}">`,
+    `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    `        <p><label for="repository-${escapeHtml(team.id)}">${escapeHtml(`Intake repository of ${team.key}`)}</label> <select id="repository-${escapeHtml(team.id)}" name="repository">${options}</select></p>`,
+    `        <p><label><input type="checkbox" name="mirrorOnOpen" value="true"> ${escapeHtml("Create a request's mirror issue when it is opened, not when it is claimed")}</label></p>`,
+    `        <button type="submit">${escapeHtml(`Mirror ${team.key}'s requests into this repository`)}</button>`,
+    "      </form>",
+  ].join("\n");
+}
 
 /** How the teams page names each field a team may require. */
 const INTAKE_FIELD_LABELS: Readonly<Record<(typeof INTAKE_FIELDS)[number], string>> = {
@@ -296,7 +360,8 @@ export function createTeamsRoute(options: PageRouteOptions): PageRoute {
       // An admin's page: the teams' read refuses a member with 403 before anything else.
       const { teams } = await read<{ teams: ListedTeam[] }>(listTeams.id, {});
       const { members } = await read<{ members: ListedMember[] }>(listMembers.id, {});
-      return htmlAnswer(teamsPage(teams, members, csrf));
+      const mappings = await read<Mappings>(listTrackerMappings.id, {});
+      return htmlAnswer(teamsPage(teams, members, mappings, csrf));
     },
     async post(form, { write }) {
       const action = Object.hasOwn(TEAM_ACTIONS, form.get("action") ?? "") ? TEAM_ACTIONS[form.get("action") ?? ""] : undefined;
@@ -318,8 +383,8 @@ function labelledForm(fields: Readonly<Record<string, string>>, csrf: string, id
   ].join("\n");
 }
 
-/** One team: its people, and the forms that add people, rename it, change its key and set its intake settings. */
-function teamSection(team: ListedTeam, members: readonly ListedMember[], csrf: string): string {
+/** One team: its people, and the forms that add people, rename it, change its key, set its intake settings and map its tracker. */
+function teamSection(team: ListedTeam, members: readonly ListedMember[], mappings: Mappings, csrf: string): string {
   const inTeam = new Set(team.members.map(({ id }) => id));
   const candidates = members.filter(({ id }) => !inTeam.has(id));
   const people = team.members.map((member) =>
@@ -362,10 +427,11 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], csrf: s
       `Change the key of ${team.key}`,
     ),
     intakeForm(team, csrf),
+    mirrorSection(team, mappings, csrf),
   ].join("\n");
 }
 
-function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[], csrf: string): string {
+function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[], mappings: Mappings, csrf: string): string {
   return htmlPage(
     "Teams",
     [
@@ -380,7 +446,7 @@ function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[
       '        <p><label for="team-name">Name</label> <input type="text" id="team-name" name="name" required></p>',
       '        <button type="submit">Create the team</button>',
       "      </form>",
-      ...(teams.length === 0 ? ["      <p>The install has no team yet.</p>"] : teams.map((team) => teamSection(team, members, csrf))),
+      ...(teams.length === 0 ? ["      <p>The install has no team yet.</p>"] : teams.map((team) => teamSection(team, members, mappings, csrf))),
     ].join("\n"),
   );
 }

@@ -53,6 +53,15 @@ export { BACKUP_WARNING_DAYS, banner, getBanners, getInstallStatus, INSTALL_COMM
 export { deprecationHeaders } from "./deprecation.ts";
 export { acknowledgeEvents, EVENT_COMMANDS, eventView, readEvents } from "./events.ts";
 export { changeMemberRole, listedMember, listMembers, MEMBER_COMMANDS, removeMember, setBotFlag } from "./members.ts";
+export {
+  listTrackerMappings,
+  mapIntakeRepository,
+  MIRROR_COMMANDS,
+  removeTrackerMapping,
+  setMirrorOnOpen,
+  TRACKER_NAMES,
+  trackerMapping,
+} from "./mirrors.ts";
 export { createInvite, findInviteAccount, invite, INVITE_COMMANDS, listInvites, revokeInvite } from "./invites.ts";
 export {
   claimRequest,

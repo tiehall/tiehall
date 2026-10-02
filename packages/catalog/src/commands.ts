@@ -12,6 +12,7 @@ import { INSTALL_COMMANDS } from "./install.ts";
 import { INVITE_COMMANDS } from "./invites.ts";
 import { MEMBER_COMMANDS } from "./members.ts";
 import { MESSAGE_COMMANDS } from "./messages.ts";
+import { MIRROR_COMMANDS } from "./mirrors.ts";
 import { PACKET_COMMANDS } from "./packets.ts";
 import { PERSONAL_ACCESS_TOKEN_COMMANDS } from "./personal-access-tokens.ts";
 import { PROPOSAL_COMMANDS } from "./proposals.ts";
@@ -26,4 +27,4 @@ import { UPDATE_COMMANDS } from "./updates.ts";
 // Tiehall's operations, one definition each (public-api: One definition per
 // operation, the same on every surface). Each task that builds an operation
 // adds its definition here, and registering the catalog checks it.
-export const CATALOG = defineCatalog([...MEMBER_COMMANDS, ...INVITE_COMMANDS, ...TEAM_COMMANDS, ...REQUEST_COMMANDS, ...PULL_REQUEST_COMMANDS, ...REQUEST_PAGE_COMMANDS, ...DIRECTORY_COMMANDS, ...MESSAGE_COMMANDS, ...PACKET_COMMANDS, ...PROPOSAL_COMMANDS, ...PROPOSE_COMMANDS, ...INBOX_COMMANDS, ...UPDATE_COMMANDS, ...EMAIL_SETTINGS_COMMANDS, ...EVENT_COMMANDS, ...SETTINGS_COMMANDS, ...ACTIVITY_LOG_COMMANDS, ...GITHUB_COMMANDS, ...AGENT_CLIENT_COMMANDS, ...PERSONAL_ACCESS_TOKEN_COMMANDS, ...INSTALL_COMMANDS, ...API_COMMANDS, ...CONTRACT_COMMANDS]);
+export const CATALOG = defineCatalog([...MEMBER_COMMANDS, ...INVITE_COMMANDS, ...TEAM_COMMANDS, ...REQUEST_COMMANDS, ...PULL_REQUEST_COMMANDS, ...REQUEST_PAGE_COMMANDS, ...DIRECTORY_COMMANDS, ...MESSAGE_COMMANDS, ...PACKET_COMMANDS, ...PROPOSAL_COMMANDS, ...PROPOSE_COMMANDS, ...INBOX_COMMANDS, ...UPDATE_COMMANDS, ...EMAIL_SETTINGS_COMMANDS, ...EVENT_COMMANDS, ...SETTINGS_COMMANDS, ...ACTIVITY_LOG_COMMANDS, ...GITHUB_COMMANDS, ...AGENT_CLIENT_COMMANDS, ...PERSONAL_ACCESS_TOKEN_COMMANDS, ...INSTALL_COMMANDS, ...API_COMMANDS, ...CONTRACT_COMMANDS, ...MIRROR_COMMANDS]);
