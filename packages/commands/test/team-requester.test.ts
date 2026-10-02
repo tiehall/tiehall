@@ -131,7 +131,7 @@ async function teamRequestedRequest(): Promise<{ id: string; key: string }> {
   return { id: rows[0]?.id ?? "", key: rows[0]?.key ?? "" };
 }
 
-/** Bob, of FE, asks a question on the request with his agent; the job that emails it runs, as the worker runs it at once. */
+/** Bob, of FE, asks a question on the request with their agent; the job that emails it runs, as the worker runs it at once. */
 async function bobAsks(key: string): Promise<void> {
   const answer = await callApi(install, tokenOf(id("bob")), "POST", `/api/v1/requests/${key}/messages`, { kind: "question", body: "Does amount move to amount_minor?" });
   expect(answer.status).toBe(200);
