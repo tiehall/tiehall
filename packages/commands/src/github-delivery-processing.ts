@@ -8,6 +8,7 @@ import { memberOfGitHubAccount } from "./github-users.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { processOrganizationEvent } from "./organization-departures.ts";
+import { processPullRequestEvent } from "./pull-request-processing.ts";
 import { withOrg } from "./with-org.ts";
 
 // Processing a stored GitHub delivery, in the worker (agent-access: Six kinds
@@ -36,7 +37,11 @@ import { withOrg } from "./with-org.ts";
 //   and checks again in the call's transaction that the user is still a
 //   member (agent-access: Six kinds of caller; github-layer-hardening:
 //   design.md, Technical decisions: T7). A change the poll stores names no
-//   sender, so it acts for no user.
+//   sender, so it acts for no user. A change that is the system's own action
+//   whoever made the change on GitHub, such as the system withdrawal of a
+//   contract-change request whose provider pull request closed without
+//   merging, runs instead as Tiehall's own job from GitHub, which acts for no
+//   user and is recorded with the actor kind system and the surface github.
 // A delivery is processed once: it is marked processed when its processing
 // ends, and a job that runs again for it afterwards does nothing. The poll of
 // polling mode stores each change it finds in the same form, less the
@@ -51,9 +56,9 @@ import { withOrg } from "./with-org.ts";
 // what a payload says happened: before it changes anything, it reads the
 // current state from GitHub with an installation token, and acts on that. The
 // organization processor asks whether the member is still in the
-// organization (organization-departures.ts); the pull request and issues
-// processors that later tasks add read the pull request or the issue again,
-// and act on its state now. A replay, a redelivery and an out-of-order
+// organization (organization-departures.ts); the pull request processor reads
+// the pull request again (pull-request-processing.ts), and the issues
+// processor a later task adds the issue, and each acts on its state now. A replay, a redelivery and an out-of-order
 // delivery then change nothing that the current state does not call for.
 // Deliveries are not deduplicated by a digest of their body: two genuine
 // deliveries can be byte for byte the same, such as two reports of one person
@@ -77,6 +82,13 @@ export interface GitHubEventContext {
   readonly caller: IntegrationEventCaller;
   /** Runs an operation as that caller, through execute(), which lets it run only internal commands. */
   run(commandId: string, input: unknown): Promise<unknown>;
+  /**
+   * Runs an internal system command as Tiehall's own job from GitHub, acting
+   * for no user, for a change that is the system's action whoever made the
+   * change on GitHub, such as the system withdrawal of a contract-change
+   * request whose provider pull request closed without merging.
+   */
+  runAsSystem(commandId: string, input: unknown): Promise<unknown>;
   /** The install's App, with a client that calls GitHub as it. */
   readonly app: GitHubAppAccess;
   readonly database: Database;
@@ -91,12 +103,16 @@ export type GitHubEventProcessors = Readonly<Record<string, GitHubEventProcessor
 /**
  * The processors of the events a connected installation's deliveries carry.
  * Each task that acts on an event adds its processor here: pull requests for
- * PR links and close on merge, issues for the GitHub Issues mirror, and
+ * provider pull requests, PR links and close on merge
+ * (pull-request-processing.ts), issues for the GitHub Issues mirror, and
  * organization for membership (organization-departures.ts). Each reads the
  * current state from GitHub before it acts, as the rule above says. An event
  * with no processor changes nothing.
  */
-export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = { organization: processOrganizationEvent };
+export const GITHUB_EVENT_PROCESSORS: GitHubEventProcessors = { organization: processOrganizationEvent, pull_request: processPullRequestEvent };
+
+/** The job a processor's system actions run as: the processing of the delivery, which applies what GitHub reported. */
+const PROCESSING_JOB = "github.process_delivery";
 
 /** The events that are about the App's installations, which make Tiehall list them again. */
 const INSTALLATION_EVENTS = new Set(["installation", "installation_repositories"]);
@@ -171,7 +187,14 @@ export async function processDelivery(services: DeliveryProcessingServices, deli
           payload,
           installation: { id: found.id, installationId },
         },
-        { caller, run: (commandId, input) => services.execute(commandId, caller, input), app, database: services.database, logger },
+        {
+          caller,
+          run: (commandId, input) => services.execute(commandId, caller, input),
+          runAsSystem: (commandId, input) => services.execute(commandId, { kind: "system_job", job: PROCESSING_JOB, surface: "github" }, input),
+          app,
+          database: services.database,
+          logger,
+        },
       );
     }
   }

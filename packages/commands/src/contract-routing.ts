@@ -83,6 +83,13 @@ import type { Writer } from "./write.ts";
 //   alike, so INFO-level changes appear only in the change lists of the
 //   requests other changes opened; a report with no ERR-level change opens
 //   nothing, whatever it holds.
+// A team has one request for the change set, its latest, which the updates
+// revise or notify: while the provider pull request is closed without
+// merging, an update opens nothing, and once it is reopened, a team whose
+// request the close withdrew gets a new one from the first report received
+// after the close, which replaces the withdrawn one (provider-pull-requests.ts;
+// contract-changes: Requests are withdrawn when the provider PR closes
+// unmerged).
 // The requests a report opens are not held to the target team's required
 // fields, which apply to the requests people and agents open (design.md,
 // Readings to confirm with the founder: R10).
@@ -206,23 +213,46 @@ async function consumingTeams({ tx, orgId }: OrgContext, apiId: string): Promise
 }
 
 /** A request of the change set: the team it was opened to, its key and its state now. */
-interface ChangeSetRequest {
+export interface ChangeSetRequest {
   requestId: string;
   teamId: string;
   key: string;
   state: RequestState;
+  /** When the provider pull request's close without merging withdrew it; null otherwise. */
+  withdrawnOnCloseAt: Date | null;
 }
 
-/** The requests the change set's updates opened, oldest first. */
-async function requestsOfChangeSet({ tx, orgId }: OrgContext, changeSetId: string): Promise<ChangeSetRequest[]> {
+/**
+ * The change set's request to each team it reached, oldest first: the latest
+ * request the change set's updates opened to the team, since a team whose
+ * request the provider pull request's close withdrew gets a new one once the
+ * pull request is reopened, which replaces the withdrawn one.
+ */
+export async function requestsOfChangeSet({ tx, orgId }: OrgContext, changeSetId: string): Promise<ChangeSetRequest[]> {
   const rows = await tx
-    .select({ requestId: contractChangeRequests.requestId, teamId: contractChangeRequests.teamId, state: requests.state, number: requests.number, teamKey: teams.key })
+    .selectDistinctOn([contractChangeRequests.teamId], {
+      requestId: contractChangeRequests.requestId,
+      teamId: contractChangeRequests.teamId,
+      openedAt: contractChangeRequests.openedAt,
+      withdrawnOnCloseAt: contractChangeRequests.withdrawnOnCloseAt,
+      state: requests.state,
+      number: requests.number,
+      teamKey: teams.key,
+    })
     .from(contractChangeRequests)
     .innerJoin(requests, and(eq(requests.orgId, contractChangeRequests.orgId), eq(requests.id, contractChangeRequests.requestId)))
     .innerJoin(teams, and(eq(teams.orgId, requests.orgId), eq(teams.id, requests.targetTeamId)))
     .where(and(eq(contractChangeRequests.orgId, orgId), eq(contractChangeRequests.changeSetId, changeSetId)))
-    .orderBy(asc(contractChangeRequests.openedAt), asc(contractChangeRequests.requestId));
-  return rows.map(({ requestId, teamId, state, number, teamKey }) => ({ requestId, teamId, key: formatRequestKey(teamKey, number), state: state as RequestState }));
+    .orderBy(asc(contractChangeRequests.teamId), desc(contractChangeRequests.openedAt), desc(contractChangeRequests.requestId));
+  return rows
+    .sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime() || (a.requestId < b.requestId ? -1 : 1))
+    .map(({ requestId, teamId, state, number, teamKey, withdrawnOnCloseAt }) => ({
+      requestId,
+      teamId,
+      key: formatRequestKey(teamKey, number),
+      state: state as RequestState,
+      withdrawnOnCloseAt,
+    }));
 }
 
 /** "1 X" or "N Xs". */
@@ -358,13 +388,20 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
 
   const section = contractSectionOf(current, api);
   const existing = await requestsOfChangeSet(context, changeSet.id);
-  // A new report updates every request of the change set: a revision where it has not ended, a notice where it has.
-  const toUpdate = report === undefined ? [] : [...existing].sort(byId(({ requestId }) => requestId));
-  const toRevise = toUpdate.filter(({ state }) => !isTerminalState(state));
   const opening = current.changes.some(({ level }) => level === "ERR");
-  const candidates = opening ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => !existing.some(({ teamId }) => teamId === id)) : [];
+  // Who may get a request: a consuming team that has none for the change set, or whose request the provider pull
+  // request's close withdrew before this report came, once the pull request is open again; nobody while it is closed.
+  const opensFor = (teamId: string) => {
+    const request = existing.find((candidate) => candidate.teamId === teamId);
+    return request === undefined || (request.withdrawnOnCloseAt !== null && current.receivedAt.getTime() >= request.withdrawnOnCloseAt.getTime());
+  };
+  const candidates = opening && changeSet.providerClosedAt === null ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => opensFor(id)) : [];
   const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
   await recordWaiting(context, changeSet, waiting);
+  // A new report updates every request of the change set: a revision where it has not ended, a notice where it has;
+  // a team's withdrawn request that a new one replaces gets nothing more.
+  const toUpdate = report === undefined ? [] : existing.filter(({ teamId }) => !toOpen.some(({ id }) => id === teamId)).sort(byId(({ requestId }) => requestId));
+  const toRevise = toUpdate.filter(({ state }) => !isTerminalState(state));
   // The requester of the requests it opens: the pull request's author while a member of the install, or the provider team alone.
   const requestingUserId = toOpen.length === 0 ? null : await requestingUserOf(context, current.authorGitHubId);
   if (toUpdate.length === 0 && toOpen.length === 0) {

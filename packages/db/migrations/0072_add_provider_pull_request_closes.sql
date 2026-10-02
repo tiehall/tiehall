@@ -1,0 +1,2 @@
+ALTER TABLE "contract_change_requests" ADD COLUMN "withdrawn_on_close_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "contract_change_sets" ADD COLUMN "provider_closed_at" timestamp with time zone;

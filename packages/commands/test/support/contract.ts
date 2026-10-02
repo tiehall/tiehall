@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { GitHubStub, StubApp } from "@tiehall/testing/github";
-import { applyChangeSets, connectInstallations, knownInstallations, readInstallations, withOrg } from "../../src/index.ts";
+import { applyChangeSets, connectInstallations, knownInstallations, readInstallations, withOrg, type InstallGitHub } from "../../src/index.ts";
 import { storeStubApp } from "./github-app.ts";
 import type { TestInstall } from "./install.ts";
 
@@ -79,6 +79,8 @@ export async function runDueUpdates(install: Pick<TestInstall, "db" | "execute" 
 /** The provider's repository on the GitHub stub, as the install's App sees it. */
 export interface StubProvider {
   app: StubApp;
+  /** The install's App, as the worker reaches it, calling the stub. */
+  github: InstallGitHub;
   /** acme/payments, by GitHub's id. */
   repositoryId: number;
   /** acme, by GitHub's id: the repository's owner. */
@@ -91,16 +93,18 @@ export interface StubProvider {
  * acme/payments on the GitHub stub, with these people in the acme
  * organization, covered by a connected installation of an App the stub made,
  * which the install stores and calls GitHub as, as the setup screen and the
- * admin's connection leave it.
+ * admin's connection leave it. With a hook, the App has a webhook at the
+ * install, which GitHub cannot reach here: the stub logs each delivery, with
+ * what GitHub sent, for the test to store; without one, it sends none.
  */
-export async function providerOnStub(install: TestInstall, stub: GitHubStub, logins: readonly string[]): Promise<StubProvider> {
+export async function providerOnStub(install: TestInstall, stub: GitHubStub, logins: readonly string[], options: { hook?: boolean } = {}): Promise<StubProvider> {
   const accounts: Record<string, number> = {};
   for (const login of logins) accounts[login] = stub.addUser({ login }).id;
   // The organization's owner, who installs the App.
   stub.addUser({ login: "acme-owner" });
   const org = stub.addOrg({ login: "acme", members: { "acme-owner": "admin", ...Object.fromEntries(logins.map((login) => [login, "member" as const])) } });
   const repository = stub.addRepo("acme/payments");
-  const app = stub.createApp({ owner: "acme" });
+  const app = stub.createApp({ owner: "acme", ...(options.hook === true ? { hook: { url: "https://tiehall.example.com/webhooks/github" } } : {}) });
   const { github } = await storeStubApp(install, stub, app);
   install.useGitHub(github);
   await stub.install(app, { account: "acme", repositories: ["acme/payments"] });
@@ -121,5 +125,5 @@ export async function providerOnStub(install: TestInstall, stub: GitHubStub, log
     if (id === undefined) throw new Error(`The stub has no account ${login} of acme.`);
     return id;
   };
-  return { app, repositoryId: repository.id, ownerId: org.id, account };
+  return { app, github, repositoryId: repository.id, ownerId: org.id, account };
 }

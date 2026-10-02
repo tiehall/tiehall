@@ -2536,7 +2536,10 @@ export const apiConsumerReconfirmationEmails = pgTable(
 // the change set, and the row holds the last report an update applied, and
 // when the burst of reports that its next update merges started. The worker's
 // job that applies an update locks the row first, as each report does, so the
-// updates and reports of one change set take turns.
+// updates and reports of one change set take turns. The row also holds what
+// Tiehall learned of the provider pull request from GitHub: whether it closed
+// without merging (contract-changes: Requests are withdrawn when the provider
+// PR closes unmerged).
 export const contractChangeSets = pgTable(
   "contract_change_sets",
   {
@@ -2563,6 +2566,12 @@ export const contractChangeSets = pgTable(
      * email are about; null while none waits.
      */
     fanOutWaitingSince: timestamp("fan_out_waiting_since", { withTimezone: true }),
+    /**
+     * When Tiehall found the provider pull request closed without merging,
+     * which withdrew the change set's unclaimed requests; null while it is
+     * open, and again once it is reopened.
+     */
+    providerClosedAt: timestamp("provider_closed_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -2585,7 +2594,9 @@ export const contractChangeSets = pgTable(
 // changes open one request per consuming team): one row per request, with the
 // change set and the consuming team it was opened for, so a request is keyed
 // by its change set and its team, and a later update of the change set finds
-// the team's request rather than opening another.
+// the team's request rather than opening another, except once the provider
+// pull request is reopened after its close withdrew the team's request: the
+// team's request is its latest row.
 export const contractChangeRequests = pgTable(
   "contract_change_requests",
   {
@@ -2597,6 +2608,12 @@ export const contractChangeRequests = pgTable(
     /** The consuming team it was opened to. */
     teamId: uuid("team_id").notNull(),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When the provider pull request's close without merging withdrew the
+     * request; the first report received after it, once the pull request is
+     * reopened, opens the team a new request. Null for any other request.
+     */
+    withdrawnOnCloseAt: timestamp("withdrawn_on_close_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.requestId] }),

@@ -30,6 +30,7 @@ import { PROPOSAL_UNDO_HANDLERS } from "./proposal-undo.ts";
 import { PROPOSAL_WAITING_HANDLERS } from "./proposal-waiting.ts";
 import { PROPOSAL_HANDLERS } from "./proposals.ts";
 import { PROPOSE_HANDLERS } from "./propose.ts";
+import { PROVIDER_PULL_REQUEST_HANDLERS } from "./provider-pull-requests.ts";
 import { PULL_REQUEST_LINK_HANDLERS } from "./pull-request-links.ts";
 import { REQUEST_PAGE_HANDLERS } from "./request-pages.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
@@ -78,6 +79,7 @@ export const HANDLERS: Handlers = {
   ...API_HANDLERS,
   ...API_CONSUMER_HANDLERS,
   ...CONTRACT_REPORT_HANDLERS,
+  ...PROVIDER_PULL_REQUEST_HANDLERS,
   ...CONTRACT_ATTACHMENT_HANDLERS,
   ...CONTRACT_ROUTING_HANDLERS,
   ...CONTRACT_FAN_OUT_HANDLERS,

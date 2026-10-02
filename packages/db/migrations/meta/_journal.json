@@ -505,6 +505,13 @@
       "when": 1790948374204,
       "tag": "0071_add_team_requester_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790950144757,
+      "tag": "0072_add_provider_pull_request_closes",
+      "breakpoints": true
     }
   ]
 }

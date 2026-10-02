@@ -202,13 +202,22 @@ export function fanOutBanner(fanOut: WaitingFanOut): z.output<typeof banner> {
 }
 
 /** Locks every change set of the change set's pull request, in the order of their ids; returns the named one's row; 404 when there is none. */
-export async function lockPullRequestChangeSets({ tx, orgId }: OrgContext, changeSetId: string) {
+export async function lockPullRequestChangeSets(context: OrgContext, changeSetId: string) {
+  const { tx, orgId } = context;
   const [named] = await tx
     .select({ repositoryId: contractChangeSets.repositoryId, pullRequestNumber: contractChangeSets.pullRequestNumber })
     .from(contractChangeSets)
     .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSetId)));
   if (named === undefined) throw new Refusal("record-not-found", "There is no such change set.");
-  const rows = await tx
+  const rows = await lockChangeSetsOfPullRequest(context, named.repositoryId, named.pullRequestNumber);
+  const row = rows.find(({ id }) => id === changeSetId);
+  if (row === undefined) throw new Refusal("record-not-found", "There is no such change set.");
+  return row;
+}
+
+/** Locks every change set of a repository's pull request, one per API it changes, in the order of their ids, and returns them; none when no report named it. */
+export async function lockChangeSetsOfPullRequest({ tx, orgId }: OrgContext, repositoryId: number, pullRequestNumber: number) {
+  return tx
     .select({
       id: contractChangeSets.id,
       apiId: contractChangeSets.apiId,
@@ -217,20 +226,12 @@ export async function lockPullRequestChangeSets({ tx, orgId }: OrgContext, chang
       appliedReportId: contractChangeSets.appliedReportId,
       burstStartedAt: contractChangeSets.burstStartedAt,
       fanOutWaitingSince: contractChangeSets.fanOutWaitingSince,
+      providerClosedAt: contractChangeSets.providerClosedAt,
     })
     .from(contractChangeSets)
-    .where(
-      and(
-        eq(contractChangeSets.orgId, orgId),
-        eq(contractChangeSets.repositoryId, named.repositoryId),
-        eq(contractChangeSets.pullRequestNumber, named.pullRequestNumber),
-      ),
-    )
+    .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.repositoryId, repositoryId), eq(contractChangeSets.pullRequestNumber, pullRequestNumber)))
     .orderBy(asc(contractChangeSets.id))
     .for("update");
-  const row = rows.find(({ id }) => id === changeSetId);
-  if (row === undefined) throw new Refusal("record-not-found", "There is no such change set.");
-  return row;
 }
 
 export const CONTRACT_FAN_OUT_HANDLERS: Handlers = {

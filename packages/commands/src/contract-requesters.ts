@@ -1,8 +1,8 @@
 import { Refusal } from "@tiehall/core";
 import { githubConnectedInstallations, githubCoveredRepositories, githubInstallations } from "@tiehall/db";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { z } from "zod";
-import { gitHubUnavailable, GitHubUnavailableError, statusOfCall, type GitHubClient } from "./github-client.ts";
+import type { GitHubClient, GitHubUnavailableError } from "./github-client.ts";
+import { readPullRequest } from "./github-pull-requests.ts";
 import { memberOfGitHubAccount } from "./github-users.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -30,8 +30,6 @@ export interface PullRequestAuthor {
   id: number;
   login: string;
 }
-
-const PULL_REQUEST = z.object({ number: z.number().int().positive(), user: z.object({ id: z.number().int().positive(), login: z.string().min(1) }).nullable() });
 
 /** The connected installation of the App, neither suspended nor deleted, that covers the repository, by GitHub's ids; undefined when none does. */
 export async function installationCovering({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number, repositoryId: number): Promise<{ installationId: number; fullName: string } | undefined> {
@@ -64,18 +62,7 @@ export async function installationCovering({ tx, orgId }: Pick<OrgContext, "tx" 
  * GitHubUnavailableError when GitHub fails the read or does not answer it.
  */
 export async function pullRequestAuthor(client: GitHubClient, installationId: number, fullName: string, number: number): Promise<PullRequestAuthor | undefined> {
-  const [owner = "", repo = ""] = fullName.split("/");
-  let data: unknown;
-  try {
-    ({ data } = await client.installation(installationId).request("GET /repos/{owner}/{repo}/pulls/{pull_number}", { owner, repo, pull_number: number }));
-  } catch (error) {
-    if (statusOfCall(error) === 404) return undefined;
-    throw gitHubUnavailable("the read of the provider pull request", error);
-  }
-  const pullRequest = PULL_REQUEST.safeParse(data);
-  // An answer that names no pull request, or another one, is GitHub failing the read.
-  if (!pullRequest.success || pullRequest.data.number !== number) throw new GitHubUnavailableError("GitHub's answer to the read of the provider pull request names no such pull request.");
-  return pullRequest.data.user === null ? undefined : { id: pullRequest.data.user.id, login: pullRequest.data.user.login };
+  return (await readPullRequest(client, installationId, fullName, number))?.author ?? undefined;
 }
 
 /** GitHub failing the read of the provider pull request, as the error model's refusal: no report is taken. */
