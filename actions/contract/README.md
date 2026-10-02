@@ -58,6 +58,10 @@ The runner sends the report to your install, so it must be able to reach it:
 - A workflow on a GitHub-hosted runner needs an install that is reachable from the internet, at the URL in `install-url`.
 - For an install that is reachable only inside your company network, run the workflow on a self-hosted runner inside that network, with `runs-on` naming that runner's labels.
 
+## When Tiehall cannot take the report
+
+The Action fails open: it never fails the check because Tiehall could not take its report. When the runner cannot reach the install, when the install answers with an error, or while it restarts for an upgrade, the job succeeds, and a warning and the job summary say that the report was not delivered; the next run reports again. When the install needs a newer `tiehall` CLI than the one this release of the Action pins, the warning and the job summary say so: pin a newer release of the Action. With `fail-on-breaking: true`, the check still fails for breaking changes when the install cannot be reached, because that result comes from the diff the Action computed, not from Tiehall.
+
 ## What it runs
 
 The Action runs its source on the runner's own Node.js 24, with nothing to build. Each run downloads the pinned oasdiff release from GitHub and checks the archive against its pinned SHA-256 before it extracts or runs anything from it; a binary that is not the pinned one never runs. oasdiff compares the document at the pull request's base and head commits, with external `$refs` off, in the runner's temporary folder, which the Action removes afterwards. The pinned `tiehall` CLI reports the result, with `npx`, so the runner needs Node.js with npm on its `PATH`, as GitHub-hosted runners have.

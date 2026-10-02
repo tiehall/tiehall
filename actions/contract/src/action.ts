@@ -25,7 +25,11 @@ import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputErr
 //    external $refs are off, so oasdiff reads and fetches nothing else;
 // 4. reports the changelog with the pinned tiehall CLI, `npx tiehall@<pin>
 //    contract report`, which sends the API, the pull request, the refs and
-//    SHAs, the engine and the classified changes, never a document;
+//    SHAs, the engine and the classified changes, never a document. It fails
+//    open (contract-changes: The Action fails open): a report Tiehall does not
+//    take, for whatever reason, is said in a warning and the job summary and
+//    never fails the step, and an install that asks for a newer CLI gets a
+//    warning that says how to upgrade;
 // 5. says what it found and reported in the job summary and its outputs, and
 //    fails the step for ERR-level changes only when the workflow sets
 //    fail-on-breaking.
@@ -200,6 +204,50 @@ function counted(count: number, what: string): string {
 /** The short form of a commit. */
 const short = (sha: string) => sha.slice(0, 7);
 
+/** How a report went: Tiehall took it, as the report with this id, or it did not, and why; or it asks for a newer CLI. */
+type Delivery = { delivered: true; id: string } | { delivered: false; reason: string; upgrade?: string };
+
+/** What a problem the install answered says, in one line: its title and its detail. */
+function problemLine(problem: { title?: unknown; detail?: unknown; status?: unknown }): string {
+  const title = typeof problem.title === "string" ? problem.title : "";
+  const detail = typeof problem.detail === "string" ? problem.detail : "";
+  const status = typeof problem.status === "number" ? ` (HTTP ${problem.status})` : "";
+  return `${[title, detail].filter((part) => part !== "").join(": ")}${status}`.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Runs the pinned CLI's contract report and reads how it went. The Action
+ * fails open (contract-changes: The Action fails open): whatever keeps
+ * Tiehall from taking the report, such as an install the runner cannot
+ * reach, an error answer, the 503 of an install that restarts for an upgrade,
+ * or a CLI that cannot be started, is a report not delivered, never a failed
+ * step. An install that asks for a newer CLI, with 400 and the problem type
+ * upgrade-required, gets its own answer, which says how to upgrade.
+ */
+async function report(runtime: ActionRuntime, workspace: string, args: readonly string[]): Promise<Delivery> {
+  let result: ExecResult;
+  try {
+    result = await runtime.exec("npx", args, { cwd: workspace, env: runtime.env });
+  } catch (error) {
+    return { delivered: false, reason: `the pinned tiehall CLI could not be started with npx (${(error as Error).message}); the runner needs Node.js with npm.` };
+  }
+  let answer: Record<string, unknown> | undefined;
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    answer = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    answer = undefined;
+  }
+  if (result.status === 0 && typeof answer?.["id"] === "string") return { delivered: true, id: answer["id"] };
+  if (answer !== undefined && typeof answer["type"] === "string") {
+    const detail = problemLine(answer);
+    if (answer["type"].endsWith("/upgrade-required")) return { delivered: false, reason: detail, upgrade: detail };
+    return { delivered: false, reason: `Tiehall answered ${detail}.` };
+  }
+  const said = result.stderr.trim().split("\n").filter((line) => line.trim() !== "").at(-1) ?? "";
+  return { delivered: false, reason: said === "" ? `the tiehall CLI exited with ${String(result.status)}.` : said };
+}
+
 /** Runs the Action once; returns the step's exit code, 0 when it succeeds. */
 export async function runAction(runtime: ActionRuntime): Promise<number> {
   const { env } = runtime;
@@ -277,34 +325,47 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     const changes = join(temporary, "changelog.json");
     writeFileSync(changes, changelog);
 
-    // 4. The report, with the pinned CLI, which sends the classified changes and no document.
-    const reported = await runtime.exec(
-      "npx",
-      ["--yes", `${CLI_PIN.package}@${CLI_PIN.version}`, "contract", "report", "--install", install, "--api", api, "--changes", changes, "--engine-version", OASDIFF.version, "--json"],
-      { cwd: workspace, env },
-    );
-    let answer: { id?: unknown } | undefined;
-    try {
-      answer = JSON.parse(reported.stdout) as { id?: unknown };
-    } catch {
-      answer = undefined;
-    }
-    if (reported.status !== 0 || typeof answer?.id !== "string") {
-      throw new StepError("Report not delivered", `Tiehall at ${install} did not take the report: ${reported.stderr.trim() || reported.stdout.trim() || `the CLI exited with ${String(reported.status)}`}`);
-    }
+    // 4. The report, with the pinned CLI, which sends the classified changes and no document; the Action fails open.
+    const delivery = await report(runtime, workspace, [
+      "--yes",
+      `${CLI_PIN.package}@${CLI_PIN.version}`,
+      "contract",
+      "report",
+      "--install",
+      install,
+      "--api",
+      api,
+      "--changes",
+      changes,
+      "--engine-version",
+      OASDIFF.version,
+      "--json",
+    ]);
 
     // 5. What it found and reported.
     const failing = failOnBreaking && counts.errors > 0;
     setOutputs(env, {
       "breaking-changes": String(counts.errors),
       "warnings": String(counts.warnings),
-      "reported": "true",
-      "report-id": answer.id,
+      "reported": String(delivery.delivered),
+      ...(delivery.delivered ? { "report-id": delivery.id } : {}),
     });
     const found =
       counts.errors + counts.warnings + counts.infos === 0
         ? "oasdiff classified no change."
         : `oasdiff classified ${counted(counts.errors, "breaking change")} (ERR), ${counted(counts.warnings, "potentially breaking change")} (WARN) and ${counted(counts.infos, "other change")} (INFO).`;
+    let reported: string[];
+    if (delivery.delivered) {
+      reported = [`Reported to Tiehall at ${install}, as report ${delivery.id}.`];
+    } else if (delivery.upgrade !== undefined) {
+      const upgrade = `Tiehall at ${install} needs a newer tiehall CLI than this release of the contract Action pins (${CLI_PIN.version}), so it did not take the report. Pin a newer release of the contract Action in this workflow: its README shows the commit SHA and release to pin. The check is not failed for it.`;
+      runtime.stdout(annotation("warning", "Tiehall needs a newer contract Action", upgrade));
+      reported = ["### Tiehall needs a newer contract Action", "", upgrade, ...(delivery.upgrade === "" ? [] : ["", `Tiehall said: ${delivery.upgrade}`])];
+    } else {
+      const why = `The report was not delivered to Tiehall at ${install}: ${delivery.reason} The check is not failed for it; the next run of the Action reports again.`;
+      runtime.stdout(annotation("warning", "Report not delivered", why));
+      reported = [why];
+    }
     appendSummary(
       env,
       [
@@ -314,7 +375,7 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
           ? `Pull request #${event.number} adds ${spec}, so there is no earlier version to compare.`
           : `Pull request #${event.number} compared ${spec} at ${event.base.ref} (${short(event.base.sha)}) with ${event.head.ref} (${short(event.head.sha)}), with oasdiff ${OASDIFF.version}. ${found}`,
         "",
-        `Reported to Tiehall at ${install}, as report ${answer.id}.`,
+        ...reported,
         ...(failing ? ["", "The step fails because of the breaking changes, as fail-on-breaking asks."] : []),
         ...(breaking === "" ? [] : ["", "<details><summary>oasdiff breaking</summary>", "", codeBlock(breaking), "</details>"]),
         "",
