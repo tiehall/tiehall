@@ -533,6 +533,13 @@
       "when": 1790952490373,
       "tag": "0075_add_contract_warn_digests",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1790954887818,
+      "tag": "0076_add_pull_request_merges",
+      "breakpoints": true
     }
   ]
 }

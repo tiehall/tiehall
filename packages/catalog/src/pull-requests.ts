@@ -69,7 +69,8 @@ export const linkPullRequest = defineCommand({
 // it moves to done each request the pull request was linked to, or whose key
 // it mentions, before it merged, that was claimed before it merged and is
 // claimed, in_progress or needs_info, and that is not a request of the pull
-// request's own contract change sets. No person and no agent runs it.
+// request's own contract change sets. It runs once per merge: a later
+// processing of the same merge closes nothing. No person and no agent runs it.
 
 /** The most request keys one merged pull request's title, body and branch name are read for. */
 export const MENTIONS_MAX = 50;

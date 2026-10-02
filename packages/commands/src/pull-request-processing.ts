@@ -27,7 +27,9 @@ import { withOrg } from "./with-org.ts";
 // GitHub (provider-pull-requests.ts); then, once it merged, it runs
 // requests.close_on_merge as the integration event, acting for the member who
 // merged it, or for no user (close-on-merge.ts), with the request keys its
-// title, body and branch name mention.
+// title, body and branch name mention, which the command reads only at the
+// first processing of the merge: a later one, such as a delivery about an
+// edit after the merge, closes nothing.
 
 const PAYLOAD = z.looseObject({
   repository: z.looseObject({ id: z.number().int().positive() }),

@@ -1,6 +1,6 @@
 import { closeOnMerge, MENTIONS_MAX } from "@tiehall/catalog";
 import { REQUEST_KEY, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
-import { contractChangeRequests, contractChangeSets, events, pullRequestLinks } from "@tiehall/db";
+import { contractChangeRequests, contractChangeSets, events, pullRequestLinks, pullRequestMerges } from "@tiehall/db";
 import { and, eq, sql } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { coveringInstallation } from "./github-installations.ts";
@@ -39,17 +39,28 @@ import { requestView, type RequestRow } from "./request-views.ts";
 // (provider-pull-requests.ts). The move to done records its state change,
 // with the caller's provenance, cancels the request's pending proposals as
 // every terminal state does, and adds a notice in Tiehall's words that names
-// the pull request. A request already done, or one that does not qualify,
-// does not change, so processing the same merge again changes nothing.
+// the pull request.
+//
+// Close on merge runs once per merge: at the first processing that reads the
+// pull request merged in a covered repository, which records the merge
+// (pull_request_merges) in the transaction that closes its requests. A later
+// processing of the same merge, which a redelivery, a delivery about an edit
+// or the poll brings, changes nothing, so a key written into the title or
+// body after the pull request merged, which GitHub then gives as its text,
+// closes no request: the spec counts only a mention made before the merge.
+// Mentions are read from the text GitHub gives at that first processing, as
+// close to the merge as Tiehall hears of it; a link counts when it was made at
+// or before the second the pull request merged.
 //
 // Reading: "mentions the key" is read without regard to case, since branch
 // names are often written in lower case, such as fe-142-new-fields; the
 // mention is a request key with no letter or digit right before it and no
 // digit right after it.
 //
-// The locks follow the lock order (event-sequence.ts): the rows of the
-// requests it may close, in the order of their ids, then the pending
-// proposals of those it closes, all before the first event.
+// The locks follow the lock order (event-sequence.ts): the record of the
+// merge, which a second processing of the same merge waits on and then finds,
+// then the rows of the requests it may close, in the order of their ids, then
+// the pending proposals of those it closes, all before the first event.
 
 /** A request key as a pull request's text may write it, in either case: a team key, a hyphen and a number. */
 const MENTION = /(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-([1-9][0-9]{0,9})(?![0-9])/g;
@@ -127,6 +138,13 @@ export const CLOSE_ON_MERGE_HANDLERS: Handlers = {
   [closeOnMerge.id]: defineHandler(closeOnMerge, async ({ repositoryId, repository, number, mergedAt, mentions }, context) => {
     if ((await coveringInstallation(context, repositoryId)) === undefined) return { done: [] };
     const merged = new Date(mergedAt);
+    // Once per merge: a later processing of it finds the record and closes nothing.
+    const [first] = await context.tx
+      .insert(pullRequestMerges)
+      .values({ orgId: context.orgId, repositoryId, number, mergedAt: merged, closeOnMergeAt: context.now() })
+      .onConflictDoNothing()
+      .returning({ number: pullRequestMerges.number });
+    if (first === undefined) return { done: [] };
     const own = await ownChangeSetRequests(context, repositoryId, number);
     const candidates = (await candidatesOf(context, { repository, number, mergedAt: merged, mentions })).filter((id) => !own.has(id)).sort();
     const closing: { row: RequestRow; lifecycle: RequestLifecycle }[] = [];

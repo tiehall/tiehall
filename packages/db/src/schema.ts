@@ -1830,6 +1830,35 @@ export const pullRequestLinks = pgTable(
   ],
 );
 
+// The merges close on merge has run for (requests: Linked PRs and done on
+// merge; design.md, Design rules: Requests and events). One row per merged
+// pull request of a covered repository, by GitHub's id of the repository and
+// the pull request's number: when it merged, as GitHub gives it, and when
+// close on merge ran for it. Close on merge runs once per merge, at the first
+// processing that reads the pull request merged (close-on-merge.ts), so a key
+// written into its title or body after it merged, which a later delivery or
+// poll reads, closes no request.
+export const pullRequestMerges = pgTable(
+  "pull_request_merges",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    /** The pull request's repository, by GitHub's id, which stays when the repository is renamed. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    /** The pull request's number in its repository. */
+    number: integer("number").notNull(),
+    /** When the pull request merged, as GitHub gives it. */
+    mergedAt: timestamp("merged_at", { withTimezone: true }).notNull(),
+    /** When close on merge ran for the merge. */
+    closeOnMergeAt: timestamp("close_on_merge_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.repositoryId, table.number] }),
+    check("pull_request_merges_ids_positive", sql`${table.repositoryId} > 0 AND ${table.number} > 0`),
+  ],
+);
+
 // Read cursors (requests: Read cursors move only on acknowledgement; design.md,
 // Design rules: Requests and events). One row per user and reader, where a
 // reader is one client of theirs: an OAuth client, such as the CLI or an MCP

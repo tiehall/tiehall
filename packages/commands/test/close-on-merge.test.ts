@@ -41,7 +41,7 @@ const ciRun = (): CiCaller => ({ kind: "ci", repositoryId: String(provider.repos
 beforeAll(async () => {
   install = await startTestInstall({ now: () => clock });
   stub = await startGitHubStub();
-  provider = await providerOnStub(install, stub, ["alice", "bob", "dana", "deniz"], { hook: true, repositories: ["acme/web"] });
+  provider = await providerOnStub(install, stub, ["alice", "bob", "dana", "deniz", "mallory"], { hook: true, repositories: ["acme/web"] });
   stub.addRepo("acme/tools");
   const ada: WebSessionCaller = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
   alice = await addUser(install.owner, { login: "alice", githubAccountId: provider.account("alice") });
@@ -216,6 +216,24 @@ describe("a pull request that does not qualify", () => {
     expect((await stateOf(request.id)).state).toBe("claimed");
   });
 
+  it("leaves a claimed request alone when its key is mentioned only after the pull request merged, as a delivery or the poll brings the edit", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    // Mallory, who has a GitHub account and no Tiehall user, opens a pull request that mentions nothing, and it merges after the claim.
+    const number = await mergedPullRequest("acme/web", { title: "Bump a dependency", head: "bump-dependency", author: "mallory", mergedBy: "bob" });
+    expect((await stateOf(request.id)).state).toBe("claimed");
+
+    // An hour later the merged pull request's body and title are edited to mention the key.
+    clock = new Date(clock.getTime() + 60 * 60 * 1000);
+    await stub.editPullRequest("acme/web", number, { title: `Bump a dependency (${request.key})`, body: `Closes ${request.key}` });
+    await deliver("acme/web", number, "edited");
+    // The same merge, processed again, as a redelivery of its close or the poll brings it, reads the edited text too.
+    await deliver("acme/web", number, "closed");
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect(await stateChangesOf(request.id)).toEqual([]);
+  });
+
   it("leaves an open request that a merged pull request was linked to open", async () => {
     const request = await feRequest();
     await mergedPullRequest("acme/web", {}, async (number) => {
@@ -295,15 +313,8 @@ describe("a merge on a trial install, whose GitHub App has no webhook", () => {
     await trial?.close();
   });
 
-  it("moves a claimed request to done once the poll finds the merge, with no delivery, for no user", async () => {
-    const { rows } = await trial.owner.query<{ id: string }>("SELECT id FROM users WHERE github_login = 'alice'");
-    const request = await openRequestInTheWebUi<{ key: string; id: string }>(trial, rows[0]!.id, { targetTeam: "FE" });
-    await trial.execute("requests.claim", sessionOf(carol), { key: request.key });
-    const opened = await trialStub.openPullRequest("acme/web", { title: "Header", head: `${request.key}-header`, author: "carol" });
-    await trialStub.mergePullRequest("acme/web", opened.number, { by: "carol" });
-    expect(trialStub.deliveries(trialProvider.app)).toEqual([]);
-
-    // The poll that runs every 60 seconds, and the processing of what it found.
+  /** The poll that runs every 60 seconds, and the processing of what it found. */
+  async function pollAndProcess(): Promise<void> {
     const sent: { queue: string; data: JobData }[] = [];
     const app = await trialProvider.github.app();
     await pollGitHubChanges({ database: trial.db, app: app!, jobs: { send: async (_tx, queue, data) => void sent.push({ queue, data }) }, now: () => new Date() });
@@ -312,6 +323,17 @@ describe("a merge on a trial install, whose GitHub App has no webhook", () => {
         await processDelivery({ database: trial.db, github: trialProvider.github, execute: trial.execute }, (data as { deliveryId: string }).deliveryId);
       }
     }
+  }
+
+  it("moves a claimed request to done once the poll finds the merge, with no delivery, for no user", async () => {
+    const { rows } = await trial.owner.query<{ id: string }>("SELECT id FROM users WHERE github_login = 'alice'");
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(trial, rows[0]!.id, { targetTeam: "FE" });
+    await trial.execute("requests.claim", sessionOf(carol), { key: request.key });
+    const opened = await trialStub.openPullRequest("acme/web", { title: "Header", head: `${request.key}-header`, author: "carol" });
+    await trialStub.mergePullRequest("acme/web", opened.number, { by: "carol" });
+    expect(trialStub.deliveries(trialProvider.app)).toEqual([]);
+
+    await pollAndProcess();
 
     const { rows: states } = await trial.owner.query("SELECT state FROM requests WHERE id = $1", [request.id]);
     expect(states).toEqual([{ state: "done" }]);
@@ -320,6 +342,21 @@ describe("a merge on a trial install, whose GitHub App has no webhook", () => {
       [request.id],
     );
     expect(events).toEqual([{ actor_kind: "integration", actor_user_id: null }]);
+  });
+
+  it("leaves a claimed request alone when the poll finds its key written into a pull request after the pull request merged", async () => {
+    const { rows } = await trial.owner.query<{ id: string }>("SELECT id FROM users WHERE github_login = 'alice'");
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(trial, rows[0]!.id, { targetTeam: "FE" });
+    await trial.execute("requests.claim", sessionOf(carol), { key: request.key });
+    const opened = await trialStub.openPullRequest("acme/web", { title: "Footer", head: "footer", author: "carol" });
+    await trialStub.mergePullRequest("acme/web", opened.number, { by: "carol" });
+    await pollAndProcess();
+
+    await trialStub.editPullRequest("acme/web", opened.number, { body: `Closes ${request.key}` });
+    await pollAndProcess();
+
+    const { rows: states } = await trial.owner.query("SELECT state FROM requests WHERE id = $1", [request.id]);
+    expect(states).toEqual([{ state: "claimed" }]);
   });
 });
 

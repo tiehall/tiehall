@@ -35,7 +35,9 @@ import type { OrgContext } from "./with-org.ts";
 //    of their ids; an update of a contract change set, or the confirmation of
 //    its fan-out, first locks the rows of every change set of its pull
 //    request, in the order of their ids (contract-fan-out.ts), and a contract
-//    report locks its own change set's row and appends no event;
+//    report locks its own change set's row and appends no event; close on
+//    merge first records the merge of its pull request, which a second
+//    processing of the same merge waits on (close-on-merge.ts);
 // 4. the request's proposals: its pending ones, oldest first, then the one
 //    the call names, then the record of what its commitment replaced
 //    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);
