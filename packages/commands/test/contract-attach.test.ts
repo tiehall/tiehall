@@ -124,17 +124,17 @@ describe("attaching a classified diff over REST", () => {
   });
 
   it("routes nothing to the teams that consume the API: MOBILE gets no request, and no report is stored", async () => {
-    const before = await harness.install.owner.query("SELECT count(*)::int AS requests FROM requests");
+    const before = Number((await harness.install.owner.query("SELECT count(*) FROM requests")).rows[0].count);
     const request = await openToFe();
 
     expect((await attachOverRest(deniz.token, request.key)).status).toBe(200);
 
     const { rows } = await harness.install.owner.query(
-      `SELECT (SELECT count(*)::int FROM requests) AS requests,
+      `SELECT (SELECT count(*)::int FROM requests) AS opened,
               (SELECT count(*)::int FROM requests JOIN teams ON teams.id = requests.target_team_id WHERE teams.key = 'MOBILE') AS mobile,
               (SELECT count(*)::int FROM contract_reports) AS reports`,
     );
-    expect(rows[0]).toEqual({ requests: before.rows[0].requests + 1, mobile: 0, reports: 0 });
+    expect(rows[0]).toEqual({ opened: before + 1, mobile: 0, reports: 0 });
   });
 
   it("becomes a scope-change proposal on a claimed request, and the packet keeps its revision", async () => {
