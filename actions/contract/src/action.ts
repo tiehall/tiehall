@@ -116,6 +116,33 @@ function pullRequestEventOf(env: ActionRuntime["env"]): PullRequestEvent | { ski
   return { action, number, draft: pull["draft"] === true, base: ref(pull["base"]), head: ref(pull["head"]) };
 }
 
+/**
+ * The install the report goes to, by its origin, as the install-url input
+ * names it (contract-changes: The Action reports to the install its workflow
+ * names; design.md, Self-hosting decisions: S15): an https:// URL, or
+ * http://localhost, with or without a port, for a trial install on the
+ * runner's own machine, as an install's TIEHALL_URL is; with no path, query,
+ * fragment or credentials. The pinned CLI then asks for the run's OIDC token
+ * with this URL as its audience, and sends the report here alone. A URL that
+ * is not one is refused before anything is downloaded or sent, and the
+ * refusal never quotes it, since it may hold credentials.
+ */
+export function installUrlOf(raw: string): string {
+  const refusal = new InputError(
+    "The input install-url names the Tiehall install to report to by its https:// URL, such as https://tiehall.example.com, with no path, or http://localhost for a trial install on the runner's machine.",
+  );
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw refusal;
+  }
+  const trial = url.protocol === "http:" && url.hostname === "localhost";
+  if (!(url.protocol === "https:" || trial) || url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") throw refusal;
+  if (url.pathname !== "/" && url.pathname !== "") throw refusal;
+  return url.origin;
+}
+
 /** The document's path in the repository, as the spec input names it: relative, inside the checkout. */
 function specPathOf(spec: string): string {
   if (spec === "") throw new InputError("The input spec names the OpenAPI document in the repository, such as openapi/payments.yaml.");
@@ -196,8 +223,7 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     runtime.stdout(annotation("notice", "Contract check skipped", event.skip));
     return 0;
   }
-  const install = inputOf(env, "install-url");
-  if (install === "") throw new InputError("The input install-url names the Tiehall install to report to, such as https://tiehall.example.com.");
+  const install = installUrlOf(inputOf(env, "install-url"));
   const api = inputOf(env, "api");
   if (api === "") throw new InputError("The input api names the registered API the document describes, such as payments-api.");
   const spec = specPathOf(inputOf(env, "spec"));

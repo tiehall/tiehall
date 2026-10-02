@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "tiehall": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "yaml": "catalog:"

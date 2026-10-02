@@ -219,6 +219,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.5
+      tiehall:
+        specifier: workspace:*
+        version: link:../../packages/cli
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
