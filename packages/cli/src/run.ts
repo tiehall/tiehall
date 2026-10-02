@@ -1,6 +1,7 @@
 import { COMMAND_TABLE, type CommandEntry } from "@tiehall/client";
 import { forgetAnnounced } from "./announced.ts";
 import { CONTRACT_COMMANDS, contractReport, contractReportHelp } from "./contract.ts";
+import { contractDiff, contractDiffHelp } from "./contract-diff.ts";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { HOOK_COMMANDS, hookSessionEnd, hookSessionStart, hookWait } from "./hooks.ts";
@@ -55,7 +56,7 @@ const CONTRACT: readonly { usage: string; summary: string }[] = CONTRACT_COMMAND
 /** The names of the CLI's own commands of more than one word, and the words that lead to them, such as "hook". */
 const OWN_NAMES: readonly string[] = ["hook", ...HOOK_COMMANDS.map(({ command }) => command), "contract", ...CONTRACT_COMMANDS.map(({ command }) => command)];
 
-/** The request commands of the command table that the CLI runs itself instead, such as contract report, which needs no login. */
+/** The request commands of the command table that the CLI runs itself instead, such as contract report, which needs no login, and contract diff, which runs the diff engine first. */
 const RUN_ITSELF: ReadonlySet<string> = new Set(CONTRACT_COMMANDS.map(({ command }) => command));
 
 /** Runs one `tiehall` command; returns its exit code: 0 once it has done what it was asked, 1 otherwise. */
@@ -135,6 +136,13 @@ async function hook(environment: CliEnvironment, globals: Globals, command: stri
  * and developers run; `tiehall contract` lists them.
  */
 async function contract(environment: CliEnvironment, globals: Globals, command: string, rest: readonly string[]): Promise<number> {
+  if (command === "contract diff") {
+    if (globals.help) {
+      environment.stdout(contractDiffHelp());
+      return 0;
+    }
+    return contractDiff(environment, globals, rest);
+  }
   if (command === "contract report") {
     if (globals.help) {
       environment.stdout(contractReportHelp());

@@ -121,7 +121,7 @@ describe("the package", () => {
     expect(child.stdout.match(/^  tiehall contract report\b/gm)).toHaveLength(1);
   });
 
-  it.fails("lists updates, contract diff, contract report, hook session-start and hook wait, which tasks 19.3, 19.11, 19.13, 22.11 and 23.5 add", () => {
+  it("lists updates, contract diff, contract report, hook session-start and hook wait, which tasks 19.3, 19.11, 19.13, 22.11 and 23.5 added", () => {
     const child = tiehall(["--help"]);
     for (const command of ["updates", "contract diff", "contract report", "hook session-start", "hook wait"]) {
       expect(child.stdout, command).toMatch(new RegExp(`^  tiehall ${command}\\b`, "m"));

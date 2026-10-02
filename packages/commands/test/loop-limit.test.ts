@@ -230,6 +230,21 @@ describe("a flagged request", () => {
           body: { packet: { ...packetOf(), untrusted: { ...(packetOf()["untrusted"] as object), links: [{ url: "https://design.example.com/dark" }] } } },
           headers: { "if-match": '"1"' },
         }),
+      "contract.attach_changes": () =>
+        sendApi(install, { ...tokenOf(alice), scopes: ["requests:read", "requests:write", "contracts:report"] }, "POST", `/api/v1/requests/${key}/contract-changes`, {
+          body: {
+            contract: {
+              api: "payments-api",
+              base: { ref: "main", sha: "a".repeat(40) },
+              head: { ref: "new-payment-fields", sha: "b".repeat(40) },
+              engine: { name: "oasdiff", version: "1.32.1" },
+              changes: [{ id: "response-required-property-removed", level: "ERR", operation: "GET /payments/{id}" }],
+              provider_pr: { repository: "acme/payments", number: 310 },
+              provider_status: "open",
+            },
+          },
+          headers: { "if-match": '"1"' },
+        }),
     };
     // Every write an agent surface offers is here, or is one that writes on no existing request.
     const writesOnNoRequest = {

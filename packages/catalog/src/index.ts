@@ -31,7 +31,7 @@ export {
 } from "./personal-access-tokens.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
-export { CONTRACT_COMMANDS, REPORT_CHANGES_MAX, reportContractChanges } from "./contract.ts";
+export { attachContractChanges, CONTRACT_COMMANDS, REPORT_CHANGES_MAX, reportContractChanges } from "./contract.ts";
 export {
   API_COMMANDS,
   API_NAME,
@@ -97,6 +97,7 @@ export {
 } from "./messages.ts";
 export {
   CHANGE_LEVELS,
+  contractSection,
   EXTENSION_NAMESPACE,
   EXTENSIONS_MAX_BYTES,
   packet,
@@ -106,6 +107,7 @@ export {
   PACKET_SCHEMA_VERSION,
   PROVIDER_STATUSES,
   UNTRUSTED_MARK,
+  type ContractSection,
   type Packet,
   type PacketKind,
 } from "./packet.ts";

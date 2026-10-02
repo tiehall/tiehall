@@ -2,7 +2,9 @@ import { z } from "zod";
 import { API_NAME, apiName } from "./apis.ts";
 import { CONTRACT_REPORT_ID } from "./body-limits.ts";
 import { defineCommand } from "./command.ts";
-import { CHANGE_LEVELS } from "./packet.ts";
+import { CHANGE_LEVELS, contractSection } from "./packet.ts";
+import { packetRevision } from "./packets.ts";
+import { request, requestKey } from "./requests.ts";
 
 // contract.report, the one way contract changes reach Tiehall
 // (contract-changes: One report operation that never takes a whole spec;
@@ -106,4 +108,50 @@ export const reportContractChanges = defineCommand({
   stability: "stable",
 });
 
-export const CONTRACT_COMMANDS = [reportContractChanges];
+// attach_contract_changes and its REST operation (contract-changes:
+// Attaching a contract diff to a request by hand; agent-access: OAuth scopes
+// are coarse; agent-surfaces: The MCP tools; agent-surfaces: CLI contract and
+// hook commands; handoff-packet: Packet changes that are commitments; design.md,
+// Decisions this change rests on: D14, D23; D28 #3, #15, #77; D30 (3)). A
+// developer runs `tiehall contract diff` on their own machine and attaches the
+// classified result to a request as the contract section of its packet. It
+// needs the contracts:report scope, and follows the rules of packet changes:
+// only the requester side attaches; the call names the revision it expects,
+// which REST takes from If-Match, and a missing or stale one is refused as
+// packets.add_revision refuses it (428, 412); a request's packet keeps its
+// kind; and since the contract section is part of a request's scope,
+// attaching to a claimed request is a commitment that becomes a proposal,
+// answered with 202 on REST. A change that makes no commitment answers with
+// the request and its packet's new revision. Attaching routes nothing: it
+// opens or updates no other request and adds nothing to any digest, whoever
+// consumes the API. It is offered on REST, MCP and the CLI, whose `contract
+// diff --attach` runs it.
+
+export const attachContractChanges = defineCommand({
+  id: "contract.attach_changes",
+  summary:
+    "Attach a classified OpenAPI diff, such as `tiehall contract diff` computes on your machine, to a request as the contract section of its packet, as its requester side, naming the revision you expect in If-Match. It never routes the changes to the teams that consume the API. Attaching to a claimed request changes its scope, a commitment: it creates a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
+  input: z.object({
+    key: requestKey,
+    expectedRevision: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .meta({ description: "The revision of the packet you expect to be current, as get_request shows it; REST takes it from If-Match, as that revision's ETag. A call that names none, or one that is no longer current, is refused." }),
+    contract: contractSection,
+  }),
+  output: z.object({ request, packet: packetRevision }),
+  method: "POST",
+  path: "/api/v1/requests/{key}/contract-changes",
+  scopes: ["contracts:report"],
+  commitment: true,
+  confirm: false,
+  surfaces: ["rest", "mcp", "cli"],
+  tool: "attach_contract_changes",
+  cli: [{ command: "contract diff" }],
+  ifMatch: "expectedRevision",
+  stability: "alpha",
+});
+
+export const CONTRACT_COMMANDS = [reportContractChanges, attachContractChanges];

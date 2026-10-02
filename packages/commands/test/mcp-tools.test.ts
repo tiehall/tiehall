@@ -17,8 +17,8 @@ import { openRequestInTheWebUi, packetOf, sessionOf } from "./support/requests.t
 // as an expected failure until the task that builds what it checks turned it
 // into a plain test: the tool list's annotations, levels and schemas in 16.3,
 // whoami and directory in 16.5, open_request and list_inbox in 16.6. The list
-// of exactly twelve tools waits for the last of them: whats_new came in 19.3,
-// and attach_contract_changes comes in 23.5.
+// of exactly twelve tools waited for the last of them: whats_new came in 19.3,
+// and attach_contract_changes in 23.5.
 
 /** The _meta key under which every tool states its stability level. */
 const STABILITY = "com.tiehall/stability";
@@ -89,7 +89,7 @@ async function listed(person: McpPerson, version: ProtocolVersion) {
 }
 
 describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (version) => {
-  it.fails("holds exactly the twelve tools", async () => {
+  it("holds exactly the twelve tools", async () => {
     expect((await listed(dana, version)).map(({ name }) => name).sort()).toEqual(TOOLS);
   });
 

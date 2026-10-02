@@ -207,6 +207,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/requests/{key}/contract-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach a classified OpenAPI diff, such as `tiehall contract diff` computes on your machine, to a request as the contract section of its packet, as its requester side, naming the revision you expect in If-Match. It never routes the changes to the teams that consume the API. Attaching to a claimed request changes its scope, a commitment: it creates a proposal based on the revision you expect, answered with 202, which people confirm in the web UI. */
+        post: operations["contract.attach_changes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/requests/{key}/messages": {
         parameters: {
             query?: never;
@@ -2637,6 +2654,368 @@ export interface operations {
             };
             /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A limit is exceeded; retry after the time Retry-After gives. */
+            429: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Setup is not complete, or Tiehall is shutting down. */
+            503: {
+                headers: {
+                    /** @description The seconds to wait before retrying. */
+                    "Retry-After": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "contract.attach_changes": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header). */
+                "Idempotency-Key"?: string;
+                /** @description The ETag of the packet's current revision, as the packet read returned it, such as "3". Without it the answer is 428; when it is not the current revision's, 412, and nothing is added. */
+                "If-Match": string;
+            };
+            path: {
+                /** @description The request's key, such as FE-142; a key written with a team's earlier key names the same request. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The contract section: the API change the diff engine classified, as its report or its developer gave it. */
+                    contract: {
+                        /** @description The registered API that changes, such as payments-api. */
+                        api: string;
+                        /** @description The ref and commit the change is compared against. */
+                        base: {
+                            /** @description The branch or tag, such as main. */
+                            ref: string;
+                            /** @description The full commit sha. */
+                            sha: string;
+                        };
+                        /** @description The classified changes, each with its id, level and operation. */
+                        changes: {
+                            /** @description The diff engine's id for the kind of change, such as response-property-removed. */
+                            id: string;
+                            /**
+                             * @description ERR for a breaking change, WARN for a warning, INFO for information.
+                             * @enum {string}
+                             */
+                            level: "ERR" | "WARN" | "INFO";
+                            /** @description The operation the change touches, such as GET /payments/{id}. */
+                            operation: string;
+                        }[];
+                        /** @description When the old behavior stays available. */
+                        deprecation_window?: {
+                            /**
+                             * Format: date
+                             * @description The last day the old behavior is served.
+                             */
+                            end: string;
+                            /**
+                             * Format: date
+                             * @description The day the old behavior is deprecated.
+                             */
+                            start?: string;
+                        };
+                        /** @description The diff engine that classified the changes. */
+                        engine: {
+                            /** @description The diff engine's name, such as oasdiff. */
+                            name: string;
+                            /** @description The diff engine's version, such as 1.32.0. */
+                            version: string;
+                        };
+                        /** @description The ref and commit that make the change. */
+                        head: {
+                            /** @description The branch or tag, such as main. */
+                            ref: string;
+                            /** @description The full commit sha. */
+                            sha: string;
+                        };
+                        /** @description How a consumer moves to the new contract. */
+                        migration_notes?: string;
+                        /** @description The provider's pull request that makes the change. */
+                        provider_pr: {
+                            /** @description The pull request's number. */
+                            number: number;
+                            /** @description The provider's repository, such as acme/payments. */
+                            repository: string;
+                            /**
+                             * Format: uri
+                             * @description The pull request's page.
+                             */
+                            url?: string;
+                        };
+                        /**
+                         * @description The provider pull request's state: open, merged, which ships the change, or closed without merging.
+                         * @enum {string}
+                         */
+                        provider_status: "open" | "merged" | "closed";
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The operation's result, for a call that makes no commitment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        packet: {
+                            /** Format: date-time */
+                            createdAt: string;
+                            packet: components["schemas"]["Packet"];
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            revision: number;
+                        };
+                        request: {
+                            claimant: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            needsHuman: boolean;
+                            requester: {
+                                team: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                } | null;
+                            };
+                            /** @enum {string} */
+                            state: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
+                            targetTeam: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            untrusted: {
+                                title: string;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description The call makes a commitment, which became this proposal instead: it takes effect once the people it needs have confirmed it in the web UI. The answer holds no confirm URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        proposal: {
+                            accountableHuman: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            };
+                            cancelReason: ("terminal_state" | "reassigned" | "accountable_removed" | "stale") | null;
+                            change: {
+                                dueDate?: string | null;
+                                team?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                            };
+                            confirmations: {
+                                needed: {
+                                    rules: ("target_team" | "requester_side" | "claimant")[];
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    team: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        key: string;
+                                    } | null;
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    } | null;
+                                }[];
+                                received: {
+                                    /** Format: date-time */
+                                    confirmedAt: string;
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    };
+                                }[];
+                            };
+                            /** Format: date-time */
+                            createdAt: string;
+                            endedAt: string | null;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            /**
+                             * @description The kind of commitment it proposes.
+                             * @enum {string}
+                             */
+                            kind: "due_date" | "scope" | "decline" | "reassign" | "withdraw" | "done";
+                            proposedBy: {
+                                /** @enum {string} */
+                                actorKind: "agent" | "web_session" | "integration";
+                                surface: ("web" | "mcp" | "cli" | "api" | "github" | "jira") | null;
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                };
+                            };
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            /**
+                             * @description pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.
+                             * @enum {string}
+                             */
+                            state: "pending" | "applied" | "rejected" | "withdrawn" | "expired" | "cancelled";
+                            untrusted: {
+                                client: string | null;
+                                packet: components["schemas"]["Packet"] | null;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description The input fails the operation's schema, or is outside what the install's settings allow, or the tiehall CLI that sent it is older than the install supports (upgrade-required). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call carries no valid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller may not take this action. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is no such operation, or the record the call names does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request's state does not allow this action. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description If-Match is not the ETag of the current revision, which someone else has changed since; nothing is added. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is larger than 2 MiB, the limit on this operation's body; it is not read, and nothing runs. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The Idempotency-Key was sent with a different body in the last 24 hours. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The call has no If-Match header, which adding a revision needs; nothing is added. */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

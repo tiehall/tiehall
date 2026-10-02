@@ -57,6 +57,7 @@ export async function main(): Promise<void> {
   process.exitCode = await run({
     argv: process.argv.slice(2),
     env: process.env,
+    cwd: process.cwd(),
     stdout: (text) => void process.stdout.write(text),
     stderr: (text) => void process.stderr.write(text),
     stdin: readStdin,

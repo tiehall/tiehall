@@ -40,6 +40,12 @@ import { CLI_VERSION } from "./version.ts";
 /** The commands of `tiehall contract`, with their usage and what they do. */
 export const CONTRACT_COMMANDS: readonly { command: string; usage: string; summary: string }[] = [
   {
+    command: "contract diff",
+    usage: "tiehall contract diff --api <name> --spec <path> --base <ref>",
+    summary:
+      "Classify the changes to an OpenAPI document between two refs of your repository with the diff engine on your PATH, oasdiff, on your own machine; with --attach <key>, attach them to that request as the contract section of its packet. It routes nothing to the API's consumers.",
+  },
+  {
     command: "contract report",
     usage: "tiehall contract report --install <url> --api <name> --changes <file> --engine-version <version>",
     summary:
@@ -80,23 +86,23 @@ export function contractReportHelp(): string {
 const LEVELS: Readonly<Record<number, "ERR" | "WARN" | "INFO">> = { 3: "ERR", 2: "WARN", 1: "INFO" };
 
 /** A change as the report carries it. */
-interface ClassifiedChange {
+export interface ClassifiedChange {
   id: string;
   level: "ERR" | "WARN" | "INFO";
   operation: string;
 }
 
-/** The options a run names, by option, each once. */
-function optionsOf(tokens: readonly string[]): Map<string, string> {
+/** The options a run of a contract command names, by option, each once, from the options the command takes. */
+export function contractOptionsOf(tokens: readonly string[], known: Readonly<Record<string, string>>, command: string): Map<string, string> {
   const given = new Map<string, string>();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index] ?? "";
     const equals = token.indexOf("=");
     const name = token.startsWith("--") && equals !== -1 ? token.slice(0, equals) : token;
-    if (!Object.hasOwn(REPORT_OPTIONS, name)) {
-      throw new CliError(`tiehall contract report takes no ${name.startsWith("-") ? `option ${name}` : `argument ${name}`}. Run tiehall contract report --help for its options.`);
+    if (!Object.hasOwn(known, name)) {
+      throw new CliError(`tiehall ${command} takes no ${name.startsWith("-") ? `option ${name}` : `argument ${name}`}. Run tiehall ${command} --help for its options.`);
     }
-    if (given.has(name)) throw new CliError(`tiehall contract report takes ${name} once.`);
+    if (given.has(name)) throw new CliError(`tiehall ${command} takes ${name} once.`);
     const value = equals !== -1 && token.startsWith("--") ? token.slice(equals + 1) : tokens[(index += 1)];
     if (value === undefined || value === "") throw new CliError(`${name} needs a value.`);
     given.set(name, value);
@@ -104,8 +110,13 @@ function optionsOf(tokens: readonly string[]): Map<string, string> {
   return given;
 }
 
-/** The changes of the diff engine's changelog, as the report carries them; a file that is not one is refused. */
-function changesOf(text: string): ClassifiedChange[] {
+/** The options a run of `tiehall contract report` names. */
+function optionsOf(tokens: readonly string[]): Map<string, string> {
+  return contractOptionsOf(tokens, REPORT_OPTIONS, "contract report");
+}
+
+/** The changes of the diff engine's changelog, as a report and a contract section carry them; a file that is not one is refused. */
+export function changesOf(text: string): ClassifiedChange[] {
   const refusal = new CliError("--changes names the diff engine's changelog, a JSON list as `oasdiff changelog --format json` writes it.");
   let changelog: unknown;
   try {
@@ -177,7 +188,7 @@ async function oidcToken(environment: CliEnvironment, audience: string): Promise
 }
 
 /** "1 X" or "N Xs", or "no X". */
-function counted(count: number, what: string): string {
+export function counted(count: number, what: string): string {
   return count === 0 ? `no ${what}` : `${count} ${what}${count === 1 ? "" : "s"}`;
 }
 

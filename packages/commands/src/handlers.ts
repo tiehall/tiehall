@@ -2,6 +2,7 @@ import { ACTIVITY_LOG_EXPORT_HANDLERS } from "./activity-log-export.ts";
 import { ADMIN_ALERT_HANDLERS } from "./admin-alerts.ts";
 import { API_CONSUMER_HANDLERS } from "./api-consumers.ts";
 import { API_HANDLERS } from "./apis.ts";
+import { CONTRACT_ATTACHMENT_HANDLERS } from "./contract-attachments.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
@@ -75,4 +76,5 @@ export const HANDLERS: Handlers = {
   ...API_HANDLERS,
   ...API_CONSUMER_HANDLERS,
   ...CONTRACT_REPORT_HANDLERS,
+  ...CONTRACT_ATTACHMENT_HANDLERS,
 };

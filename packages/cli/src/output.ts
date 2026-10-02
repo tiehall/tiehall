@@ -48,6 +48,7 @@ export const RENDERERS: Readonly<Record<string, Render>> = {
   "messages.post": (output, reader) => postedMessageText(output as MessagePostJson, reader),
   "requests.link_pr": (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
   "proposals.propose": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
+  "contract.attach_changes": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   "updates.read": (output, reader) => updatesText(output as UpdatesJson, reader, "cli"),
   // The answer to a contract report names the API it was taken for, by its name, which holds no space, and the report's id.
   "contract.report": (output) => {

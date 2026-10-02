@@ -125,7 +125,7 @@ describe("tiehall login", () => {
     expect(com.calls[0]).toMatchObject({
       method: "POST",
       path: "/api/auth/device/code",
-      form: { client_id: "tiehall-cli", resource: `${COM}/mcp`, scope: "requests:read requests:write" },
+      form: { client_id: "tiehall-cli", resource: `${COM}/mcp`, scope: "requests:read requests:write contracts:report" },
       authorization: null,
     });
     expect(com.calls[1]).toMatchObject({

@@ -1,15 +1,17 @@
 // What one run of the CLI is given in place of its process's (agent-surfaces:
-// The CLI package): its arguments, its environment variables, where it writes
-// its output, its standard input, how it reaches the network, how it waits and
-// tells the time, whether the process that started it still runs, and when it
-// is asked to stop. The `tiehall` command gives it the process's own; a test
-// gives it its own, such as a fetch that reaches a test install or a clock it
-// moves by hand.
+// The CLI package): its arguments, its environment variables, the folder it
+// runs in, where it writes its output, its standard input, how it reaches the
+// network, how it waits and tells the time, whether the process that started
+// it still runs, and when it is asked to stop. The `tiehall` command gives it
+// the process's own; a test gives it its own, such as a fetch that reaches a
+// test install or a clock it moves by hand.
 
 export interface CliEnvironment {
   /** The arguments after `tiehall`. */
   readonly argv: readonly string[];
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** The folder the command runs in, such as the repository `tiehall contract diff` reads; the process's own unless given. */
+  readonly cwd?: string;
   stdout(text: string): void;
   stderr(text: string): void;
   /** The whole standard input, for an option given as `-` or a hook's input; none when the run has none. */

@@ -106,7 +106,7 @@ const classifiedChange = z.object({
 });
 
 /** The contract section: an API change the diff engine classified in the provider's CI or on a developer's machine. */
-const contractSection = z
+export const contractSection = z
   .object({
     api: text(200).meta({ description: "The registered API that changes, such as payments-api." }),
     base: gitRef.meta({ description: "The ref and commit the change is compared against." }),
@@ -210,3 +210,6 @@ export const packet = z
   .meta({ description: "A handoff packet, tiehall.packet/v1: the typed content of a request." });
 
 export type Packet = z.output<typeof packet>;
+
+/** A packet's contract section, as the packet schema parses it. */
+export type ContractSection = z.output<typeof contractSection>;

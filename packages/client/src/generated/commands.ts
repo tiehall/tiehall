@@ -117,6 +117,56 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "proposes": false
   },
   {
+    "command": "contract diff",
+    "operationId": "contract.attach_changes",
+    "summary": "Attach a classified OpenAPI diff, such as `tiehall contract diff` computes on your machine, to a request as the contract section of its packet, as its requester side, naming the revision you expect in If-Match. It never routes the changes to the teams that consume the API. Attaching to a claimed request changes its scope, a commitment: it creates a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
+    "method": "POST",
+    "path": "/api/v1/requests/{key}/contract-changes",
+    "stability": "alpha",
+    "arguments": [],
+    "input": {},
+    "defaults": {},
+    "fields": [
+      {
+        "name": "key",
+        "in": "path",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The request's key, such as FE-142; a key written with a team's earlier key names the same request."
+      },
+      {
+        "name": "contract",
+        "in": "body",
+        "types": [
+          "object"
+        ],
+        "required": true,
+        "description": "The contract section: the API change the diff engine classified, as its report or its developer gave it."
+      },
+      {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": false,
+        "description": "A key of your choice that makes a retried POST run once: a repeat with the same key and body within 24 hours gets the first response, and the same key with another body gets 422 (draft-ietf-httpapi-idempotency-key-header)."
+      },
+      {
+        "name": "If-Match",
+        "in": "header",
+        "types": [
+          "string"
+        ],
+        "required": true,
+        "description": "The ETag of the packet's current revision, as the packet read returned it, such as \"3\". Without it the answer is 428; when it is not the current revision's, 412, and nothing is added."
+      }
+    ],
+    "proposes": true
+  },
+  {
     "command": "contract report",
     "operationId": "contract.report",
     "summary": "Report the classified changes that a provider pull request makes to a registered API, from a CI run of the contract Action in the API's repository, authenticated with the run's GitHub Actions OIDC token; it takes no OpenAPI document.",

@@ -6,4 +6,4 @@
 
 export { run } from "./run.ts";
 export { CliError, type CliEnvironment } from "./environment.ts";
-export { CLI_VERSION, NODE_MAJOR_MINIMUM } from "./version.ts";
+export { CLI_VERSION, NODE_MAJOR_MINIMUM, OASDIFF_MINIMUM } from "./version.ts";

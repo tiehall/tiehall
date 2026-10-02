@@ -23,8 +23,13 @@ import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 export const CLI_CLIENT_ID = "tiehall-cli";
 
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
-/** The scopes the CLI asks for: reading and writing requests. */
-const SCOPES = "requests:read requests:write";
+/**
+ * The scopes the CLI asks for: reading and writing requests, and attaching
+ * classified contract changes, which `tiehall contract diff --attach` does
+ * (agent-access: OAuth scopes are coarse; contract-changes: Attaching a
+ * contract diff to a request by hand).
+ */
+const SCOPES = "requests:read requests:write contracts:report";
 
 /**
  * Whether an answer is a redirect, which the CLI does not follow: its tokens,

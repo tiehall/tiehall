@@ -30,6 +30,7 @@ export interface TiehallCli {
 export interface CliEnvironment {
   argv: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
+  cwd?: string;
   stdout(text: string): void;
   stderr(text: string): void;
   stdin?(): Promise<string>;
@@ -71,7 +72,7 @@ export interface CliMachine {
    */
   run(
     args: readonly string[],
-    options?: { stdin?: string; sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>; env?: Record<string, string> },
+    options?: { stdin?: string; sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>; env?: Record<string, string>; cwd?: string },
   ): Promise<CliRun>;
   /** Saves a login for this install, as `tiehall login` keeps it. */
   saveLogin(url: string, tokens: { accessToken: string; refreshToken: string }, expiresAt?: Date): void;
@@ -122,6 +123,7 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
       const code = await cli.run({
         argv: args,
         env: { TIEHALL_CONFIG_DIR: configDir, HOME: configDir, ...options.env },
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         stdout: (text) => void (printed += text),
         stderr: (text) => void (stderr += text),
         stdin: async () => options.stdin ?? "",

@@ -1,4 +1,5 @@
 import {
+  attachContractChanges,
   claimRequest,
   createRequest,
   isProposalAnswer,
@@ -57,6 +58,7 @@ export const TOOL_TEXTS: Readonly<Record<string, ToolText>> = {
   [postMessage.id]: (output, reader) => postedMessageText(output as MessagePostJson, reader),
   [linkPullRequest.id]: (output, reader) => pullRequestLinkText(output as LinkedPullRequestJson, reader),
   [proposeTool.id]: (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
+  [attachContractChanges.id]: (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   [readRequest.id]: (output, reader) => requestPageText(output as RequestPageJson, reader),
   [whoami.id]: (output) => whoamiText(output as WhoamiJson),
   [readDirectory.id]: (output, reader) => directoryText(output as DirectoryJson, reader),
