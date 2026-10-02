@@ -196,6 +196,40 @@ describe("a report from a CI run", () => {
   it("is refused with 403 for an API that is not registered, as for one registered to another repository", async () => {
     expect((await send(oidc.token(paymentsRun()), "ledger-api")).status).toBe(403);
   });
+
+  it("from a repository no registered API is bound to is refused with 403 before its body is judged, and its token is not recorded", async () => {
+    // Any GitHub user can have a workflow of their own ask for a token whose audience is the install's URL.
+    const stranger = oidc.token({ audience: URL_OF_INSTALL, repository: "mallory/anything", repositoryId: 9_999_001, repositoryOwnerId: 9_999_000 });
+    const before = await seenTokens();
+
+    const response = await api()(
+      new Request(`${URL_OF_INSTALL}/api/v1/contract-reports`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${stranger}`, "content-type": "application/json" },
+        body: "{ this is not JSON",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
+    expect(await seenTokens()).toBe(before);
+  });
+
+  it("from a repository whose only API was unregistered is refused with 403 before its body is judged", async () => {
+    await install.owner.query("UPDATE apis SET unregistered_at = now(), unregistered_by = $1 WHERE repository_id = 7001", [ada.userId]);
+    try {
+      const response = await api()(
+        new Request(`${URL_OF_INSTALL}/api/v1/contract-reports`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${oidc.token(paymentsRun())}`, "content-type": "application/json" },
+          body: "{ this is not JSON",
+        }),
+      );
+      expect(response.status).toBe(403);
+    } finally {
+      await install.owner.query("UPDATE apis SET unregistered_at = NULL, unregistered_by = NULL WHERE repository_id = 7001");
+    }
+  });
 });
 
 describe("a CI token that is not valid", () => {

@@ -4,6 +4,7 @@ import { usedCiTokens, type Database } from "@tiehall/db";
 import { and, eq, lt } from "drizzle-orm";
 import { createLocalJWKSet, createRemoteJWKSet, customFetch, decodeJwt, jwtVerify, type JSONWebKeySet, type JWTVerifyGetKey } from "jose";
 import type { AgentTokenCheck } from "./agent-tokens.ts";
+import { repositoryHasRegisteredApi } from "./apis.ts";
 import { bearerTokenOf } from "./agent-tokens.ts";
 import type { CiCaller } from "./caller.ts";
 import { defineJobType } from "./jobs.ts";
@@ -48,7 +49,13 @@ import { SetupRequiredError, withOrg } from "./with-org.ts";
 // neither the membership re-check nor the PAT switch applies to it. execute()
 // lets it call contract.report alone, and contract.report takes a report only
 // for an API registered to that repository and, for an API bound to a
-// workflow, from that workflow (apis.ts).
+// workflow, from that workflow (apis.ts). A run in a repository that no
+// registered API is bound to may call nothing at all, and any GitHub user can
+// have a workflow of their own ask for a token whose audience is the install's
+// URL: so a token that passes the check but names such a repository is refused
+// here, with 403 ci-caller-refused, as the error model gives a report for an
+// API not registered to the run's repository, before anything else of its
+// call, its body included, is judged, and its jti is not recorded.
 
 /** GitHub Actions' OIDC issuer, as its tokens name it. */
 export const GITHUB_ACTIONS_ISSUER = GITHUB_ACTIONS_OIDC_ORIGIN;
@@ -146,15 +153,21 @@ export function createCiTokenCheck(options: CiTokenCheckOptions): CiTokenCheck {
     if (typeof repositoryOwnerId !== "string" || !GITHUB_ID.test(repositoryOwnerId)) throw invalidToken();
     if (typeof jobWorkflowRef !== "string" || jobWorkflowRef.length === 0 || jobWorkflowRef.length > 1024) throw invalidToken();
     if (typeof exp !== "number") throw invalidToken();
-    // A jti seen before is a replay, whatever became of the call that presented it first.
-    const recorded = await withOrg(options.database, ({ tx, orgId }) =>
-      tx
+    const outcome = await withOrg(options.database, async (context) => {
+      // A run in a repository that no registered API is bound to may call nothing.
+      if (!(await repositoryHasRegisteredApi(context, { repositoryId, repositoryOwnerId }))) return "unregistered";
+      // A jti seen before is a replay, whatever became of the call that presented it first.
+      const recorded = await context.tx
         .insert(usedCiTokens)
-        .values({ orgId, jtiHash: createHash("sha256").update(jti).digest(), expiresAt: new Date(exp * 1000) })
+        .values({ orgId: context.orgId, jtiHash: createHash("sha256").update(jti).digest(), expiresAt: new Date(exp * 1000) })
         .onConflictDoNothing()
-        .returning({ orgId: usedCiTokens.orgId }),
-    );
-    if (recorded.length === 0) throw invalidToken();
+        .returning({ orgId: usedCiTokens.orgId });
+      return recorded.length === 0 ? "replayed" : "recorded";
+    });
+    if (outcome === "unregistered") {
+      throw new Refusal("ci-caller-refused", "No API is registered to this CI run's repository, so it may not call Tiehall.");
+    }
+    if (outcome === "replayed") throw invalidToken();
     return { kind: "ci", repositoryId, repositoryOwnerId, jobWorkflowRef };
   };
 }

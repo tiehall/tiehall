@@ -166,6 +166,18 @@ describe("a contract report", () => {
     expect(await stored()).toEqual([]);
   });
 
+  it("from a CI run in a repository no API is registered to is refused with 403 before its body is judged, whatever it holds", async () => {
+    // Any GitHub user can have a workflow of their own ask for a token whose audience is the install's URL.
+    const stranger = oidc.token({ audience: URL_OF_INSTALL, repository: "mallory/anything", repositoryId: 9_999_001, repositoryOwnerId: 9_999_000 });
+
+    // 100,000 empty changes: a body of 0.29 MiB, far under the limit, that fails the schema 300,000 times.
+    const answer = await report(stranger, reportOf(Array.from({ length: 100_000 }, () => ({}))));
+
+    expect(answer.status).toBe(403);
+    expect(answer.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
+    expect(await stored()).toEqual([]);
+  }, 60_000);
+
   it("with a token for another audience, or a replayed one, is refused with 401 invalid_token and stores nothing more", async () => {
     expect((await report(oidc.token(paymentsRun({ audience: "https://tiehall.other.example" })), reportOf())).status).toBe(401);
     const token = oidc.token(paymentsRun());

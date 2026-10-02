@@ -205,6 +205,30 @@ export const API_HANDLERS: Handlers = {
   }),
 };
 
+/**
+ * Whether any registered API is bound to the repository, and the repository's
+ * owner, that a CI run's OIDC token names, by GitHub's ids as the token gives
+ * them, compared as text so that no id is rounded or out of range.
+ */
+export async function repositoryHasRegisteredApi(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  { repositoryId, repositoryOwnerId }: Pick<CiCaller, "repositoryId" | "repositoryOwnerId">,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: apis.id })
+    .from(apis)
+    .where(
+      and(
+        eq(apis.orgId, orgId),
+        isNull(apis.unregisteredAt),
+        sql`${apis.repositoryId}::text = ${repositoryId}`,
+        sql`${apis.repositoryOwnerId}::text = ${repositoryOwnerId}`,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 /** A registered API a CI run may report for: its id, its name and its provider team. */
 export interface ReportableApi {
   id: string;
