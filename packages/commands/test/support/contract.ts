@@ -33,3 +33,21 @@ export function changesOf(pair: OasdiffPair): ClassifiedChange[] {
     operation: operation !== undefined && path !== undefined ? `${operation} ${path}` : (path ?? (section !== undefined ? `the ${section} section` : "the document")),
   }));
 }
+
+/** The workflow the contract Action runs in, in the provider's repository. */
+export const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+
+/** acme/payments, the provider's repository, by GitHub's id. */
+export const PAYMENTS_REPOSITORY = { fullName: "acme/payments", id: 7001 } as const;
+
+/** A report of a provider pull request in acme/payments for an API, with these changes, as the contract Action's CLI sends it. */
+export function reportOf(api: string, changes: readonly ClassifiedChange[], options: { pullRequest?: number; head?: string } = {}): Record<string, unknown> {
+  return {
+    api,
+    pullRequest: { number: options.pullRequest ?? 310 },
+    base: { ref: "main", sha: "a".repeat(40) },
+    head: { ref: "new-payment-fields", sha: options.head ?? "b".repeat(40) },
+    engine: { name: "oasdiff", version: "1.32.1" },
+    changes,
+  };
+}

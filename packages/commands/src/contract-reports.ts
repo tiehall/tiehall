@@ -1,7 +1,8 @@
 import { reportContractChanges } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
-import { contractReports } from "@tiehall/db";
+import { contractChangeSets, contractReports } from "@tiehall/db";
 import { reportableApi } from "./apis.ts";
+import { applyChangeSets } from "./contract-routing.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 
 // Taking contract reports (contract-changes: One report operation that never
@@ -16,7 +17,11 @@ import { defineHandler, type Handlers } from "./execute.ts";
 // (apis.ts), and is refused with 403 otherwise. An accepted report is stored
 // as it was sent, with the run's repository, owner and workflow as its OIDC
 // token named them, in the call's transaction, for routing to read; it
-// changes no request itself, and so appends no event.
+// changes no request itself, and so appends no event. The report joins its
+// change set, the pull request against the API, which its first report makes,
+// and starts, in the same transaction, the worker's job that applies the
+// change set's update (contract-routing.ts), so the job runs only once the
+// report has committed.
 
 export const CONTRACT_REPORT_HANDLERS: Handlers = {
   [reportContractChanges.id]: defineHandler(reportContractChanges, async (input, context) => {
@@ -25,6 +30,16 @@ export const CONTRACT_REPORT_HANDLERS: Handlers = {
       throw new Refusal("forbidden", "Only a CI run of the contract Action reports contract changes, with its run's GitHub Actions OIDC token.");
     }
     const api = await reportableApi(context, caller, input.api);
+    // The change set: made by its first report, and locked by every report until its transaction ends.
+    const [changeSet] = await context.tx
+      .insert(contractChangeSets)
+      .values({ orgId: context.orgId, apiId: api.id, repositoryId: Number(caller.repositoryId), pullRequestNumber: input.pullRequest.number })
+      .onConflictDoUpdate({
+        target: [contractChangeSets.orgId, contractChangeSets.apiId, contractChangeSets.repositoryId, contractChangeSets.pullRequestNumber],
+        set: { pullRequestNumber: input.pullRequest.number },
+      })
+      .returning({ id: contractChangeSets.id });
+    if (changeSet === undefined) throw new Error("A contract report's change set was not stored.");
     const [row] = await context.tx
       .insert(contractReports)
       .values({
@@ -45,6 +60,7 @@ export const CONTRACT_REPORT_HANDLERS: Handlers = {
       })
       .returning({ id: contractReports.id, receivedAt: contractReports.receivedAt });
     if (row === undefined) throw new Error("A contract report was not stored.");
+    await context.enqueue(applyChangeSets.type, { changeSetId: changeSet.id });
     return { id: row.id, api: api.name, receivedAt: row.receivedAt.toISOString() };
   }),
 };

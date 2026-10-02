@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createNewRequestRoute, createTeamsRoute, csrfTokenFor, NEW_REQUEST_PATH, TEAMS_PATH, type WebSessionCaller } from "../src/index.ts";
+import { applyChangeSets, createNewRequestRoute, createTeamsRoute, csrfTokenFor, NEW_REQUEST_PATH, TEAMS_PATH, type CiCaller, type WebSessionCaller } from "../src/index.ts";
+import { addInstallation } from "./support/apis.ts";
+import { changesOf, CONTRACT_WORKFLOW, PAYMENTS_REPOSITORY, reportOf } from "./support/contract.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, tokenOf } from "./support/requests.ts";
@@ -16,8 +18,8 @@ import { addTeam, callApi, joinTeams, tokenOf } from "./support/requests.ts";
 // team it opens a request to, and marks the fields that team requires.
 // Intake notes are text a user wrote: agents read them fenced, in directory
 // (mcp-tools.test.ts). A request that lacks a required field is refused on
-// every path (required-fields.test.ts); the requests a contract report opens
-// come with task 23.6.
+// every path (required-fields.test.ts), but the requests a contract report
+// opens are not held to the target team's required fields.
 
 let install: TestInstall;
 let ada: WebSessionCaller;
@@ -143,6 +145,32 @@ describe("the web form that opens a request", () => {
   });
 
   // Refusing a request that lacks a required field on every path came with task 18.13; the requests a contract report
-  // opens are task 23.6: once it is built, a report opens a request to FE without the acceptance criteria FE requires.
-  it.todo("does not hold the requests a contract report opens to the target team's required fields (waits for 23.6)");
+  // opens came with task 23.6, and a report opens a request to FE without the acceptance criteria FE requires.
+  it("does not hold the requests a contract report opens to the target team's required fields", async () => {
+    expect((await postIntake(ada, fe, NOTES, ["acceptance_criteria", "links"])).status).toBe(303);
+    const pay = await addTeam(install.owner, "PAY");
+    const { accountId } = await addInstallation(install.owner, { account: "acme", repositories: [PAYMENTS_REPOSITORY] });
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: PAYMENTS_REPOSITORY.fullName })).status).toBe(200);
+    await install.owner.query(
+      `INSERT INTO api_consumers (org_id, api_id, team_id, declared_by, declared_at, last_confirmed_at)
+         SELECT apis.org_id, apis.id, $1, $2, now(), now() FROM apis WHERE apis.name = 'payments-api'`,
+      [fe, dana.userId],
+    );
+    install.sentJobs.splice(0);
+
+    const ci: CiCaller = { kind: "ci", repositoryId: String(PAYMENTS_REPOSITORY.id), repositoryOwnerId: String(accountId), jobWorkflowRef: CONTRACT_WORKFLOW };
+    await install.execute("contract.report", ci, reportOf("payments-api", changesOf("breaking")));
+    for (const job of install.sentJobs.splice(0).filter(({ queue }) => queue === applyChangeSets.type.queue)) {
+      await applyChangeSets.handle({ id: randomUUID(), queue: job.queue, data: job.data as never, signal: new AbortController().signal }, { database: install.db, now: () => new Date(), execute: install.execute });
+    }
+
+    const { rows } = await install.owner.query<{ packet: { kind: string; untrusted: Record<string, unknown> } }>(
+      "SELECT p.packet FROM requests r JOIN packet_revisions p ON p.request_id = r.id AND p.number = 1 WHERE r.target_team_id = $1",
+      [fe],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.packet.kind).toBe("contract_change");
+    expect(rows[0]?.packet.untrusted["acceptance_criteria"]).toBeUndefined();
+    expect(rows[0]?.packet.untrusted["links"]).toBeUndefined();
+  });
 });

@@ -123,8 +123,8 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
   }
   return {
     boss,
-    async send(tx, queue, data) {
-      await boss.send(queue, data, { db: fromDrizzle(tx, sql) });
+    async send(tx, queue, data, options = {}) {
+      await boss.send(queue, data, { db: fromDrizzle(tx, sql), ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }) });
     },
     async stop({ timeoutMs = 10_000 } = {}) {
       await boss.stop({ graceful: true, timeout: timeoutMs, close: true });

@@ -54,6 +54,12 @@ export interface SystemJobCaller {
   kind: "system_job";
   /** The job's queue name. */
   job: string;
+  /**
+   * The surface what the job applies came through, for a job that applies
+   * what a source reported, such as a contract report from GitHub Actions,
+   * whose changes are recorded as the system's on the surface github.
+   */
+  surface?: "github";
 }
 
 /**
@@ -119,8 +125,9 @@ export function catalogSurfaceOf(caller: Caller): CommandSurface | undefined {
  * the CLI is the CLI's own; a personal access token names none. A web action is
  * recorded as `web_session` on `web`, because the server cannot tell a person
  * from an agent that drives a browser, and nothing is ever recorded as
- * `human`. A CI report is a system action from GitHub (D30 (3)), a job is
- * `system` and a tracker change `integration`. The team the user acted for
+ * `human`. A CI report is a system action from GitHub (D30 (3)), and so is
+ * the job that applies it; any other job is `system` and a tracker change
+ * `integration`. The team the user acted for
  * depends on their side of the request, so the handler adds it when it writes.
  */
 export function provenanceOf(caller: Caller): Provenance {
@@ -134,7 +141,7 @@ export function provenanceOf(caller: Caller): Provenance {
     case "ci":
       return { actorKind: "system", surface: "github" };
     case "system_job":
-      return { actorKind: "system" };
+      return caller.surface === undefined ? { actorKind: "system" } : { actorKind: "system", surface: caller.surface };
     case "integration_event":
       return { actorKind: "integration", surface: caller.source, ...(caller.userId === undefined ? {} : { userId: caller.userId }) };
   }

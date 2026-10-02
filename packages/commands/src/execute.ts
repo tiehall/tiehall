@@ -5,6 +5,7 @@ import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./call
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
 import type { EventWakeups } from "./event-wakeups.ts";
 import type { InstallGitHub } from "./install-github.ts";
+import type { JobData, JobOptions, JobType } from "./jobs.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { assertRoleAllows, memberOf, type Member } from "./members.ts";
 import { createProposal, type Commitment, type ProposalAnswer } from "./proposals.ts";
@@ -183,6 +184,12 @@ export interface HandlerContext extends OrgContext {
    * acted for, which it decides from the record, never from the payload.
    */
   write<R>(change: (writer: Writer) => Promise<R>, options?: { teamId?: string | undefined }): Promise<R>;
+  /**
+   * Starts a job that commits with the call's transaction, for a call whose
+   * change records no event, such as a contract report it stores: the job
+   * runs only once the call has committed, and never for a call rolled back.
+   */
+  enqueue<D extends JobData>(type: JobType<D>, data: D, options?: JobOptions): Promise<void>;
   /**
    * Creates the proposal for a commitment the call makes on a request whose
    * row it has locked, instead of applying it; only an operation flagged as a
@@ -488,6 +495,7 @@ export function createExecute(services: ExecuteServices): Execute {
               },
               writeOptions,
             ),
+          enqueue: (type, data, jobOptions) => store.jobs.send(context.tx, type.queue, data, jobOptions),
           propose: async (request, commitment) => {
             if (!definition.commitment) throw new Error(`${commandId} is not flagged as a commitment, so it creates no proposal.`);
             const answer = await createProposal(handlerContext, request, commitment);

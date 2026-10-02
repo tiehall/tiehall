@@ -2517,3 +2517,84 @@ export const apiConsumerReconfirmationEmails = pgTable(
     }),
   ],
 );
+
+// The change sets of contract reports (contract-changes: Breaking changes open
+// one request per consuming team; contract-changes: Bursts of reports are
+// merged into one update; design.md, Decisions this change rests on: D28
+// #70). A change set is one provider pull request against one registered API:
+// the reports of CI runs for that API about that pull request, in the
+// repository the API is bound to, which a report names by GitHub's id, so a
+// pull request that changes two APIs makes two change sets, and an API bound
+// anew to another repository starts new ones. Each update applies a report of
+// the change set, and the row holds the last report an update applied. The
+// worker's job that applies an update locks the row first, so the updates of
+// one change set take turns.
+export const contractChangeSets = pgTable(
+  "contract_change_sets",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    apiId: uuid("api_id").notNull(),
+    /** The provider's repository, by GitHub's id, as the reports' OIDC tokens named it. */
+    repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+    pullRequestNumber: integer("pull_request_number").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The last report an update of the change set applied; null until the first update. */
+    appliedReportId: uuid("applied_report_id"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("contract_change_sets_pull_request").on(table.orgId, table.apiId, table.repositoryId, table.pullRequestNumber),
+    foreignKey({
+      name: "contract_change_sets_api_fk",
+      columns: [table.orgId, table.apiId],
+      foreignColumns: [apis.orgId, apis.id],
+    }),
+    foreignKey({
+      name: "contract_change_sets_applied_report_fk",
+      columns: [table.orgId, table.appliedReportId],
+      foreignColumns: [contractReports.orgId, contractReports.id],
+    }),
+    check("contract_change_sets_pull_request_number_positive", sql`${table.pullRequestNumber} > 0`),
+  ],
+);
+
+// The requests the updates of a change set opened (contract-changes: Breaking
+// changes open one request per consuming team): one row per request, with the
+// change set and the consuming team it was opened for, so a request is keyed
+// by its change set and its team, and a later update of the change set finds
+// the team's request rather than opening another.
+export const contractChangeRequests = pgTable(
+  "contract_change_requests",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    requestId: uuid("request_id").notNull(),
+    changeSetId: uuid("change_set_id").notNull(),
+    /** The consuming team it was opened to. */
+    teamId: uuid("team_id").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.requestId] }),
+    index("contract_change_requests_change_set_team").on(table.orgId, table.changeSetId, table.teamId),
+    foreignKey({
+      name: "contract_change_requests_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "contract_change_requests_change_set_fk",
+      columns: [table.orgId, table.changeSetId],
+      foreignColumns: [contractChangeSets.orgId, contractChangeSets.id],
+    }),
+    foreignKey({
+      name: "contract_change_requests_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);

@@ -21,9 +21,15 @@ export interface JobType<D extends JobData> {
   readonly data?: D;
 }
 
+/** When a job runs, for one that waits. */
+export interface JobOptions {
+  /** The job runs no earlier than this, such as the end of a burst of contract reports. */
+  startAfter?: Date;
+}
+
 export interface JobSender {
   /** Sends a job inside the caller's transaction. */
-  send(tx: Transaction, queue: string, data: JobData): Promise<void>;
+  send(tx: Transaction, queue: string, data: JobData, options?: JobOptions): Promise<void>;
 }
 
 /** How the queue retries a kind of job. */

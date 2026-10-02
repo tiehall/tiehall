@@ -32,7 +32,9 @@ import type { OrgContext } from "./with-org.ts";
 //    (member-changes.ts);
 // 3. the request's row (request-changes.ts), or, for a write on several
 //    requests, such as a removal or the expiry job, their rows in the order
-//    of their ids;
+//    of their ids; an update of a contract change set locks the change set's
+//    row first (contract-routing.ts), which a contract report also locks, and
+//    no event of its own;
 // 4. the request's proposals: its pending ones, oldest first, then the one
 //    the call names, then the record of what its commitment replaced
 //    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);
@@ -44,7 +46,9 @@ import type { OrgContext } from "./with-org.ts";
 //    locks the one grant or token it revokes first;
 // 6. what a write counts or numbers before its first event: an agent token's
 //    writes (write-limits.ts), the loop limit's re-lock of the request's row
-//    (loop-limit.ts) and a team's next request number (request-numbers.ts);
+//    (loop-limit.ts) and a team's next request number (request-numbers.ts),
+//    or several teams' in the order of their ids, as a change set's update
+//    takes them;
 // 7. the org's event counter, here, with the first event: the last lock a
 //    write takes. What a write does after its first event, such as cancelling
 //    the proposals its change ends, locks only rows it holds already.

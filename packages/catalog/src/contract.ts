@@ -4,7 +4,7 @@ import { CONTRACT_REPORT_ID } from "./body-limits.ts";
 import { defineCommand } from "./command.ts";
 import { CHANGE_LEVELS, contractSection } from "./packet.ts";
 import { packetRevision } from "./packets.ts";
-import { request, requestKey } from "./requests.ts";
+import { request, requestKey, requestKeyOutput } from "./requests.ts";
 
 // contract.report, the one way contract changes reach Tiehall
 // (contract-changes: One report operation that never takes a whole spec;
@@ -154,4 +154,29 @@ export const attachContractChanges = defineCommand({
   stability: "alpha",
 });
 
-export const CONTRACT_COMMANDS = [reportContractChanges, attachContractChanges];
+// Applying a change set's update (contract-changes: Breaking changes open one
+// request per consuming team; contract-changes: INFO-level changes appear only
+// on existing requests; requests: System actions need no proposal or
+// confirmation; requests: Provenance is stamped by the server; design.md,
+// Decisions this change rests on: D28 #70, #71; D30 (3)). An internal system
+// command, which only the worker's job runs, for the change set a report
+// started: it applies the change set's latest report, and opens one request
+// to each team that declared it consumes the API, keyed by the change set and
+// the team, when the report holds an ERR-level change. No person and no agent
+// runs it, and it takes effect with no proposal and no confirmation; what it
+// changes is recorded with the actor kind system and the surface github.
+
+export const applyChangeSet = defineCommand({
+  id: "contract.apply_change_set",
+  summary: "Apply the latest contract report of a change set: open a request to each team that consumes the API and has none for the change set, when the report holds a breaking change.",
+  input: z.object({ changeSet: z.uuid().meta({ description: "The change set, one provider pull request against one registered API." }) }),
+  output: z.object({ opened: z.array(requestKeyOutput).meta({ description: "The keys of the requests the update opened." }) }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  system: true,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const CONTRACT_COMMANDS = [reportContractChanges, attachContractChanges, applyChangeSet];

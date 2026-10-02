@@ -4,6 +4,7 @@ import { API_CONSUMER_HANDLERS } from "./api-consumers.ts";
 import { API_HANDLERS } from "./apis.ts";
 import { CONTRACT_ATTACHMENT_HANDLERS } from "./contract-attachments.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
+import { CONTRACT_ROUTING_HANDLERS } from "./contract-routing.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
 import { DEVICE_APPROVAL_HANDLERS } from "./device-approval.ts";
@@ -77,4 +78,5 @@ export const HANDLERS: Handlers = {
   ...API_CONSUMER_HANDLERS,
   ...CONTRACT_REPORT_HANDLERS,
   ...CONTRACT_ATTACHMENT_HANDLERS,
+  ...CONTRACT_ROUTING_HANDLERS,
 };
