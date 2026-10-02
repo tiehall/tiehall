@@ -25,6 +25,7 @@ const request = {
   claimant: null,
   createdAt: "2026-09-30T08:00:00.000Z",
   needsHuman: false,
+  providerChange: null,
   untrusted: { title: "Add a dark mode" },
 };
 

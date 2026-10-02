@@ -200,6 +200,7 @@ export { pageContentSecurityPolicy } from "./request-urls.ts";
 export { readRequestPageAs, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
 export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";
 export { packetLinesOf } from "./new-request.ts";
+export { providerChangeLine } from "@tiehall/packet/tool-text";
 
 /** A team as its intake page shows it, as teams.get reads it (agent-surfaces: Team intake pages). */
 export interface TeamIntakeView {

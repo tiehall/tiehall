@@ -1,7 +1,7 @@
 import { applyProviderPullRequest } from "@tiehall/catalog";
-import { isTerminalState } from "@tiehall/core";
+import { isTerminalState, requestProviderChangeShipped } from "@tiehall/core";
 import { apis, contractChangeRequests, contractChangeSets } from "@tiehall/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { lockChangeSetsOfPullRequest } from "./contract-fan-out.ts";
 import { applyChangeSets, requestsOfChangeSet, withdrawAsSystem, type ChangeSetRequest } from "./contract-routing.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
@@ -10,7 +10,8 @@ import { lockPendingProposals } from "./proposals.ts";
 import { lifecycleOf, lockRequestById } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
 
-// What GitHub says of a provider pull request (contract-changes: Requests are
+// What GitHub says of a provider pull request (contract-changes: Merging the
+// provider PR marks the change shipped; contract-changes: Requests are
 // withdrawn when the provider PR closes unmerged; requests: System
 // withdrawals never touch a claimed request; requests: System actions need no
 // proposal or confirmation; agent-access: Six kinds of caller; design.md,
@@ -24,6 +25,15 @@ import type { RequestRow } from "./request-views.ts";
 // request. The command locks the change sets of the pull request, one per API
 // it changes, in the order of their ids; a pull request no report named has
 // none, and nothing happens.
+//
+// Merged. Each change set not marked merged yet is marked shipped, with the
+// time the pull request merged, and every request it opened, whatever its
+// state, gets a domain event that names it, which the tracker mirrors' jobs
+// pick up; the requests show the provider change as shipped
+// (request-views.ts), and none moves to done: each consumer closes its own
+// request with its own pull request (contract-changes: Merging the provider
+// PR marks the change shipped; contract-changes: Consumers close requests
+// with their own PR).
 //
 // Closed without merging. Each change set that is not marked closed yet is
 // marked so, and each of its requests, the latest one to each team, is
@@ -53,6 +63,7 @@ interface ProviderChangeSet {
   id: string;
   pullRequestNumber: number;
   providerClosedAt: Date | null;
+  providerMergedAt: Date | null;
   repositoryFullName: string;
 }
 
@@ -65,7 +76,10 @@ function closeText(pr: string, request: ChangeSetRequest, withdrawn: boolean): s
 }
 
 /** The API's repository of each change set, for the notices. */
-async function withRepositories(context: HandlerContext, changeSets: readonly { id: string; apiId: string; pullRequestNumber: number; providerClosedAt: Date | null }[]): Promise<ProviderChangeSet[]> {
+async function withRepositories(
+  context: HandlerContext,
+  changeSets: readonly { id: string; apiId: string; pullRequestNumber: number; providerClosedAt: Date | null; providerMergedAt: Date | null }[],
+): Promise<ProviderChangeSet[]> {
   if (changeSets.length === 0) return [];
   const rows = await context.tx
     .select({ id: apis.id, repositoryFullName: apis.repositoryFullName })
@@ -79,10 +93,11 @@ async function withRepositories(context: HandlerContext, changeSets: readonly { 
         ),
       ),
     );
-  return changeSets.map(({ id, apiId, pullRequestNumber, providerClosedAt }) => ({
+  return changeSets.map(({ id, apiId, pullRequestNumber, providerClosedAt, providerMergedAt }) => ({
     id,
     pullRequestNumber,
     providerClosedAt,
+    providerMergedAt,
     repositoryFullName: rows.find((row) => row.id === apiId)?.repositoryFullName ?? "",
   }));
 }
@@ -141,6 +156,31 @@ async function applyClose(context: HandlerContext, changeSets: readonly Provider
   });
 }
 
+/**
+ * Marks the provider change of the change sets shipped, when it merged, as
+ * GitHub gives it, with a domain event on every request of each change set
+ * not marked so before, whatever its state, and changes no request.
+ */
+async function applyMerge(context: HandlerContext, changeSets: readonly ProviderChangeSet[], mergedAt: Date): Promise<void> {
+  const { tx, orgId } = context;
+  const merging = changeSets.filter(({ providerMergedAt }) => providerMergedAt === null);
+  if (merging.length === 0) return;
+  const ids = merging.map(({ id }) => id);
+  await tx
+    .update(contractChangeSets)
+    .set({ providerMergedAt: mergedAt, providerClosedAt: null })
+    .where(and(eq(contractChangeSets.orgId, orgId), inArray(contractChangeSets.id, ids)));
+  const shipped = await tx
+    .select({ requestId: contractChangeRequests.requestId })
+    .from(contractChangeRequests)
+    .where(and(eq(contractChangeRequests.orgId, orgId), inArray(contractChangeRequests.changeSetId, ids)))
+    .orderBy(asc(contractChangeRequests.requestId));
+  if (shipped.length === 0) return;
+  await context.write(async (writer) => {
+    for (const { requestId } of shipped) await writer.record(requestProviderChangeShipped, { requestId });
+  });
+}
+
 /** Marks the change sets of a pull request that is open again after a close as no longer closed, and updates them at once. */
 async function applyReopen(context: HandlerContext, changeSets: readonly ProviderChangeSet[]): Promise<void> {
   const reopened = changeSets.filter(({ providerClosedAt }) => providerClosedAt !== null);
@@ -154,13 +194,16 @@ async function applyReopen(context: HandlerContext, changeSets: readonly Provide
 }
 
 export const PROVIDER_PULL_REQUEST_HANDLERS: Handlers = {
-  [applyProviderPullRequest.id]: defineHandler(applyProviderPullRequest, async ({ repositoryId, number, state, merged }, context) => {
+  [applyProviderPullRequest.id]: defineHandler(applyProviderPullRequest, async ({ repositoryId, number, state, mergedAt }, context) => {
     const changeSets = await withRepositories(context, await lockChangeSetsOfPullRequest(context, repositoryId, number));
     if (state === "open") {
       await applyReopen(context, changeSets);
       return { withdrawn: [] };
     }
-    if (merged) return { withdrawn: [] };
+    if (mergedAt !== null) {
+      await applyMerge(context, changeSets, new Date(mergedAt));
+      return { withdrawn: [] };
+    }
     return { withdrawn: await applyClose(context, changeSets) };
   }),
 };

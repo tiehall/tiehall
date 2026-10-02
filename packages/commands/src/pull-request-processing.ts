@@ -39,5 +39,5 @@ export const processPullRequestEvent: GitHubEventProcessor = async (event, conte
   if (covering === undefined) return;
   const pullRequest = await readPullRequest(context.app.client, covering.installationId, covering.fullName, number);
   if (pullRequest === undefined) return;
-  await context.runAsSystem(applyProviderPullRequest.id, { repositoryId, number, state: pullRequest.state, merged: pullRequest.mergedAt !== null });
+  await context.runAsSystem(applyProviderPullRequest.id, { repositoryId, number, state: pullRequest.state, mergedAt: pullRequest.mergedAt?.toISOString() ?? null });
 };

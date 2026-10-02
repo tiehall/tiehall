@@ -1225,6 +1225,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -1687,6 +1707,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -2136,6 +2176,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -2271,6 +2331,26 @@ export interface operations {
                         key: string;
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                        providerChange: {
+                            /** @description The registered API the provider change is to, such as payments-api. */
+                            api: string;
+                            /** @description The provider pull request that makes the change. */
+                            pullRequest: {
+                                number: number;
+                                /** @description The provider pull request's repository, as owner/name. */
+                                repository: string;
+                                /** @description The provider pull request's URL on GitHub.com. */
+                                url: string;
+                            };
+                            /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                            shippedAt: string | null;
+                            /**
+                             * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                             * @enum {string}
+                             */
+                            status: "open" | "merged" | "closed";
+                        } | null;
                         requester: {
                             team: {
                                 /** Format: uuid */
@@ -2455,6 +2535,26 @@ export interface operations {
                         }[];
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                        providerChange: {
+                            /** @description The registered API the provider change is to, such as payments-api. */
+                            api: string;
+                            /** @description The provider pull request that makes the change. */
+                            pullRequest: {
+                                number: number;
+                                /** @description The provider pull request's repository, as owner/name. */
+                                repository: string;
+                                /** @description The provider pull request's URL on GitHub.com. */
+                                url: string;
+                            };
+                            /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                            shippedAt: string | null;
+                            /**
+                             * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                             * @enum {string}
+                             */
+                            status: "open" | "merged" | "closed";
+                        } | null;
                         requester: {
                             team: {
                                 /** Format: uuid */
@@ -2580,6 +2680,26 @@ export interface operations {
                         key: string;
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                        providerChange: {
+                            /** @description The registered API the provider change is to, such as payments-api. */
+                            api: string;
+                            /** @description The provider pull request that makes the change. */
+                            pullRequest: {
+                                number: number;
+                                /** @description The provider pull request's repository, as owner/name. */
+                                repository: string;
+                                /** @description The provider pull request's URL on GitHub.com. */
+                                url: string;
+                            };
+                            /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                            shippedAt: string | null;
+                            /**
+                             * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                             * @enum {string}
+                             */
+                            status: "open" | "merged" | "closed";
+                        } | null;
                         requester: {
                             team: {
                                 /** Format: uuid */
@@ -2821,6 +2941,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -3166,6 +3306,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -3879,6 +4039,26 @@ export interface operations {
                         key: string;
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                        providerChange: {
+                            /** @description The registered API the provider change is to, such as payments-api. */
+                            api: string;
+                            /** @description The provider pull request that makes the change. */
+                            pullRequest: {
+                                number: number;
+                                /** @description The provider pull request's repository, as owner/name. */
+                                repository: string;
+                                /** @description The provider pull request's URL on GitHub.com. */
+                                url: string;
+                            };
+                            /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                            shippedAt: string | null;
+                            /**
+                             * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                             * @enum {string}
+                             */
+                            status: "open" | "merged" | "closed";
+                        } | null;
                         requester: {
                             team: {
                                 /** Format: uuid */
@@ -4158,6 +4338,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -4423,6 +4623,26 @@ export interface operations {
                         key: string;
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                        providerChange: {
+                            /** @description The registered API the provider change is to, such as payments-api. */
+                            api: string;
+                            /** @description The provider pull request that makes the change. */
+                            pullRequest: {
+                                number: number;
+                                /** @description The provider pull request's repository, as owner/name. */
+                                repository: string;
+                                /** @description The provider pull request's URL on GitHub.com. */
+                                url: string;
+                            };
+                            /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                            shippedAt: string | null;
+                            /**
+                             * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                             * @enum {string}
+                             */
+                            status: "open" | "merged" | "closed";
+                        } | null;
                         requester: {
                             team: {
                                 /** Format: uuid */
@@ -4762,6 +4982,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */
@@ -5022,6 +5262,26 @@ export interface operations {
                             key: string;
                             /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                             needsHuman: boolean;
+                            /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
+                            providerChange: {
+                                /** @description The registered API the provider change is to, such as payments-api. */
+                                api: string;
+                                /** @description The provider pull request that makes the change. */
+                                pullRequest: {
+                                    number: number;
+                                    /** @description The provider pull request's repository, as owner/name. */
+                                    repository: string;
+                                    /** @description The provider pull request's URL on GitHub.com. */
+                                    url: string;
+                                };
+                                /** @description When the provider pull request merged, which shipped the change; null until it has. */
+                                shippedAt: string | null;
+                                /**
+                                 * @description open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.
+                                 * @enum {string}
+                                 */
+                                status: "open" | "merged" | "closed";
+                            } | null;
                             requester: {
                                 team: {
                                     /** Format: uuid */

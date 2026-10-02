@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { packetLinesOf, type RequestPageData } from "@tiehall/commands/web";
+import { packetLinesOf, providerChangeLine, type RequestPageData } from "@tiehall/commands/web";
 import { ActionForm } from "./action-form.tsx";
 
 // The web UI's page of a request, as a server component renders it
@@ -75,6 +75,7 @@ function Summary({ request }: { request: Request }): ReactNode {
       <p>{`${request.key} is ${request.state}, addressed to team ${request.targetTeam.key}.`}</p>
       <p>{`Requested by ${requester} at ${request.createdAt}.`}</p>
       <p>{request.claimant === null ? "Nobody has claimed it." : `Claimed by ${person(request.claimant)}.`}</p>
+      {request.providerChange === null ? null : <p>{providerChangeLine(request.providerChange)}</p>}
     </>
   );
 }

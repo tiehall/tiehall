@@ -125,6 +125,21 @@ export const requestPullRequestLinked = defineEventType({
 });
 
 /**
+ * The provider change a contract-change request follows shipped: its provider
+ * pull request merged (contract-changes: Merging the provider PR marks the
+ * change shipped; requests: The event log). It names the request, never the
+ * pull request's text; the tracker mirrors' jobs pick it up to update the
+ * request's mirror. Its provenance is the system's, from GitHub.
+ */
+export const requestProviderChangeShipped = defineEventType({
+  type: "request.provider_change_shipped",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+  },
+});
+
+/**
  * A request's state changed as the side effect of another change, such as a
  * blocking question moving it to needs_info or the last answer returning it
  * (requests: Thread messages and blocking questions; requests: The event
@@ -738,6 +753,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   messageEdited,
   requestPacketRevised,
   requestPullRequestLinked,
+  requestProviderChangeShipped,
   requestStateChanged,
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,

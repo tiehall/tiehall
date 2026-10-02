@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { request, requestKey } from "./requests.ts";
-import { user } from "./schemas.ts";
+import { GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 
 // Linking a pull request to a request (requests: Linked PRs and done on
 // merge; agent-surfaces: Tools that change a request directly; agent-surfaces:
@@ -20,16 +20,7 @@ import { user } from "./schemas.ts";
 // writes them in lower case, as GitHub names repositories without regard to
 // case.
 
-/** A GitHub account's name, a user's or an organization's: letters, digits and hyphens, not starting with a hyphen. */
-const OWNER = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
-/** A repository's name: letters, digits, dots, hyphens and underscores, other than "." and "..". */
-const NAME = "(?!\\.\\.?(?:/|$))[A-Za-z0-9\\._-]{1,100}";
-
-/** A repository on GitHub.com, as owner/name, such as acme/web. */
-export const GITHUB_REPOSITORY = new RegExp(`^${OWNER}/${NAME}$`);
-
-/** A pull request's URL on GitHub.com, such as https://github.com/acme/web/pull/88. */
-export const PULL_REQUEST_URL = new RegExp(`^https://github\\.com/${OWNER}/${NAME}/pull/[1-9][0-9]{0,8}$`);
+export { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "./schemas.ts";
 
 /** A pull request linked to a request, as the operations return it. */
 export const pullRequestLink = z.object({

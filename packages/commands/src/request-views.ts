@@ -1,6 +1,6 @@
 import type { message, request } from "@tiehall/catalog";
 import { formatRequestKey, Refusal, type RequestState } from "@tiehall/core";
-import { messages, messageVersions, requests, teams, users } from "@tiehall/db";
+import { apis, contractChangeRequests, contractChangeSets, messages, messageVersions, requests, teams, users } from "@tiehall/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { noSuchRequest } from "./request-keys.ts";
@@ -14,7 +14,11 @@ import type { OrgContext } from "./with-org.ts";
 // users it names, each marked with their kind and bot flag; its title sits
 // under `untrusted`. A message carries its kind, what it answers or whether it
 // was answered, its provenance, and its latest version's text under
-// `untrusted`, with the client its poster named themselves by.
+// `untrusted`, with the client its poster named themselves by. A request that
+// a contract report opened carries the provider change it follows: the API,
+// the provider pull request, and whether it is open, closed without merging,
+// or merged, which shipped the change (contract-changes: Merging the provider
+// PR marks the change shipped).
 
 /** A request as the operations return it. */
 export type RequestView = z.input<typeof request>;
@@ -53,10 +57,47 @@ async function teamsById({ tx, orgId }: OrgContext, ids: readonly (string | null
   };
 }
 
+/** The provider change of each contract-change request among these, by the request's id. */
+async function providerChangesOf({ tx, orgId }: OrgContext, requestIds: readonly string[]) {
+  const wanted = [...new Set(requestIds)];
+  const rows =
+    wanted.length === 0
+      ? []
+      : await tx
+          .select({
+            requestId: contractChangeRequests.requestId,
+            api: apis.name,
+            repository: apis.repositoryFullName,
+            number: contractChangeSets.pullRequestNumber,
+            closedAt: contractChangeSets.providerClosedAt,
+            mergedAt: contractChangeSets.providerMergedAt,
+          })
+          .from(contractChangeRequests)
+          .innerJoin(contractChangeSets, and(eq(contractChangeSets.orgId, contractChangeRequests.orgId), eq(contractChangeSets.id, contractChangeRequests.changeSetId)))
+          .innerJoin(apis, and(eq(apis.orgId, contractChangeSets.orgId), eq(apis.id, contractChangeSets.apiId)))
+          .where(and(eq(contractChangeRequests.orgId, orgId), inArray(contractChangeRequests.requestId, wanted)));
+  const byId = new Map(
+    rows.map(({ requestId, api, repository, number, closedAt, mergedAt }) => [
+      requestId,
+      {
+        api,
+        pullRequest: { repository, number, url: `https://github.com/${repository}/pull/${number}` },
+        status: mergedAt !== null ? ("merged" as const) : closedAt !== null ? ("closed" as const) : ("open" as const),
+        shippedAt: mergedAt === null ? null : mergedAt.toISOString(),
+      },
+    ]),
+  );
+  return (requestId: string) => byId.get(requestId) ?? null;
+}
+
 /** Requests as the operations return them, in the order of the rows. */
 export async function requestViews(context: OrgContext, rows: readonly RequestRow[]): Promise<RequestView[]> {
   const teamOf = await teamsById(context, rows.flatMap((row) => [row.targetTeamId, row.requestingTeamId]));
   const userOf = await usersById(context, rows.flatMap((row) => [row.requestingUserId, row.claimantUserId]));
+  const providerChangeOf = await providerChangesOf(
+    context,
+    rows.map(({ id }) => id),
+  );
   return rows.map((row) => {
     const target = teamOf(row.targetTeamId);
     return {
@@ -68,6 +109,7 @@ export async function requestViews(context: OrgContext, rows: readonly RequestRo
       claimant: userOf(row.claimantUserId),
       createdAt: row.createdAt.toISOString(),
       needsHuman: row.needsHuman,
+      providerChange: providerChangeOf(row.id),
       untrusted: { title: row.title },
     };
   });

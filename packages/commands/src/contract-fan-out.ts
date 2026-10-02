@@ -227,6 +227,7 @@ export async function lockChangeSetsOfPullRequest({ tx, orgId }: OrgContext, rep
       burstStartedAt: contractChangeSets.burstStartedAt,
       fanOutWaitingSince: contractChangeSets.fanOutWaitingSince,
       providerClosedAt: contractChangeSets.providerClosedAt,
+      providerMergedAt: contractChangeSets.providerMergedAt,
     })
     .from(contractChangeSets)
     .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.repositoryId, repositoryId), eq(contractChangeSets.pullRequestNumber, pullRequestNumber)))

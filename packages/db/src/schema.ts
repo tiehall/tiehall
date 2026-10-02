@@ -2539,7 +2539,8 @@ export const apiConsumerReconfirmationEmails = pgTable(
 // updates and reports of one change set take turns. The row also holds what
 // Tiehall learned of the provider pull request from GitHub: whether it closed
 // without merging (contract-changes: Requests are withdrawn when the provider
-// PR closes unmerged).
+// PR closes unmerged), and when it merged (contract-changes: Merging the
+// provider PR marks the change shipped).
 export const contractChangeSets = pgTable(
   "contract_change_sets",
   {
@@ -2572,6 +2573,11 @@ export const contractChangeSets = pgTable(
      * open, and again once it is reopened.
      */
     providerClosedAt: timestamp("provider_closed_at", { withTimezone: true }),
+    /**
+     * When the provider pull request merged, as GitHub gave it when Tiehall
+     * found it merged: the provider change shipped then; null until it has.
+     */
+    providerMergedAt: timestamp("provider_merged_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

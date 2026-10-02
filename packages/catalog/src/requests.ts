@@ -1,8 +1,8 @@
 import { REQUEST_KEY, REQUEST_STATES, SURFACES, TEAM_KEY } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
-import { packet } from "./packet.ts";
-import { user } from "./schemas.ts";
+import { packet, PROVIDER_STATUSES } from "./packet.ts";
+import { API_NAME, GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 import { teamKey } from "./teams.ts";
 
 // The request operations (requests: A request is addressed to a team of the
@@ -42,6 +42,30 @@ export const requestKeyOutput = z.string().regex(REQUEST_KEY);
 export const requestRef = z.object({ id: z.uuid(), key: requestKeyOutput });
 
 /** A request as the request operations return it. */
+/**
+ * The provider change a contract-change request follows: the registered API,
+ * the provider pull request, and what became of it, as Tiehall learned it from
+ * GitHub (contract-changes: Merging the provider PR marks the change shipped;
+ * contract-changes: Requests are withdrawn when the provider PR closes
+ * unmerged). The API's name has the form API names take, and the repository
+ * and the URL are GitHub's own identifiers, so none of them sits under an
+ * untrusted object.
+ */
+export const providerChange = z.object({
+  api: z.string().regex(API_NAME).meta({ description: "The registered API the provider change is to, such as payments-api." }),
+  pullRequest: z
+    .object({
+      repository: z.string().regex(GITHUB_REPOSITORY).meta({ description: "The provider pull request's repository, as owner/name." }),
+      number: z.number().int().min(1),
+      url: z.string().regex(PULL_REQUEST_URL).meta({ description: "The provider pull request's URL on GitHub.com." }),
+    })
+    .meta({ description: "The provider pull request that makes the change." }),
+  status: z.enum(PROVIDER_STATUSES).meta({
+    description: "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+  }),
+  shippedAt: z.iso.datetime().nullable().meta({ description: "When the provider pull request merged, which shipped the change; null until it has." }),
+});
+
 export const request = z.object({
   id: z.uuid(),
   /** Its key, such as FE-142, written with its target team's current key. */
@@ -56,6 +80,10 @@ export const request = z.object({
   /** Whether agents made so many writes on it that it waits for a person, who clears it with a message in the web UI. */
   needsHuman: z.boolean().meta({
     description: "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+  }),
+  /** For a request a contract report opened, the provider change it follows; null for any other request. */
+  providerChange: providerChange.nullable().meta({
+    description: "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request.",
   }),
   untrusted: z.object({ title: z.string() }),
 });

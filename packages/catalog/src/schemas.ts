@@ -39,3 +39,17 @@ export const user = z.object({
  * sits under untrusted objects).
  */
 export const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;
+
+/** A GitHub account's name, a user's or an organization's: letters, digits and hyphens, not starting with a hyphen. */
+const OWNER = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
+/** A repository's name: letters, digits, dots, hyphens and underscores, other than "." and "..". */
+const NAME = "(?!\\.\\.?(?:/|$))[A-Za-z0-9\\._-]{1,100}";
+
+/** A repository on GitHub.com, as owner/name, such as acme/web. */
+export const GITHUB_REPOSITORY = new RegExp(`^${OWNER}/${NAME}$`);
+
+/** A pull request's URL on GitHub.com, such as https://github.com/acme/web/pull/88. */
+export const PULL_REQUEST_URL = new RegExp(`^https://github\\.com/${OWNER}/${NAME}/pull/[1-9][0-9]{0,8}$`);
+
+/** An API's name: 1 to 100 lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, such as payments-api. */
+export const API_NAME = /^[a-z0-9][a-z0-9\._-]{0,99}$/;

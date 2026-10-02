@@ -56,6 +56,7 @@ describe("reading one request", () => {
         claimant: null,
         createdAt: expect.any(String),
         needsHuman: false,
+        providerChange: null,
         untrusted: { title: "Add a dark mode" },
         messages: [],
       },

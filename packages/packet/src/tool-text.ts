@@ -49,7 +49,17 @@ export interface RequestJson {
   claimant: UserJson | null;
   createdAt: string;
   needsHuman: boolean;
+  /** For a contract-change request, the provider change it follows; null or absent for any other request. */
+  providerChange?: ProviderChangeJson | null;
   untrusted: { title: string };
+}
+
+/** The provider change a contract-change request follows, as the operations return it. */
+export interface ProviderChangeJson {
+  api: string;
+  pullRequest: { repository: string; number: number; url: string };
+  status: string;
+  shippedAt: string | null;
 }
 
 /** What a page states about a message of the thread: all but its text. */
@@ -92,6 +102,8 @@ const TEAM_KEY = /^[A-Z][A-Z0-9]{1,9}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** A registered API's name, such as payments-api. */
+const API_NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 /** A fixed value Tiehall writes, such as a state, a kind or a field's name: lower-case words joined by underscores. */
 const WORD = /^[a-z][a-z_]{0,39}$/;
 
@@ -133,11 +145,27 @@ export function requestText(request: RequestJson, reader: Reader): AgentText[] {
   if (request.needsHuman === true) {
     lines.push(`${key} waits for a person (needs_human): agents' writes on it are refused until a member posts a message on it in the web UI.`);
   }
+  const change = request.providerChange;
+  if (change !== undefined && change !== null) lines.push(providerChangeLine(change));
   lines.push("Its title:");
   return [
     { origin: "tiehall", text: lines.join("\n") },
     { origin: originOf(request.requester.team, reader), text: request.untrusted.title },
   ];
+}
+
+/** The provider change a contract-change request follows, and what became of it, in Tiehall's words. */
+export function providerChangeLine(change: ProviderChangeJson): string {
+  const api = checked(change.api, API_NAME, "API name");
+  const pr = `${checked(change.pullRequest.repository, REPOSITORY, "repository")}#${count(change.pullRequest.number, "pull request number")}`;
+  const status = checked(change.status, WORD, "provider status");
+  const what =
+    status === "merged"
+      ? `shipped: ${pr} merged at ${checked(change.shippedAt, DATE_TIME, "date")}`
+      : status === "closed"
+        ? `has not shipped: ${pr} closed without merging`
+        : `has not shipped yet: ${pr} is open`;
+  return `It follows the provider change to ${api} in ${pr}, which ${what}.`;
 }
 
 /** What a message is and who posted it, in Tiehall's words. */
@@ -575,6 +603,8 @@ export function updateDescription({ type, data }: Pick<UpdateJson, "type" | "dat
       return `its packet is at revision ${count(data["revision"], "revision")}`;
     case "request.pull_request_linked":
       return "a pull request was linked to it";
+    case "request.provider_change_shipped":
+      return "the provider change it follows shipped: its provider pull request merged";
     case "request.state_changed":
       return `it moved from ${word("previousState")} to ${word("state")}`;
     case "request.needs_human_flagged":

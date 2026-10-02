@@ -2026,6 +2026,78 @@
                 "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                 "type": "boolean"
               },
+              "providerChange": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "api": {
+                        "description": "The registered API the provider change is to, such as payments-api.",
+                        "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                        "type": "string"
+                      },
+                      "pullRequest": {
+                        "description": "The provider pull request that makes the change.",
+                        "properties": {
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "description": "The provider pull request's repository, as owner/name.",
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The provider pull request's URL on GitHub.com.",
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "number",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "shippedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the provider pull request merged, which shipped the change; null until it has."
+                      },
+                      "status": {
+                        "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api",
+                      "pullRequest",
+                      "status",
+                      "shippedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+              },
               "requester": {
                 "properties": {
                   "team": {
@@ -2138,6 +2210,7 @@
               "claimant",
               "createdAt",
               "needsHuman",
+              "providerChange",
               "untrusted"
             ],
             "type": "object"
@@ -2216,6 +2289,78 @@
           "needsHuman": {
             "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
             "type": "boolean"
+          },
+          "providerChange": {
+            "anyOf": [
+              {
+                "properties": {
+                  "api": {
+                    "description": "The registered API the provider change is to, such as payments-api.",
+                    "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                    "type": "string"
+                  },
+                  "pullRequest": {
+                    "description": "The provider pull request that makes the change.",
+                    "properties": {
+                      "number": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repository": {
+                        "description": "The provider pull request's repository, as owner/name.",
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "The provider pull request's URL on GitHub.com.",
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "repository",
+                      "number",
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "shippedAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "When the provider pull request merged, which shipped the change; null until it has."
+                  },
+                  "status": {
+                    "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                    "enum": [
+                      "open",
+                      "merged",
+                      "closed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api",
+                  "pullRequest",
+                  "status",
+                  "shippedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
           },
           "requester": {
             "properties": {
@@ -2329,6 +2474,7 @@
           "claimant",
           "createdAt",
           "needsHuman",
+          "providerChange",
           "untrusted"
         ],
         "type": "object"
@@ -2938,6 +3084,78 @@
                 "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                 "type": "boolean"
               },
+              "providerChange": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "api": {
+                        "description": "The registered API the provider change is to, such as payments-api.",
+                        "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                        "type": "string"
+                      },
+                      "pullRequest": {
+                        "description": "The provider pull request that makes the change.",
+                        "properties": {
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "description": "The provider pull request's repository, as owner/name.",
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The provider pull request's URL on GitHub.com.",
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "number",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "shippedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the provider pull request merged, which shipped the change; null until it has."
+                      },
+                      "status": {
+                        "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api",
+                      "pullRequest",
+                      "status",
+                      "shippedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+              },
               "requester": {
                 "properties": {
                   "team": {
@@ -3050,6 +3268,7 @@
               "claimant",
               "createdAt",
               "needsHuman",
+              "providerChange",
               "untrusted"
             ],
             "type": "object"
@@ -4284,6 +4503,78 @@
                 "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                 "type": "boolean"
               },
+              "providerChange": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "api": {
+                        "description": "The registered API the provider change is to, such as payments-api.",
+                        "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                        "type": "string"
+                      },
+                      "pullRequest": {
+                        "description": "The provider pull request that makes the change.",
+                        "properties": {
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "description": "The provider pull request's repository, as owner/name.",
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The provider pull request's URL on GitHub.com.",
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "number",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "shippedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the provider pull request merged, which shipped the change; null until it has."
+                      },
+                      "status": {
+                        "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api",
+                      "pullRequest",
+                      "status",
+                      "shippedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+              },
               "requester": {
                 "properties": {
                   "team": {
@@ -4396,6 +4687,7 @@
               "claimant",
               "createdAt",
               "needsHuman",
+              "providerChange",
               "untrusted"
             ],
             "type": "object"
@@ -4494,6 +4786,78 @@
                 "needsHuman": {
                   "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                   "type": "boolean"
+                },
+                "providerChange": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "api": {
+                          "description": "The registered API the provider change is to, such as payments-api.",
+                          "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                          "type": "string"
+                        },
+                        "pullRequest": {
+                          "description": "The provider pull request that makes the change.",
+                          "properties": {
+                            "number": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "repository": {
+                              "description": "The provider pull request's repository, as owner/name.",
+                              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                              "type": "string"
+                            },
+                            "url": {
+                              "description": "The provider pull request's URL on GitHub.com.",
+                              "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "repository",
+                            "number",
+                            "url"
+                          ],
+                          "type": "object"
+                        },
+                        "shippedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the provider pull request merged, which shipped the change; null until it has."
+                        },
+                        "status": {
+                          "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                          "enum": [
+                            "open",
+                            "merged",
+                            "closed"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "api",
+                        "pullRequest",
+                        "status",
+                        "shippedAt"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
                 },
                 "requester": {
                   "properties": {
@@ -4607,6 +4971,7 @@
                 "claimant",
                 "createdAt",
                 "needsHuman",
+                "providerChange",
                 "untrusted"
               ],
               "type": "object"
@@ -5359,6 +5724,78 @@
             "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
             "type": "boolean"
           },
+          "providerChange": {
+            "anyOf": [
+              {
+                "properties": {
+                  "api": {
+                    "description": "The registered API the provider change is to, such as payments-api.",
+                    "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                    "type": "string"
+                  },
+                  "pullRequest": {
+                    "description": "The provider pull request that makes the change.",
+                    "properties": {
+                      "number": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repository": {
+                        "description": "The provider pull request's repository, as owner/name.",
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "The provider pull request's URL on GitHub.com.",
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "repository",
+                      "number",
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "shippedAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "When the provider pull request merged, which shipped the change; null until it has."
+                  },
+                  "status": {
+                    "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                    "enum": [
+                      "open",
+                      "merged",
+                      "closed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api",
+                  "pullRequest",
+                  "status",
+                  "shippedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+          },
           "requester": {
             "properties": {
               "team": {
@@ -5471,6 +5908,7 @@
           "claimant",
           "createdAt",
           "needsHuman",
+          "providerChange",
           "untrusted"
         ],
         "type": "object"
@@ -5774,6 +6212,78 @@
                 "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                 "type": "boolean"
               },
+              "providerChange": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "api": {
+                        "description": "The registered API the provider change is to, such as payments-api.",
+                        "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                        "type": "string"
+                      },
+                      "pullRequest": {
+                        "description": "The provider pull request that makes the change.",
+                        "properties": {
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "description": "The provider pull request's repository, as owner/name.",
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The provider pull request's URL on GitHub.com.",
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "number",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "shippedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the provider pull request merged, which shipped the change; null until it has."
+                      },
+                      "status": {
+                        "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api",
+                      "pullRequest",
+                      "status",
+                      "shippedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+              },
               "requester": {
                 "properties": {
                   "team": {
@@ -5886,6 +6396,7 @@
               "claimant",
               "createdAt",
               "needsHuman",
+              "providerChange",
               "untrusted"
             ],
             "type": "object"
@@ -8419,6 +8930,78 @@
                 "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                 "type": "boolean"
               },
+              "providerChange": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "api": {
+                        "description": "The registered API the provider change is to, such as payments-api.",
+                        "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                        "type": "string"
+                      },
+                      "pullRequest": {
+                        "description": "The provider pull request that makes the change.",
+                        "properties": {
+                          "number": {
+                            "maximum": 9007199254740991,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "repository": {
+                            "description": "The provider pull request's repository, as owner/name.",
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "The provider pull request's URL on GitHub.com.",
+                            "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "number",
+                          "url"
+                        ],
+                        "type": "object"
+                      },
+                      "shippedAt": {
+                        "anyOf": [
+                          {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the provider pull request merged, which shipped the change; null until it has."
+                      },
+                      "status": {
+                        "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "api",
+                      "pullRequest",
+                      "status",
+                      "shippedAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+              },
               "requester": {
                 "properties": {
                   "team": {
@@ -8531,6 +9114,7 @@
               "claimant",
               "createdAt",
               "needsHuman",
+              "providerChange",
               "untrusted"
             ],
             "type": "object"
@@ -9680,6 +10264,78 @@
             ],
             "type": "object"
           },
+          "providerChange": {
+            "anyOf": [
+              {
+                "properties": {
+                  "api": {
+                    "description": "The registered API the provider change is to, such as payments-api.",
+                    "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                    "type": "string"
+                  },
+                  "pullRequest": {
+                    "description": "The provider pull request that makes the change.",
+                    "properties": {
+                      "number": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repository": {
+                        "description": "The provider pull request's repository, as owner/name.",
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "The provider pull request's URL on GitHub.com.",
+                        "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "repository",
+                      "number",
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "shippedAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "When the provider pull request merged, which shipped the change; null until it has."
+                  },
+                  "status": {
+                    "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                    "enum": [
+                      "open",
+                      "merged",
+                      "closed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api",
+                  "pullRequest",
+                  "status",
+                  "shippedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+          },
           "requester": {
             "properties": {
               "team": {
@@ -9971,6 +10627,78 @@
                   "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                   "type": "boolean"
                 },
+                "providerChange": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "api": {
+                          "description": "The registered API the provider change is to, such as payments-api.",
+                          "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                          "type": "string"
+                        },
+                        "pullRequest": {
+                          "description": "The provider pull request that makes the change.",
+                          "properties": {
+                            "number": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "repository": {
+                              "description": "The provider pull request's repository, as owner/name.",
+                              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                              "type": "string"
+                            },
+                            "url": {
+                              "description": "The provider pull request's URL on GitHub.com.",
+                              "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "repository",
+                            "number",
+                            "url"
+                          ],
+                          "type": "object"
+                        },
+                        "shippedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the provider pull request merged, which shipped the change; null until it has."
+                        },
+                        "status": {
+                          "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                          "enum": [
+                            "open",
+                            "merged",
+                            "closed"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "api",
+                        "pullRequest",
+                        "status",
+                        "shippedAt"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+                },
                 "requester": {
                   "properties": {
                     "team": {
@@ -10083,6 +10811,7 @@
                 "claimant",
                 "createdAt",
                 "needsHuman",
+                "providerChange",
                 "untrusted"
               ],
               "type": "object"

@@ -3,7 +3,7 @@ import { defineCommand } from "./command.ts";
 import { GITHUB_REPOSITORY } from "./pull-requests.ts";
 import { teamRef } from "./requests.ts";
 import { teamKey } from "./teams.ts";
-import { user } from "./schemas.ts";
+import { API_NAME, user } from "./schemas.ts";
 
 // The APIs registered for contract reports (contract-changes: Admins register
 // APIs, each bound to one repository; teams-and-roles: What admins and
@@ -28,8 +28,7 @@ import { user } from "./schemas.ts";
 // team, repository or workflow changes: the API keeps its id, and the teams'
 // declarations route again.
 
-/** An API's name: 1 to 100 lower-case letters, digits, dots, hyphens and underscores, starting with a letter or digit, such as payments-api. */
-export const API_NAME = /^[a-z0-9][a-z0-9\._-]{0,99}$/;
+export { API_NAME } from "./schemas.ts";
 
 export const apiName = z
   .string()

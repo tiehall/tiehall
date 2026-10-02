@@ -195,25 +195,29 @@ export const applyChangeSet = defineCommand({
 });
 
 // Applying what GitHub says of a provider pull request (contract-changes:
+// Merging the provider PR marks the change shipped; contract-changes:
 // Requests are withdrawn when the provider PR closes unmerged; requests:
 // System withdrawals never touch a claimed request; requests: System actions
 // need no proposal or confirmation; design.md, Decisions this change rests on:
 // D23; D28 #74). An internal system command, which only the worker runs, as
 // the system from GitHub, once a delivery of the install's GitHub App or the
 // poll of polling mode has shown a pull request of a covered repository, read
-// from GitHub as it is now: when it closed without merging, each unclaimed
-// request of its change sets is withdrawn and the others get a notice; when it
-// is open again after such a close, the next report opens new requests to the
-// teams the close withdrew. No person and no agent runs it.
+// from GitHub as it is now: when it merged, the provider change is marked
+// shipped on every request of its change sets, none of which moves to done;
+// when it closed without merging, each unclaimed request of its change sets
+// is withdrawn and the others get a notice; when it is open again after such a
+// close, the next report opens new requests to the teams the close withdrew.
+// No person and no agent runs it.
 
 export const applyProviderPullRequest = defineCommand({
   id: "contract.apply_provider_pull_request",
-  summary: "Apply what GitHub says of a provider pull request now: withdraw the unclaimed requests of its change sets when it closed without merging, and let a reopened one open requests again.",
+  summary:
+    "Apply what GitHub says of a provider pull request now: mark its change shipped on the requests of its change sets when it merged, withdraw their unclaimed requests when it closed without merging, and let a reopened one open requests again.",
   input: z.object({
     repositoryId: z.int().min(1).meta({ description: "The pull request's repository, by GitHub's id." }),
     number: z.int().min(1).max(2_147_483_647).meta({ description: "The pull request's number." }),
     state: z.enum(["open", "closed"]).meta({ description: "The pull request's state, as GitHub gives it now." }),
-    merged: z.boolean().meta({ description: "Whether the pull request merged." }),
+    mergedAt: z.iso.datetime().nullable().meta({ description: "When the pull request merged, as GitHub gives it; null while it has not." }),
   }),
   output: z.object({ withdrawn: z.array(requestKeyOutput).meta({ description: "The keys of the requests the close withdrew." }) }),
   scopes: [],

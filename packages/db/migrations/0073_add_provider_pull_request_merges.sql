@@ -1,0 +1,1 @@
+ALTER TABLE "contract_change_sets" ADD COLUMN "provider_merged_at" timestamp with time zone;

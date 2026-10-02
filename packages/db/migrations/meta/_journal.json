@@ -512,6 +512,13 @@
       "when": 1790950144757,
       "tag": "0072_add_provider_pull_request_closes",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790950769626,
+      "tag": "0073_add_provider_pull_request_merges",
+      "breakpoints": true
     }
   ]
 }
