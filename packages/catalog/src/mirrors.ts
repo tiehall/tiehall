@@ -12,7 +12,11 @@ import { GITHUB_REPOSITORY } from "./schemas.ts";
 // cover; a team that maps one gets 409 when it is asked to map a second, and
 // an admin removes the first. A mapping starts with mirroring on claim: a
 // request's mirror issue is created when the request is claimed, unless an
-// admin turns on mirroring on open for the team. Mappings are not security
+// admin turns on mirroring on open for the team. It also starts with the
+// setting for tracker "Done" proposals off: a close of a mirror issue then
+// only adds a notice to the request's thread, until an admin turns it on
+// (tracker-mirrors: A tracker "Done" never closes a request by itself).
+// Mappings are not security
 // events (design.md, Readings to confirm with the founder: R21) and change no
 // request, so they record no event.
 
@@ -26,6 +30,7 @@ export const trackerMapping = z.object({
   /** Where the team's mirror issues are created, as it is shown: for GitHub, the intake repository's owner/name. */
   place: z.string().meta({ description: "Where the team's mirror issues are created: for GitHub Issues, the intake repository, as owner/name." }),
   mirrorOnOpen: z.boolean().meta({ description: "Whether a request's mirror issue is created when it is opened, rather than when it is claimed." }),
+  doneProposals: z.boolean().meta({ description: "Whether a close of a mirror issue by a member of the team becomes a done proposal for them, which they confirm." }),
 });
 
 export const listTrackerMappings = defineCommand({
@@ -74,6 +79,19 @@ export const setMirrorOnOpen = defineCommand({
   stability: "beta",
 });
 
+export const setDoneProposals = defineCommand({
+  id: "mirrors.set_done_proposals",
+  summary: "Turn the setting for tracker \"Done\" proposals on or off for a team: on, a close of a mirror issue by a member of the team becomes a done proposal they confirm; off, it only adds a notice.",
+  input: z.object({ teamId: z.uuid(), on: z.boolean() }),
+  output: trackerMapping,
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "integrations",
+  surfaces: [],
+  stability: "beta",
+});
+
 export const removeTrackerMapping = defineCommand({
   id: "mirrors.remove_mapping",
   summary: "Remove a team's tracker mapping, so its requests get no new mirror issue.",
@@ -96,7 +114,8 @@ const trackerAccount = z.object({ id: z.string().min(1).max(100), login: z.strin
  * echo; tracker-mirrors: Inbound tracker changes are recorded, not applied).
  * Only a verified integration event runs it: it records the changes the read
  * shows that Tiehall did not make itself, and drops the echoes of its own
- * writes.
+ * writes; a tracker "Done" by a member of the target team, with the team's
+ * setting on, becomes a done proposal for them.
  */
 export const recordTrackerChange = defineCommand({
   id: "mirrors.record_tracker_change",
@@ -117,10 +136,11 @@ export const recordTrackerChange = defineCommand({
     changes: z.array(z.enum(["closed", "reopened", "assignees_changed"])).meta({ description: "The changes the read showed that Tiehall did not write itself." }),
   }),
   scopes: [],
-  commitment: false,
+  // A tracker "Done" by a member of the target team, with the team's setting on, becomes a done proposal for them.
+  commitment: true,
   confirm: false,
   surfaces: [],
   stability: "alpha",
 });
 
-export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, removeTrackerMapping, recordTrackerChange];
+export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, setDoneProposals, removeTrackerMapping, recordTrackerChange];

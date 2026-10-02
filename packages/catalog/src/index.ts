@@ -59,6 +59,7 @@ export {
   MIRROR_COMMANDS,
   recordTrackerChange,
   removeTrackerMapping,
+  setDoneProposals,
   setMirrorOnOpen,
   TRACKER_NAMES,
   trackerMapping,

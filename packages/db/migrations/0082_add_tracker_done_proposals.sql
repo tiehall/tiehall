@@ -1,0 +1,1 @@
+ALTER TABLE "tracker_mappings" ADD COLUMN "done_proposals" boolean DEFAULT false NOT NULL;

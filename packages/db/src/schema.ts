@@ -2908,7 +2908,10 @@ export const contractWarnDigestEmails = pgTable(
 // the team's intake repository, by GitHub's id of it, which a rename keeps,
 // and its owner/name when the mapping was made. A team without a row gets no
 // mirror issues. Mirror issues are created when a request is claimed, unless
-// an admin turned on mirroring on open for the team. Only admins change
+// an admin turned on mirroring on open for the team. The setting for tracker
+// "Done" proposals, off until an admin turns it on, lets a close of a mirror
+// issue by a member of the team become a done proposal (tracker-mirrors: A
+// tracker "Done" never closes a request by itself). Only admins change
 // mappings, in the web UI; mappings are not security events (design.md,
 // Readings to confirm with the founder: R21).
 export const trackerMappings = pgTable(
@@ -2926,6 +2929,8 @@ export const trackerMappings = pgTable(
     /** Whether a request's mirror issue is created when the request is opened, rather than when it is claimed. */
     mirrorOnOpen: boolean("mirror_on_open").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Whether a tracker "Done" by a member of the team becomes a done proposal for them; off until an admin turns it on. */
+    doneProposals: boolean("done_proposals").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.teamId] }),

@@ -575,6 +575,13 @@
       "when": 1790984405638,
       "tag": "0081_add_tracker_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790984635473,
+      "tag": "0082_add_tracker_done_proposals",
+      "breakpoints": true
     }
   ]
 }

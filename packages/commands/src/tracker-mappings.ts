@@ -1,4 +1,4 @@
-import { listTrackerMappings, mapIntakeRepository, removeTrackerMapping, setMirrorOnOpen, type trackerMapping } from "@tiehall/catalog";
+import { listTrackerMappings, mapIntakeRepository, removeTrackerMapping, setDoneProposals, setMirrorOnOpen, type trackerMapping } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { githubApp, githubConnectedInstallations, githubCoveredRepositories, githubInstallations, teams, trackerMappings } from "@tiehall/db";
 import { and, asc, eq, isNull } from "drizzle-orm";
@@ -22,6 +22,9 @@ import type { OrgContext } from "./with-org.ts";
 //   the install does not have gets 404.
 // - A new mapping mirrors on claim; turning mirroring on open on makes a
 //   request's mirror issue be created when it is opened (mirrors.ts).
+// - A new mapping has the setting for tracker "Done" proposals off; turned
+//   on, a close of a mirror issue by a member of the team becomes a done
+//   proposal for them (tracker-changes.ts).
 // - Removing a mapping stops new mirror issues for the team; the issues made
 //   before stay in the tracker, and Tiehall writes to them no more while no
 //   mapping names their place.
@@ -42,7 +45,7 @@ async function assertTeam({ tx, orgId }: OrgContext, teamId: string): Promise<vo
 async function mappingOf({ tx, orgId }: OrgContext, teamId: string): Promise<TrackerMappingView> {
   const [row] = await tx.select().from(trackerMappings).where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.teamId, teamId)));
   if (row === undefined) throw new Refusal("record-not-found", "The team maps no tracker.");
-  return { teamId: row.teamId, tracker: row.tracker as "github" | "jira", place: row.targetName, mirrorOnOpen: row.mirrorOnOpen };
+  return { teamId: row.teamId, tracker: row.tracker as "github" | "jira", place: row.targetName, mirrorOnOpen: row.mirrorOnOpen, doneProposals: row.doneProposals };
 }
 
 /** The repositories that connected installations of the App cover now, neither suspended nor deleted, as owner/name, each once, in order. */
@@ -76,6 +79,7 @@ export const TRACKER_MAPPING_HANDLERS: Handlers = {
         tracker: mapping.tracker as "github" | "jira",
         place: mapping.targetName,
         mirrorOnOpen: mapping.mirrorOnOpen,
+        doneProposals: mapping.doneProposals,
       })),
       repositories: await coveredRepositories(context),
     };
@@ -109,6 +113,16 @@ export const TRACKER_MAPPING_HANDLERS: Handlers = {
     await context.tx
       .update(trackerMappings)
       .set({ mirrorOnOpen: on })
+      .where(and(eq(trackerMappings.orgId, context.orgId), eq(trackerMappings.teamId, teamId)));
+    return mappingOf(context, teamId);
+  }),
+
+  [setDoneProposals.id]: defineHandler(setDoneProposals, async ({ teamId, on }, context) => {
+    await assertTeam(context, teamId);
+    await mappingOf(context, teamId);
+    await context.tx
+      .update(trackerMappings)
+      .set({ doneProposals: on })
       .where(and(eq(trackerMappings.orgId, context.orgId), eq(trackerMappings.teamId, teamId)));
     return mappingOf(context, teamId);
   }),

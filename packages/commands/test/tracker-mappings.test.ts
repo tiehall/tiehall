@@ -67,7 +67,7 @@ const mirrorJobsOf = (requestId: string) => install.sentJobs.filter(({ queue, da
 describe("mapping a team to an intake repository", () => {
   it("sends FE's mirror issues to its intake repository, by GitHub's id of it", async () => {
     const mapping = await install.execute("mirrors.map_repository", ada, { teamId: teams["FE"], repository: "acme/fe-intake" });
-    expect(mapping).toEqual({ teamId: teams["FE"], tracker: "github", place: "acme/fe-intake", mirrorOnOpen: false });
+    expect(mapping).toEqual({ teamId: teams["FE"], tracker: "github", place: "acme/fe-intake", mirrorOnOpen: false, doneProposals: false });
     expect(await mappingsOf(teams["FE"]!)).toEqual([{ tracker: "github", target: String(feIntake), target_name: "acme/fe-intake", mirror_on_open: false }]);
 
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
@@ -201,6 +201,13 @@ describe("the teams page", () => {
     expect(await mappingsOf(teams["MOBILE"]!)).toEqual([expect.objectContaining({ target_name: "acme/mobile-intake", mirror_on_open: false })]);
     expect((await post(ada, { action: "set_mirror_on_open", teamId: teams["MOBILE"]!, on: "true" })).status).toBe(303);
     expect((await mappingsOf(teams["MOBILE"]!))[0]?.mirror_on_open).toBe(true);
+    // The setting for tracker "Done" proposals, off in a new mapping, which the page offers to turn on.
+    const html = await (await page(ada)(new Request(`${URL_OF_INSTALL}${TEAMS_PATH}`))).text();
+    expect(html).toContain("Make a close of MOBILE&#39;s mirror issues by its members propose done");
+    expect((await post(ada, { action: "set_done_proposals", teamId: teams["MOBILE"]!, on: "true" })).status).toBe(303);
+    const { rows } = await install.owner.query("SELECT done_proposals FROM tracker_mappings WHERE team_id = $1", [teams["MOBILE"]]);
+    expect(rows).toEqual([{ done_proposals: true }]);
+    expect((await post(ayse, { action: "set_done_proposals", teamId: teams["MOBILE"]!, on: "false" })).status).toBe(403);
     expect((await post(ada, { action: "remove_mapping", teamId: teams["MOBILE"]! })).status).toBe(303);
     expect(await mappingsOf(teams["MOBILE"]!)).toEqual([]);
   });

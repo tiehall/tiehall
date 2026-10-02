@@ -23,6 +23,7 @@ import {
   listTrackerMappings,
   mapIntakeRepository,
   removeTrackerMapping,
+  setDoneProposals,
   setMirrorOnOpen,
   type invite,
   type listedMember,
@@ -67,7 +68,9 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   tracker-mirrors: Mirror issues are created on claim by default): an
 //   intake repository on GitHub, picked among those a connected installation
 //   covers, with mirroring on claim unless the admin ticks mirroring on open;
-//   a mapped team's forms switch mirroring on open and remove the mapping.
+//   a mapped team's forms switch mirroring on open, switch the setting for
+//   tracker "Done" proposals (tracker-mirrors: A tracker "Done" never closes
+//   a request by itself), and remove the mapping.
 //   None of these needs the confirmation step (agent-safety: Actions that
 //   need the confirmation step).
 // - /admin/sign-in-policy is an admin's: the policy in force, and a link to
@@ -276,6 +279,7 @@ const TEAM_ACTIONS: Readonly<Record<string, { commandId: string; input: (form: U
     input: (form) => ({ teamId: field(form, "teamId"), repository: field(form, "repository"), mirrorOnOpen: form.get("mirrorOnOpen") === "true" }),
   },
   set_mirror_on_open: { commandId: setMirrorOnOpen.id, input: (form) => ({ teamId: field(form, "teamId"), on: form.get("on") === "true" }) },
+  set_done_proposals: { commandId: setDoneProposals.id, input: (form) => ({ teamId: field(form, "teamId"), on: form.get("on") === "true" }) },
   remove_mapping: { commandId: removeTrackerMapping.id, input: (form) => ({ teamId: field(form, "teamId") }) },
 };
 
@@ -296,6 +300,18 @@ function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): stri
         { action: "set_mirror_on_open", teamId: team.id, on: mapping.mirrorOnOpen ? "false" : "true" },
         csrf,
         mapping.mirrorOnOpen ? `Create ${team.key}'s mirror issues when a request is claimed` : `Create ${team.key}'s mirror issues when a request is opened`,
+        "      ",
+      ),
+      `      <p>${escapeHtml(
+        mapping.doneProposals
+          ? `A close of a mirror issue by a member of ${team.key} becomes a done proposal for them, which they confirm in Tiehall; it never closes the request by itself.`
+          : `A close of a mirror issue only adds a notice to its request's thread; it never closes the request.`,
+      )}</p>`,
+      postForm(
+        TEAMS_PATH,
+        { action: "set_done_proposals", teamId: team.id, on: mapping.doneProposals ? "false" : "true" },
+        csrf,
+        mapping.doneProposals ? `Make a close of ${team.key}'s mirror issues only add a notice` : `Make a close of ${team.key}'s mirror issues by its members propose done`,
         "      ",
       ),
       postForm(TEAMS_PATH, { action: "remove_mapping", teamId: team.id }, csrf, `Stop mirroring ${team.key}'s requests`, "      "),
