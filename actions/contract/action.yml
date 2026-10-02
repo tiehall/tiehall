@@ -1,0 +1,39 @@
+# The contract Action (contract-changes: The contract Action; contract-changes:
+# The Action reports to the install its workflow names; design.md, Technical
+# decisions: T12). Pin it by commit SHA, with the release as a comment, as its
+# README shows. It runs its TypeScript source on the runner's own Node.js 24
+# and needs nothing installed besides git, tar and npx, which GitHub-hosted
+# runners have.
+name: Tiehall contract check
+description: Finds the breaking OpenAPI changes of a pull request with the pinned oasdiff, and reports the classified changes, never the document, to your Tiehall install.
+author: Tiehall
+inputs:
+  install-url:
+    description: The URL of your Tiehall install, such as https://tiehall.example.com. The report goes there alone, with a GitHub Actions OIDC token whose audience is this URL, so the job needs the permission id-token write.
+    required: true
+  api:
+    description: The registered API the document describes, such as payments-api, as an admin registered it in Tiehall for this repository.
+    required: true
+  spec:
+    description: The API's OpenAPI document in the repository, relative to its root, such as openapi/payments.yaml.
+    required: true
+  fail-on-breaking:
+    description: Whether the step fails when the pull request makes breaking (ERR-level) changes to the API. It does not by default.
+    required: false
+    default: "false"
+  include-drafts:
+    description: Whether draft pull requests are checked and reported too. They are not by default, and are reported once marked ready for review.
+    required: false
+    default: "false"
+outputs:
+  breaking-changes:
+    description: How many breaking (ERR-level) changes oasdiff found.
+  warnings:
+    description: How many potentially breaking (WARN-level) changes oasdiff found.
+  reported:
+    description: Whether Tiehall took the report, true or false.
+  report-id:
+    description: The id Tiehall gave the report, when it took it.
+runs:
+  using: node24
+  main: src/main.ts

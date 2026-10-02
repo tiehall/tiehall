@@ -1,12 +1,28 @@
 {
-  "$comment": "What the contract Action pins (contract-changes: The contract Action; design.md, Technical decisions: T12): the diff engine, oasdiff, at the release Tiehall's own CI runs, with the SHA-256 of each release archive from the release's checksums.txt, which the Action checks before it runs anything from the archive. oasdiff's pin is the same as tools/repo-checks/oasdiff.json, which a test of tools/repo-checks holds it to. A new version is pinned only after the 7-day release age, through a reviewed pull request.",
+  "$comment": "What the contract Action pins (contract-changes: The contract Action; design.md, Technical decisions: T12): the diff engine, oasdiff, at the release Tiehall's own CI runs, with the SHA-256 of each release archive from the release's checksums.txt, which the Action checks before it runs anything from the archive; and the tiehall CLI that reports the changes. oasdiff's pin is the same as tools/repo-checks/oasdiff.json, and the CLI's is the version of packages/cli; the Action's tests hold both to them. A new version is pinned only after the 7-day release age, through a reviewed pull request.",
   "oasdiff": {
     "version": "1.32.1",
     "archives": {
-      "darwin-arm64": { "file": "oasdiff_1.32.1_darwin_all.tar.gz", "sha256": "e4d74b7e2dfb9d4819e7fc720c905ec86547e4637ac270a2b0187c0f1fb7187e" },
-      "darwin-x64": { "file": "oasdiff_1.32.1_darwin_all.tar.gz", "sha256": "e4d74b7e2dfb9d4819e7fc720c905ec86547e4637ac270a2b0187c0f1fb7187e" },
-      "linux-arm64": { "file": "oasdiff_1.32.1_linux_arm64.tar.gz", "sha256": "32fff58a120f75a723d6c2422444691c37fa6813fed61d23f53dbcb604b30f6d" },
-      "linux-x64": { "file": "oasdiff_1.32.1_linux_amd64.tar.gz", "sha256": "7c8939fc49b75ee11fec66a5b83b37a2fca6aee109fed85013b1ba2ac2a1ee7f" }
+      "darwin-arm64": {
+        "file": "oasdiff_1.32.1_darwin_all.tar.gz",
+        "sha256": "e4d74b7e2dfb9d4819e7fc720c905ec86547e4637ac270a2b0187c0f1fb7187e"
+      },
+      "darwin-x64": {
+        "file": "oasdiff_1.32.1_darwin_all.tar.gz",
+        "sha256": "e4d74b7e2dfb9d4819e7fc720c905ec86547e4637ac270a2b0187c0f1fb7187e"
+      },
+      "linux-arm64": {
+        "file": "oasdiff_1.32.1_linux_arm64.tar.gz",
+        "sha256": "32fff58a120f75a723d6c2422444691c37fa6813fed61d23f53dbcb604b30f6d"
+      },
+      "linux-x64": {
+        "file": "oasdiff_1.32.1_linux_amd64.tar.gz",
+        "sha256": "7c8939fc49b75ee11fec66a5b83b37a2fca6aee109fed85013b1ba2ac2a1ee7f"
+      }
     }
+  },
+  "cli": {
+    "package": "tiehall",
+    "version": "0.1.0"
   }
 }
