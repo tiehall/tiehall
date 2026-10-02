@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createDocument, type ZodOpenApiOperationObject, type ZodOpenApiPathsObject, type ZodOpenApiResponsesObject } from "zod-openapi";
-import { bodyLimitOf, MIB } from "./body-limits.ts";
+import { bodyLimitOf, CONTRACT_REPORT_ID, MIB } from "./body-limits.ts";
 import { restShapesOf, variantsOf, type Catalog, type RestShape } from "./catalog.ts";
 import type { CliCommand } from "./command.ts";
 import { packet, PACKET_COMPONENT } from "./packet.ts";
@@ -134,6 +134,14 @@ const ERRORS: Readonly<Record<string, string>> = {
 };
 const WRITE_ERRORS: Readonly<Record<string, string>> = { "409": "The request's state does not allow this action." };
 const POST_ERRORS: Readonly<Record<string, string>> = { "422": "The Idempotency-Key was sent with a different body in the last 24 hours." };
+/**
+ * The error of the one operation a CI run calls, contract.report, whose token
+ * is checked against the keys GitHub Actions publishes (agent-access: CI
+ * authenticates with GitHub Actions OIDC bound to registered repositories).
+ */
+const CI_ERRORS: Readonly<Record<string, string>> = {
+  "502": "GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read: nothing ran and the token was not recorded, so the same token can be sent again.",
+};
 
 export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}): OpenApiDocument {
   const version = options.version ?? API_VERSION;
@@ -269,6 +277,7 @@ function responsesOf(shape: RestShape): ZodOpenApiResponsesObject {
     ...(method === "POST" ? POST_ERRORS : {}),
     ...(BODY_METHODS.has(method) ? { "413": payloadTooLargeOf(definition) } : {}),
     ...(definition.ifMatch === undefined ? {} : IF_MATCH_ERRORS),
+    ...(definition.id === CONTRACT_REPORT_ID ? CI_ERRORS : {}),
   };
   for (const [status, description] of Object.entries(errors)) {
     responses[status as "400"] = {

@@ -301,6 +301,17 @@ describe("the published operation", () => {
     expect(CATALOG.get("contract.report")?.surfaces).toEqual(["rest", "cli"]);
   });
 
+  it("lists 502, which a CI run gets when GitHub Actions' keys cannot be read, and no other operation does", () => {
+    expect(operation?.["responses"]["502"]).toMatchObject({
+      description: expect.stringContaining("GitHub Actions"),
+      content: { "application/problem+json": { schema: expect.any(Object) } },
+    });
+    const others = Object.values(document.paths)
+      .flatMap((methods) => Object.values(methods))
+      .filter(({ operationId, responses }) => operationId !== "contract.report" && responses?.["502"] !== undefined);
+    expect(others.map(({ operationId }) => operationId)).toEqual([]);
+  });
+
   it("has no field for a spec: its input is the API, the pull request, the refs, the engine and the classified changes, and nothing more", () => {
     const schema = operation?.["requestBody"].content["application/json"].schema;
     expect(Object.keys(schema.properties).sort()).toEqual(["api", "base", "changes", "engine", "head", "pullRequest"]);

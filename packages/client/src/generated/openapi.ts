@@ -829,6 +829,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read: nothing ran and the token was not recorded, so the same token can be sent again. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description Setup is not complete, or Tiehall is shutting down. */
             503: {
                 headers: {

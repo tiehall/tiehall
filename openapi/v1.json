@@ -1023,6 +1023,16 @@
               }
             }
           },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read: nothing ran and the token was not recorded, so the same token can be sent again."
+          },
           "503": {
             "content": {
               "application/problem+json": {
