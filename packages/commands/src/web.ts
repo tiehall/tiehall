@@ -25,7 +25,7 @@ import { createEmailSettingsRoute } from "./email-settings-page.ts";
 import { createInboxRoute } from "./inbox-page.ts";
 import { HANDLERS } from "./handlers.ts";
 import { createInstallGitHub } from "./install-github.ts";
-import { openJobQueue, type JobQueue } from "./job-queue.ts";
+import { lazyJobSender, openJobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { createMcpRoute, type McpRoute } from "./mcp.ts";
@@ -80,21 +80,7 @@ function servicesOf(env: Environment): Services {
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
   const database = openAppDatabase(connection, { applicationName: "tiehall web", logger, role: "web" });
-  let queue: Promise<JobQueue> | undefined;
-  const jobs: JobSender = {
-    async send(tx, name, data) {
-      queue ??= openJobQueue({
-        connection,
-        jobTypes: WORKER_JOBS.map(({ type }) => type),
-        applicationName: "tiehall web",
-        logger,
-      }).catch((error: unknown) => {
-        queue = undefined;
-        throw error;
-      });
-      await (await queue).send(tx, name, data);
-    },
-  };
+  const jobs: JobSender = lazyJobSender(() => openJobQueue({ connection, jobTypes: WORKER_JOBS.map(({ type }) => type), applicationName: "tiehall web", logger }));
   // The confirmation step's nonces, signed with TIEHALL_AUTH_SECRET, which is read when one is first issued or checked.
   const confirmations = createConfirmationNonces({ secret: () => readAuthSecret(env) });
   // The sign-in service opens the GitHub App's stored client secret with TIEHALL_SECRET_KEY, read when it is first built.

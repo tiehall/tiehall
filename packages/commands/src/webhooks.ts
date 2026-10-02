@@ -1,6 +1,6 @@
 import { openAppDatabase } from "./database.ts";
 import { createGitHubWebhookRoute, processGitHubDelivery, type GitHubWebhookRoute } from "./github-webhooks.ts";
-import { openJobQueue, type JobQueue } from "./job-queue.ts";
+import { lazyJobSender, openJobQueue } from "./job-queue.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger } from "./log.ts";
 import { openSecretBox, type SecretBox } from "./secret-box.ts";
@@ -21,21 +21,7 @@ export function githubWebhookRoute(env: Environment): GitHubWebhookRoute {
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
   const database = openAppDatabase(connection, { applicationName: "tiehall web webhooks", logger, role: "web" });
-  let queue: Promise<JobQueue> | undefined;
-  const jobs: JobSender = {
-    async send(tx, name, data) {
-      queue ??= openJobQueue({
-        connection,
-        jobTypes: [processGitHubDelivery.type],
-        applicationName: "tiehall web webhooks",
-        logger,
-      }).catch((error: unknown) => {
-        queue = undefined;
-        throw error;
-      });
-      await (await queue).send(tx, name, data);
-    },
-  };
+  const jobs: JobSender = lazyJobSender(() => openJobQueue({ connection, jobTypes: [processGitHubDelivery.type], applicationName: "tiehall web webhooks", logger }));
   let box: SecretBox | undefined;
   route = createGitHubWebhookRoute({ database, secrets: () => (box ??= openSecretBox(readSecretKey(env))), jobs, logger });
   return route;

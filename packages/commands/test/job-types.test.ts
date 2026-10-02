@@ -47,6 +47,15 @@ describe("a job type", () => {
   });
 });
 
+describe("a job type that runs one key at a time", () => {
+  it("keeps its policy with its settings, and refuses a policy pg-boss would apply differently", () => {
+    expect(defineJobType("mirror.sync", 1, { ...settings, policy: "key_strict_fifo" }).settings.policy).toBe("key_strict_fifo");
+    expect(() => defineJobType("mirror.sync", 1, { ...settings, policy: "exclusive" as never })).toThrow(
+      new JobTypeError("mirror.sync: the policy exclusive is not one a job type may have; key_strict_fifo is."),
+    );
+  });
+});
+
 describe("the worker's jobs", () => {
   it("use each queue once", () => {
     const queues = WORKER_JOBS.map(({ type }) => type.queue);

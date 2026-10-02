@@ -124,7 +124,11 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
   return {
     boss,
     async send(tx, queue, data, options = {}) {
-      await boss.send(queue, data, { db: fromDrizzle(tx, sql), ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }) });
+      await boss.send(queue, data, {
+        db: fromDrizzle(tx, sql),
+        ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }),
+        ...(options.singletonKey === undefined ? {} : { singletonKey: options.singletonKey }),
+      });
     },
     async stop({ timeoutMs = 10_000 } = {}) {
       await boss.stop({ graceful: true, timeout: timeoutMs, close: true });
@@ -132,11 +136,35 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
   };
 }
 
-/** Creates a job type's dead-letter queue and queue when they are missing, and applies its settings. */
+/**
+ * A job sender that opens its queue when it first sends a job, as the web
+ * role's does, and opens it again on the next send when opening it failed. It
+ * passes each job's options on, such as the key a job runs under, which a
+ * queue that runs one key at a time refuses a job without, and when a job may
+ * start.
+ */
+export function lazyJobSender(open: () => Promise<JobQueue>): JobSender {
+  let queue: Promise<JobQueue> | undefined;
+  return {
+    async send(tx, name, data, options) {
+      queue ??= open().catch((error: unknown) => {
+        queue = undefined;
+        throw error;
+      });
+      await (await queue).send(tx, name, data, options);
+    },
+  };
+}
+
+/**
+ * Creates a job type's dead-letter queue and queue when they are missing, and
+ * applies its settings. The queue's policy, such as key_strict_fifo, is given
+ * only when it is created, since pg-boss never changes a queue's policy.
+ */
 async function ensureQueue(boss: PgBoss, type: DefinedJobType<JobData>): Promise<void> {
   await boss.createQueue(type.deadLetterQueue);
   const settings = { deadLetter: type.deadLetterQueue, ...queueSettings(type.settings) };
-  await boss.createQueue(type.queue, settings);
+  await boss.createQueue(type.queue, { ...settings, ...(type.settings.policy === undefined ? {} : { policy: type.settings.policy }) });
   await boss.updateQueue(type.queue, settings);
 }
 

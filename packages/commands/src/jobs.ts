@@ -21,10 +21,18 @@ export interface JobType<D extends JobData> {
   readonly data?: D;
 }
 
-/** When a job runs, for one that waits. */
+/** When a job runs, for one that waits, and which jobs it runs one at a time with. */
 export interface JobOptions {
   /** The job runs no earlier than this, such as the end of a burst of contract reports. */
   startAfter?: Date;
+  /**
+   * For a job type whose jobs run one key at a time (JobSettings.policy
+   * key_strict_fifo), the key it runs under, such as a request's id: jobs with
+   * the same key run one after the other, never two at once, in the order of
+   * the transactions that sent them, and jobs with other keys run beside them.
+   * Every job of such a type has one.
+   */
+  singletonKey?: string;
 }
 
 export interface JobSender {
@@ -42,6 +50,15 @@ export interface JobSettings {
   retryBackoff: boolean;
   /** How long one attempt may run before it counts as failed, in seconds. */
   expireInSeconds: number;
+  /**
+   * key_strict_fifo runs the queue's jobs one key at a time, such as each
+   * mirror's jobs (design.md, Technical decisions: T6): a job that is active,
+   * waiting to be retried or failed holds back the later jobs with its key,
+   * and no other key. Each job is then sent with a key (JobOptions). A queue's
+   * policy is set when the queue is created and never changes, so a type that
+   * changes it gets a new version, and with it a new queue.
+   */
+  policy?: "key_strict_fifo";
 }
 
 export interface DefinedJobType<D extends JobData> extends JobType<D> {
@@ -79,6 +96,9 @@ export function defineJobType<D extends JobData>(name: string, version: number, 
   whole("retryLimit", 0);
   whole("retryDelaySeconds", 0);
   whole("expireInSeconds", 1);
+  if (settings.policy !== undefined && settings.policy !== "key_strict_fifo") {
+    throw new JobTypeError(`${name}: the policy ${String(settings.policy)} is not one a job type may have; key_strict_fifo is.`);
+  }
   const queue = `${name}.v${version}`;
   return { name, version, queue, deadLetterQueue: `${queue}.dead_letter`, settings: { ...settings } };
 }

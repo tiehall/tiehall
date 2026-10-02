@@ -208,6 +208,32 @@ export {
 } from "./github-mode.ts";
 export { REDELIVERY_ASKS, redeliverFailedDeliveries, redeliverGitHubDeliveries, type RedeliveryOptions } from "./github-redelivery.ts";
 export { changeKeyOf, polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
+export { changesMirror, mirrorRequest, wakeMirror } from "./mirror-jobs.ts";
+export { mirrorSummary, mirrorTitle, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
+export {
+  adaptersOf,
+  mirrorRequests,
+  projectionOf,
+  pushedOf,
+  syncMirror,
+  trackerChanges,
+  TRACKERS,
+  updateOf,
+  type CloseReason,
+  type IssueNow,
+  type IssueState,
+  type IssueUpdate,
+  type MirrorMapping,
+  type MirrorProjection,
+  type MirrorRow,
+  type MirrorServices,
+  type Pushed,
+  type Tracker,
+  type TrackerAccount,
+  type TrackerAdapter,
+  type TrackerAdapters,
+  type TrackerChange,
+} from "./mirrors.ts";
 export { PROCESSED_DELIVERY_RETENTION_DAYS, pruneGitHubDeliveries, UNPROCESSED_DELIVERY_RETENTION_DAYS } from "./github-delivery-pruning.ts";
 export { pollGitHub, pollGitHubChanges, type PollOptions } from "./github-polling.ts";
 export { userOfGitHubAccount } from "./github-users.ts";
@@ -265,7 +291,7 @@ export {
   type StoredResponse,
 } from "./idempotency.ts";
 export { HEALTH_TIMEOUT_MS, openDatabaseHealth, type DatabaseHealth, type DatabaseHealthOptions, type Health } from "./health.ts";
-export { installJobQueue, JOB_QUEUE_VERSION, openJobQueue, type JobQueue, type JobQueueOptions } from "./job-queue.ts";
+export { installJobQueue, JOB_QUEUE_VERSION, lazyJobSender, openJobQueue, type JobQueue, type JobQueueOptions } from "./job-queue.ts";
 export {
   defineJobType,
   JobTypeError,

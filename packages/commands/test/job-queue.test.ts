@@ -11,6 +11,7 @@ import {
   defineJobType,
   installJobQueue,
   JOB_QUEUE_VERSION,
+  lazyJobSender,
   migrate,
   openDatabase,
   openJobQueue,
@@ -37,6 +38,7 @@ const fast = { retryLimit: 1, retryDelaySeconds: 0, retryBackoff: false, expireI
 const mirrorV1 = defineJobType<{ requestId: string }>("probe.mirror_request", 1, fast);
 const mirrorV2 = defineJobType<{ requestId: string; teamId: string }>("probe.mirror_request", 2, fast);
 const alwaysFails = defineJobType<{ requestId: string }>("probe.always_fails", 1, fast);
+const oneAtATime = defineJobType<{ requestId: string; step: number }>("probe.one_key_at_a_time", 1, { ...fast, policy: "key_strict_fifo" });
 const agent: Provenance = { actorKind: "agent", userId: randomUUID(), surface: "mcp" };
 
 let database: TestDatabase;
@@ -57,7 +59,7 @@ beforeAll(async () => {
   url.password = "";
   app = { connectionString: url.toString(), password: appRole.password };
   db = openDatabase(app);
-  queue = await openJobQueue({ connection: app, jobTypes: [mirrorV1, mirrorV2, alwaysFails], logger: silent });
+  queue = await openJobQueue({ connection: app, jobTypes: [mirrorV1, mirrorV2, alwaysFails, oneAtATime], logger: silent });
   await owner.query("INSERT INTO orgs (name, setup_completed_at) VALUES ('Acme', now())");
 });
 
@@ -147,6 +149,7 @@ describe("the job queue's schema", () => {
       { name: "probe.always_fails.v1", dead_letter: "probe.always_fails.v1.dead_letter", ...settings },
       { name: "probe.mirror_request.v1", dead_letter: "probe.mirror_request.v1.dead_letter", ...settings },
       { name: "probe.mirror_request.v2", dead_letter: "probe.mirror_request.v2.dead_letter", ...settings },
+      { name: "probe.one_key_at_a_time.v1", dead_letter: "probe.one_key_at_a_time.v1.dead_letter", ...settings },
     ]);
     const deadLetters = await owner.query(
       "SELECT name, dead_letter FROM pgboss.queue WHERE name LIKE 'probe.%.dead_letter' ORDER BY name",
@@ -155,6 +158,14 @@ describe("the job queue's schema", () => {
       { name: "probe.always_fails.v1.dead_letter", dead_letter: null },
       { name: "probe.mirror_request.v1.dead_letter", dead_letter: null },
       { name: "probe.mirror_request.v2.dead_letter", dead_letter: null },
+      { name: "probe.one_key_at_a_time.v1.dead_letter", dead_letter: null },
+    ]);
+    const policies = await owner.query("SELECT name, policy FROM pgboss.queue WHERE name LIKE 'probe.%' AND name NOT LIKE '%.dead_letter' ORDER BY name");
+    expect(policies.rows.map(({ name, policy }) => [name, policy])).toEqual([
+      ["probe.always_fails.v1", "standard"],
+      ["probe.mirror_request.v1", "standard"],
+      ["probe.mirror_request.v2", "standard"],
+      ["probe.one_key_at_a_time.v1", "key_strict_fifo"],
     ]);
   });
 
@@ -207,6 +218,93 @@ describe("queue versions", () => {
     const next = await recordingWorker([mirrorV2]);
     const [job] = await until("the next worker to receive the new job", () => (next.length > 0 ? next : undefined));
     expect(job?.data).toEqual(newJob);
+  });
+});
+
+describe("a job type that runs one key at a time", () => {
+  it("runs a key's jobs one after the other, never two at once, and other keys' jobs beside them", async () => {
+    const started: string[] = [];
+    const finish = new Map<string, () => void>();
+    workers.push(
+      await startWorker({
+        connection: app,
+        jobs: [
+          {
+            type: oneAtATime,
+            concurrency: 3,
+            handle: async (job: RunningJob<{ requestId: string; step: number }>) => {
+              const name = `${job.data.requestId}:${job.data.step}`;
+              started.push(name);
+              await new Promise<void>((resolve) => finish.set(name, resolve));
+            },
+          },
+        ],
+        pollingIntervalSeconds: 0.5,
+        logger: silent,
+      }),
+    );
+    const first = randomUUID();
+    const other = randomUUID();
+    // Each in a write of its own: jobs sent in one transaction share its time, which orders a key's jobs.
+    for (const [requestId, step] of [
+      [first, 1],
+      [first, 2],
+      [other, 1],
+    ] as const) {
+      await write({ database: db, jobs: queue }, agent, async (writer) => {
+        await writer.record(messagePosted, { requestId, messageId: randomUUID() });
+        await writer.enqueue(oneAtATime, { requestId, step }, { singletonKey: requestId });
+      });
+    }
+    // The other key's job runs beside the first key's first job, and that key's second job waits for its first.
+    await until("both keys' first jobs to start", () => (started.length >= 2 ? started : undefined));
+    await sleep(2000);
+    expect([...started].sort()).toEqual([`${first}:1`, `${other}:1`].sort());
+    finish.get(`${first}:1`)?.();
+    await until("the first key's second job to start", () => (started.includes(`${first}:2`) ? started : undefined));
+    finish.get(`${first}:2`)?.();
+    finish.get(`${other}:1`)?.();
+  });
+
+  it("sends each job with its key", async () => {
+    const requestId = randomUUID();
+    await write({ database: db, jobs: queue }, agent, async (writer) => {
+      await writer.record(messagePosted, { requestId, messageId: randomUUID() });
+      await writer.enqueue(oneAtATime, { requestId, step: 1 }, { singletonKey: requestId });
+    });
+    const { rows } = await owner.query("SELECT singleton_key FROM pgboss.job WHERE name = $1", [oneAtATime.queue]);
+    expect(rows).toEqual([{ singleton_key: requestId }]);
+  });
+});
+
+describe("a job sender that opens its queue when it first sends", () => {
+  it("passes each job's options on, such as the key it runs under and when it may start", async () => {
+    const sent: unknown[][] = [];
+    let opened = 0;
+    const sender = lazyJobSender(async () => {
+      opened += 1;
+      return { send: async (...call: unknown[]) => void sent.push(call) } as unknown as JobQueue;
+    });
+    const startAfter = new Date("2026-10-10T08:02:00Z");
+    await sender.send({} as never, mirrorV1.queue, { requestId: "a" }, { singletonKey: "a" });
+    await sender.send({} as never, mirrorV1.queue, { requestId: "b" }, { startAfter });
+    expect(opened).toBe(1);
+    expect(sent.map(([, queueName, data, options]) => [queueName, data, options])).toEqual([
+      [mirrorV1.queue, { requestId: "a" }, { singletonKey: "a" }],
+      [mirrorV1.queue, { requestId: "b" }, { startAfter }],
+    ]);
+  });
+
+  it("opens the queue again on the next send after opening it failed", async () => {
+    let opened = 0;
+    const sender = lazyJobSender(async () => {
+      opened += 1;
+      if (opened === 1) throw new Error("the database is not reachable");
+      return { send: async () => {} } as unknown as JobQueue;
+    });
+    await expect(sender.send({} as never, mirrorV1.queue, { requestId: "a" })).rejects.toThrow("the database is not reachable");
+    await sender.send({} as never, mirrorV1.queue, { requestId: "a" });
+    expect(opened).toBe(2);
   });
 });
 

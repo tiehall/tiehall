@@ -1,8 +1,9 @@
 import type { EventData, EventType, Provenance } from "@tiehall/core";
 import { securityEventOrigins, type Database } from "@tiehall/db";
 import { appendEvent, type AppendedEvent } from "./append-event.ts";
-import type { JobData, JobSender, JobType } from "./jobs.ts";
+import type { JobData, JobOptions, JobSender, JobType } from "./jobs.ts";
 import { countAgentWrite } from "./loop-limit.ts";
+import { changesMirror, wakeMirror } from "./mirror-jobs.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 
 // The single write path (requests: The event log; activity-log: Which actions
@@ -21,6 +22,12 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // changesRequest(), which counts an agent's write against the loop limit or
 // refuses it while the request waits for a person (loop-limit.ts); a test of
 // every operation that writes on a request holds each to it.
+//
+// A write that records an event that can change what a request's tracker
+// mirror shows, such as a claim, also sends that request's mirror job, once
+// per write and only when the request is mirrored or its target team's
+// mapping would mirror it (mirror-jobs.ts), so the job commits with the
+// change (tracker-mirrors: A mirror is a projection of the request).
 
 /** Where writes go: the app's database and the queue that jobs are sent to. */
 export interface Store {
@@ -37,8 +44,8 @@ export interface Writer extends OrgContext {
   changesRequest(requestId: string): Promise<void>;
   /** Records an event of this write, with the caller's provenance. */
   record<T extends EventType>(type: T, data: EventData<T>): Promise<AppendedEvent>;
-  /** Starts a job that commits with this write. */
-  enqueue<D extends JobData>(type: JobType<D>, data: D): Promise<void>;
+  /** Starts a job that commits with this write, such as one that runs under a key or after a time. */
+  enqueue<D extends JobData>(type: JobType<D>, data: D, options?: JobOptions): Promise<void>;
 }
 
 /** Where a caller's request came from, as the web layer saw it. */
@@ -90,6 +97,8 @@ export async function writeIn<R>(
   const userAgent = options.origin?.userAgent?.slice(0, USER_AGENT_MAX_LENGTH);
   const now = options.now ?? (() => new Date());
   let recorded = 0;
+  /** The requests whose mirror job this write has sent already. */
+  const mirrored = new Set<string>();
   const writer: Writer = {
     ...context,
     provenance,
@@ -106,10 +115,15 @@ export async function writeIn<R>(
           userAgent: userAgent ?? null,
         });
       }
+      const requestId = (data as Readonly<Record<string, unknown>>)["requestId"];
+      if (type.class === "domain" && typeof requestId === "string" && !mirrored.has(requestId) && changesMirror(type.type, data)) {
+        mirrored.add(requestId);
+        await wakeMirror(context, jobs, requestId);
+      }
       return event;
     },
-    async enqueue(type, data) {
-      await jobs.send(context.tx, type.queue, data);
+    async enqueue(type, data, jobOptions) {
+      await jobs.send(context.tx, type.queue, data, jobOptions);
     },
   };
   const result = await change(writer);

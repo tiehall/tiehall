@@ -2898,3 +2898,112 @@ export const contractWarnDigestEmails = pgTable(
     }),
   ],
 );
+
+// The tracker each team mirrors its requests into (tracker-mirrors: Each team
+// maps to one tracker; tracker-mirrors: Mirror issues are created on claim by
+// default; design.md, Design rules: Tracker mirrors). One row per team that
+// mirrors, so a team maps one tracker and one place in it, never two: the
+// tracker, GitHub Issues or Jira Cloud, and where the team's mirror issues
+// go, in that tracker's own terms, with the name it is shown by; for GitHub,
+// the team's intake repository, by GitHub's id of it, which a rename keeps,
+// and its owner/name when the mapping was made. A team without a row gets no
+// mirror issues. Mirror issues are created when a request is claimed, unless
+// an admin turned on mirroring on open for the team. Only admins change
+// mappings, in the web UI; mappings are not security events (design.md,
+// Readings to confirm with the founder: R21).
+export const trackerMappings = pgTable(
+  "tracker_mappings",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    teamId: uuid("team_id").notNull(),
+    tracker: text("tracker").notNull(),
+    /** Where the team's mirror issues go, in the tracker's own terms: for GitHub, the intake repository's id. */
+    target: text("target").notNull(),
+    /** How that place is shown, such as acme/fe-intake. */
+    targetName: text("target_name").notNull(),
+    /** Whether a request's mirror issue is created when the request is opened, rather than when it is claimed. */
+    mirrorOnOpen: boolean("mirror_on_open").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.teamId] }),
+    foreignKey({
+      name: "tracker_mappings_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("tracker_mappings_tracker_known", sql`${table.tracker} IN ('github', 'jira')`),
+    check("tracker_mappings_target_length", sql`char_length(${table.target}) BETWEEN 1 AND 200`),
+    check("tracker_mappings_target_name_length", sql`char_length(${table.targetName}) BETWEEN 1 AND 200`),
+  ],
+);
+
+// The mirror issues of requests (tracker-mirrors: A mirror is a projection of
+// the request; tracker-mirrors: Mirror writes are idempotent and never echo;
+// design.md, Design rules: Tracker mirrors; design.md, Technical decisions:
+// T16). One row per request and place a team's mapping names: the request,
+// the team whose tracker holds the issue, the tracker and the place in it,
+// and, once it exists, the tracker's reference of the issue, such as its
+// number in the repository. The mirror job writes the row, with a random
+// marker, before it asks the tracker to create the issue, and the issue
+// carries the marker, so a create that is retried after the tracker made the
+// issue finds that issue instead of making a second one. The row then keeps
+// what the job needs to write nothing when nothing changed and to tell
+// Tiehall's own writes from changes made in the tracker:
+// - what Tiehall last wrote to the issue: digests of its title and body, and
+//   its state label;
+// - what the issue shows as far as Tiehall knows, open or closed and its
+//   assignees, from Tiehall's own writes and the changes it read from the
+//   tracker, and what a write under way will leave it showing.
+// Nothing of the packet or the thread is kept here.
+export const mirrors = pgTable(
+  "mirrors",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    requestId: uuid("request_id").notNull(),
+    /** The team whose tracker holds the mirror issue: the request's target team when the mirror was made. */
+    teamId: uuid("team_id").notNull(),
+    tracker: text("tracker").notNull(),
+    /** Where the issue is, in the tracker's own terms, as the team's mapping named it: for GitHub, the repository's id. */
+    target: text("target").notNull(),
+    /** The tracker's reference of the issue, such as its number in the repository; null until the tracker made it. */
+    issue: text("issue"),
+    /** The random marker the issue's create carries, written before the create. */
+    marker: uuid("marker").notNull().defaultRandom(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When Tiehall learned the issue's reference from the tracker. */
+    issueCreatedAt: timestamp("issue_created_at", { withTimezone: true }),
+    /** What Tiehall last wrote to the issue: digests of its title and body, and its state label. */
+    pushed: jsonb("pushed"),
+    /** What the issue shows as far as Tiehall knows: open or closed, why, and its assignees. */
+    trackerState: jsonb("tracker_state"),
+    /** What a write under way will leave the issue showing, which a change read meanwhile is compared with. */
+    expectedState: jsonb("expected_state"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    uniqueIndex("mirrors_request_place").on(table.orgId, table.requestId, table.teamId, table.tracker, table.target),
+    uniqueIndex("mirrors_issue").on(table.orgId, table.tracker, table.target, table.issue).where(sql`${table.issue} IS NOT NULL`),
+    foreignKey({
+      name: "mirrors_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    foreignKey({
+      name: "mirrors_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    check("mirrors_tracker_known", sql`${table.tracker} IN ('github', 'jira')`),
+    check("mirrors_target_length", sql`char_length(${table.target}) BETWEEN 1 AND 200`),
+    check("mirrors_issue_length", sql`${table.issue} IS NULL OR char_length(${table.issue}) BETWEEN 1 AND 200`),
+    check("mirrors_pushed_is_object", sql`${table.pushed} IS NULL OR jsonb_typeof(${table.pushed}) = 'object'`),
+    check("mirrors_tracker_state_is_object", sql`${table.trackerState} IS NULL OR jsonb_typeof(${table.trackerState}) = 'object'`),
+    check("mirrors_expected_state_is_object", sql`${table.expectedState} IS NULL OR jsonb_typeof(${table.expectedState}) = 'object'`),
+  ],
+);

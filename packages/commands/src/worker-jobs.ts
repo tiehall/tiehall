@@ -15,6 +15,7 @@ import { reconcileGitHub } from "./github-reconciliation.ts";
 import { redeliverGitHubDeliveries } from "./github-redelivery.ts";
 import { processGitHubDelivery, releaseHeldGitHubDeliveries } from "./github-webhooks.ts";
 import { pruneIdempotencyKeys } from "./idempotency.ts";
+import { mirrorRequests } from "./mirrors.ts";
 import { expireProposals } from "./proposal-endings.ts";
 import { notifyWaitingProposals } from "./proposal-waiting.ts";
 import { emailDigests } from "./digests.ts";
@@ -52,4 +53,5 @@ export const WORKER_JOBS: readonly WorkerJob<JobData>[] = [
   requestConsumerReconfirmations,
   applyChangeSets,
   emailWarnDigests,
+  mirrorRequests,
 ];
