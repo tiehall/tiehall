@@ -64,7 +64,12 @@ export function parseIdempotencyKey(header: string): string | undefined {
   return /^[\x20-\x21\x23-\x5b\x5d-\x7e]{1,255}$/.test(key) && key.trim() === key && key !== "" ? key : undefined;
 }
 
-/** Whose keys a caller's keys are: one token, one client for its user, or one CI repository. */
+/**
+ * Whose keys a caller's keys are: one token, one client for its user, or one
+ * workflow of a CI repository, as the run's token names both, so that a repeat
+ * from another workflow, which an API bound to a workflow refuses, never gets
+ * the answer a run of that workflow got.
+ */
 export function idempotencyCallerOf(caller: Caller): string {
   switch (caller.kind) {
     case "personal_access_token":
@@ -72,7 +77,7 @@ export function idempotencyCallerOf(caller: Caller): string {
     case "oauth_token":
       return `oauth:${caller.userId}:${caller.clientId}`;
     case "ci":
-      return `ci:${caller.repositoryId}`;
+      return `ci:${caller.repositoryId}:${caller.jobWorkflowRef}`;
     case "web_session":
       return `web:${caller.userId}`;
     case "system_job":

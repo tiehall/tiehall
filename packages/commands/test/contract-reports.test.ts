@@ -78,13 +78,13 @@ function api(): (request: Request) => Promise<Response> {
   });
 }
 
-/** Sends a report with the token, as the contract Action's CLI does. */
-async function report(token: string, body: unknown): Promise<{ status: number; body: any }> {
+/** Sends a report with the token, as the contract Action's CLI does, with the headers given. */
+async function report(token: string, body: unknown, headers: Record<string, string> = {}): Promise<{ status: number; body: any }> {
   const { method = "POST", path = "" } = CATALOG.get("contract.report") ?? {};
   const response = await api()(
     new Request(`${URL_OF_INSTALL}${path}`, {
       method,
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
     }),
   );
@@ -177,6 +177,20 @@ describe("a contract report", () => {
     expect(answer.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
     expect(await stored()).toEqual([]);
   }, 60_000);
+
+  it("repeated with its Idempotency-Key gets the first answer, but not from another workflow of a bound API's repository", async () => {
+    const body = reportOf(CHANGES, "billing-api");
+    const key = { "idempotency-key": "contract-run-9100200300" };
+    const first = await report(oidc.token(paymentsRun()), body, key);
+    expect(first.status).toBe(200);
+
+    expect(await report(oidc.token(paymentsRun()), body, key)).toEqual(first);
+    const nightly = await report(oidc.token(paymentsRun({ jobWorkflowRef: "acme/payments/.github/workflows/nightly.yml@refs/heads/main" })), body, key);
+
+    expect(nightly.status).toBe(403);
+    expect(nightly.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
+    expect(await stored()).toHaveLength(1);
+  });
 
   it("with a token for another audience, or a replayed one, is refused with 401 invalid_token and stores nothing more", async () => {
     expect((await report(oidc.token(paymentsRun({ audience: "https://tiehall.other.example" })), reportOf())).status).toBe(401);
