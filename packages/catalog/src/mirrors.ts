@@ -107,7 +107,10 @@ export const recordTrackerChange = defineCommand({
       open: z.boolean(),
       closeReason: z.enum(["completed", "not_planned", "duplicate"]).nullable(),
       assignees: z.array(trackerAccount).max(100),
-      closedBy: trackerAccount.nullable(),
+    }),
+    by: trackerAccount.nullable().meta({
+      description:
+        "The tracker account that made the change, as the tracker names it: who closed the issue, for a closed one, or who caused the tracker's notice of the change otherwise; null when the tracker names none.",
     }),
   }),
   output: z.object({

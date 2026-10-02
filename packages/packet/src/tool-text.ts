@@ -605,6 +605,19 @@ export function updateDescription({ type, data }: Pick<UpdateJson, "type" | "dat
       return "a pull request was linked to it";
     case "request.provider_change_shipped":
       return "the provider change it follows shipped: its provider pull request merged";
+    case "request.tracker_changed": {
+      const change = word("change");
+      const what =
+        change === "closed"
+          ? `its mirror issue was closed in the tracker${data["reason"] === undefined ? "" : ` (${word("reason")})`}`
+          : change === "reopened"
+            ? "its mirror issue was reopened in the tracker"
+            : change === "assignees_changed"
+              ? "its mirror issue's assignees changed in the tracker"
+              : undefined;
+      if (what === undefined) throw new ToolTextError("A tracker's change is not one Tiehall records.");
+      return `${what}, which changed nothing of the request`;
+    }
     case "request.state_changed":
       return `it moved from ${word("previousState")} to ${word("state")}`;
     case "request.needs_human_flagged":

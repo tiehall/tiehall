@@ -17,7 +17,12 @@ import { withOrg } from "./with-org.ts";
 // what the payload says happened: it reads the mirror issue from GitHub, with
 // the token of the installation that covers its repository now, and records
 // what the issue shows (mirrors.record_tracker_change), as the integration
-// event from GitHub. What Tiehall wrote itself, or is writing, comes back
+// event from GitHub, acting for the member whose GitHub account made the
+// change: the one GitHub names as having closed the issue, for a closed
+// issue, or the delivery's sender otherwise, while that account is a
+// member's, and for no user otherwise (agent-access: Six kinds of caller;
+// github-layer-hardening: design.md, Technical decisions: T7). What
+// Tiehall wrote itself, or is writing, comes back
 // this way too, as the App's bot: a label added or taken off, a close, the
 // issue's opening. The read then shows what Tiehall knows the issue shows, or
 // what its write under way will leave it showing, and nothing is added to the
@@ -26,9 +31,12 @@ import { withOrg } from "./with-org.ts";
 // change nothing either. A mirror issue whose repository no connected
 // installation covers now is not read.
 
+const ACCOUNT = z.looseObject({ id: z.number().int().positive(), login: z.string().min(1).max(100) });
+
 const PAYLOAD = z.looseObject({
   repository: z.looseObject({ id: z.number().int().positive() }),
   issue: z.looseObject({ number: z.number().int().positive(), pull_request: z.unknown().optional() }),
+  sender: ACCOUNT.optional(),
 });
 
 export const processIssuesEvent: GitHubEventProcessor = async (event, context) => {
@@ -57,5 +65,7 @@ export const processIssuesEvent: GitHubEventProcessor = async (event, context) =
   }
   // An issue GitHub no longer has shows nothing to record.
   if (now === undefined) return;
-  await context.run(recordTrackerChange.id, { mirrorId: mirror.id, issue: now });
+  const sender = payload.data.sender === undefined ? null : { id: String(payload.data.sender.id), login: payload.data.sender.login };
+  const by = now.open ? sender : (now.closedBy ?? sender);
+  await context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, { mirrorId: mirror.id, issue: now, by });
 };

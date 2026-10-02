@@ -85,6 +85,13 @@ export interface GitHubEventContext {
   /** Runs an operation as that caller, through execute(), which lets it run only internal commands. */
   run(commandId: string, input: unknown): Promise<unknown>;
   /**
+   * Runs an operation as the integration event from GitHub acting for the
+   * Tiehall user of another GitHub account, such as the one GitHub names as
+   * having closed an issue, while that user is a member, and for no user
+   * otherwise, or when no account is given.
+   */
+  runAs(account: { id: number } | undefined, commandId: string, input: unknown): Promise<unknown>;
+  /**
    * Runs an internal system command as Tiehall's own job from GitHub, acting
    * for no user, for a change that is the system's action whoever made the
    * change on GitHub, such as the system withdrawal of a contract-change
@@ -197,6 +204,10 @@ export async function processDelivery(services: DeliveryProcessingServices, deli
         {
           caller,
           run: (commandId, input) => services.execute(commandId, caller, input),
+          runAs: async (account, commandId, input) => {
+            const userId = account === undefined ? undefined : await withOrg(services.database, (context) => memberOfGitHubAccount(context, account), { readOnly: true });
+            return services.execute(commandId, { kind: "integration_event", source: "github", ...(userId === undefined ? {} : { userId }) }, input);
+          },
           runAsSystem: (commandId, input) => services.execute(commandId, { kind: "system_job", job: PROCESSING_JOB, surface: "github" }, input),
           app,
           database: services.database,

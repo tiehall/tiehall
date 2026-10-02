@@ -188,7 +188,7 @@ describe("recording what a mirror issue shows", () => {
     await install.execute("requests.claim", sessionOf(ayse), { key: request.key });
     await sync(request.id);
     const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM mirrors WHERE request_id = $1", [request.id]);
-    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [], closedBy: null } };
+    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [] }, by: null };
     await expect(install.execute("mirrors.record_tracker_change", sessionOf(ayse), input)).rejects.toMatchObject({ status: 403 });
     const token = { kind: "personal_access_token" as const, userId: ayse, tokenId: randomUUID(), scopes: ["requests:read" as const, "requests:write" as const], surface: "api" as const };
     await expect(install.execute("mirrors.record_tracker_change", token, input)).rejects.toMatchObject({ status: 404 });

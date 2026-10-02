@@ -42,6 +42,8 @@ export const RECORD_KINDS = [
   "change_set",
   "sign_in_refusal",
   "pull_request_link",
+  "mirror",
+  "tracker_change",
 ] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 

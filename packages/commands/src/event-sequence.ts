@@ -37,7 +37,9 @@ import type { OrgContext } from "./with-org.ts";
 //    request, in the order of their ids (contract-fan-out.ts), and a contract
 //    report locks its own change set's row and appends no event; close on
 //    merge first records the merge of its pull request, which a second
-//    processing of the same merge waits on (close-on-merge.ts);
+//    processing of the same merge waits on (close-on-merge.ts); a change read
+//    back from a tracker locks the request's row, then its mirror's row
+//    (tracker-changes.ts);
 // 4. the request's proposals: its pending ones, oldest first, then the one
 //    the call names, then the record of what its commitment replaced
 //    (proposals.ts, proposal-confirmations.ts, proposal-undo.ts);

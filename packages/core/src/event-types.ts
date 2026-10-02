@@ -140,6 +140,29 @@ export const requestProviderChangeShipped = defineEventType({
 });
 
 /**
+ * A change made in a tracker to a request's mirror issue was recorded
+ * (tracker-mirrors: Inbound tracker changes are recorded, not applied;
+ * requests: The event log): the issue was closed, with the reason the tracker
+ * gives, reopened, or assigned to other accounts. It names the request, its
+ * mirror and Tiehall's record of the change, which holds the tracker accounts
+ * the change was about, never in the event itself; the change changes
+ * nothing else of the request. Its provenance is the integration's, from the
+ * tracker, acting for the member whose tracker account made the change, when
+ * Tiehall knows one.
+ */
+export const requestTrackerChanged = defineEventType({
+  type: "request.tracker_changed",
+  class: "domain",
+  fields: {
+    requestId: { kind: "id", of: "request" },
+    mirrorId: { kind: "id", of: "mirror" },
+    trackerChangeId: { kind: "id", of: "tracker_change" },
+    change: { kind: "enum", values: ["closed", "reopened", "assignees_changed"] },
+    reason: { kind: "enum", values: ["completed", "not_planned", "duplicate"], optional: true },
+  },
+});
+
+/**
  * A request's state changed as the side effect of another change, such as a
  * blocking question moving it to needs_info or the last answer returning it
  * (requests: Thread messages and blocking questions; requests: The event
@@ -754,6 +777,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   requestPacketRevised,
   requestPullRequestLinked,
   requestProviderChangeShipped,
+  requestTrackerChanged,
   requestStateChanged,
   requestNeedsHumanFlagged,
   requestNeedsHumanCleared,

@@ -466,6 +466,24 @@ describe("a page of updates", () => {
     expect(view(updatesText(updates, { teams: [] }, "cli"))).toContain("Once you have handled them, run tiehall updates --acknowledge 61: until then, each run lists them again.");
   });
 
+  it("says what a change made in the tracker to the request's mirror issue was, and that it changed nothing of the request", () => {
+    const mirror = "00000000-0000-4000-8000-000000000040";
+    const change = "00000000-0000-4000-8000-000000000041";
+    const tracked = (number: number, data: Record<string, unknown>) => ({
+      number,
+      type: "request.tracker_changed",
+      occurredAt: "2026-09-30T10:00:00.000Z",
+      data: { requestId: request.id, mirrorId: mirror, trackerChangeId: change, ...data },
+      request: on,
+    });
+    const markdown = view(
+      updatesText({ ...updates, events: [tracked(70, { change: "closed", reason: "not_planned" }), tracked(71, { change: "reopened" }), tracked(72, { change: "assignees_changed" })] }, { teams: [] }),
+    );
+    expect(markdown).toContain("its mirror issue was closed in the tracker (not_planned), which changed nothing of the request.");
+    expect(markdown).toContain("its mirror issue was reopened in the tracker, which changed nothing of the request.");
+    expect(markdown).toContain("its mirror issue's assignees changed in the tracker, which changed nothing of the request.");
+  });
+
   it("says when more updates wait after the page", () => {
     expect(view(updatesText({ ...updates, more: true }, { teams: [] }))).toContain("More updates wait after these; acknowledge these to read them.");
   });

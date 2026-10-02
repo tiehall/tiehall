@@ -3023,3 +3023,55 @@ export const mirrors = pgTable(
     check("mirrors_pending_comment_is_object", sql`${table.pendingComment} IS NULL OR jsonb_typeof(${table.pendingComment}) = 'object'`),
   ],
 );
+
+// The changes made in a tracker to mirror issues that Tiehall recorded
+// (tracker-mirrors: Inbound tracker changes are recorded, not applied). One
+// row per change, which its request's event request.tracker_changed names:
+// the mirror, the change, a close's reason, the tracker account that made it
+// as the tracker names it, and, for new assignees, the accounts the issue is
+// assigned to then. Tracker accounts are kept here and not in the event,
+// because an event names nothing outside Tiehall but by Tiehall's own ids.
+export const trackerChangeRecords = pgTable(
+  "tracker_changes",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    id: uuid("id").notNull().defaultRandom(),
+    mirrorId: uuid("mirror_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    /** closed, reopened or assignees_changed. */
+    change: text("change").notNull(),
+    /** Why the tracker says the issue was closed, for a close. */
+    reason: text("reason"),
+    /** The tracker account that made the change, by the tracker's id and the name it shows; null when the tracker names none. */
+    actor: jsonb("actor"),
+    /** For new assignees, the accounts the issue is assigned to now, by the tracker's ids and names. */
+    assignees: jsonb("assignees"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.id] }),
+    index("tracker_changes_request").on(table.orgId, table.requestId),
+    foreignKey({
+      name: "tracker_changes_mirror_fk",
+      columns: [table.orgId, table.mirrorId],
+      foreignColumns: [mirrors.orgId, mirrors.id],
+    }),
+    foreignKey({
+      name: "tracker_changes_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+    check("tracker_changes_change_known", sql`${table.change} IN ('closed', 'reopened', 'assignees_changed')`),
+    check(
+      "tracker_changes_reason_for_closes",
+      sql`(${table.change} = 'closed') = (${table.reason} IS NOT NULL) AND (${table.reason} IS NULL OR ${table.reason} IN ('completed', 'not_planned', 'duplicate'))`,
+    ),
+    check("tracker_changes_actor_is_object", sql`${table.actor} IS NULL OR jsonb_typeof(${table.actor}) = 'object'`),
+    check(
+      "tracker_changes_assignees_for_assignments",
+      sql`(${table.change} = 'assignees_changed') = (${table.assignees} IS NOT NULL) AND (${table.assignees} IS NULL OR jsonb_typeof(${table.assignees}) = 'array')`,
+    ),
+  ],
+);
