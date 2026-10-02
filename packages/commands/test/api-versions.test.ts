@@ -54,7 +54,7 @@ const widgetV2 = defineCommand({
 });
 
 /** The widgets' titles by locale, as the one handler reads them. */
-const TITLES: Readonly<Record<string, string>> = { en: "Blue widget", tr: "Mavi parça" };
+const TITLES: Readonly<Record<string, string>> = { en: "Blue widget", tr: "Blue widget, in Turkish" };
 
 let install: TestInstall;
 let caller: Caller;
@@ -110,7 +110,7 @@ describe("a stable operation with a breaking shape under /api/v2", () => {
 
     const answeredV2 = await get(now, "/api/v2/widgets/w7?locale=tr");
     expect(answeredV2.status).toBe(200);
-    expect(JSON.parse(answeredV2.text)).toEqual({ id: "w7", title: "Mavi parça", locale: "tr" });
+    expect(JSON.parse(answeredV2.text)).toEqual({ id: "w7", title: "Blue widget, in Turkish", locale: "tr" });
     expect((await get(now, "/api/v2/openapi.json")).text).toBe(v2);
   });
 
