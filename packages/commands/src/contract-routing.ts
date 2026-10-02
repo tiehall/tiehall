@@ -1,18 +1,20 @@
 import { applyChangeSet, packet as packetSchema, type ContractSection, type Packet } from "@tiehall/catalog";
-import { formatRequestKey, isTerminalState, requestOpened, type RequestState } from "@tiehall/core";
+import { formatRequestKey, isTerminalState, requestOpened, requestStateChanged, type RequestLifecycle, type RequestState } from "@tiehall/core";
 import { apiConsumers, apis, contractChangeRequests, contractChangeSets, contractReports, requests, teams } from "@tiehall/db";
 import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { addSystemMessage } from "./messages.ts";
 import { insertPacketRevision, packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
-import { lockPendingProposals } from "./proposals.ts";
+import { cancelProposals, lockPendingProposals } from "./proposals.ts";
 import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan-out.ts";
 import { requestingUserOf } from "./contract-requesters.ts";
-import { lockRequestById, stampOf } from "./request-changes.ts";
+import { lifecycleOf, lockRequestById, saveLifecycle, stampOf, transition } from "./request-changes.ts";
+import type { RequestRow } from "./request-views.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
+import type { Writer } from "./write.ts";
 
 // Contract-change routing (contract-changes: Breaking changes open one request
 // per consuming team; contract-changes: INFO-level changes appear only on
@@ -57,6 +59,16 @@ import type { WorkerJob } from "./worker.ts";
 //   update, in the same words, and keeps its packet and its state (contract-
 //   changes: Each update adds a packet revision and a system message;
 //   handoff-packet: Packet changes that are commitments);
+// - when the report holds no change that opens requests, each of those
+//   requests that is unclaimed at that moment, whatever claims it had before,
+//   is then withdrawn, as a system withdrawal with no proposal and no
+//   confirmation, which cancels its pending proposals as every terminal state
+//   does; a claimed one keeps its state; the system message of each says that
+//   the breaking changes are gone, and which of the two the update did
+//   (contract-changes: Requests are withdrawn when the breaking changes
+//   disappear; requests: System withdrawals never touch a claimed request).
+//   A later report of the change set that brings breaking changes back opens
+//   no second request for a team, whose withdrawn request gets a notice;
 // - the changes that open requests are the report's ERR-level ones; when there
 //   are some, each team that declared it consumes the API, while the API is
 //   registered, and has no request for the change set gets one, within the
@@ -223,24 +235,37 @@ function breakingIn(packet: Packet): number {
   return (packet.untrusted.contract?.changes ?? []).filter(({ level }) => level === "ERR").length;
 }
 
+/** What an update did to a request of the change set, which its message says. */
+type UpdateOutcome =
+  /** It added this revision, and the request goes on, since the changes still open requests. */
+  | { kind: "revised"; revision: number }
+  /** It added this revision, and the changes no longer open any request, so the request was withdrawn, unclaimed, or stays as it is, claimed. */
+  | { kind: "gone"; revision: number; withdrawn: boolean }
+  /** The request is in a terminal state: it keeps its packet at this revision, and gets only this notice. */
+  | { kind: "notice"; revision: number };
+
 /**
  * What an update says on a request of the change set, in Tiehall's words: how
  * the number of breaking changes changed from the request's packet to the
- * report, and what the update did to the request: its next revision, or, for
- * a request in a terminal state, nothing but this notice.
+ * report, and what the update did to the request.
  */
-function updateText(
-  section: ContractSection,
-  report: StoredReport,
-  request: { key: string; state: RequestState; before: number; revision: number },
-  revised: boolean,
-): string {
+function updateText(section: ContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
   const after = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const head = `Diff updated: ${request.before} → ${after} breaking. The contract Action reported ${pr} again, at commit ${report.headSha.slice(0, 12)}`;
-  return revised
-    ? `${head}: packet revision ${request.revision} lists the ${counted(section.changes.length, "change")} to ${section.api} that the diff engine classified, each with its level.`
-    : `${head}. ${request.key} is ${request.state}, so its packet stays at revision ${request.revision}.`;
+  const listed = `${head}: packet revision ${outcome.revision} lists the ${counted(section.changes.length, "change")} to ${section.api} that the diff engine classified, each with its level.`;
+  switch (outcome.kind) {
+    case "revised":
+      return listed;
+    case "gone": {
+      const gone = `The breaking changes are gone: ${pr} no longer makes a change to ${section.api} that opens requests.`;
+      return outcome.withdrawn
+        ? `${listed} ${gone} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}.`
+        : `${listed} ${gone} ${request.key} is claimed, so Tiehall leaves it as it is.`;
+    }
+    case "notice":
+      return `${head}. ${request.key} is ${request.state}, so its packet stays at revision ${outcome.revision}.`;
+  }
 }
 
 /** The contract section of a report, for the API at its repository. */
@@ -270,6 +295,22 @@ function packetOf(section: ContractSection, team: string): Packet {
 /** The title of a contract-change request, in Tiehall's words, within the 200 characters of a title. */
 function titleOf(section: ContractSection): string {
   return `Breaking changes to ${section.api} in ${section.provider_pr.repository}#${section.provider_pr.number}`.slice(0, 200);
+}
+
+/**
+ * Withdraws an unclaimed request as a system withdrawal, with no proposal and
+ * no confirmation (requests: System withdrawals never touch a claimed
+ * request): its state change, recorded with the write's provenance, and the
+ * cancellation of its pending proposals, which a terminal state ends. The
+ * caller holds the request's row and its pending proposals, and has found it
+ * unclaimed.
+ */
+export async function withdrawAsSystem(writer: Writer, requestId: string, current: RequestLifecycle): Promise<void> {
+  if (current.claimantId !== null) throw new Error("A system withdrawal never touches a claimed request.");
+  const next = transition(current, { kind: "withdraw" });
+  await saveLifecycle(writer, requestId, next);
+  await writer.record(requestStateChanged, { requestId, state: next.state, previousState: current.state });
+  await cancelProposals(writer, requestId, { kind: "terminal_state" });
 }
 
 /** By id, for the lock order. */
@@ -332,27 +373,37 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   }
   return context.write(async (writer) => {
     // Every lock before the update's first event: the requests' rows, the pending proposals of those it revises, then the teams' next numbers.
-    for (const { requestId } of toUpdate) await lockRequestById(writer, requestId);
+    const rows = new Map<string, RequestRow>();
+    for (const { requestId } of toUpdate) rows.set(requestId, await lockRequestById(writer, requestId));
     for (const { requestId } of toRevise) await lockPendingProposals(writer, requestId);
     const numbers = new Map<string, number>();
     for (const team of [...toOpen].sort(byId(({ id }) => id))) numbers.set(team.id, await takeRequestNumber(writer, team.id));
 
-    const asSystem = { actorKind: "system" as const, surface: "github" as const };
     for (const request of toUpdate) {
       const { packet: currentPacket, revision } = await packetRevisionOf(writer, request.requestId);
       const before = breakingIn(currentPacket as Packet);
       if (isTerminalState(request.state)) {
         await writer.changesRequest(request.requestId);
-        await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before, revision }, false), asSystem);
+        await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before }, { kind: "notice", revision }));
         continue;
       }
+      const row = rows.get(request.requestId);
+      if (row === undefined) throw new Error("The update locks every request it changes before its first event.");
+      const lifecycle = await lifecycleOf(writer, row);
       const revised = await storePacketRevision(
         writer,
         request.requestId,
         { ...currentPacket, untrusted: { ...currentPacket.untrusted, contract: section } } as Packet,
         stampOf(writer.provenance, undefined),
       );
-      await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before, revision: revised }, true), asSystem);
+      if (opening) {
+        await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before }, { kind: "revised", revision: revised }));
+        continue;
+      }
+      // No change opens requests any more: a system withdrawal of an unclaimed request; a claimed one stays as it is.
+      const withdrawn = lifecycle.claimantId === null;
+      await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before }, { kind: "gone", revision: revised, withdrawn }));
+      if (withdrawn) await withdrawAsSystem(writer, request.requestId, lifecycle);
     }
     const opened: string[] = [];
     for (const team of toOpen) {

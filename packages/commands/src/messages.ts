@@ -87,12 +87,17 @@ async function nextMessageNumber({ tx, orgId }: OrgContext, requestId: string): 
 /**
  * Adds a message in Tiehall's own words to the request's thread, such as a
  * notice or the system message of a contract update: a comment recorded with
- * the actor kind system, and the surface a system action names, such as
- * github for one that follows a signed contract report, with its own event.
- * Tiehall's own messages are not posted by a caller, so no side rule limits
- * them; the caller has locked the request's row.
+ * the actor kind system, with its own event. A write the system makes, such
+ * as one that follows a signed contract report, records it with its own
+ * provenance, the surface included; a write of a caller's own change that
+ * leads Tiehall to add a notice, such as the flip limit's, names the system
+ * as the notice's author instead. Tiehall's own messages are not posted by a
+ * caller, so no side rule limits them; the caller has locked the request's
+ * row.
  */
-export async function addSystemMessage(writer: Writer, requestId: string, body: string, provenance: { actorKind: "system"; surface?: "github" } = { actorKind: "system" }): Promise<string> {
+export async function addSystemMessage(writer: Writer, requestId: string, body: string, provenance?: { actorKind: "system" }): Promise<string> {
+  const author = provenance ?? writer.provenance;
+  if (author.actorKind !== "system") throw new Error("Tiehall's own messages are recorded as the system's.");
   const { tx, orgId } = writer;
   const [message] = await tx
     .insert(messages)
@@ -103,12 +108,14 @@ export async function addSystemMessage(writer: Writer, requestId: string, body: 
       kind: "comment",
       blocking: false,
       actorKind: "system",
-      surface: provenance.surface ?? null,
+      surface: "surface" in author ? (author.surface ?? null) : null,
     })
     .returning({ id: messages.id });
   if (message === undefined) throw new Error("The system message was not returned.");
   await tx.insert(messageVersions).values({ orgId, messageId: message.id, version: 1, body });
-  await appendEvent(writer, messagePosted, { requestId, messageId: message.id, kind: "comment", blocking: false }, provenance);
+  const data = { requestId, messageId: message.id, kind: "comment" as const, blocking: false };
+  if (provenance === undefined) await writer.record(messagePosted, data);
+  else await appendEvent(writer, messagePosted, data, provenance);
   return message.id;
 }
 
@@ -120,7 +127,7 @@ async function addFlipNotice(writer: Writer, requestId: string, targetTeamId: st
   const body =
     `Tiehall posted the question above as non-blocking: agents have already moved ${key} from in_progress to needs_info and back ` +
     `${FLIPS_PER_DAY} times today (UTC). A blocking question posted from the web UI still moves it to needs_info.`;
-  await addSystemMessage(writer, requestId, body);
+  await addSystemMessage(writer, requestId, body, { actorKind: "system" });
 }
 
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {
