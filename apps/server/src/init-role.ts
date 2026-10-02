@@ -3,8 +3,9 @@ import { SettingsError } from "@tiehall/commands";
 import { initEnv, type ImageBuild } from "./env-file.ts";
 
 // The init role (self-host-install: `init` prints a complete `.env`):
-//   docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env
-// prints every install setting with fresh random secrets. TIEHALL_IMAGE is the
+//   (umask 077 && docker run --rm <image> init --url https://tiehall.example.com --image <image> > .env)
+// prints every install setting with fresh random secrets; the install docs
+// set the umask so that only its owner can read the file from the start. TIEHALL_IMAGE is the
 // reference --image gives, verbatim, or without it the image's own name and
 // version tag, which the build bakes in (D42). Its standard output is the
 // file, so it logs nothing there: a refusal, of a URL the install would refuse
