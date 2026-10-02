@@ -15,8 +15,8 @@ import { addTeam, joinTeams } from "./support/requests.ts";
 // burst: the update is applied 2 minutes after that report, with the latest
 // report received by then, and a report that arrives later starts the next
 // burst, so an update never waits more than 2 minutes, however often reports
-// come. Each update adds a packet revision to the change set's requests,
-// which task 23.11 completes; here a revision shows which report an update
+// come. Each update adds a packet revision to the change set's requests
+// (contract-updates.test.ts); here a revision shows which report an update
 // applied, by its head commit. The clock is the test's, and the worker's job
 // that applies an update runs when the time it was sent for has come.
 

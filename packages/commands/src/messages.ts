@@ -84,6 +84,34 @@ async function nextMessageNumber({ tx, orgId }: OrgContext, requestId: string): 
   return placed?.number ?? 1;
 }
 
+/**
+ * Adds a message in Tiehall's own words to the request's thread, such as a
+ * notice or the system message of a contract update: a comment recorded with
+ * the actor kind system, and the surface a system action names, such as
+ * github for one that follows a signed contract report, with its own event.
+ * Tiehall's own messages are not posted by a caller, so no side rule limits
+ * them; the caller has locked the request's row.
+ */
+export async function addSystemMessage(writer: Writer, requestId: string, body: string, provenance: { actorKind: "system"; surface?: "github" } = { actorKind: "system" }): Promise<string> {
+  const { tx, orgId } = writer;
+  const [message] = await tx
+    .insert(messages)
+    .values({
+      orgId,
+      requestId,
+      number: await nextMessageNumber(writer, requestId),
+      kind: "comment",
+      blocking: false,
+      actorKind: "system",
+      surface: provenance.surface ?? null,
+    })
+    .returning({ id: messages.id });
+  if (message === undefined) throw new Error("The system message was not returned.");
+  await tx.insert(messageVersions).values({ orgId, messageId: message.id, version: 1, body });
+  await appendEvent(writer, messagePosted, { requestId, messageId: message.id, kind: "comment", blocking: false }, provenance);
+  return message.id;
+}
+
 /** Adds Tiehall's notice that an agent's blocking question was posted as non-blocking, with its own event. */
 async function addFlipNotice(writer: Writer, requestId: string, targetTeamId: string, number: number): Promise<void> {
   const { tx, orgId } = writer;
@@ -92,13 +120,7 @@ async function addFlipNotice(writer: Writer, requestId: string, targetTeamId: st
   const body =
     `Tiehall posted the question above as non-blocking: agents have already moved ${key} from in_progress to needs_info and back ` +
     `${FLIPS_PER_DAY} times today (UTC). A blocking question posted from the web UI still moves it to needs_info.`;
-  const [notice] = await tx
-    .insert(messages)
-    .values({ orgId, requestId, number: await nextMessageNumber(writer, requestId), kind: "comment", blocking: false, actorKind: "system" })
-    .returning({ id: messages.id });
-  if (notice === undefined) throw new Error("The notice was not returned.");
-  await tx.insert(messageVersions).values({ orgId, messageId: notice.id, version: 1, body });
-  await appendEvent(writer, messagePosted, { requestId, messageId: notice.id, kind: "comment", blocking: false }, { actorKind: "system" });
+  await addSystemMessage(writer, requestId, body);
 }
 
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {

@@ -4,6 +4,7 @@ import { apiConsumers, apis, contractChangeRequests, contractChangeSets, contrac
 import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
+import { addSystemMessage } from "./messages.ts";
 import { insertPacketRevision, packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { lockPendingProposals } from "./proposals.ts";
 import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan-out.ts";
@@ -48,8 +49,14 @@ import type { WorkerJob } from "./worker.ts";
 // - each request of the change set that is not in a terminal state gets the
 //   report's contract section as its packet's next revision, a system action
 //   that takes effect also while the request is claimed, and cancels a pending
-//   proposed packet change based on an earlier revision as stale (task 23.11
-//   adds the system message and the notice on requests in a terminal state);
+//   proposed packet change based on an earlier revision as stale, with a
+//   system message in Tiehall's words that states how the number of breaking
+//   changes changed from the request's current packet to the report, such as
+//   "Diff updated: 2 → 3 breaking"; each request of the change set in a
+//   terminal state (done, declined or withdrawn) gets only a notice of the
+//   update, in the same words, and keeps its packet and its state (contract-
+//   changes: Each update adds a packet revision and a system message;
+//   handoff-packet: Packet changes that are commitments);
 // - the changes that open requests are the report's ERR-level ones; when there
 //   are some, each team that declared it consumes the API, while the API is
 //   registered, and has no request for the change set gets one, within the
@@ -70,9 +77,10 @@ import type { WorkerJob } from "./worker.ts";
 //
 // The locks follow the lock order (event-sequence.ts): the rows of the pull
 // request's change sets, in the order of their ids, then the rows of the
-// change set's requests that get a revision, in the order of their ids, then
-// their pending proposals, then the teams' next request numbers, in the order
-// of the teams' ids, all before the update's first event.
+// change set's requests that get a revision or a notice, in the order of
+// their ids, then the pending proposals of those that get a revision, then
+// the teams' next request numbers, in the order of the teams' ids, all before
+// the update's first event.
 
 /** How long a burst of reports for one change set lasts, from its first report. */
 export const BURST_MS = 2 * 60 * 1000;
@@ -185,27 +193,54 @@ async function consumingTeams({ tx, orgId }: OrgContext, apiId: string): Promise
     .orderBy(asc(apiConsumers.declaredAt), asc(teams.key));
 }
 
-/** A request of the change set: the team it was opened to, and its state now. */
+/** A request of the change set: the team it was opened to, its key and its state now. */
 interface ChangeSetRequest {
   requestId: string;
   teamId: string;
+  key: string;
   state: RequestState;
 }
 
 /** The requests the change set's updates opened, oldest first. */
 async function requestsOfChangeSet({ tx, orgId }: OrgContext, changeSetId: string): Promise<ChangeSetRequest[]> {
   const rows = await tx
-    .select({ requestId: contractChangeRequests.requestId, teamId: contractChangeRequests.teamId, state: requests.state })
+    .select({ requestId: contractChangeRequests.requestId, teamId: contractChangeRequests.teamId, state: requests.state, number: requests.number, teamKey: teams.key })
     .from(contractChangeRequests)
     .innerJoin(requests, and(eq(requests.orgId, contractChangeRequests.orgId), eq(requests.id, contractChangeRequests.requestId)))
+    .innerJoin(teams, and(eq(teams.orgId, requests.orgId), eq(teams.id, requests.targetTeamId)))
     .where(and(eq(contractChangeRequests.orgId, orgId), eq(contractChangeRequests.changeSetId, changeSetId)))
     .orderBy(asc(contractChangeRequests.openedAt), asc(contractChangeRequests.requestId));
-  return rows.map((row) => ({ ...row, state: row.state as RequestState }));
+  return rows.map(({ requestId, teamId, state, number, teamKey }) => ({ requestId, teamId, key: formatRequestKey(teamKey, number), state: state as RequestState }));
 }
 
 /** "1 X" or "N Xs". */
 function counted(count: number, what: string): string {
   return `${count} ${what}${count === 1 ? "" : "s"}`;
+}
+
+/** How many ERR-level changes, which break the contract, a packet's contract section lists; 0 for a packet without one. */
+function breakingIn(packet: Packet): number {
+  return (packet.untrusted.contract?.changes ?? []).filter(({ level }) => level === "ERR").length;
+}
+
+/**
+ * What an update says on a request of the change set, in Tiehall's words: how
+ * the number of breaking changes changed from the request's packet to the
+ * report, and what the update did to the request: its next revision, or, for
+ * a request in a terminal state, nothing but this notice.
+ */
+function updateText(
+  section: ContractSection,
+  report: StoredReport,
+  request: { key: string; state: RequestState; before: number; revision: number },
+  revised: boolean,
+): string {
+  const after = section.changes.filter(({ level }) => level === "ERR").length;
+  const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
+  const head = `Diff updated: ${request.before} → ${after} breaking. The contract Action reported ${pr} again, at commit ${report.headSha.slice(0, 12)}`;
+  return revised
+    ? `${head}: packet revision ${request.revision} lists the ${counted(section.changes.length, "change")} to ${section.api} that the diff engine classified, each with its level.`
+    : `${head}. ${request.key} is ${request.state}, so its packet stays at revision ${request.revision}.`;
 }
 
 /** The contract section of a report, for the API at its repository. */
@@ -282,27 +317,42 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
 
   const section = contractSectionOf(current, api);
   const existing = await requestsOfChangeSet(context, changeSet.id);
-  const toRevise = report === undefined ? [] : existing.filter(({ state }) => !isTerminalState(state)).sort(byId(({ requestId }) => requestId));
+  // A new report updates every request of the change set: a revision where it has not ended, a notice where it has.
+  const toUpdate = report === undefined ? [] : [...existing].sort(byId(({ requestId }) => requestId));
+  const toRevise = toUpdate.filter(({ state }) => !isTerminalState(state));
   const opening = current.changes.some(({ level }) => level === "ERR");
   const candidates = opening ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => !existing.some(({ teamId }) => teamId === id)) : [];
   const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
   await recordWaiting(context, changeSet, waiting);
   // The requester of the requests it opens: the pull request's author while a member of the install, or the provider team alone.
   const requestingUserId = toOpen.length === 0 ? null : await requestingUserOf(context, current.authorGitHubId);
-  if (toRevise.length === 0 && toOpen.length === 0) {
+  if (toUpdate.length === 0 && toOpen.length === 0) {
     await markApplied();
     return { opened: [] };
   }
   return context.write(async (writer) => {
-    // Every lock before the update's first event: the requests' rows, their pending proposals, then the teams' next numbers.
-    for (const { requestId } of toRevise) await lockRequestById(writer, requestId);
+    // Every lock before the update's first event: the requests' rows, the pending proposals of those it revises, then the teams' next numbers.
+    for (const { requestId } of toUpdate) await lockRequestById(writer, requestId);
     for (const { requestId } of toRevise) await lockPendingProposals(writer, requestId);
     const numbers = new Map<string, number>();
     for (const team of [...toOpen].sort(byId(({ id }) => id))) numbers.set(team.id, await takeRequestNumber(writer, team.id));
 
-    for (const { requestId } of toRevise) {
-      const currentPacket = (await packetRevisionOf(writer, requestId)).packet as Packet;
-      await storePacketRevision(writer, requestId, { ...currentPacket, untrusted: { ...currentPacket.untrusted, contract: section } } as Packet, stampOf(writer.provenance, undefined));
+    const asSystem = { actorKind: "system" as const, surface: "github" as const };
+    for (const request of toUpdate) {
+      const { packet: currentPacket, revision } = await packetRevisionOf(writer, request.requestId);
+      const before = breakingIn(currentPacket as Packet);
+      if (isTerminalState(request.state)) {
+        await writer.changesRequest(request.requestId);
+        await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before, revision }, false), asSystem);
+        continue;
+      }
+      const revised = await storePacketRevision(
+        writer,
+        request.requestId,
+        { ...currentPacket, untrusted: { ...currentPacket.untrusted, contract: section } } as Packet,
+        stampOf(writer.provenance, undefined),
+      );
+      await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before, revision: revised }, true), asSystem);
     }
     const opened: string[] = [];
     for (const team of toOpen) {
