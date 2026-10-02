@@ -20,6 +20,8 @@ import { CHANGE_LEVELS } from "./packet.ts";
 // touches. That is all a report holds: its input is strict, at every level, so
 // it has no field for an OpenAPI document and a body with any field it does
 // not know is refused with 400, and Tiehall never receives or parses a spec.
+// Its texts are refused with 400 when they hold what no text Tiehall stores
+// may hold: a NUL character, or a surrogate without its pair.
 // It accepts the CI caller alone, authenticated with its run's GitHub Actions
 // OIDC token, and a report only for an API registered to the run's repository
 // and, for an API bound to a workflow, from that workflow; every other caller,
@@ -30,9 +32,22 @@ import { CHANGE_LEVELS } from "./packet.ts";
 // major version. Its body may be 16 MiB, the larger limit that classified
 // diffs need (body-limits.ts).
 
-/** Text of a report: 1 to max characters, not all blank, kept exactly as sent. */
+/**
+ * Text that says something and can be stored as sent: not all blank, with no
+ * NUL character, which no text Tiehall stores may hold, and no UTF-16
+ * surrogate without its pair, which is no character and which the database
+ * cannot store either; a character beyond the Basic Multilingual Plane, as its
+ * pair of surrogates, is kept.
+ */
+const REPORT_TEXT = /^(?=[\s\S]*\S)(?:[^\u0000\ud800-\udfff]|[\ud800-\udbff][\udc00-\udfff])*$/;
+
+/** Text of a report: 1 to max characters, not all blank, that can be stored, kept exactly as sent. */
 function text(max: number) {
-  return z.string().min(1).max(max).regex(/\S/, "The text is not blank.");
+  return z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(REPORT_TEXT, "The text is not blank, and holds no NUL character and no surrogate without its pair.");
 }
 
 /** The most classified changes one report carries, as many as a packet's contract section holds. */

@@ -766,7 +766,7 @@
                         "description": "The branch or tag, such as main.",
                         "maxLength": 255,
                         "minLength": 1,
-                        "pattern": "\\S",
+                        "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                         "type": "string"
                       },
                       "sha": {
@@ -790,7 +790,7 @@
                           "description": "The diff engine's id for the kind of change, such as response-property-removed.",
                           "maxLength": 200,
                           "minLength": 1,
-                          "pattern": "\\S",
+                          "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                           "type": "string"
                         },
                         "level": {
@@ -806,7 +806,7 @@
                           "description": "The operation the change touches, such as GET /payments/{id}.",
                           "maxLength": 1000,
                           "minLength": 1,
-                          "pattern": "\\S",
+                          "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                           "type": "string"
                         }
                       },
@@ -828,14 +828,14 @@
                         "description": "The diff engine's name, such as oasdiff.",
                         "maxLength": 100,
                         "minLength": 1,
-                        "pattern": "\\S",
+                        "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                         "type": "string"
                       },
                       "version": {
                         "description": "The diff engine's version, such as 1.32.1.",
                         "maxLength": 100,
                         "minLength": 1,
-                        "pattern": "\\S",
+                        "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                         "type": "string"
                       }
                     },
@@ -853,7 +853,7 @@
                         "description": "The branch or tag, such as main.",
                         "maxLength": 255,
                         "minLength": 1,
-                        "pattern": "\\S",
+                        "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*$",
                         "type": "string"
                       },
                       "sha": {

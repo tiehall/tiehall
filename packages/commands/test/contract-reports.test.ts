@@ -246,6 +246,27 @@ describe("a contract report", () => {
     expect(await stored()).toEqual([]);
   });
 
+  it.each([
+    ["a NUL character in a ref", { ...reportOf(), base: { ref: "main\u0000", sha: "a".repeat(40) } }],
+    ["a NUL character in the engine's name", { ...reportOf(), engine: { name: "oasdiff\u0000", version: "1.32.1" } }],
+    ["a NUL character in a change's operation", reportOf([{ id: "response-property-removed", level: "ERR", operation: "GET /payments\u0000" }])],
+    ["a lone surrogate in a change's operation", reportOf([{ id: "response-property-removed", level: "ERR", operation: "GET /pay\ud800ments" }])],
+    ["a lone low surrogate in a change's id", reportOf([{ id: "\udc00removed", level: "ERR", operation: "GET /payments" }])],
+  ])("with text that cannot be stored, %s, is refused with 400 and stores nothing", async (_case, body) => {
+    const answer = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", body);
+
+    expect(answer.status).toBe(400);
+    expect(answer.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}invalid-input` });
+    expect(await stored()).toEqual([]);
+  });
+
+  it("keeps text with characters beyond the Basic Multilingual Plane exactly as sent", async () => {
+    const changes = [{ id: "response-property-removed", level: "ERR", operation: "GET /payments/{id} \u{1F4B8}" }];
+
+    expect((await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf(changes))).status).toBe(200);
+    expect(await stored()).toEqual([expect.objectContaining({ changes })]);
+  });
+
   it("with no change at all is accepted, since a fix can remove every breaking change", async () => {
     const answer = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf([]));
     expect(answer.status).toBe(200);
