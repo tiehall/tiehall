@@ -711,6 +711,24 @@ export const apiUnregistered = defineEventType({
   },
 });
 
+/**
+ * An admin confirmed, with the confirmation step, that a provider pull
+ * request's breaking changes reach consumer teams beyond the 10 it reaches
+ * without an admin (agent-safety: One PR reaches at most 10 consumer teams
+ * without an admin; activity-log: Which actions are security events). It names
+ * the change set and how many waiting teams the confirmation let in; the
+ * change set's update then opens their requests. Its provenance names the
+ * admin.
+ */
+export const contractFanOutConfirmed = defineEventType({
+  type: "contract.fan_out_confirmed",
+  class: "security",
+  fields: {
+    changeSetId: { kind: "id", of: "change_set" },
+    teams: { kind: "integer" },
+  },
+});
+
 export const EVENT_TYPES: readonly EventType[] = [
   requestOpened,
   requestClaimed,
@@ -756,4 +774,5 @@ export const EVENT_TYPES: readonly EventType[] = [
   personalAccessTokenRevoked,
   apiRegistered,
   apiUnregistered,
+  contractFanOutConfirmed,
 ];

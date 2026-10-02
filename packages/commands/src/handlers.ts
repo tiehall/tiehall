@@ -3,6 +3,7 @@ import { ADMIN_ALERT_HANDLERS } from "./admin-alerts.ts";
 import { API_CONSUMER_HANDLERS } from "./api-consumers.ts";
 import { API_HANDLERS } from "./apis.ts";
 import { CONTRACT_ATTACHMENT_HANDLERS } from "./contract-attachments.ts";
+import { CONTRACT_FAN_OUT_HANDLERS } from "./contract-fan-out.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
 import { CONTRACT_ROUTING_HANDLERS } from "./contract-routing.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
@@ -79,4 +80,5 @@ export const HANDLERS: Handlers = {
   ...CONTRACT_REPORT_HANDLERS,
   ...CONTRACT_ATTACHMENT_HANDLERS,
   ...CONTRACT_ROUTING_HANDLERS,
+  ...CONTRACT_FAN_OUT_HANDLERS,
 };

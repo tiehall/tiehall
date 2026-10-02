@@ -249,7 +249,16 @@
     },
     {
       "item": "a contract-change fan-out confirmed;",
-      "actions": [{ "action": "a contract-change fan-out confirmed", "pending": "23.8" }]
+      "actions": [
+        {
+          "action": "a contract-change fan-out confirmed",
+          "event": "contract.fan_out_confirmed",
+          "test": {
+            "file": "packages/commands/test/contract-fan-out.test.ts",
+            "case": "opens the last 2 once an admin confirms it with the confirmation step, which is a security event, and its banner goes"
+          }
+        }
+      ]
     },
     {
       "item": "a change to the PAT switch, the longest PAT lifetime or the daily write budget;",

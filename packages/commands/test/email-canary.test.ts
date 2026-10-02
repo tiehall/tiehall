@@ -33,7 +33,8 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // notices, the daily digest, the reminders that a personal access token
 // expires soon, the request to re-confirm a team's declaration that it consumes
 // an API, whose team and API are named with the canary where their names
-// allow it, and the admin's test message. The canary appears in no email
+// allow it, the admins' alerts about GitHub's webhook and a waiting
+// contract-change fan-out, and the admin's test message. The canary appears in no email
 // subject, nor in any email's text, and every template the email module
 // defines was sent at least once, so a template added later joins this test.
 
@@ -121,7 +122,10 @@ async function ok(answer: Promise<{ status: number; body?: any }>, status = 200)
 
 /** A message as it was sent: its subject and its text, unfolded. */
 function read(message: ReceivedMessage): { subject: string; text: string } {
-  const unfolded = message.data.replace(/=\r\n/g, "").replace(/=3D/g, "=").replace(/\r\n/g, "\n");
+  // The header's folded lines, such as a long subject's, are joined; the text's quoted-printable soft line breaks too.
+  const end = message.data.indexOf("\r\n\r\n");
+  const header = message.data.slice(0, end).replace(/\r\n[ \t]/g, " ");
+  const unfolded = `${header}${message.data.slice(end)}`.replace(/=\r\n/g, "").replace(/=3D/g, "=").replace(/\r\n/g, "\n");
   return { subject: /^Subject: (.*)$/m.exec(unfolded)?.[1] ?? "", text: unfolded.slice(unfolded.indexOf("\n\n") + 2) };
 }
 
@@ -137,6 +141,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9} is asked to re-confirm an API it consumes$/.test(subject)) return email.RECONFIRMATION_REQUEST.id;
   if (subject === "Tiehall: test message") return email.TEST_MESSAGE.id;
   if (subject === "Tiehall: GitHub's webhook deliveries to the install fail") return email.GITHUB_WEBHOOK_ALERT.id;
+  if (subject === "Tiehall: consumer teams wait for an admin to confirm a contract-change fan-out") return email.CONTRACT_FAN_OUT_ALERT.id;
   return undefined;
 }
 
@@ -202,6 +207,14 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     const { rows: apiRows } = await install.owner.query<{ id: string }>("SELECT id FROM apis");
     await install.execute("apis.declare_consumer", sessionOf(id("bob")), { api: apiRows[0]?.id ?? "", team: teamId("FE") });
     await runJob(requestConsumerReconfirmations, new Date(Date.now() + 91 * 24 * 3_600_000));
+    // The alert to the admins about a contract-change fan-out that waits for their confirmation: FE, named with the canary, waits.
+    const { rows: changeSets } = await install.owner.query<{ id: string; since: Date }>(
+      `INSERT INTO contract_change_sets (org_id, api_id, repository_id, pull_request_number, fan_out_waiting_since)
+         SELECT org_id, id, 7001, 310, now() FROM apis RETURNING id, fan_out_waiting_since AS since`,
+    );
+    const changeSet = changeSets[0];
+    await install.owner.query("INSERT INTO contract_fan_out_waits (org_id, change_set_id, team_id, waiting_since) SELECT id, $1, $2, now() FROM orgs", [changeSet?.id, teamId("FE")]);
+    await runJob(emailAdminAlerts, new Date(), { alert: "contract_fan_out", raisedAt: changeSet?.since.toISOString(), changeSetId: changeSet?.id });
     // And the admin's test message.
     await sendTestMessage(mailer, { to: "pia@example.com", installUrl: URL_OF_INSTALL });
   }, 60_000);
@@ -227,6 +240,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     expect([...new Set(sent)].sort()).toEqual(templates());
     expect(templates()).toEqual(
       [
+        "email.contract_fan_out_alert",
         "email.digest",
         "email.github_webhook_alert",
         "email.personal_access_token_reminder",

@@ -5,6 +5,7 @@ import { defineCommand } from "./command.ts";
 import { CHANGE_LEVELS, contractSection } from "./packet.ts";
 import { packetRevision } from "./packets.ts";
 import { request, requestKey, requestKeyOutput } from "./requests.ts";
+import { teamKey } from "./teams.ts";
 
 // contract.report, the one way contract changes reach Tiehall
 // (contract-changes: One report operation that never takes a whole spec;
@@ -179,4 +180,30 @@ export const applyChangeSet = defineCommand({
   stability: "alpha",
 });
 
-export const CONTRACT_COMMANDS = [reportContractChanges, attachContractChanges, applyChangeSet];
+// Confirming a fan-out beyond 10 consumer teams (agent-safety: One PR reaches
+// at most 10 consumer teams without an admin; agent-safety: Actions that need
+// the confirmation step; activity-log: Which actions are security events;
+// design.md, Decisions this change rests on: D28 #52; design.md,
+// Self-hosting decisions: S7). An admin confirms, in the web UI with the
+// confirmation step, that a change set's breaking changes reach the consumer
+// teams that wait for it, named by their ids, which the review page lists;
+// the change set's update then opens their requests. No agent surface offers
+// it.
+
+export const confirmFanOut = defineCommand({
+  id: "contract.confirm_fan_out",
+  summary: "Confirm that a provider pull request's breaking changes to an API reach consumer teams beyond the 10 it reaches without an admin: the teams that wait, named here.",
+  input: z.object({
+    changeSet: z.uuid().meta({ description: "The change set: one provider pull request against one registered API." }),
+    teams: z.array(z.uuid()).min(1).max(1000).meta({ description: "The waiting consumer teams the confirmation lets in, by id." }),
+  }),
+  output: z.object({ confirmed: z.array(teamKey).meta({ description: "The keys of the teams the confirmation let in." }) }),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  admin: "fan_out",
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const CONTRACT_COMMANDS = [reportContractChanges, attachContractChanges, applyChangeSet, confirmFanOut];

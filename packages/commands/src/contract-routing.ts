@@ -1,11 +1,12 @@
 import { applyChangeSet, packet as packetSchema, type ContractSection, type Packet } from "@tiehall/catalog";
-import { formatRequestKey, isTerminalState, Refusal, requestOpened, type RequestState } from "@tiehall/core";
+import { formatRequestKey, isTerminalState, requestOpened, type RequestState } from "@tiehall/core";
 import { apiConsumers, apis, contractChangeRequests, contractChangeSets, contractReports, requests, teams } from "@tiehall/db";
 import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { insertPacketRevision, packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { lockPendingProposals } from "./proposals.ts";
+import { fanOut, lockPullRequestChangeSets, recordWaiting } from "./contract-fan-out.ts";
 import { lockRequestById, stampOf } from "./request-changes.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -108,25 +109,7 @@ interface StoredReport {
   receivedAt: Date;
 }
 
-/** The change set's row, locked until the call's transaction ends; 404 when there is none. */
-async function lockChangeSet({ tx, orgId }: OrgContext, changeSetId: string) {
-  const [row] = await tx
-    .select({
-      id: contractChangeSets.id,
-      apiId: contractChangeSets.apiId,
-      pullRequestNumber: contractChangeSets.pullRequestNumber,
-      repositoryId: contractChangeSets.repositoryId,
-      appliedReportId: contractChangeSets.appliedReportId,
-      burstStartedAt: contractChangeSets.burstStartedAt,
-    })
-    .from(contractChangeSets)
-    .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSetId)))
-    .for("update");
-  if (row === undefined) throw new Refusal("record-not-found", "There is no such change set.");
-  return row;
-}
-
-type ChangeSetRow = Awaited<ReturnType<typeof lockChangeSet>>;
+type ChangeSetRow = Awaited<ReturnType<typeof lockPullRequestChangeSets>>;
 
 const REPORT_COLUMNS = {
   id: contractReports.id,
@@ -159,6 +142,15 @@ async function latestReportBy({ tx, orgId }: OrgContext, changeSet: ChangeSetRow
     .where(and(ofChangeSet(orgId, changeSet), lte(contractReports.receivedAt, by)))
     .orderBy(desc(contractReports.receivedAt), desc(contractReports.id))
     .limit(1);
+  return row === undefined ? undefined : { ...row, changes: row.changes as ContractSection["changes"] };
+}
+
+/** A report of the change set by its id. */
+async function reportById({ tx, orgId }: OrgContext, reportId: string): Promise<StoredReport | undefined> {
+  const [row] = await tx
+    .select(REPORT_COLUMNS)
+    .from(contractReports)
+    .where(and(eq(contractReports.orgId, orgId), eq(contractReports.id, reportId)));
   return row === undefined ? undefined : { ...row, changes: row.changes as ContractSection["changes"] };
 }
 
@@ -240,42 +232,52 @@ function titleOf(section: ContractSection): string {
 const byId = <T>(id: (item: T) => string) => (a: T, b: T) => (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : 0);
 
 /**
- * Applies a change set's update, as contract.apply_change_set does, once its
- * burst has ended; returns the keys of the requests it opened.
+ * Applies a change set's update, as contract.apply_change_set does: a burst's
+ * latest report once the burst has ended, and the fan-out of the change set's
+ * latest applied report; returns the keys of the requests it opened.
  */
 async function applyUpdate(context: HandlerContext, changeSetId: string): Promise<{ opened: string[] }> {
   const { tx, orgId } = context;
-  const changeSet = await lockChangeSet(context, changeSetId);
-  if (changeSet.burstStartedAt === null) return { opened: [] };
-  const end = burstEnd(changeSet.burstStartedAt);
-  if (context.now().getTime() < end.getTime()) {
-    // Early, such as a job of a burst that has not ended: its update waits for the end.
-    await context.enqueue(applyChangeSets.type, { changeSetId }, { startAfter: end });
-    return { opened: [] };
+  const changeSet = await lockPullRequestChangeSets(context, changeSetId);
+  // The report a burst that has ended brings, if it is new.
+  let report: StoredReport | undefined;
+  if (changeSet.burstStartedAt !== null) {
+    const end = burstEnd(changeSet.burstStartedAt);
+    if (context.now().getTime() < end.getTime()) {
+      // Early, such as a job of a burst that has not ended: the burst's update waits for its end.
+      await context.enqueue(applyChangeSets.type, { changeSetId }, { startAfter: end });
+    } else {
+      // The burst ends here; the first report after it starts the next.
+      const next = await firstReportAfter(context, changeSet, end);
+      await tx
+        .update(contractChangeSets)
+        .set({ burstStartedAt: next ?? null })
+        .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSet.id)));
+      if (next !== undefined) await context.enqueue(applyChangeSets.type, { changeSetId }, { startAfter: burstEnd(next) });
+      const latest = await latestReportBy(context, changeSet, end);
+      if (latest !== undefined && latest.id !== changeSet.appliedReportId) report = latest;
+    }
   }
-  // The burst ends here; the first report after it starts the next.
-  const next = await firstReportAfter(context, changeSet, end);
-  await tx
-    .update(contractChangeSets)
-    .set({ burstStartedAt: next ?? null })
-    .where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSet.id)));
-  if (next !== undefined) await context.enqueue(applyChangeSets.type, { changeSetId }, { startAfter: burstEnd(next) });
-
-  const report = await latestReportBy(context, changeSet, end);
-  if (report === undefined || report.id === changeSet.appliedReportId) return { opened: [] };
+  // The change set's latest report: the new one, or the one an earlier update applied, whose fan-out an admin may have confirmed since.
+  const current = report ?? (changeSet.appliedReportId === null ? undefined : await reportById(context, changeSet.appliedReportId));
+  if (current === undefined) return { opened: [] };
   const [api] = await tx
     .select({ name: apis.name, providerTeamId: apis.providerTeamId, repositoryFullName: apis.repositoryFullName })
     .from(apis)
     .where(and(eq(apis.orgId, orgId), eq(apis.id, changeSet.apiId)));
   if (api === undefined) throw new Error("A change set names an API the install does not have.");
-  const markApplied = () =>
-    tx.update(contractChangeSets).set({ appliedReportId: report.id }).where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSet.id)));
+  const markApplied = async () => {
+    if (report === undefined) return;
+    await tx.update(contractChangeSets).set({ appliedReportId: report.id }).where(and(eq(contractChangeSets.orgId, orgId), eq(contractChangeSets.id, changeSet.id)));
+  };
 
-  const section = contractSectionOf(report, api);
+  const section = contractSectionOf(current, api);
   const existing = await requestsOfChangeSet(context, changeSet.id);
-  const toRevise = existing.filter(({ state }) => !isTerminalState(state)).sort(byId(({ requestId }) => requestId));
-  const opening = report.changes.some(({ level }) => level === "ERR");
-  const toOpen = opening ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => !existing.some(({ teamId }) => teamId === id)) : [];
+  const toRevise = report === undefined ? [] : existing.filter(({ state }) => !isTerminalState(state)).sort(byId(({ requestId }) => requestId));
+  const opening = current.changes.some(({ level }) => level === "ERR");
+  const candidates = opening ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => !existing.some(({ teamId }) => teamId === id)) : [];
+  const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
+  await recordWaiting(context, changeSet, waiting);
   if (toRevise.length === 0 && toOpen.length === 0) {
     await markApplied();
     return { opened: [] };
@@ -288,8 +290,8 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
     for (const team of [...toOpen].sort(byId(({ id }) => id))) numbers.set(team.id, await takeRequestNumber(writer, team.id));
 
     for (const { requestId } of toRevise) {
-      const current = (await packetRevisionOf(writer, requestId)).packet as Packet;
-      await storePacketRevision(writer, requestId, { ...current, untrusted: { ...current.untrusted, contract: section } } as Packet, stampOf(writer.provenance, undefined));
+      const currentPacket = (await packetRevisionOf(writer, requestId)).packet as Packet;
+      await storePacketRevision(writer, requestId, { ...currentPacket, untrusted: { ...currentPacket.untrusted, contract: section } } as Packet, stampOf(writer.provenance, undefined));
     }
     const opened: string[] = [];
     for (const team of toOpen) {

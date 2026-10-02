@@ -2,7 +2,8 @@ import { getBanners, type banner } from "@tiehall/catalog";
 import { adminAlertEmails, githubApp, members, users } from "@tiehall/db";
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { z } from "zod";
-import { GITHUB_WEBHOOK_ALERT, installLink, type ServerText } from "./email.ts";
+import { fanOutBanner, waitingFanOuts } from "./contract-fan-out.ts";
+import { apiNameText, CONTRACT_FAN_OUT_ALERT, countText, GITHUB_WEBHOOK_ALERT, installLink, repositoryText, teamKeysText, type Mailer, type ServerText } from "./email.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -26,11 +27,17 @@ import type { WorkerJob } from "./worker.ts";
 // see it once the GitHub Issues mirror maps teams (group 24). The write that
 // records the give-up when none is recorded starts the email to the admins
 // (github-mode.ts), so later give-ups while the banner shows start none.
+//
+// The admins also see a banner for each contract-change fan-out that waits for
+// an admin's confirmation (agent-safety: One PR reaches at most 10 consumer
+// teams without an admin; contract-fan-out.ts), which leads to the review page
+// of the confirmation, and get one email about it when SMTP is set; the update
+// that makes the first team of a change set wait starts that email.
 
 export type Banner = z.output<typeof banner>;
 
 /** The admin alerts that are emailed, by their ids. */
-export type AdminAlert = "github_webhook";
+export type AdminAlert = "github_webhook" | "contract_fan_out";
 
 /** The problem with GitHub's webhook that the App's row shows, if any: when it was raised, and whether GitHub moved to polling mode. */
 async function githubWebhookProblem({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<{ raisedAt: Date; polling: boolean } | undefined> {
@@ -61,6 +68,7 @@ export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, role
       link: { href: "/admin/github", text: "The GitHub page of the admin UI" },
     });
   }
+  if (role === "admin") for (const fanOut of await waitingFanOuts(context)) banners.push(fanOutBanner(fanOut));
   return banners;
 }
 
@@ -72,6 +80,33 @@ export interface AdminAlertEmailData extends Record<string, unknown> {
   alert: AdminAlert;
   /** When the alert was raised, as the state that shows it records it. */
   raisedAt: string;
+  /** For a waiting fan-out, its change set. */
+  changeSetId?: string;
+}
+
+/** An alert's email, which sends it to one admin; read from the state that shows the alert. */
+type AlertEmail = (mailer: Mailer, to: string, installUrl: string) => Promise<unknown>;
+
+/** The email of an alert, while its banner shows the raise the job was started for; undefined once its banner has gone or shows a later raise. */
+async function alertEmailOf(context: Pick<OrgContext, "tx" | "orgId">, data: AdminAlertEmailData, raisedAt: Date): Promise<AlertEmail | undefined> {
+  if (data.alert === "github_webhook") {
+    const problem = await githubWebhookProblem(context);
+    if (problem === undefined || problem.raisedAt.getTime() !== raisedAt.getTime()) return undefined;
+    return (mailer, to, installUrl) =>
+      mailer.send(to, GITHUB_WEBHOOK_ALERT, { page: installLink(installUrl, "/admin/github"), polling: pollingSentence(problem.polling) as ServerText });
+  }
+  if (data.changeSetId === undefined) return undefined;
+  const [fanOut] = await waitingFanOuts(context, data.changeSetId);
+  if (fanOut === undefined || fanOut.since.getTime() !== raisedAt.getTime()) return undefined;
+  return (mailer, to, installUrl) =>
+    mailer.send(to, CONTRACT_FAN_OUT_ALERT, {
+      count: countText(fanOut.teams.length),
+      repository: repositoryText(fanOut.repository),
+      number: countText(fanOut.pullRequestNumber),
+      api: apiNameText(fanOut.api),
+      teams: teamKeysText(fanOut.teams.map(({ key }) => key)),
+      page: installLink(installUrl, "/admin"),
+    });
 }
 
 /**
@@ -93,25 +128,25 @@ export const emailAdminAlerts: WorkerJob<AdminAlertEmailData> = {
     if (mailer === undefined || !mailer.configured || installUrl === undefined) return;
     const raisedAt = new Date(job.data.raisedAt);
     let recipients: { userId: string; email: string }[];
-    let polling: boolean;
+    let alert: AlertEmail;
     try {
       const read = await withOrg(
         database,
         async (context) => {
-          const problem = await githubWebhookProblem(context);
-          if (problem === undefined || problem.raisedAt.getTime() !== raisedAt.getTime()) return undefined;
+          const email = await alertEmailOf(context, job.data, raisedAt);
+          if (email === undefined) return undefined;
           const admins = await context.tx
             .select({ userId: members.userId, email: users.email })
             .from(members)
             .innerJoin(users, and(eq(users.orgId, members.orgId), eq(users.id, members.userId)))
             .where(and(eq(members.orgId, context.orgId), eq(members.role, "admin"), isNotNull(users.email)));
-          return { polling: problem.polling, admins: admins.flatMap(({ userId, email }) => (email === null ? [] : [{ userId, email }])) };
+          return { email, admins: admins.flatMap(({ userId, email: address }) => (address === null ? [] : [{ userId, email: address }])) };
         },
         { readOnly: true },
       );
       if (read === undefined) return;
       recipients = read.admins;
-      polling = read.polling;
+      alert = read.email;
     } catch (error) {
       if (error instanceof SetupRequiredError) return;
       throw error;
@@ -125,7 +160,7 @@ export const emailAdminAlerts: WorkerJob<AdminAlertEmailData> = {
           .returning({ userId: adminAlertEmails.userId });
         // Another run recorded it first, and sends it.
         if (recorded.length === 0) return;
-        await mailer.send(email, GITHUB_WEBHOOK_ALERT, { page: installLink(installUrl, "/admin/github"), polling: pollingSentence(polling) as ServerText });
+        await alert(mailer, email, installUrl);
       });
     }
   },

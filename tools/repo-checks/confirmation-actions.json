@@ -121,7 +121,13 @@
     },
     {
       "item": "confirming a contract-change fan-out to more than 10 consumer teams;",
-      "actions": [{ "action": "confirming a contract-change fan-out to more than 10 consumer teams", "pending": "23.8" }]
+      "actions": [
+        {
+          "action": "confirming a contract-change fan-out to more than 10 consumer teams",
+          "command": "contract.confirm_fan_out",
+          "input": { "changeSet": "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "teams": ["6c2a3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e"] }
+        }
+      ]
     },
     {
       "item": "exporting the activity log.",

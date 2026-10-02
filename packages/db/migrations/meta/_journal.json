@@ -484,6 +484,13 @@
       "when": 1790946730441,
       "tag": "0068_add_contract_report_bursts",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790947247623,
+      "tag": "0069_add_contract_fan_out",
+      "breakpoints": true
     }
   ]
 }

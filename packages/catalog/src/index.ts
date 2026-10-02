@@ -31,7 +31,7 @@ export {
 } from "./personal-access-tokens.ts";
 export { ACTIVITY_LOG_COMMANDS, activityActor, activityEvent, activityOrigin, exportActivityLog, exportedActor, exportedEvent, listActivityLog } from "./activity-log.ts";
 export { CATALOG } from "./commands.ts";
-export { applyChangeSet, attachContractChanges, CONTRACT_COMMANDS, REPORT_CHANGES_MAX, reportContractChanges } from "./contract.ts";
+export { applyChangeSet, attachContractChanges, confirmFanOut, CONTRACT_COMMANDS, REPORT_CHANGES_MAX, reportContractChanges } from "./contract.ts";
 export {
   API_COMMANDS,
   API_NAME,

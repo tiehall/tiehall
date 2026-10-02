@@ -267,7 +267,7 @@ export const adminAlertEmails = pgTable(
       columns: [table.orgId, table.userId],
       foreignColumns: [users.orgId, users.id],
     }),
-    check("admin_alert_emails_alert_known", sql`${table.alert} IN ('github_webhook')`),
+    check("admin_alert_emails_alert_known", sql`${table.alert} IN ('github_webhook', 'contract_fan_out')`),
   ],
 );
 
@@ -2550,6 +2550,12 @@ export const contractChangeSets = pgTable(
      * by then; null while no burst waits.
      */
     burstStartedAt: timestamp("burst_started_at", { withTimezone: true }),
+    /**
+     * Since when consumer teams of the change set wait for an admin to confirm
+     * the pull request's fan-out beyond 10 teams, which the admins' banner and
+     * email are about; null while none waits.
+     */
+    fanOutWaitingSince: timestamp("fan_out_waiting_since", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
@@ -2602,6 +2608,69 @@ export const contractChangeRequests = pgTable(
       name: "contract_change_requests_team_fk",
       columns: [table.orgId, table.teamId],
       foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);
+
+// The fan-out beyond 10 consumer teams (agent-safety: One PR reaches at most
+// 10 consumer teams without an admin; design.md, Decisions this change rests
+// on: D28 #52): the consuming teams of a change set that wait for an admin to
+// confirm that the pull request's breaking changes reach them, because the
+// pull request reached 10 teams already, and those an admin confirmed, whose
+// requests the change set's updates then open.
+export const contractFanOutWaits = pgTable(
+  "contract_fan_out_waits",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    changeSetId: uuid("change_set_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    waitingSince: timestamp("waiting_since", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.changeSetId, table.teamId] }),
+    foreignKey({
+      name: "contract_fan_out_waits_change_set_fk",
+      columns: [table.orgId, table.changeSetId],
+      foreignColumns: [contractChangeSets.orgId, contractChangeSets.id],
+    }),
+    foreignKey({
+      name: "contract_fan_out_waits_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);
+
+export const contractFanOutApprovals = pgTable(
+  "contract_fan_out_approvals",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    changeSetId: uuid("change_set_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    /** The admin who confirmed it, with the confirmation step. */
+    approvedByUserId: uuid("approved_by").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.changeSetId, table.teamId] }),
+    foreignKey({
+      name: "contract_fan_out_approvals_change_set_fk",
+      columns: [table.orgId, table.changeSetId],
+      foreignColumns: [contractChangeSets.orgId, contractChangeSets.id],
+    }),
+    foreignKey({
+      name: "contract_fan_out_approvals_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+    foreignKey({
+      name: "contract_fan_out_approvals_approved_by_fk",
+      columns: [table.orgId, table.approvedByUserId],
+      foreignColumns: [users.orgId, users.id],
     }),
   ],
 );

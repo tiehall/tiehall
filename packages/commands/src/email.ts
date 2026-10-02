@@ -383,6 +383,47 @@ export const GITHUB_WEBHOOK_ALERT: EmailTemplate<{ page: ServerText; polling: Se
     ].join("\n"),
 };
 
+/** A GitHub repository's owner and name, as GitHub named it when an API was registered, such as acme/payments. */
+export function repositoryText(fullName: string): ServerText {
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(fullName)) throw new TypeError("A repository is its owner and name, such as acme/payments.");
+  return fullName as ServerText;
+}
+
+/** Team keys, such as "MOB", "MOB and WEB" or "APP, MOB and WEB". */
+export function teamKeysText(keys: readonly string[]): ServerText {
+  const checked = keys.map((key) => teamKey(key));
+  if (checked.length === 0) throw new TypeError("Team keys name at least one team.");
+  return (checked.length <= 2 ? checked.join(" and ") : `${checked.slice(0, -1).join(", ")} and ${checked.at(-1)}`) as ServerText;
+}
+
+/** A count Tiehall made, such as the number of teams that wait. */
+export function countText(count: number): ServerText {
+  if (!Number.isInteger(count) || count < 0) throw new TypeError("A count is a whole number.");
+  return String(count) as ServerText;
+}
+
+/**
+ * The alert to every admin when consumer teams wait for an admin to confirm a
+ * contract-change fan-out beyond 10 teams (agent-safety: One PR reaches at
+ * most 10 consumer teams without an admin): sent once while its banner shows,
+ * with the admin page, whose banner leads to the review page. Only server
+ * text: the provider pull request, the API, the waiting teams' keys and their
+ * count.
+ */
+export const CONTRACT_FAN_OUT_ALERT: EmailTemplate<{ count: ServerText; repository: ServerText; number: ServerText; api: ServerText; teams: ServerText; page: ServerText }> = {
+  id: "email.contract_fan_out_alert",
+  subject: () => "Tiehall: consumer teams wait for an admin to confirm a contract-change fan-out",
+  text: ({ count, repository, number, api, teams, page }) =>
+    [
+      `${count} consumer teams wait for an admin to confirm that the breaking changes of ${repository}#${number} to ${api} reach them: ${teams}.`,
+      "One pull request reaches at most 10 consumer teams without an admin's confirmation; the teams that declared they consume the API first got their requests at once.",
+      "",
+      `Review and confirm the fan-out from its banner on the admin page: ${page}`,
+      "The banner stays until no team waits; this email is sent once while it shows.",
+      "",
+    ].join("\n"),
+};
+
 /** The test message an admin sends from the admin page. */
 export const TEST_MESSAGE: EmailTemplate<{ install: ServerText }> = {
   id: "email.test_message",
