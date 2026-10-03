@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { COMMAND_TABLE } from "@tiehall/client";
-import { changesOf, contractOptionsOf, counted, CONTRACT_COMMANDS, type ClassifiedChange } from "./contract.ts";
+import { changesOf, contractOptionsOf, CONTRACT_COMMANDS } from "./contract.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf } from "./logins.ts";
-import { answerText, isProblem, problemText } from "./output.ts";
+import { answerText, contractDiffFailureOutput, contractDiffOutput, isProblem, problemText } from "./output.ts";
 import { sessionFor } from "./session.ts";
 import { OASDIFF_MINIMUM } from "./version.ts";
 
@@ -19,7 +19,12 @@ import { OASDIFF_MINIMUM } from "./version.ts";
 // oasdiff classify every change between them, `oasdiff changelog --format
 // json` with external $refs off, in a folder of its own, and prints the
 // classified changes: each change's engine id, its level and the operation it
-// touches, as a contract report carries them. With --attach <key> it attaches
+// touches, as a contract report carries them. What it prints goes through the
+// one renderer (agent-safety: Every string shown to agents has an origin):
+// the API and the refs the developer named, the changes the document gave and
+// what a failing engine wrote are external text, fenced, since a
+// contributor's pull request writes the document; with --json, the contract
+// section sits under `untrusted`, stripped. With --attach <key> it attaches
 // them to that request as the contract section of its packet, with the
 // developer's saved login, through the operation behind
 // attach_contract_changes, naming the revision it expects with --if-match, as
@@ -52,7 +57,7 @@ export function contractDiffHelp(): string {
     "Options:",
     ...Object.entries(DIFF_OPTIONS).map(([option, text]) => `  ${option} <value>: ${text}`),
     "  --install <url>: with --attach, the install the request is on, when the CLI is signed in to several.",
-    "  --json: print the contract section, or the install's JSON answer, instead of text.",
+    "  --json: print the contract section, under untrusted, or the install's JSON answer, instead of text.",
     "",
   ].join("\n");
 }
@@ -115,12 +120,6 @@ function originRepository(environment: CliEnvironment): string {
   return `${match[1]}/${match[2]}`;
 }
 
-/** The changes, one line each: the level, the engine's id and the operation. */
-function changeLines(changes: readonly ClassifiedChange[]): string[] {
-  const idWidth = Math.max(0, ...changes.map(({ id }) => id.length));
-  return changes.map(({ id, level, operation }) => `  ${level.padEnd(4)} ${id.padEnd(idWidth)}  ${operation}`);
-}
-
 /** Runs `tiehall contract diff` with the options after it; returns the exit code. */
 export async function contractDiff(environment: CliEnvironment, globals: { json: boolean; install?: string }, rest: readonly string[]): Promise<number> {
   const options = contractOptionsOf(rest, DIFF_OPTIONS, "contract diff");
@@ -146,7 +145,8 @@ export async function contractDiff(environment: CliEnvironment, globals: { json:
   const head = { ref: headRef, sha: commitOf(environment, headRef) };
   const extension = [".json", ".yaml", ".yml"].includes(extname(spec).toLowerCase()) ? extname(spec).toLowerCase() : ".yaml";
   const work = mkdtempSync(join(tmpdir(), "tiehall-contract-diff-"));
-  let changelog: string;
+  let changelog: string | undefined;
+  let stderr = "";
   try {
     writeFileSync(join(work, `base${extension}`), documentAt(environment, base.sha, baseRef, spec));
     writeFileSync(join(work, `revision${extension}`), documentAt(environment, head.sha, headRef, spec));
@@ -156,12 +156,15 @@ export async function contractDiff(environment: CliEnvironment, globals: { json:
       env: programEnv(environment),
       maxBuffer: 64 * 1024 * 1024,
     });
-    if (run.error !== undefined || run.status !== 0) {
-      throw new CliError(`oasdiff could not compare ${spec} at ${baseRef} and ${headRef}: ${(run.stderr ?? "").trim() || "it failed"}.`);
-    }
-    changelog = run.stdout;
+    if (run.error === undefined && run.status === 0) changelog = run.stdout;
+    else stderr = run.stderr ?? "";
   } finally {
     rmSync(work, { recursive: true, force: true });
+  }
+  if (changelog === undefined) {
+    // What the engine wrote can quote the document, so it is external text.
+    environment.stderr(contractDiffFailureOutput({ engine: { name: "oasdiff", version }, base, head, untrusted: { stderr } }));
+    return 1;
   }
   const changes = changesOf(changelog);
   const contract = {
@@ -176,17 +179,7 @@ export async function contractDiff(environment: CliEnvironment, globals: { json:
   };
 
   if (attach === undefined) {
-    if (globals.json) {
-      environment.stdout(`${JSON.stringify({ contract }, null, 2)}\n`);
-      return 0;
-    }
-    const levels = (level: ClassifiedChange["level"]) => changes.filter((change) => change.level === level).length;
-    const between = `between ${baseRef} (${base.sha.slice(0, 7)}) and ${headRef} (${head.sha.slice(0, 7)})`;
-    const summary =
-      changes.length === 0
-        ? `oasdiff ${version} classified no change of ${api} ${between}.`
-        : `oasdiff ${version} classified ${counted(changes.length, "change")} of ${api} ${between}: ${levels("ERR")} breaking, ${levels("WARN")} potentially breaking and ${levels("INFO")} informational.`;
-    environment.stdout(`${[summary, ...changeLines(changes)].join("\n")}\n`);
+    environment.stdout(contractDiffOutput(contract, globals.json));
     return 0;
   }
 

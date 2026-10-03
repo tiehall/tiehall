@@ -1,6 +1,8 @@
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import { agentJson, createAgentView, type AgentText } from "@tiehall/packet/render";
 import {
+  contractDiffFailureText,
+  contractDiffText,
   contractReportText,
   inboxText,
   postedMessageText,
@@ -9,6 +11,8 @@ import {
   requestText,
   revisedPacketText,
   updatesText,
+  type ContractDiffFailureJson,
+  type ContractDiffJson,
   type ContractReportJson,
   type InboxJson,
   type LinkedPullRequestJson,
@@ -67,6 +71,22 @@ export function answerText(operationId: string, output: unknown, reader: Reader 
   const render = RENDERERS[operationId];
   if (render === undefined) throw new Error(`The CLI has no text for the answer of ${operationId}.`);
   return `${createAgentView().markdown(render(output, reader))}\n`;
+}
+
+/**
+ * What `tiehall contract diff` prints of a diff the engine classified, which
+ * runs no operation: as text, its own words and, fenced as external, the API
+ * and refs the developer named and the changes the document gave; with
+ * --json, the contract section under `untrusted`, where a packet holds it.
+ */
+export function contractDiffOutput(diff: ContractDiffJson, json: boolean): string {
+  if (json) return `${JSON.stringify(agentJson({ untrusted: { contract: diff } }), null, 2)}\n`;
+  return `${createAgentView().markdown(contractDiffText(diff))}\n`;
+}
+
+/** What `tiehall contract diff` prints when the engine could not compare the document: its own words, and what the engine wrote, fenced as external. */
+export function contractDiffFailureOutput(failure: ContractDiffFailureJson): string {
+  return `${createAgentView().markdown(contractDiffFailureText(failure))}\n`;
 }
 
 /** An RFC 9457 problem, as the install answers a refusal. */

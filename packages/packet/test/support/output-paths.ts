@@ -1,6 +1,8 @@
 import { proposalText, type ProposalJson } from "../../src/proposals.ts";
 import type { AgentText, FencedOrigin } from "../../src/render.ts";
 import {
+  contractDiffFailureText,
+  contractDiffText,
   contractReportText,
   directoryText,
   inboxText,
@@ -13,6 +15,8 @@ import {
   teamIntakeText,
   updatesText,
   whoamiText,
+  type ContractDiffFailureJson,
+  type ContractDiffJson,
   type ContractReportJson,
   type DirectoryJson,
   type InboxJson,
@@ -156,6 +160,25 @@ function proposal(login: string): ProposalJson {
     createdAt: AT,
     expiresAt: "2026-10-08T09:00:00Z",
   };
+}
+
+const BASE_SHA = "a".repeat(40);
+const HEAD_SHA = "b".repeat(40);
+
+/** A diff of tiehall contract diff with this API, these refs, and one change with this id and operation. */
+function contractDiff(api: string, baseRef: string, headRef: string, id: string, operation: string, version = "1.32.1"): ContractDiffJson {
+  return {
+    api,
+    base: { ref: baseRef, sha: BASE_SHA },
+    head: { ref: headRef, sha: HEAD_SHA },
+    engine: { name: "oasdiff", version },
+    changes: [{ id, level: "ERR", operation }],
+  };
+}
+
+/** A diff the engine could not make, with what it wrote on its standard error. */
+function contractDiffFailure(stderr: string, version = "1.32.1"): ContractDiffFailureJson {
+  return { engine: { name: "oasdiff", version }, base: { sha: BASE_SHA }, head: { sha: HEAD_SHA }, untrusted: { stderr } };
 }
 
 function intake(name: string, notes: string): TeamIntakeJson {
@@ -314,6 +337,37 @@ export const OUTPUT_PATHS: Readonly<Record<string, OutputPath>> = {
     render: (input) => [{ origin: "tiehall", text: proposalText(input as ProposalJson) }],
     build: () => ({ input: proposal(DANA.login), reader: READER, fenced: [], own: [] }),
     misplace: (text) => ({ input: proposal(text), reader: READER }),
+  },
+  contractDiffText: {
+    builder: "contractDiffText",
+    texts: 5,
+    render: (input) => contractDiffText(input as ContractDiffJson),
+    build: (texts) => ({
+      input: contractDiff(at(texts, 0), at(texts, 1), at(texts, 2), at(texts, 3), at(texts, 4)),
+      reader: READER,
+      // The API, the refs and the change are one external text: the section as the developer named it and the document gave it.
+      fenced: [
+        {
+          text: `API: ${at(texts, 0)}\nBase: ${at(texts, 1)}, at ${BASE_SHA.slice(0, 7)}\nHead: ${at(texts, 2)}, at ${HEAD_SHA.slice(0, 7)}\n  ERR  ${at(texts, 3)}  ${at(texts, 4)}`,
+          origin: "external",
+        },
+      ],
+      own: [],
+    }),
+    misplace: (text) => ({ input: contractDiff("payments-api", "main", "change", "endpoint-removed", "GET /payments", text), reader: READER }),
+  },
+  contractDiffFailureText: {
+    builder: "contractDiffFailureText",
+    texts: 1,
+    render: (input) => contractDiffFailureText(input as ContractDiffFailureJson),
+    build: (texts) => ({
+      input: contractDiffFailure(at(texts, 0)),
+      reader: READER,
+      // What the engine wrote, without the white space around it; nothing is fenced when that is all it wrote.
+      fenced: at(texts, 0).trim() === "" ? [] : [{ text: at(texts, 0).trim(), origin: "external" }],
+      own: [],
+    }),
+    misplace: (text) => ({ input: contractDiffFailure("it failed", text), reader: READER }),
   },
   contractReportText: {
     builder: "contractReportText",

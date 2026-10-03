@@ -408,6 +408,78 @@ export function whoamiText(whoami: WhoamiJson): AgentText[] {
   return texts;
 }
 
+/** A commit's full sha: 40 or 64 lower-case hex digits. */
+const COMMIT_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+/** The levels a diff engine's change has, as Tiehall names them. */
+const CHANGE_LEVELS = ["ERR", "WARN", "INFO"] as const;
+
+/** The contract section `tiehall contract diff` gives: the API and the refs as the developer named them, and the changes as the engine classified the document's. */
+export interface ContractDiffJson {
+  api: string;
+  base: { ref: string; sha: string };
+  head: { ref: string; sha: string };
+  engine: { name: string; version: string };
+  changes: { id: string; level: string; operation: string }[];
+}
+
+/** The engine and the two commits of a diff, in Tiehall's words. */
+function engineAndCommits(engine: { name: string; version: string }, base: { sha: string }, head: { sha: string }) {
+  return {
+    engine: `${checked(engine.name, WORD, "diff engine")} ${checked(engine.version, VERSION, "diff engine version")}`,
+    commits: `commits ${checked(base.sha, COMMIT_SHA, "commit").slice(0, 7)} and ${checked(head.sha, COMMIT_SHA, "commit").slice(0, 7)}`,
+  };
+}
+
+/**
+ * A diff `tiehall contract diff` classified, as it prints it: the engine, the
+ * two commits and how many changes of each level, in Tiehall's words; then, in
+ * one external text, the API and the refs as the developer named them and each
+ * change, with its level, the engine's id and the operation it touches, as the
+ * document gave them, since a contributor's pull request writes the document.
+ */
+export function contractDiffText(diff: ContractDiffJson): AgentText[] {
+  const { engine, commits } = engineAndCommits(diff.engine, diff.base, diff.head);
+  const levels = diff.changes.map(({ level }) => {
+    if (!(CHANGE_LEVELS as readonly unknown[]).includes(level)) throw new ToolTextError("A change's level is not one Tiehall names.");
+    return level;
+  });
+  const of = (level: (typeof CHANGE_LEVELS)[number]) => levels.filter((each) => each === level).length;
+  const said =
+    diff.changes.length === 0
+      ? `${engine} classified no change between ${commits}. The API and the two refs, as you named them:`
+      : `${engine} classified ${diff.changes.length} change${diff.changes.length === 1 ? "" : "s"} between ${commits}: ${of("ERR")} breaking, ${of("WARN")} potentially breaking and ${of("INFO")} informational. The API, the two refs and each change, with its level, the engine's id and the operation it touches, as you named them and as the document gave them:`;
+  const idWidth = Math.max(0, ...diff.changes.map(({ id }) => id.length));
+  const section = [
+    `API: ${diff.api}`,
+    `Base: ${diff.base.ref}, at ${diff.base.sha.slice(0, 7)}`,
+    `Head: ${diff.head.ref}, at ${diff.head.sha.slice(0, 7)}`,
+    ...diff.changes.map(({ id, level, operation }) => `  ${level.padEnd(4)} ${id.padEnd(idWidth)}  ${operation}`),
+  ];
+  return [
+    { origin: "tiehall", text: said },
+    { origin: "external", text: section.join("\n") },
+  ];
+}
+
+/** A diff engine that could not compare the document at two commits: the engine, the commits, and what it wrote on its standard error. */
+export interface ContractDiffFailureJson {
+  engine: { name: string; version: string };
+  base: { sha: string };
+  head: { sha: string };
+  untrusted: { stderr: string };
+}
+
+/** A diff the engine could not make, in Tiehall's words, and what the engine wrote, as external text, since it can quote the document. */
+export function contractDiffFailureText(failure: ContractDiffFailureJson): AgentText[] {
+  const { engine, commits } = engineAndCommits(failure.engine, failure.base, failure.head);
+  const stderr = failure.untrusted.stderr.trim();
+  if (stderr === "") return [{ origin: "tiehall", text: `${engine} could not compare the document at ${commits}, and wrote nothing on its standard error.` }];
+  return [
+    { origin: "tiehall", text: `${engine} could not compare the document at ${commits}. What it wrote on its standard error:` },
+    { origin: "external", text: stderr },
+  ];
+}
+
 /** The install's teams and registered APIs, as directory returns them. */
 export interface DirectoryJson {
   teams: { id: string; key: string; requiredFields?: readonly string[]; untrusted: { name: string; intakeNotes?: string } }[];

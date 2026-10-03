@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createAgentView } from "@tiehall/packet/render";
+import { agentJson, createAgentView } from "@tiehall/packet/render";
+import type { ContractDiffFailureJson, ContractDiffJson } from "@tiehall/packet/tool-text";
 import { OUTPUT_PATHS, plainCase } from "../../packet/test/support/output-paths.ts";
-import { answerText, RENDERERS, type Render } from "../src/output.ts";
+import { answerText, contractDiffFailureOutput, contractDiffOutput, RENDERERS, type Render } from "../src/output.ts";
 
 // Every CLI command's output renders through a path of the fence suite
 // (agent-safety: Content Tiehall did not generate is fenced as data;
@@ -12,7 +13,10 @@ import { answerText, RENDERERS, type Render } from "../src/output.ts";
 // through: for that path's case, the command's texts are the path's texts. A
 // command that renders without a path named here fails the check, so a new
 // command joins the suite before it ships; a commitment's answer prints as its
-// proposal, the proposalText path.
+// proposal, the proposalText path. tiehall contract diff runs no operation
+// for what it prints: a diff the engine classified renders through the
+// contractDiffText path, and one it could not make through
+// contractDiffFailureText.
 
 /** The path of the fence suite each command's output renders through, by its operation id. */
 const COMMAND_PATHS: Readonly<Record<string, string>> = {
@@ -46,6 +50,27 @@ function strays(renderers: Readonly<Record<string, Render>>): string[] {
   return problems;
 }
 
+/** An output with each fence's nonce left out, so two renderings of the same texts compare equal. */
+const withoutNonces = (output: string) => output.replace(/tiehall-data-[0-9a-f]{32}/g, "tiehall-data-NONCE");
+
+/** The ways tiehall contract diff's printers stray from their paths, as sentences; none when each prints as its path renders. */
+function contractDiffStrays(printers: { diff: (diff: ContractDiffJson) => string; failure: (failure: ContractDiffFailureJson) => string }): string[] {
+  const problems: string[] = [];
+  for (const [name, print] of [
+    ["contractDiffText", (input: unknown) => printers.diff(input as ContractDiffJson)],
+    ["contractDiffFailureText", (input: unknown) => printers.failure(input as ContractDiffFailureJson)],
+  ] as const) {
+    const path = OUTPUT_PATHS[name];
+    if (path === undefined) {
+      problems.push(`${name} is no path of the fence suite.`);
+      continue;
+    }
+    const { input, reader } = plainCase(path);
+    if (withoutNonces(print(input)) !== withoutNonces(`${createAgentView().markdown(path.render(input, reader))}\n`)) problems.push(`contract diff does not print as ${name} renders.`);
+  }
+  return problems;
+}
+
 describe("the CLI's command output", () => {
   it("renders each command's answer through the path of the fence suite named for it", () => {
     expect(strays(RENDERERS)).toEqual([]);
@@ -57,6 +82,27 @@ describe("the CLI's command output", () => {
     const { input, reader } = plainCase(path);
     const expected = `${createAgentView().markdown(path.render(input, reader))}\n`;
     for (const operationId of Object.keys(RENDERERS)) expect(answerText(operationId, { proposal: input }, reader)).toBe(expected);
+  });
+
+  it("prints tiehall contract diff's diff through the contractDiffText path, and a failing engine through contractDiffFailureText", () => {
+    expect(contractDiffStrays({ diff: (diff) => contractDiffOutput(diff, false), failure: contractDiffFailureOutput })).toEqual([]);
+  });
+
+  it("prints its diff with --json under untrusted, as agents read JSON", () => {
+    const path = OUTPUT_PATHS["contractDiffText"];
+    if (path === undefined) throw new Error("The suite has no contractDiffText path.");
+    const { input } = plainCase(path);
+    expect(JSON.parse(contractDiffOutput(input as ContractDiffJson, true))).toEqual(agentJson({ untrusted: { contract: input } }));
+  });
+
+  it("fails the contract diff check for a printer that writes the document's text as its own, as a fixture printer shows", () => {
+    const own = (texts: readonly { text: string }[]) => `${texts.map(({ text }) => text).join("\n")}\n`;
+    expect(
+      contractDiffStrays({
+        diff: (diff) => own([{ text: `${diff.api} ${diff.changes.map(({ operation }) => operation).join(" ")}` }]),
+        failure: contractDiffFailureOutput,
+      }),
+    ).toEqual(["contract diff does not print as contractDiffText renders."]);
   });
 
   it("fails the check for a command that renders through no path, or not as its path does, as fixture renderers show", () => {
