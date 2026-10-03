@@ -55,6 +55,8 @@ async function loopback(): Promise<Loopback> {
 class AgentAuthorization implements OAuthClientProvider {
   readonly redirect: string;
   readonly name: string;
+  /** The URL of the client's Client ID Metadata Document, which the SDK names as its client id where the install fetches such documents. */
+  readonly clientMetadataUrl?: string;
   readonly expectedState = randomBytes(16).toString("base64url");
   /** Where the SDK asked to send the person's browser, once it has. */
   authorizationUrl: URL | undefined;
@@ -62,9 +64,10 @@ class AgentAuthorization implements OAuthClientProvider {
   private saved: StoredOAuthTokens | undefined;
   private verifier = "";
 
-  constructor(redirect: string, name: string) {
+  constructor(redirect: string, name: string, clientMetadataUrl?: string) {
     this.redirect = redirect;
     this.name = name;
+    if (clientMetadataUrl !== undefined) this.clientMetadataUrl = clientMetadataUrl;
   }
 
   get redirectUrl(): string {
@@ -119,16 +122,29 @@ function clientNamed(name: string): Client {
   return new Client({ name, version: "0.0.0" }, { capabilities: {}, versionNegotiation: { mode: { pin: MODERN } } });
 }
 
+/** How the agent's client identifies itself, besides registering with Dynamic Client Registration. */
+export interface AgentIdentity {
+  /**
+   * The URL of the client's Client ID Metadata Document: the SDK names it as
+   * the client id when the install's metadata says it fetches such
+   * documents, and registers the client otherwise.
+   */
+  clientMetadataUrl: string;
+  /** Called with the client's loopback redirect URI before the SDK starts, so the document can list it. */
+  redirectUri(url: string): void;
+}
+
 /**
  * The agent's MCP client for the person whose signed-in browser `page` is,
  * connected to the install's /mcp once the person approved it on the consent
  * screen; fails the test when a step does not go as it should.
  */
-export async function connectAgent(installUrl: string, page: Page, name: string): Promise<Client> {
+export async function connectAgent(installUrl: string, page: Page, name: string, identity?: AgentIdentity): Promise<Client> {
   const endpoint = new URL(`${installUrl}/mcp`);
   const callback = await loopback();
   try {
-    const authorization = new AgentAuthorization(callback.url, name);
+    identity?.redirectUri(callback.url);
+    const authorization = new AgentAuthorization(callback.url, name, identity?.clientMetadataUrl);
     const transport = new StreamableHTTPClientTransport(endpoint, { authProvider: authorization });
     // The first call gets 401, and the SDK registers the client and asks to send the browser to the authorization.
     const unsigned = clientNamed(name);

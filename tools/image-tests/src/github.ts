@@ -20,7 +20,7 @@ import type { Install } from "./install.ts";
 // through its production code, and to nothing else.
 
 /** The Node base image the Tiehall image is built on, pinned by digest, which runs the relays. */
-const NODE_IMAGE = (() => {
+export const NODE_IMAGE = (() => {
   const dockerfile = readFileSync(fileURLToPath(new URL("../../../Dockerfile", import.meta.url)), "utf8");
   const image = /^FROM (node:\S+@sha256:[0-9a-f]{64}) AS base$/m.exec(dockerfile)?.[1];
   if (image === undefined) throw new Error("the Dockerfile names no Node base image pinned by digest");

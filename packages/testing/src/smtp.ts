@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 
 // A local SMTP test server (design.md, Technical decisions: T17): it listens
-// on 127.0.0.1, speaks enough SMTP for a mail client to deliver to it (EHLO,
+// on 127.0.0.1 unless told otherwise, speaks enough SMTP for a mail client to deliver to it (EHLO,
 // optional AUTH PLAIN and AUTH LOGIN, MAIL, RCPT, DATA, RSET, NOOP, QUIT), and
 // keeps every message it receives, so tests read what Tiehall sent. It offers
 // no STARTTLS, so a client that requires TLS refuses to send to it.
@@ -30,6 +30,11 @@ export interface SmtpSinkOptions {
   auth?: { user: string; password: string };
   /** Accept connections and never answer, as a hung server does. */
   silent?: boolean;
+  /**
+   * The address it listens on: 127.0.0.1 unless given, such as 0.0.0.0 for an
+   * install whose containers reach it through the host's gateway.
+   */
+  listenHost?: string;
 }
 
 export async function startSmtpSink(options: SmtpSinkOptions = {}): Promise<SmtpSink> {
@@ -44,7 +49,7 @@ export async function startSmtpSink(options: SmtpSinkOptions = {}): Promise<Smtp
     if (options.silent) return;
     converse(socket, options, messages);
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, options.listenHost ?? "127.0.0.1", resolve));
   const { port } = server.address() as { port: number };
   return {
     port,
