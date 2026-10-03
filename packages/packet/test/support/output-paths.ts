@@ -229,12 +229,17 @@ export const OUTPUT_PATHS: Readonly<Record<string, OutputPath>> = {
           { ...facts(1, "web_session", "web", DANA, FE), untrusted: { body: at(texts, 1), client: null } },
           { ...facts(2, "agent", "mcp", SAM, QA), untrusted: { body: at(texts, 2), client: "agent-1" } },
         ],
+        // A pending proposal is stated in Tiehall's own words, with no text anyone wrote.
+        pendingProposals: [proposal(DANA.login)],
       } satisfies RequestWithThreadJson,
       reader: READER,
       fenced: [other(at(texts, 0)), same(at(texts, 1)), other(at(texts, 2))],
       own: [],
     }),
-    misplace: (text) => ({ input: { ...request("A title"), messages: [{ ...facts(1, text, "web", DANA, FE), untrusted: { body: "b", client: null } }] }, reader: READER }),
+    misplace: (text) => ({
+      input: { ...request("A title"), messages: [{ ...facts(1, text, "web", DANA, FE), untrusted: { body: "b", client: null } }], pendingProposals: [] },
+      reader: READER,
+    }),
   },
   postedMessageText: {
     builder: "postedMessageText",

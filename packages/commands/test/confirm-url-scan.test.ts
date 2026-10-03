@@ -195,7 +195,8 @@ describe("every output a request's life gives agents while proposals on it wait"
     expect(JSON.stringify(await waited.json())).toContain(request.key);
   });
 
-  it("holds none in a request URL's markdown or JSON while a proposal on it waits", async () => {
+  // agent-safety: The confirm URL never reaches the model, "A request's markdown holds no confirm URL".
+  it("shows the waiting proposal's id, and holds no confirm URL, in a request URL's markdown and JSON", async () => {
     const request = await claimedRequest();
     const declined = await harness.handle(
       new Request(`${URL_OF_INSTALL}/api/v1/requests/${request.key}/status`, {
@@ -205,11 +206,16 @@ describe("every output a request's life gives agents while proposals on it wait"
       }),
     );
     expect(declined.status).toBe(202);
+    const proposalId = ((await declined.json()) as { proposal: { id: string } }).proposal.id;
     for (const suffix of [".md", ".json"]) {
       const answer = await urls(new Request(`${URL_OF_INSTALL}/${request.key}${suffix}`, { headers: { authorization: `Bearer ${sam.token}` } }));
       if (answer === undefined || !("response" in answer)) throw new Error(`/${request.key}${suffix} gave no answer of its own.`);
       expect(answer.response.status).toBe(200);
-      scanUrlAnswer(`/${request.key}${suffix}`, answer.response.headers.get("content-type") ?? undefined, await answer.response.text());
+      const body = await answer.response.text();
+      scanUrlAnswer(`/${request.key}${suffix}`, answer.response.headers.get("content-type") ?? undefined, body);
+      expect(body, suffix).not.toMatch(/\/confirm\//);
+      if (suffix === ".md") expect(body).toContain(`Proposal ${proposalId}: decline ${request.key}. It is pending.`);
+      else expect((JSON.parse(body) as { pendingProposals: { id: string }[] }).pendingProposals.map(({ id }) => id)).toEqual([proposalId]);
     }
   });
 

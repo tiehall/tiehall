@@ -20,6 +20,7 @@
 // added. A system message is Tiehall's own text, written from its templates,
 // and stays outside any fence.
 
+import { proposalText, type ProposalJson } from "./proposals.ts";
 import type { AgentText, FencedOrigin } from "./render.ts";
 
 /** Who reads: the keys of the reader's teams, by which each text's origin is decided. */
@@ -252,17 +253,21 @@ export function requestPageText(page: RequestPageJson, reader: Reader, surface: 
   return texts;
 }
 
-/** A request with its thread, oldest message first, as the /api/v1 read and the JSON of its URL return it. */
+/** A request with its thread, oldest message first, and its pending proposals, oldest first, as the /api/v1 read and the JSON of its URL return it. */
 export interface RequestWithThreadJson extends RequestJson {
   messages: (MessageFactsJson & { untrusted: { body: string; client: string | null } })[];
+  pendingProposals: ProposalJson[];
 }
 
 /**
  * A request with its thread, as the markdown of its URL shows it: the same
  * data as its JSON. The request in Tiehall's words, its title fenced, then
  * each message, oldest first, with what it is and who posted it in Tiehall's
- * words and its latest text fenced with its origin, and how to read the
- * packet too, which the thread leaves out.
+ * words and its latest text fenced with its origin; then each pending
+ * proposal, by its id, in Tiehall's words, with the confirmations it needs
+ * and has, when it expires and whose web inbox it waits in, and no link, so
+ * never its confirm URL (agent-safety: The confirm URL never reaches the
+ * model); and how to read the packet too, which the thread leaves out.
  */
 export function requestWithThreadText(request: RequestWithThreadJson, reader: Reader): AgentText[] {
   const key = checked(request.key, REQUEST_KEY, "request key");
@@ -275,6 +280,12 @@ export function requestWithThreadText(request: RequestWithThreadJson, reader: Re
       texts.push({ origin: "tiehall", text: messageLine(message, 1, 1) });
       texts.push({ origin: messageOrigin(message, reader), text: message.untrusted.body });
     }
+  }
+  if (request.pendingProposals.length === 0) {
+    texts.push({ origin: "tiehall", text: "No proposal on it is pending." });
+  } else {
+    texts.push({ origin: "tiehall", text: "Its pending proposals, which people confirm or reject in Tiehall's web UI:" });
+    for (const proposal of request.pendingProposals) texts.push({ origin: "tiehall", text: proposalText(proposal) });
   }
   texts.push({ origin: "tiehall", text: `For its packet too, run tiehall get ${key} or call get_request with request "${key}".` });
   return texts;

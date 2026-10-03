@@ -180,7 +180,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read a request by its key, with its thread. Every member of the install can read every request. */
+        /** Read a request by its key, with its thread and its pending proposals. Every member of the install can read every request. */
         get: operations["requests.get"];
         put?: never;
         post?: never;
@@ -2535,6 +2535,99 @@ export interface operations {
                         }[];
                         /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
                         needsHuman: boolean;
+                        /** @description The request's pending proposals, oldest first, each as proposals.get returns it, which people confirm or reject in the web UI. */
+                        pendingProposals: {
+                            accountableHuman: {
+                                bot: boolean;
+                                /** Format: uuid */
+                                id: string;
+                                /** @constant */
+                                kind: "human";
+                                login: string;
+                            };
+                            cancelReason: ("terminal_state" | "reassigned" | "accountable_removed" | "stale") | null;
+                            change: {
+                                dueDate?: string | null;
+                                team?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
+                            };
+                            confirmations: {
+                                needed: {
+                                    rules: ("target_team" | "requester_side" | "claimant")[];
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    team: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        key: string;
+                                    } | null;
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    } | null;
+                                }[];
+                                received: {
+                                    /** Format: date-time */
+                                    confirmedAt: string;
+                                    /** @enum {string} */
+                                    step: "accountable_human" | "other_side";
+                                    user: {
+                                        bot: boolean;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @constant */
+                                        kind: "human";
+                                        login: string;
+                                    };
+                                }[];
+                            };
+                            /** Format: date-time */
+                            createdAt: string;
+                            endedAt: string | null;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            /**
+                             * @description The kind of commitment it proposes.
+                             * @enum {string}
+                             */
+                            kind: "due_date" | "scope" | "decline" | "reassign" | "withdraw" | "done";
+                            proposedBy: {
+                                /** @enum {string} */
+                                actorKind: "agent" | "web_session" | "integration";
+                                surface: ("web" | "mcp" | "cli" | "api" | "github" | "jira") | null;
+                                user: {
+                                    bot: boolean;
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @constant */
+                                    kind: "human";
+                                    login: string;
+                                };
+                            };
+                            request: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
+                            /**
+                             * @description pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.
+                             * @enum {string}
+                             */
+                            state: "pending" | "applied" | "rejected" | "withdrawn" | "expired" | "cancelled";
+                            untrusted: {
+                                client: string | null;
+                                packet: components["schemas"]["Packet"] | null;
+                            };
+                        }[];
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
                             /** @description The registered API the provider change is to, such as payments-api. */

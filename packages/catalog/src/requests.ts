@@ -1,9 +1,13 @@
-import { REQUEST_KEY, REQUEST_STATES, SURFACES, TEAM_KEY } from "@tiehall/core";
+import { REQUEST_STATES, SURFACES } from "@tiehall/core";
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { packet, PROVIDER_STATUSES } from "./packet.ts";
+import { proposal } from "./proposals.ts";
+import { requestKey, requestKeyOutput, teamRef } from "./request-refs.ts";
 import { API_NAME, GITHUB_REPOSITORY, PULL_REQUEST_URL, user } from "./schemas.ts";
 import { teamKey } from "./teams.ts";
+
+export { requestKey, requestKeyOutput, requestRef, teamRef } from "./request-refs.ts";
 
 // The request operations (requests: A request is addressed to a team of the
 // install; requests: The requester picks the requesting team; requests:
@@ -18,14 +22,6 @@ import { teamKey } from "./teams.ts";
 // requests and teams by keys whose schemas close them to their form, which
 // holds no space.
 
-/** A team as a request names it: its id and its current key. */
-export const teamRef = z.object({ id: z.uuid(), key: z.string().regex(TEAM_KEY) });
-
-/** A request's key, such as FE-142: a team key, current or from before a rename, a hyphen and a number. */
-export const requestKey = z
-  .string()
-  .regex(REQUEST_KEY, "A request key is a team key, a hyphen and a number, such as FE-142.")
-  .meta({ description: "The request's key, such as FE-142; a key written with a team's earlier key names the same request." });
 
 /** A request's title, as its requester writes it: one line of 1 to 200 characters. */
 export const requestTitle = z
@@ -34,12 +30,6 @@ export const requestTitle = z
   .min(1)
   .max(200)
   .regex(/^[^\u0000-\u001f\u007f]*$/, "A title is one line, without control characters.");
-
-/** A request's key as outputs write it, with its target team's current key. */
-export const requestKeyOutput = z.string().regex(REQUEST_KEY);
-
-/** A request as other records name it: its id and its key. */
-export const requestRef = z.object({ id: z.uuid(), key: requestKeyOutput });
 
 /** A request as the request operations return it. */
 /**
@@ -118,8 +108,19 @@ export const message = z.object({
   untrusted: z.object({ body: z.string(), client: z.string().nullable() }),
 });
 
-/** A request with its thread, oldest message first. */
-export const requestWithThread = request.extend({ messages: z.array(message) });
+/**
+ * A request with its thread, oldest message first, and its pending proposals,
+ * oldest first, each as proposals.get returns it: what waits for people to
+ * confirm or reject it in the web UI. A proposal holds no confirm URL, so the
+ * read, and the markdown of the request's URL that renders it, holds none
+ * (agent-safety: The confirm URL never reaches the model).
+ */
+export const requestWithThread = request.extend({
+  messages: z.array(message),
+  pendingProposals: z.array(proposal).meta({
+    description: "The request's pending proposals, oldest first, each as proposals.get returns it, which people confirm or reject in the web UI.",
+  }),
+});
 
 export const createRequest = defineCommand({
   id: "requests.create",
@@ -147,7 +148,7 @@ export const createRequest = defineCommand({
 
 export const getRequest = defineCommand({
   id: "requests.get",
-  summary: "Read a request by its key, with its thread. Every member of the install can read every request.",
+  summary: "Read a request by its key, with its thread and its pending proposals. Every member of the install can read every request.",
   input: z.object({ key: requestKey }),
   output: requestWithThread,
   method: "GET",

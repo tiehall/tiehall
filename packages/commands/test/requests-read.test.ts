@@ -7,9 +7,10 @@ import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./
 // Request keys that use a renamed team key keep resolving; design.md,
 // Decisions this change rests on: D28 #3). Every member of the install sees
 // every request, whether or not they belong to its requesting team or its
-// target team: requests.get reads one by its key, with its thread, and
-// requests.list lists the install's requests, newest first. A key that names no request gets 404, and
-// someone who is no longer a member gets 403 and nothing.
+// target team: requests.get reads one by its key, with its thread and its
+// pending proposals, and requests.list lists the install's requests, newest
+// first. A key that names no request gets 404, and someone who is no longer a
+// member gets 403 and nothing.
 
 let install: TestInstall;
 const team: Record<string, string> = {};
@@ -59,6 +60,7 @@ describe("reading one request", () => {
         providerChange: null,
         untrusted: { title: "Add a dark mode" },
         messages: [],
+        pendingProposals: [],
       },
     });
   });
@@ -87,8 +89,9 @@ describe("listing requests", () => {
     expect(answer.status).toBe(200);
     expect(answer.body.requests.map(({ key }: { key: string }) => key)).toEqual(["FE-143", "OPS-1", "FE-142"]);
     // Each listed request is what a read of it returns, without its thread.
-    const { messages, ...read } = (await callApi(install, tokenOf(carol), "GET", "/api/v1/requests/FE-142")).body;
+    const { messages, pendingProposals, ...read } = (await callApi(install, tokenOf(carol), "GET", "/api/v1/requests/FE-142")).body;
     expect(messages).toEqual([]);
+    expect(pendingProposals).toEqual([]);
     expect(answer.body.requests[2]).toEqual(read);
   });
 
@@ -108,5 +111,25 @@ describe("listing requests", () => {
     expect((await callApi(install, tokenOf(carol), "GET", "/api/v1/requests?limit=201")).status).toBe(400);
     expect((await callApi(install, tokenOf(carol), "GET", "/api/v1/requests?state=closed")).status).toBe(400);
     expect((await callApi(install, tokenOf(dana), "GET", "/api/v1/requests")).status).toBe(403);
+  });
+});
+
+// Last, since it opens a request of its own, which the lists above do not expect.
+describe("a request's pending proposals", () => {
+  // agent-safety: The confirm URL never reaches the model, "A request's markdown holds no confirm URL": the markdown of a request URL renders this read.
+  it("lists the request's pending proposals, oldest first, each as proposals.get returns it, and leaves out those that ended", async () => {
+    const request = await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: "Add a light mode" });
+    const decline = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
+    const withdraw = await callApi(install, tokenOf(alice), "POST", `/api/v1/requests/${request.key}/proposals`, { kind: "withdraw" });
+    const reassign = await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${request.key}/proposals`, { kind: "reassign", team: "OPS" });
+    for (const answer of [decline, withdraw, reassign]) expect(answer.status).toBe(202);
+    const bobs = sessionOf(bob);
+    expect(await install.web(bobs).write("proposals.withdraw", { proposal: decline.body.proposal.id }, install.fromThePage(bobs))).toMatchObject({ ok: true });
+
+    const read = await callApi(install, tokenOf(carol), "GET", `/api/v1/requests/${request.key}`);
+    expect(read.status).toBe(200);
+    const pending = read.body.pendingProposals as { id: string }[];
+    expect(pending.map(({ id }) => id)).toEqual([withdraw.body.proposal.id, reassign.body.proposal.id]);
+    for (const proposal of pending) expect(proposal).toEqual((await callApi(install, tokenOf(carol), "GET", `/api/v1/proposals/${proposal.id}`)).body);
   });
 });

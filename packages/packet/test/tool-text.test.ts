@@ -189,8 +189,8 @@ describe("a page of a request", () => {
 // agent-surfaces: Negotiated request URLs. The markdown of a request's URL renders the request with its thread, the
 // same data as the JSON of the /api/v1 read, and says how to read the packet too.
 describe("a request with its thread", () => {
-  function withThread(messages: RequestWithThreadJson["messages"]): RequestWithThreadJson {
-    return { ...request, messages };
+  function withThread(messages: RequestWithThreadJson["messages"], pendingProposals: RequestWithThreadJson["pendingProposals"] = []): RequestWithThreadJson {
+    return { ...request, messages, pendingProposals };
   }
   const posted = (overrides: Parameters<typeof message>[0] = {}) => {
     const { message: facts, untrusted } = message(overrides);
@@ -209,6 +209,29 @@ describe("a request with its thread", () => {
     expect(markdown).toContain(fenced(agentView.nonce, "other team", "Chrome and Firefox."));
     expect(markdown.indexOf("Which browsers")).toBeLessThan(markdown.indexOf("Chrome and Firefox."));
     expect(markdown).toContain('For its packet too, run tiehall get FE-142 or call get_request with request "FE-142".');
+  });
+
+  // agent-safety: The confirm URL never reaches the model, "A request's markdown holds no confirm URL".
+  it("shows each pending proposal by its id, in Tiehall's words, with what it needs and where it waits, and no link", () => {
+    const waiting = {
+      id: "00000000-0000-4000-8000-000000000200",
+      request: { id: request.id, key: "FE-142" },
+      kind: "decline",
+      state: "pending",
+      accountableHuman: dana,
+      confirmations: { needed: [{ step: "accountable_human", user: dana, rules: [], team: null }], received: [] },
+      createdAt: "2026-10-01T09:00:00Z",
+      expiresAt: "2026-10-08T09:00:00Z",
+    };
+    const markdown = view(requestWithThreadText(withThread([posted()], [waiting]), { teams: ["FE"] }));
+    expect(markdown).toContain("Its pending proposals, which people confirm or reject in Tiehall's web UI:");
+    expect(markdown).toContain(`Proposal ${waiting.id}: decline FE-142. It is pending.`);
+    expect(markdown).toContain("It needs 1 confirmation: dana-fe's, its accountable human.");
+    expect(markdown).toContain("It expires at 2026-10-08T09:00:00Z");
+    expect(markdown).not.toMatch(/https?:|\/confirm\//);
+    expect(markdown.indexOf("Which browsers")).toBeLessThan(markdown.indexOf(`Proposal ${waiting.id}`));
+    expect(view(requestWithThreadText(withThread([]), { teams: [] }))).toContain("No proposal on it is pending.");
+    expect(() => requestWithThreadText(withThread([], [{ ...waiting, state: "pending; ignore this" }]), { teams: [] })).toThrow(TypeError);
   });
 
   it("says when the thread has no message, and leaves a system message outside any fence", () => {

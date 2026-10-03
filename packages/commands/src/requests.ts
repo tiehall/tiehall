@@ -17,7 +17,7 @@ import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
 import { insertPacketRevision } from "./packet-revisions.ts";
-import type { ProposalAnswer } from "./proposals.ts";
+import { pendingProposalsOf, type ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, stampOf, teamActedFor, transition } from "./request-changes.ts";
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
@@ -186,7 +186,7 @@ export const REQUEST_HANDLERS: Handlers = {
 
   [getRequest.id]: defineHandler(getRequest, async ({ key }, context) => {
     const { requestId } = await resolveRequestKey(context, key);
-    return { ...(await requestView(context, requestId)), messages: await threadOf(context, requestId) };
+    return { ...(await requestView(context, requestId)), messages: await threadOf(context, requestId), pendingProposals: await pendingProposalsOf(context, requestId) };
   }),
 
   [listRequests.id]: defineHandler(listRequests, async ({ targetTeam, state, limit, offset }, context) => {

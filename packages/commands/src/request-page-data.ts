@@ -18,8 +18,8 @@ import type { WebCommands, WebResult } from "./web-commands.ts";
 // reads them too, as the same session, for the page's ETag, which so changes
 // whenever what the page shows of the request does.
 
-/** A request with its thread, oldest message first. */
-export type RequestWithThreadView = RequestView & { messages: MessageView[] };
+/** A request with its thread, oldest message first, and its pending proposals, oldest first. */
+export type RequestWithThreadView = RequestView & { messages: MessageView[]; pendingProposals: ProposalView[] };
 
 /** Who reads the page, as whoami says: the user, by id, and the teams they belong to. */
 export interface RequestPageViewer {

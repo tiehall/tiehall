@@ -2,7 +2,7 @@ import { CANCEL_REASONS, COMMITMENT_KINDS, PROPOSAL_STATES, SECOND_CONFIRMERS, S
 import { z } from "zod";
 import { defineCommand } from "./command.ts";
 import { packet } from "./packet.ts";
-import { requestKey, requestRef, teamRef } from "./requests.ts";
+import { requestKey, requestRef, teamRef } from "./request-refs.ts";
 import { user } from "./schemas.ts";
 
 // Proposals as the operations return them (requests: Commitments become

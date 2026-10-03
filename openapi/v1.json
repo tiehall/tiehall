@@ -5437,6 +5437,417 @@
                       "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
                       "type": "boolean"
                     },
+                    "pendingProposals": {
+                      "description": "The request's pending proposals, oldest first, each as proposals.get returns it, which people confirm or reject in the web UI.",
+                      "items": {
+                        "properties": {
+                          "accountableHuman": {
+                            "properties": {
+                              "bot": {
+                                "type": "boolean"
+                              },
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "human",
+                                "type": "string"
+                              },
+                              "login": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "login",
+                              "kind",
+                              "bot"
+                            ],
+                            "type": "object"
+                          },
+                          "cancelReason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "terminal_state",
+                                  "reassigned",
+                                  "accountable_removed",
+                                  "stale"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "change": {
+                            "properties": {
+                              "dueDate": {
+                                "anyOf": [
+                                  {
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "team": {
+                                "properties": {
+                                  "id": {
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                    "type": "string"
+                                  },
+                                  "key": {
+                                    "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "key"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "confirmations": {
+                            "properties": {
+                              "needed": {
+                                "items": {
+                                  "properties": {
+                                    "rules": {
+                                      "items": {
+                                        "enum": [
+                                          "target_team",
+                                          "requester_side",
+                                          "claimant"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "step": {
+                                      "enum": [
+                                        "accountable_human",
+                                        "other_side"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "team": {
+                                      "anyOf": [
+                                        {
+                                          "properties": {
+                                            "id": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                              "type": "string"
+                                            },
+                                            "key": {
+                                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "key"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "user": {
+                                      "anyOf": [
+                                        {
+                                          "properties": {
+                                            "bot": {
+                                              "type": "boolean"
+                                            },
+                                            "id": {
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "const": "human",
+                                              "type": "string"
+                                            },
+                                            "login": {
+                                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "login",
+                                            "kind",
+                                            "bot"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "step",
+                                    "user",
+                                    "rules",
+                                    "team"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
+                              "received": {
+                                "items": {
+                                  "properties": {
+                                    "confirmedAt": {
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                      "type": "string"
+                                    },
+                                    "step": {
+                                      "enum": [
+                                        "accountable_human",
+                                        "other_side"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "user": {
+                                      "properties": {
+                                        "bot": {
+                                          "type": "boolean"
+                                        },
+                                        "id": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "human",
+                                          "type": "string"
+                                        },
+                                        "login": {
+                                          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "login",
+                                        "kind",
+                                        "bot"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  },
+                                  "required": [
+                                    "step",
+                                    "user",
+                                    "confirmedAt"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "needed",
+                              "received"
+                            ],
+                            "type": "object"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "endedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "expiresAt": {
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "description": "The kind of commitment it proposes.",
+                            "enum": [
+                              "due_date",
+                              "scope",
+                              "decline",
+                              "reassign",
+                              "withdraw",
+                              "done"
+                            ],
+                            "type": "string"
+                          },
+                          "proposedBy": {
+                            "properties": {
+                              "actorKind": {
+                                "enum": [
+                                  "agent",
+                                  "web_session",
+                                  "integration"
+                                ],
+                                "type": "string"
+                              },
+                              "surface": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "web",
+                                      "mcp",
+                                      "cli",
+                                      "api",
+                                      "github",
+                                      "jira"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "user": {
+                                "properties": {
+                                  "bot": {
+                                    "type": "boolean"
+                                  },
+                                  "id": {
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "const": "human",
+                                    "type": "string"
+                                  },
+                                  "login": {
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "login",
+                                  "kind",
+                                  "bot"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "user",
+                              "actorKind",
+                              "surface"
+                            ],
+                            "type": "object"
+                          },
+                          "request": {
+                            "properties": {
+                              "id": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                "type": "string"
+                              },
+                              "key": {
+                                "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "key"
+                            ],
+                            "type": "object"
+                          },
+                          "state": {
+                            "description": "pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.",
+                            "enum": [
+                              "pending",
+                              "applied",
+                              "rejected",
+                              "withdrawn",
+                              "expired",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "untrusted": {
+                            "properties": {
+                              "client": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "packet": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/components/schemas/Packet"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "client",
+                              "packet"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "request",
+                          "kind",
+                          "state",
+                          "accountableHuman",
+                          "proposedBy",
+                          "change",
+                          "confirmations",
+                          "createdAt",
+                          "expiresAt",
+                          "endedAt",
+                          "cancelReason",
+                          "untrusted"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "providerChange": {
                       "anyOf": [
                         {
@@ -5623,7 +6034,8 @@
                     "needsHuman",
                     "providerChange",
                     "untrusted",
-                    "messages"
+                    "messages",
+                    "pendingProposals"
                   ],
                   "type": "object"
                 }
@@ -5719,7 +6131,7 @@
             ]
           }
         ],
-        "summary": "Read a request by its key, with its thread. Every member of the install can read every request.",
+        "summary": "Read a request by its key, with its thread and its pending proposals. Every member of the install can read every request.",
         "x-stability-level": "beta"
       }
     },

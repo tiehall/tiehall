@@ -292,6 +292,23 @@ export async function proposalView(context: OrgContext, proposalId: string): Pro
   };
 }
 
+/**
+ * A request's pending proposals, oldest first, each as proposals.get returns
+ * it, for the request's read, whose JSON a request URL serves and whose
+ * markdown shows each by its id (agent-safety: The confirm URL never reaches
+ * the model).
+ */
+export async function pendingProposalsOf(context: OrgContext, requestId: string): Promise<ProposalView[]> {
+  const rows = await context.tx
+    .select({ id: proposals.id })
+    .from(proposals)
+    .where(and(eq(proposals.orgId, context.orgId), eq(proposals.requestId, requestId), eq(proposals.state, "pending")))
+    .orderBy(asc(proposals.createdAt), asc(proposals.id));
+  const pending: ProposalView[] = [];
+  for (const { id } of rows) pending.push(await proposalView(context, id));
+  return pending;
+}
+
 export const PROPOSAL_HANDLERS: Handlers = {
   [getProposal.id]: defineHandler(getProposal, async ({ proposal }, context) => proposalView(context, proposal)),
 
