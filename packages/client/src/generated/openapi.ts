@@ -856,7 +856,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read: nothing ran and the token was not recorded, so the same token can be sent again. */
+            /** @description GitHub failed a read the report needs, or did not answer it. When GitHub Actions' keys, which the CI run's OIDC token is checked against, could not be read, nothing ran and the token was not recorded, so the same token can be sent again. When the provider pull request's author, who is the requester of the requests the report opens, could not be read, no report was taken, and the token was recorded, so the next run of the contract Action reports again with a token of its own. */
             502: {
                 headers: {
                     [name: string]: unknown;

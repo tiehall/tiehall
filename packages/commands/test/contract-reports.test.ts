@@ -347,11 +347,14 @@ describe("the published operation", () => {
     expect(CATALOG.get("contract.report")?.surfaces).toEqual(["rest", "cli"]);
   });
 
-  it("lists 502, which a CI run gets when GitHub Actions' keys cannot be read, as no other operation does but requests.link_pr, which reads the pull request from GitHub", () => {
+  it("lists 502, which a CI run gets when GitHub Actions' keys or the pull request's author cannot be read, as no other operation does but requests.link_pr, which reads the pull request from GitHub", () => {
     expect(operation?.["responses"]["502"]).toMatchObject({
       description: expect.stringContaining("GitHub Actions"),
       content: { "application/problem+json": { schema: expect.any(Object) } },
     });
+    // The second read GitHub can fail: the provider pull request's author, after the token's jti is recorded.
+    expect(operation?.["responses"]["502"].description).toContain("the provider pull request's author");
+    expect(operation?.["responses"]["502"].description).toContain("next run of the contract Action");
     const others = Object.values(document.paths)
       .flatMap((methods) => Object.values(methods))
       .filter(({ operationId, responses }) => operationId !== "contract.report" && responses?.["502"] !== undefined);
