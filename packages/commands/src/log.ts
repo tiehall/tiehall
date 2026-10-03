@@ -195,7 +195,7 @@ function sanitize(value: unknown, depth: number, seen: WeakSet<object>): unknown
     for (const [key, item] of entries) {
       if (errorLike && key === "message") continue;
       if (errorLike && key === "stack") {
-        result[key] = stackFrames({ stack: item as string } as Error);
+        result[key] = stackFrames(item, (value as { message?: unknown }).message);
         continue;
       }
       const clean = isSensitiveKey(key) ? REDACTED : sanitize(item, depth + 1, seen);
@@ -217,20 +217,29 @@ function sanitizeError(error: Error, depth: number, seen: WeakSet<object>): Reco
   const code = (error as { code?: unknown }).code;
   if (typeof code === "string" || typeof code === "number") result["code"] = scrub(String(code));
   if ((error as { [LOGGABLE]?: unknown })[LOGGABLE] === true) result["message"] = scrub(error.message);
-  result["stack"] = stackFrames(error);
+  result["stack"] = stackFrames(error.stack, error.message);
   if (error.cause !== undefined) result["cause"] = sanitize(error.cause, depth + 1, seen);
   if (error instanceof AggregateError) result["errors"] = sanitize(error.errors, depth + 1, seen);
   return result;
 }
 
-/** The "at ..." lines of an error's stack, without the first lines, which repeat its message. */
-function stackFrames(error: Error): string[] {
-  return (error.stack ?? "")
+/**
+ * The frames of an error's stack, its indented "at ..." lines. The stack starts with the error's name and message,
+ * whose lines can read like frames, so the message is cut off first when it starts on the stack's first line, as V8
+ * writes it. A line of a message that was changed after the stack was written is left out too, unless it is
+ * indented as V8 indents frames.
+ */
+function stackFrames(stack: unknown, message: unknown): string[] {
+  let frames = typeof stack === "string" ? stack : "";
+  if (typeof message === "string" && message !== "") {
+    const at = frames.indexOf(message);
+    if (at !== -1 && !frames.slice(0, at).includes("\n")) frames = frames.slice(at + message.length);
+  }
+  return frames
     .split("\n")
-    .map((frame) => frame.trim())
-    .filter((frame) => frame.startsWith("at "))
+    .filter((frame) => /^\s+at \S/.test(frame))
     .slice(0, 20)
-    .map(scrub);
+    .map((frame) => scrub(frame.trim()));
 }
 
 /**

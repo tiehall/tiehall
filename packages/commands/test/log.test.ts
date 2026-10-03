@@ -263,6 +263,19 @@ describe("redaction", () => {
     expect(lines.join("\n")).not.toContain("canary");
   });
 
+  // A stack starts with the error's name and message, whose lines can read like the frames that follow them.
+  it("never logs a line of an error's message, even one that reads like a stack frame", () => {
+    const { lines, entries, logger } = capture();
+    const error = new Error(`insert failed for\nat the export endpoint ${CANARY_TEXT}\n    at ${CANARY_PAT} (file:///app/x.js:1:1)`);
+    const stack = `Error: insert failed for\nat the export endpoint ${CANARY_TEXT}\n    at insert (file:///app/x.js:1:1)`;
+    logger.error("worker: job failed", { error, spread: { message: "the message was changed", stack } });
+    const [entry] = entries();
+    expect(entry?.["error"]).toEqual({ name: "Error", stack: expect.any(Array) });
+    expect((entry?.["error"] as { stack: string[] }).stack[0]).toMatch(/^at .*log\.test\.ts:\d+:\d+\)?$/);
+    expect(entry?.["spread"]).toEqual({ name: "Error", stack: ["at insert (file:///app/x.js:1:1)"] });
+    expect(lines.join("\n")).not.toMatch(/canary|export endpoint/);
+  });
+
   it("survives circular and deep values", () => {
     const { entries, logger } = capture();
     const loop: Record<string, unknown> = { id: "a" };
