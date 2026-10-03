@@ -188,11 +188,6 @@ async function oidcToken(environment: CliEnvironment, audience: string): Promise
   return body.value;
 }
 
-/** "1 X" or "N Xs", or "no X". */
-export function counted(count: number, what: string): string {
-  return count === 0 ? `no ${what}` : `${count} ${what}${count === 1 ? "" : "s"}`;
-}
-
 /** Runs `tiehall contract report` with the options after it; returns the exit code. */
 export async function contractReport(environment: CliEnvironment, globals: { json: boolean; install?: string }, rest: readonly string[]): Promise<number> {
   const options = optionsOf(rest);
