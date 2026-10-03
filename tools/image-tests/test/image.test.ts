@@ -200,6 +200,15 @@ describe("the image", () => {
     expect(revision()).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  // public-api: The license map; design.md, Self-hosting decisions: S16. The image is the server, under AGPL-3.0: it
+  // carries the license's text beside the code, and says the license in its labels, where scanners read it.
+  it("carries the AGPL-3.0 text as /app/LICENSE, and the license in its OCI label", () => {
+    const label = dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.licenses"}}', image]);
+    expect(label).toBe("AGPL-3.0-only");
+    const text = dockerOk(["run", "--rm", "--network", "none", "--entrypoint", "/usr/local/bin/node", image, "--eval", 'process.stdout.write(require("node:fs").readFileSync("/app/LICENSE", "utf8"))']);
+    expect(text.trim()).toBe(readFileSync(fileURLToPath(new URL("../../../LICENSE", import.meta.url)), "utf8").trim());
+  });
+
   it("carries its release, which the migrate role records with each migration", () => {
     const label = dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.version"}}', image]);
     expect(label).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);

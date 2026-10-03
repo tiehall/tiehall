@@ -72,11 +72,15 @@ ENV NODE_ENV=production \
     TIEHALL_VERSION=${TIEHALL_VERSION} \
     TIEHALL_IMAGE_NAME=${TIEHALL_IMAGE_NAME} \
     TIEHALL_SOURCE_REPOSITORY=${TIEHALL_SOURCE_REPOSITORY}
+# The image is the server, under AGPL-3.0 (public-api: The license map): the label says so, and /app/LICENSE holds
+# the license's text.
 LABEL org.opencontainers.image.title="tiehall" \
       org.opencontainers.image.description="Tiehall: one image with the roles web, worker, migrate, all, init and admin" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.revision="${TIEHALL_COMMIT_SHA}" \
       org.opencontainers.image.version="${TIEHALL_VERSION}"
 WORKDIR /app
+COPY --from=build /repo/LICENSE ./LICENSE
 # The files stay owned by root, so the app cannot change its own code even
 # where the root filesystem is writable.
 COPY --from=build /repo/apps/web/.next/standalone/ ./
