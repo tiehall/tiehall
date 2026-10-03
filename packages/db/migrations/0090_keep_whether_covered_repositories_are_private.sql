@@ -1,0 +1,1 @@
+ALTER TABLE "github_covered_repositories" ADD COLUMN "private" boolean;

@@ -28,6 +28,9 @@ import type { OrgContext } from "./with-org.ts";
 // - Removing a mapping stops new mirror issues for the team; the issues made
 //   before stay in the tracker, and Tiehall writes to them no more while no
 //   mapping names their place.
+// - The listing names the covered repositories GitHub reported public when
+//   they were last read: a mirror issue copies its request's title into the
+//   intake repository, so the teams page warns about a public one.
 // Like every team change, a mapping changes no request and is no security
 // event (design.md, Readings to confirm with the founder: R21), so it writes
 // in the call's transaction without an event. Two admins mapping one team at
@@ -48,12 +51,15 @@ async function mappingOf({ tx, orgId }: OrgContext, teamId: string): Promise<Tra
   return { teamId: row.teamId, tracker: row.tracker as "github" | "jira", place: row.targetName, mirrorOnOpen: row.mirrorOnOpen, doneProposals: row.doneProposals };
 }
 
-/** The repositories that connected installations of the App cover now, neither suspended nor deleted, as owner/name, each once, in order. */
-async function coveredRepositories({ tx, orgId }: OrgContext): Promise<string[]> {
+/**
+ * The repositories that connected installations of the App cover now, neither suspended nor deleted, as owner/name,
+ * each once, in order, and those of them GitHub reported public when they were last read.
+ */
+async function coveredRepositories({ tx, orgId }: OrgContext): Promise<{ repositories: string[]; publicRepositories: string[] }> {
   const [app] = await tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, orgId));
-  if (app === undefined) return [];
+  if (app === undefined) return { repositories: [], publicRepositories: [] };
   const rows = await tx
-    .selectDistinct({ fullName: githubCoveredRepositories.fullName })
+    .selectDistinct({ fullName: githubCoveredRepositories.fullName, private: githubCoveredRepositories.private })
     .from(githubCoveredRepositories)
     .innerJoin(githubInstallations, and(eq(githubInstallations.orgId, githubCoveredRepositories.orgId), eq(githubInstallations.id, githubCoveredRepositories.installationId)))
     .innerJoin(
@@ -62,7 +68,9 @@ async function coveredRepositories({ tx, orgId }: OrgContext): Promise<string[]>
     )
     .where(and(eq(githubCoveredRepositories.orgId, orgId), eq(githubInstallations.appId, app.appId), isNull(githubInstallations.suspendedAt), isNull(githubInstallations.deletedAt)))
     .orderBy(asc(githubCoveredRepositories.fullName));
-  return rows.map(({ fullName }) => fullName);
+  const repositories = [...new Set(rows.map(({ fullName }) => fullName))];
+  const publicRepositories = [...new Set(rows.filter(({ private: isPrivate }) => isPrivate === false).map(({ fullName }) => fullName))];
+  return { repositories, publicRepositories };
 }
 
 export const TRACKER_MAPPING_HANDLERS: Handlers = {
@@ -81,7 +89,7 @@ export const TRACKER_MAPPING_HANDLERS: Handlers = {
         mirrorOnOpen: mapping.mirrorOnOpen,
         doneProposals: mapping.doneProposals,
       })),
-      repositories: await coveredRepositories(context),
+      ...(await coveredRepositories(context)),
     };
   }),
 

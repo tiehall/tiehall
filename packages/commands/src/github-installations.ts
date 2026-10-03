@@ -53,6 +53,8 @@ export interface ListedRepository {
   /** GitHub's numeric id of the repository. */
   id: number;
   fullName: string;
+  /** Whether GitHub reports the repository private; undefined when its answer does not say. */
+  private?: boolean;
 }
 
 /** An installation of the App as Tiehall knows it, for the admin page and the syncs. */
@@ -98,7 +100,7 @@ const INSTALLATION = z.object({
 });
 
 const REPOSITORIES = z.object({
-  repositories: z.array(z.object({ id: z.number().int().positive(), full_name: z.string().min(1) })),
+  repositories: z.array(z.object({ id: z.number().int().positive(), full_name: z.string().min(1), private: z.boolean().optional() })),
 });
 
 /**
@@ -128,7 +130,9 @@ export async function listAppInstallations(client: GitHubClient, logger: Logger 
 /** Lists every repository an installation covers, with that installation's own token, 100 at a time. */
 export async function listInstallationRepositories(client: GitHubClient, installationId: number): Promise<ListedRepository[]> {
   const pages = await everyPage(client.installation(installationId), "GET /installation/repositories", { per_page: PER_PAGE });
-  return pages.flatMap((page) => REPOSITORIES.parse(page).repositories.map(({ id, full_name: fullName }) => ({ id, fullName })));
+  return pages.flatMap((page) =>
+    REPOSITORIES.parse(page).repositories.map(({ id, full_name: fullName, private: isPrivate }) => ({ id, fullName, ...(isPrivate === undefined ? {} : { private: isPrivate }) })),
+  );
 }
 
 /**
@@ -220,7 +224,7 @@ export async function recordCoveredRepositories(
   if (repositories.length === 0) return;
   await tx
     .insert(githubCoveredRepositories)
-    .values(repositories.map(({ id, fullName }) => ({ orgId, installationId, repositoryId: id, fullName })))
+    .values(repositories.map(({ id, fullName, private: isPrivate }) => ({ orgId, installationId, repositoryId: id, fullName, private: isPrivate ?? null })))
     .onConflictDoNothing();
 }
 

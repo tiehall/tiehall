@@ -32,7 +32,7 @@ let tracker: FakeTracker;
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  await providerOnStub(install, stub, ["ayse"], { repositories: ["acme/fe-intake", "acme/mobile-intake"] });
+  await providerOnStub(install, stub, ["ayse"], { repositories: ["acme/fe-intake", "acme/mobile-intake", "acme/open-intake"], publicRepositories: ["acme/open-intake"] });
   stub.addRepo("acme/secret-intake");
   const covered = await install.owner.query<{ repository_id: string }>("SELECT repository_id FROM github_covered_repositories WHERE full_name = 'acme/fe-intake'");
   feIntake = Number(covered.rows[0]?.repository_id);
@@ -40,7 +40,7 @@ beforeAll(async () => {
   ayse = { kind: "web_session", userId: await addUser(install.owner, { login: "ayse" }), sessionId: randomUUID() };
   alice = await addUser(install.owner, { login: "alice" });
   teams = {};
-  for (const key of ["BE", "FE", "MOBILE", "DATA", "OPS"]) teams[key] = await addTeam(install.owner, key);
+  for (const key of ["BE", "FE", "MOBILE", "DATA", "OPS", "OPEN"]) teams[key] = await addTeam(install.owner, key);
   await joinTeams(install.owner, alice, teams["BE"]!);
   await joinTeams(install.owner, ayse.userId, teams["FE"]!, teams["MOBILE"]!);
 }, 60_000);
@@ -216,5 +216,24 @@ describe("the teams page", () => {
     const refused = await post(ayse, { action: "map_repository", teamId: teams["MOBILE"]!, repository: "acme/mobile-intake" });
     expect(refused.status).toBe(403);
     expect(await mappingsOf(teams["MOBILE"]!)).toEqual([]);
+  });
+
+  // Mirror issues copy each request's title into the intake repository, so a public one shows the titles to anyone:
+  // the page says which covered repositories GitHub reports public, and warns about a team's public intake repository.
+  it("marks the covered repositories GitHub reports public, and warns that a public intake repository shows its team's titles to anyone", async () => {
+    const { rows } = await install.owner.query("SELECT full_name, private FROM github_covered_repositories WHERE full_name LIKE 'acme/%-intake' ORDER BY full_name");
+    expect(rows).toEqual([
+      { full_name: "acme/fe-intake", private: true },
+      { full_name: "acme/mobile-intake", private: true },
+      { full_name: "acme/open-intake", private: false },
+    ]);
+    const before = await (await page(ada)(new Request(`${URL_OF_INSTALL}${TEAMS_PATH}`))).text();
+    expect(before).toContain('<option value="acme/open-intake">acme/open-intake (public)</option>');
+    expect(before).toContain('<option value="acme/mobile-intake">acme/mobile-intake</option>');
+    expect((await post(ada, { action: "map_repository", teamId: teams["OPEN"]!, repository: "acme/open-intake" })).status).toBe(303);
+    const after = (await (await page(ada)(new Request(`${URL_OF_INSTALL}${TEAMS_PATH}`))).text()).replace(/&#39;/g, "'");
+    expect(after).toContain("acme/open-intake is public on GitHub: anyone can read the titles of OPEN's requests, which its mirror issues copy there.");
+    expect(after).not.toContain("acme/fe-intake is public");
+    expect((await post(ada, { action: "remove_mapping", teamId: teams["OPEN"]! })).status).toBe(303);
   });
 });

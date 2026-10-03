@@ -631,6 +631,13 @@
       "when": 1791065011495,
       "tag": "0089_keep_read_times_of_pull_requests_with_no_mention",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791066619515,
+      "tag": "0090_keep_whether_covered_repositories_are_private",
+      "breakpoints": true
     }
   ]
 }

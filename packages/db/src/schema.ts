@@ -573,7 +573,9 @@ export const githubConnectedInstallations = pgTable(
 // (tracker-mirrors: Covered repositories follow each connected installation;
 // github-app-reachability: design.md, Design rules: Finding installations).
 // A repository counts as covered while a connected installation that is
-// neither suspended nor deleted holds it here.
+// neither suspended nor deleted holds it here. Whether GitHub reports it
+// private is kept too, so the teams page can warn about a public intake
+// repository, whose mirror issues show request titles to anyone.
 export const githubCoveredRepositories = pgTable(
   "github_covered_repositories",
   {
@@ -585,6 +587,8 @@ export const githubCoveredRepositories = pgTable(
     repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
     /** The repository's owner and name when last read, such as acme/web. */
     fullName: text("full_name").notNull(),
+    /** Whether GitHub reported the repository private when last read; null until a read after this was kept. */
+    private: boolean("private"),
     readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

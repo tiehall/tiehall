@@ -70,7 +70,9 @@ import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, 
 //   covers, with mirroring on claim unless the admin ticks mirroring on open;
 //   a mapped team's forms switch mirroring on open, switch the setting for
 //   tracker "Done" proposals (tracker-mirrors: A tracker "Done" never closes
-//   a request by itself), and remove the mapping.
+//   a request by itself), and remove the mapping. A repository GitHub
+//   reports public is marked so among those to pick, and a team mapped to one
+//   is warned that anyone can read the titles its mirror issues copy there.
 //   None of these needs the confirmation step (agent-safety: Actions that
 //   need the confirmation step).
 // - /admin/sign-in-policy is an admin's: the policy in force, and a link to
@@ -103,8 +105,8 @@ export const APIS_PATH = "/admin/apis";
 type ListedMember = z.output<typeof listedMember>;
 type ListedTeam = z.output<typeof listedTeam>;
 type TrackerMapping = z.output<typeof trackerMapping>;
-/** The teams' mappings, and the repositories a team can map as its intake repository. */
-type Mappings = { mappings: TrackerMapping[]; repositories: string[] };
+/** The teams' mappings, the repositories a team can map as its intake repository, and those GitHub reports public. */
+type Mappings = { mappings: TrackerMapping[]; repositories: string[]; publicRepositories: string[] };
 type Invite = z.output<typeof invite>;
 
 /** The links between the admin pages, shown to admins. */
@@ -295,6 +297,9 @@ function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): stri
     return [
       heading,
       `      <p>${escapeHtml(`${team.key}'s requests are mirrored into ${TRACKER_NAMES[mapping.tracker]}, as issues in ${mapping.place}, each created ${when}.`)}</p>`,
+      ...(mapping.tracker === "github" && mappings.publicRepositories.includes(mapping.place)
+        ? [`      <p><strong>${escapeHtml(`${mapping.place} is public on GitHub: anyone can read the titles of ${team.key}'s requests, which its mirror issues copy there.`)}</strong></p>`]
+        : []),
       postForm(
         TEAMS_PATH,
         { action: "set_mirror_on_open", teamId: team.id, on: mapping.mirrorOnOpen ? "false" : "true" },
@@ -324,10 +329,12 @@ function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): stri
       `      <p>${escapeHtml(`${team.key}'s requests are mirrored nowhere. No connected installation of the install's GitHub App covers a repository, so there is no intake repository to map yet.`)}</p>`,
     ].join("\n");
   }
-  const options = mappings.repositories.map((repository) => `<option value="${escapeHtml(repository)}">${escapeHtml(repository)}</option>`).join("");
+  const options = mappings.repositories
+    .map((repository) => `<option value="${escapeHtml(repository)}">${escapeHtml(mappings.publicRepositories.includes(repository) ? `${repository} (public)` : repository)}</option>`)
+    .join("");
   return [
     heading,
-    `      <p>${escapeHtml(`${team.key}'s requests are mirrored nowhere. Map an intake repository to mirror each of them as a GitHub issue there, which shows a summary, a link and the request's state, never its packet or thread.`)}</p>`,
+    `      <p>${escapeHtml(`${team.key}'s requests are mirrored nowhere. Map an intake repository to mirror each of them as a GitHub issue there, which shows a summary, a link and the request's state, never its packet or thread.${mappings.publicRepositories.length === 0 ? "" : " Anyone can read the issues of a repository marked public, request titles included."}`)}</p>`,
     `      <form method="post" action="${TEAMS_PATH}">`,
     '        <input type="hidden" name="action" value="map_repository">',
     `        <input type="hidden" name="teamId" value="${escapeHtml(team.id)}">`,

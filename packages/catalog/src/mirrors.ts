@@ -40,6 +40,9 @@ export const listTrackerMappings = defineCommand({
   output: z.object({
     mappings: z.array(trackerMapping),
     repositories: z.array(z.string()).meta({ description: "The repositories that connected installations of the install's GitHub App cover, as owner/name." }),
+    publicRepositories: z.array(z.string()).meta({
+      description: "Those of the repositories GitHub reports public, whose mirror issues anyone can read, as owner/name.",
+    }),
   }),
   scopes: [],
   commitment: false,

@@ -102,7 +102,7 @@ export async function providerOnStub(
   install: TestInstall,
   stub: GitHubStub,
   logins: readonly string[],
-  options: { hook?: boolean; repositories?: readonly string[] } = {},
+  options: { hook?: boolean; repositories?: readonly string[]; publicRepositories?: readonly string[] } = {},
 ): Promise<StubProvider> {
   const accounts: Record<string, number> = {};
   for (const login of logins) accounts[login] = stub.addUser({ login }).id;
@@ -110,8 +110,8 @@ export async function providerOnStub(
   stub.addUser({ login: "acme-owner" });
   const org = stub.addOrg({ login: "acme", members: { "acme-owner": "admin", ...Object.fromEntries(logins.map((login) => [login, "member" as const])) } });
   const repository = stub.addRepo("acme/payments");
-  // Other repositories of acme the installation covers, such as a consumer's.
-  for (const fullName of options.repositories ?? []) stub.addRepo(fullName);
+  // Other repositories of acme the installation covers, such as a consumer's: private, unless the test makes them public.
+  for (const fullName of options.repositories ?? []) stub.addRepo(fullName, { private: !(options.publicRepositories ?? []).includes(fullName) });
   const app = stub.createApp({ owner: "acme", ...(options.hook === true ? { hook: { url: "https://tiehall.example.com/webhooks/github" } } : {}) });
   const { github } = await storeStubApp(install, stub, app);
   install.useGitHub(github);
