@@ -88,6 +88,33 @@ describe("a grant revoked on the page", () => {
     expect(await liveRefreshTokens(ana, client.clientId)).toBe(0);
   });
 
+  // The code is removed by the revocation itself, not only refused by the token endpoint's check of the grant after the
+  // exchange (grantChecks()), which would hide a code the revocation left: the stored code is gone at once, while a
+  // code the person gave another client stays.
+  it("removes the codes the client kept unexchanged at once, and leaves another client's", async () => {
+    const ana = await harness.member("ana-codes-gone");
+    const client = await harness.registerClient();
+    const other = await harness.registerClient();
+    await harness.approve(ana.userId, client.clientId, ["requests:read"]);
+    await harness.approve(ana.userId, other.clientId, ["requests:read"]);
+    await codeFor(ana, client);
+    await codeFor(ana, other);
+    const codesOf = async (clientId: string) =>
+      (
+        await harness.install.owner.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM sign_in_verifications WHERE value LIKE '%"type":"authorization_code"%' AND value LIKE $1 AND value LIKE $2`,
+          [`%"userId":"${ana.userId}"%`, `%"client_id":"${clientId}"%`],
+        )
+      ).rows[0]?.n;
+    expect(await codesOf(client.clientId)).toBe(1);
+    expect(await codesOf(other.clientId)).toBe(1);
+
+    expect((await revokeOnThePage(ana, client.clientId)).status).toBe(303);
+
+    expect(await codesOf(client.clientId)).toBe(0);
+    expect(await codesOf(other.clientId)).toBe(1);
+  });
+
   it("leaves a device code the person approved and the CLI has not exchanged yet worth nothing", async () => {
     const ana = await harness.member("ana-device");
     const form = (fields: Record<string, string>) => ({

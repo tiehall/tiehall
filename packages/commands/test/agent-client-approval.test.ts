@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { csrfTokenFor } from "../src/index.ts";
+import { createConfirmationNonces, csrfTokenFor } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { pkcePair, startAgentAccess, type AgentAccessHarness, type AgentClient, type Pkce, type SignedIn } from "./support/agent-access.ts";
 
@@ -206,6 +206,29 @@ describe("a confirmed approval", () => {
         user_agent: "Mozilla/5.0 (ana)",
       },
     ]);
+  });
+});
+
+// The approval judges the authorization request itself, not only its review page: a confirmation of an approval whose
+// request asks for a scope Tiehall does not offer is refused with 400, as the review page is, even with a nonce that is
+// valid for that exact input, and stores no grant.
+describe("an approval of a request for a scope Tiehall does not offer", () => {
+  it("is refused with 400 by the approval itself, with a nonce valid for it, and stores no grant", async () => {
+    const client = await harness.registerClient();
+    const form = await consentFor(ana, client, pkcePair());
+    const { authorization } = JSON.parse(form.fields.input) as { authorization: string };
+    const asked = new URLSearchParams(authorization);
+    asked.set("scope", `${asked.get("scope") ?? ""} admin`.trim());
+    const input = { authorization: asked.toString() };
+    const session = await harness.signIn.service.session(new Headers({ cookie: ana.cookie }));
+    expect(session).toBeDefined();
+    const nonce = createConfirmationNonces({ secret: harness.install.authSecret }).issue(session!, "agent_clients.approve", input);
+
+    const refused = await post(ana, form, { ...form.fields, input: JSON.stringify(input), nonce });
+
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("https://tiehall.com/problems/invalid-input");
+    expect((await grantsOf(ana.userId)).filter(({ client_id }) => client_id === client.clientId)).toEqual([]);
   });
 });
 

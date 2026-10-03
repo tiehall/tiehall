@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { WebSessionCaller } from "../src/index.ts";
+import { CLI_CLIENT_ID, type WebSessionCaller } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { holdRow, untilWaiting } from "./support/locks.ts";
 import { addUser } from "./support/members.ts";
 import { sessionOf } from "./support/requests.ts";
-import { hiddenField, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { hiddenField, MCP_RESOURCE, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
 // A removal leaves no credential of the person alive, even one a write was
 // creating as it committed (teams-and-roles: Removing a member; sign-in: An
@@ -134,6 +134,71 @@ describe("a removal that commits while Dana's write creates a credential", () =>
     expect(rows[0]?.n).toBe(0);
     dana = await rejoin(dana, "dana-refresh");
     expect((await harness.refresh(client, refreshToken ?? "")).body["error"]).toBe("invalid_grant");
+  });
+});
+
+/** `tiehall login`'s device authorization request, and Dana's review page of its approval, as the device approval page leads to it. */
+async function deviceApprovalReview(dana: SignedIn): Promise<{ deviceCode: string; review: string }> {
+  const asked = await harness.handle(
+    new Request(`${URL_OF_INSTALL}/api/auth/device/code`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: CLI_CLIENT_ID, resource: MCP_RESOURCE, scope: "requests:read" }).toString(),
+    }),
+  );
+  const { device_code: deviceCode, user_code: userCode } = (await asked.json()) as { device_code: string; user_code: string };
+  const page = await (await harness.handle(new Request(`${URL_OF_INSTALL}/device`, { headers: { cookie: dana.cookie, accept: "text/html" } }))).text();
+  const typed = await harness.handle(
+    new Request(`${URL_OF_INSTALL}/device`, {
+      method: "POST",
+      headers: { cookie: dana.cookie, accept: "text/html", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+      body: new URLSearchParams({ user_code: userCode, csrf: hiddenField(page, "csrf") }).toString(),
+    }),
+  );
+  expect(typed.status).toBe(200);
+  return { deviceCode, review: await typed.text() };
+}
+
+/** The CLI's poll of the token endpoint with its device code, at once. */
+async function poll(deviceCode: string): Promise<Record<string, unknown>> {
+  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [deviceCode]);
+  const answer = await harness.handle(
+    new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: deviceCode, client_id: CLI_CLIENT_ID }).toString(),
+    }),
+  );
+  return (await answer.json()) as Record<string, unknown>;
+}
+
+describe("a removal that commits while Dana approves a device code", () => {
+  it("denies the code Dana approves at that moment, or refuses the approval: the CLI gets no token, then or after a rejoin", async () => {
+    let dana = await harness.member("dana-device");
+    const { deviceCode, review } = await deviceApprovalReview(dana);
+    // Storing the CLI's grant for Dana reads Dana's user row, which is held until the removal has started.
+    const held = await holdRow(harness.install.databaseUrl, "SELECT id FROM users WHERE id = $1 FOR UPDATE", [dana.userId]);
+    const approving = harness.handle(
+      new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve_device`, {
+        method: "POST",
+        headers: { cookie: dana.cookie, accept: "text/html", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+        body: new URLSearchParams({ input: hiddenField(review, "input"), nonce: hiddenField(review, "nonce"), csrf: hiddenField(review, "csrf") }).toString(),
+      }),
+    );
+    await untilWaiting(harness.install.owner, 1);
+    const removal = removing(dana);
+    await untilWaiting(harness.install.owner, 2, removal.finished);
+    await held.release();
+    expect((await removal.answer).status).toBe(200);
+    await approving;
+
+    const { rows } = await harness.install.owner.query("SELECT status FROM oauth_device_codes WHERE device_code = $1", [deviceCode]);
+    expect(rows.map(({ status }) => status)).not.toContain("approved");
+    const { rows: grants } = await harness.install.owner.query("SELECT id FROM oauth_consents WHERE user_id = $1", [dana.userId]);
+    expect(grants).toEqual([]);
+    expect((await poll(deviceCode))["access_token"]).toBeUndefined();
+    dana = await rejoin(dana, "dana-device");
+    expect((await poll(deviceCode))["access_token"]).toBeUndefined();
   });
 });
 
