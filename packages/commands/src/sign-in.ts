@@ -286,8 +286,14 @@ export interface SignInService {
    * it, as for a server component, the read renews nothing.
    */
   session(headers: Headers, renewal?: Headers): Promise<WebSessionCaller | undefined>;
-  /** Every route of the service as it is built now, such as `GET /callback/:id`, for the route inventory test. */
-  routes(): Promise<string[]>;
+  /**
+   * Every route of the service's instance as it is built now, such as `GET
+   * /callback/:id`, for the route inventory test: the usual sign-in's, or the
+   * one that completes setup.
+   */
+  routes(mode?: "sign-in" | "setup"): Promise<string[]>;
+  /** The ids of the plugins that instance is built with, for the route inventory test. */
+  plugins(mode?: "sign-in" | "setup"): Promise<string[]>;
   /**
    * The install's public signing keys, which the access tokens of agent
    * clients are signed with, read in this process (agent-tokens.ts);
@@ -947,9 +953,14 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       }
     },
 
-    async routes() {
-      const auth = await current();
+    async routes(mode = "sign-in") {
+      const auth = await current(mode);
       return auth === undefined ? [] : routeInventory(auth.api);
+    },
+
+    async plugins(mode = "sign-in") {
+      const auth = await current(mode);
+      return auth === undefined ? [] : (auth.options.plugins ?? []).map(({ id }) => id).sort();
     },
 
     async signingKeys() {

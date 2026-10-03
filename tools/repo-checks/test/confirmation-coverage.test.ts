@@ -82,6 +82,18 @@ const getRequest = defineCommand({
   stability: "beta",
 });
 
+const exportLog = defineCommand({
+  id: "activity_log.export",
+  summary: "Export the activity log.",
+  input: z.object({}),
+  output: z.object({}),
+  scopes: [],
+  commitment: false,
+  confirm: true,
+  surfaces: [],
+  stability: "alpha",
+});
+
 /** The catalog once 9.8 has built removing a member: one command that needs the confirmation step, and one that does not. */
 const catalog: Catalog = defineCatalog([remove, getRequest]);
 /** The catalog once 9.7 has built changing a role too. */
@@ -236,9 +248,39 @@ describe("the confirmation coverage check", () => {
   });
 });
 
+// Against the full list (task 26.6): once every group that builds an action
+// is done, the list holds no action that still waits for its task, and the
+// check run with --full fails on one that does.
+describe("the confirmation coverage check against the full list", () => {
+  it("fails each action that still waits for the task that builds it, as a fixture list shows", () => {
+    expect(confirmationCoverageProblems(inputs(), { full: true })).toEqual([
+      "changing a member's role: it still waits for task 9.7, so the list is not full: every action names its confirm command.",
+      "exporting the activity log: it still waits for task 20.6, so the list is not full: every action names its confirm command.",
+    ]);
+  });
+
+  it("passes a fixture list whose every action names its confirm command and an input", () => {
+    const full = {
+      items: [
+        {
+          item: "changing a member's role, and removing a member;",
+          actions: [
+            { action: "changing a member's role", command: "members.change_role", input: { userId: LEE, role: "admin" } },
+            { action: "removing a member", command: "members.remove", input: { userId: LEE } },
+          ],
+        },
+        { item: "exporting the activity log.", actions: [{ action: "exporting the activity log", command: "activity_log.export", input: {} }] },
+      ],
+    };
+    const built = defineCatalog([changeRole, remove, exportLog, getRequest]);
+    const done = taskStates(TASKS.replaceAll("- [ ]", "- [x]"));
+    expect(confirmationCoverageProblems(inputs({ list: full, catalog: built, tasks: done }), { full: true })).toEqual([]);
+  });
+});
+
 describe("the check's script", () => {
-  function check(root: string) {
-    const run = spawnSync(process.execPath, [script, root], { encoding: "utf8" });
+  function check(root: string, ...flags: string[]) {
+    const run = spawnSync(process.execPath, [script, ...flags, root], { encoding: "utf8" });
     if (run.error) throw run.error;
     return run;
   }
@@ -255,6 +297,21 @@ describe("the check's script", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toMatch(/^tools\/repo-checks\/confirmation-actions\.json mirrors the \d+ items of agent-safety: Actions that need the confirmation step/);
     expect(confirmationCoverageProblems(readCoverageInputs(repoRoot, CATALOG))).toEqual([]);
+  });
+
+  it("fails a fixture tree against the full list for each action that still waits for its task", () => {
+    const run = check(fixture("entry-without-command"), "--full");
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("exporting the activity log: it still waits for task 20.6, so the list is not full: every action names its confirm command.");
+  });
+
+  // Connecting Jira and changing the Jira connection wait for tasks 25.1 and 25.2, which wait for the founder's Jira
+  // spikes; once both are built, the real tree passes against the full list, and this test turns plain.
+  it.fails("passes the real tree against the full list, with no action waiting for its task", () => {
+    const run = check(repoRoot, "--full");
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("every action names its confirm command");
   });
 
   it("reads the list the commands' tests run the two cases from", () => {

@@ -28,6 +28,9 @@ export { taskStates } from "./plan.ts";
 // - when a command that needs the confirmation step is an operation of
 //   openapi/v1.json, is offered there on the CLI, or is a tool of
 //   mcp/tools.json.
+// Against the full list (task 26.6), which the check runs on with --full once
+// every group that builds an action is done, it also fails each action that
+// still waits for its task.
 
 /** Where the list lives, relative to the repository's root. */
 export const CONFIRMATION_LIST = "tools/repo-checks/confirmation-actions.json";
@@ -82,8 +85,13 @@ function isList(value: unknown): value is ConfirmationList {
   );
 }
 
+/** How the check runs: on the list as it stands, or against the full list, in which no action waits for its task. */
+export interface CoverageOptions {
+  full?: boolean;
+}
+
 /** Every way the list and the surfaces break the rules above, as a sentence; none when they keep them. */
-export function confirmationCoverageProblems(inputs: CoverageInputs): string[] {
+export function confirmationCoverageProblems(inputs: CoverageInputs, options: CoverageOptions = {}): string[] {
   const { list, catalog } = inputs;
   if (!isList(list)) return ["The list is not { items: [{ item, actions: [{ action, command and input, or pending }] }] }."];
   const problems: string[] = [];
@@ -115,6 +123,7 @@ export function confirmationCoverageProblems(inputs: CoverageInputs): string[] {
       const done = inputs.tasks.get(entry.pending);
       if (done === undefined) problem(`the plan has no task ${entry.pending}.`);
       else if (done) problem(`task ${entry.pending} is done, so this action names its confirm command and an input for its two cases.`);
+      else if (options.full === true) problem(`it still waits for task ${entry.pending}, so the list is not full: every action names its confirm command.`);
     } else {
       problem('it names neither its confirm command, with an input for its two cases, nor the task that builds it, as "pending": "<task>".');
     }

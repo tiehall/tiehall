@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { betterAuth } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -93,5 +94,77 @@ describe("a blocked route", () => {
     expect(((await response.json()) as { type: string }).type).toBe("https://tiehall.com/problems/route-not-found");
     expect(response.headers.getSetCookie()).toEqual([]);
     expect(Number((await install.owner.query("SELECT count(*) FROM web_sessions")).rows[0].count)).toBe(sessions);
+  });
+});
+
+// The route inventory, re-run against the pinned sign-in library with every
+// plugin in use (agent-safety: The confirmation step runs only in the web UI;
+// design.md, Technical decisions: T7 and T8). The inventory above lists the
+// routes of the service as the usual sign-in builds it. The service builds
+// three instances in all: the usual one, whose authorization server
+// identifies agent clients by their metadata documents unless
+// TIEHALL_CLIENT_METADATA_FETCH switches that off, and the one that completes
+// setup; every one of them is served under /api/auth behind the same guard.
+// So the inventory covers the routes of all three, and each plugin any of them
+// uses is a plugin of the usual instance, whose routes the inventory lists;
+// and it runs on the library and plugins the commands package pins exactly,
+// as installed and as the lockfile resolves them, so an upgrade changes the
+// inventory only through a reviewed change of the pin.
+
+/** The sign-in library and the plugins of it that Tiehall uses (design.md, Technical decisions: T7). */
+const SIGN_IN_PACKAGES = ["better-auth", "@better-auth/mcp", "@better-auth/cimd", "@better-auth/oauth-provider"];
+
+describe("the route inventory, against the pinned sign-in library with every plugin in use", () => {
+  it("runs on the sign-in library and its plugins pinned exactly, as installed and as the lockfile resolves them", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
+    const lockfile = readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8");
+    const importer = lockfile.slice(lockfile.indexOf("\n  packages/commands:\n"), lockfile.indexOf("\n  packages/core:\n"));
+    for (const name of SIGN_IN_PACKAGES) {
+      const pinned = manifest.dependencies[name] ?? "";
+      expect(pinned, name).toMatch(/^\d+\.\d+\.\d+$/);
+      const installed = JSON.parse(readFileSync(new URL(`../node_modules/${name}/package.json`, import.meta.url), "utf8")) as { version: string };
+      expect(installed.version, name).toBe(pinned);
+      const key = name.startsWith("@") ? `'${name}'` : name;
+      expect(importer, name).toContain(`\n      ${key}:\n        specifier: ${pinned}\n        version: ${pinned}(`);
+    }
+  });
+
+  it("finds every route of every instance the service builds classified: sign-in with metadata documents on and off, and setup", async () => {
+    const withoutDocuments = await startSignIn(install, stub, { sameAppAs: harness, agentClients: { metadataDocuments: false } });
+    const inventories = {
+      "sign-in": await harness.service.routes("sign-in"),
+      "sign-in without metadata documents": await withoutDocuments.service.routes(),
+      setup: await harness.service.routes("setup"),
+    };
+    for (const [instance, routes] of Object.entries(inventories)) {
+      expect(routes.length, instance).toBeGreaterThan(20);
+      expect(unclassifiedRoutes(routes), instance).toEqual([]);
+    }
+    const all = [...new Set(Object.values(inventories).flat())].sort();
+    expect(Object.keys(SIGN_IN_ROUTES).sort()).toEqual(all);
+    // The usual instance's routes hold every other instance's, so the inventory above sees every route.
+    expect(all).toEqual(inventories["sign-in"]);
+  });
+
+  it("builds the usual instance, whose routes the inventory lists, with every plugin any instance uses", async () => {
+    const withoutDocuments = await startSignIn(install, stub, { sameAppAs: harness, agentClients: { metadataDocuments: false } });
+    const usual = await harness.service.plugins("sign-in");
+    const inUse = [...new Set([...usual, ...(await harness.service.plugins("setup")), ...(await withoutDocuments.service.plugins())])].sort();
+    expect(usual).toEqual(inUse);
+    // The plugins of design.md, T7, by the ids they register: jwt(), mcp() as "oauth-provider", cimd() and
+    // oauthDeviceAuthorization() as "device-authorization"; and Tiehall's own.
+    expect(inUse).toEqual(
+      [
+        "jwt",
+        "oauth-provider",
+        "cimd",
+        "device-authorization",
+        "tiehall-github-endpoints",
+        "tiehall-offered-scopes",
+        "tiehall-client-registrations",
+        "tiehall-cli-device-flow",
+        "tiehall-grant-checks",
+      ].sort(),
+    );
   });
 });
