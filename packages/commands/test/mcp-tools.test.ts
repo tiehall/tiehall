@@ -174,7 +174,9 @@ describe.each(PROTOCOL_VERSIONS)("whoami, on protocol version %s", (version) => 
       warnings: [{ kind: "skill_outdated", skillVersion, minimum: MINIMUM_SKILL_VERSION }],
     });
     const text = textOf(result);
-    expect(text).toContain(`The Tiehall skill you follow is version ${skillVersion}, older than the oldest this install supports, ${MINIMUM_SKILL_VERSION}`);
+    expect(text).toContain(`The Tiehall skill you follow is older than the oldest version this install supports, ${MINIMUM_SKILL_VERSION}`);
+    // The version the caller named stays in the structured content alone, never in Tiehall's words.
+    expect(text).not.toContain(`version ${skillVersion}`);
     expect(text).toContain("dana-fe");
     expect(text).toContain(URL_OF_INSTALL);
   });

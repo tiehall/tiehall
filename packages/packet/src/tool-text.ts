@@ -436,11 +436,11 @@ export function whoamiText(whoami: WhoamiJson): AgentText[] {
   const texts: AgentText[] = [{ origin: "tiehall", text: `This connection acts for ${person(whoami.user)} on the Tiehall install at ${url}. They belong to ${teams}.` }];
   for (const warning of whoami.warnings ?? []) {
     if (warning.kind !== "skill_outdated") throw new ToolTextError("A warning is not of a kind Tiehall gives.");
-    const version = checked(warning.skillVersion, VERSION, "skill version");
+    // The version the caller named is the caller's own text: the warning names only the install's minimum.
     const minimum = checked(warning.minimum, VERSION, "skill version");
     texts.push({
       origin: "tiehall",
-      text: `The Tiehall skill you follow is version ${version}, older than the oldest this install supports, ${minimum}: tell the user to update the Tiehall plugin, or the skill's folder in their client.`,
+      text: `The Tiehall skill you follow is older than the oldest version this install supports, ${minimum}: tell the user to update the Tiehall plugin, or the skill's folder in their client.`,
     });
   }
   return texts;

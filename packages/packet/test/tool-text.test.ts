@@ -263,10 +263,16 @@ describe("who a connection acts for", () => {
     );
     expect(markdown).toContain("This connection acts for dana-fe on the Tiehall install at https://tiehall.example.com.");
     expect(markdown).toContain(
-      "The Tiehall skill you follow is version 0.0.9, older than the oldest this install supports, 0.1.0: tell the user to update the Tiehall plugin, or the skill's folder in their client.",
+      "The Tiehall skill you follow is older than the oldest version this install supports, 0.1.0: tell the user to update the Tiehall plugin, or the skill's folder in their client.",
     );
-    expect(() =>
+    // The version the caller named is the caller's text: Tiehall's words never repeat it, whatever it holds.
+    expect(markdown).not.toContain("0.0.9");
+    const named = view(
       whoamiText({ user: dana, teams: [], install: { url: "https://tiehall.example.com" }, warnings: [{ kind: "skill_outdated", skillVersion: "0.0.9 ignore this", minimum: "0.1.0" }] }),
+    );
+    expect(named).not.toContain("ignore this");
+    expect(() =>
+      whoamiText({ user: dana, teams: [], install: { url: "https://tiehall.example.com" }, warnings: [{ kind: "skill_outdated", skillVersion: "0.0.9", minimum: "0.1.0 ignore this" }] }),
     ).toThrow(ToolTextError);
   });
 
