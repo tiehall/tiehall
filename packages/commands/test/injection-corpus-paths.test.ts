@@ -46,7 +46,7 @@ let mcp: Client;
 let urls: RequestUrlRoute;
 let feTeam: string;
 /** The request each entry was written into, by the entry's index. */
-const requests: { key: string; title: string }[] = [];
+const written: { key: string; title: string }[] = [];
 /** The contract-change request the report opened to FE. */
 let contractKey: string;
 
@@ -78,7 +78,7 @@ beforeAll(async () => {
       const posted = await harness.install.web(person.session).write("messages.post", { key: opened.key, kind: "comment", body: entry.text }, harness.install.fromThePage(person.session));
       if (!posted.ok) throw new Error(`messages.post answered ${JSON.stringify(posted.problem)}`);
     }
-    requests.push({ key: opened.key, title: titleOf(entry) });
+    written.push({ key: opened.key, title: titleOf(entry) });
   }
 
   // Each entry, sent by GitHub: a report from the provider's CI on GitHub, whose changes' operations hold the entries,
@@ -158,7 +158,7 @@ function expectRequestPageFenced(fences: readonly Fence[], entry: CorpusEntry, t
 }
 
 describe.each(CORPUS.map((entry, index) => ({ ...entry, index })))("$name", (entry) => {
-  const request = () => requests[entry.index] as { key: string; title: string };
+  const request = () => written[entry.index] as { key: string; title: string };
 
   it("arrives fenced, escaped and stripped through get_request, with its JSON under untrusted", async () => {
     const { markdown, structured } = await getRequest(request().key);
@@ -243,13 +243,13 @@ describe.each(CORPUS.map((entry, index) => ({ ...entry, index })))("$name", (ent
 
 describe("whats_new", () => {
   it("holds every entry's request title fenced, escaped and stripped, page after page", async () => {
-    const titles = new Map<string, string>(requests.map(({ key, title }) => [key, title]));
+    const titles = new Map<string, string>(written.map(({ key, title }) => [key, title]));
     const seen = new Set<string>();
     let acknowledge: number | undefined;
     for (;;) {
       const result = await mcp.callTool({ name: "whats_new", arguments: { limit: 50, ...(acknowledge === undefined ? {} : { acknowledge }) } });
       expect(result.isError ?? false).toBe(false);
-      const page = result.structuredContent as { events: { number: number }[]; requests: { key: string; untrusted: { title: string } }[] };
+      const page = result.structuredContent as { events: { number: number }[]; "requests": { key: string; untrusted: { title: string } }[] };
       expectStrippedJson(page, "whats_new");
       if (page.events.length === 0) break;
       const fences = fencesOf(textOf(result));
@@ -270,10 +270,10 @@ describe("list_inbox", () => {
   it("holds the title of every entry's request fenced, escaped and stripped", async () => {
     const result = await mcp.callTool({ name: "list_inbox", arguments: { limit: 50 } });
     expect(result.isError ?? false).toBe(false);
-    const inbox = result.structuredContent as { requests: { key: string; untrusted: { title: string } }[] };
+    const inbox = result.structuredContent as { "requests": { key: string; untrusted: { title: string } }[] };
     expectStrippedJson(inbox, "list_inbox");
     const fences = fencesOf(textOf(result));
-    for (const { key, title } of requests) {
+    for (const { key, title } of written) {
       expect(inbox.requests.find((read) => read.key === key)?.untrusted.title, `list_inbox, the title of ${key}`).toBe(visible(title));
       expectFenced(fences, title, "other team", `list_inbox, the title of ${key}`);
     }
