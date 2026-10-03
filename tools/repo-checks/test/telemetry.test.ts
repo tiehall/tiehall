@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 // NEXT_TELEMETRY_DISABLED; the image sets it in its build stage and in the
 // image itself, and every script that runs Next.js sets it, so a build on a
 // maintainer's machine sends nothing either. The image tests check the
-// environment of the built image; the egress test comes in task 26.8.
+// environment of the built image, and the egress test
+// (tools/image-tests/test/install/egress.test.ts) that a running install
+// makes no DNS query or connection beyond the services it needs.
 
 const root = new URL("../../../", import.meta.url);
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, root)), "utf8");
