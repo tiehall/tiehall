@@ -42,6 +42,32 @@ export class UnreachableError extends CliError {
   override name = "UnreachableError";
 }
 
+/**
+ * The promise, or a rejection with an AbortError as soon as the signal
+ * aborts. A request's own signal follows the signal it was made with only
+ * while Node.js keeps the request's controller, which Node.js 22 may collect
+ * while the call waits, so a call that must end when its signal aborts
+ * listens to that signal itself rather than trust the request's.
+ */
+export function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return promise;
+  if (signal.aborted) return Promise.reject(new DOMException("The call was given up.", "AbortError"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException("The call was given up.", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** How a run waits: the environment's sleep, or a timer that the signal ends early. */
 export function sleepOf(environment: CliEnvironment): (milliseconds: number, signal?: AbortSignal) => Promise<void> {
   if (environment.sleep !== undefined) return (milliseconds, signal) => environment.sleep!(milliseconds, signal);

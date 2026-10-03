@@ -1,5 +1,5 @@
 import { createTiehallClient, type TiehallClient } from "@tiehall/client";
-import { UnreachableError, type CliEnvironment } from "./environment.ts";
+import { abortable, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { configDirOf, type SavedLogin } from "./logins.ts";
 import { expiresSoon, isRedirect, redirectRefusal, refreshLogin } from "./oauth.ts";
 import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
@@ -48,10 +48,10 @@ export function sessionFor(environment: CliEnvironment, saved: SavedLogin, { lon
   const configDir = configDirOf(environment.env);
   let login = saved;
   let refreshed = false;
-  const once = async (call: Call): Promise<Answer> => {
+  const once = async (call: Call, signal: AbortSignal | undefined): Promise<Answer> => {
     let answered: { data?: unknown; error?: unknown; response: Response };
     try {
-      answered = await call(clientFor(environment, login));
+      answered = await abortable(call(clientFor(environment, login)), signal);
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
       throw new UnreachableError(`The CLI could not reach ${login.url}: ${why}`);
@@ -68,12 +68,12 @@ export function sessionFor(environment: CliEnvironment, saved: SavedLogin, { lon
         login = await refreshLogin(environment, configDir, login, signal);
         refreshed = refreshedNow = true;
       }
-      const answer = await once(call);
+      const answer = await once(call, signal);
       // An access token the install no longer takes, such as one it refused before it expired, is refreshed once.
       if (answer.status !== 401 || (longRunning ? refreshedNow : refreshed)) return answer;
       login = await refreshLogin(environment, configDir, login, signal);
       refreshed = true;
-      return once(call);
+      return once(call, signal);
     },
   };
 }

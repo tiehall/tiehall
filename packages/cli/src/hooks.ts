@@ -1,6 +1,6 @@
 import { hookLine, noticeEventType, noticeKey, noticeTeam, noticeUrl, type Notice } from "@tiehall/packet/notices";
 import { announce, announcedThrough } from "./announced.ts";
-import { sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
+import { abortable, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf } from "./logins.ts";
 import { sessionFor, type Answer, type Session } from "./session.ts";
 import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
@@ -187,9 +187,10 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
   void sleepOf(environment)(CALL_LIMIT_MS, call.signal).then(() => call.abort());
   try {
     // A refresh of the access token is given up only when the waiter stops, such as at its cap, not when one call runs long.
-    const answer = await session.send(
-      (client) => client.GET("/api/v1/events/wait", { params: { query: cursor === undefined ? {} : { cursor } }, signal: call.signal }),
-      stop,
+    // The call ends when its own signal aborts, whatever its request's signal does (abortable()).
+    const answer = await abortable(
+      session.send((client) => client.GET("/api/v1/events/wait", { params: { query: cursor === undefined ? {} : { cursor } }, signal: call.signal }), stop),
+      call.signal,
     );
     if (answer.ok) {
       const body = answer.body as { events?: unknown; cursor?: unknown } | undefined;
@@ -202,7 +203,7 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
   } catch (error) {
     if (stop.aborted) return { kind: "stopped" };
     // A call that did not reach the install, or that it held longer than it holds one, is tried again later.
-    if (error instanceof UnreachableError) return { kind: "failed" };
+    if (error instanceof UnreachableError || call.signal.aborted) return { kind: "failed" };
     return { kind: "refused", error: error instanceof Error ? error : new Error(String(error)) };
   } finally {
     call.abort();

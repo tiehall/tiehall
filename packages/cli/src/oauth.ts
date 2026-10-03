@@ -1,4 +1,4 @@
-import { CliError, nowOf, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
+import { abortable, CliError, nowOf, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, saveLogin, withLoginsLock, type SavedLogin } from "./logins.ts";
 import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
@@ -56,14 +56,17 @@ async function post(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   let response: Response;
   try {
-    response = await (environment.fetch ?? fetch)(
-      new Request(`${url}${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
-        body: new URLSearchParams(fields).toString(),
-        redirect: "manual",
-        ...(signal === undefined ? {} : { signal }),
-      }),
+    response = await abortable(
+      (environment.fetch ?? fetch)(
+        new Request(`${url}${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `tiehall/${CLI_VERSION}`, [CLI_VERSION_HEADER]: CLI_VERSION },
+          body: new URLSearchParams(fields).toString(),
+          redirect: "manual",
+          ...(signal === undefined ? {} : { signal }),
+        }),
+      ),
+      signal,
     );
   } catch (error) {
     throw new UnreachableError(`The CLI could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`);

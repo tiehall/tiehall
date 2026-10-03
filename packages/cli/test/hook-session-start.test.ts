@@ -152,6 +152,20 @@ describe("a digest that cannot read", () => {
     expect(install.calls.map(({ path }) => path)).toEqual(["/api/auth/oauth2/token"]);
   });
 
+  // A request's own signal follows the one it was made with only while Node.js keeps the request's controller, which
+  // Node.js 22 may collect while the call waits: the CLI gives a call up when its own signal aborts, whatever the
+  // request's signal does, as with a fetch that never ends a call.
+  it("prints nothing once 10 seconds pass while a refresh hangs that no signal of its request ends", async () => {
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    saveLogin(configDir, clock, INSTALL, -60_000);
+    const deaf = (request: Request) =>
+      new URL(request.url).pathname === "/api/auth/oauth2/token" ? (install.calls.push({ method: request.method, path: "/api/auth/oauth2/token", query: {}, body: undefined, authorization: null, cliVersion: null, at: Number.NaN }), new Promise<Response>(() => {})) : install.fetch(request);
+    const run = startCli(["hook", "session-start"], { configDir, clock, fetch: deaf, stdin: hookInput("session-1", "SessionStart") });
+    await install.untilCalls(1);
+    await clock.advance(10_000);
+    expect(await run.done).toEqual({ code: 0, stdout: "", stderr: "" });
+  });
+
   it("reads from the install --install names, as the plugin's launcher passes it", async () => {
     install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
     const printed = await digest(["--install", INSTALL]);
