@@ -29,6 +29,7 @@ export const DOCS_PAGES: readonly DocsPage[] = [
   { path: "docs/github-and-jira.md", title: "GitHub and Jira: installations, webhook and polling modes, and mirrors" },
   { path: "docs/contract-changes.md", title: "Contract changes: APIs, the consumer map and the contract Action" },
   { path: "docs/activity-log.md", title: "The activity log" },
+  { path: "docs/api.md", title: "The API: stability levels, notice, the changelog, idempotency and the error model" },
   { path: "docs/install.md", title: "Installing and running Tiehall" },
   { path: "docs/security-and-trust.md", title: "Security and trust" },
 ];
