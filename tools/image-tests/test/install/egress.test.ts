@@ -244,7 +244,7 @@ describe.each(["on", "off"] as const)("An install with metadata-document fetchin
     if (fetching === "off") expect(isolation.received.filter(({ host }) => host === VENDOR_HOST)).toEqual([]);
     // Nothing else: no name the network does not hold was looked up, and no connection went looking for a route out.
     expect(isolation.dnsQueries()).toEqual([]);
-    expect(isolation.noRouteAttempts()).toEqual({ app: 0, postgres: 0 });
+    expect(isolation.noRouteAttempts()).toEqual({ app: 0, postgres: 0, migrate: 0 });
     // The stubs play the hosts the docs list for operators' egress rules.
     const section = INSTALL_DOCS.slice(INSTALL_DOCS.indexOf("## What an install connects to"));
     for (const host of ["github.com", "api.github.com", ACTIONS_OIDC_HOST]) expect(section).toContain(`\`${host}\``);
@@ -260,6 +260,21 @@ describe.each(["on", "off"] as const)("An install with metadata-document fetchin
     expect(attempt.status, attempt.stderr).toBe(0);
     expect(isolation.dnsQueries().map(({ name }) => name)).toContain("api.openai.com");
     expect(isolation.noRouteAttempts().app).toBeGreaterThan(0);
+  });
+
+  // The migrate step ends before the app starts, and its network namespace with it, so it runs in a namespace a
+  // container of the test's holds, whose counters are read after the step ended.
+  it("watches the migrate step too: it ran in the namespace whose counters are read, which sees a connection attempt", () => {
+    const holder = install.compose(["ps", "--all", "--quiet", "migrate-net"]).stdout.trim();
+    const migrate = install.compose(["ps", "--all", "--quiet", "migrate"]).stdout.trim();
+    expect(holder).not.toBe("");
+    expect(install.shell(`docker inspect --format '{{.HostConfig.NetworkMode}}' ${migrate}`).stdout.trim()).toMatch(new RegExp(`^container:${holder.slice(0, 12)}`));
+    expect(install.compose(["ps", "--all", "--format", "{{.ExitCode}}", "migrate"]).stdout.trim()).toBe("0");
+    const attempt = install.shell(
+      "docker compose exec -T migrate-net node --eval " + `'const socket = require("node:net").connect(443, "162.159.140.245"); socket.on("error", () => process.exit(0));'`,
+    );
+    expect(attempt.status, attempt.stderr).toBe(0);
+    expect(isolation.noRouteAttempts().migrate).toBeGreaterThan(0);
   });
 
   it.todo("reaches the Jira site's stub alone for the Jira mirror, once it is built (tasks 25.1 to 25.6)");

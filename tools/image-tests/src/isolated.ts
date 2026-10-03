@@ -43,7 +43,10 @@ import { quote, type Install } from "./install.ts";
 // - a connection attempt to an address outside the network finds no route,
 //   and the kernel counts it in the container's network namespace
 //   (OutNoRoutes in /proc/net/snmp, Ip6OutNoRoutes in /proc/net/snmp6), which
-//   is read in the app and Postgres, whose namespaces stay up while they run.
+//   is read in the app and Postgres, whose namespaces stay up while they run,
+//   and in the namespace the migrate step ran in: the step ends before the
+//   app starts, and its namespace with it, so it runs in the namespace of a
+//   container of its own that holds it (migrate-net), which stays up.
 
 /** The host of GitHub Actions' OIDC issuer, whose published keys check the contract Action's tokens. */
 export const ACTIONS_OIDC_HOST = "token.actions.githubusercontent.com";
@@ -54,8 +57,11 @@ export const VENDOR_HOST = "vendor.example";
 /** The agent client's id: the URL of its Client ID Metadata Document. */
 export const CLIENT_METADATA_URL = `https://${VENDOR_HOST}/oauth/client.json`;
 
-/** The services whose network namespaces are watched for connection attempts that find no route. */
-export const WATCHED_SERVICES = ["app", "postgres"] as const;
+/**
+ * The services whose network namespaces are watched for connection attempts that find no route, each with the
+ * container whose namespace it runs in: its own, or, for the migrate step, which ends, the one that holds its namespace.
+ */
+export const WATCHED_SERVICES = { app: "app", postgres: "postgres", migrate: "migrate-net" } as const;
 
 /** A DNS query the logger received: the name, the record type's number and the address that asked. */
 export interface DnsQuery {
@@ -83,7 +89,7 @@ export interface Isolation {
   /** Every query the DNS logger received so far. */
   dnsQueries(): DnsQuery[];
   /** The connection attempts that found no route, so far, in each watched service, as the kernel counts them. */
-  noRouteAttempts(): Record<(typeof WATCHED_SERVICES)[number], number>;
+  noRouteAttempts(): Record<keyof typeof WATCHED_SERVICES, number>;
   close(): Promise<void>;
 }
 
@@ -206,7 +212,13 @@ export async function isolate(install: Install): Promise<Isolation> {
       "  outside: {}",
       "services:",
       watchedDns("postgres"),
-      watchedDns("migrate"),
+      // The namespace the migrate step runs in, held by a container that stays up after the step ends.
+      watchedDns("migrate-net", [`    image: ${NODE_IMAGE}`, '    command: ["node", "--eval", "setInterval(() => {}, 2 ** 30)"]', "    restart: unless-stopped"]),
+      "  migrate:",
+      '    network_mode: "service:migrate-net"',
+      "    depends_on:",
+      "      migrate-net:",
+      "        condition: service_started",
       watchedDns("app", [
         ...["github-web", "github-api", "actions-oidc", "vendor", "smtp"].flatMap((name) => [`      ${name}:`, "        condition: service_started"]),
         "    ports: !reset []",
@@ -249,9 +261,9 @@ export async function isolate(install: Install): Promise<Isolation> {
         .map((line) => JSON.parse(line) as DnsQuery);
     },
     noRouteAttempts() {
-      const counts = {} as Record<(typeof WATCHED_SERVICES)[number], number>;
-      for (const service of WATCHED_SERVICES) {
-        const read = install.shell(`docker compose exec -T ${quote(service)} sh -c 'cat /proc/net/snmp; cat /proc/net/snmp6 2>/dev/null; true'`);
+      const counts = {} as Record<keyof typeof WATCHED_SERVICES, number>;
+      for (const [service, container] of Object.entries(WATCHED_SERVICES) as [keyof typeof WATCHED_SERVICES, string][]) {
+        const read = install.shell(`docker compose exec -T ${quote(container)} sh -c 'cat /proc/net/snmp; cat /proc/net/snmp6 2>/dev/null; true'`);
         if (read.status !== 0) throw new Error(`reading the network counters of ${service} failed: ${read.stderr}`);
         counts[service] = noRoutesIn(read.stdout);
       }

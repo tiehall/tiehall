@@ -243,7 +243,7 @@ describe("GitHub in polling mode on an install GitHub cannot reach", () => {
     for (const [what, ms] of Object.entries(took)) expect(ms, what).toBeLessThanOrEqual(BOUND_MS);
     expect(install.sql("SELECT mode FROM github_app")).toBe("polling");
     expect(isolation.dnsQueries()).toEqual([]);
-    expect(isolation.noRouteAttempts()).toEqual({ app: 0, postgres: 0 });
+    expect(isolation.noRouteAttempts()).toEqual({ app: 0, postgres: 0, migrate: 0 });
   });
 
   it.todo("picks up the changes of Jira in polling mode within 2 minutes too, once the Jira mirror is built (tasks 25.1 to 25.11)");
