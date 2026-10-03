@@ -4,6 +4,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { and, eq, lt } from "drizzle-orm";
 import { SCOPES } from "@tiehall/catalog";
 import { oauthClientResources, oauthClients, oauthDeviceCodes, type Database } from "@tiehall/db";
+import { storedDeviceCode } from "./device-code-storage.ts";
 import { defineJobType } from "./jobs.ts";
 import { SetupRequiredError, withOrg } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -164,7 +165,7 @@ export function cliDeviceFlow(options: CliDeviceFlowOptions): BetterAuthPlugin {
               tx
                 .update(oauthDeviceCodes)
                 .set({ scope: deviceScopeOf(requested, options.refreshScope), requestedFrom: address ?? null })
-                .where(and(eq(oauthDeviceCodes.orgId, orgId), eq(oauthDeviceCodes.deviceCode, deviceCode))),
+                .where(and(eq(oauthDeviceCodes.orgId, orgId), eq(oauthDeviceCodes.deviceCode, storedDeviceCode(deviceCode)))),
             );
             // The answer names the approval page alone, never a link with the user code in it: the page ignores a code
             // in its URL, so nothing invites a person to open one that another prefilled.

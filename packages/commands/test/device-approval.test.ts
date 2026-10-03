@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID } from "../src/index.ts";
+import { CLI_CLIENT_ID, storedDeviceCode } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
@@ -57,7 +57,7 @@ async function login(address = "198.51.100.7"): Promise<{ deviceCode: string; us
 /** The CLI's poll with its device code. */
 async function poll(deviceCode: string): Promise<Answer> {
   // The CLI waits its interval between polls; the test lets it poll at once.
-  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [deviceCode]);
+  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
   const answer = await harness.handle(
     new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
       method: "POST",
@@ -111,7 +111,7 @@ async function confirm(person: SignedIn, review: string, fields: Record<string, 
 
 /** The device code's record as the install holds it. */
 async function stored(deviceCode: string): Promise<{ status: string; user_id: string | null } | undefined> {
-  const { rows } = await harness.install.owner.query("SELECT status, user_id FROM oauth_device_codes WHERE device_code = $1", [deviceCode]);
+  const { rows } = await harness.install.owner.query("SELECT status, user_id FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
   return rows[0];
 }
 
@@ -147,7 +147,7 @@ describe("the device approval page", () => {
 
   it("shows, for a typed code, the IP address and time of the request, and the text to continue only after tiehall login", async () => {
     const { deviceCode, userCode } = await login("203.0.113.44");
-    const { rows } = await harness.install.owner.query("SELECT requested_at FROM oauth_device_codes WHERE device_code = $1", [deviceCode]);
+    const { rows } = await harness.install.owner.query("SELECT requested_at FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
     const requestedAt = (rows[0].requested_at as Date).toISOString().replace("T", " ").slice(0, 19);
     const answer = await typeCode(ana, userCode);
     expect(answer.status).toBe(200);
@@ -184,7 +184,7 @@ describe("the device approval page", () => {
 
   it("gets 409 for an expired code, and stores nothing", async () => {
     const { deviceCode, userCode } = await login();
-    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [deviceCode]);
+    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
     const answer = await typeCode(ana, userCode);
     expect(answer.status).toBe(409);
     expect(await answer.text()).toContain("expired");
@@ -242,7 +242,7 @@ describe("approving a code", () => {
   it("gets 409 once the code expired, even from a review page opened before", async () => {
     const { deviceCode, userCode } = await login();
     const review = await (await typeCode(ana, userCode)).text();
-    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [deviceCode]);
+    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
     const answer = await confirm(ana, review);
     expect(answer.status).toBe(409);
     expect(await stored(deviceCode)).toEqual({ status: "pending", user_id: null });

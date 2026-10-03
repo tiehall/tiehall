@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID, createDeviceApprovalRoute } from "../src/index.ts";
+import { CLI_CLIENT_ID, createDeviceApprovalRoute, storedDeviceCode } from "../src/index.ts";
 import { startBrowserHarness, type BrowserHarness } from "./support/browser.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
@@ -66,7 +66,7 @@ describe("the device approval page in a browser", { timeout: 60_000 }, () => {
     await Promise.all([page.waitForURL(`${browser.origin}/device`), page.getByRole("button", { name: "Continue" }).click()]);
     await expect(page.getByText(/198\.51\.100\.7/).count()).resolves.toBe(1);
     await expect(page.getByText("Continue only if you just ran tiehall login.").count()).resolves.toBe(1);
-    const { rows } = await harness.install.owner.query("SELECT status, user_id FROM oauth_device_codes WHERE device_code = $1", [deviceCode]);
+    const { rows } = await harness.install.owner.query("SELECT status, user_id FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
     expect(rows).toEqual([{ status: "pending", user_id: null }]);
 
     await Promise.all([page.waitForURL(`${browser.origin}/confirm/agent_clients.approve_device`), page.getByRole("button", { name: "Confirm" }).click()]);

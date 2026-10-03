@@ -9,6 +9,7 @@ import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH, renderReviewPage, type ConfirmEntries, type ConfirmMessages } from "./confirm-route.ts";
 import type { ConfirmationStep, Reviews } from "./confirmation-step.ts";
 import { SCOPE_TEXTS } from "./consent.ts";
+import { storedDeviceCode } from "./device-code-storage.ts";
 import { CLI_CLIENT_ID, DEVICE_APPROVAL_PATH } from "./device-flow.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor, type WayOn } from "./html.ts";
@@ -101,7 +102,7 @@ async function waitingCodeIn(context: Pick<OrgContext, "tx" | "orgId">, userCode
       requestedAt: oauthDeviceCodes.requestedAt,
     })
     .from(oauthDeviceCodes)
-    .where(and(eq(oauthDeviceCodes.orgId, context.orgId), eq(oauthDeviceCodes.userCode, userCode)));
+    .where(and(eq(oauthDeviceCodes.orgId, context.orgId), eq(oauthDeviceCodes.userCode, storedDeviceCode(userCode))));
   const [code] = lock ? await query.for("update") : await query;
   if (code === undefined || code.clientId !== CLI_CLIENT_ID) {
     throw new Refusal("record-not-found", "No sign-in of the tiehall CLI is waiting with this code. Check the code tiehall login printed.");

@@ -58,10 +58,13 @@ The maintainers review Tiehall against this checklist before a release, and when
 - Requirement: agent-access: The device approval page cannot be prefilled
 - Check: only the CLI's client id gets a device code, which expires after 10 minutes and binds to no user before approval; the token's only audience is the MCP resource; the library's own device token, verification and approval routes are not served.
 - Check: the approval page ignores a code its URL carries, shows the request's address and time, and approves only with the confirmation step.
+- Check: a device code and its user code are kept only as their SHA-256 hashes, and the hash sent as a device code redeems nothing.
 - Test: `packages/commands/test/device-flow.test.ts`: "gets unauthorized_client for a client registered through DCR, and no device code is issued"
 - Test: `packages/commands/test/device-flow.test.ts`: "gets an access token whose only audience is the MCP resource"
 - Test: `packages/commands/test/device-approval.test.ts`: "leaves the code field empty when its link carries a code, and does not use that code"
 - Test: `packages/commands/test/device-approval.test.ts`: "without a valid confirmation gets 403, and the CLI gets no token"
+- Test: `packages/commands/test/device-flow.test.ts`: "are the SHA-256 hashes of the device code and the user code, and never the codes"
+- Test: `packages/commands/test/device-flow.test.ts`: "redeem nothing when the hash the database keeps is sent as the device code"
 
 ### SR-6 CI OIDC
 

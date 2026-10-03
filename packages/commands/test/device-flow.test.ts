@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID, removeExpiredDeviceCodes } from "../src/index.ts";
+import { createHash } from "node:crypto";
+import { CLI_CLIENT_ID, removeExpiredDeviceCodes, storedDeviceCode } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
@@ -17,7 +18,10 @@ import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn 
 // token endpoint for an access token whose only audience is the install's MCP
 // resource, and a refresh token, and no web session is made for it.
 //
-// An expired code is removed by an hourly job, with the address it kept.
+// An expired code is removed by an hourly job, with the address it kept. The
+// install keeps a device code and its user code only as their SHA-256 hashes,
+// as it keeps personal access tokens, so a reader of the database finds no
+// code to redeem or approve.
 //
 // The device approval page, where a member approves a code with the
 // confirmation step, has its own tests (device-approval.test.ts); here a test
@@ -71,12 +75,12 @@ const CLI_REQUEST = { client_id: CLI_CLIENT_ID, resource: MCP_RESOURCE, scope: "
 
 /** Approves a device code for a user as the device approval page's confirmed approval stores it: the code, and the user's grant to the CLI. */
 async function approve(userCode: string, userId: string): Promise<void> {
-  await harness.install.owner.query("UPDATE oauth_device_codes SET status = 'approved', user_id = $2 WHERE user_code = $1", [userCode, userId]);
+  await harness.install.owner.query("UPDATE oauth_device_codes SET status = 'approved', user_id = $2 WHERE user_code = $1", [storedDeviceCode(userCode), userId]);
   await harness.install.owner.query(
     `INSERT INTO oauth_consents (org_id, client_id, user_id, scopes, resources, requested_user_info_claims, created_at, updated_at)
        SELECT d.org_id, $3, $2, string_to_array(d.scope, ' '), d.resources, '{}', now(), now() FROM oauth_device_codes d
         WHERE d.user_code = $1 AND NOT EXISTS (SELECT 1 FROM oauth_consents c WHERE c.user_id = $2 AND c.client_id = $3)`,
-    [userCode, userId, CLI_CLIENT_ID],
+    [storedDeviceCode(userCode), userId, CLI_CLIENT_ID],
   );
 }
 
@@ -115,7 +119,7 @@ describe("the CLI", () => {
     expect(answer.body).not.toHaveProperty("verification_uri_complete");
     const { rows } = await harness.install.owner.query(
       "SELECT extract(epoch FROM expires_at - requested_at)::int AS lifetime, host(requested_from) AS ip, status, user_id FROM oauth_device_codes WHERE device_code = $1",
-      [answer.body["device_code"]],
+      [storedDeviceCode(String(answer.body["device_code"]))],
     );
     expect(rows).toEqual([{ lifetime: 600, ip: "198.51.100.7", status: "pending", user_id: null }]);
   });
@@ -125,7 +129,7 @@ describe("the CLI", () => {
     const code = String(answer.body["device_code"]);
     await approve(String(answer.body["user_code"]), ana.userId);
     // Eleven minutes on, as the install's clock reads the code's expiry.
-    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [code]);
+    await harness.install.owner.query("UPDATE oauth_device_codes SET expires_at = now() - interval '1 minute' WHERE device_code = $1", [storedDeviceCode(code)]);
     const polled = await deviceToken(code);
     expect(polled.status).toBe(400);
     expect(polled.body["error"]).toBe("expired_token");
@@ -279,13 +283,13 @@ describe("the hourly removal", () => {
 
   it("keeps a device code until it expires, then removes it with the address it kept", async () => {
     const issued = await deviceCode(CLI_REQUEST);
-    const { rows } = await harness.install.owner.query("SELECT expires_at FROM oauth_device_codes WHERE device_code = $1", [issued.body["device_code"]]);
+    const { rows } = await harness.install.owner.query("SELECT expires_at FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(String(issued.body["device_code"]))]);
     const expiresAt = rows[0].expires_at as Date;
     await removeExpired(new Date(expiresAt.getTime() - 60_000));
-    const { rows: kept } = await harness.install.owner.query("SELECT host(requested_from) AS ip FROM oauth_device_codes WHERE device_code = $1", [issued.body["device_code"]]);
+    const { rows: kept } = await harness.install.owner.query("SELECT host(requested_from) AS ip FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(String(issued.body["device_code"]))]);
     expect(kept).toEqual([{ ip: "198.51.100.7" }]);
     await removeExpired(new Date(expiresAt.getTime() + 1000));
-    const { rows: left } = await harness.install.owner.query("SELECT 1 FROM oauth_device_codes WHERE device_code = $1", [issued.body["device_code"]]);
+    const { rows: left } = await harness.install.owner.query("SELECT 1 FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(String(issued.body["device_code"]))]);
     expect(left).toEqual([]);
   });
 });
@@ -295,5 +299,36 @@ describe("the authorization server metadata", () => {
     const answer = await harness.handle(new Request(`${URL_OF_INSTALL}/.well-known/oauth-authorization-server`));
     const body = (await answer.json()) as Record<string, unknown>;
     expect(body["device_authorization_endpoint"]).toBe(`${URL_OF_INSTALL}/api/auth/device/code`);
+  });
+});
+
+// The codes the install keeps: the SHA-256 hash of each, never the code, so the hash a reader of the database finds
+// redeems nothing at the token endpoint.
+describe("the codes the install keeps", () => {
+  const sha256 = (code: string) => `sha256:${createHash("sha256").update(code, "utf8").digest("hex")}`;
+
+  it("are the SHA-256 hashes of the device code and the user code, and never the codes", async () => {
+    const issued = await deviceCode(CLI_REQUEST);
+    const device = String(issued.body["device_code"]);
+    const user = String(issued.body["user_code"]);
+    expect(storedDeviceCode(device)).toBe(sha256(device));
+    const { rows } = await harness.install.owner.query("SELECT device_code, user_code FROM oauth_device_codes WHERE device_code = $1", [sha256(device)]);
+    expect(rows).toEqual([{ device_code: sha256(device), user_code: sha256(user) }]);
+    const { rows: plain } = await harness.install.owner.query("SELECT 1 FROM oauth_device_codes WHERE device_code = $1 OR user_code = $2", [device, user]);
+    expect(plain).toEqual([]);
+  });
+
+  it("redeem nothing when the hash the database keeps is sent as the device code; the code itself redeems", async () => {
+    const issued = await deviceCode(CLI_REQUEST);
+    const device = String(issued.body["device_code"]);
+    await approve(String(issued.body["user_code"]), ana.userId);
+    const withHash = await deviceToken(sha256(device));
+    expect(withHash.status).toBe(400);
+    expect(withHash.body["error"]).toBe("invalid_grant");
+    expect(withHash.body["access_token"]).toBeUndefined();
+    await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [sha256(device)]);
+    const withCode = await deviceToken(device);
+    expect(withCode.status).toBe(200);
+    expect(typeof withCode.body["access_token"]).toBe("string");
   });
 });

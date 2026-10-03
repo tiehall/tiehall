@@ -47,6 +47,7 @@ export {
   seedCliClient,
   type CliDeviceFlowOptions,
 } from "./device-flow.ts";
+export { deviceCodesHashed, storedDeviceCode } from "./device-code-storage.ts";
 export {
   createTokensRoute,
   findPersonalAccessToken,

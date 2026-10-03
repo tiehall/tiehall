@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID, type WebSessionCaller } from "../src/index.ts";
+import { CLI_CLIENT_ID, storedDeviceCode, type WebSessionCaller } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { holdRow, untilWaiting } from "./support/locks.ts";
 import { addUser } from "./support/members.ts";
@@ -161,7 +161,7 @@ async function deviceApprovalReview(dana: SignedIn): Promise<{ deviceCode: strin
 
 /** The CLI's poll of the token endpoint with its device code, at once. */
 async function poll(deviceCode: string): Promise<Record<string, unknown>> {
-  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [deviceCode]);
+  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = NULL WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
   const answer = await harness.handle(
     new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
       method: "POST",
@@ -192,7 +192,7 @@ describe("a removal that commits while Dana approves a device code", () => {
     expect((await removal.answer).status).toBe(200);
     await approving;
 
-    const { rows } = await harness.install.owner.query("SELECT status FROM oauth_device_codes WHERE device_code = $1", [deviceCode]);
+    const { rows } = await harness.install.owner.query("SELECT status FROM oauth_device_codes WHERE device_code = $1", [storedDeviceCode(deviceCode)]);
     expect(rows.map(({ status }) => status)).not.toContain("approved");
     const { rows: grants } = await harness.install.owner.query("SELECT id FROM oauth_consents WHERE user_id = $1", [dana.userId]);
     expect(grants).toEqual([]);

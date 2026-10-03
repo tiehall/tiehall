@@ -1,5 +1,6 @@
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { deviceCodesHashed } from "./device-code-storage.ts";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { authorizationCodeRequest, getOAuth2Tokens } from "better-auth/oauth2";
 import type { GithubProfile } from "better-auth/social-providers";
@@ -448,7 +449,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           else if (level !== "debug") logger.info(line);
         },
       },
-      database: drizzleAdapter(options.database, {
+      // The device flow's codes are kept as their hashes (device-code-storage.ts).
+      database: deviceCodesHashed(drizzleAdapter(options.database, {
         provider: "pg",
         schema: {
           users,
@@ -465,7 +467,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           oauthClientAssertions,
           oauthDeviceCodes,
         },
-      }),
+      })),
       advanced: {
         // The library's origin and CSRF checks, on everywhere: left unset, the library turns both off by itself when
         // NODE_ENV is test or TEST is set, so the tests would not run the checks production runs.
