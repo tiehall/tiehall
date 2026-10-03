@@ -15,6 +15,10 @@
 //   Tiehall wrote that error to be logged: an error is logged by its name, its
 //   code, its stack frames and its cause. An error spread into a plain object,
 //   with a message and a stack, is treated the same way.
+// Each string a line holds, the message, every value and every field's name,
+// is then cut to 2 KiB, with how many characters were cut, since a string can
+// be as long as a body a caller sends; and two names that scrub to the same
+// name each keep their value, the later ones under a numbered name.
 // The one secret a log line shows on purpose is the setup code, which the
 // setup screen's task prints in a message (self-host-install: Logs carry ids,
 // never message text or credentials).
@@ -55,11 +59,20 @@ export const LOGGABLE: unique symbol = Symbol.for("tiehall.loggable");
 
 export const REDACTED = "[redacted]";
 
+/** How many characters of a string a log line keeps, once the string is scrubbed: 2 KiB. */
+export const LOGGED_STRING_MAX = 2_048;
+
+/** A string as a log line holds it: scrubbed, then cut to LOGGED_STRING_MAX characters, saying how many were cut. */
+function logged(text: string): string {
+  const clean = scrub(text);
+  return clean.length <= LOGGED_STRING_MAX ? clean : `${clean.slice(0, LOGGED_STRING_MAX)}… [${clean.length - LOGGED_STRING_MAX} more characters]`;
+}
+
 export function createLogger(options: LoggerOptions = {}, bindings: LogFields = {}): Logger {
   const write = options.write ?? ((line: string) => void process.stdout.write(`${line}\n`));
   const now = options.now ?? (() => new Date());
   const line = (level: LogLevel) => (msg: string, fields: LogFields = {}) => {
-    const entry = { ...sanitizeFields({ ...bindings, ...fields }), time: now().toISOString(), level, msg: scrub(msg) };
+    const entry = { ...sanitizeFields({ ...bindings, ...fields }), time: now().toISOString(), level, msg: logged(msg) };
     // time, level and msg lead the line, and no field can replace them.
     const { time, level: lineLevel, msg: message, ...rest } = entry;
     write(JSON.stringify({ time, level: lineLevel, msg: message, ...rest }));
@@ -169,7 +182,7 @@ function isSensitiveKey(key: string): boolean {
 function sanitize(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
-  if (typeof value === "string") return scrub(value);
+  if (typeof value === "string") return logged(value);
   if (typeof value === "bigint") return value.toString();
   if (typeof value !== "object") return undefined;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? "Invalid Date" : value.toISOString();
@@ -199,13 +212,22 @@ function sanitize(value: unknown, depth: number, seen: WeakSet<object>): unknown
         continue;
       }
       const clean = isSensitiveKey(key) ? REDACTED : sanitize(item, depth + 1, seen);
-      // A name can hold what a value can, such as a token a cache is keyed by, or a URL.
-      if (clean !== undefined) result[scrub(key)] = clean;
+      // A name can hold what a value can, such as a token a cache is keyed by, or a URL; two names that scrub to the
+      // same name each keep their value, the later ones under a numbered name.
+      if (clean !== undefined) result[unusedName(result, logged(key))] = clean;
     }
     return result;
   } finally {
     seen.delete(value);
   }
+}
+
+/** The name, or, when the object has it already, the name with the first number from 2 on that it does not have. */
+function unusedName(object: Readonly<Record<string, unknown>>, name: string): string {
+  if (!Object.hasOwn(object, name)) return name;
+  let number = 2;
+  while (Object.hasOwn(object, `${name} (${number})`)) number += 1;
+  return `${name} (${number})`;
 }
 
 function isErrorLike(value: object): boolean {
@@ -214,10 +236,10 @@ function isErrorLike(value: object): boolean {
 }
 
 function sanitizeError(error: Error, depth: number, seen: WeakSet<object>): Record<string, unknown> {
-  const result: Record<string, unknown> = { name: scrub(error.name) };
+  const result: Record<string, unknown> = { name: logged(error.name) };
   const code = (error as { code?: unknown }).code;
-  if (typeof code === "string" || typeof code === "number") result["code"] = scrub(String(code));
-  if ((error as { [LOGGABLE]?: unknown })[LOGGABLE] === true) result["message"] = scrub(error.message);
+  if (typeof code === "string" || typeof code === "number") result["code"] = logged(String(code));
+  if ((error as { [LOGGABLE]?: unknown })[LOGGABLE] === true) result["message"] = logged(error.message);
   result["stack"] = stackFrames(error.stack, error.message);
   if (error.cause !== undefined) result["cause"] = sanitize(error.cause, depth + 1, seen);
   if (error instanceof AggregateError) result["errors"] = sanitize(error.errors, depth + 1, seen);
@@ -240,7 +262,7 @@ function stackFrames(stack: unknown, message: unknown): string[] {
     .split("\n")
     .filter((frame) => /^\s+at \S/.test(frame))
     .slice(0, 20)
-    .map((frame) => scrub(frame.trim()));
+    .map((frame) => logged(frame.trim()));
 }
 
 /**
@@ -413,9 +435,39 @@ function queryStrings(text: string): { from: number; to: number }[] {
     const mark = text.charCodeAt(end);
     if (!starts || (mark !== 63 && mark !== 35)) continue;
     at = runEnd(text, end + 1, isQueryCharacter);
-    spans.push({ from: end, to: at });
+    spans.push({ from: end, to: givesBackClosers(text, end, at) });
   }
   return spans;
+}
+
+/** The brackets a query string's run can end with, each with the bracket that opens it, and the other way round. */
+const OPENERS: Readonly<Record<number, number>> = { 41: 40, 93: 91, 125: 123 };
+const CLOSERS: Readonly<Record<number, number>> = { 40: 41, 91: 93, 123: 125 };
+
+/**
+ * Where a query string that runs from `from` to `to` ends once it gives back the closing brackets it ends with but
+ * does not open itself, as in "(see https://x.example/a?b=c)", so dropping it leaves the bracket that closes what
+ * came before it. The brackets of the run are counted once, so the time grows only with its length.
+ */
+function givesBackClosers(text: string, from: number, to: number): number {
+  // For each kind of bracket, by its closer: how many the run opens, less how many it closes.
+  const open = new Map<number, number>();
+  for (let at = from; at < to; at += 1) {
+    const code = text.charCodeAt(at);
+    const closes = OPENERS[code] !== undefined ? code : undefined;
+    const opens = CLOSERS[code];
+    if (closes !== undefined) open.set(closes, (open.get(closes) ?? 0) - 1);
+    if (opens !== undefined) open.set(opens, (open.get(opens) ?? 0) + 1);
+  }
+  let end = to;
+  while (end - 1 > from) {
+    const closer = text.charCodeAt(end - 1);
+    if (OPENERS[closer] === undefined || (open.get(closer) ?? 0) >= 0) return end;
+    // Given back, the bracket no longer counts against the run.
+    open.set(closer, (open.get(closer) ?? 0) + 1);
+    end -= 1;
+  }
+  return end;
 }
 
 /**

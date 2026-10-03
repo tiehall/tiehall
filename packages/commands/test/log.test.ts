@@ -213,7 +213,7 @@ describe("redaction", () => {
       "see localhost:3000/api/v1/requests?token=canary": "see localhost:3000/api/v1/requests",
       "GET:/api/v1/requests?token=canary": "GET:/api/v1/requests",
       "in `/api/v1/requests?token=canary` once": "in `/api/v1/requests once",
-      "in [/api/v1/requests?token=canary] once": "in [/api/v1/requests once",
+      "in [/api/v1/requests?token=canary] once": "in [/api/v1/requests] once",
     };
     for (const [text, scrubbed] of Object.entries(cases)) expect(scrub(text), text).toBe(scrubbed);
     // A reference to an issue is neither a URL nor a path, and stays whole.
@@ -233,6 +233,13 @@ describe("redaction", () => {
         const started = performance.now();
         scrub(text);
         expect(performance.now() - started, `${length} characters of ${shape}`).toBeLessThan(1_000);
+      }
+      // A query string that ends with a long run of closing brackets it does not open, which it gives back one by one.
+      for (const closers of [")", "])}"]) {
+        const text = `/a?${closers.repeat(Math.ceil(length / closers.length))}`.slice(0, length);
+        const started = performance.now();
+        scrub(text);
+        expect(performance.now() - started, `${length} characters of a query string's closing brackets`).toBeLessThan(1_000);
       }
     }
   });
@@ -294,6 +301,43 @@ describe("redaction", () => {
     logger.info("tokens cached", { byValue: { [token]: 1 }, cache: new Map([[token, 1]]), ["https://x.example/a?code=canary"]: 2 });
     expect(entries()[0]).toMatchObject({ byValue: { "[redacted]": 1 }, cache: { "[redacted]": 1 }, "https://x.example/a": 2 });
     expect(lines.join("\n")).not.toContain("canary");
+  });
+
+  // Two names that scrub to the same name, such as two tokens a cache is keyed by, each keep their value.
+  it("keeps the value of every field whose name scrubs to a name another field has, under a numbered name", () => {
+    const { entries, logger } = capture();
+    const first = `ghs_${"canaryAbC123".repeat(4)}`;
+    const second = `ghs_${"canaryXyZ789".repeat(4)}`;
+    logger.info("tokens cached", { cache: { [first]: 1, [second]: 2, "[redacted]": 3 } });
+    expect(entries()[0]?.["cache"]).toEqual({ "[redacted]": 1, "[redacted] (2)": 2, "[redacted] (3)": 3 });
+  });
+
+  // A string Tiehall logs, such as the callbackURL of a refused registration, can be as long as the 2 MiB a body may
+  // be: each is cut to 2 KiB once it is scrubbed, with how many characters were cut.
+  it("cuts every string it logs to 2 KiB after scrubbing it, in the message and in every field, and says so", () => {
+    const { lines, entries, logger } = capture();
+    const long = `https://agent.example/${"a".repeat(5_000)}`;
+    logger.warn(`sign-in service: Invalid callbackURL: ${long}`, { callbackURL: long, nested: { values: [long] } });
+    const entry = entries()[0]!;
+    const cut = `${long.slice(0, 2_048)}… [${long.length - 2_048} more characters]`;
+    expect(entry["callbackURL"]).toBe(cut);
+    expect((entry["nested"] as { values: string[] }).values[0]).toBe(cut);
+    expect(entry.msg.length).toBeLessThan(2_048 + 40);
+    expect(entry.msg.startsWith("sign-in service: Invalid callbackURL: https://agent.example/aaa")).toBe(true);
+    expect(lines[0]!.length).toBeLessThan(4 * 2_048 + 400);
+    // A short string is left as it is.
+    logger.info("short", { url: "https://agent.example/callback" });
+    expect(entries()[1]?.["url"]).toBe("https://agent.example/callback");
+  });
+
+  // A query string runs to the first space, quote or angle bracket, so it would take a closing bracket written right
+  // after it, as in prose or a list; the bracket it does not open is given back.
+  it("leaves a closing bracket after a query string it drops, when the query string does not open it", () => {
+    expect(scrub("the callback (https://agent.example/cb?code=canary) failed")).toBe("the callback (https://agent.example/cb) failed");
+    expect(scrub("[/api/v1/requests?after=canary]")).toBe("[/api/v1/requests]");
+    expect(scrub("{url: https://x.example/a?b=canary}")).toBe("{url: https://x.example/a}");
+    // A bracket the query string opens is part of it, and goes with it.
+    expect(scrub("see https://x.example/a?q=(canary) now")).toBe("see https://x.example/a now");
   });
 
   // A stack starts with the error's name and message, whose lines can read like the frames that follow them.
