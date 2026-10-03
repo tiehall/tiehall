@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import type pg from "pg";
 import type { GitHubStub, StubApp, StubDelivery } from "@tiehall/testing/github";
 import { createGitHubWebhookRoute, createInstallGitHub, storeGitHubApp, type InstallGitHub, type SecretBox } from "../../src/index.ts";
 import type { TestInstall } from "./install.ts";
@@ -13,6 +14,22 @@ export interface StoredStubApp {
   box: SecretBox;
   /** The install's App, as the worker and the web role reach it, calling the stub. */
   github: InstallGitHub;
+}
+
+/**
+ * The database's clock, in milliseconds since the epoch, read on the host:
+ * the host's clock plus how far the database container's runs ahead of it,
+ * measured once. The GitHub stub runs on it where a test compares the times
+ * GitHub logs, such as a delivery's, with times the database stamps, such as
+ * when the App's credentials were stored, so a host clock a second or two off
+ * the container's cannot reorder them.
+ */
+export async function databaseClock(owner: pg.Client, host: () => number = Date.now): Promise<() => number> {
+  const asked = host();
+  const { rows } = await owner.query<{ now: number }>("SELECT extract(epoch FROM clock_timestamp()) * 1000 AS now");
+  const answered = host();
+  const offset = Number(rows[0]!.now) - (asked + answered) / 2;
+  return () => host() + offset;
 }
 
 /** Stores the stub's App in the install, with its credentials encrypted with the install's box, and returns what calls GitHub as it. */

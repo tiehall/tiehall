@@ -16,7 +16,7 @@ import {
   type GitHubEvent,
   type WebSessionCaller,
 } from "../src/index.ts";
-import { serveWebhooks, storeStubApp, type StoredStubApp, type WebhookServer } from "./support/github-app.ts";
+import { databaseClock, serveWebhooks, storeStubApp, type StoredStubApp, type WebhookServer } from "./support/github-app.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { sessionOf } from "./support/requests.ts";
@@ -51,7 +51,9 @@ let ada: WebSessionCaller;
 
 beforeEach(async () => {
   install = await startTestInstall();
-  stub = await startGitHubStub();
+  // The stub logs deliveries by the database's clock, which stamps when the credentials were stored, so a host clock
+  // a second or two off the database container's cannot move a delivery to the other side of that moment.
+  stub = await startGitHubStub({ now: await databaseClock(install.owner) });
   stub.addUser({ login: "omar" });
   stub.addOrg({ login: "acme", members: { omar: "admin" } });
   stub.addRepo("acme/web");
@@ -123,6 +125,20 @@ async function missedDelivery(): Promise<StubDelivery> {
   expect(failed.statusCode < 200 || failed.statusCode > 299).toBe(true);
   return failed;
 }
+
+describe("the stub's clock in these tests", () => {
+  it("is the database's, whatever the host's clock says", async () => {
+    const database = async () => Number((await install.owner.query<{ now: number }>("SELECT extract(epoch FROM clock_timestamp()) * 1000 AS now")).rows[0]!.now);
+    for (const skew of [-3_000, 0, 3_000]) {
+      const clock = await databaseClock(install.owner, () => Date.now() + skew);
+      const before = await database();
+      const read = clock();
+      const after = await database();
+      expect(read).toBeGreaterThanOrEqual(before - 50);
+      expect(read).toBeLessThanOrEqual(after + 50);
+    }
+  });
+});
 
 describe("the redelivery of failed GitHub deliveries", () => {
   it("runs every 10 minutes, as one of the worker's jobs", () => {
