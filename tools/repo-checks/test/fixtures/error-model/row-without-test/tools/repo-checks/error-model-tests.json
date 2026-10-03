@@ -1,0 +1,221 @@
+{
+  "$comment": "A fixture of the error model's test coverage check: every row of the error model names its test on REST but conflict, which names none.",
+  "rows": {
+    "route-not-found": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "record-not-found": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "setup-required": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "shutting-down": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "invalid-input": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "outside-settings": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "upgrade-required": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "forbidden": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "sign-in-refused": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "personal-access-tokens-off": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "confirmation-required": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "removed-member": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "request-state-refused": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "invalid-token": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "ci-caller-refused": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "needs-human": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "payload-too-large": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "if-match-required": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "rate-limited": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "integration-unavailable": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "unauthenticated": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "insufficient-scope": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "precondition-failed": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    },
+    "idempotency-key-reused": {
+      "rest": {
+        "file": "refusals.test.ts",
+        "case": "refuses on each row but one"
+      },
+      "mcp": {
+        "not": "The fixture's tools give no tool error for any row, so none is named."
+      }
+    }
+  }
+}

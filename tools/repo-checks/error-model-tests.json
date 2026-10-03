@@ -1,0 +1,174 @@
+{
+  "$comment": "The tests of every row of the error model (public-api: One error model for Tiehall's own refusals), by the row's problem type as packages/core/src/error-model.ts names it. Each row names its test on REST, as a test file of the repository and the exact title of a test in it, or says why no operation of /api/v1 reaches the row and names the test of the HTTP endpoint that does. Each row names its test on MCP, a test that shows the refusal as a tool error, or says why tool errors do not apply to it, with the test of /mcp's HTTP status where /mcp gives one. A file shows its row by naming its problem type, or the text `names` gives. pnpm check:error-model checks this file.",
+  "rows": {
+    "route-not-found": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a path that serves no operation with 404 route-not-found" },
+      "mcp": { "file": "packages/commands/test/mcp-route.test.ts", "case": "answers a tool it does not offer with a tool error for a route that is not there" }
+    },
+    "record-not-found": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a record that does not exist with 404 record-not-found" },
+      "mcp": { "file": "packages/commands/test/mcp-results.test.ts", "case": "answers a refusal as a tool result with isError, whose content is the problem and names its type, inside an HTTP 200" }
+    },
+    "setup-required": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers an operation with 503 and the problem type setup-required" },
+      "mcp": {
+        "not": "Before setup completes, the setup gate answers every call to /mcp, as to /api/v1, before any tool runs, with the HTTP status 503 and the problem.",
+        "test": {
+          "file": "packages/commands/test/refusal-pages.test.ts",
+          "case": "keep the setup gate's answers before setup completes: the problem for /api/v1 and /mcp whatever they accept, and pages sent on to /setup"
+        }
+      }
+    },
+    "shutting-down": {
+      "rest": { "file": "apps/server/test/web-role.test.ts", "case": "answers a call during shutdown with 503, Retry-After: 0 and a problem, lets the call in flight finish, and exits 0" },
+      "mcp": {
+        "not": "While the app shuts down, the web role answers every new call before any route, /mcp's included, with the HTTP status 503 and Retry-After: 0.",
+        "test": { "file": "apps/server/test/web-role.test.ts", "case": "answers a call during shutdown with 503, Retry-After: 0 and a problem, lets the call in flight finish, and exits 0" }
+      }
+    },
+    "invalid-input": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers input that fails the schema with 400 invalid-input" },
+      "mcp": { "file": "packages/commands/test/mcp-get-request.test.ts", "case": "refuses what is neither a key nor a URL as input that fails the schema" }
+    },
+    "outside-settings": {
+      "rest": {
+        "not": "The one refusal of this row, a personal access token's lifetime above the admin's maximum, comes from creating a token, which runs only in the web UI with the confirmation step, so no operation of /api/v1 reaches it.",
+        "test": {
+          "file": "packages/commands/test/personal-access-tokens.test.ts",
+          "case": "above the admin's shorter maximum is refused with 400, even when the review page was opened before the admin shortened it"
+        }
+      },
+      "mcp": { "not": "Creating a personal access token is offered on no agent surface, so no tool reaches this row." }
+    },
+    "upgrade-required": {
+      "rest": { "file": "packages/commands/test/cli-version.test.ts", "case": "gets 400 upgrade-required with directions to upgrade, and the operation does not run" },
+      "mcp": { "not": "Only the CLI names its version, on its calls to /api/v1; an MCP client names none, so no tool call is refused for one." }
+    },
+    "forbidden": {
+      "rest": { "file": "packages/commands/test/requests-create.test.ts", "case": "gets 403 for a user in no team, and creates nothing" },
+      "mcp": { "file": "packages/commands/test/mcp-tools.test.ts", "case": "refuses a member of no team with 403, and opens nothing" }
+    },
+    "sign-in-refused": {
+      "rest": {
+        "not": "A sign-in is refused on GitHub's return to the sign-in callback, a route of the sign-in service, which no operation of /api/v1 is.",
+        "test": { "file": "packages/commands/test/sign-in.test.ts", "case": "is refused with 403 and the text that says to ask an admin for an invite, and gets no session and no user" },
+        "names": "403"
+      },
+      "mcp": { "not": "Signing in happens in a browser, through the sign-in service; no tool signs anyone in." }
+    },
+    "personal-access-tokens-off": {
+      "rest": { "file": "packages/commands/test/token-call-checks.test.ts", "case": "applies to the next call: once it is off, the script's next call with the same token gets 403 and no data" },
+      "mcp": {
+        "file": "packages/commands/test/error-model-mcp.test.ts",
+        "case": "answer a personal access token's call with a tool error naming personal-access-tokens-off once an admin has switched them off"
+      }
+    },
+    "confirmation-required": {
+      "rest": {
+        "not": "The actions that need the confirmation step run only from the web UI, and no operation of /api/v1 offers one.",
+        "test": { "file": "packages/commands/test/personal-access-tokens.test.ts", "case": "without a valid confirmation gets 403, and creates nothing" }
+      },
+      "mcp": { "not": "The actions that need the confirmation step are offered on no agent surface, so no tool reaches this row." }
+    },
+    "removed-member": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a caller who has been removed from the install with 403 removed-member" },
+      "mcp": { "file": "packages/commands/test/mcp-results.test.ts", "case": "gets a tool error that names the removed member's problem, and no data of the install" }
+    },
+    "request-state-refused": {
+      "rest": {
+        "not": "A request state is what a retry carries on /mcp after a URL-mode elicitation; /api/v1 takes none.",
+        "test": { "file": "packages/commands/test/mcp-elicitation.test.ts", "case": "refuses with HTTP 403 a state bound to another user, or to another client of the same user" }
+      },
+      "mcp": {
+        "not": "A refused request state is an HTTP status on /mcp, 403, not a tool error, as the error model says.",
+        "test": { "file": "packages/commands/test/mcp-elicitation.test.ts", "case": "refuses with HTTP 403, not as an error inside a 200, a state that was changed, and nothing changes on the proposal" }
+      }
+    },
+    "invalid-token": {
+      "rest": { "file": "packages/commands/test/ci-callers.test.ts", "case": "is refused with 401 invalid_token when it was seen before: a replayed token takes no report", "names": "invalid_token" },
+      "mcp": {
+        "not": "An invalid bearer token on /mcp gets the OAuth refusal, HTTP 401 with invalid_token, not a tool error.",
+        "test": { "file": "packages/commands/test/mcp-results.test.ts", "case": "holding an access token issued before they rejoined gets HTTP 401 invalid_token, the OAuth refusal of a revoked token", "names": "invalid_token" }
+      }
+    },
+    "ci-caller-refused": {
+      "rest": { "file": "packages/commands/test/ci-callers.test.ts", "case": "is refused with 403 on any other operation, and with 404 on a path that serves none" },
+      "mcp": { "not": "A CI caller calls only contract.report, on /api/v1; on /mcp its token is no access token, and gets the OAuth refusal." }
+    },
+    "needs-human": {
+      "rest": { "file": "packages/commands/test/loop-limit.test.ts", "case": "accepts the seventh write within 10 minutes and flags the request with it; the next agent write gets 409 needs-human" },
+      "mcp": {
+        "file": "packages/commands/test/error-model-mcp.test.ts",
+        "case": "answer an agent's write to a request flagged needs_human with a tool error naming needs-human, and post nothing"
+      }
+    },
+    "conflict": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a state conflict with 409 conflict" },
+      "mcp": { "file": "packages/commands/test/mcp-route.test.ts", "case": "answers a refusal as a tool result with isError, whose content is the problem and names its type" }
+    },
+    "payload-too-large": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a 3 MiB requests.create body with 413 payload-too-large, and creates nothing" },
+      "mcp": {
+        "not": "A body over the size limit is refused before any route, /mcp's included, with the HTTP status 413, not a tool error, as the error model says.",
+        "test": { "file": "apps/server/test/web-role.test.ts", "case": "answers a body over 2 MiB to /mcp with the HTTP status 413, not with a tool result in a 200", "names": "413" }
+      }
+    },
+    "if-match-required": {
+      "rest": { "file": "packages/commands/test/packet-revision-add.test.ts", "case": "gets 428 without If-Match, even when the body names a revision, and adds nothing" },
+      "mcp": {
+        "file": "packages/commands/test/mcp-request-changes.test.ts",
+        "case": "refuses a packet change that names a stale expected revision, or none, as REST refuses a mismatched or missing If-Match, and creates no proposal"
+      }
+    },
+    "rate-limited": {
+      "rest": { "file": "packages/commands/test/write-limits.test.ts", "case": "accepts the 60th write in 60 seconds from one token and refuses the 61st with 429 and Retry-After", "names": "429" },
+      "mcp": {
+        "file": "packages/commands/test/error-model-mcp.test.ts",
+        "case": "answer an agent's write past the install's daily budget with a tool error naming rate-limited, which says when to retry, and post nothing"
+      }
+    },
+    "integration-unavailable": {
+      "rest": { "file": "packages/commands/test/pull-request-link-merged.test.ts", "case": "is refused with 502 and links nothing when GitHub fails the read" },
+      "mcp": {
+        "file": "packages/commands/test/error-model-mcp.test.ts",
+        "case": "answer link_pr with a tool error naming integration-unavailable when GitHub fails the read of the pull request, and link nothing"
+      }
+    },
+    "unauthenticated": {
+      "rest": { "file": "packages/commands/test/rest.test.ts", "case": "answers a call without credentials with 401 as a problem, once the path serves an operation", "names": "www-authenticate" },
+      "mcp": {
+        "not": "A call to /mcp without a token gets the OAuth refusal, HTTP 401 with a challenge, not a tool error.",
+        "test": {
+          "file": "packages/commands/test/oauth-conformance.test.ts",
+          "case": "answers a call without a token with 401 and a challenge that points to the protected resource metadata and carries a scope hint",
+          "names": "www-authenticate"
+        }
+      }
+    },
+    "insufficient-scope": {
+      "rest": {
+        "file": "packages/commands/test/oauth-scopes.test.ts",
+        "case": "refuses a message from a token with only requests:read with 403 insufficient_scope naming requests:write, and posts nothing",
+        "names": "insufficient_scope"
+      },
+      "mcp": {
+        "not": "A token without a scope a tool needs gets the OAuth refusal on /mcp, HTTP 403 with insufficient_scope, before the tool runs.",
+        "test": { "file": "packages/commands/test/mcp-route.test.ts", "case": "answers a token without the scope a tool needs with HTTP 403 insufficient_scope, before anything runs", "names": "insufficient_scope" }
+      }
+    },
+    "precondition-failed": {
+      "rest": {
+        "file": "packages/commands/test/rest-agent-operations.test.ts",
+        "case": "gets 428 for a packet change without If-Match, even when the body names the revision, and 412 for a stale one, and proposes nothing"
+      },
+      "mcp": {
+        "file": "packages/commands/test/mcp-request-changes.test.ts",
+        "case": "refuses a packet change that names a stale expected revision, or none, as REST refuses a mismatched or missing If-Match, and creates no proposal"
+      }
+    },
+    "idempotency-key-reused": {
+      "rest": { "file": "packages/commands/test/idempotency.test.ts", "case": "refuses a reused key with a different body with 422, and does not run" },
+      "mcp": { "not": "Idempotency-Key is a header of /api/v1's POST operations; MCP has no such header." }
+    }
+  }
+}

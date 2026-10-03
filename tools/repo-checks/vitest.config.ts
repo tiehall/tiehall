@@ -1,4 +1,4 @@
-import { defineProject } from "vitest/config";
+import { configDefaults, defineProject } from "vitest/config";
 
 export default defineProject({
   test: {
@@ -7,5 +7,7 @@ export default defineProject({
     // for a test there. A test or hook that needs more gives its own timeout (design.md, Technical decisions: T17).
     testTimeout: 30_000,
     hookTimeout: 60_000,
+    // The fixtures are trees the checks run on, such as a test file the error model's check reads; none is a test.
+    exclude: [...configDefaults.exclude, "test/fixtures/**"],
   },
 });
