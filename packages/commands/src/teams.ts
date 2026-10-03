@@ -3,7 +3,8 @@ import { Refusal } from "@tiehall/core";
 import { teamKeyAliases, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { memberOf } from "./members.ts";
+import { memberOf, teamsOfMember } from "./members.ts";
+import { actingUserOf } from "./request-changes.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // The team operations (teams-and-roles: Teams; teams-and-roles: What admins
@@ -109,9 +110,16 @@ export const TEAM_HANDLERS: Handlers = {
 
   [setTeamIntake.id]: defineHandler(setTeamIntake, async ({ teamId, notes, requiredFields }, context) => {
     await teamOf(context, teamId);
+    // The teams the admin belongs to now, which decide the origin agents read the notes with, once these notes are theirs.
+    const writerTeams = `{${(await teamsOfMember(context, actingUserOf(context))).map(({ id }) => id).join(",")}}`;
     const [row] = await context.tx
       .update(teams)
-      .set({ intakeNotes: notes, requiredFields })
+      .set({
+        intakeNotes: notes,
+        requiredFields,
+        // A change of the required fields alone leaves the notes their writer's.
+        intakeNotesWriterTeamIds: sql`CASE WHEN ${teams.intakeNotes} IS DISTINCT FROM ${notes} THEN ${writerTeams}::uuid[] ELSE ${teams.intakeNotesWriterTeamIds} END`,
+      })
       .where(and(eq(teams.orgId, context.orgId), eq(teams.id, teamId)))
       .returning({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields });
     if (row === undefined) throw new Refusal("record-not-found", "There is no such team.");

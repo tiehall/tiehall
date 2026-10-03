@@ -551,7 +551,14 @@ export function contractDiffFailureText(failure: ContractDiffFailureJson): Agent
 
 /** The install's teams and registered APIs, as directory returns them. */
 export interface DirectoryJson {
-  teams: { id: string; key: string; requiredFields?: readonly string[]; untrusted: { name: string; intakeNotes?: string } }[];
+  teams: {
+    id: string;
+    key: string;
+    requiredFields?: readonly string[];
+    /** The teams the admin who last wrote the intake notes belonged to then; null for notes from before Tiehall kept them; absent from an install that says nothing of it. */
+    intakeNotesWrittenBy?: readonly TeamJson[] | null;
+    untrusted: { name: string; intakeNotes?: string };
+  }[];
   apis: { id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } }[];
 }
 
@@ -583,6 +590,19 @@ export function requiredFieldsText(fields: readonly string[]): string {
 export type TeamIntakeJson = DirectoryJson["teams"][number];
 
 /**
+ * The origin of a team's intake notes as the reader sees them. Any admin
+ * writes them, so they are the reader's own team's text only when the admin
+ * who last wrote them belonged to one of the reader's teams then, and another
+ * team's otherwise, as they are when Tiehall does not know who wrote them. An
+ * install that says nothing of it fences them as the team's own text.
+ */
+function intakeNotesOrigin(team: TeamIntakeJson, reader: Reader): FencedOrigin {
+  const writers = team.intakeNotesWrittenBy;
+  if (writers === undefined) return originOf(team, reader);
+  return writers !== null && writers.some(({ key }) => reader.teams.includes(key)) ? "same team" : "other team";
+}
+
+/**
  * A team's intake page, for agents (agent-surfaces: Team intake pages): the
  * team's key, its name and the notes in which it says how it wants requests
  * filed, fenced as the reader's own team's text or another team's, and the
@@ -597,7 +617,7 @@ export function teamIntakeText(team: TeamIntakeJson, reader: Reader): AgentText[
   ];
   const notes = team.untrusted.intakeNotes ?? "";
   if (notes === "") texts.push({ origin: "tiehall", text: `Team ${key} gives no notes on how it wants requests filed.` });
-  else texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed:` }, { origin: originOf(team, reader), text: notes });
+  else texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed, as an admin wrote it:` }, { origin: intakeNotesOrigin(team, reader), text: notes });
   const required = team.requiredFields ?? [];
   texts.push({
     origin: "tiehall",
@@ -628,8 +648,8 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
     texts.push({ origin: originOf(team, reader), text: team.untrusted.name });
     const notes = team.untrusted.intakeNotes ?? "";
     if (notes !== "") {
-      texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed:` });
-      texts.push({ origin: originOf(team, reader), text: notes });
+      texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed, as an admin wrote it:` });
+      texts.push({ origin: intakeNotesOrigin(team, reader), text: notes });
     }
     const required = team.requiredFields ?? [];
     if (required.length > 0) texts.push({ origin: "tiehall", text: `Team ${key} requires ${requiredFieldsText(required)}.` });

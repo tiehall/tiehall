@@ -58,7 +58,8 @@ const operationOf = (entry: CorpusEntry) => fitted(entry.text, 1000);
 
 beforeAll(async () => {
   harness = await startAgentAccess({ now: () => new Date(Date.now() + shift) });
-  ada = await mcpPerson(harness, "ada", { role: "admin" });
+  // An admin of FE, who writes FE's intake notes, which FE's members then read as their own team's text.
+  ada = await mcpPerson(harness, "ada", { role: "admin", teams: ["FE"] });
   sam = await mcpPerson(harness, "sam-qa", { teams: ["QA"] });
   dana = await mcpPerson(harness, "dana-fe", { teams: ["FE"] });
   const deniz = await mcpPerson(harness, "deniz-pay", { teams: ["PAY"] });

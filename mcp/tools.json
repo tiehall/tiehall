@@ -2567,6 +2567,35 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "type": "string"
                 },
+                "intakeNotesWrittenBy": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "properties": {
+                          "id": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "type": "string"
+                          },
+                          "key": {
+                            "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "key"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The teams the admin who last wrote the intake notes belonged to then, which any admin may write: the notes are a reader's own team's text only when one of these is the reader's team. Null for notes written before Tiehall kept this, which agents read as another team's."
+                },
                 "key": {
                   "description": "The team's key, such as FE, which open_request addresses it by.",
                   "pattern": "^[A-Z][A-Z0-9]{1,9}$",
@@ -2607,6 +2636,7 @@
                 "id",
                 "key",
                 "requiredFields",
+                "intakeNotesWrittenBy",
                 "untrusted"
               ],
               "type": "object"

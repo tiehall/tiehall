@@ -1,0 +1,1 @@
+ALTER TABLE "teams" ADD COLUMN "intake_notes_writer_team_ids" uuid[];

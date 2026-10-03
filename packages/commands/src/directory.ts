@@ -7,6 +7,7 @@ import { defineHandler, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
 import { actingUserOf } from "./request-changes.ts";
 import { teamOfKey } from "./request-keys.ts";
+import type { OrgContext } from "./with-org.ts";
 
 // whoami and directory (agent-surfaces: The MCP tools; teams-and-roles: Bot
 // users; design.md, Decisions this change rests on: D28 #56, #94). whoami
@@ -44,20 +45,13 @@ export const DIRECTORY_HANDLERS: Handlers = {
   [getTeam.id]: defineHandler(getTeam, async ({ key }, context) => {
     const found = await teamOfKey(context, key);
     if (found === undefined) throw new Refusal("record-not-found", "There is no such team.");
-    const [row] = await context.tx
-      .select({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields })
-      .from(teams)
-      .where(and(eq(teams.orgId, context.orgId), eq(teams.id, found.id)));
+    const [row] = await context.tx.select(TEAM_COLUMNS).from(teams).where(and(eq(teams.orgId, context.orgId), eq(teams.id, found.id)));
     if (row === undefined) throw new Refusal("record-not-found", "There is no such team.");
-    return { id: row.id, key: row.key, requiredFields: row.requiredFields as IntakeField[], untrusted: { name: row.name, intakeNotes: row.intakeNotes } };
+    return listedTeam(row, await teamKeysById(context));
   }),
 
   [readDirectory.id]: defineHandler(readDirectory, async (_input, context) => {
-    const rows = await context.tx
-      .select({ id: teams.id, key: teams.key, name: teams.name, intakeNotes: teams.intakeNotes, requiredFields: teams.requiredFields })
-      .from(teams)
-      .where(eq(teams.orgId, context.orgId))
-      .orderBy(asc(teams.key));
+    const rows = await context.tx.select(TEAM_COLUMNS).from(teams).where(eq(teams.orgId, context.orgId)).orderBy(asc(teams.key));
     const registered = await context.tx
       .select({ id: apis.id, name: apis.name, providerId: teams.id, providerKey: teams.key })
       .from(apis)
@@ -73,14 +67,45 @@ export const DIRECTORY_HANDLERS: Handlers = {
         untrusted: { name: api.name },
       });
     }
-    return {
-      teams: rows.map(({ id, key, name, intakeNotes, requiredFields }) => ({
-        id,
-        key,
-        requiredFields: requiredFields as IntakeField[],
-        untrusted: { name, intakeNotes },
-      })),
-      apis: listedApis,
-    };
+    const keys = new Map(rows.map(({ id, key }) => [id, key]));
+    return { teams: rows.map((row) => listedTeam(row, keys)), apis: listedApis };
   }),
 };
+
+/** The columns a team is listed from. */
+const TEAM_COLUMNS = {
+  id: teams.id,
+  key: teams.key,
+  name: teams.name,
+  intakeNotes: teams.intakeNotes,
+  intakeNotesWriterTeamIds: teams.intakeNotesWriterTeamIds,
+  requiredFields: teams.requiredFields,
+};
+
+type TeamRow = { id: string; key: string; name: string; intakeNotes: string; intakeNotesWriterTeamIds: string[] | null; requiredFields: string[] };
+
+/** The install's teams' current keys, by id. */
+async function teamKeysById({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<Map<string, string>> {
+  const rows = await tx.select({ id: teams.id, key: teams.key }).from(teams).where(eq(teams.orgId, orgId));
+  return new Map(rows.map(({ id, key }) => [id, key]));
+}
+
+/** A team as directory and teams.get list it, the teams its notes' writer belonged to by their current keys, in order. */
+function listedTeam(row: TeamRow, keys: ReadonlyMap<string, string>) {
+  const writers =
+    row.intakeNotesWriterTeamIds === null
+      ? null
+      : row.intakeNotesWriterTeamIds
+          .flatMap((id) => {
+            const key = keys.get(id);
+            return key === undefined ? [] : [{ id, key }];
+          })
+          .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return {
+    id: row.id,
+    key: row.key,
+    requiredFields: row.requiredFields as IntakeField[],
+    intakeNotesWrittenBy: writers,
+    untrusted: { name: row.name, intakeNotes: row.intakeNotes },
+  };
+}

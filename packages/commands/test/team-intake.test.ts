@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { directoryText, teamIntakeText, type DirectoryJson, type Reader, type TeamIntakeJson } from "@tiehall/packet/tool-text";
 import { createNewRequestRoute, createTeamsRoute, csrfTokenFor, NEW_REQUEST_PATH, TEAMS_PATH, type CiCaller, type WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
 import { changesOf, CONTRACT_WORKFLOW, PAYMENTS_REPOSITORY, reportOf, runDueUpdates } from "./support/contract.ts";
@@ -119,6 +120,39 @@ describe("a team's intake settings", () => {
 
   it("gets 404 for a team the install does not have", async () => {
     expect((await postIntake(ada, randomUUID(), NOTES, [])).status).toBe(404);
+  });
+});
+
+// agent-safety: Every string shown to agents has an origin. Any admin writes a team's intake notes, whether or not
+// they belong to the team, so agents read the notes as their own team's text only when the admin who last wrote them
+// belonged to one of the reader's teams then, and as another team's otherwise: the directory and the team's intake
+// page name those teams. A change of the required fields alone leaves the notes' writer as it was.
+describe("the origin agents read a team's intake notes with", () => {
+  /** The origin a reader of these teams reads FE's notes with, in directory and on FE's intake page. */
+  async function originsFor(teams: readonly string[]): Promise<string[]> {
+    const reader: Reader = { teams };
+    const directory = (await install.execute("directory.get", dana, {})) as DirectoryJson;
+    const team = (await install.execute("teams.get", dana, { key: "FE" })) as TeamIntakeJson;
+    const notes = (await intakeOf(fe)).intake_notes;
+    return [directoryText(directory, reader), teamIntakeText(team, reader)].map((texts) => texts.find(({ text }) => text === notes)?.origin ?? "none");
+  }
+
+  it("is the reader's own team's only when the admin who last wrote them was in one of the reader's teams", async () => {
+    // Ada belongs to no team: FE's own members read the notes Ada writes for FE as another team's.
+    expect((await postIntake(ada, fe, NOTES, [])).status).toBe(303);
+    expect(await originsFor(["FE"])).toEqual(["other team", "other team"]);
+    // Once in BE, Ada writes them again: BE's members read them as their own team's, FE's alone as another team's.
+    const be = (await install.owner.query<{ id: string }>("SELECT id FROM teams WHERE key = 'BE'")).rows[0]!.id;
+    await joinTeams(install.owner, ada.userId, be);
+    expect((await postIntake(ada, fe, `${NOTES} Name the screen.`, [])).status).toBe(303);
+    expect(await originsFor(["BE"])).toEqual(["same team", "same team"]);
+    expect(await originsFor(["FE"])).toEqual(["other team", "other team"]);
+    const team = (await install.execute("teams.get", dana, { key: "FE" })) as { intakeNotesWrittenBy: { key: string }[] | null };
+    expect(team.intakeNotesWrittenBy?.map(({ key }) => key)).toEqual(["BE"]);
+    // Another admin, in no team, changes the required fields alone: the notes keep their writer.
+    const ola: WebSessionCaller = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ola" }), sessionId: randomUUID() };
+    expect((await postIntake(ola, fe, `${NOTES} Name the screen.`, ["links"])).status).toBe(303);
+    expect(await originsFor(["BE"])).toEqual(["same team", "same team"]);
   });
 });
 

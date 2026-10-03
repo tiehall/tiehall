@@ -1396,6 +1396,11 @@ export const teams = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** How the team wants requests filed, as an admin wrote it; empty when it says nothing (agent-surfaces: Admins set a team's intake notes and required fields). */
     intakeNotes: text("intake_notes").notNull().default(""),
+    /**
+     * The teams the admin who last wrote the intake notes belonged to then, by id, which decide the origin agents
+     * read the notes with; null for notes written before Tiehall kept them.
+     */
+    intakeNotesWriterTeamIds: uuid("intake_notes_writer_team_ids").array(),
     /** The packet fields the team requires of the requests people and agents open to it, each once. */
     requiredFields: text("required_fields").array().notNull().default(sql`'{}'::text[]`),
   },
