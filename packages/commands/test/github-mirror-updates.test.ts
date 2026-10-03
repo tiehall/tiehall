@@ -175,6 +175,34 @@ describe("a request that ends", () => {
     expect(await commentsOf(request.id)).toEqual([`${request.key} is now done in Tiehall: ${URL_OF_INSTALL}/${request.key}`]);
   });
 
+  it("closes the issue a retried create finds when it was done before the retry, with the done label and a comment for the move", async () => {
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE", title: "Show the invoice total" });
+    await install.execute("requests.claim", sessionOf(ayse), { key: request.key });
+    // GitHub makes the issue, but its answer never reaches Tiehall: the job fails and waits for its retry.
+    let dropped = false;
+    const losing: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (!dropped && (init?.method ?? "GET") === "POST" && url.pathname.endsWith("/fe-intake/issues")) {
+        dropped = true;
+        throw new TypeError("fetch failed: the connection was reset");
+      }
+      return response;
+    };
+    const lossy = createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: losing, logger: install.logger });
+    await expect(sync(request.id, (await lossy.app())!)).rejects.toThrow();
+    // Within the 14 minutes before the retry, the request is marked done.
+    const done = (await install.execute("requests.set_status", sessionOf(ayse), { key: request.key, state: "done" })) as { proposal: { id: string } };
+    expect((await confirm(ayse, done.proposal.id)).status).toBe(200);
+
+    await sync(request.id);
+    await sync(request.id);
+
+    const issue = await issueOf(request.id);
+    expect({ state: issue.state, stateReason: issue.stateReason, labels: issue.labels }).toEqual({ state: "closed", stateReason: "completed", labels: ["tiehall:done"] });
+    expect(await commentsOf(request.id)).toEqual([`${request.key} is now done in Tiehall: ${URL_OF_INSTALL}/${request.key}`]);
+  });
+
   it("closes its issue as not planned when it is withdrawn", async () => {
     const request = await mirroredRequest();
     const withdrawal = (await install.execute("requests.propose", sessionOf(alice), { key: request.key, kind: "withdraw" })) as { proposal: { id: string } };

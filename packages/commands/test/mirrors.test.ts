@@ -131,6 +131,59 @@ describe("creating the mirror issue", () => {
     expect(tracker.calls).toEqual(["createIssue", "findCreated", "createIssue"]);
   });
 
+  it("brings the issue a retry finds up to date with the request as it is now, when the request changed before the retry", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    tracker.failNext({ call: "createIssue", when: "after" });
+    await expect(sync(request.id)).rejects.toThrow();
+    // The request changes before the queue retries the job: the issue the first attempt made shows it claimed.
+    await install.execute("requests.set_status", sessionOf(bob), { key: request.key, state: "in_progress" });
+
+    await sync(request.id);
+    await sync(request.id);
+
+    expect(tracker.issues).toHaveLength(1);
+    expect(tracker.issues[0]?.labels).toEqual(["tiehall:in_progress"]);
+    expect(tracker.issues[0]?.comments.map(({ text }) => text)).toEqual([`${request.key} is now in_progress in Tiehall: ${URL_OF_INSTALL}/${request.key}`]);
+
+    // The next change moves the label on from the one the issue shows.
+    await install.execute("requests.set_status", sessionOf(bob), { key: request.key, state: "open" });
+    await sync(request.id);
+    expect(tracker.issues[0]?.labels).toEqual(["tiehall:open"]);
+  });
+
+  it("closes the issue a retry finds when the request ended before the retry", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    tracker.failNext({ call: "createIssue", when: "after" });
+    await expect(sync(request.id)).rejects.toThrow();
+    const withdrawal = (await install.execute("requests.propose", sessionOf(alice), { key: request.key, kind: "withdraw" })) as { proposal: { id: string } };
+    expect((await install.confirm(sessionOf(alice), "proposals.confirm", { proposal: withdrawal.proposal.id })).status).toBe(200);
+
+    await sync(request.id);
+    await sync(request.id);
+
+    expect(tracker.issues.map(({ open, closeReason, labels }) => ({ open, closeReason, labels }))).toEqual([{ open: false, closeReason: "not_planned", labels: ["tiehall:withdrawn"] }]);
+    expect(tracker.issues[0]?.comments.map(({ text }) => text)).toEqual([`${request.key} is now withdrawn in Tiehall: ${URL_OF_INSTALL}/${request.key}`]);
+  });
+
+  it("makes no issue on a retry for a request that ended after a create that failed before the tracker made it", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    tracker.failNext({ call: "createIssue", when: "before" });
+    await expect(sync(request.id)).rejects.toThrow();
+    const withdrawal = (await install.execute("requests.propose", sessionOf(alice), { key: request.key, kind: "withdraw" })) as { proposal: { id: string } };
+    expect((await install.confirm(sessionOf(alice), "proposals.confirm", { proposal: withdrawal.proposal.id })).status).toBe(200);
+
+    // The retry, or a Retry pressed later, looks for the issue the failed create may have made, finds none, and makes none.
+    await sync(request.id);
+    await sync(request.id);
+
+    expect(tracker.issues).toEqual([]);
+    expect(tracker.writes).toEqual(["createIssue"]);
+    expect((await mirrorRowOf(request.id))?.issue).toBeNull();
+  });
+
   it("carries the request's key and title, a summary and link Tiehall wrote, and the label of its state", async () => {
     const request = await feRequest();
     await install.execute("requests.claim", sessionOf(bob), { key: request.key });

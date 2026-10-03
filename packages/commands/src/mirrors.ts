@@ -47,12 +47,20 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   undo that both land before a job runs leave nothing on the old issue. A
 //   later reassignment back to the old team, which is no undo, gives the
 //   request a new key there, and so a new issue.
-// - Creating it: the job writes the mirror's row, with a random marker, and
-//   commits it before it asks the tracker to create the issue, which carries
-//   the marker. When the create fails after the tracker made the issue, such
-//   as when the tracker's answer never arrives, the job's retry finds the row
-//   with no issue yet, asks the tracker for an issue that carries the marker,
-//   and takes that one: a retried create never makes a second issue.
+// - Creating it: the job writes the mirror's row, with a random marker and a
+//   record of what the create writes (an open issue that shows the request as
+//   the job read it, whose comments start after the events that read
+//   covered), and commits it before it asks the tracker to create the issue,
+//   which carries the marker. When the create fails after the tracker made
+//   the issue, such as when the tracker's answer never arrives, the job's
+//   retry finds the row with no issue yet, asks the tracker for an issue that
+//   carries the marker, and takes that one: a retried create never makes a
+//   second issue. The issue it finds shows what the row recorded, so the
+//   retry brings it up to date from there as any update does, with a comment
+//   for each write since and the label and state of the request now, which
+//   closes it when the request ended meanwhile. A retry that finds none makes
+//   the issue from the request as it is now, or none for a request that no
+//   longer gets one, such as one that ended meanwhile.
 // - Updating it: the row keeps digests of the title and body Tiehall last
 //   wrote, the state label it last set, and whether it left the issue open
 //   or closed, and why; the job writes only what differs from them, so when
@@ -252,6 +260,20 @@ export function pushedOf(projection: MirrorProjection): Pushed {
     open: projection.open,
     closeReason: projection.closeReason,
   };
+}
+
+/** What an issue Tiehall made shows, as far as it knows, until it reads it back: open, and assigned to nobody. */
+const AS_MADE: IssueState = { open: true, closeReason: null, assignees: [] };
+
+/**
+ * What the mirror's row records before it asks the tracker to create the
+ * issue: what the create writes, an open issue that shows this projection,
+ * and that its comments start after every event the job read. A retry that
+ * finds the issue the create made takes it from here, so it brings the issue
+ * up to date from what it shows, not from what the request shows now.
+ */
+function createdOf(projection: MirrorProjection, plan: Pick<MirrorPlan, "latest">): { pushed: Pushed; commentedThrough: number; shownState: RequestState } {
+  return { pushed: { ...pushedOf(projection), open: true, closeReason: null }, commentedThrough: plan.latest, shownState: projection.state };
 }
 
 /** What differs between what Tiehall last wrote and the projection now; undefined when nothing does. */
@@ -498,7 +520,8 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
       : (rows.find((candidate) => isCurrent(candidate, request, mapping) && candidate.number !== null) ?? rows.find((candidate) => isCurrent(candidate, request, mapping)));
   const leftBehind = rows.filter((candidate) => candidate !== mirror && candidate.issue !== null && !candidate.away && isLeftBehind(candidate, request));
   // The events since the earliest comments of the mirrors that follow, or followed, the request until now.
-  const reading = [...(mirror?.issue !== null && mirror?.issue !== undefined && mirror.shownState !== null ? [mirror] : []), ...leftBehind];
+  // A mirror whose create is under way has its comments' start recorded too, from the read its create carries.
+  const reading = [...(mirror !== undefined && mirror.shownState !== null ? [mirror] : []), ...leftBehind];
   const since = reading.length === 0 ? undefined : Math.min(...reading.map(({ commentedThrough }) => commentedThrough));
   const read =
     since === undefined
@@ -621,17 +644,20 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
     return;
   }
   const projection = projectionOf(request, services.installUrl);
+  // A request gets its mirror issue once claimed in its team, or from its opening there when the team mirrors on open,
+  // unless it has ended; a request reassigned to the team is open and unclaimed in it.
+  const wanted = !isTerminalState(request.state) && (request.claimed || mapping.mirrorOnOpen);
   let mirror = plan.mirror;
   let fresh = false;
   if (mirror === undefined) {
-    // A request gets its mirror issue once claimed in its team, or from its opening there when the team mirrors on open,
-    // unless it has ended; a request reassigned to the team is open and unclaimed in it.
-    if (isTerminalState(request.state) || !(request.claimed || mapping.mirrorOnOpen)) return;
+    if (!wanted) return;
     mirror = await withOrg(services.database, async ({ tx, orgId }) => {
-      await tx
+      const inserted = await tx
         .insert(mirrors)
-        .values({ orgId, requestId, teamId: request.targetTeamId, number: request.number, tracker: mapping.tracker, target: mapping.target })
-        .onConflictDoNothing();
+        .values({ orgId, requestId, teamId: request.targetTeamId, number: request.number, tracker: mapping.tracker, target: mapping.target, ...createdOf(projection, plan) })
+        .onConflictDoNothing()
+        .returning({ id: mirrors.id });
+      fresh = inserted.length > 0;
       const [row] = await tx
         .select()
         .from(mirrors)
@@ -648,23 +674,39 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
       if (row === undefined) throw new Error("The mirror's row was not found after it was written.");
       return mirrorRowOf(row);
     });
-    fresh = true;
   }
 
   if (mirror.issue === null) {
+    const pending = mirror;
     // The row and its marker are committed: a create retried after the tracker made the issue finds it by the marker.
-    const found = fresh ? undefined : await adapter.findCreated(mirror.target, mirror.marker, new Date(mirror.createdAt.getTime() - CREATE_LOOKBACK_MS));
-    const issue = found ?? (await adapter.createIssue(mirror.target, projection, mirror.marker));
-    const known: IssueState = { open: true, closeReason: null, assignees: [] };
-    // The issue shows the request as it was read, so its comments start after every event that read covered.
+    const found = fresh ? undefined : await adapter.findCreated(pending.target, pending.marker, new Date(pending.createdAt.getTime() - CREATE_LOOKBACK_MS));
+    let issue = found;
+    if (issue === undefined) {
+      // No create made the issue: one that should be made is made from the request as it is now, after the row records
+      // what it writes; a request that ended meanwhile gets none.
+      if (!wanted) {
+        logger.info("mirror: made no mirror issue, as the request no longer gets one", { mirrorId: mirror.id });
+        return;
+      }
+      if (!fresh) await saveMirror(services.database, mirror.id, createdOf(projection, plan));
+      issue = await adapter.createIssue(mirror.target, projection, mirror.marker);
+    }
+    const madeIssue = issue;
     await withOrg(services.database, async ({ tx, orgId }) => {
       await tx
         .update(mirrors)
-        .set({ issue, issueCreatedAt: sql`now()`, pushed: pushedOf(projection), trackerState: known, commentedThrough: plan.latest, shownState: request.state, away: false })
-        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id), isNull(mirrors.issue)));
+        .set({ issue: madeIssue, issueCreatedAt: sql`now()`, trackerState: AS_MADE, away: false })
+        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, pending.id), isNull(mirrors.issue)));
     });
-    logger.info(found === undefined ? "mirror: created the mirror issue" : "mirror: found the mirror issue a create made before", { mirrorId: mirror.id });
-    return;
+    if (found === undefined) {
+      // It shows the request as the job read it, so its comments start after every event that read covered.
+      logger.info("mirror: created the mirror issue", { mirrorId: mirror.id });
+      return;
+    }
+    // The issue a create made before shows the request as that create read it, which the row recorded: the comments of
+    // the writes since, its label and its state follow, as for any issue whose request changed.
+    logger.info("mirror: found the mirror issue a create made before", { mirrorId: mirror.id });
+    mirror = { ...pending, issue: madeIssue, trackerState: AS_MADE, away: false };
   }
   const following = mirror as MirrorRow & { issue: string };
   const mirrorId = following.id;

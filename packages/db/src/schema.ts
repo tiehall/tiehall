@@ -2990,7 +2990,7 @@ export const mirrors = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** When Tiehall learned the issue's reference from the tracker. */
     issueCreatedAt: timestamp("issue_created_at", { withTimezone: true }),
-    /** What Tiehall last wrote to the issue: digests of its title and body, its state label, and whether it is open or closed and why. */
+    /** What Tiehall last wrote to the issue: digests of its title and body, its state label, and whether it is open or closed and why; before the issue exists, what its create writes. */
     pushed: jsonb("pushed"),
     /** What the issue shows as far as Tiehall knows: open or closed, why, and its assignees. */
     trackerState: jsonb("tracker_state"),
