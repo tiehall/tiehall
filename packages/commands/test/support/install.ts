@@ -62,7 +62,7 @@ export interface TestInstall {
   secretKey: string;
   /** The install's auth secret, TIEHALL_AUTH_SECRET, which signs the CSRF tokens, the nonces and the sign-in service's cookies. */
   authSecret: string;
-  /** The install's logger, which writes nowhere. */
+  /** The install's logger, which writes nowhere unless the test captures its lines. */
   logger: Logger;
   /** TIEHALL_SECRET_KEY's box, which encrypts the stored integration secrets, for the operations that store one. */
   box: SecretBox;
@@ -126,6 +126,8 @@ export async function startTestInstall(
      * a worker the test starts runs them; the jobs then join no sentJobs.
      */
     jobTypes?: readonly DefinedJobType<JobData>[];
+    /** Where the install's logger writes each line, such as a log canary test's capture; nowhere unless given. */
+    log?: (line: string) => void;
   } = {},
 ): Promise<TestInstall> {
   const migrationsFolder = fileURLToPath(new URL("../../../db/migrations/", import.meta.url));
@@ -144,7 +146,7 @@ export async function startTestInstall(
   const secret = randomBytes(32).toString("base64url");
   const secretKey = randomBytes(32).toString("base64url");
   const box = openSecretBox(secretKey);
-  const logger = createLogger({ write: () => {} });
+  const logger = createLogger({ write: options.log ?? (() => {}) });
   const confirmations = createConfirmationNonces({ secret });
   const sentJobs: { queue: string; data: JobData; startAfter?: Date; singletonKey?: string }[] = [];
   const jobQueue: JobQueue | undefined =
