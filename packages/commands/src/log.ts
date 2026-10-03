@@ -257,7 +257,8 @@ function stackFrames(stack: unknown, message: unknown): string[] {
  * ends where a match of it that begins inside it would end, so one scan of a
  * shape finds all it covers: a JWT runs on through every part after its third,
  * as a JWE has five, and a Bearer or Basic credential that ends with one of
- * those words runs on through the credential after it.
+ * those words runs on through the credential after it. HTTP compares the names
+ * of its authentication schemes in any case, and so does the logger.
  *
  * The logger scrubs text that callers who need no account can send, in bodies
  * of up to 2 MiB, so a scrub takes time in proportion to the text's length,
@@ -269,7 +270,7 @@ function stackFrames(stack: unknown, message: unknown): string[] {
  */
 const TOKEN_PATTERNS: readonly RegExp[] = [
   /\bth_pat_[A-Za-z0-9_-]+/g,
-  /\b(?:Bearer|bearer|Basic)(?:\s+[A-Za-z0-9._~+/=-]*?\b(?:Bearer|bearer|Basic)(?=\s))*\s+[A-Za-z0-9._~+/=-]+/g,
+  /\b(?:bearer|basic)(?:\s+[A-Za-z0-9._~+/=-]*?\b(?:bearer|basic)(?=\s))*\s+[A-Za-z0-9._~+/=-]+/gi,
   /\bgh[pousr]_[A-Za-z0-9_.-]+/g,
   /\bgithub_pat_[A-Za-z0-9_.-]+/g,
   /\bATATT[A-Za-z0-9_=-]{16,}/g,
@@ -298,14 +299,17 @@ const isSchemeCharacter = (code: number) => isLetter(code) || isDigit(code) || c
 /** The characters of a JWT's first two parts, `[A-Za-z0-9_-]`, and of its third and later parts, with `.`. */
 const isJwtCharacter = (code: number) => isWordCharacter(code) || code === 45;
 const isJwtTailCharacter = (code: number) => isJwtCharacter(code) || code === 46;
-/** The user info of a URL runs up to `@`, and stops at `/`, `?`, `#` and whitespace: `[^/\s@?#]`. */
-const isUserInfoCharacter = (code: number) => code !== 47 && code !== 64 && code !== 63 && code !== 35 && !isSpace(code);
+/** The authority of a URL, its user info, `@` and host, runs up to `/`, `?`, `#` or whitespace: `[^/\s?#]`. */
+const isAuthorityCharacter = (code: number) => code !== 47 && code !== 63 && code !== 35 && !isSpace(code);
 /** A query string or a fragment runs up to whitespace, a quote, `<` or `>`: `[^\s"'<>]`. */
 const isQueryCharacter = (code: number) => code !== 34 && code !== 39 && code !== 60 && code !== 62 && !isSpace(code);
 /** A URL or a path runs up to its query string or fragment, and stops where those stop: `[^\s?#"'<>]`. */
 const isPathCharacter = (code: number) => code !== 63 && code !== 35 && isQueryCharacter(code);
-/** What a path may follow: whitespace, a quote, `(` or `=`. */
-const leadsPath = (code: number) => isSpace(code) || code === 34 || code === 39 || code === 40 || code === 61;
+/**
+ * What a path may follow: anything but a letter, a digit, `_` or `-`, which end the names before a slash that is
+ * not a path's, as in the issue reference acme/web#142.
+ */
+const leadsPath = (code: number) => !isWordCharacter(code) && code !== 45;
 
 /** Where the run of characters of this class that starts at `from` ends. */
 function runEnd(text: string, from: number, inRun: (code: number) => boolean): number {
@@ -320,22 +324,37 @@ function startsWord(text: string, at: number): boolean {
 }
 
 /**
- * Reads the run of a scheme's characters that starts at `from`, and says where it ends and whether a scheme, a
- * letter at the start of a word and what follows it, ends there: `\b[a-z][a-z0-9+.-]*`. Every scheme that starts
- * in a run ends where the run ends, because no scheme character can begin `://`.
+ * Reads the run of a scheme's characters that starts at `from`, and says where it ends, whether a scheme, a letter
+ * at the start of a word and what follows it, ends there: `\b[a-z][a-z0-9+.-]*`, and whether it holds a dot, as a
+ * host name does. Every scheme or host name that starts in a run ends where the run ends, because no scheme
+ * character can begin `://`, `/` or a port.
  */
-function schemeRun(text: string, from: number): { end: number; scheme: boolean } {
+function schemeRun(text: string, from: number): { end: number; scheme: boolean; dotted: boolean } {
   let scheme = false;
+  let dotted = false;
   let end = from;
   for (; end < text.length && isSchemeCharacter(text.charCodeAt(end)); end += 1) {
     if (!scheme && isLetter(text.charCodeAt(end)) && startsWord(text, end)) scheme = true;
+    if (text.charCodeAt(end) === 46) dotted = true;
   }
-  return { end, scheme };
+  return { end, scheme, dotted };
+}
+
+/**
+ * Whether a path follows a host name that ends at `at`, without the URL's scheme: a slash after a name with a dot,
+ * as in tiehall.example.com/api, or a port and a slash, as in localhost:3000/api.
+ */
+function pathFollowsHost(text: string, at: number, dotted: boolean): boolean {
+  if (text.charCodeAt(at) === 47) return dotted;
+  if (text.charCodeAt(at) !== 58) return false;
+  const port = runEnd(text, at + 1, isDigit);
+  return port > at + 1 && text.charCodeAt(port) === 47;
 }
 
 /**
  * The text with the user info of each URL replaced, such as the password in postgres://user:password@host:
- * `\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@?#]*@`.
+ * `\b([a-z][a-z0-9+.-]*:\/\/)[^/\s?#]*@`. The user info ends at the authority's last `@`, as URL parsers end it, so
+ * a password that holds an unencoded `@` is replaced whole.
  */
 function withoutUserInfo(text: string): string {
   let result = "";
@@ -350,8 +369,9 @@ function withoutUserInfo(text: string): string {
     at = end;
     if (!scheme || !text.startsWith("://", end)) continue;
     const from = end + 3;
-    const to = runEnd(text, from, isUserInfoCharacter);
-    if (text.charCodeAt(to) !== 64) continue;
+    let to = runEnd(text, from, isAuthorityCharacter) - 1;
+    while (to >= from && text.charCodeAt(to) !== 64) to -= 1;
+    if (to < from) continue;
     result += text.slice(kept, from) + REDACTED;
     kept = to;
     at = to + 1;
@@ -360,9 +380,10 @@ function withoutUserInfo(text: string): string {
 }
 
 /**
- * The query strings and fragments of URLs, and of paths after a space, a quote, `(`, `=` or the start, as the
- * spans they cover: `(?:\b[a-z][a-z0-9+.-]*:\/\/|(?<=^|[\s"'(=])\/)[^\s?#"'<>]*` before `[?#][^\s"'<>]*`. A URL or
- * a path that starts anywhere in a run of its characters ends where the run ends, so each run is read once.
+ * The query strings and fragments of URLs, with or without their scheme, and of paths, as the spans they cover: a
+ * URL, `\b[a-z][a-z0-9+.-]*:\/\/`, a host name and the path after it, or a path, `/` at the start or after what
+ * `leadsPath` names, then `[^\s?#"'<>]*` before `[?#][^\s"'<>]*`. A URL or a path that starts anywhere in a run of
+ * its characters ends where the run ends, so each run is read once.
  */
 function queryStrings(text: string): { from: number; to: number }[] {
   const spans: { from: number; to: number }[] = [];
@@ -381,7 +402,7 @@ function queryStrings(text: string): { from: number; to: number }[] {
         end += 1;
       } else if (!starts && isSchemeCharacter(code)) {
         const run = schemeRun(text, end);
-        starts = run.scheme && text.startsWith("://", run.end);
+        starts = (run.scheme && text.startsWith("://", run.end)) || pathFollowsHost(text, run.end, run.dotted);
         end = run.end;
       } else {
         end += 1;
@@ -397,9 +418,10 @@ function queryStrings(text: string): { from: number; to: number }[] {
 }
 
 /**
- * JWTs, as the spans they cover: `\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_.-]*`. A JWT that starts
- * anywhere in a run of its first part's characters has its first part end where the run ends, so each run is read
- * once, and the first JWT in it covers every later one.
+ * JWTs, as the spans they cover: `\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*\.[A-Za-z0-9_.-]*`. The second part may be
+ * empty, as a JWE's encrypted key is with direct encryption. A JWT that starts anywhere in a run of its first part's
+ * characters has its first part end where the run ends, so each run is read once, and the first JWT in it covers
+ * every later one.
  */
 function jwts(text: string): { from: number; to: number }[] {
   const spans: { from: number; to: number }[] = [];
@@ -417,7 +439,7 @@ function jwts(text: string): { from: number; to: number }[] {
     at = first;
     if (from === -1 || first - (from + 3) < 4 || text.charCodeAt(first) !== 46) continue;
     const second = runEnd(text, first + 1, isJwtCharacter);
-    if (second - (first + 1) < 4 || text.charCodeAt(second) !== 46) continue;
+    if (text.charCodeAt(second) !== 46) continue;
     at = runEnd(text, second + 1, isJwtTailCharacter);
     spans.push({ from, to: at });
   }

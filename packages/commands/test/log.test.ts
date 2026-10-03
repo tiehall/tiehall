@@ -196,13 +196,36 @@ describe("redaction", () => {
     expect(scrub(`GET /api/v1/requests?auth=Bearer ${part(20)} answered 401`)).toBe("GET /api/v1/requests[redacted] answered 401");
   });
 
+  // Other shapes a credential, a URL or a path takes: an HTTP authentication scheme in any case, as HTTP compares
+  // them; a password with an unencoded `@`, as URL parsers end the user info at the last `@` before the host; a JWE
+  // whose encrypted key is empty, as with direct encryption; a URL without its scheme; and a path after a colon, a
+  // backtick or a bracket.
+  it("drops credentials, user info and query strings in the other shapes they take", () => {
+    // Built here, so the secret scan does not take the source for a real token.
+    const jwe = ["eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0", "", "aXZjYW5hcnk", "Y2lwaGVyY2FuYXJ5", "dGFnY2FuYXJ5"].join(".");
+    const cases: Record<string, string> = {
+      "authorization: basic canary0123456789": "authorization: [redacted]",
+      "Authorization: BEARER canary0123456789": "Authorization: [redacted]",
+      "postgres://tiehall:p@ss-canary@db:5432/tiehall": "postgres://[redacted]@db:5432/tiehall",
+      [`sent ${jwe} once`]: "sent [redacted] once",
+      "see tiehall.example.com/api/v1/requests?token=canary": "see tiehall.example.com/api/v1/requests",
+      "see localhost:3000/api/v1/requests?token=canary": "see localhost:3000/api/v1/requests",
+      "GET:/api/v1/requests?token=canary": "GET:/api/v1/requests",
+      "in `/api/v1/requests?token=canary` once": "in `/api/v1/requests once",
+      "in [/api/v1/requests?token=canary] once": "in [/api/v1/requests once",
+    };
+    for (const [text, scrubbed] of Object.entries(cases)) expect(scrub(text), text).toBe(scrubbed);
+    // A reference to an issue is neither a URL nor a path, and stays whole.
+    expect(scrub("closed acme/web#142 and acme/web.js#7")).toBe("closed acme/web#142 and acme/web.js#7");
+  });
+
   // The logger scrubs every string it writes, and some come from callers who need no account, such as the callbackURL
   // of a client registration that the sign-in service refuses and logs, in a request body of up to 2 MiB. So the time
   // a scrub takes grows only with the text's length, whatever the text, and no text can hold the process up.
   it("scrubs any text in time that grows only with its length", () => {
     // Runs of a scheme's, a token's or a path's characters, with a place where a shape could start every few
     // characters and nothing that ends the shape, which made a pattern scan to the run's end from each such place.
-    const shapes = ["-eyJ", "eyJaaaa-", "eyJaaaa.", "eyJaaaa.aaaa", "a.", "a-", "a://", "a://x", "a://a@", "(/", "=/", "ATATT-", "Basic -Bearer-Bearer"];
+    const shapes = ["-eyJ", "eyJaaaa-", "eyJaaaa.", "eyJaaaa..", "eyJaaaa.aaaa", "a.", "a-", "a.b:1", "a://", "a://x", "a://a@", "(/", "=/", "ATATT-", "Basic -Bearer-Bearer"];
     for (const length of [96 * 1024, 2 * 1024 * 1024]) {
       for (const shape of shapes) {
         const text = shape.repeat(Math.ceil(length / shape.length)).slice(0, length);
