@@ -29,11 +29,14 @@ import type { WorkerJob } from "./worker.ts";
 // Before setup completes there is nothing to reconcile.
 
 export const reconcileGitHub: WorkerJob<Record<string, never>> = {
-  // Five attempts over about an hour, then the dead-letter queue, as for every integration job (design.md, Decisions this change rests on: D28 #83).
+  // Five attempts over about an hour, then the dead-letter queue, as for every integration job (design.md, Decisions
+  // this change rests on: D28 #83): each next attempt a fixed 14 minutes after the one before failed, with no
+  // backoff, whose random spread would carry the fifth past the hour, so the fifth comes 56 minutes after the
+  // first when each fails at once, as for the mirror jobs (mirror-jobs.ts).
   type: defineJobType<Record<string, never>>("github.reconcile", 1, {
     retryLimit: 4,
-    retryDelaySeconds: 240,
-    retryBackoff: true,
+    retryDelaySeconds: 14 * 60,
+    retryBackoff: false,
     expireInSeconds: 600,
   }),
   schedule: "*/15 * * * *",

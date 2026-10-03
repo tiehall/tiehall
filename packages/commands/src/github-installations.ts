@@ -403,11 +403,14 @@ export async function readInstallations(options: ReadInstallationsOptions): Prom
  * connects an installation, so its repositories count as covered at once.
  */
 export const syncGitHubInstallations: WorkerJob<{ repositoriesOf?: number[] }> = {
-  // Five attempts over about an hour, then the dead-letter queue, as for every integration job (design.md, Decisions this change rests on: D28 #83).
+  // Five attempts over about an hour, then the dead-letter queue, as for every integration job (design.md, Decisions
+  // this change rests on: D28 #83): each next attempt a fixed 14 minutes after the one before failed, with no
+  // backoff, whose random spread would carry the fifth past the hour, so the fifth comes 56 minutes after the
+  // first when each fails at once, as for the mirror jobs (mirror-jobs.ts).
   type: defineJobType<{ repositoriesOf?: number[] }>("github.sync_installations", 1, {
     retryLimit: 4,
-    retryDelaySeconds: 240,
-    retryBackoff: true,
+    retryDelaySeconds: 14 * 60,
+    retryBackoff: false,
     expireInSeconds: 300,
   }),
   async handle(job, { database, github, jobs }) {
