@@ -35,6 +35,7 @@
     "check:security-events": "node tools/repo-checks/src/check-security-events.ts",
     "check:error-model": "node tools/repo-checks/src/check-error-model.ts",
     "check:api-compat": "node tools/repo-checks/src/check-api-compat.ts",
+    "check:contract-report-floor": "node tools/repo-checks/src/check-contract-report-floor.ts",
     "check:tool-compat": "node tools/repo-checks/src/check-tool-compat.ts",
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts",

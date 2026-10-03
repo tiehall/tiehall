@@ -56,6 +56,13 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+      # contract.report's own CLI floor rises only with 180 days' notice: a
+      # pull request that raises it passes only when openapi/changelog.json
+      # holds an entry about contract.report, naming the new floor, dated at
+      # least 180 days earlier.
+      - run: node tools/repo-checks/src/check-contract-report-floor.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
       # Compares mcp/tools.json at the merge base with the pull request's, with
       # the same oasdiff and notice periods, reading each tool as an operation
       # at the stability level and with the deprecation the snapshot records:

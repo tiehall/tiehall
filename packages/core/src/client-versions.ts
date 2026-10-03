@@ -24,7 +24,9 @@ export const MINIMUM_CLI_VERSION = "0.1.0";
  * rules: Public API). Companies' CI runs the CLI version the contract Action
  * pins, so the floor is never above MINIMUM_CLI_VERSION, and it is raised only
  * with at least 180 days' notice in the API changelog: a pinned CLI that the
- * general minimum has left behind keeps reporting until then.
+ * general minimum has left behind keeps reporting until then. CI's API
+ * compatibility job holds a rise to that notice
+ * (tools/repo-checks/src/check-contract-report-floor.ts).
  */
 export const MINIMUM_CONTRACT_REPORT_CLI_VERSION = "0.1.0";
 
