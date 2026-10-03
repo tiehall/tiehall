@@ -1,6 +1,6 @@
 import { verifyJwsAccessToken } from "better-auth/oauth2";
 import { SCOPES, type Scope } from "@tiehall/catalog";
-import { Refusal } from "@tiehall/core";
+import { CLI_VERSION_HEADER, Refusal, SEMANTIC_VERSION } from "@tiehall/core";
 import { mcpResourceOf } from "./authorization-server.ts";
 import type { Database } from "@tiehall/db";
 import type { Caller } from "./caller.ts";
@@ -118,9 +118,19 @@ export function createAgentTokenCheck(options: AgentTokenCheckOptions): AgentTok
     const granted = typeof claims["scope"] === "string" ? claims["scope"].split(" ") : [];
     const scopes = SCOPES.filter((scope): scope is Scope => granted.includes(scope));
     const issuedAt = typeof claims["iat"] === "number" ? new Date(claims["iat"] * 1000) : undefined;
-    // Only the CLI holds a token of its client, from its device flow, so a call with one came through the CLI.
+    // Only the CLI holds a token of its client, from its device flow, so a call with one came through the CLI, whose
+    // version, which it names in a header of every call, its provenance names as its client.
     const surface = clientId === CLI_CLIENT_ID ? "cli" : "api";
-    return { kind: "oauth_token", userId, clientId, scopes, surface, ...(issuedAt === undefined ? {} : { issuedAt }) };
+    const cliVersion = surface === "cli" ? request.headers.get(CLI_VERSION_HEADER) : null;
+    return {
+      kind: "oauth_token",
+      userId,
+      clientId,
+      scopes,
+      surface,
+      ...(issuedAt === undefined ? {} : { issuedAt }),
+      ...(cliVersion !== null && SEMANTIC_VERSION.test(cliVersion) ? { cliVersion } : {}),
+    };
   };
 }
 

@@ -1,11 +1,15 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import cliManifest from "../../cli/package.json" with { type: "json" };
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { cliMachine, signedInCli, signInOnlyInstall, type CliMachine } from "./support/cli.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { addTeams, connectMcp, MODERN, mcpPerson, type McpPerson } from "./support/mcp.ts";
 import { openRequestInTheWebUi, packetOf } from "./support/requests.ts";
+
+/** The version of the CLI the tests run, which it names in every call. */
+const CLI_VERSION = cliManifest.version;
 
 // The tiehall CLI's request commands, end to end (agent-surfaces: CLI request
 // commands; agent-surfaces: The CLI package; agent-access: The CLI signs in
@@ -199,7 +203,8 @@ describe("the request commands (task 17.3)", () => {
         kind: "answer",
         questionId,
         provenance: { actorKind: "agent", surface: "cli", user: { id: sam.userId }, team: { key: "QA" } },
-        untrusted: { body: "The last two versions of each.", client: "tiehall-cli" },
+        // requests: Provenance is stamped by the server: a CLI call names the CLI's version as its client.
+        untrusted: { body: "The last two versions of each.", client: `tiehall-cli/${CLI_VERSION}` },
       },
       request: { key: request.key, state: "in_progress" },
     });

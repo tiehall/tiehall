@@ -27,6 +27,8 @@ export interface OAuthTokenCaller {
   surface: AgentSurface;
   /** When the access token was issued; a token issued before its user's current membership began is refused as revoked. */
   issuedAt?: Date;
+  /** For a call that came through the CLI, the version it names in its version header, when it is a semantic version. */
+  cliVersion?: string;
 }
 
 /** A personal access token, acting for the user who created it. */
@@ -115,14 +117,24 @@ export function catalogSurfaceOf(caller: Caller): CommandSurface | undefined {
 }
 
 /**
+ * The client an OAuth token's call names in its provenance: the CLI's version
+ * for a call that came through the CLI, such as tiehall-cli/0.4.0, as the
+ * requests capability has it, and otherwise the token's client.
+ */
+function clientOf(caller: OAuthTokenCaller): string {
+  return caller.surface === "cli" && caller.cliVersion !== undefined ? `${caller.clientId}/${caller.cliVersion}` : caller.clientId;
+}
+
+/**
  * Who caused what a call changes (requests: Provenance is stamped by the
  * server), from the caller alone, never from the payload. An agent's call, one
  * made with an OAuth token or a personal access token, is recorded with the
  * actor kind `agent`, the user the token acts for as the accountable human,
  * and the surface it came through: `mcp`, `cli` for the CLI, and `api` for
  * any other call to /api/v1. An OAuth token also names its client: the
- * Client ID Metadata Document URL or the registered client's id, which for
- * the CLI is the CLI's own; a personal access token names none. A web action is
+ * Client ID Metadata Document URL or the registered client's id, and for the
+ * CLI its version, which every call of the CLI names in its version header; a
+ * personal access token names none. A web action is
  * recorded as `web_session` on `web`, because the server cannot tell a person
  * from an agent that drives a browser, and nothing is ever recorded as
  * `human`. A CI report is a system action from GitHub (D30 (3)), and so is
@@ -135,7 +147,7 @@ export function provenanceOf(caller: Caller): Provenance {
     case "web_session":
       return { actorKind: "web_session", userId: caller.userId, surface: "web" };
     case "oauth_token":
-      return { actorKind: "agent", userId: caller.userId, surface: caller.surface, client: caller.clientId };
+      return { actorKind: "agent", userId: caller.userId, surface: caller.surface, client: clientOf(caller) };
     case "personal_access_token":
       return { actorKind: "agent", userId: caller.userId, surface: caller.surface };
     case "ci":
