@@ -6,7 +6,7 @@ import type { ParsedManifest, Permission } from "./manifest.ts";
 import { checkAppName } from "./manifest.ts";
 import { createHandlers, tokenKind, type RecordedRequest, type StubHost, type StubRequest, type StubResponse, type TokenKind } from "./server.ts";
 import { Deliveries, type DeliveryOptions, type StubDelivery } from "./webhooks.ts";
-import { GitHubWorld, type StubAccount, type StubApp, type StubEmail, type StubInstallation, type StubIssue, type StubOrg, type StubPullRequest, type StubRepo, type StubUser } from "./world.ts";
+import { GitHubWorld, type MemberAnswers, type StubAccount, type StubApp, type StubEmail, type StubInstallation, type StubIssue, type StubOrg, type StubPullRequest, type StubRepo, type StubUser } from "./world.ts";
 
 // The GitHub stub every GitHub test runs against (add-tiehall-oss-v1:
 // design.md, Technical decisions: T17; github-app-reachability: design.md,
@@ -35,7 +35,7 @@ export { DEFAULT_INSTALLATION_TOKEN_LENGTH, makeInstallationToken } from "./toke
 export { FAILED_DELIVERY, signBody, type DeliveryMode, type DeliveryOptions, type StubDelivery } from "./webhooks.ts";
 export type { RecordedRequest, StubHost, TokenKind } from "./server.ts";
 export type { Permission } from "./manifest.ts";
-export type { StubAccount, StubApp, StubEmail, StubInstallation, StubIssue, StubOrg, StubPullRequest, StubRepo, StubUser } from "./world.ts";
+export type { MemberAnswers, StubAccount, StubApp, StubEmail, StubInstallation, StubIssue, StubOrg, StubPullRequest, StubRepo, StubUser } from "./world.ts";
 
 /** The permissions of Tiehall's own App, the default of an App a test creates. */
 const TIEHALL_PERMISSIONS: Readonly<Record<string, Permission>> = {
@@ -110,6 +110,19 @@ export interface GitHubStub {
   addMember(org: string, login: string, role?: "admin" | "member", options?: DeliveryOptions): Promise<StubDelivery[]>;
   removeMember(org: string, login: string, options?: DeliveryOptions): Promise<StubDelivery[]>;
   renameUser(login: string, newLogin: string): StubUser;
+  /** Renames an organization, as its owner does on GitHub; another organization may then take the old login. */
+  renameOrg(login: string, newLogin: string): StubOrg;
+  /** A member makes their membership public, or private again, as on GitHub's people page. */
+  setMembershipPublic(org: string, login: string, isPublic: boolean): void;
+  /** GitHub serves every requester the organization's public members only, as it may once an owner removed the Members permission. */
+  setMembersPublicOnly(org: string, publicOnly: boolean): void;
+  /**
+   * How the stub answers a requester that may not see an organization's members: "forbidden", with 403, by default,
+   * or "documented", as GitHub documents it: a 302 to the public membership check, and the public members only.
+   */
+  setMemberAnswers(answers: MemberAnswers): void;
+  /** Changes the permissions an installation holds, as an owner who declines or removes one; tokens issued from then on carry them. */
+  setInstallationPermissions(installation: StubInstallation, permissions: Record<string, Permission>): void;
   setEmails(login: string, emails: StubEmail[]): void;
   addRepo(fullName: string, options?: { private?: boolean; id?: number }): StubRepo;
   /** The account a browser acts as on the stub's github.com unless its cookie names another; none signs the browser out. */
@@ -292,6 +305,26 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
       const user = world.user(login);
       user.login = newLogin;
       return user;
+    },
+    renameOrg(login, newLogin) {
+      if (world.findAccount(newLogin) !== undefined) throw new Error(`${newLogin} is taken`);
+      const org = world.org(login);
+      org.login = newLogin;
+      return org;
+    },
+    setMembershipPublic(orgLogin, login, isPublic) {
+      const membership = world.org(orgLogin).members.get(world.user(login).id);
+      if (membership === undefined) throw new Error(`${login} is not a member of ${orgLogin}`);
+      membership.public = isPublic;
+    },
+    setMembersPublicOnly(orgLogin, publicOnly) {
+      world.org(orgLogin).membersPublicOnly = publicOnly;
+    },
+    setMemberAnswers(answers) {
+      world.memberAnswers = answers;
+    },
+    setInstallationPermissions(installation, permissions) {
+      installation.permissions = { ...permissions };
     },
     setEmails(login, emails) {
       world.user(login).emails = emails.map((email) => ({ ...email }));

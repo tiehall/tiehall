@@ -37,7 +37,17 @@ export interface StubUser {
 export interface StubMembership {
   role: "admin" | "member";
   state: "active" | "pending";
+  /** The member made the membership public, so GitHub shows it to anyone; private unless set. */
+  public?: boolean;
 }
+
+/**
+ * How the stub answers a requester that may not see an organization's
+ * members: "forbidden", with 403, unless a test asks for "documented", GitHub's
+ * own answers (a 302 to the public membership check, and the public members
+ * only).
+ */
+export type MemberAnswers = "forbidden" | "documented";
 
 export interface StubOrg {
   readonly type: "Organization";
@@ -47,6 +57,8 @@ export interface StubOrg {
   name: string | null;
   /** By user id. */
   readonly members: Map<number, StubMembership>;
+  /** GitHub serves every requester this organization's public members only, as it may once an owner removed the Members permission. */
+  membersPublicOnly: boolean;
   readonly createdAt: string;
 }
 
@@ -104,8 +116,11 @@ export interface StubInstallation {
   deleted: boolean;
   readonly createdAt: string;
   updatedAt: string;
-  /** The App's permissions this installation holds: no account permission, and organization ones only on an organization. */
-  readonly permissions: Record<string, Permission>;
+  /**
+   * The App's permissions this installation holds: no account permission, and organization ones only on an
+   * organization. A test changes them as an owner does who declines or removes one.
+   */
+  permissions: Record<string, Permission>;
   readonly events: string[];
   /** The full names of the repositories it covers now. */
   repositoryNames(): string[];
@@ -231,6 +246,7 @@ export class GitHubWorld {
   /** Issues and pull requests, by repository id and number. */
   readonly items = new Map<string, StubIssue | StubPullRequest>();
   installationTokenLength = DEFAULT_INSTALLATION_TOKEN_LENGTH;
+  memberAnswers: MemberAnswers = "forbidden";
   private clockOffset = 0;
   private nextId = 1_000;
   private nextNodeId = 1;
@@ -290,6 +306,7 @@ export class GitHubWorld {
       login: input.login,
       name: input.name ?? null,
       members: new Map(),
+      membersPublicOnly: false,
       createdAt: this.timestamp(),
     };
     this.addAccount(org);

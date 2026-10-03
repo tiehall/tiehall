@@ -36,6 +36,7 @@ import type {
   StubApp,
   StubInstallation,
   StubIssue,
+  StubOrg,
   StubPullRequest,
   StubRepo,
   StubUser,
@@ -700,12 +701,23 @@ export function createHandlers(context: ServerContext): StubHandlers {
     return installation === undefined || installation.deleted || installation.appId !== app.id ? undefined : installation;
   }
 
-  /** The organization an installation may ask about: its own, and only with the Members permission. */
-  function orgFor(installation: StubInstallation, login: string): StubAccount | StubResponse {
+  /**
+   * The organization an installation asks about, and whether it may see the members: only of its own organization,
+   * only with the Members permission, and not while GitHub serves the organization's public members only. A requester
+   * that may not see them gets 403, unless a test asked for GitHub's documented answers (MemberAnswers).
+   */
+  function orgFor(installation: StubInstallation, login: string): { org: StubOrg; seesMembers: boolean } | StubResponse {
     const org = world.findAccount(login);
     if (org?.type !== "Organization") return NOT_FOUND();
-    if (installation.account.id !== org.id || !allows(installation.permissions, "members", "read")) return NOT_ACCESSIBLE();
-    return org;
+    const seesMembers = installation.account.id === org.id && allows(installation.permissions, "members", "read") && !org.membersPublicOnly;
+    if (!seesMembers && world.memberAnswers !== "documented") return NOT_ACCESSIBLE();
+    return { org, seesMembers };
+  }
+
+  /** Whether the user is an active member of the organization who made the membership public. */
+  function isPublicMember(org: StubOrg, user: StubAccount | undefined): boolean {
+    const membership = user?.type === "User" ? org.members.get(user.id) : undefined;
+    return membership?.state === "active" && membership.public === true;
   }
 
   function item(repo: StubRepo, number: string): StubIssue | StubPullRequest | undefined {
@@ -866,10 +878,22 @@ export function createHandlers(context: ServerContext): StubHandlers {
       /^\/orgs\/([^/]+)\/members\/([^/]+)$/,
       (request, [orgLogin, login]) =>
         asInstallation(request, (installation) => {
-          const org = orgFor(installation, orgLogin!);
-          if (isResponse(org)) return org;
+          const found = orgFor(installation, orgLogin!);
+          if (isResponse(found)) return found;
+          const { org, seesMembers } = found;
+          // GitHub sends a requester that may not see the members on to the public membership check.
+          if (!seesMembers) return { status: 302, headers: { location: `${context.urls().api}/orgs/${org.login}/public_members/${login!}` } };
           const user = world.findAccount(login!);
-          return user?.type === "User" && org.type === "Organization" && world.isActiveMember(org, user) ? empty(204) : NOT_FOUND();
+          return user?.type === "User" && world.isActiveMember(org, user) ? empty(204) : NOT_FOUND();
+        }),
+    ],
+    [
+      "GET",
+      /^\/orgs\/([^/]+)\/public_members\/([^/]+)$/,
+      (request, [orgLogin, login]) =>
+        withCaller(request, () => {
+          const org = world.findAccount(orgLogin!);
+          return org?.type === "Organization" && isPublicMember(org, world.findAccount(login!)) ? empty(204) : NOT_FOUND();
         }),
     ],
     [
@@ -877,8 +901,10 @@ export function createHandlers(context: ServerContext): StubHandlers {
       /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/,
       (request, [orgLogin, login]) =>
         asInstallation(request, (installation) => {
-          const org = orgFor(installation, orgLogin!);
-          if (isResponse(org) || org.type !== "Organization") return isResponse(org) ? org : NOT_FOUND();
+          const found = orgFor(installation, orgLogin!);
+          if (isResponse(found)) return found;
+          if (!found.seesMembers) return NOT_ACCESSIBLE();
+          const { org } = found;
           const user = world.findAccount(login!);
           const membership = user?.type === "User" ? org.members.get(user.id) : undefined;
           if (user === undefined || membership === undefined) return NOT_FOUND();
@@ -898,10 +924,12 @@ export function createHandlers(context: ServerContext): StubHandlers {
       /^\/orgs\/([^/]+)\/members$/,
       (request, [orgLogin]) =>
         asInstallation(request, (installation) => {
-          const org = orgFor(installation, orgLogin!);
-          if (isResponse(org) || org.type !== "Organization") return isResponse(org) ? org : NOT_FOUND();
+          const found = orgFor(installation, orgLogin!);
+          if (isResponse(found)) return found;
+          const { org, seesMembers } = found;
+          // A requester that may not see the members gets the public ones only.
           const members = [...org.members.entries()]
-            .filter(([, membership]) => membership.state === "active")
+            .filter(([, membership]) => membership.state === "active" && (seesMembers || membership.public === true))
             .map(([id]) => world.accountById(id))
             .filter((account): account is StubUser => account?.type === "User")
             .sort((a, b) => a.id - b.id);

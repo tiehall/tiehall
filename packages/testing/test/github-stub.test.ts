@@ -493,6 +493,73 @@ describe("organization membership", () => {
   });
 });
 
+// GitHub documents what a requester that may not see an organization's members gets: `GET
+// /orgs/{org}/members/{username}` answers 302, to `/orgs/{org}/public_members/{username}`, which answers 204 for a
+// public member and 404 for anyone else, and `GET /orgs/{org}/members` lists the public members only. An
+// installation's token is such a requester without the Members permission, and for an organization that is not the
+// installation's own. The stub answers so once a test asks for GitHub's documented answers; until then it refuses
+// such calls with 403, which tests of the rest rely on.
+describe("organization membership, as GitHub answers a requester that may not see the members", () => {
+  async function publicOnly(token: string) {
+    const redirect = await api("/orgs/acme/members/lee", token, { redirect: "manual" });
+    return {
+      redirect: redirect.status,
+      location: redirect.headers.get("location"),
+      lee: (await api("/orgs/acme/members/lee", token)).status,
+      omar: (await api("/orgs/acme/members/omar", token)).status,
+      listed: ((await (await api("/orgs/acme/members", token)).json()) as Array<{ login: string }>).map(({ login }) => login),
+    };
+  }
+  const PUBLIC_ONLY = { redirect: 302, lee: 404, omar: 204, listed: ["omar"] };
+
+  beforeEach(() => {
+    stub.setMemberAnswers("documented");
+    stub.setMembershipPublic("acme", "omar", true);
+  });
+
+  it("serves a token GitHub issued without the Members permission the public members only", async () => {
+    const app = stub.createApp({ owner: "acme" });
+    const installation = await stub.install(app, { account: "acme", repositories: "all" });
+    stub.setInstallationPermissions(installation, { metadata: "read", issues: "write", pull_requests: "read" });
+    const response = await api(`/app/installations/${installation.id}/access_tokens`, jwtFor(app), { method: "POST" });
+    const issued = (await response.json()) as { token: string; permissions: Record<string, string> };
+    expect(issued.permissions["members"]).toBeUndefined();
+    const answers = await publicOnly(issued.token);
+    expect(answers).toMatchObject(PUBLIC_ONLY);
+    expect(answers.location).toBe(`${stub.apiUrl}/orgs/acme/public_members/lee`);
+  });
+
+  it("serves another organization's installation the public members only", async () => {
+    stub.addOrg({ login: "other", members: { omar: "admin" } });
+    const app = stub.createApp({ owner: "omar", public: true });
+    const other = await stub.install(app, { account: "other", repositories: "all" });
+    expect(await publicOnly(await installationToken(app, other))).toMatchObject(PUBLIC_ONLY);
+  });
+
+  it("serves every token the public members only while GitHub hides an organization's members, whatever permissions it was issued with", async () => {
+    const app = stub.createApp({ owner: "acme" });
+    const installation = await stub.install(app, { account: "acme", repositories: "all" });
+    const token = await installationToken(app, installation);
+    expect((await api("/orgs/acme/members/lee", token)).status).toBe(204);
+    stub.setMembersPublicOnly("acme", true);
+    expect(await publicOnly(token)).toMatchObject(PUBLIC_ONLY);
+  });
+
+  it("answers by the organization that holds the login now, after a rename and another organization took the old login", async () => {
+    const app = stub.createApp({ owner: "acme" });
+    const installation = await stub.install(app, { account: "acme", repositories: "all" });
+    const token = await installationToken(app, installation);
+    const renamed = stub.renameOrg("acme", "acme-inc");
+    const taker = stub.addOrg({ login: "acme", members: { outsider: "member" } });
+    stub.setMembershipPublic("acme", "outsider", true);
+    expect(((await (await api("/users/acme", token)).json()) as { id: number }).id).toBe(taker.id);
+    expect(((await (await api("/orgs/acme/members", token)).json()) as Array<{ login: string }>).map(({ login }) => login)).toEqual(["outsider"]);
+    expect((await api("/orgs/acme/members/outsider", token, { redirect: "manual" })).status).toBe(302);
+    expect((await api("/orgs/acme-inc/members/lee", token)).status).toBe(204);
+    expect(renamed.id).not.toBe(taker.id);
+  });
+});
+
 describe("pull requests and issues", () => {
   it("serves a covered repository's pull requests, and answers an unchanged list as not modified", async () => {
     const app = stub.createApp({ owner: "acme" });

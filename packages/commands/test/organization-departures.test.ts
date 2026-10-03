@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubDelivery, type StubInstallation } from "@tiehall/testing/github";
-import { processDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
+import { checkDepartures, processDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { storeDelivery } from "./support/github-app.ts";
-import { publicMembersOnly, type PublicMembersOptions } from "./support/github-public-members.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
@@ -85,9 +84,32 @@ async function reconcile(): Promise<void> {
   );
 }
 
-/** The reconciliation, reaching GitHub through a fetch that answers with the organization's public members only. */
-async function reconcileThrough(options: PublicMembersOptions): Promise<void> {
-  const reading = await startSignIn(install, stub, { sameAppAs: harness, fetch: publicMembersOnly(options) });
+/**
+ * GitHub answers a requester that may not see acme's members as it documents: the membership check sends it on to
+ * the public membership check, and the member list holds the public members only, of whom omar-acme is one.
+ */
+function answerPublicMembersOnly(): void {
+  stub.setMemberAnswers("documented");
+  stub.setMembershipPublic("acme", "omar-acme", true);
+}
+
+/** The installation's permissions without the Members permission, as GitHub issues its tokens once an owner removed it. */
+function withoutMembersPermission(installation: StubInstallation): void {
+  const { members: _removed, ...rest } = installation.permissions;
+  stub.setInstallationPermissions(installation, rest);
+}
+
+/** The member lookups GitHub answered from here on as it does a requester that may not see the members: by the public members only. */
+function publicAnswers(from: number): string[] {
+  return stub.received
+    .slice(from)
+    .filter(({ path, status }) => (/^\/orgs\/[^/]+\/members(\/[^/]+)?$/.test(path) && (status === 302 || status === 200)) || path.includes("/public_members/"))
+    .map(({ method, path, status }) => `${method} ${path} ${status}`);
+}
+
+/** The reconciliation, through a new client of the App, so it uses no installation token issued earlier. */
+async function reconcileAnew(): Promise<void> {
+  const reading = await startSignIn(install, stub, { sameAppAs: harness });
   await reconcileGitHub.handle(
     { id: randomUUID(), queue: reconcileGitHub.type.queue, data: {}, signal: new AbortController().signal },
     { database: install.db, now: () => new Date(), github: reading.github, execute: install.execute, jobs: { send: async () => undefined } },
@@ -270,21 +292,37 @@ describe("the reconciliation", () => {
 
   it("removes no one when GitHub lists only the organization's public members, to a token GitHub issued without the Members permission", async () => {
     const lee = await join("lee-acme");
-    await reconcileThrough({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }], withoutMembersPermission: true });
+    answerPublicMembersOnly();
+    withoutMembersPermission(acme);
+    await reconcileAnew();
     expect(await isMember(lee)).toBe(true);
     expect(await removals(lee)).toEqual([]);
   });
 
   it("removes no one when GitHub lists only the organization's public members to a token issued with the Members permission, as it may after an owner removes that permission", async () => {
     const lee = await join("lee-acme");
-    await reconcileThrough({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }] });
+    answerPublicMembersOnly();
+    stub.setMembersPublicOnly("acme", true);
+    const from = stub.received.length;
+    await reconcileAnew();
+    expect(publicAnswers(from)).toContain("GET /orgs/acme/members 200");
     expect(await isMember(lee)).toBe(true);
     expect(await removals(lee)).toEqual([]);
   });
 
   it("removes no one while another organization holds the organization's login, as after a rename, before the listing reads the new one", async () => {
     const lee = await join("lee-acme");
-    await reconcileThrough({ org: "acme", publicMembers: [{ login: "mallory", id: 999_001 }], loginNowNames: 999_000 });
+    // acme is renamed, and another organization takes the login, whose one public member is mallory.
+    stub.setMemberAnswers("documented");
+    stub.renameOrg("acme", "acme-inc");
+    stub.addUser({ login: "mallory" });
+    stub.addOrg({ login: "acme", members: { mallory: "member" } });
+    stub.setMembershipPublic("acme", "mallory", true);
+    // The check of the members, as the reconciliation runs it before its listing of the installations reads the new login.
+    const reading = await startSignIn(install, stub, { sameAppAs: harness });
+    const from = stub.received.length;
+    await checkDepartures({ database: install.db, app: (await reading.github.app())!, logger: install.logger, provenance: { actorKind: "system" } }, { every: true });
+    expect(stub.received.slice(from).map(({ method, path }) => `${method} ${path}`)).toContain("GET /users/acme");
     expect(await isMember(lee)).toBe(true);
     expect(await removals(lee)).toEqual([]);
   });
@@ -337,10 +375,9 @@ describe("a sign-in", () => {
 
   it("removes no member whose membership GitHub shows only publicly, to a token GitHub issued without the Members permission", async () => {
     const lee = await join("lee-acme");
-    const reading = await startSignIn(install, stub, {
-      sameAppAs: harness,
-      fetch: publicMembersOnly({ org: "acme", publicMembers: [{ login: "omar-acme", id: ids.get("omar-acme")! }], withoutMembersPermission: true }),
-    });
+    answerPublicMembersOnly();
+    withoutMembersPermission(acme);
+    const reading = await startSignIn(install, stub, { sameAppAs: harness });
     expect((await reading.signIn("lee-acme")).response.status).toBe(302);
     expect(await isMember(lee)).toBe(true);
     expect(await removals(lee)).toEqual([]);
