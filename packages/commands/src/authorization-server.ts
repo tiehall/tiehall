@@ -149,10 +149,20 @@ export interface AuthorizationServerOptions {
   /** The install's org, whose id every row the plugins store carries. */
   orgId: string;
   clients?: AgentClientOptions;
+  /** The number of a user's current membership, which each access token issued for them names; none for a user who is no member, or whose membership has none. */
+  membershipOf?: (userId: string) => Promise<number | undefined>;
 }
 
+/**
+ * The claim of an access token that names the membership of its user it was
+ * issued in, by the number each new membership takes (members.ts): a removal
+ * ends the membership, so a token of it is refused once the user is a member
+ * again (with-org.ts), whatever the clocks say.
+ */
+export const MEMBERSHIP_CLAIM = "tiehall_membership";
+
 /** The sign-in service's plugins that make it the install's authorization server for agent clients. */
-export function authorizationServerPlugins({ url, orgId, clients = {} }: AuthorizationServerOptions): BetterAuthPlugin[] {
+export function authorizationServerPlugins({ url, orgId, clients = {}, membershipOf }: AuthorizationServerOptions): BetterAuthPlugin[] {
   const signingKeys = jwt({
     jwt: { issuer: url },
     disableSettingJwtHeader: true,
@@ -171,6 +181,11 @@ export function authorizationServerPlugins({ url, orgId, clients = {} }: Authori
     allowUnauthenticatedClientRegistration: true,
     // A used refresh token is refused at once, with no window in which it is taken again.
     refreshTokenReuseInterval: 0,
+    // Each access token names the membership of its user it was issued in, the device flow's too.
+    customAccessTokenClaims: async ({ user }) => {
+      const membership = user === undefined || user === null || membershipOf === undefined ? undefined : await membershipOf(user.id);
+      return membership === undefined ? {} : { [MEMBERSHIP_CLAIM]: membership };
+    },
     // Registrations are limited per client address and hour, as agent-access says (15.8), not by the plugin's
     // five a minute; its limits on the token, authorization and revocation endpoints stay.
     rateLimit: { register: false },

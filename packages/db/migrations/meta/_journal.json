@@ -638,6 +638,13 @@
       "when": 1791066619515,
       "tag": "0090_keep_whether_covered_repositories_are_private",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1791067602323,
+      "tag": "0091_name_each_membership_for_its_tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@ import {
   integer,
   json,
   jsonb,
+  pgSequence,
   pgTable,
   primaryKey,
   text,
@@ -660,7 +661,13 @@ export const users = pgTable(
 // The members of the install (teams-and-roles: Two roles, admin and member;
 // teams-and-roles: Membership is re-checked on every call). A user is a member
 // while they have a row here, with exactly one of the two roles. Removing a
-// member deletes the row, and their user stays.
+// member deletes the row, and their user stays. Each new row takes the next
+// number of a sequence, which names that membership: an access token names
+// the membership it was issued in, and is good only in it (agent-access:
+// Every token call is checked against the install's current state), with no
+// clock to compare. A membership from before the number was kept has none.
+export const memberTokenGenerations = pgSequence("members_token_generation_seq");
+
 export const members = pgTable(
   "members",
   {
@@ -670,6 +677,8 @@ export const members = pgTable(
     userId: uuid("user_id").notNull(),
     role: text("role").notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The number that names this membership, which the access tokens issued in it carry; null for one from before it was kept. */
+    tokenGeneration: bigint("token_generation", { mode: "number" }).default(sql`nextval('members_token_generation_seq')`),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.userId] }),

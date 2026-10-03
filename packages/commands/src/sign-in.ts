@@ -51,6 +51,7 @@ import { readSecret } from "./integration-secrets.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { memberOf } from "./members.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession } from "./setup-code.ts";
@@ -653,7 +654,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         ...(setup
           ? []
           : [
-              ...authorizationServerPlugins({ url: options.url, orgId: input.orgId, ...(options.agentClients === undefined ? {} : { clients: options.agentClients }) }),
+              ...authorizationServerPlugins({
+                url: options.url,
+                orgId: input.orgId,
+                membershipOf: (userId) => withOrg(options.database, async (context) => (await memberOf(context, userId))?.tokenGeneration ?? undefined, { readOnly: true }),
+                ...(options.agentClients === undefined ? {} : { clients: options.agentClients }),
+              }),
               clientRegistrations({ database: options.database, ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }) }),
               cliDeviceFlow({ database: options.database, resource: mcpResourceOf(options.url), refreshScope: REFRESH_SCOPE }),
               grantChecks({ database: options.database }),

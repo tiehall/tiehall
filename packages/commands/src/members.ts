@@ -17,15 +17,17 @@ export interface Member {
   role: Role;
   /** When this membership began: when the user joined, or joined again after a removal. */
   joinedAt: Date;
+  /** The number that names this membership, which the access tokens issued in it carry; null for one from before it was kept. */
+  tokenGeneration: number | null;
 }
 
 /** The user's membership, read in the call's transaction; undefined when they are not a member. */
 export async function memberOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string): Promise<Member | undefined> {
   const [row] = await tx
-    .select({ role: members.role, joinedAt: members.joinedAt })
+    .select({ role: members.role, joinedAt: members.joinedAt, tokenGeneration: members.tokenGeneration })
     .from(members)
     .where(and(eq(members.orgId, orgId), eq(members.userId, userId)));
-  return row === undefined ? undefined : { userId, role: row.role as Role, joinedAt: row.joinedAt };
+  return row === undefined ? undefined : { userId, role: row.role as Role, joinedAt: row.joinedAt, tokenGeneration: row.tokenGeneration };
 }
 
 /**

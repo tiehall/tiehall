@@ -78,8 +78,10 @@ export interface WithOrgOptions {
   forUser?: string | undefined;
   /** Whether the call is made with a personal access token, which the PAT switch must allow. */
   personalAccessToken?: boolean;
-  /** When the call's access token was issued, which must not be before the user's current membership began. */
+  /** When the call's access token was issued, which, for a token that names no membership, must not be before the user's current membership began. */
   issuedAt?: Date | undefined;
+  /** The membership the call's access token was issued in, by its number, which must be the user's current one. */
+  membership?: number | undefined;
   /** For a write made for the user: reads their membership row FOR KEY SHARE, so a removal waits for the write (lockMembership()). */
   lockMember?: boolean;
 }
@@ -130,6 +132,24 @@ export async function lockMembership({ tx, orgId }: Pick<OrgContext, "tx" | "org
   if (row === undefined) throw new RemovedMemberError();
 }
 
+/**
+ * Whether the call's access token was issued in an earlier membership of its
+ * user than the current one, which a removal ended. A token names the
+ * membership it was issued in, by the number each new membership takes, so
+ * no clock is compared: the app's, which gave the token its issue time, may
+ * run apart from the database's, which gave the membership its start. A token
+ * that names none was issued before the numbers were kept, so it is of an
+ * earlier membership than one that has a number; for a membership that has
+ * none either, its issue time is compared with the membership's start, to
+ * the second, as a token's issue time is recorded.
+ */
+export function revokedByRemoval(member: Member, options: Pick<WithOrgOptions, "issuedAt" | "membership">): boolean {
+  if (options.issuedAt === undefined && options.membership === undefined) return false;
+  if (member.tokenGeneration !== null) return options.membership !== member.tokenGeneration;
+  if (options.membership !== undefined) return true;
+  return options.issuedAt !== undefined && options.issuedAt.getTime() < Math.floor(member.joinedAt.getTime() / 1000) * 1000;
+}
+
 export async function withOrg<T>(
   database: Database,
   handler: (context: OrgContext) => Promise<T>,
@@ -143,8 +163,7 @@ export async function withOrg<T>(
       if (options.lockMember === true && options.readOnly !== true) await lockMembership({ tx, orgId: org.id }, options.forUser);
       const member = await memberOf({ tx, orgId: org.id }, options.forUser);
       if (member === undefined) throw new RemovedMemberError();
-      // Membership starts are compared to the second, as a token's issue time is recorded.
-      if (options.issuedAt !== undefined && options.issuedAt.getTime() < Math.floor(member.joinedAt.getTime() / 1000) * 1000) throw new RevokedByRemovalError();
+      if (revokedByRemoval(member, options)) throw new RevokedByRemovalError();
       if (options.personalAccessToken === true && !(await personalAccessTokensOn({ tx, orgId: org.id }))) throw new PersonalAccessTokensOffError();
       return handler({ tx, orgId: org.id, member });
     },

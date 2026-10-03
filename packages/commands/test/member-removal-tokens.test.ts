@@ -43,6 +43,9 @@ afterAll(async () => {
 
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
+/** The claims of a JWT access token. */
+const claimsOf = (token: string) => JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as Record<string, unknown>;
+
 /** A call to /api/v1 with a token: its status and its problem type, if any. */
 async function call(token: string): Promise<{ status: number; type: string | undefined }> {
   const answer = await harness.api("GET", "/api/v1/requests", bearer(token));
@@ -118,6 +121,13 @@ describe("Dana, once an invite admits them again", () => {
     for (const token of [agent.accessToken, cli.accessToken]) expect(await call(token)).toEqual(REVOKED);
   });
 
+  // A token names the membership it was issued in, by the number each new membership gets, so the check needs no
+  // clock: not the issue time the app's clock gave it, nor the start of the membership the database's clock gave.
+  it("finds them refused still when the database's clock puts the new membership's start before they were issued", async () => {
+    await harness.install.owner.query("UPDATE members SET joined_at = now() - interval '1 hour' WHERE user_id = $1", [dana.userId]);
+    for (const token of [agent.accessToken, cli.accessToken]) expect(await call(token)).toEqual(REVOKED);
+  });
+
   it("finds the old refresh tokens refused with invalid_grant", async () => {
     expect((await harness.refresh(agent.client, agent.refreshToken ?? "")).body["error"]).toBe("invalid_grant");
     expect((await harness.refresh({ clientId: "tiehall-cli", redirectUri: "" }, cli.refreshToken)).body["error"]).toBe("invalid_grant");
@@ -133,5 +143,10 @@ describe("Dana, once an invite admits them again", () => {
     const again = await harness.signInCli(dana);
     const newPat = await harness.personalAccessToken(dana, { name: "Dana's new script" });
     for (const token of [again.accessToken, newPat]) expect(await call(token)).toEqual({ status: 200, type: undefined });
+    // The new access tokens, the CLI's and an agent's, name the membership they were issued in.
+    const { rows } = await harness.install.owner.query("SELECT token_generation::text AS generation FROM members WHERE user_id = $1", [dana.userId]);
+    const agentAgain = await harness.tokens(dana, ["requests:read"]);
+    for (const token of [again.accessToken, agentAgain.accessToken]) expect(String(claimsOf(token)["tiehall_membership"])).toBe(rows[0].generation);
+    expect(await call(agentAgain.accessToken)).toEqual({ status: 200, type: undefined });
   });
 });

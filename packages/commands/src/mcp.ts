@@ -303,6 +303,7 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
           forUser: caller.userId,
           personalAccessToken: caller.kind === "personal_access_token",
           issuedAt: caller.kind === "oauth_token" ? caller.issuedAt : undefined,
+          membership: caller.kind === "oauth_token" ? caller.membership : undefined,
         },
       );
       const render = definition === undefined ? undefined : texts[definition.id];
@@ -443,6 +444,7 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         forUser: caller.userId,
         personalAccessToken: caller.kind === "personal_access_token",
         issuedAt: caller.kind === "oauth_token" ? caller.issuedAt : undefined,
+        membership: caller.kind === "oauth_token" ? caller.membership : undefined,
       });
       return undefined;
     } catch (error) {

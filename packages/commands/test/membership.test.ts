@@ -150,14 +150,24 @@ async function removeMember(userId: string): Promise<void> {
 describe("withOrg() for a call made for a user", () => {
   it("hands the call the user's membership, read at the time of the call", async () => {
     const lee = await addUser(owner, { role: "member" });
-    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "member", joinedAt: expect.any(Date) });
+    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "member", joinedAt: expect.any(Date), tokenGeneration: expect.any(Number) });
     await owner.query("UPDATE members SET role = 'admin' WHERE user_id = $1", [lee]);
-    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "admin", joinedAt: expect.any(Date) });
+    expect(await withOrg(db, async ({ member }) => member, { forUser: lee })).toEqual({ userId: lee, role: "admin", joinedAt: expect.any(Date), tokenGeneration: expect.any(Number) });
   });
 
-  it("refuses a call whose access token was issued before the user's membership began with 401 invalid-token, and takes one issued since", async () => {
+  it("refuses a call whose access token names another membership of the user with 401 invalid-token, and takes one of the current membership", async () => {
     const lee = await addUser(owner, { role: "member" });
-    await owner.query("UPDATE members SET joined_at = '2026-09-30T10:00:00.400Z' WHERE user_id = $1", [lee]);
+    const { rows } = await owner.query<{ generation: string }>("SELECT token_generation::text AS generation FROM members WHERE user_id = $1", [lee]);
+    const membership = Number(rows[0]?.generation);
+    expect(await withOrg(db, async () => "ran", { forUser: lee, membership, issuedAt: new Date("2020-01-01T00:00:00Z") })).toBe("ran");
+    await expect(withOrg(db, async () => "ran", { forUser: lee, membership: membership - 1, issuedAt: new Date("2030-01-01T00:00:00Z") })).rejects.toMatchObject({
+      reason: "invalid-token",
+    });
+  });
+
+  it("refuses a call whose access token was issued before the user's membership began with 401 invalid-token, and takes one issued since, for a membership kept before memberships were numbered", async () => {
+    const lee = await addUser(owner, { role: "member" });
+    await owner.query("UPDATE members SET joined_at = '2026-09-30T10:00:00.400Z', token_generation = NULL WHERE user_id = $1", [lee]);
     await expect(withOrg(db, async () => "ran", { forUser: lee, issuedAt: new Date("2026-09-30T09:59:59Z") })).rejects.toMatchObject({
       reason: "invalid-token",
     });

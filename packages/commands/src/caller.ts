@@ -25,8 +25,10 @@ export interface OAuthTokenCaller {
   clientId: string;
   scopes: readonly Scope[];
   surface: AgentSurface;
-  /** When the access token was issued; a token issued before its user's current membership began is refused as revoked. */
+  /** When the access token was issued; for a token that names no membership, one issued before its user's current membership began is refused as revoked. */
   issuedAt?: Date;
+  /** The membership the access token was issued in, by its number; a token of another membership than its user's current one is refused as revoked. */
+  membership?: number;
   /** For a call that came through the CLI, the version it names in its version header, when it is a semantic version. */
   cliVersion?: string;
 }
