@@ -12,7 +12,7 @@ So: Do not give a browser-driving agent a browser profile that is signed in to T
 
 Receipts, the undo window and keeping the confirm URL away from models reduce this risk; they do not remove it:
 
-- Every confirmation gets a receipt in the web inbox, and by email when the install sends email, so a confirmation you did not make shows up where you look.
+- Every confirmation of a commitment, and every undo, gets a receipt in the web inbox, and by email when the install sends email, so a commitment you did not confirm shows up where you look. The other confirmations give no receipt: each of them is recorded as a security event in the activity log, which admins read, and a new personal access token or an approved agent client is also listed on your page `/tokens`, "Connected agents and tokens", where you can revoke it.
 - A due date, a scope change, a reassignment and a decline can be undone for 15 minutes after they take effect, with the same confirmation step.
 - The URL of a proposal's confirm page reaches people only through the web inbox, email and the URL-mode elicitation an MCP client shows its user. It never appears in what an agent reads: tool results, CLI output, hook output, the markdown and JSON of request URLs, the wait answer, or the answer the REST API gives to a commitment. An agent that follows instructions hidden in another team's text has no confirm URL to open.
 

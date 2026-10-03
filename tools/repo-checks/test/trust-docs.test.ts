@@ -58,6 +58,20 @@ describe("the security and trust docs", () => {
     }
   });
 
+  it("say which confirmations give a receipt, and where the others show: receipts are for commitments and undos only (requests: Receipts)", () => {
+    const text = flat(page, "What the confirmation step does not prove");
+    for (const phrase of [
+      "Every confirmation of a commitment, and every undo, gets a receipt in the web inbox",
+      "The other confirmations give no receipt",
+      "is recorded as a security event in the activity log",
+      "is also listed on your page `/tokens`",
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+    // A receipt is given for a proposal's confirmation and an undo, never for a new token, a role change or an invite.
+    expect(text).not.toContain("Every confirmation gets a receipt");
+  });
+
   it("state that the activity log is not tamper-evident, who can change it, and that a tamper-evident log is planned", () => {
     const text = flat(page, "What the activity log does not prove");
     for (const phrase of [
