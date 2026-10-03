@@ -78,9 +78,19 @@ describe("the packet docs", () => {
     };
     const urls = uriNodes(readPacketSchema());
     expect(urls.length).toBeGreaterThan(0);
-    const schemeless = urls.some((node) => typeof node["pattern"] !== "string" || !/https/i.test(node["pattern"]));
+    /**
+     * Whether a schema's URL fields name no scheme: a validator of it accepts a `javascript:` URL in a link, as the
+     * validator judges the patterns, however they are spelled, rather than as a reading of their text would.
+     */
+    const namesNoScheme = (of: unknown) =>
+      packetValidator(of as Record<string, unknown>)({ schema_version: "1-beta", kind: "request", untrusted: { need: "A need.", links: [{ url: "javascript:alert(1)" }] } });
+    // A schema whose URL fields name the scheme in a pattern of any spelling, such as one that matches either case.
+    const withScheme = JSON.parse(JSON.stringify(readPacketSchema()), (_key, value: unknown) =>
+      typeof value === "object" && value !== null && (value as Record<string, unknown>)["format"] === "uri" ? { ...value, pattern: "^[Hh][Tt][Tt][Pp][Ss]?://" } : value,
+    ) as Record<string, unknown>;
+    expect(namesNoScheme(withScheme)).toBe(false);
     // A validator of the schema accepts what the schema accepts; the page says so while the URL fields name no scheme.
-    expect(packetValidator()({ schema_version: "1-beta", kind: "request", untrusted: { need: "A need.", links: [{ url: "javascript:alert(1)" }] } })).toBe(schemeless);
+    const schemeless = namesNoScheme(readPacketSchema());
     const caveat = "does not refuse a URL of another scheme, such as a `javascript:` or `data:` URL";
     if (schemeless) expect(text).toContain(caveat);
     else expect(text).not.toContain(caveat);
