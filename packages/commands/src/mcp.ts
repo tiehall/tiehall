@@ -86,7 +86,9 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 // hold an event stream open for them, is no tool call and gets the removal as
 // its HTTP status, 403; their initialize and tools/list, which carry no data of
 // the install, are still answered, so that a client reaches the tool call
-// whose tool error tells its agent of the removal.
+// whose tool error tells its agent of the removal. Every other caller's
+// subscriptions/listen gets JSON-RPC's "method not found": the endpoint offers
+// tools only and keeps no event stream in v1.
 //
 // A call the checks admit acts for the token's user, on the surface mcp, and
 // every tool it calls runs its operation through execute() as that caller, so
@@ -405,8 +407,10 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
         return internalError();
       }
     }
-    // A removed member holds no event stream open: their subscriptions/listen gets the removal as HTTP 403.
-    if ("refusal" in calling && messagesOf(body).some(({ method }) => method === "subscriptions/listen")) return problem(calling.refusal);
+    // The endpoint keeps no event stream (subscriptions/listen): a removed member's gets the removal as HTTP 403, and
+    // every other caller's JSON-RPC's "method not found", as any method the endpoint does not have.
+    const listens = messagesOf(body).filter(({ method }) => method === "subscriptions/listen");
+    if (listens.length > 0) return "refusal" in calling ? problem(calling.refusal) : methodNotFound(body);
     // A retry's request state that is not valid for it is refused here, as an HTTP status, before anything runs.
     const refusedState = await stateRefusal(calling, authInfo.extra.binding, body);
     if (refusedState !== undefined) return problem(refusedState);
@@ -499,6 +503,32 @@ function messagesOf(body: Uint8Array): { method?: unknown; params?: unknown }[] 
   }
   const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
   return messages.filter((message): message is { method?: unknown; params?: unknown } => typeof message === "object" && message !== null);
+}
+
+/**
+ * The answer to a body that asks for subscriptions/listen, a method the
+ * endpoint does not have, since it keeps no event stream in v1: JSON-RPC's
+ * "method not found" (-32601) for each request of the body, by its id, as
+ * JSON, with HTTP 200, as JSON-RPC answers a method a server lacks.
+ */
+function methodNotFound(body: Uint8Array): Response {
+  const answers = messagesOf(body)
+    .filter((message): message is { id: string | number; method?: unknown } => {
+      const id = (message as { id?: unknown }).id;
+      return typeof id === "string" || typeof id === "number";
+    })
+    .map(({ id }) => ({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found: this endpoint keeps no event stream." } }));
+  const single = answers.length === 1 && !Array.isArray(parsedJson(body));
+  return new Response(JSON.stringify(single ? answers[0] : answers), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+}
+
+/** A body's JSON, or undefined for one that is not JSON. */
+function parsedJson(body: Uint8Array): unknown {
+  try {
+    return JSON.parse(decoder.decode(body)) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The tool calls of a body's JSON-RPC messages that carry a request state: each one's tool, arguments and state as sent. */

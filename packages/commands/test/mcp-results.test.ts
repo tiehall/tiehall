@@ -108,6 +108,25 @@ describe.each(PROTOCOL_VERSIONS)("a tool result, on protocol version %s", (versi
   });
 });
 
+// agent-surfaces: One MCP endpoint for both protocol versions; design.md, Design rules: Agent surfaces. The endpoint
+// offers tools only and keeps no event stream in v1, so subscriptions/listen, which would hold one open, is a method it
+// does not have: a member's client gets JSON-RPC's "method not found", and no stream.
+describe("subscriptions/listen", () => {
+  it("is a method the endpoint does not have: a member's client gets JSON-RPC method not found, and no event stream", async () => {
+    const log: McpExchange[] = [];
+    const client = await connectMcp(harness, { token: dana.token, version: MODERN, log });
+    try {
+      await expect(client.listen({ toolsListChanged: true })).rejects.toThrow();
+    } finally {
+      await client.close();
+    }
+    const listen = log.find(({ rpcMethod }) => rpcMethod === "subscriptions/listen");
+    expect(listen?.status).toBe(200);
+    expect(listen?.contentType).toContain("application/json");
+    expect(JSON.parse(listen?.body ?? "{}")).toMatchObject({ jsonrpc: "2.0", error: { code: -32601 } });
+  });
+});
+
 describe("a removed member's agent", () => {
   it("gets a tool error that names the removed member's problem, and no data of the install", async () => {
     await harness.install.owner.query("DELETE FROM members WHERE user_id = $1", [lee.userId]);
