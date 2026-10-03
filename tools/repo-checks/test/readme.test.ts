@@ -57,6 +57,16 @@ describe("the README", () => {
     expect(links(part("Quickstart")).map(({ target }) => target.split("#")[0])).toContain("docs/install.md");
   });
 
+  it("offers a trial at http://localhost:3000 only with the install docs' advice on its cookies (task 26.15)", () => {
+    const install = (section(readFileSync(join(root, "docs/install.md"), "utf8"), "Start the install") ?? "").replace(/\s+/g, " ");
+    const advice = "run a trial in a browser profile that visits no other local server";
+    expect(install).toContain(advice);
+    const quickstart = part("Quickstart").replace(/\s+/g, " ");
+    expect(quickstart).toContain("`http://localhost:3000` works without TLS");
+    expect(quickstart).toContain("in a browser profile that visits no other local server");
+    expect(links(part("Quickstart")).map(({ target }) => target)).toContain("docs/install.md#start-the-install");
+  });
+
   it("names the license of each directory as the license map gives it, each with a link to its license file", () => {
     const map = loadLicenseMap();
     const licenses = part("Licenses by directory");
