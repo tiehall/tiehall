@@ -119,15 +119,19 @@ export async function addSystemMessage(writer: Writer, requestId: string, body: 
   return message.id;
 }
 
+/** Tiehall's notice that an agent's blocking question on the request with this key was posted as non-blocking. */
+export function flipNoticeText(key: string): string {
+  return (
+    `Tiehall posted the question above as non-blocking: agents have already moved ${key} from in_progress to needs_info and back ` +
+    `${FLIPS_PER_DAY} times today (UTC). A blocking question posted from the web UI still moves it to needs_info.`
+  );
+}
+
 /** Adds Tiehall's notice that an agent's blocking question was posted as non-blocking, with its own event. */
 async function addFlipNotice(writer: Writer, requestId: string, targetTeamId: string, number: number): Promise<void> {
   const { tx, orgId } = writer;
   const [team] = await tx.select({ key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, targetTeamId)));
-  const key = formatRequestKey(team?.key ?? "", number);
-  const body =
-    `Tiehall posted the question above as non-blocking: agents have already moved ${key} from in_progress to needs_info and back ` +
-    `${FLIPS_PER_DAY} times today (UTC). A blocking question posted from the web UI still moves it to needs_info.`;
-  await addSystemMessage(writer, requestId, body, { actorKind: "system" });
+  await addSystemMessage(writer, requestId, flipNoticeText(formatRequestKey(team?.key ?? "", number)), { actorKind: "system" });
 }
 
 async function questionOf({ tx, orgId }: OrgContext, requestId: string, questionId: string) {

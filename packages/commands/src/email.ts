@@ -64,6 +64,12 @@ export function serverDay(time: Date): ServerText {
   return time.toISOString().slice(0, 10) as ServerText;
 }
 
+/** The UTC hour and minute of a time Tiehall recorded, given as an ISO 8601 time, such as when an update of a digest happened: HH:MM. */
+export function updateTime(time: string): ServerText {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(time) || Number.isNaN(new Date(time).getTime())) throw new TypeError("An update's time is an ISO 8601 time.");
+  return new Date(time).toISOString().slice(11, 16) as ServerText;
+}
+
 /** A whole number of days Tiehall counted, such as "14 days" or "1 day". */
 export function dayCount(days: number): ServerText {
   if (!Number.isInteger(days) || days < 0) throw new TypeError("A day count is a whole number of days.");
@@ -414,6 +420,15 @@ export const RECONFIRMATION_REQUEST: EmailTemplate<{ team: ServerText; api: Serv
     ].join("\n"),
 };
 
+/** What the banner and the email say about GitHub's mode after a given-up delivery: whether GitHub now polls, or stays in the webhook mode an admin chose. */
+export function githubModeSentence(polling: boolean): ServerText {
+  return (
+    polling
+      ? "GitHub now runs in polling mode, so its changes still reach Tiehall, within 2 minutes."
+      : "An admin chose webhook mode, so GitHub stays in it, and changes reach Tiehall only through the reconciliation every 15 minutes until deliveries work again."
+  ) as ServerText;
+}
+
 /**
  * The alert to every admin when Tiehall gave up a GitHub webhook delivery
  * (tracker-mirrors: Broken integrations are surfaced): sent once while its
@@ -453,6 +468,15 @@ export const GITHUB_INSTALLATION_ALERT: EmailTemplate<{ broken: ServerText; page
       "",
     ].join("\n"),
 };
+
+/** What the alert says broke: the accounts whose installation of the App is suspended on GitHub, and those whose installation was deleted. */
+export function brokenInstallationsSentence({ suspended, deleted }: { suspended: readonly string[]; deleted: readonly string[] }): ServerText {
+  if (suspended.length === 0 && deleted.length === 0) throw new TypeError("A broken installation names its account.");
+  return [
+    ...(suspended.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(suspended)} is suspended on GitHub.`]),
+    ...(deleted.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(deleted)} was deleted on GitHub.`]),
+  ].join(" ") as ServerText;
+}
 
 /** GitHub accounts, as GitHub's logins name them, in a sentence, such as "acme" or "acme and acme-labs". */
 export function accountsText(logins: readonly string[]): ServerText {

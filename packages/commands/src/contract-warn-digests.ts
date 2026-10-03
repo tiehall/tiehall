@@ -97,6 +97,11 @@ async function digestEntries({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, wh
   }));
 }
 
+/** What a team's WARN digest of a day says in the standing list of the web inbox, in Tiehall's words, before its changes. */
+export function warnDigestHeading(team: string, day: string): string {
+  return `${team}'s WARN digest of ${day} (UTC): potentially breaking changes reported that day to APIs ${team} declared it consumes, which open no request while each API's WARN switch is off.`;
+}
+
 /** The WARN digests of the user's teams, of the UTC days that have ended by now, newest day first. */
 export async function warnDigestViews(context: Pick<OrgContext, "tx" | "orgId">, userId: string, now: Date): Promise<WarnDigestView[]> {
   const mine = sql`EXISTS (SELECT 1 FROM ${teamMembers} m WHERE m.org_id = ${contractWarnDigestEntries.orgId} AND m.team_id = ${contractWarnDigestEntries.teamId} AND m.user_id = ${userId})`;
@@ -108,7 +113,7 @@ export async function warnDigestViews(context: Pick<OrgContext, "tx" | "orgId">,
       digest = {
         team: { id: entry.teamId, key: entry.teamKey },
         day: entry.day,
-        text: `${entry.teamKey}'s WARN digest of ${entry.day} (UTC): potentially breaking changes reported that day to APIs ${entry.teamKey} declared it consumes, which open no request while each API's WARN switch is off.`,
+        text: warnDigestHeading(entry.teamKey, entry.day),
         changeSets: [],
       };
       digests.push(digest);

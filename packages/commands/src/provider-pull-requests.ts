@@ -68,7 +68,7 @@ interface ProviderChangeSet {
 }
 
 /** What the close says on a request, in Tiehall's words. */
-function closeText(pr: string, request: ChangeSetRequest, withdrawn: boolean): string {
+export function closeText(pr: string, request: ChangeSetRequest, withdrawn: boolean): string {
   const closed = `The provider pull request ${pr} closed without merging.`;
   if (withdrawn) return `${closed} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}. If ${pr} is reopened, the next contract report opens a new request.`;
   if (isTerminalState(request.state)) return `${closed} ${request.key} is ${request.state}, so it stays as it is.`;

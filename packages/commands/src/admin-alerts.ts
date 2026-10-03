@@ -4,17 +4,17 @@ import { and, asc, eq, isNotNull, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { fanOutBanner, waitingFanOuts } from "./contract-fan-out.ts";
 import {
-  accountsText,
   apiNameText,
+  brokenInstallationsSentence,
   CONTRACT_FAN_OUT_ALERT,
   countText,
   GITHUB_INSTALLATION_ALERT,
   GITHUB_WEBHOOK_ALERT,
+  githubModeSentence,
   installLink,
   repositoryText,
   teamKeysText,
   type Mailer,
-  type ServerText,
 } from "./email.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
@@ -76,13 +76,6 @@ async function githubWebhookProblem({ tx, orgId }: Pick<OrgContext, "tx" | "orgI
     .from(githubApp)
     .where(and(eq(githubApp.orgId, orgId), isNotNull(githubApp.webhookGivenUpAt)));
   return row?.raisedAt === null || row?.raisedAt === undefined ? undefined : { raisedAt: row.raisedAt, polling: row.mode === "polling" };
-}
-
-/** What the banner and the email say about the mode after a given-up delivery. */
-function pollingSentence(polling: boolean): string {
-  return polling
-    ? "GitHub now runs in polling mode, so its changes still reach Tiehall, within 2 minutes."
-    : "An admin chose webhook mode, so GitHub stays in it, and changes reach Tiehall only through the reconciliation every 15 minutes until deliveries work again.";
 }
 
 /** A connected installation of the App in use that is suspended or deleted on GitHub, with the teams whose mirrors go through it. */
@@ -191,7 +184,7 @@ export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, memb
       id: "github_webhook",
       text:
         "GitHub's webhook deliveries to this install fail: Tiehall gave one up after asking GitHub 5 times to deliver it again. " +
-        `${pollingSentence(webhook.polling)} ` +
+        `${githubModeSentence(webhook.polling)} ` +
         (admin ? "Check the webhook in the App's settings on GitHub, on its Advanced tab." : "An admin of the install can check the webhook in the App's settings on GitHub."),
       link: admin ? GITHUB_PAGE : ADMINS,
     });
@@ -228,18 +221,14 @@ async function alertEmailOf(context: Pick<OrgContext, "tx" | "orgId">, data: Adm
     if (broken.length === 0) return undefined;
     const suspended = broken.filter(({ deleted }) => !deleted).map(({ account }) => account);
     const deleted = broken.filter(({ deleted: gone }) => gone).map(({ account }) => account);
-    const sentences = [
-      ...(suspended.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(suspended)} is suspended on GitHub.`]),
-      ...(deleted.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(deleted)} was deleted on GitHub.`]),
-    ];
     return (mailer, to, installUrl) =>
-      mailer.send(to, GITHUB_INSTALLATION_ALERT, { broken: sentences.join(" ") as ServerText, page: installLink(installUrl, "/admin/github") });
+      mailer.send(to, GITHUB_INSTALLATION_ALERT, { broken: brokenInstallationsSentence({ suspended, deleted }), page: installLink(installUrl, "/admin/github") });
   }
   if (data.alert === "github_webhook") {
     const problem = await githubWebhookProblem(context);
     if (problem === undefined || problem.raisedAt.getTime() !== raisedAt.getTime()) return undefined;
     return (mailer, to, installUrl) =>
-      mailer.send(to, GITHUB_WEBHOOK_ALERT, { page: installLink(installUrl, "/admin/github"), polling: pollingSentence(problem.polling) as ServerText });
+      mailer.send(to, GITHUB_WEBHOOK_ALERT, { page: installLink(installUrl, "/admin/github"), polling: githubModeSentence(problem.polling) });
   }
   if (data.changeSetId === undefined) return undefined;
   const [fanOut] = await waitingFanOuts(context, data.changeSetId);

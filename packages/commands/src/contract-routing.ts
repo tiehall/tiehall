@@ -284,7 +284,7 @@ type UpdateOutcome =
  * the number of breaking changes changed from the request's packet to the
  * report, and what the update did to the request.
  */
-function updateText(section: ContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
+export function updateText(section: ContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
   const after = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const head = `Diff updated: ${request.before} → ${after} breaking. The contract Action reported ${pr} again, at commit ${report.headSha.slice(0, 12)}`;
@@ -317,7 +317,7 @@ function contractSectionOf(report: StoredReport, api: { name: string; repository
 }
 
 /** The packet a contract-change request is opened with: Tiehall's words for the need, and the report's contract section. */
-function packetOf(section: ContractSection, team: string): Packet {
+export function packetOf(section: ContractSection, team: string): Packet {
   const breaking = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const need =
@@ -328,7 +328,7 @@ function packetOf(section: ContractSection, team: string): Packet {
 }
 
 /** The title of a contract-change request, in Tiehall's words, within the 200 characters of a title. */
-function titleOf(section: ContractSection): string {
+export function titleOf(section: ContractSection): string {
   return `Breaking changes to ${section.api} in ${section.provider_pr.repository}#${section.provider_pr.number}`.slice(0, 200);
 }
 

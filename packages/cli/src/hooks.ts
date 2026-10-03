@@ -278,8 +278,13 @@ async function watchParent(environment: CliEnvironment, stop: AbortController): 
 }
 
 /** The reminder that wakes Claude: Tiehall's words, then a line for each update. */
-function reminderOf(notices: readonly { notice: Notice }[]): string {
+export function reminderOf(notices: readonly { notice: Notice }[]): string {
   return `${[REMINDER_HEADING, ...notices.map(({ notice }) => hookLine(notice))].join("\n")}\n`;
+}
+
+/** The SessionStart digest: Tiehall's words, a line for each update, and, when more wait past these, Tiehall's words for that. */
+export function sessionDigestOf(news: { notices: readonly { notice: Notice }[]; more: boolean }): string {
+  return `${[DIGEST_HEADING, ...news.notices.map(({ notice }) => hookLine(notice)), ...(news.more ? [DIGEST_MORE] : [])].join("\n")}\n`;
 }
 
 /** `tiehall hook wait`: waits for news for up to 30 minutes; 2 with the reminder when it comes, 0 without a word otherwise. */
@@ -380,8 +385,7 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
     const news: DigestNews | undefined =
       onPage !== undefined ? { notices: onPage, more: page.more === true } : page.more === true ? await newsPastTheMark(environment, session, stop.signal) : undefined;
     if (news === undefined) return 0;
-    const lines = [DIGEST_HEADING, ...news.notices.map(({ notice }) => hookLine(notice)), ...(news.more ? [DIGEST_MORE] : [])];
-    environment.stdout(`${lines.join("\n")}\n`);
+    environment.stdout(sessionDigestOf(news));
     return 0;
   } catch {
     // A session starts whatever happens here, and nothing reaches Claude but the digest.

@@ -1,4 +1,4 @@
-import { hookLine } from "@tiehall/packet/notices";
+import { hookLine, type Notice } from "@tiehall/packet/notices";
 import { announcedThrough } from "./announced.ts";
 import { CliError, sleepOf, type CliEnvironment } from "./environment.ts";
 import { announceFresh, noticesOf, retryDelay, waitOnce } from "./hooks.ts";
@@ -28,6 +28,11 @@ import { sessionFor } from "./session.ts";
 /** The line `tiehall watch` prints for an update. */
 const LINE_PREFIX = "Tiehall: ";
 
+/** The line `tiehall watch` prints for an update: Tiehall's prefix, then the update's notice line. */
+export function watchLine(notice: Notice): string {
+  return `${LINE_PREFIX}${hookLine(notice)}\n`;
+}
+
 /** `tiehall watch`: prints a line per new update until it is stopped; 0 then, 1 when the install refuses it. */
 export async function watch(environment: CliEnvironment, install: string | undefined): Promise<number> {
   const configDir = configDirOf(environment.env);
@@ -50,7 +55,7 @@ export async function watch(environment: CliEnvironment, install: string | undef
           // A mark the CLI cannot keep does not keep an update from being reported.
           fresh = notices;
         }
-        for (const { notice } of fresh ?? []) environment.stdout(`${LINE_PREFIX}${hookLine(notice)}\n`);
+        for (const { notice } of fresh ?? []) environment.stdout(watchLine(notice));
         cursor = Math.max(waited.cursor, announcedThrough(configDir, login.url));
         break;
       }

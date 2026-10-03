@@ -10,8 +10,8 @@ import {
   serverDay,
   teamKey,
   updateSaid,
+  updateTime,
   type DigestRequest,
-  type ServerText,
 } from "./email.ts";
 import { EMAIL_SETTINGS_PATH } from "./email-settings-page.ts";
 import { INBOX_PATH } from "./inbox-page.ts";
@@ -102,7 +102,7 @@ async function digestsOf(context: OrgContext, { day, from, until, installUrl }: 
         };
         byRequest.set(update.request.id, request);
       }
-      request.updates.push({ at: update.occurredAt.slice(11, 16) as ServerText, type: eventTypeText(update.type), said: updateSaid(update) });
+      request.updates.push({ at: updateTime(update.occurredAt), type: eventTypeText(update.type), said: updateSaid(update) });
     }
     const beyond = kept.length - listed.length + (more ? 1 : 0);
     digests.push({ userId, email, byRequest: [...byRequest.values()], more: beyond, updates: kept.length });

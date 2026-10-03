@@ -75,6 +75,16 @@ const AS_MADE: IssueState = { open: true, closeReason: null, assignees: [] };
 /** How a notice names each tracker. */
 const TRACKER_NAMES: Readonly<Record<string, string>> = { github: "GitHub", jira: "Jira" };
 
+/**
+ * The notice on a request that a person closed its mirror issue, in
+ * Tiehall's words: the tracker, the key the issue mirrors, and that the
+ * request, by its key now, stays in its state.
+ */
+export function mirrorClosedText({ tracker, mirroredKey, key, state }: { tracker: string; mirroredKey: string; key: string; state: string }): string {
+  const name = TRACKER_NAMES[tracker] ?? tracker;
+  return `The ${name} mirror issue of ${mirroredKey} was closed. A close in ${name} does not change the request: ${key} is still ${state}.`;
+}
+
 function sameKnown(a: IssueState, b: IssueState): boolean {
   return (
     a.open === b.open &&
@@ -192,11 +202,10 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
           const key = formatRequestKey(keys.get(request.targetTeamId) ?? "", request.number);
           // The key the issue mirrors, which a reassignment since may have left behind.
           const mirroredKey = row.number === null ? key : formatRequestKey(keys.get(row.teamId) ?? "", row.number);
-          const tracker = TRACKER_NAMES[row.tracker] ?? row.tracker;
           await addSystemMessage(
             writer,
             request.id,
-            `The ${tracker} mirror issue of ${mirroredKey} was closed. A close in ${tracker} does not change the request: ${key} is still ${request.state}.`,
+            mirrorClosedText({ tracker: row.tracker, mirroredKey, key, state: request.state }),
             { actorKind: "system", surface: row.tracker === "jira" ? "jira" : "github" },
           );
         }

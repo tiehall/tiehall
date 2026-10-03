@@ -11,6 +11,11 @@ import { resolveRequestKey } from "./request-keys.ts";
 import { requestView, type RequestRow } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 
+/** The notice on a request that a merge closed, in Tiehall's words: the pull request, as GitHub names it, and the request's key. */
+export function mergedText({ pullRequest, key }: { pullRequest: string; key: string }): string {
+  return `${pullRequest} merged after ${key} was claimed, so ${key} moved to done.`;
+}
+
 // Close on merge (requests: Linked PRs and done on merge; requests: System
 // actions need no proposal or confirmation; contract-changes: Consumers close
 // requests with their own PR; agent-access: Six kinds of caller; design.md,
@@ -210,7 +215,7 @@ export const CLOSE_ON_MERGE_HANDLERS: Handlers = {
         await saveLifecycle(writer, row.id, next);
         await writer.record(requestStateChanged, { requestId: row.id, state: next.state, previousState: lifecycle.state });
         await cancelProposals(writer, row.id, { kind: "terminal_state" });
-        await addSystemMessage(writer, row.id, `${repository}#${number} merged after ${key} was claimed, so ${key} moved to done.`, { actorKind: "system", surface: "github" });
+        await addSystemMessage(writer, row.id, mergedText({ pullRequest: `${repository}#${number}`, key }), { actorKind: "system", surface: "github" });
         done.push(key);
       }
       return { done };
