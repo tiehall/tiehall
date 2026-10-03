@@ -77,9 +77,13 @@ export function readSources(root: string): Sources {
   return { requirements, decisions };
 }
 
-/** The repository's tracked files outside openspec/ and .claude/, which cite the specs rather than hold them. */
-export function trackedFiles(root: string): string[] {
-  return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
+/**
+ * The repository's files outside openspec/ and .claude/, which cite the specs
+ * rather than hold them: the tracked files and the new ones git does not
+ * ignore, so a file a commit is about to add is checked before the commit.
+ */
+export function repositoryFiles(root: string): string[] {
+  return execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
     .split("\0")
     .filter(
       (file) =>

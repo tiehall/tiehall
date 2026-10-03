@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { trackedFiles } from "../src/source-citations.ts";
+import { repositoryFiles } from "../src/source-citations.ts";
 
 // No email about API changes (public-api: The changelog page and the release
 // notes; D28 #28). Tiehall emails no token holder about API changes: the
@@ -63,7 +63,7 @@ describe("email about API changes", { timeout: 60_000 }, () => {
   });
 
   it("has no email template about the API, its changelog, deprecations or sunsets", () => {
-    const templates = trackedFiles(root)
+    const templates = repositoryFiles(root)
       .filter((file) => /^(apps|packages)\/.*\.tsx?$/.test(file) && !file.includes("/test/"))
       .flatMap((file) => [...readFileSync(`${root}${file}`, "utf8").matchAll(/EmailTemplate<[^>]*>\s*=\s*\{\s*id:\s*"([^"]+)"/g)].map(([, id]) => `${file}: ${id}`));
     expect(templates).toContain("packages/commands/src/email.ts: email.test_message");

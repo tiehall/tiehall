@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { citationProblems, readSources, trackedFiles } from "../src/source-citations.ts";
+import { citationProblems, readSources, repositoryFiles } from "../src/source-citations.ts";
 
 // Source citations (task 3.4; design.md, Decisions this change rests on: D38).
 // Every citation of a requirement or a design decision in the repository's
@@ -62,9 +64,35 @@ describe("the citation check", () => {
   });
 });
 
+describe("the files the check reads", () => {
+  // A file a commit is about to add is checked before the commit, so a wrong
+  // citation in it fails locally rather than on main after the push.
+  it("are the committed files and the new ones git does not ignore, openspec/ left out", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "tiehall-citations-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: scratch });
+      git("init", "--quiet", "--initial-branch=main");
+      writeFileSync(join(scratch, ".gitignore"), "ignored/\n");
+      writeFileSync(join(scratch, "committed.ts"), "// committed\n");
+      git("add", ".");
+      git("commit", "--quiet", "-m", "Start");
+      writeFileSync(join(scratch, "staged.ts"), "// staged\n");
+      git("add", "staged.ts");
+      writeFileSync(join(scratch, "new.ts"), "// new, not yet added\n");
+      mkdirSync(join(scratch, "ignored"));
+      writeFileSync(join(scratch, "ignored", "notes.md"), "ignored\n");
+      mkdirSync(join(scratch, "openspec"));
+      writeFileSync(join(scratch, "openspec", "draft.md"), "a change being written\n");
+      expect(repositoryFiles(scratch).sort()).toEqual([".gitignore", "committed.ts", "new.ts", "staged.ts"]);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the repository's citations", () => {
   it("name only current requirements and the decisions design.md lists", () => {
-    const problems = trackedFiles(root).flatMap((file) => {
+    const problems = repositoryFiles(root).flatMap((file) => {
       let text: string;
       try {
         text = readFileSync(join(root, file), "utf8");
