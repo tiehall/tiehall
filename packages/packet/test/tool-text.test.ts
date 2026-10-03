@@ -190,6 +190,31 @@ describe("a page of a request", () => {
 
 // agent-surfaces: Negotiated request URLs. The markdown of a request's URL renders the request with its thread, the
 // same data as the JSON of the /api/v1 read, and says how to read the packet too.
+// Each packet field is fenced with the origin of the team that last changed it, which its part names; a part from a
+// server that names none takes the packet's team.
+describe("a page's packet fields", () => {
+  it("are each fenced with the origin of the team that last changed that field", () => {
+    const agentView = createAgentView();
+    const markdown = agentView.markdown(
+      requestPageText(
+        page({
+          section: "packet",
+          parts: [
+            { kind: "packet_field", field: "need", part: 1, parts: 1, team: QA, untrusted: { text: "Add a dark mode." } },
+            { kind: "packet_field", field: "acceptance_criteria", part: 1, parts: 1, team: FE, untrusted: { text: '["It follows the system setting."]' } },
+            { kind: "packet_field", field: "links", part: 1, parts: 1, untrusted: { text: '["https://example.com"]' } },
+          ],
+        }),
+        { teams: ["FE"] },
+      ),
+    );
+    expect(markdown).toContain(`Its need:\n\n${fenced(agentView.nonce, "other team", "Add a dark mode.")}`);
+    expect(markdown).toContain(`Its acceptance_criteria:\n\n${fenced(agentView.nonce, "same team", '["It follows the system setting."]')}`);
+    // No team on the part: the packet's, QA's.
+    expect(markdown).toContain(`Its links:\n\n${fenced(agentView.nonce, "other team", '["https://example.com"]')}`);
+  });
+});
+
 describe("a request with its thread", () => {
   function withThread(messages: RequestWithThreadJson["messages"], pendingProposals: RequestWithThreadJson["pendingProposals"] = []): RequestWithThreadJson {
     return { ...request, messages, pendingProposals };

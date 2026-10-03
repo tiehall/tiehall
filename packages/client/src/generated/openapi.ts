@@ -5018,6 +5018,12 @@ export interface operations {
                             part: number;
                             /** @description How many parts the field or message is split into; 1 when it is whole. */
                             parts: number;
+                            /** @description The team whose member wrote this field's text: the team that added the latest revision that changed this field; null for text Tiehall added. */
+                            team: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            } | null;
                             untrusted: {
                                 /** @description The field's text, or, for a field that is not text, its JSON: all of it, or this part. */
                                 text: string;

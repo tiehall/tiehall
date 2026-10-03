@@ -12441,6 +12441,32 @@
                                 "minimum": 1,
                                 "type": "integer"
                               },
+                              "team": {
+                                "anyOf": [
+                                  {
+                                    "properties": {
+                                      "id": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "key"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "The team whose member wrote this field's text: the team that added the latest revision that changed this field; null for text Tiehall added."
+                              },
                               "untrusted": {
                                 "properties": {
                                   "text": {
@@ -12459,6 +12485,7 @@
                               "field",
                               "part",
                               "parts",
+                              "team",
                               "untrusted"
                             ],
                             "type": "object"

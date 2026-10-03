@@ -48,6 +48,10 @@ const pagePart = z.discriminatedUnion("kind", [
     kind: z.literal("packet_field"),
     field: z.string().regex(PACKET_FIELD_NAME).meta({ description: "The packet field, such as need or acceptance_criteria." }),
     ...partPlace,
+    team: teamRef.nullable().meta({
+      description:
+        "The team whose member wrote this field's text: the team that added the latest revision that changed this field; null for text Tiehall added.",
+    }),
     untrusted: z.object({
       text: z.string().meta({ description: "The field's text, or, for a field that is not text, its JSON: all of it, or this part." }),
     }),

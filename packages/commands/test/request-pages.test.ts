@@ -32,7 +32,7 @@ const request = {
 const packet = { revision: 1, kind: "request" as const, dueDate: null, team: QA };
 
 function field(name: string, text: string): PagePartView {
-  return { kind: "packet_field", field: name, part: 1, parts: 1, untrusted: { text } };
+  return { kind: "packet_field", field: name, part: 1, parts: 1, team: QA, untrusted: { text } };
 }
 
 function message(id: number, text: string): PagePartView {

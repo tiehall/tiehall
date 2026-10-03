@@ -3,7 +3,7 @@ import { REQUEST_KEY, Refusal } from "@tiehall/core";
 import { packetRevisions, teams } from "@tiehall/db";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestPageText, type Reader } from "@tiehall/packet/tool-text";
-import { and, desc, eq, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -81,13 +81,19 @@ export function keyOfRequestName(name: string, installUrl: string | undefined): 
   return key;
 }
 
+/** A team as a page names it, or none for text Tiehall added. */
+type Writer = { id: string; key: string } | null;
+
 /**
  * The request's current packet revision, with the team whose member wrote its
- * text (agent-safety: Every string shown to agents has an origin). The text is
- * the packet's `untrusted` object, and its writer is the team that added the
- * latest revision that changed it: a revision that kept it as it was, such as
- * the one a due date the target team proposed adds once it is confirmed,
- * wrote none of it, so the requester side's text keeps its origin.
+ * text, and, for each field, the team whose member wrote that field's text
+ * (agent-safety: Every string shown to agents has an origin). The text is the
+ * packet's `untrusted` object, and the writer of the packet's text, or of a
+ * field's, is the team that added the latest revision that changed it: a
+ * revision that kept it as it was, such as the one a due date the target team
+ * proposed adds once it is confirmed, wrote none of it, and a revision by
+ * another team that changes one field wrote that field alone, so each other
+ * field keeps its origin.
  */
 async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
   const [row] = await tx
@@ -97,6 +103,16 @@ async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
     .orderBy(desc(packetRevisions.number))
     .limit(1);
   if (row === undefined) throw new Error("A request has no packet revision.");
+  const team = await writerOf({ tx, orgId }, requestId, sql`(${packetRevisions.packet} -> 'untrusted')::jsonb`, sql`(previous.packet -> 'untrusted')::jsonb`);
+  const fields = new Map<string, Writer>();
+  for (const field of PACKET_FIELDS) {
+    fields.set(field, await writerOf({ tx, orgId }, requestId, sql`(${packetRevisions.packet} -> 'untrusted' -> ${field})::jsonb`, sql`(previous.packet -> 'untrusted' -> ${field})::jsonb`));
+  }
+  return { number: row.number, packet: row.packet as Packet, team, fields };
+}
+
+/** The team that added the latest revision whose value of `current` differs from the revision before it, the first revision's included. */
+async function writerOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, requestId: string, current: SQL, before: SQL): Promise<Writer> {
   const previous = alias(packetRevisions, "previous");
   const [writer] = await tx
     .select({ teamId: teams.id, teamKey: teams.key })
@@ -115,7 +131,7 @@ async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
                 eq(previous.orgId, packetRevisions.orgId),
                 eq(previous.requestId, packetRevisions.requestId),
                 eq(previous.number, sql`${packetRevisions.number} - 1`),
-                sql`(${previous.packet} -> 'untrusted')::jsonb = (${packetRevisions.packet} -> 'untrusted')::jsonb`,
+                sql`${before} IS NOT DISTINCT FROM ${current}`,
               ),
             ),
         ),
@@ -123,8 +139,7 @@ async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
     )
     .orderBy(desc(packetRevisions.number))
     .limit(1);
-  const team = writer === undefined || writer.teamId === null || writer.teamKey === null ? null : { id: writer.teamId, key: writer.teamKey };
-  return { number: row.number, packet: row.packet as Packet, team };
+  return writer === undefined || writer.teamId === null || writer.teamKey === null ? null : { id: writer.teamId, key: writer.teamKey };
 }
 
 /** The text of a packet field: a text as it is, anything else as its JSON. */
@@ -132,14 +147,15 @@ function fieldText(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
-/** The parts of the packet: one for each field the revision carries. */
-function packetParts(packet: Packet): PagePartView[] {
+/** The parts of the packet: one for each field the revision carries, with the team that wrote its text. */
+function packetParts(packet: Packet, writers: ReadonlyMap<string, Writer>): PagePartView[] {
   const fields = packet.untrusted as Record<string, unknown>;
   return PACKET_FIELDS.filter((field) => fields[field] !== undefined).map((field) => ({
     kind: "packet_field" as const,
     field,
     part: 1,
     parts: 1,
+    team: writers.get(field) ?? null,
     untrusted: { text: fieldText(fields[field]) },
   }));
 }
@@ -245,7 +261,7 @@ export const REQUEST_PAGE_HANDLERS: Handlers = {
     const { requestId } = await resolveRequestKey(context, keyOfRequestName(name, context.url));
     const view = await requestView(context, requestId);
     const revision = await currentRevision(context, requestId);
-    const parts = [...packetParts(revision.packet), ...threadParts(await threadOf(context, requestId))];
+    const parts = [...packetParts(revision.packet, revision.fields), ...threadParts(await threadOf(context, requestId))];
     // The reader's teams, which decide each fence's origin in the markdown the page is measured by.
     const reader: Reader = { teams: (await teamsOfMember(context, actingUserOf(context))).map(({ key }) => key) };
     const packet = { revision: revision.number, kind: revision.packet.kind, dueDate: revision.packet.due_date ?? null, team: revision.team };

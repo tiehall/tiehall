@@ -133,3 +133,39 @@ describe("a request's pending proposals", () => {
     for (const proposal of pending) expect(proposal).toEqual((await callApi(install, tokenOf(carol), "GET", `/api/v1/proposals/${proposal.id}`)).body);
   });
 });
+
+// agent-safety: Every string shown to agents has an origin. A page of a request names, for each packet field, the
+// team whose member wrote its text: the team of the latest revision that changed that field. A revision by another
+// team that changes one field relabels that field alone, and one that changes no text, such as a due date Tiehall
+// records, relabels none.
+describe("the packet's fields on a page of the request", () => {
+  it("each name the team of the latest revision that changed that field", async () => {
+    const opened = await openRequest<{ id: string; key: string }>(install, tokenOf(alice), {
+      targetTeam: "FE",
+      title: "Add a high-contrast mode",
+      packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "A high-contrast mode.", acceptance_criteria: ["It passes WCAG AA."] } },
+    });
+    // Revision 2: Bob of FE changes the acceptance criteria alone. Revision 3: Tiehall moves the due date, no text.
+    await install.owner.query(
+      `INSERT INTO packet_revisions (org_id, request_id, number, packet, actor_kind, actor_user_id, surface, team_id)
+         SELECT org_id, request_id, 2, jsonb_set(packet::jsonb, '{untrusted,acceptance_criteria}', '["It passes WCAG AAA."]')::json, 'web_session', $2, 'web', $3
+           FROM packet_revisions WHERE request_id = $1 AND number = 1`,
+      [opened.id, bob, team["FE"]],
+    );
+    await install.owner.query(
+      `INSERT INTO packet_revisions (org_id, request_id, number, packet, actor_kind, surface, team_id)
+         SELECT org_id, request_id, 3, jsonb_set(packet::jsonb, '{due_date}', '"2026-12-01"')::json, 'system', NULL, NULL
+           FROM packet_revisions WHERE request_id = $1 AND number = 2`,
+      [opened.id],
+    );
+    const page = (await install.execute("requests.read", tokenOf(carol), { request: opened.key, section: "packet" })) as {
+      packet: { revision: number; team: { key: string } | null };
+      parts: { field: string; team: { key: string } | null }[];
+    };
+    expect(page.packet).toMatchObject({ revision: 3, team: { key: "FE" } });
+    expect(page.parts.map(({ field, team: writer }) => [field, writer?.key ?? null])).toEqual([
+      ["need", "BE"],
+      ["acceptance_criteria", "FE"],
+    ]);
+  });
+});

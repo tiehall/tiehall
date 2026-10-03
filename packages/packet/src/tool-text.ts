@@ -78,7 +78,7 @@ export interface MessageFactsJson {
 
 /** One part of a page: the text of one packet field, or of one message, whole or in parts. */
 export type PagePartJson =
-  | { kind: "packet_field"; field: string; part: number; parts: number; untrusted: { text: string } }
+  | { kind: "packet_field"; field: string; part: number; parts: number; team?: TeamJson | null; untrusted: { text: string } }
   | { kind: "message"; message: MessageFactsJson; part: number; parts: number; untrusted: { text: string; client: string | null } };
 
 /** A page of a request, as get_request returns it. */
@@ -230,7 +230,8 @@ export function requestPageText(page: RequestPageJson, reader: Reader, surface: 
       if (heading !== "packet") texts.push({ origin: "tiehall", text: "The packet:" });
       heading = "packet";
       texts.push({ origin: "tiehall", text: `Its ${checked(part.field, WORD, "packet field")}${split}:` });
-      texts.push({ origin: packetOrigin, text: part.untrusted.text });
+      // The field's own writer, which a page names for each field; a page that names none, the packet's.
+      texts.push({ origin: part.team === undefined ? packetOrigin : originOf(part.team, reader), text: part.untrusted.text });
     } else {
       if (heading !== "thread") texts.push({ origin: "tiehall", text: "The thread:" });
       heading = "thread";
