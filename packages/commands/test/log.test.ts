@@ -263,6 +263,15 @@ describe("redaction", () => {
     expect(lines.join("\n")).not.toContain("canary");
   });
 
+  it("scrubs the names of fields, of an object's and of a Map's, as it scrubs values", () => {
+    const { lines, entries, logger } = capture();
+    // Built here, so the secret scan does not take the source for a real token.
+    const token = `ghs_${"canaryAbC123".repeat(4)}`;
+    logger.info("tokens cached", { byValue: { [token]: 1 }, cache: new Map([[token, 1]]), ["https://x.example/a?code=canary"]: 2 });
+    expect(entries()[0]).toMatchObject({ byValue: { "[redacted]": 1 }, cache: { "[redacted]": 1 }, "https://x.example/a": 2 });
+    expect(lines.join("\n")).not.toContain("canary");
+  });
+
   // A stack starts with the error's name and message, whose lines can read like the frames that follow them.
   it("never logs a line of an error's message, even one that reads like a stack frame", () => {
     const { lines, entries, logger } = capture();

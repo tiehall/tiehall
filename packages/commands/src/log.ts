@@ -7,7 +7,7 @@
 //   secrets, passwords, nonces, session ids, the Authorization, Cookie and
 //   Set-Cookie headers) or a body (text, body, content, packet, title, ...);
 // - the query strings and fragments of URLs and paths, and the user info of
-//   URLs, in the message and in every field;
+//   URLs, in the message and in every field, its name as well as its value;
 // - anything shaped like a token Tiehall or an integration issues (personal
 //   access tokens, bearer and basic credentials, JWTs, GitHub and Atlassian
 //   tokens), wherever it appears;
@@ -199,7 +199,8 @@ function sanitize(value: unknown, depth: number, seen: WeakSet<object>): unknown
         continue;
       }
       const clean = isSensitiveKey(key) ? REDACTED : sanitize(item, depth + 1, seen);
-      if (clean !== undefined) result[key] = clean;
+      // A name can hold what a value can, such as a token a cache is keyed by, or a URL.
+      if (clean !== undefined) result[scrub(key)] = clean;
     }
     return result;
   } finally {
