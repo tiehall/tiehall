@@ -107,6 +107,8 @@ describe("a request, as its summary", () => {
   it("says when the request waits for a person, and marks a bot user", () => {
     const flagged = view(requestText({ ...request, needsHuman: true, claimant: { ...dana, bot: true } }, { teams: [] }));
     expect(flagged).toContain("FE-142 waits for a person (needs_human)");
+    // agent-safety: Runaway agent loops flag the request needs_human: a web message or a web confirmation clears it.
+    expect(flagged).toContain("until a member posts a message on it or confirms a proposal on it in the web UI");
     expect(flagged).toContain("Claimed by dana-fe (a bot user).");
     expect(view(requestText({ ...request, state: "open", claimant: null }, { teams: [] }))).toContain("Nobody has claimed it.");
   });

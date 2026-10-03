@@ -144,7 +144,7 @@ export function requestText(request: RequestJson, reader: Reader): AgentText[] {
     request.claimant === null ? "Nobody has claimed it." : `Claimed by ${person(request.claimant)}.`,
   ];
   if (request.needsHuman === true) {
-    lines.push(`${key} waits for a person (needs_human): agents' writes on it are refused until a member posts a message on it in the web UI.`);
+    lines.push(`${key} waits for a person (needs_human): agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI.`);
   }
   const change = request.providerChange;
   if (change !== undefined && change !== null) lines.push(providerChangeLine(change));

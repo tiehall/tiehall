@@ -13,8 +13,9 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, sendApi, sessionOf,
 // agent writes on each request since the last human action on it, meaning
 // writes made with an OAuth token or a personal access token. The write that
 // makes 7 within 10 minutes, or the thirtieth in total, is accepted and flags
-// the request; until a person posts a message on it in the web UI, every agent
-// write to it gets 409 needs-human and is not counted. Writes by the system, an
+// the request; until a person posts a message on it in the web UI, or confirms
+// a proposal on it there, every agent write to it gets 409 needs-human and is
+// not counted. Writes by the system, an
 // integration or a web session are neither counted nor refused, nor are
 // acknowledgements and reads. The count is decided in the writing transaction,
 // so two writes at once cannot both pass the limit. The flag is checked last,
@@ -262,6 +263,9 @@ describe("a flagged request", () => {
     for (const [operation, send] of Object.entries(writes)) {
       const answer = await send();
       expect({ operation, status: answer.status, type: answer.body.type }).toEqual({ operation, status: 409, type: NEEDS_HUMAN });
+      // The refusal says both ways a person clears the flag: a message posted in the web UI, or a confirmation there.
+      expect(answer.body.detail, operation).toMatch(/message posted on it in the web UI/);
+      expect(answer.body.detail, operation).toMatch(/proposal on it confirmed in the web UI/);
     }
     const { rows } = await install.owner.query<{ state: string; revisions: string; versions: string }>(
       `SELECT r.state, (SELECT count(*) FROM packet_revisions WHERE request_id = r.id) AS revisions,

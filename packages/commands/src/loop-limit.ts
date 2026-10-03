@@ -47,7 +47,7 @@ export async function countAgentWrite(writer: Writer, requestId: string): Promis
   if (state.needsHuman) {
     throw new Refusal(
       "needs-human",
-      "This request waits for a person: agents made too many writes on it since a person last acted. A message posted on it in the web UI lets agents write on it again.",
+      "This request waits for a person: agents made too many writes on it since a person last acted. A message posted on it in the web UI, or a proposal on it confirmed in the web UI, lets agents write on it again.",
     );
   }
   const { writes, flags } = recordAgentWrite(state.agentWriteTimes, writer.now());

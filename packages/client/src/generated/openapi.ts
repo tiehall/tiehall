@@ -1223,7 +1223,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -1705,7 +1705,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -2174,7 +2174,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -2329,7 +2329,7 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         key: string;
-                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
@@ -2533,7 +2533,7 @@ export interface operations {
                             };
                             version: number;
                         }[];
-                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                         needsHuman: boolean;
                         /** @description The request's pending proposals, oldest first, each as proposals.get returns it, which people confirm or reject in the web UI. */
                         pendingProposals: {
@@ -2771,7 +2771,7 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         key: string;
-                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
@@ -3032,7 +3032,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -3397,7 +3397,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -4130,7 +4130,7 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         key: string;
-                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
@@ -4429,7 +4429,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -4723,7 +4723,7 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         key: string;
-                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                        /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
@@ -5082,7 +5082,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
@@ -5362,7 +5362,7 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             key: string;
-                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI. */
+                            /** @description Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there. */
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {

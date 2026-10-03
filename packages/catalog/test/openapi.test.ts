@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CATALOG, defineCatalog, defineCommand, packet, SCOPES } from "../src/index.ts";
+import { CATALOG, defineCatalog, defineCommand, OPENAPI_JSON, packet, SCOPES } from "../src/index.ts";
 import { API_VERSION, openApiDocument, serializeDocument } from "../src/openapi.ts";
 
 // The OpenAPI 3.1 document, generated from the catalog (public-api: What the
@@ -540,5 +540,31 @@ describe("the document an install serves", () => {
       expect(types.filter((type) => type.includes("event-stream"))).toEqual([]);
       expect(new Set(types)).toEqual(new Set(["application/json", "application/problem+json"]));
     }
+  });
+});
+
+// agent-safety: Runaway agent loops flag the request needs_human. A person clears the flag with a message posted in the
+// web UI, or by confirming a proposal on the request there; every text that tells an agent or a client what clears it
+// says both: here the requests' field in the API and the tools; the 409's detail, the
+// request's markdown and the skill have tests of their own (loop-limit.test.ts, packages/packet, packages/claude-plugin).
+describe("the API's field that says a request waits for a person", () => {
+  it("names both a message posted in the web UI and a proposal confirmed there", () => {
+    // The descriptions of the needsHuman field wherever the document's schemas have it: one text, from the catalog.
+    const descriptions = new Set<string>();
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (typeof node === "object" && node !== null) {
+        for (const [key, value] of Object.entries(node)) {
+          const description = (value as { description?: unknown } | null)?.description;
+          if (key === "needsHuman" && typeof description === "string") descriptions.add(description);
+          walk(value);
+        }
+      }
+    };
+    walk(JSON.parse(OPENAPI_JSON));
+    expect(descriptions.size).toBe(1);
+    const [field = ""] = descriptions;
+    expect(field).toMatch(/message/);
+    expect(field).toMatch(/confirm/);
   });
 });

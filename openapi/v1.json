@@ -1730,7 +1730,7 @@
                             "type": "string"
                           },
                           "needsHuman": {
-                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                             "type": "boolean"
                           },
                           "providerChange": {
@@ -3030,7 +3030,7 @@
                           "type": "string"
                         },
                         "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                           "type": "boolean"
                         },
                         "providerChange": {
@@ -4445,7 +4445,7 @@
                             "type": "string"
                           },
                           "needsHuman": {
-                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                             "type": "boolean"
                           },
                           "providerChange": {
@@ -4844,7 +4844,7 @@
                       "type": "string"
                     },
                     "needsHuman": {
-                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                       "type": "boolean"
                     },
                     "providerChange": {
@@ -5434,7 +5434,7 @@
                       "type": "array"
                     },
                     "needsHuman": {
-                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                       "type": "boolean"
                     },
                     "pendingProposals": {
@@ -6215,7 +6215,7 @@
                       "type": "string"
                     },
                     "needsHuman": {
-                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                       "type": "boolean"
                     },
                     "providerChange": {
@@ -6886,7 +6886,7 @@
                           "type": "string"
                         },
                         "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                           "type": "boolean"
                         },
                         "providerChange": {
@@ -8025,7 +8025,7 @@
                           "type": "string"
                         },
                         "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                           "type": "boolean"
                         },
                         "providerChange": {
@@ -9731,7 +9731,7 @@
                       "type": "string"
                     },
                     "needsHuman": {
-                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                       "type": "boolean"
                     },
                     "providerChange": {
@@ -10642,7 +10642,7 @@
                           "type": "string"
                         },
                         "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                           "type": "boolean"
                         },
                         "providerChange": {
@@ -11514,7 +11514,7 @@
                       "type": "string"
                     },
                     "needsHuman": {
-                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                      "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                       "type": "boolean"
                     },
                     "providerChange": {
@@ -12739,7 +12739,7 @@
                           "type": "string"
                         },
                         "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                           "type": "boolean"
                         },
                         "providerChange": {
@@ -13427,7 +13427,7 @@
                             "type": "string"
                           },
                           "needsHuman": {
-                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI.",
+                            "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
                             "type": "boolean"
                           },
                           "providerChange": {

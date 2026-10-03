@@ -61,6 +61,13 @@ describe("the Tiehall skill", () => {
     expect(start).toMatch(/If it warns that this skill is older than the install supports, tell the user/);
   });
 
+  // agent-safety: Runaway agent loops flag the request needs_human: a message posted in the web UI, or a proposal on
+  // the request confirmed there, clears the flag.
+  it("tells the agent, on needs-human, to ask the user to post a message or confirm a proposal in the web UI", () => {
+    const line = body.split("\n").find((each) => each.includes("`needs-human`")) ?? "";
+    expect(line).toContain("tell the user to post a message on it in the web UI, or to confirm a proposal on it there");
+  });
+
   it("names the CLI's commands beside the tools, for a client without the MCP server", () => {
     for (const command of ["tiehall inbox", "tiehall get", "tiehall open", "tiehall ask", "tiehall reply", "tiehall propose", "tiehall status", "tiehall claim", "tiehall link-pr"]) {
       expect(body, command).toContain(command);
