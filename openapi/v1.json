@@ -720,7 +720,7 @@
     },
     "securitySchemes": {
       "bearer": {
-        "description": "An OAuth access token or a personal access token, in the Authorization header; for contract.report, a GitHub Actions OIDC token. Each operation lists the scopes its token needs.",
+        "description": "An OAuth access token or a personal access token, in the Authorization header; for contract.report, a GitHub Actions OIDC token, the only token it takes, which needs no scope. Each operation lists the scopes its token needs.",
         "scheme": "bearer",
         "type": "http"
       }
@@ -1080,9 +1080,7 @@
         },
         "security": [
           {
-            "bearer": [
-              "contracts:report"
-            ]
+            "bearer": []
           }
         ],
         "summary": "Report the classified changes that a provider pull request makes to a registered API, from a CI run of the contract Action in the API's repository, authenticated with the run's GitHub Actions OIDC token; it takes no OpenAPI document.",

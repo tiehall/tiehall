@@ -73,7 +73,7 @@ const report = defineCommand({
   output: z.object({ api: z.uuid() }),
   method: "POST",
   path: "/api/v1/contract-reports",
-  scopes: ["contracts:report"],
+  scopes: [],
   commitment: false,
   confirm: false,
   surfaces: ["rest"],

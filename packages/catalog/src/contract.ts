@@ -115,7 +115,9 @@ export const reportContractChanges = defineCommand({
   }),
   method: "POST",
   path: "/api/v1/contract-reports",
-  scopes: ["contracts:report"],
+  // No OAuth scope: only a CI run's GitHub Actions OIDC token reports, and no token of a person can, whatever scopes it
+  // carries, so a scope named here would only send a token's holder to ask for one that cannot help.
+  scopes: [],
   commitment: false,
   confirm: false,
   surfaces: ["rest", "cli"],

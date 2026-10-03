@@ -185,7 +185,7 @@ export function openApiDocument(catalog: Catalog, options: OpenApiOptions = {}):
             type: "http",
             scheme: "bearer",
             description:
-              "An OAuth access token or a personal access token, in the Authorization header; for contract.report, a GitHub Actions OIDC token. Each operation lists the scopes its token needs.",
+              "An OAuth access token or a personal access token, in the Authorization header; for contract.report, a GitHub Actions OIDC token, the only token it takes, which needs no scope. Each operation lists the scopes its token needs.",
           },
         },
       },

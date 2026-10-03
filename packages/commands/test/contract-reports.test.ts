@@ -251,15 +251,19 @@ describe("a contract report", () => {
 
   it("from a member's personal access token or OAuth token, whatever scopes it carries, is refused with 403 and stores nothing", async () => {
     const allScopes = ["requests:read", "requests:write", "contracts:report"] as const;
-    for (const caller of [
-      { ...tokenOf(danaId), scopes: allScopes },
-      { ...oauthTokenOf(danaId, "https://agent.example.net/client.json", "api"), scopes: allScopes },
-    ]) {
-      const answer = await callApi(install, caller, "POST", "/api/v1/contract-reports", reportOf());
-      expect(answer.status, caller.kind).toBe(403);
+    for (const scopes of [allScopes, ["requests:read"] as const]) {
+      for (const caller of [
+        { ...tokenOf(danaId), scopes },
+        { ...oauthTokenOf(danaId, "https://agent.example.net/client.json", "api"), scopes },
+      ]) {
+        const answer = await callApi(install, caller, "POST", "/api/v1/contract-reports", reportOf());
+        // No scope would let a token report, so none is named as missing: the refusal is the CI-only rule's, whatever the token holds.
+        expect({ kind: caller.kind, scopes, status: answer.status, type: answer.body.type }).toEqual({ kind: caller.kind, scopes, status: 403, type: `${PROBLEM_TYPE_BASE}forbidden` });
+      }
     }
     expect(await stored()).toEqual([]);
   });
+
 
   it.each([
     ["a field that holds an OpenAPI document", { ...reportOf(), spec: { openapi: "3.1.0", paths: {} } }],
@@ -345,6 +349,11 @@ describe("the published operation", () => {
     expect(operation?.["x-stability-level"]).toBe("stable");
     expect(operation?.["x-tiehall-cli"]).toEqual({ commands: [{ command: "contract report" }] });
     expect(CATALOG.get("contract.report")?.surfaces).toEqual(["rest", "cli"]);
+  });
+
+  it("declares no OAuth scope in the document, since no token of a person can report", () => {
+    expect(CATALOG.get("contract.report")?.scopes).toEqual([]);
+    expect(operation?.["security"]).toEqual([{ bearer: [] }]);
   });
 
   it("lists 502, which a CI run gets when GitHub Actions' keys or the pull request's author cannot be read, as no other operation does but requests.link_pr, which reads the pull request from GitHub", () => {

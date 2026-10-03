@@ -60,7 +60,7 @@ const fixture = {
     output: z.object({ changeSetId: z.string() }),
     method: "POST",
     path: "/api/v1/contract/reports",
-    scopes: ["contracts:report"],
+    scopes: [],
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
@@ -307,6 +307,11 @@ describe("a catalog", () => {
     ]);
     expect(catalogProblems(withChanged("getRequest", { scopes: [] }))).toEqual([
       "requests.get: it is offered on an agent surface, so it names the scopes a token needs to run it.",
+    ]);
+    // contract.report runs for a CI run's OIDC token alone, which carries no OAuth scope, so it names none.
+    expect(catalogProblems(withChanged("reportContract", { scopes: [] }))).toEqual([]);
+    expect(catalogProblems(withChanged("reportContract", { scopes: ["contracts:report"] }))).toEqual([
+      "contract.report: only a CI run's GitHub Actions OIDC token runs it, which carries no OAuth scope, so it names none.",
     ]);
     expect(catalogProblems(withChanged("reportContract", { deprecated: { since: "1 September", sunset: "2027-03-01" } }))).toEqual([
       "contract.report: its deprecation dates are calendar dates, such as 2026-12-15.",

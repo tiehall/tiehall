@@ -67,7 +67,7 @@ const catalog = defineCatalog([
     output: z.object({ changeSetId: z.string() }),
     method: "POST",
     path: "/api/v1/contract/reports",
-    scopes: ["contracts:report"],
+    scopes: [],
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
@@ -149,7 +149,7 @@ describe("the OpenAPI document", () => {
       security: [{ bearer: ["requests:write"] }],
       "x-stability-level": "beta",
     });
-    expect(operation("/api/v1/contract/reports", "post")).toMatchObject({ security: [{ bearer: ["contracts:report"] }], "x-stability-level": "stable" });
+    expect(operation("/api/v1/contract/reports", "post")).toMatchObject({ security: [{ bearer: [] }], "x-stability-level": "stable" });
     expect(operation("/api/v1/requests/{key}/decline", "post")["x-stability-level"]).toBe("alpha");
     const scopes = valuesOf(document, "security").flatMap((requirements) =>
       (requirements as Record<string, string[]>[]).flatMap((requirement) => Object.values(requirement).flat()),

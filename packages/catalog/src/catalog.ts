@@ -1,6 +1,7 @@
 import { ADMIN_ACTIONS } from "@tiehall/core";
 import { z } from "zod";
 import { COMMAND_SURFACES, SCOPES, STABILITY_LEVELS, type CliCommand, type CommandDefinition, type Deprecation, type EarlierShape, type HttpMethod, type StabilityLevel } from "./command.ts";
+import { CONTRACT_REPORT_ID } from "./body-limits.ts";
 import { lowerToolSchema, ToolSchemaError } from "./tool-schemas.ts";
 
 // Registering definitions (public-api: One definition per operation, the same
@@ -222,7 +223,11 @@ export function catalogProblems(definitions: readonly CommandDefinition[]): stri
       if (definition.confirm) problem("it is a commitment, which becomes a proposal people confirm, so it does not need the confirmation step itself.");
       if (definition.method === "GET") problem("it is a commitment, which changes something, so it is not offered with GET.");
     }
-    if (offered && !definition.confirm && definition.scopes.length === 0) {
+    // contract.report runs for a CI run's GitHub Actions OIDC token alone, which carries no OAuth scope, so it names none,
+    // and a token of a person, whatever its scopes, is refused by the CI-only rule rather than sent to ask for a scope.
+    if (definition.id === CONTRACT_REPORT_ID) {
+      if (definition.scopes.length > 0) problem("only a CI run's GitHub Actions OIDC token runs it, which carries no OAuth scope, so it names none.");
+    } else if (offered && !definition.confirm && definition.scopes.length === 0) {
       problem("it is offered on an agent surface, so it names the scopes a token needs to run it.");
     }
     if (surfaces.includes("rest")) {

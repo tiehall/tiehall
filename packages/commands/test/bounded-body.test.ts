@@ -33,7 +33,7 @@ const withReport = defineCatalog([
     output: z.object({ changeSetId: z.string() }),
     method: "POST",
     path: "/api/v1/contract/reports",
-    scopes: ["contracts:report"],
+    scopes: [],
     commitment: false,
     confirm: false,
     surfaces: ["rest", "cli"],
