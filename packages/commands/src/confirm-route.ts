@@ -3,7 +3,7 @@ import { canonicalJson, httpProblem, internalErrorProblem, quotePreamble, Refusa
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
 import type { Execute } from "./execute.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
@@ -191,7 +191,7 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       return page(renderReviewPage(path, reviewed.review, canonicalJson(reviewed.input), reviewed.nonce, csrf, proposal !== undefined && !undo, fields));
     } catch (error) {
       if (error instanceof Refusal) {
-        return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : { href: back.path, text: "Back to the review page" });
+        return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, { href: back.path, text: "Back to the review page" }));
       }
       logger.error("confirm: the review page failed", { operationId: commandId, error });
       return problem(internalErrorProblem());

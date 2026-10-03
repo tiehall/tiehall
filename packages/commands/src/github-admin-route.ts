@@ -13,7 +13,7 @@ import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import type { Execute } from "./execute.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor } from "./html.ts";
 import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
@@ -95,7 +95,7 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
       return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId), options.url), { headers: PAGE_HEADERS });
     } catch (error) {
       if (error instanceof Refusal) {
-        return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : { href: GITHUB_ADMIN_PATH, text: "Back to the GitHub page" });
+        return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, { href: GITHUB_ADMIN_PATH, text: "Back to the GitHub page" }));
       }
       logger.error("github admin: the page failed", { error });
       return problem(internalErrorProblem());

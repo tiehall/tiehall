@@ -5,7 +5,7 @@ import { AUTHORIZATION_ENDPOINT_PATH, CONSENT_PATH, REFRESH_SCOPE } from "./auth
 import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH, renderReviewPage } from "./confirm-route.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
-import { answerRefusal, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, PAGE_HEADERS, wayOnFor } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { csrfTokenFor } from "./web-writes.ts";
@@ -284,7 +284,7 @@ export function createConsentRoute(options: ConsentRouteOptions): ConsentRoute {
       );
       return new Response(page, { headers: { ...PAGE_HEADERS, "content-security-policy": consentPolicy(authorization.redirectUri) } });
     } catch (error) {
-      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), back);
+      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, back));
       logger.error("consent: the consent screen failed", { error });
       return problem(internalErrorProblem());
     }

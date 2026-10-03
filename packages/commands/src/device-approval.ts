@@ -11,7 +11,7 @@ import type { ConfirmationStep, Reviews } from "./confirmation-step.ts";
 import { SCOPE_TEXTS } from "./consent.ts";
 import { CLI_CLIENT_ID, DEVICE_APPROVAL_PATH } from "./device-flow.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
@@ -243,7 +243,7 @@ export function createDeviceApprovalRoute(options: DeviceApprovalRouteOptions): 
         ),
       );
     } catch (error) {
-      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), error.reason === "unauthenticated" ? TO_SIGN_IN : TO_PAGE);
+      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, TO_PAGE));
       logger.error("device approval: the device approval page failed", { error });
       return problem(internalErrorProblem());
     }

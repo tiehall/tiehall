@@ -1,7 +1,7 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
-import { answerRefusal, escapeHtml, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
+import { answerRefusal, escapeHtml, PAGE_HEADERS, wayOnFor, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
@@ -104,9 +104,9 @@ export function createPageRoute(options: PageRouteOptions, handlers: PageHandler
   }
 }
 
-/** Where a page's refusal leads a browser on: to sign in when it is not signed in, and otherwise back to the page, whose form it was. */
+/** Where a page's refusal leads a browser on: to sign in when it is not signed in or its person was removed, and otherwise back to the page, whose form it was. */
 function wayOnFrom(refusal: Refusal, handlers: Pick<PageHandlers, "path" | "name">): WayOn {
-  return refusal.reason === "unauthenticated" ? TO_SIGN_IN : { href: handlers.path, text: `Back to the ${handlers.name} page` };
+  return wayOnFor(refusal.reason, { href: handlers.path, text: `Back to the ${handlers.name} page` });
 }
 
 /** The headers every answer carries, so that no other site can frame it. */

@@ -7,7 +7,7 @@ import { REQUEST_LISTS_PATH } from "./request-lists.ts";
 import type { Banner } from "./admin-alerts.ts";
 import { bannersSection } from "./admin-page.ts";
 import type { WebSessionCaller } from "./caller.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
@@ -80,7 +80,7 @@ ${bannersSection(banners, { csrf, back: "/" }).map((line) => `${line}\n`).join("
         { headers: PAGE_HEADERS },
       );
     } catch (error) {
-      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), { href: "/", text: "Go to Tiehall's home page" });
+      if (error instanceof Refusal) return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, { href: "/", text: "Go to Tiehall's home page" }));
       logger.error("home: the home page failed", { error });
       return problem(internalErrorProblem());
     }

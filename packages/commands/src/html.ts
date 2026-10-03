@@ -1,4 +1,4 @@
-import type { HttpProblem } from "@tiehall/core";
+import type { HttpProblem, RefusalReason } from "@tiehall/core";
 import type { RunningVersion } from "./running-version.ts";
 
 // The web role's own HTML pages, such as the setup screen and the review pages
@@ -88,6 +88,16 @@ export interface WayOn {
 
 /** The way on for a refused sign-in, or a browser that is not signed in. */
 export const TO_SIGN_IN: WayOn = { href: "/sign-in", text: "Go to the sign-in page" };
+
+/**
+ * Where a page's refusal for this reason leads a browser on: to the sign-in
+ * page when the browser is not signed in, and when its person was removed,
+ * because a removal ends the person's web sessions, so the page would refuse
+ * it again; otherwise the way on the page gives.
+ */
+export function wayOnFor(reason: RefusalReason, otherwise: WayOn): WayOn {
+  return reason === "unauthenticated" || reason === "removed-member" ? TO_SIGN_IN : otherwise;
+}
 
 /** Whether a request negotiates HTML on a page route: its Accept header names text/html, as browsers send. */
 export function acceptsHtml(request: Request): boolean {
