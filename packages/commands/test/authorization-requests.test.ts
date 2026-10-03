@@ -75,9 +75,10 @@ describe("an authorization request", () => {
     const answer = await harness.authorize(ana.cookie, client, pkce, { scope: "requests:read" });
     const code = locationOf(answer).searchParams.get("code") ?? "";
     const exchanged = await harness.exchange(client, code, { ...pkce, verifier: pkcePair().verifier });
-    // The authorization server answers a verifier that does not match with 401 invalid_request.
-    expect(exchanged.status).toBe(401);
-    expect(exchanged.body["error"]).toBe("invalid_request");
+    // A verifier that does not match the code's challenge is an invalid grant, as RFC 7636 (4.6) and OAuth 2.1 have it:
+    // 400 invalid_grant, which the sign-in library answers with 401 invalid_request unless Tiehall maps it.
+    expect(exchanged.status).toBe(400);
+    expect(exchanged.body["error"]).toBe("invalid_grant");
     expect(exchanged.body["access_token"]).toBeUndefined();
     // The refused exchange used the code up: the right verifier gets no token with it either.
     const again = await harness.exchange(client, code, pkce);

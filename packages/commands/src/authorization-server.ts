@@ -178,6 +178,7 @@ export function authorizationServerPlugins({ url, orgId, clients = {} }: Authori
     withOrgId(server as unknown as BetterAuthPlugin, orgId),
     withOrgId(deviceFlow as unknown as BetterAuthPlugin, orgId),
     offeredScopes(),
+    pkceRefusals(),
   ];
   if (clients.metadataDocuments !== false) plugins.push(metadataDocuments(clients.fetchDocument ?? createOutboundFetcher({ maxRedirects: 0 })));
   return plugins;
@@ -281,6 +282,47 @@ function offeredScopes(): BetterAuthPlugin {
           handler: createAuthMiddleware(async (context) => ({
             context: { query: { ...(context.query ?? {}), scope: scopeReadFor((context.query as Record<string, unknown> | undefined)?.["scope"]) } },
           })),
+        },
+      ],
+    },
+  };
+}
+
+/** The sign-in library's refusal of a code exchange whose verifier does not match the code's challenge. */
+const VERIFICATION_FAILED = "code verification failed";
+
+/**
+ * Answers the token endpoint's refusals of a PKCE verifier as OAuth has them.
+ * The sign-in library refuses a verifier that does not match the code's
+ * challenge with 401 invalid_request, where RFC 7636 (4.6) and OAuth 2.1 call
+ * for invalid_grant, and every OAuth error but invalid_client with 400 (RFC
+ * 6749, 5.2): such a refusal becomes 400 invalid_grant, and any other 401
+ * invalid_request about the verifier 400 invalid_request. The library has
+ * used the code up by then, which stays so: the right verifier gets no token
+ * with it either.
+ */
+function pkceRefusals(): BetterAuthPlugin {
+  return {
+    id: "tiehall-pkce-refusals",
+    hooks: {
+      after: [
+        {
+          matcher: (context) => context.path === "/oauth2/token",
+          handler: createAuthMiddleware(async (context) => {
+            const refused = context.context.returned;
+            if (!(refused instanceof APIError) || refused.statusCode !== 401) return;
+            const body = refused.body as { error?: unknown; error_description?: unknown } | undefined;
+            if (body?.error !== "invalid_request" || typeof body.error_description !== "string" || !body.error_description.includes("verif")) return;
+            const mismatch = body.error_description === VERIFICATION_FAILED;
+            // A Response of its own, since the library would answer a refusal the hook throws with the endpoint's status.
+            return new Response(
+              JSON.stringify({
+                error: mismatch ? "invalid_grant" : "invalid_request",
+                error_description: mismatch ? "The code verifier does not match the code's challenge." : body.error_description,
+              }),
+              { status: 400, headers: { "content-type": "application/json", "cache-control": "no-store" } },
+            );
+          }),
         },
       ],
     },

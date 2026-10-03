@@ -188,6 +188,7 @@ describe("the route inventory, against the pinned sign-in library with every plu
         "device-authorization",
         "tiehall-github-endpoints",
         "tiehall-offered-scopes",
+        "tiehall-pkce-refusals",
         "tiehall-client-registrations",
         "tiehall-cli-device-flow",
         "tiehall-grant-checks",
