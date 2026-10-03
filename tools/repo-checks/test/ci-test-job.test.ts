@@ -59,3 +59,18 @@ describe("CI's typecheck and test", () => {
     expect(runs(aggregate)).toMatch(/= success/);
   });
 });
+
+// agent-surfaces: The CLI package. The CLI says it runs on Node.js 22 or later, while the repository builds and tests
+// on the version in .node-version: one job builds its bundle and runs its tests on Node.js 22, so the claim is tried.
+describe("CI's run of the CLI on Node.js 22", () => {
+  it("is a job that builds the CLI's bundle and runs its tests on Node.js 22", () => {
+    const onNode22 = jobs.filter(([, job]) =>
+      (job.steps ?? []).some((step) => typeof step["uses"] === "string" && step["uses"].startsWith("actions/setup-node@") && String((step["with"] as Mapping | undefined)?.["node-version"]) === "22"),
+    );
+    expect(onNode22).toHaveLength(1);
+    const [[, job]] = onNode22 as [[string, Job]];
+    expect(runs(job)).toContain("pnpm --filter tiehall build");
+    expect(runs(job)).toMatch(/pnpm vitest run --project tiehall\b/);
+    expect(job["timeout-minutes"]).toBeLessThanOrEqual(20);
+  });
+});

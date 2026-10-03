@@ -86,6 +86,29 @@ jobs:
           echo "Typecheck: $TYPECHECK. Test shards: $SHARDS."
           test "$TYPECHECK" = success && test "$SHARDS" = success
 
+  cli-node-22:
+    name: CLI on Node.js 22
+    runs-on: ubuntu-24.04
+    # The tiehall CLI says it runs on Node.js 22 or later (its engines field and its launcher), while the rest of the
+    # repository builds and tests on .node-version: this job builds the CLI's bundle and runs its tests on Node.js 22,
+    # whose launcher tests start the bundle with this Node.js.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter tiehall build
+      - run: pnpm vitest run --project tiehall
+
   dependency-rules:
     name: Dependency rules
     runs-on: ubuntu-24.04
