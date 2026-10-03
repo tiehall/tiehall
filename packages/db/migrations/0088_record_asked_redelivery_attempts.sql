@@ -1,0 +1,1 @@
+ALTER TABLE "github_redeliveries" ADD COLUMN "last_asked_attempt_id" bigint;

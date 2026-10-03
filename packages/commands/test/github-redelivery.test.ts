@@ -416,6 +416,36 @@ describe("a delivery given up (github-layer-hardening 1.21)", () => {
     expect(await modeEvents()).toHaveLength(2);
   });
 
+  it("waits for GitHub to log the fifth redelivery, and gives up only once a failed attempt newer than the fifth request is logged", async () => {
+    await missedDelivery();
+    stub.setHookReachable(false);
+    for (let run = 0; run < REDELIVERY_ASKS - 1; run += 1) await redeliver();
+    // GitHub accepts the fifth request at once, but makes and logs its redelivery only later.
+    const held: (() => Promise<Response>)[] = [];
+    const late = reachingGitHubThrough(async (input, init) => {
+      if ((init?.method ?? "GET").toUpperCase() === "POST" && /^\/app\/hook\/deliveries\/\d+\/attempts$/.test(pathOf(input))) {
+        held.push(() => fetch(input, init));
+        return new Response("{}", { status: 202, headers: { "content-type": "application/json" } });
+      }
+      return fetch(input, init);
+    });
+    await redeliver(late);
+    expect(held).toHaveLength(1);
+    const { rows } = await install.owner.query<{ asks: number }>("SELECT asks FROM github_redeliveries");
+    expect(rows).toEqual([{ asks: REDELIVERY_ASKS }]);
+
+    // The log's latest attempt is still the fourth redelivery, which failed before the fifth request: nothing is given up yet.
+    await redeliver();
+    expect((await appRow()).given_up_at).toBeNull();
+    expect(asked()).toHaveLength(REDELIVERY_ASKS - 1);
+
+    // GitHub makes the fifth redelivery, which fails too: the next run gives the delivery up.
+    expect((await held[0]!()).status).toBe(202);
+    await stub.settled();
+    await redeliver();
+    expect((await appRow()).given_up_at).not.toBeNull();
+  });
+
   it("is cleared by an admin's switch of the mode, and the same delivery is not given up again", async () => {
     await missedDelivery();
     await giveUp();

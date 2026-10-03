@@ -436,6 +436,12 @@ export const githubRedeliveries = pgTable(
     /** How many times Tiehall asked GitHub to redeliver it. */
     asks: integer("asks").notNull().default(1),
     lastAskedAt: timestamp("last_asked_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * GitHub's id of the attempt whose redelivery Tiehall's last request is still owed, so a later attempt in the
+     * log, which has a larger id, is that redelivery; null when GitHub refused the request, and for a request made
+     * before this was recorded.
+     */
+    lastAskedAttemptId: bigint("last_asked_attempt_id", { mode: "number" }),
     /** When Tiehall gave it up, after its last request, so later runs record nothing more for it; null until then. */
     givenUpAt: timestamp("given_up_at", { withTimezone: true }),
   },

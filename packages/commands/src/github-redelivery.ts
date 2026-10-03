@@ -33,8 +33,12 @@ import type { WorkerJob } from "./worker.ts";
 // A delivery given up (tracker-mirrors: Failed GitHub deliveries are
 // redelivered; github-layer-hardening: design.md, Decisions this change rests
 // on: D50 (15); design.md, Technical decisions: T8): a run that finds a
-// delivery asked for 5 times, whose latest attempt in the log still failed
-// and that Tiehall does not hold, gives it up, once: in one write it marks the
+// delivery asked for 5 times, whose latest attempt in the log is the
+// redelivery the fifth request made (GitHub's ids only grow, so it is newer
+// than the attempt that request named) and still failed, or whose fifth
+// request GitHub refused, and that Tiehall does not hold, gives it up, once;
+// while GitHub has not logged the redelivery it owes, the run waits for the
+// next: in one write it marks the
 // delivery given up, so later runs record nothing more for it, and records the
 // give-up on the App's row, which moves GitHub to polling mode unless an
 // admin chose webhook mode (github-mode.ts). The parameters are the design's:
@@ -109,24 +113,33 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
     const asked = new Map(
       (
         await tx
-          .select({ deliveryId: githubRedeliveries.deliveryId, asks: githubRedeliveries.asks, givenUpAt: githubRedeliveries.givenUpAt })
+          .select({
+            deliveryId: githubRedeliveries.deliveryId,
+            asks: githubRedeliveries.asks,
+            givenUpAt: githubRedeliveries.givenUpAt,
+            lastAskedAttemptId: githubRedeliveries.lastAskedAttemptId,
+          })
           .from(githubRedeliveries)
           .where(and(eq(githubRedeliveries.orgId, orgId), inArray(githubRedeliveries.deliveryId, ids)))
-      ).map(({ deliveryId, asks, givenUpAt }) => [deliveryId, { asks, givenUp: givenUpAt !== null }]),
+      ).map(({ deliveryId, asks, givenUpAt, lastAskedAttemptId }) => [deliveryId, { asks, givenUp: givenUpAt !== null, lastAskedAttemptId }]),
     );
     const missing = failed.filter(({ deliveryId }) => !stored.has(deliveryId));
     return {
       toAsk: missing.filter(({ deliveryId }) => (asked.get(deliveryId)?.asks ?? 0) < REDELIVERY_ASKS),
-      // Asked for 5 times, and still failed: given up, once.
-      toGiveUp: missing.filter(({ deliveryId }) => {
+      // Asked for 5 times, and the redelivery the fifth request made failed too, or GitHub refused that request: given
+      // up, once. Until GitHub logs the redelivery it owes, the log's latest attempt is the one the fifth request named,
+      // and the run waits for the next.
+      toGiveUp: missing.filter(({ deliveryId, id }) => {
         const seen = asked.get(deliveryId);
-        return seen !== undefined && seen.asks >= REDELIVERY_ASKS && !seen.givenUp;
+        return seen !== undefined && seen.asks >= REDELIVERY_ASKS && !seen.givenUp && (seen.lastAskedAttemptId === null || id > seen.lastAskedAttemptId);
       }),
     };
   });
 
   let refused = 0;
   for (const attempt of toAsk) {
+    // The attempt whose redelivery GitHub now owes, which no request GitHub refused leaves.
+    let awaited: number | null = attempt.id;
     try {
       await askRedelivery(app.client, attempt.id);
     } catch (error) {
@@ -134,14 +147,15 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
       // the delivery's requests, and the run asks for the others. GitHub failing the call stops the run.
       if (!refusedRequest(error)) throw error;
       refused += 1;
+      awaited = null;
     }
     await withOrg(database, ({ tx, orgId }) =>
       tx
         .insert(githubRedeliveries)
-        .values({ orgId, deliveryId: attempt.deliveryId })
+        .values({ orgId, deliveryId: attempt.deliveryId, lastAskedAttemptId: awaited })
         .onConflictDoUpdate({
           target: [githubRedeliveries.orgId, githubRedeliveries.deliveryId],
-          set: { asks: sql`${githubRedeliveries.asks} + 1`, lastAskedAt: sql`now()` },
+          set: { asks: sql`${githubRedeliveries.asks} + 1`, lastAskedAt: sql`now()`, lastAskedAttemptId: awaited },
         }),
     );
   }

@@ -617,6 +617,13 @@
       "when": 1790991073744,
       "tag": "0087_count_mirror_state_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1791054235031,
+      "tag": "0088_record_asked_redelivery_attempts",
+      "breakpoints": true
     }
   ]
 }
