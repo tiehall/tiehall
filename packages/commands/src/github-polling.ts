@@ -4,6 +4,7 @@ import { z } from "zod";
 import { polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
 import { GitHubUnavailableError, pagesOf, type GitHubClient } from "./github-client.ts";
 import { readInstallations, type GitHubAppAccess } from "./github-installations.ts";
+import { pollMirrorIssues } from "./github-mirror-issues.ts";
 import { processGitHubDelivery } from "./github-webhooks.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
@@ -29,6 +30,12 @@ import type { WorkerJob } from "./worker.ts";
 //   that processes it as a delivery is processed: the same processing, with
 //   the same input, as the integration-event caller. A change the poll or a
 //   delivery stored already is not stored again, so it is handled once;
+// - reads the issues of each repository that holds mirror issues updated
+//   since then too, newest first, and stores each mirror issue among them as
+//   the change it is, with the job that processes it as a delivery about it
+//   is processed (github-mirror-issues.ts; tracker-mirrors: GitHub and Jira
+//   each run in webhook mode or polling mode), so a close, a reopen or new
+//   assignees made on GitHub are recorded within 2 minutes;
 // - checks every member Tiehall saw in an organization against the member
 //   list of each working connected organization, and removes those GitHub
 //   positively reports gone, as the system (organization-departures.ts),
@@ -38,8 +45,7 @@ import type { WorkerJob } from "./worker.ts";
 // requests linked to open requests are among those it reads when their
 // repository is covered, and a pull request of a repository no connected
 // installation covers closes no request (close-on-merge.ts), so it reads
-// none there; the mirror issues join the poll with the task that builds the
-// mirrors. A poll that could not read a
+// none there. A poll that could not read a
 // repository keeps the previous poll's time, so the next one reads that
 // repository's changes again. In webhook mode the poll does nothing.
 
@@ -195,6 +201,10 @@ export async function pollGitHubChanges(options: PollOptions): Promise<boolean> 
     }
     if (pullRequests.length > 0) found += await withOrg(database, (context) => storePullRequestChanges(context, jobs, repository, pullRequests));
   }
+
+  const mirrored = await pollMirrorIssues({ database, app, jobs, since, logger });
+  found += mirrored.found;
+  failure ??= mirrored.failure;
 
   await checkDepartures({ database, app, logger, provenance: { actorKind: "system" } }, { every: true });
 

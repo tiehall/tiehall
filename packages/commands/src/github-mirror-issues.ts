@@ -13,32 +13,46 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 
 // The mirror issues as Tiehall reads them from GitHub without a delivery
 // (tracker-mirrors: Reconciliation catches missed changes; tracker-mirrors:
+// GitHub and Jira each run in webhook mode or polling mode; tracker-mirrors:
 // Mirror writes are idempotent and never echo; design.md, Design rules:
-// Tracker mirrors; design.md, Technical decisions: T16). A delivery about a
-// mirror issue can be lost, so the 15-minute reconciliation, in webhook mode
-// as in polling mode, asks GitHub, with its `since` parameter, for the issues
-// of each repository that holds mirror issues updated since shortly before it
-// last read that repository, with the token of the working connected
-// installation that covers it now; a repository none covers is not read.
+// Tracker mirrors; design.md, Self-hosting decisions: S9; design.md, Technical
+// decisions: T16). A delivery about a mirror issue can be lost, and an install
+// GitHub cannot reach gets none, so two readers ask GitHub for the issues of
+// each repository that holds mirror issues, with the token of the working
+// connected installation that covers it now; a repository none covers is not
+// read:
+// - the 15-minute reconciliation, in webhook mode as in polling mode, asks
+//   with GitHub's `since` parameter for the issues updated since shortly
+//   before it last read that repository to the end;
+// - the poll of polling mode, every 60 seconds, reads the repository's issues
+//   newest updated first, down to those updated before shortly before the
+//   previous poll (github-polling.ts). Its first page's URL stays the same
+//   from one poll to the next, so it is a conditional request that GitHub
+//   answers with 304 while nothing changed, which costs nothing of GitHub's
+//   rate limit (github-client.ts).
 //
 // Each mirror issue among them is stored as the change it is, the issue in the
 // state GitHub lists it in, in the form of a delivery about it, with the job
 // that processes it as a delivery is processed (github-issue-processing.ts):
 // as if its webhook had arrived. Issues that mirror no request, and pull
 // requests, which GitHub lists among the issues, are left out. A change is
-// stored once under its key, so runs that list the same issue in the same
-// state hand it on once. A delivery about the same change may come too, and
-// is stored on its own; the processing reads the issue from GitHub and records
-// only what differs from what Tiehall knows the issue shows, under the
-// request's lock (tracker-changes.ts), so the change is recorded once,
-// whichever comes first. What Tiehall wrote itself comes back the same way,
-// and is dropped there as an echo.
+// stored once under its key, so the poll and the reconciliation, and runs of
+// each, that list the same issue in the same state hand it on once. A
+// delivery about the same change may come too, and is stored on its own; the
+// processing reads the issue from GitHub and records only what differs from
+// what Tiehall knows the issue shows, under the request's lock
+// (tracker-changes.ts), so the change is recorded once, whichever comes first.
+// What Tiehall wrote itself comes back the same way, and is dropped there as
+// an echo.
 //
-// The run records, per repository, when it read it to the end; a repository
-// GitHub failed to list, or that no installation covers now, keeps the time of
-// its last read, so a later run reads the changes it missed. The first read of
-// a repository starts at its first mirror issue. A run that could not read a
-// repository fails, after reading the others, so the job is tried again.
+// The reconciliation records, per repository, when it read it to the end; a
+// repository GitHub failed to list, or that no installation covers now, keeps
+// the time of its last read, so a later run reads the changes it missed. Its
+// first read of a repository starts at the repository's first mirror issue. A
+// run that could not read a repository fails, after reading the others, so
+// the job is tried again. The poll keeps the time of the previous poll, as
+// for the pull requests it reads: a poll that could not read a repository
+// fails, and the next one reads from the same time.
 
 /** How far before the last read each read starts: for GitHub's timestamps to the second, a clock that differs from GitHub's, and a change GitHub records while a run reads. */
 const OVERLAP_MS = 5 * 60 * 1000;
@@ -57,6 +71,9 @@ const LISTED_ISSUE = z.looseObject({
   updated_at: z.string(),
   pull_request: z.unknown().optional(),
 });
+
+/** When GitHub last changed an item of an issue listing, an issue's or a pull request's. */
+const UPDATED = z.looseObject({ updated_at: z.iso.datetime({ offset: true }) });
 
 /** An issue as GitHub lists it, in what Tiehall keeps of it. */
 type ListedIssue = z.output<typeof LISTED_ISSUE>;
@@ -108,13 +125,17 @@ async function mirrorRepositories(context: Pick<OrgContext, "tx" | "orgId">, app
   return repositories;
 }
 
+/** How a reader asks GitHub for the issues updated since a time: with GitHub's `since` parameter, or newest updated first with a URL that stays the same. */
+type Listing = "since" | "newest_first";
+
 /**
- * The issues of a repository updated at or after `since`, as GitHub lists
- * them with its `since` parameter, less the pull requests among them. It
+ * The issues of a repository updated at or after `since`, less the pull
+ * requests among them: as GitHub lists them with its `since` parameter, or
+ * newest updated first, read down to the first one updated before `since`. It
  * throws GitHubUnavailableError when GitHub fails a page, or answers one with
  * something that is not a list, which says nothing of what changed.
  */
-async function issuesUpdatedSince(app: GitHubAppAccess, repository: MirrorRepository, since: Date): Promise<ListedIssue[]> {
+async function issuesUpdatedSince(app: GitHubAppAccess, repository: MirrorRepository, since: Date, listing: Listing): Promise<ListedIssue[]> {
   const [owner = "", repo = ""] = repository.fullName.split("/");
   const issues: ListedIssue[] = [];
   try {
@@ -122,16 +143,24 @@ async function issuesUpdatedSince(app: GitHubAppAccess, repository: MirrorReposi
       owner,
       repo,
       state: "all",
-      since: since.toISOString(),
+      ...(listing === "since" ? { since: since.toISOString() } : {}),
       sort: "updated",
       direction: "desc",
       per_page: PER_PAGE,
     })) {
       if (!Array.isArray(page)) throw new GitHubUnavailableError("GitHub's answer to the listing of a repository's issues is not a list.");
+      let older = false;
       for (const item of page) {
+        const updated = UPDATED.safeParse(item);
+        if (updated.success && Date.parse(updated.data.updated_at) < since.getTime()) {
+          older = true;
+          break;
+        }
         const issue = LISTED_ISSUE.safeParse(item);
         if (issue.success && issue.data.pull_request === undefined) issues.push(issue.data);
       }
+      // Newest first, so the rest are older.
+      if (older) break;
     }
   } catch (error) {
     throw gitHubUnavailable("the listing of a repository's issues", error);
@@ -234,7 +263,7 @@ export async function reconcileMirrorIssues(options: MirrorIssueReconciliationOp
     const since = new Date((repository.reconciledAt ?? repository.firstIssueAt).getTime() - OVERLAP_MS);
     let issues: ListedIssue[];
     try {
-      issues = await issuesUpdatedSince(app, repository, since);
+      issues = await issuesUpdatedSince(app, repository, since, "since");
     } catch (error) {
       logger.warn("github: GitHub did not list the issues of a repository that holds mirror issues", { repositoryId: repository.repositoryId, error });
       failure ??= error;
@@ -253,4 +282,41 @@ export async function reconcileMirrorIssues(options: MirrorIssueReconciliationOp
   // A repository that could not be read is read again from the same time at the next run.
   if (failure !== undefined) throw failure;
   return found;
+}
+
+export interface MirrorIssuePollOptions {
+  /** The app's database, as the app role; setup must be complete. */
+  database: Database;
+  app: GitHubAppAccess;
+  /** Sends the processing job of each change found, in the transaction that stores it. */
+  jobs: JobSender;
+  /** The time from which the poll reads: shortly before the previous poll. */
+  since: Date;
+  logger?: Logger;
+}
+
+/**
+ * The poll's read of the mirror issues, in polling mode: hands on each change
+ * of a mirror issue made since `since`, and returns how many it handed on,
+ * with the first failure of GitHub's, after reading every repository it
+ * could.
+ */
+export async function pollMirrorIssues(options: MirrorIssuePollOptions): Promise<{ found: number; failure: unknown }> {
+  const { database, app, jobs, since } = options;
+  const logger = (options.logger ?? createLogger()).child({ integration: "github" });
+  const repositories = await withOrg(database, (context) => mirrorRepositories(context, app.appId), { readOnly: true });
+  let failure: unknown;
+  let found = 0;
+  for (const repository of repositories) {
+    let issues: ListedIssue[];
+    try {
+      issues = await issuesUpdatedSince(app, repository, since, "newest_first");
+    } catch (error) {
+      logger.warn("github: GitHub did not list the issues of a repository that holds mirror issues", { repositoryId: repository.repositoryId, error });
+      failure ??= error;
+      continue;
+    }
+    if (issues.length > 0) found += await withOrg(database, (context) => storeIssueChanges(context, jobs, repository, issues));
+  }
+  return { found, failure };
 }

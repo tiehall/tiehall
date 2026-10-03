@@ -565,7 +565,7 @@ export {
 } from "./worker.ts";
 export { WORKER_JOBS } from "./worker-jobs.ts";
 export { reconcileGitHub } from "./github-reconciliation.ts";
-export { issueChangeKey, reconcileMirrorIssues, type MirrorIssueReconciliationOptions } from "./github-mirror-issues.ts";
+export { issueChangeKey, pollMirrorIssues, reconcileMirrorIssues, type MirrorIssuePollOptions, type MirrorIssueReconciliationOptions } from "./github-mirror-issues.ts";
 export { checkDepartures, departureOf, processOrganizationEvent, type Departure, type DepartureScope, type DepartureServices } from "./organization-departures.ts";
 export { countAgentWrite, recordHumanAction } from "./loop-limit.ts";
 export {
