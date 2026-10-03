@@ -43,7 +43,7 @@ export const reconcileGitHub: WorkerJob<Record<string, never>> = {
     if (app === undefined) return;
     const logger = createLogger().child({ job: "github.reconcile" });
     try {
-      await readInstallations({ database, app, logger });
+      await readInstallations({ database, app, jobs, logger });
       await checkDepartures({ database, app, logger, provenance: { actorKind: "system" } }, { every: true });
       await reconcileMirrorIssues({ database, app, jobs, now, logger });
     } catch (error) {

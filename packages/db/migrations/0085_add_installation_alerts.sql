@@ -1,0 +1,2 @@
+ALTER TABLE "admin_alert_emails" DROP CONSTRAINT "admin_alert_emails_alert_known";--> statement-breakpoint
+ALTER TABLE "admin_alert_emails" ADD CONSTRAINT "admin_alert_emails_alert_known" CHECK ("admin_alert_emails"."alert" IN ('github_webhook', 'contract_fan_out', 'github_installation'));

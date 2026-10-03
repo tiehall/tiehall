@@ -260,7 +260,8 @@ describe("the banner", () => {
     await install.owner.query("UPDATE github_installations SET suspended_at = now()");
     try {
       await expect(runMirrorJob(request.id)).rejects.toThrow();
-      expect(await bannersOf(ada)).toHaveLength(1);
+      // Besides the banner about the suspended installation itself.
+      expect((await bannersOf(ada)).filter(({ id }) => id.startsWith("mirror_failed:"))).toHaveLength(1);
     } finally {
       await install.owner.query("UPDATE github_installations SET suspended_at = NULL");
     }

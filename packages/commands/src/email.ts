@@ -433,6 +433,36 @@ export const GITHUB_WEBHOOK_ALERT: EmailTemplate<{ page: ServerText; polling: Se
     ].join("\n"),
 };
 
+/**
+ * The alert to every admin when a connected installation of the install's
+ * GitHub App stops working, because it was suspended or deleted on GitHub
+ * (tracker-mirrors: Broken integrations are surfaced): sent once while its
+ * banner shows, only when SMTP is set. The accounts are GitHub's logins, so
+ * the text holds nothing people wrote in Tiehall.
+ */
+export const GITHUB_INSTALLATION_ALERT: EmailTemplate<{ broken: ServerText; page: ServerText }> = {
+  id: "email.github_installation_alert",
+  subject: () => "Tiehall: a GitHub installation of the install's App stopped working",
+  text: ({ broken, page }) =>
+    [
+      broken,
+      "Tiehall cannot read the repositories it covered, link or close requests through their pull requests, or write the mirror issues in them until it works again.",
+      "",
+      `An owner of the account unsuspends the App in the account's settings on GitHub, or installs it again, and an admin connects the new installation. The GitHub page of the admin UI says more: ${page}`,
+      "The banner in the web UI stays until the installation works again; this email is sent once while it shows.",
+      "",
+    ].join("\n"),
+};
+
+/** GitHub accounts, as GitHub's logins name them, in a sentence, such as "acme" or "acme and acme-labs". */
+export function accountsText(logins: readonly string[]): ServerText {
+  for (const login of logins) {
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) throw new TypeError("A GitHub account is named by its login, such as acme.");
+  }
+  if (logins.length === 0) throw new TypeError("At least one account is named.");
+  return (logins.length === 1 ? logins[0] : `${logins.slice(0, -1).join(", ")} and ${logins.at(-1)}`) as ServerText;
+}
+
 /** A GitHub repository's owner and name, as GitHub named it when an API was registered, such as acme/payments. */
 export function repositoryText(fullName: string): ServerText {
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(fullName)) throw new TypeError("A repository is its owner and name, such as acme/payments.");

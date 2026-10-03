@@ -32,8 +32,9 @@ import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 // see it. A problem with an integration is a banner, which the web UI shows to
 // the admins, on the admin page and the home page, and to no one else while
 // no team's mirrors go through that integration; the given-up GitHub delivery
-// is the one such problem built so far, and the fixture here. With SMTP set,
-// every admin gets one email about it while its banner shows.
+// is the fixture here, and a broken installation, with the members who see
+// its banner, is in broken-installations.test.ts. With SMTP set, every admin
+// gets one email about it while its banner shows.
 
 let install: TestInstall;
 let stub: GitHubStub;

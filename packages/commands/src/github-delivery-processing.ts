@@ -2,6 +2,7 @@ import { githubConnectedInstallations, githubDeliveries, githubInstallations, ty
 import { and, eq, isNull } from "drizzle-orm";
 import type { IntegrationEventCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
+import type { JobSender } from "./jobs.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { readInstallations } from "./github-installations.ts";
 import { memberOfGitHubAccount } from "./github-users.ts";
@@ -138,6 +139,8 @@ export interface DeliveryProcessingServices {
   github: InstallGitHub;
   /** execute() of the worker, through which a processor's changes run. */
   execute: Execute;
+  /** Sends the jobs a delivery starts, such as the admins' email about an installation it reports suspended; none without it. */
+  jobs?: JobSender;
   /** The processors of the events, GITHUB_EVENT_PROCESSORS unless a test gives others. */
   processors?: GitHubEventProcessors;
   /** The worker's clock. */
@@ -173,7 +176,13 @@ export async function processDelivery(services: DeliveryProcessingServices, deli
 
   if (INSTALLATION_EVENTS.has(delivery.event)) {
     // A hint: list the App's installations again, and read the repositories of the one it names if it is connected.
-    await readInstallations({ database: services.database, app, repositoriesOf: installationId === undefined ? [] : [installationId], logger });
+    await readInstallations({
+      database: services.database,
+      app,
+      repositoriesOf: installationId === undefined ? [] : [installationId],
+      ...(services.jobs === undefined ? {} : { jobs: services.jobs }),
+      logger,
+    });
   } else if (installationId !== undefined) {
     const found = await withOrg(services.database, async (context) => {
       const [connected] = await context.tx

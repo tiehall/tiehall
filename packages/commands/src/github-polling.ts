@@ -184,7 +184,7 @@ export async function pollGitHubChanges(options: PollOptions): Promise<boolean> 
   });
   if (state === undefined || state.appId !== app.appId || state.mode !== "polling") return false;
 
-  await readInstallations({ database, app, logger });
+  await readInstallations({ database, app, jobs, logger });
 
   const since = new Date((state.polledAt ?? started).getTime() - OVERLAP_MS);
   const repositories = await withOrg(database, (context) => repositoriesToPoll(context, app.appId), { readOnly: true });

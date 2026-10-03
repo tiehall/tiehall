@@ -2,7 +2,8 @@ import { githubConnectedInstallations, githubCoveredRepositories, githubInstalla
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { everyPage, GitHubUnavailableError, type GitHubClient } from "./github-client.ts";
-import { defineJobType } from "./jobs.ts";
+import { emailAdminAlerts } from "./admin-alerts.ts";
+import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -29,6 +30,13 @@ import type { WorkerJob } from "./worker.ts";
 // webhook mode, and on each run of the 15-minute reconciliation, in either
 // mode (github-reconciliation.ts), and on each 60-second poll in polling mode
 // (github-polling.ts).
+//
+// A connected installation of the App that a listing finds suspended, or
+// deleted, on GitHub stops working (tracker-mirrors: Broken integrations are
+// surfaced): the web UI shows a banner about it (admin-alerts.ts), and the
+// listing that found it starts the email that tells every admin, when SMTP is
+// set, once per installation and time it broke, so later listings that find
+// it broken still start none.
 
 /** One installation of the App, as GitHub's listing gives it. */
 export interface ListedInstallation {
@@ -129,7 +137,9 @@ export async function listInstallationRepositories(client: GitHubClient, install
  * suspension; each known installation of the App that it no longer holds was
  * deleted on GitHub.
  */
-export async function recordInstallations({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number, listed: readonly ListedInstallation[]): Promise<void> {
+export async function recordInstallations(context: Pick<OrgContext, "tx" | "orgId">, appId: number, listed: readonly ListedInstallation[]): Promise<Date[]> {
+  const { tx, orgId } = context;
+  const before = await brokenConnected(context, appId);
   for (const installation of listed) {
     const values = {
       appId,
@@ -159,6 +169,32 @@ export async function recordInstallations({ tx, orgId }: Pick<OrgContext, "tx" |
         ...(held.length === 0 ? [] : [notInArray(githubInstallations.installationId, held)]),
       ),
     );
+  // The times at which connected installations broke that the listing found, each once.
+  const raised = new Map<number, Date>();
+  for (const [id, at] of await brokenConnected(context, appId)) if (before.get(id)?.getTime() !== at.getTime()) raised.set(at.getTime(), at);
+  return [...raised.values()];
+}
+
+/**
+ * The connected installations of the App that are broken, suspended or
+ * deleted on GitHub, by Tiehall's ids, with the time each broke: when it was
+ * deleted, or else when GitHub suspended it.
+ */
+async function brokenConnected({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, appId: number): Promise<Map<string, Date>> {
+  const rows = await tx
+    .select({ id: githubInstallations.id, suspendedAt: githubInstallations.suspendedAt, deletedAt: githubInstallations.deletedAt })
+    .from(githubInstallations)
+    .innerJoin(
+      githubConnectedInstallations,
+      and(eq(githubConnectedInstallations.orgId, githubInstallations.orgId), eq(githubConnectedInstallations.installationId, githubInstallations.id)),
+    )
+    .where(and(eq(githubInstallations.orgId, orgId), eq(githubInstallations.appId, appId)));
+  const broken = new Map<string, Date>();
+  for (const { id, suspendedAt, deletedAt } of rows) {
+    const at = deletedAt ?? suspendedAt;
+    if (at !== null) broken.set(id, at);
+  }
+  return broken;
 }
 
 /** Connects these known installations, by Tiehall's ids, in the caller's transaction; returns those that were not connected before. */
@@ -333,6 +369,8 @@ export interface ReadInstallationsOptions {
   app: GitHubAppAccess;
   /** Reads the repositories of these connected installations only, by GitHub's ids; of every connected one by default. */
   repositoriesOf?: readonly number[];
+  /** Sends the admins' email about a connected installation the listing finds broken, in the transaction that records it; none without it. */
+  jobs?: JobSender;
   logger?: Logger;
 }
 
@@ -346,7 +384,9 @@ export async function readInstallations(options: ReadInstallationsOptions): Prom
   const { database, app } = options;
   const listed = await listAppInstallations(app.client, options.logger);
   const toRead = await withOrg(database, async (context) => {
-    await recordInstallations(context, app.appId, listed);
+    const raised = await recordInstallations(context, app.appId, listed);
+    // Every admin is emailed once about the installations that broke at each time, when SMTP is set (admin-alerts.ts).
+    for (const at of raised) await options.jobs?.send(context.tx, emailAdminAlerts.type.queue, { alert: "github_installation", raisedAt: at.toISOString() });
     return liveConnectedInstallations(context, app.appId, options.repositoriesOf);
   });
   const repositories = await readRepositoriesOf(app.client, toRead);
@@ -370,12 +410,17 @@ export const syncGitHubInstallations: WorkerJob<{ repositoriesOf?: number[] }> =
     retryBackoff: true,
     expireInSeconds: 300,
   }),
-  async handle(job, { database, github }) {
+  async handle(job, { database, github, jobs }) {
     if (github === undefined) throw new Error("The worker gives this job no GitHub App to list the installations of.");
     const app = await github.app();
     if (app === undefined) return;
     try {
-      await readInstallations({ database, app, ...(job.data.repositoriesOf === undefined ? {} : { repositoriesOf: job.data.repositoriesOf }) });
+      await readInstallations({
+        database,
+        app,
+        ...(job.data.repositoriesOf === undefined ? {} : { repositoriesOf: job.data.repositoriesOf }),
+        ...(jobs === undefined ? {} : { jobs }),
+      });
     } catch (error) {
       // Before setup completes there is nothing to sync; the sign-in that completes it lists the installations.
       if (!(error instanceof SetupRequiredError)) throw error;

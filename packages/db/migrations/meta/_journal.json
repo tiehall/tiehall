@@ -596,6 +596,13 @@
       "when": 1790986159553,
       "tag": "0084_add_mirror_failures",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790986798794,
+      "tag": "0085_add_installation_alerts",
+      "breakpoints": true
     }
   ]
 }

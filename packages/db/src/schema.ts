@@ -253,7 +253,7 @@ export const adminAlertEmails = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id),
-    /** The alert, such as github_webhook. */
+    /** The alert, such as github_webhook, or github_installation for the installations that stopped working at one time. */
     alert: text("alert").notNull(),
     /** When the alert was raised, which tells one showing of its banner from the next. */
     raisedAt: timestamp("raised_at", { withTimezone: true }).notNull(),
@@ -267,7 +267,7 @@ export const adminAlertEmails = pgTable(
       columns: [table.orgId, table.userId],
       foreignColumns: [users.orgId, users.id],
     }),
-    check("admin_alert_emails_alert_known", sql`${table.alert} IN ('github_webhook', 'contract_fan_out')`),
+    check("admin_alert_emails_alert_known", sql`${table.alert} IN ('github_webhook', 'contract_fan_out', 'github_installation')`),
   ],
 );
 

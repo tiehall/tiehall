@@ -1,9 +1,21 @@
 import { getBanners, type banner } from "@tiehall/catalog";
-import { adminAlertEmails, githubApp, members, users } from "@tiehall/db";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { adminAlertEmails, githubApp, githubConnectedInstallations, githubCoveredRepositories, githubInstallations, members, teamMembers, teams, trackerMappings, users } from "@tiehall/db";
+import { and, asc, eq, isNotNull, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { fanOutBanner, waitingFanOuts } from "./contract-fan-out.ts";
-import { apiNameText, CONTRACT_FAN_OUT_ALERT, countText, GITHUB_WEBHOOK_ALERT, installLink, repositoryText, teamKeysText, type Mailer, type ServerText } from "./email.ts";
+import {
+  accountsText,
+  apiNameText,
+  CONTRACT_FAN_OUT_ALERT,
+  countText,
+  GITHUB_INSTALLATION_ALERT,
+  GITHUB_WEBHOOK_ALERT,
+  installLink,
+  repositoryText,
+  teamKeysText,
+  type Mailer,
+  type ServerText,
+} from "./email.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
 import type { Member } from "./members.ts";
@@ -21,14 +33,25 @@ import type { WorkerJob } from "./worker.ts";
 // is read from the state that shows the problem, so it goes on its own once
 // the problem does.
 //
-// The problem built so far: Tiehall gave up a GitHub webhook delivery
-// (github-redelivery.ts), which the App's row records until an admin switches
-// GitHub's mode or a delivery that reaches the install after the give-up is
-// verified. Teams map no GitHub intake repository yet, so its banner shows to
-// the admins alone; the members of the teams whose mirrors go through GitHub
-// see it once the GitHub Issues mirror maps teams (group 24). The write that
-// records the give-up when none is recorded starts the email to the admins
-// (github-mode.ts), so later give-ups while the banner shows start none.
+// The problems built so far:
+// - Tiehall gave up a GitHub webhook delivery (github-redelivery.ts), which
+//   the App's row records until an admin switches GitHub's mode or a delivery
+//   that reaches the install after the give-up is verified. Its banner shows
+//   to the admins and to the members of each team that maps a GitHub intake
+//   repository. The write that records the give-up when none is recorded
+//   starts the email to the admins (github-mode.ts), so later give-ups while
+//   the banner shows start none.
+// - A connected installation of the install's GitHub App is suspended or
+//   deleted on GitHub, as the latest listing of the App's installations, or a
+//   delivery about it, recorded (github-installations.ts). Its banner shows
+//   to the admins and to the members of each team whose intake repository is
+//   one the installation covered, until a listing finds it working again, or
+//   an admin disconnects it. The listing that records it broken starts the
+//   email, once per time it broke.
+// An admin's banner leads to the page of the admin UI that fixes the
+// problem; a member's, which they cannot open, to the members page, which
+// names the admins. An App created without a webhook has no delivery log,
+// and GitHub's 404 for it raises nothing (github-mode.ts).
 //
 // The admins and the members of a request's target team also see a banner,
 // with a Retry button, for each of the team's requests whose mirror job failed
@@ -44,7 +67,7 @@ import type { WorkerJob } from "./worker.ts";
 export type Banner = z.output<typeof banner>;
 
 /** The admin alerts that are emailed, by their ids. */
-export type AdminAlert = "github_webhook" | "contract_fan_out";
+export type AdminAlert = "github_webhook" | "contract_fan_out" | "github_installation";
 
 /** The problem with GitHub's webhook that the App's row shows, if any: when it was raised, and whether GitHub moved to polling mode. */
 async function githubWebhookProblem({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<{ raisedAt: Date; polling: boolean } | undefined> {
@@ -62,21 +85,122 @@ function pollingSentence(polling: boolean): string {
     : "An admin chose webhook mode, so GitHub stays in it, and changes reach Tiehall only through the reconciliation every 15 minutes until deliveries work again.";
 }
 
+/** A connected installation of the App in use that is suspended or deleted on GitHub, with the teams whose mirrors go through it. */
+interface BrokenInstallation {
+  id: string;
+  account: string;
+  deleted: boolean;
+  /** When it broke: when it was deleted, or else when GitHub suspended it. */
+  raisedAt: Date;
+  /** The teams whose intake repository is one it covered, with that repository. */
+  teams: { id: string; key: string; repository: string }[];
+}
+
+/** The connected installations of the App in use that are suspended or deleted on GitHub, by account. */
+async function brokenInstallations({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<BrokenInstallation[]> {
+  const [app] = await tx.select({ appId: githubApp.appId }).from(githubApp).where(eq(githubApp.orgId, orgId));
+  if (app === undefined) return [];
+  const rows = await tx
+    .select({ id: githubInstallations.id, account: githubInstallations.accountLogin, suspendedAt: githubInstallations.suspendedAt, deletedAt: githubInstallations.deletedAt })
+    .from(githubInstallations)
+    .innerJoin(
+      githubConnectedInstallations,
+      and(eq(githubConnectedInstallations.orgId, githubInstallations.orgId), eq(githubConnectedInstallations.installationId, githubInstallations.id)),
+    )
+    .where(
+      and(
+        eq(githubInstallations.orgId, orgId),
+        eq(githubInstallations.appId, app.appId),
+        or(isNotNull(githubInstallations.suspendedAt), isNotNull(githubInstallations.deletedAt)),
+      ),
+    )
+    .orderBy(asc(githubInstallations.accountLogin), asc(githubInstallations.installationId));
+  const broken: BrokenInstallation[] = [];
+  for (const { id, account, suspendedAt, deletedAt } of rows) {
+    // The repositories it covered stay recorded while it is broken: the teams that map one of them mirror through it.
+    const mapped = await tx
+      .select({ id: teams.id, key: teams.key, repository: trackerMappings.targetName })
+      .from(trackerMappings)
+      .innerJoin(teams, and(eq(teams.orgId, trackerMappings.orgId), eq(teams.id, trackerMappings.teamId)))
+      .innerJoin(
+        githubCoveredRepositories,
+        and(
+          eq(githubCoveredRepositories.orgId, trackerMappings.orgId),
+          eq(githubCoveredRepositories.installationId, id),
+          sql`${githubCoveredRepositories.repositoryId}::text = ${trackerMappings.target}`,
+        ),
+      )
+      .where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.tracker, "github")))
+      .orderBy(asc(teams.key));
+    broken.push({ id, account, deleted: deletedAt !== null, raisedAt: (deletedAt ?? suspendedAt)!, teams: mapped });
+  }
+  return broken;
+}
+
+/** The ids of the teams that map a GitHub intake repository, whose mirrors go through GitHub. */
+async function teamsMirroringThroughGitHub({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<Set<string>> {
+  const rows = await tx
+    .select({ teamId: trackerMappings.teamId })
+    .from(trackerMappings)
+    .where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.tracker, "github")));
+  return new Set(rows.map(({ teamId }) => teamId));
+}
+
+/** The ids of the member's teams. */
+async function teamsOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, userId: string): Promise<Set<string>> {
+  const rows = await tx
+    .select({ teamId: teamMembers.teamId })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.orgId, orgId), eq(teamMembers.userId, userId)));
+  return new Set(rows.map(({ teamId }) => teamId));
+}
+
+/** Where an admin's banner about GitHub leads: the page of the admin UI that fixes it. */
+const GITHUB_PAGE = { href: "/admin/github", text: "The GitHub page of the admin UI" };
+
+/** Where a member's banner leads, since they cannot open the admin UI: the members page, which names the admins. */
+const ADMINS = { href: "/members", text: "The members page, which names the admins" };
+
+/** What a broken installation's banner says, to an admin or to a member. */
+function brokenInstallationText(installation: BrokenInstallation, admin: boolean): string {
+  const { account, deleted } = installation;
+  const repositories = installation.teams.map(({ key, repository }) => `${key} in ${repository}`);
+  const what = deleted ? `The ${account} installation of the install's GitHub App was deleted on GitHub` : `The ${account} installation of the install's GitHub App is suspended on GitHub`;
+  const effect =
+    `, so Tiehall cannot read the repositories it covered, link or close requests through their pull requests, or write the mirror issues in them` +
+    (repositories.length === 0 ? "." : `: the mirrors of ${repositories.join(", ")}.`);
+  const fix = !admin
+    ? " An admin of the install can tell you more."
+    : deleted
+      ? ` An owner of ${account} installs the App again on GitHub, and an admin connects the new installation.`
+      : ` An owner of ${account} unsuspends it in ${account}'s settings on GitHub, under GitHub Apps.`;
+  return `${what}${effect}${fix}`;
+}
+
 /** The banners the web UI shows the member this call acts for: every one to an admin. */
 export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, member: Pick<Member, "userId" | "role"> | undefined): Promise<Banner[]> {
   const role = member?.role;
+  const admin = role === "admin";
   const banners: Banner[] = [];
+  if (member === undefined) return banners;
+  const mine = admin ? new Set<string>() : await teamsOf(context, member.userId);
+  const sees = (teamIds: Iterable<string>) => admin || [...teamIds].some((id) => mine.has(id));
   const webhook = await githubWebhookProblem(context);
-  if (webhook !== undefined && role === "admin") {
+  if (webhook !== undefined && sees(await teamsMirroringThroughGitHub(context))) {
     banners.push({
       id: "github_webhook",
       text:
         "GitHub's webhook deliveries to this install fail: Tiehall gave one up after asking GitHub 5 times to deliver it again. " +
-        `${pollingSentence(webhook.polling)} Check the webhook in the App's settings on GitHub, on its Advanced tab.`,
-      link: { href: "/admin/github", text: "The GitHub page of the admin UI" },
+        `${pollingSentence(webhook.polling)} ` +
+        (admin ? "Check the webhook in the App's settings on GitHub, on its Advanced tab." : "An admin of the install can check the webhook in the App's settings on GitHub."),
+      link: admin ? GITHUB_PAGE : ADMINS,
     });
   }
-  if (role === "admin") for (const fanOut of await waitingFanOuts(context)) banners.push(fanOutBanner(fanOut));
+  for (const installation of await brokenInstallations(context)) {
+    if (!sees(installation.teams.map(({ id }) => id))) continue;
+    banners.push({ id: `github_installation:${installation.id}`, text: brokenInstallationText(installation, admin), link: admin ? GITHUB_PAGE : ADMINS });
+  }
+  if (admin) for (const fanOut of await waitingFanOuts(context)) banners.push(fanOutBanner(fanOut));
   banners.push(...(await mirrorFailureBanners(context, member)));
   return banners;
 }
@@ -98,6 +222,19 @@ type AlertEmail = (mailer: Mailer, to: string, installUrl: string) => Promise<un
 
 /** The email of an alert, while its banner shows the raise the job was started for; undefined once its banner has gone or shows a later raise. */
 async function alertEmailOf(context: Pick<OrgContext, "tx" | "orgId">, data: AdminAlertEmailData, raisedAt: Date): Promise<AlertEmail | undefined> {
+  if (data.alert === "github_installation") {
+    // The installations that broke at this time and still are broken from then.
+    const broken = (await brokenInstallations(context)).filter((installation) => installation.raisedAt.getTime() === raisedAt.getTime());
+    if (broken.length === 0) return undefined;
+    const suspended = broken.filter(({ deleted }) => !deleted).map(({ account }) => account);
+    const deleted = broken.filter(({ deleted: gone }) => gone).map(({ account }) => account);
+    const sentences = [
+      ...(suspended.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(suspended)} is suspended on GitHub.`]),
+      ...(deleted.length === 0 ? [] : [`The installation of the install's GitHub App on ${accountsText(deleted)} was deleted on GitHub.`]),
+    ];
+    return (mailer, to, installUrl) =>
+      mailer.send(to, GITHUB_INSTALLATION_ALERT, { broken: sentences.join(" ") as ServerText, page: installLink(installUrl, "/admin/github") });
+  }
   if (data.alert === "github_webhook") {
     const problem = await githubWebhookProblem(context);
     if (problem === undefined || problem.raisedAt.getTime() !== raisedAt.getTime()) return undefined;

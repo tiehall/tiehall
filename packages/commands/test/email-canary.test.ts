@@ -35,8 +35,8 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // notices, the daily digest, the reminders that a personal access token
 // expires soon, the request to re-confirm a team's declaration that it consumes
 // an API, whose team and API are named with the canary where their names
-// allow it, the admins' alerts about GitHub's webhook and a waiting
-// contract-change fan-out, a team's daily WARN digest of a change whose id
+// allow it, the admins' alerts about GitHub's webhook, a broken GitHub
+// installation and a waiting contract-change fan-out, a team's daily WARN digest of a change whose id
 // and operation hold the canary, and the admin's test message. The canary appears in no email
 // subject, nor in any email's text, and every template the email module
 // defines was sent at least once, so a template added later joins this test.
@@ -146,6 +146,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (subject === "Tiehall: test message") return email.TEST_MESSAGE.id;
   if (subject === "Tiehall: GitHub's webhook deliveries to the install fail") return email.GITHUB_WEBHOOK_ALERT.id;
   if (subject === "Tiehall: consumer teams wait for an admin to confirm a contract-change fan-out") return email.CONTRACT_FAN_OUT_ALERT.id;
+  if (subject === "Tiehall: a GitHub installation of the install's App stopped working") return email.GITHUB_INSTALLATION_ALERT.id;
   return undefined;
 }
 
@@ -219,6 +220,15 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     const changeSet = changeSets[0];
     await install.owner.query("INSERT INTO contract_fan_out_waits (org_id, change_set_id, team_id, waiting_since) SELECT id, $1, $2, now() FROM orgs", [changeSet?.id, teamId("FE")]);
     await runJob(emailAdminAlerts, new Date(), { alert: "contract_fan_out", raisedAt: changeSet?.since.toISOString(), changeSetId: changeSet?.id });
+    // The alert to the admins about a broken installation: the App's installation on acme-labs, through which FE, named with
+    // the canary, mirrors into acme-labs/intake, is suspended on GitHub.
+    const { id: broken } = await addInstallation(install.owner, { account: "acme-labs", repositories: [{ fullName: "acme-labs/intake", id: 7002 }], suspended: true });
+    await install.owner.query(
+      "INSERT INTO tracker_mappings (org_id, team_id, tracker, target, target_name) SELECT id, $1, 'github', '7002', 'acme-labs/intake' FROM orgs",
+      [teamId("FE")],
+    );
+    const { rows: suspended } = await install.owner.query<{ at: Date }>("SELECT suspended_at AS at FROM github_installations WHERE id = $1", [broken]);
+    await runJob(emailAdminAlerts, new Date(), { alert: "github_installation", raisedAt: suspended[0]?.at.toISOString() });
     // A potentially breaking change, whose id and operation hold the canary, goes to FE's daily WARN digest, emailed once the day ends.
     await install.execute(
       "contract.report",
@@ -270,6 +280,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
       [
         "email.contract_fan_out_alert",
         "email.digest",
+        "email.github_installation_alert",
         "email.github_webhook_alert",
         "email.personal_access_token_reminder",
         "email.proposal_notice",
