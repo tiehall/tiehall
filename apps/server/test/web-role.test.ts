@@ -47,13 +47,22 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-async function until(what: string, check: () => boolean, seconds = 20): Promise<void> {
+/**
+ * Waits until the check holds, failing after the given seconds. The role
+ * listens within a second on a laptop, but a loaded CI runner took longer than
+ * 20 seconds twice, so the default is a minute, and the tests that start the
+ * role have two (STARTS_THE_ROLE).
+ */
+async function until(what: string, check: () => boolean, seconds = 60): Promise<void> {
   const deadline = Date.now() + seconds * 1000;
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
     await sleep(20);
   }
 }
+
+/** The tests that start the role give it two minutes, so the minute the role may take to listen fits in. */
+const STARTS_THE_ROLE = { timeout: 120_000 };
 
 async function startWebRole(env: Record<string, string> = {}): Promise<Running> {
   const port = await freePort();
@@ -89,7 +98,7 @@ function logEntries(output: string): Record<string, unknown>[] {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-describe("the web role on SIGTERM", () => {
+describe("the web role on SIGTERM", STARTS_THE_ROLE, () => {
   it("answers a call during shutdown with 503, Retry-After: 0 and a problem, lets the call in flight finish, and exits 0", async () => {
     const web = await startWebRole();
     const slow = fetch(`http://127.0.0.1:${web.port}/slow`).then(async (response) => ({
@@ -240,7 +249,7 @@ describe("the web role on SIGTERM", () => {
 // agent-surfaces: Request URL response headers. Next.js sets its own Vary as it renders the web UI's page of a
 // request, after the proxy ran; the web role adds Accept and Authorization to the Vary of every answer of a request
 // URL as its head goes out, and leaves every other answer as it is.
-describe("the web role's answers of request URLs", () => {
+describe("the web role's answers of request URLs", STARTS_THE_ROLE, () => {
   it("name Accept and Authorization in their Vary, besides what the page set, and leave other answers as they are", async () => {
     const web = await startWebRole();
     const vary = async (path: string) => (await fetch(`http://127.0.0.1:${web.port}${path}`)).headers.get("vary");
@@ -250,7 +259,7 @@ describe("the web role's answers of request URLs", () => {
   });
 });
 
-describe("the web role's log", () => {
+describe("the web role's log", STARTS_THE_ROLE, () => {
   it("is only JSON lines on standard output, with what the server prints to the console redacted like any line", async () => {
     const web = await startWebRole();
     const canary = `canary-${randomBytes(8).toString("hex")}`;
@@ -284,7 +293,7 @@ describe("the web role's log", () => {
 // carries `Connection: close`, and the rest of the body is not read. The fixture stands in for the app's routes:
 // /api/v1/… answers as the setup gate does before setup is complete, /mcp answers 200 as an MCP server does, and
 // /setup reads the form posted to it.
-describe("the web role's limit on request bodies", () => {
+describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
   const MiB = 1024 * 1024;
   const LIMIT = 2 * MiB;
   const PAYLOAD_TOO_LARGE = "https://tiehall.com/problems/payload-too-large";
@@ -632,7 +641,7 @@ describe("the web role's limit on request bodies", () => {
 // self-host-install: The setup code guards the setup screen. While setup is incomplete, each start prints a new
 // setup code to the log, where `docker compose logs app` shows it, and stores only its hash, which replaces the
 // previous one.
-describe("the web role at start", () => {
+describe("the web role at start", STARTS_THE_ROLE, () => {
   const migrationsFolder = fileURLToPath(new URL("../../../packages/db/migrations/", import.meta.url));
   const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
   let database: TestDatabase;

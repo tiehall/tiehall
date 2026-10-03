@@ -292,10 +292,10 @@ describe("the seeded text", () => {
       interrupted: () => stop.signal,
     });
     try {
-      const started = Date.now() + 20_000;
+      const started = Date.now() + 30_000;
       while (!calls.includes("/api/v1/events/wait") && Date.now() < started) await realSleep(20);
       for (const [index] of CORPUS.entries()) await post(dana, { key: open.key, kind: "comment", body: seeded(index) });
-      const until = Date.now() + 20_000;
+      const until = Date.now() + 30_000;
       while (printed.split("\n").filter((line) => line !== "").length < CORPUS.length && Date.now() < until) await realSleep(20);
     } finally {
       stop.abort();

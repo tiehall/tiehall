@@ -73,9 +73,9 @@ async function lineUp<T>(call: () => Promise<T>, behind: number): Promise<{ answ
     finished = true;
   };
   inFlight.then(settle, settle);
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (!finished && (await waiting()) <= behind) {
-    if (Date.now() > deadline) throw new Error(`The call neither waited for a lock behind ${behind} others nor finished within 10 seconds.`);
+    if (Date.now() > deadline) throw new Error(`The call neither waited for a lock behind ${behind} others nor finished within 30 seconds.`);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return { answer: inFlight };

@@ -78,13 +78,13 @@ describe("tiehall watch", () => {
       interrupted: () => stop.signal,
     });
     try {
-      const until = Date.now() + 20_000;
+      const until = Date.now() + 30_000;
       while (!calls.includes("/api/v1/events/wait") && Date.now() < until) await realSleep(20);
       await ask(oli, other.key);
       await realSleep(HOLD_MS * 2);
       expect(printed).toBe("");
       await ask(dana, theirs.key);
-      const reported = Date.now() + 20_000;
+      const reported = Date.now() + 30_000;
       while (printed === "" && Date.now() < reported) await realSleep(20);
       expect(printed).toBe(`Tiehall: ${theirs.key} request.message_posted (team FE) ${URL_OF_INSTALL}/${theirs.key}\n`);
     } finally {

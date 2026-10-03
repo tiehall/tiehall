@@ -185,7 +185,7 @@ describe("the hook commands, as Claude Code runs them", () => {
       const pid = Number(printed);
       expect(pid).toBeGreaterThan(0);
       expect(waits).toEqual(["/api/v1/events/wait"]);
-      const until = Date.now() + 15_000;
+      const until = Date.now() + 30_000;
       while (Date.now() < until && runs(pid)) await new Promise((resolve) => setTimeout(resolve, 100));
       expect(runs(pid)).toBe(false);
       expect(existsSync(sessionLockPath(configDir, "session-orphan"))).toBe(false);
@@ -220,7 +220,7 @@ describe("the hook commands, as Claude Code runs them", () => {
         child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
         child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
         const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
-        const until = Date.now() + 10_000;
+        const until = Date.now() + 30_000;
         while (waits.length === before && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
         child.kill(signal);
         expect({ args, signal, code: await exited, output }).toEqual({ args, signal, code: 0, output: "" });

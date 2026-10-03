@@ -40,7 +40,7 @@ async function endSessions(applicationName: string): Promise<number> {
   return rows.filter(({ ended }) => ended).length;
 }
 
-async function until(what: string, check: () => boolean, seconds = 4): Promise<void> {
+async function until(what: string, check: () => boolean, seconds = 30): Promise<void> {
   const deadline = Date.now() + seconds * 1000;
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);

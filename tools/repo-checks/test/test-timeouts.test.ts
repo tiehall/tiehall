@@ -37,9 +37,9 @@ function projects(): string[] {
     .map((file) => file.slice(0, -"/package.json".length));
 }
 
-/** The committed TypeScript sources of a project's tests, fixtures left out. */
+/** The TypeScript sources of a project's tests, committed or new and not ignored, fixtures left out. */
 function testSources(project: string): string[] {
-  return execFileSync("git", ["ls-files", `${project}/test`], { cwd: repoRoot, encoding: "utf8" })
+  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", `${project}/test`], { cwd: repoRoot, encoding: "utf8" })
     .split("\n")
     .filter((file) => file.endsWith(".ts") && !file.includes("/fixtures/"));
 }
@@ -54,6 +54,23 @@ function configOf(project: string): string | undefined {
 function startsProcesses(project: string): boolean {
   if (configOf(project)?.includes("globalSetup") === true) return true;
   return testSources(project).some((file) => STARTS_PROCESSES.test(readFileSync(join(repoRoot, file), "utf8")));
+}
+
+/**
+ * The waits a test source fixes, in milliseconds, each with its line: a wait
+ * helper's default, such as `seconds = 20`; a deadline a loop polls against,
+ * such as `const until = Date.now() + 10_000;`; and a browser locator's
+ * `waitFor({ timeout })`.
+ */
+function fixedWaits(source: string): { line: number; ms: number }[] {
+  const waits: { line: number; ms: number }[] = [];
+  const number = (text: string) => Number(text.replaceAll("_", ""));
+  source.split("\n").forEach((text, index) => {
+    for (const [, value = ""] of text.matchAll(/\bseconds\s*=\s*(\d[\d_]*)\b/g)) waits.push({ line: index + 1, ms: number(value) * 1000 });
+    for (const [, value = ""] of text.matchAll(/\b(?:const|let)\s+\w+\s*=\s*Date\.now\(\)\s*\+\s*(\d[\d_]*)\s*;/g)) waits.push({ line: index + 1, ms: number(value) });
+    for (const [, value = ""] of text.matchAll(/\.waitFor\(\{\s*timeout:\s*(\d[\d_]*)\s*\}\)/g)) waits.push({ line: index + 1, ms: number(value) });
+  });
+  return waits;
 }
 
 /** A timeout the config sets, in milliseconds, or undefined when it sets none. */
@@ -75,6 +92,28 @@ describe("the Vitest projects whose tests start browsers, child processes or con
     const found = projects().filter(startsProcesses);
     expect(found).toEqual(expect.arrayContaining(["apps/server", "apps/web", "packages/commands", "packages/db", "tools/repo-checks"]));
     expect(found).not.toContain("packages/core");
+  });
+
+  // A wait that holds on a laptop ran out on CI's runners: the web role's
+  // tests waited 20 seconds for the role to listen, which a loaded runner
+  // took longer than twice. So a wait a test fixes is at least as long as the
+  // shortest test timeout, 30 seconds.
+  it("fix no wait shorter than 30 seconds in their tests", () => {
+    expect(fixedWaits(["async function until(what: string, seconds = 20) {", "  const until = Date.now() + 5_000;", "await page.waitFor({ timeout: 20_000 });", "new Date(Date.now() + 600_000)"].join("\n"))).toEqual([
+      { line: 1, ms: 20_000 },
+      { line: 2, ms: 5_000 },
+      { line: 3, ms: 20_000 },
+    ]);
+    const problems = projects()
+      .filter(startsProcesses)
+      .flatMap((project) => testSources(project))
+      .filter((file) => file !== "tools/repo-checks/test/test-timeouts.test.ts")
+      .flatMap((file) =>
+        fixedWaits(readFileSync(join(repoRoot, file), "utf8"))
+          .filter(({ ms }) => ms < 30_000)
+          .map(({ line, ms }) => `${file}:${line} waits ${ms} ms`),
+      );
+    expect(problems).toEqual([]);
   });
 
   it("each give their tests at least 30 seconds and their hooks at least 60, in their own vitest.config.ts", () => {

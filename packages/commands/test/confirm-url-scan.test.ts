@@ -167,7 +167,7 @@ describe("every output a request's life gives agents while proposals on it wait"
     const waits = () => samCli.calls.filter(({ url }) => new URL(url).pathname === "/api/v1/events/wait").length;
     const calls = waits();
     const ended = samCli.run(["hook", "wait"], { stdin: JSON.stringify({ session_id: "scan-wait", hook_event_name: "Stop" }), sleep: realSleep });
-    const until = Date.now() + 20_000;
+    const until = Date.now() + 30_000;
     while (waits() === calls && Date.now() < until) await realSleep(20);
     const posted = await harness.install.web(dana.session).write("messages.post", { key: request.key, kind: "comment", body: "Declining: this is FE's call." }, harness.install.fromThePage(dana.session));
     expect(posted.ok).toBe(true);

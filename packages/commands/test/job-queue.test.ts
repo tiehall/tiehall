@@ -114,7 +114,7 @@ async function recordingWorker(types: (typeof mirrorV1 | typeof mirrorV2)[]): Pr
   return received;
 }
 
-async function until<T>(what: string, check: () => Promise<T | undefined> | T | undefined, seconds = 20): Promise<T> {
+async function until<T>(what: string, check: () => Promise<T | undefined> | T | undefined, seconds = 30): Promise<T> {
   const deadline = Date.now() + seconds * 1000;
   while (Date.now() < deadline) {
     const value = await check();

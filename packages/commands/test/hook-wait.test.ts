@@ -56,7 +56,7 @@ function waiter(session: string): Promise<CliRun> {
 
 /** Resolves once Sam's CLI has called the wait endpoint this many times in all. */
 async function untilWaited(count: number): Promise<void> {
-  const until = Date.now() + 20_000;
+  const until = Date.now() + 30_000;
   while (samCli.calls.filter(({ url }) => new URL(url).pathname === "/api/v1/events/wait").length < count) {
     if (Date.now() > until) throw new Error("The waiter did not call the wait endpoint.");
     await realSleep(20);

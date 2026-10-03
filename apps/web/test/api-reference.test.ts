@@ -80,7 +80,7 @@ async function visit(options: { bypassCSP?: boolean } = {}): Promise<Visit> {
   });
   const response = await page.goto(`${origin}${REFERENCE_PATH}`);
   // The fixture's operation, as the reference renders it.
-  await page.getByText("Open a request to a team.").first().waitFor({ timeout: 20_000 });
+  await page.getByText("Open a request to a team.").first().waitFor({ timeout: 30_000 });
   // Lets requests that start after the first render, such as fonts and lazy parts, begin.
   await page.waitForLoadState("networkidle");
   const violations = await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations);

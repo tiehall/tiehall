@@ -51,13 +51,13 @@ export async function waitingNow(owner: pg.Client): Promise<number> {
 /**
  * Waits until at least this many transactions wait for a lock, so the calls
  * under test are inside their writes, or until `done` says a call finished
- * without waiting; fails after 10 seconds.
+ * without waiting; fails after 30 seconds.
  */
 export async function untilWaiting(owner: pg.Client, count: number, done: () => boolean = () => false): Promise<void> {
-  const until = Date.now() + 10_000;
+  const until = Date.now() + 30_000;
   while (Date.now() < until) {
     if (done() || (await waitingNow(owner)) >= count) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`fewer than ${count} transactions waited for a lock within 10 seconds`);
+  throw new Error(`fewer than ${count} transactions waited for a lock within 30 seconds`);
 }

@@ -265,7 +265,7 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
     },
     holding: () => held,
     async untilCalls(count) {
-      const until = Date.now() + 5_000;
+      const until = Date.now() + 30_000;
       while (stub.calls.length < count) {
         if (Date.now() > until) throw new Error(`The CLI made ${stub.calls.length} calls, not ${count}.`);
         await new Promise((resolve) => setTimeout(resolve, 2));
@@ -273,7 +273,7 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
       await settle();
     },
     async untilHolding(count = 1) {
-      const until = Date.now() + 5_000;
+      const until = Date.now() + 30_000;
       while (held < count) {
         if (Date.now() > until) throw new Error(`The stub install holds ${held} waits, not ${count}.`);
         await new Promise((resolve) => setTimeout(resolve, 2));

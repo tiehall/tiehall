@@ -60,7 +60,7 @@ const digest = (machine: CliMachine, session: string): Promise<CliRun> => machin
 const waitCalls = (machine: CliMachine) => machine.calls.filter(({ url }) => new URL(url).pathname === "/api/v1/events/wait").length;
 
 async function untilWaited(machine: CliMachine, count: number): Promise<void> {
-  const until = Date.now() + 20_000;
+  const until = Date.now() + 30_000;
   while (waitCalls(machine) < count) {
     if (Date.now() > until) throw new Error("The waiter did not call the wait endpoint.");
     await realSleep(20);

@@ -117,7 +117,7 @@ describe("a background job that fails while holding message text and a token", (
         await writer.record(messagePosted, { requestId: randomUUID(), messageId });
         await writer.enqueue(mirrorMessage, { messageId });
       });
-      const deadline = Date.now() + 20_000;
+      const deadline = Date.now() + 30_000;
       for (;;) {
         const { rows } = await owner.query<{ id: string; state: string }>(
           "SELECT id, state::text AS state FROM pgboss.job WHERE name = $1",

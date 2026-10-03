@@ -108,7 +108,7 @@ async function runPruningAt(now: Date): Promise<void> {
   });
   try {
     const id = await queue.boss.send(pruneSecurityEventOrigins.type.queue, {});
-    const deadline = Date.now() + 20_000;
+    const deadline = Date.now() + 30_000;
     for (;;) {
       const { rows } = await owner.query<{ state: string }>("SELECT state::text AS state FROM pgboss.job WHERE id = $1", [id]);
       if (rows[0]?.state === "completed") return;

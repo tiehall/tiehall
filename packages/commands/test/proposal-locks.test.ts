@@ -87,7 +87,7 @@ async function waiting(): Promise<number> {
 
 /**
  * Starts a call and returns once it waits for a lock behind the calls lined
- * up before it, or once it has finished; fails after 10 seconds. The call's
+ * up before it, or once it has finished; fails after 30 seconds. The call's
  * answer comes wrapped, since a promise returned as is would be waited for.
  */
 async function lineUp<T>(call: () => Promise<T>, behind: number): Promise<{ answer: Promise<T> }> {
@@ -97,9 +97,9 @@ async function lineUp<T>(call: () => Promise<T>, behind: number): Promise<{ answ
     finished = true;
   };
   inFlight.then(settle, settle);
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (!finished && (await waiting()) <= behind) {
-    if (Date.now() > deadline) throw new Error(`The call neither waited for a lock behind ${behind} others nor finished within 10 seconds.`);
+    if (Date.now() > deadline) throw new Error(`The call neither waited for a lock behind ${behind} others nor finished within 30 seconds.`);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return { answer: inFlight };
