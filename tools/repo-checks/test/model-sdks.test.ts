@@ -2,13 +2,15 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findModelSdkDependencies, loadDenylist, loadTelemetryDenylist, type Denylist } from "../src/model-sdks.ts";
+import { findLockfilePackages, findModelSdkDependencies, lockfilePackages, loadDenylist, loadTelemetryDenylist, type Denylist } from "../src/model-sdks.ts";
 
 // The CI check for self-host-install: No model calls, extended to
 // self-host-install: No telemetry and a documented list of outbound
 // connections. No workspace package.json may depend on a model-vendor SDK, or
-// on an analytics SDK, an error-reporting SDK or an update checker. It runs
-// the same script as the CI job against committed fixtures and the real tree.
+// on an analytics SDK, an error-reporting SDK or an update checker, and the
+// lockfile may resolve none of them, whatever depends on it. It runs the same
+// script as the CI job against committed fixtures and the real tree. The
+// built image's own check is in tools/image-tests (image.test.ts).
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/check-model-sdks.ts", import.meta.url));
@@ -74,6 +76,46 @@ describe("the model SDK check", () => {
     expect(run.stderr).not.toContain("denylist");
     expect(run.stdout).toContain("No LLM or model-vendor SDK");
     expect(run.status).toBe(0);
+  });
+
+  it("fails on a lockfile that resolves model-vendor and telemetry SDKs that no package.json names, in either of its documents", () => {
+    const root = fixture("lockfile-with-sdks");
+    expect(findModelSdkDependencies(root, loadDenylist())).toEqual([]);
+    expect(findLockfilePackages(root, loadDenylist())).toEqual([
+      { file: "pnpm-lock.yaml", name: "@anthropic-ai/sdk", version: "0.60.0", listedAs: "@anthropic-ai" },
+      { file: "pnpm-lock.yaml", name: "openai", version: "5.10.0", listedAs: "openai" },
+    ]);
+    expect(findLockfilePackages(root, loadTelemetryDenylist())).toEqual([{ file: "pnpm-lock.yaml", name: "@sentry/node", version: "9.0.0", listedAs: "@sentry" }]);
+    const run = check(root);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("pnpm-lock.yaml: resolves openai@5.10.0, which the model SDK denylist names as openai.");
+    expect(run.stderr).toContain("pnpm-lock.yaml: resolves @anthropic-ai/sdk@0.60.0, which the model SDK denylist names as @anthropic-ai.");
+    expect(run.stderr).toContain("pnpm-lock.yaml: resolves @sentry/node@9.0.0, which the telemetry denylist names as @sentry (Sentry error reporting).");
+  });
+
+  it("reads every package a lockfile resolves, by name and version, from its packages and snapshots, peers left out", () => {
+    const text = readFileSync(`${fixture("lockfile-with-sdks")}pnpm-lock.yaml`, "utf8");
+    expect(lockfilePackages(text)).toEqual([
+      { name: "@anthropic-ai/sdk", version: "0.60.0" },
+      { name: "@sentry/node", version: "9.0.0" },
+      { name: "chat-helpers", version: "1.0.0" },
+      { name: "openai", version: "5.10.0" },
+      { name: "pnpm", version: "12.6.0" },
+      { name: "zod", version: "4.1.0" },
+    ]);
+  });
+
+  it("passes on a lockfile that resolves look-alike names only", () => {
+    expect(findLockfilePackages(fixture("clean"), loadDenylist())).toEqual([]);
+    expect(findLockfilePackages(fixture("clean"), loadTelemetryDenylist())).toEqual([]);
+  });
+
+  it("reads the real lockfile, and finds no denied package in it", () => {
+    const text = readFileSync(`${repoRoot}pnpm-lock.yaml`, "utf8");
+    const names = lockfilePackages(text).map(({ name }) => name);
+    for (const name of ["next", "better-auth", "pg", "zod", "@modelcontextprotocol/server"]) expect(names).toContain(name);
+    expect(findLockfilePackages(repoRoot, loadDenylist())).toEqual([]);
+    expect(findLockfilePackages(repoRoot, loadTelemetryDenylist())).toEqual([]);
   });
 
   it("passes on the real tree", () => {

@@ -1,0 +1,73 @@
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.6.0
+        version: 12.6.0
+
+packages:
+
+  pnpm@12.6.0:
+    resolution: {integrity: sha512-fixture}
+    hasBin: true
+
+snapshots:
+
+  pnpm@12.6.0: {}
+
+---
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      chat-helpers:
+        specifier: 1.0.0
+        version: 1.0.0(zod@4.1.0)
+
+packages:
+
+  '@anthropic-ai/sdk@0.60.0':
+    resolution: {integrity: sha512-fixture}
+
+  '@sentry/node@9.0.0':
+    resolution: {integrity: sha512-fixture}
+
+  chat-helpers@1.0.0:
+    resolution: {integrity: sha512-fixture}
+
+  openai@5.10.0:
+    resolution: {integrity: sha512-fixture}
+    peerDependencies:
+      zod: ^4
+
+  zod@4.1.0:
+    resolution: {integrity: sha512-fixture}
+
+snapshots:
+
+  '@anthropic-ai/sdk@0.60.0': {}
+
+  '@sentry/node@9.0.0': {}
+
+  chat-helpers@1.0.0(zod@4.1.0):
+    dependencies:
+      '@anthropic-ai/sdk': 0.60.0
+      '@sentry/node': 9.0.0
+      openai: 5.10.0(zod@4.1.0)
+
+  openai@5.10.0(zod@4.1.0):
+    dependencies:
+      zod: 4.1.0
+
+  zod@4.1.0: {}

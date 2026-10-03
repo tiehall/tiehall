@@ -2,7 +2,7 @@
   "name": "@tiehall/image-tests",
   "version": "0.0.0",
   "private": true,
-  "description": "Container tests of the Tiehall image, the self-host boot test, and the operator tests that run whole installs with Docker Compose: a fresh install through the setup screen, backup and restore, upgrades and rollbacks, the end-to-end \"It works\" test of two people and their agents on a fresh install, and the egress test, which runs a fresh install in a network where only the stubs of the services it may reach are reachable. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset, and for some TIEHALL_PREVIOUS_IMAGE. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone) and `pnpm test:install <file>`; `pnpm test` leaves them out.",
+  "description": "Container tests of the Tiehall image, the self-host boot test, and the operator tests that run whole installs with Docker Compose: a fresh install through the setup screen, backup and restore, upgrades and rollbacks, the end-to-end \"It works\" test of two people and their agents on a fresh install, and the egress test, which runs a fresh install in a network where only the stubs of the services it may reach are reachable; and the check that the built image holds no model-vendor or telemetry SDK. They need Docker and an image: TIEHALL_IMAGE, or a local build of the repository when it is unset, and for some TIEHALL_PREVIOUS_IMAGE. Run with `pnpm test:image` (and `pnpm test:boot` for the boot test alone) and `pnpm test:install <file>`; `pnpm test` leaves them out.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {

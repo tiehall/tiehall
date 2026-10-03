@@ -9,7 +9,8 @@
     "node": ">=24"
   },
   "exports": {
-    "./docs-commands": "./src/docs-commands.ts"
+    "./docs-commands": "./src/docs-commands.ts",
+    "./model-sdks": "./src/model-sdks.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

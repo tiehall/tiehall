@@ -53,3 +53,14 @@ packageExtensions:
   drizzle-orm@0.45.2:
     dependencies:
       kysely: 0.29.6
+
+# Scalar's API reference package depends on its agent chat, which brings the
+# Vercel AI SDK (ai and @ai-sdk/*), a model SDK. The web app serves only the
+# package's prebuilt browser bundle, with the agent chat switched off and a
+# Content-Security-Policy that lets the page reach no other host
+# (apps/web/lib/api-reference.ts), and imports none of the package's modules.
+# So the agent chat is left out of the dependency graph, and the lockfile
+# resolves no model SDK (self-host-install: No model calls; checked by
+# `pnpm check:model-sdks`).
+overrides:
+  "@scalar/api-reference>@scalar/agent-chat": "-"

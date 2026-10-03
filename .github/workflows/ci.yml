@@ -75,8 +75,9 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       # No model-vendor SDK, and no analytics SDK, error-reporting SDK or
-      # update checker, in any package.json. Uses only Node built-ins, so it
-      # needs no install.
+      # update checker, in any package.json or among the packages the
+      # lockfile resolves. Uses only Node built-ins, so it needs no install.
+      # The image checks run the same denylists over the built image.
       - run: node tools/repo-checks/src/check-model-sdks.ts
 
   spec-reading:

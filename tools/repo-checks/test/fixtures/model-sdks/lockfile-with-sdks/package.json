@@ -1,0 +1,7 @@
+{
+  "name": "fixture-lockfile-with-sdks",
+  "private": true,
+  "dependencies": {
+    "chat-helpers": "1.0.0"
+  }
+}

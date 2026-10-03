@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 export interface Denylist {
@@ -78,6 +78,75 @@ function installedName(as: string, spec: unknown): string {
   const target = spec.slice("npm:".length);
   const versionAt = target.indexOf("@", target.startsWith("@") ? 1 : 0);
   return versionAt === -1 ? target : target.slice(0, versionAt);
+}
+
+/** A package a lockfile resolves, or an image holds, that a denylist names. */
+export interface PackageFinding {
+  /** Where it was found: the lockfile, relative to the scanned root, or a path in an image. */
+  file: string;
+  name: string;
+  version: string;
+  /** The denylist entry it matched: a scope or a package name. */
+  listedAs: string;
+}
+
+/** The lockfile the check reads beside the root package.json: pnpm's. */
+export const LOCKFILE = "pnpm-lock.yaml";
+
+/**
+ * Every package a pnpm lockfile resolves, by name and version, sorted: the
+ * keys of its packages and snapshots, in each of its documents (pnpm writes
+ * its own install in a document of its own before the workspace's), with the
+ * peers a snapshot's key names after its version left out. Whatever depends on
+ * a package, directly or through others, the lockfile resolves it here. The
+ * lockfile is read line by line, with Node alone, so the check needs no
+ * install: pnpm writes each of these keys on a line of its own, indented by
+ * two spaces under its section, and quoted when it starts with "@".
+ */
+export function lockfilePackages(text: string): { name: string; version: string }[] {
+  const found = new Map<string, { name: string; version: string }>();
+  let section: string | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    const top = /^([A-Za-z][A-Za-z0-9]*):/.exec(line);
+    if (top !== null || line === "---") {
+      section = top?.[1];
+      continue;
+    }
+    if (section !== "packages" && section !== "snapshots") continue;
+    const entry = /^  (?:'([^']+)'|([^\s'#][^\s]*?)):(?:\s|$)/.exec(line);
+    if (entry === null) continue;
+    const resolved = resolvedPackage(entry[1] ?? entry[2] ?? "");
+    found.set(`${resolved.name}@${resolved.version}`, resolved);
+  }
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+}
+
+/** A lockfile key, name@version with any peers in parentheses after it, as its name and version. */
+function resolvedPackage(key: string): { name: string; version: string } {
+  const withoutPeers = key.includes("(") ? key.slice(0, key.indexOf("(")) : key;
+  const at = withoutPeers.indexOf("@", withoutPeers.startsWith("@") ? 1 : 0);
+  if (at <= 0) throw new Error(`a lockfile key that names no version: ${key}`);
+  return { name: withoutPeers.slice(0, at), version: withoutPeers.slice(at + 1) };
+}
+
+/** The packages the lockfile beside root resolves that the denylist names; none when root holds no lockfile. */
+export function findLockfilePackages(root: string, denylist: Denylist): PackageFinding[] {
+  const path = join(root, LOCKFILE);
+  if (!existsSync(path)) return [];
+  return deniedPackages(
+    lockfilePackages(readFileSync(path, "utf8")).map((resolved) => ({ ...resolved, file: LOCKFILE })),
+    denylist,
+  );
+}
+
+/** The packages among these that the denylist names, sorted by where they were found, then by name and version. */
+export function deniedPackages(packages: readonly { file: string; name: string; version: string }[], denylist: Denylist): PackageFinding[] {
+  const findings: PackageFinding[] = [];
+  for (const found of packages) {
+    const listedAs = denylistEntry(found.name, denylist);
+    if (listedAs !== undefined) findings.push({ file: found.file, name: found.name, version: found.version, listedAs });
+  }
+  return findings.sort((a, b) => a.file.localeCompare(b.file) || a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
 
 function denylistEntry(name: string, denylist: Denylist): string | undefined {

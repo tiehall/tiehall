@@ -2,11 +2,13 @@
 // model-vendor SDK from model-sdk-denylist.json (self-host-install: No model
 // calls), or on an analytics SDK, an error-reporting SDK or an update checker
 // from telemetry-sdk-denylist.json (self-host-install: No telemetry and a
-// documented list of outbound connections).
+// documented list of outbound connections), or when the lockfile resolves
+// one, whatever depends on it. The image tests check the built image the same
+// way (tools/image-tests/test/image.test.ts).
 // Usage: node tools/repo-checks/src/check-model-sdks.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";
-import { denylistReason, findModelSdkDependencies, loadDenylist, loadTelemetryDenylist } from "./model-sdks.ts";
+import { denylistReason, findLockfilePackages, findModelSdkDependencies, loadDenylist, loadTelemetryDenylist } from "./model-sdks.ts";
 
 const root = resolve(process.argv[2] ?? ".");
 
@@ -38,7 +40,12 @@ for (const { denylist, name, reason, describe } of lists) {
     const why = describe ? ` (${denylistReason(denylist, listedAs) ?? "listed"})` : "";
     console.error(`${file}: ${field} has ${dependency}${alias}, which ${name} names as ${listedAs}${why}.`);
   }
-  if (findings.length > 0) {
+  const resolved = findLockfilePackages(root, denylist);
+  for (const { file, name: dependency, version, listedAs } of resolved) {
+    const why = describe ? ` (${denylistReason(denylist, listedAs) ?? "listed"})` : "";
+    console.error(`${file}: resolves ${dependency}@${version}, which ${name} names as ${listedAs}${why}.`);
+  }
+  if (findings.length > 0 || resolved.length > 0) {
     console.error(`\n${reason}\n`);
     failed = true;
   }
@@ -47,5 +54,5 @@ for (const { denylist, name, reason, describe } of lists) {
 if (failed) {
   process.exitCode = 1;
 } else {
-  console.log("No LLM or model-vendor SDK, and no analytics, error-reporting or update-check SDK, in any package.json.");
+  console.log("No LLM or model-vendor SDK, and no analytics, error-reporting or update-check SDK, in any package.json or in the lockfile.");
 }
