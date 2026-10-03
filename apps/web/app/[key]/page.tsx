@@ -29,7 +29,10 @@ import { RequestPage } from "../../lib/request-page.tsx";
 // the session's CSRF token. A path that is neither a request's key nor a
 // team's is no page. Should the session end, or the request go, between the
 // proxy's read and this one,
-// the page sends the browser to sign in, or says what refused it.
+// the page sends the browser to sign in, or, since a server component cannot
+// set its answer's status, to the same URL again, whose negotiation answers
+// the refusal as its page with the refusal's own status (public-api: One
+// error model for Tiehall's own refusals).
 
 // Rendered for every request, never prerendered or cached.
 export const dynamic = "force-dynamic";
@@ -62,14 +65,14 @@ export default async function Page({ params }: { params: Promise<{ key: string }
   return <RequestPage data={read.output} csrf={csrf} />;
 }
 
-/** A read the page needs was refused: a browser that is not signed in signs in and comes back, and any other refusal is said. */
-function refusal(problem: { status: number; title: string; detail: string }, key: string) {
+/**
+ * A read the page needs was refused after the proxy's read let the call through: a browser that is not signed in
+ * signs in and comes back, a page that is gone is no page, and any other refusal, such as of a member removed
+ * meanwhile, asks for the URL again. The proxy's negotiation, which reads what the page reads, then answers the
+ * refusal itself, as a page with the refusal's own status.
+ */
+function refusal(problem: { status: number }, key: string): never {
   if (problem.status === 401) redirect(`/sign-in?return=${encodeURIComponent(`/${key}`)}`);
   if (problem.status === 404) notFound();
-  return (
-    <main>
-      <h1>{problem.title}</h1>
-      <p>{problem.detail}</p>
-    </main>
-  );
+  redirect(`/${key}`);
 }

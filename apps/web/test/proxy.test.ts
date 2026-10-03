@@ -124,9 +124,20 @@ describe("the web UI's page at /<KEY>", () => {
 
   it("reads the request or the team the proxy negotiated the call as", async () => {
     callHeaders = new Headers({ [NEGOTIATED_KEY]: "FE-1" });
-    await render("FE-1");
+    await render("FE-1").catch(() => undefined);
     callHeaders = new Headers({ [NEGOTIATED_KEY]: "FE" });
-    await render("FE");
+    await render("FE").catch(() => undefined);
     expect(reads).toEqual(["requests.get", "teams.get"]);
+  });
+
+  // public-api: One error model for Tiehall's own refusals. A server component cannot set its answer's status, so a
+  // read refused between the proxy's read and the page's, other than for a browser that is not signed in or a page
+  // that is gone, sends the browser to the same URL again, whose negotiation then answers the refusal as its page,
+  // with its own status (403 here), rather than the page saying it with 200.
+  it("sends a call whose read is refused with 403 to the same URL, whose negotiation answers the refusal with its status", async () => {
+    callHeaders = new Headers({ [NEGOTIATED_KEY]: "FE-1" });
+    await expect(render("FE-1")).rejects.toThrow("NEXT_REDIRECT /FE-1");
+    callHeaders = new Headers({ [NEGOTIATED_KEY]: "FE" });
+    await expect(render("FE")).rejects.toThrow("NEXT_REDIRECT /FE");
   });
 });
