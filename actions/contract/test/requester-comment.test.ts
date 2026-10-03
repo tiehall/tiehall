@@ -29,16 +29,28 @@ interface FakeComment {
   user: { login: string; type: string };
 }
 
-/** GitHub's API for the pull request's comments: it keeps them, and records every call with its token. */
-function fakeGitHub(comments: FakeComment[], calls: { method: string; url: string; authorization: string | null }[], refuse = false) {
+/**
+ * GitHub's API for the pull request's comments: it keeps them, and records every call with its token. It writes a
+ * comment as the token's account: GitHub Actions' bot unless a test names another, such as a person's, whose token
+ * GET /user answers for, or another App's bot, whose installation token it does not.
+ */
+function fakeGitHub(
+  comments: FakeComment[],
+  calls: { method: string; url: string; authorization: string | null }[],
+  refuse = false,
+  author: { login: string; type: string } = { login: "github-actions[bot]", type: "Bot" },
+) {
   let next = 9000;
   return async (request: Request): Promise<Response> => {
     calls.push({ method: request.method, url: request.url, authorization: request.headers.get("authorization") });
     if (refuse) return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
+    if (request.method === "GET" && request.url === "https://api.github.com/user") {
+      return author.type === "User" ? Response.json({ login: author.login, type: "User" }) : Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
+    }
     if (request.method === "GET" && request.url.startsWith(COMMENTS)) return Response.json(comments);
     if (request.method === "POST" && request.url === COMMENTS) {
       const { body } = (await request.json()) as { body: string };
-      const comment = { id: (next += 1), body, user: { login: "github-actions[bot]", type: "Bot" } };
+      const comment = { id: (next += 1), body, user: author };
       comments.push(comment);
       return Response.json(comment, { status: 201 });
     }
@@ -132,6 +144,35 @@ describe("a report whose requester is the provider team", () => {
 
     expect(comments[0]?.body).toBe(`${marker} spoofed`);
     expect(comments.filter(({ user }) => user.login === "github-actions[bot]")).toHaveLength(1);
+  });
+
+  // A job may give the Action a token of its own in github-token, such as a person's token or an App's installation
+  // token: its comment is the one that account wrote, which a later run updates in place.
+  it.each([
+    ["a person's token", { login: "release-manager", type: "User" }],
+    ["another App's installation token", { login: "acme-ci[bot]", type: "Bot" }],
+  ])("updates in place the comment it posted with %s, rather than posting another each run", async (_token, author) => {
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    await runWith({ npx: answering("team"), runId: "7101", github: fakeGitHub(comments, calls, false, author) });
+    await runWith({ npx: answering("team"), runId: "7102", github: fakeGitHub(comments, calls, false, author) });
+
+    expect(comments).toHaveLength(1);
+    expect(comments[0]?.user).toEqual(author);
+    expect(comments[0]?.body).toContain("https://github.com/acme/payments/actions/runs/7102");
+    expect(calls.filter(({ method }) => method === "POST")).toHaveLength(1);
+    expect(calls.filter(({ method }) => method === "PATCH")).toHaveLength(1);
+  });
+
+  it("leaves a comment with the Action's marker that another person wrote alone, with a person's token too", async () => {
+    const marker = "<!-- tiehall-contract-action -->";
+    const comments: FakeComment[] = [{ id: 3, body: `${marker} spoofed`, user: { login: "mallory", type: "User" } }];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+
+    await runWith({ npx: answering("team"), runId: "7103", github: fakeGitHub(comments, calls, false, { login: "release-manager", type: "User" }) });
+
+    expect(comments[0]?.body).toBe(`${marker} spoofed`);
+    expect(comments.filter(({ user }) => user.login === "release-manager")).toHaveLength(1);
   });
 
   it("lets the job succeed with a warning when GitHub refuses the comment, such as without pull-requests: write", async () => {

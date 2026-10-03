@@ -13,15 +13,21 @@ import type { ActionRuntime } from "./action.ts";
 // the pull request runs the Action once per API, so the comment holds a part
 // per API, between hidden lines that name it: each run writes its own API's
 // part, which shows its latest run, and keeps the others' parts as they were.
-// A comment is the Action's own when it carries the mark and GitHub Actions'
-// bot wrote it, so a comment someone else wrote with the mark is left alone.
+// A comment is the Action's own when it carries the mark and the account the
+// token acts as wrote it, so a comment someone else wrote with the mark is
+// left alone. The job's github-token input may be the workflow's own
+// GITHUB_TOKEN, which writes as GitHub Actions' bot, or a token of its own:
+// for a person's token, GitHub's GET /user names its account; an
+// installation token, GITHUB_TOKEN's kind and an App's, has no such account
+// to read, and writes as a bot, which no person can write as, so its comment
+// is the bot comment with the mark.
 // Runs for two APIs at the same moment, in jobs of their own, can each miss
 // the other's part or comment; their next runs put it right. GitHub refusing the comment, or not
 // answering, leaves the job as it is, with a warning: the comment is a
 // courtesy, and the Action fails open.
 
-/** The bot GitHub Actions comments as, with a workflow's GITHUB_TOKEN. */
-const ACTIONS_BOT = "github-actions[bot]";
+/** Whose comments a run may take for its own: the account a person's token acts as, or, for an installation token, any bot. */
+type Author = { login: string } | { bot: true };
 
 /** What the comment says: the API, the install, the provider team, and the run that wrote it. */
 export interface RequesterComment {
@@ -95,14 +101,19 @@ export async function commentOnPullRequest(runtime: ActionRuntime, comment: Requ
       return "GitHub's API could not be reached.";
     }
   };
+  // The account the token writes as: a person's token's, which GET /user names, or, for an installation token, a bot.
+  const user = await call("GET", `${api}/user`);
+  const self = typeof user === "string" ? undefined : ((await user.json().catch(() => undefined)) as { login?: unknown } | undefined)?.login;
+  const author: Author = typeof self === "string" && self !== "" ? { login: self } : { bot: true };
+  const wrote = (by: { login?: unknown; type?: unknown } | null | undefined) => ("login" in author ? by?.login === author.login : by?.type === "Bot");
   // The Action's own comment on the pull request, if an earlier run posted one.
   let ours: { id: number; body: string } | undefined;
   for (let page = 1; ours === undefined; page += 1) {
     const listed = await call("GET", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments?per_page=100&page=${page}`);
     if (typeof listed === "string") return listed;
-    const comments = (await listed.json().catch(() => [])) as { id?: unknown; body?: unknown; user?: { login?: unknown } | null }[];
+    const comments = (await listed.json().catch(() => [])) as { id?: unknown; body?: unknown; user?: { login?: unknown; type?: unknown } | null }[];
     if (!Array.isArray(comments)) return "GitHub's answer listed no comments.";
-    const found = comments.find((each) => typeof each.body === "string" && each.body.includes(COMMENT_MARK) && each.user?.login === ACTIONS_BOT && typeof each.id === "number");
+    const found = comments.find((each) => typeof each.body === "string" && each.body.includes(COMMENT_MARK) && wrote(each.user) && typeof each.id === "number");
     if (found !== undefined) ours = { id: found.id as number, body: found.body as string };
     if (comments.length < 100) break;
   }
