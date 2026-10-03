@@ -38,7 +38,9 @@ import type { WorkerJob } from "./worker.ts";
 //   requests:read and requests:write when it named none, and the refresh
 //   scope, so the CLI gets a refresh token. The person approves the code on
 //   the install's own device approval page, /device, which the verification
-//   address names;
+//   address names; the answer carries no verification_uri_complete, the
+//   address with the user code in it, since the page ignores a code in its
+//   URL and nothing should invite a person to open one another prefilled;
 // - the CLI polls the OAuth token endpoint with the device code grant, which
 //   issues an access token and a refresh token like any grant's; the library's
 //   own device token endpoint, /api/auth/device/token, which would hand out a
@@ -152,7 +154,8 @@ export function cliDeviceFlow(options: CliDeviceFlowOptions): BetterAuthPlugin {
         {
           matcher: (context) => context.path === DEVICE_AUTHORIZATION_PATH,
           handler: createAuthMiddleware(async (context) => {
-            const deviceCode = (context.context.returned as { device_code?: unknown } | undefined)?.device_code;
+            const returned = context.context.returned as { device_code?: unknown; verification_uri_complete?: unknown } | undefined;
+            const deviceCode = returned?.device_code;
             if (typeof deviceCode !== "string") return;
             const requested = context.request === undefined ? undefined : asked.get(context.request);
             if (context.request !== undefined) asked.delete(context.request);
@@ -163,6 +166,10 @@ export function cliDeviceFlow(options: CliDeviceFlowOptions): BetterAuthPlugin {
                 .set({ scope: deviceScopeOf(requested, options.refreshScope), requestedFrom: address ?? null })
                 .where(and(eq(oauthDeviceCodes.orgId, orgId), eq(oauthDeviceCodes.deviceCode, deviceCode))),
             );
+            // The answer names the approval page alone, never a link with the user code in it: the page ignores a code
+            // in its URL, so nothing invites a person to open one that another prefilled.
+            const { verification_uri_complete: _prefilled, ...answer } = returned as Record<string, unknown>;
+            return context.json(answer);
           }),
         },
       ],

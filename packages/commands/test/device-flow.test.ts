@@ -111,6 +111,8 @@ describe("the CLI", () => {
     const answer = await deviceCode(CLI_REQUEST);
     expect(answer.status).toBe(200);
     expect(answer.body).toMatchObject({ expires_in: 600, verification_uri: `${URL_OF_INSTALL}/device` });
+    // No link carries the code: the approval page ignores a code in its URL, so nothing invites one there.
+    expect(answer.body).not.toHaveProperty("verification_uri_complete");
     const { rows } = await harness.install.owner.query(
       "SELECT extract(epoch FROM expires_at - requested_at)::int AS lifetime, host(requested_from) AS ip, status, user_id FROM oauth_device_codes WHERE device_code = $1",
       [answer.body["device_code"]],
