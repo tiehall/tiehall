@@ -1,0 +1,2 @@
+ALTER TABLE "pull_request_mentions" DROP CONSTRAINT "pull_request_mentions_keys_bounded";--> statement-breakpoint
+ALTER TABLE "pull_request_mentions" ADD CONSTRAINT "pull_request_mentions_keys_bounded" CHECK (cardinality("pull_request_mentions"."keys") BETWEEN 0 AND 50);

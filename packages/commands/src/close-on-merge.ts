@@ -54,7 +54,10 @@ export function mergedText({ pullRequest, key }: { pullRequest: string; key: str
 // records the keys its title, body and branch name mention then
 // (pull_request_mentions, recordOpenMentions), the latest read by GitHub's
 // update time replacing what an earlier one recorded, and a read that finds
-// it open and mentioning no key removing the record. A merged pull request's
+// it open and mentioning no key recording no key. The record keeps the update
+// time of every read it took, one that found no key too, so a read GitHub
+// gave an earlier update time, which ends after a later one, changes
+// nothing. A merged pull request's
 // mentions are the keys of the latest read that found it open, and the keys
 // its branch name mentions, which GitHub gives as the branch the pull request
 // was opened from and which no edit of the pull request changes. A key written
@@ -97,20 +100,15 @@ export function mentionedKeys(...texts: readonly string[]): string[] {
 
 /**
  * Records the request keys an open pull request's title, body and branch name
- * mention as a read found them, the read GitHub updated last winning: a read
- * that GitHub gave an earlier update time than the record's changes nothing,
- * and one that mentions no key removes the record. Close on merge counts
- * these keys as mentioned before the pull request merged.
+ * mention as a read found them, none included, with the update time GitHub
+ * gave, the read GitHub updated last winning: a read that GitHub gave an
+ * earlier update time than the record's changes nothing. Close on merge
+ * counts these keys as mentioned before the pull request merged.
  */
 export async function recordOpenMentions(
   { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
   read: { repositoryId: number; number: number; keys: readonly string[]; updatedAt: Date },
 ): Promise<void> {
-  const row = and(eq(pullRequestMentions.orgId, orgId), eq(pullRequestMentions.repositoryId, read.repositoryId), eq(pullRequestMentions.number, read.number));
-  if (read.keys.length === 0) {
-    await tx.delete(pullRequestMentions).where(and(row, lte(pullRequestMentions.updatedAt, read.updatedAt)));
-    return;
-  }
   await tx
     .insert(pullRequestMentions)
     .values({ orgId, repositoryId: read.repositoryId, number: read.number, keys: [...read.keys], updatedAt: read.updatedAt })

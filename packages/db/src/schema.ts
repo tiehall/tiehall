@@ -1870,13 +1870,13 @@ export const pullRequestMerges = pgTable(
 // counts a key in a pull request's title or body only when Tiehall knows it was
 // there before the pull request merged: GitHub gives a merged pull request's
 // title and body as they are now, edits made after the merge included, so they
-// are read while the pull request is open. One row per open pull request of a
-// covered repository whose title, body or branch name mentions a request key,
-// by GitHub's id of the repository and the pull request's number: the keys of
-// the latest read of it that found it open, and GitHub's update time of the
-// pull request that read gave, which orders reads that end out of order. A
-// later read that finds it open and mentioning no key removes the row
-// (close-on-merge.ts).
+// are read while the pull request is open. One row per pull request of a
+// covered repository that a read found open, by GitHub's id of the repository
+// and the pull request's number: the keys of the latest read of it that found
+// it open, none when that read found none, and GitHub's update time of the
+// pull request that read gave, which orders reads that end out of order, so a
+// read GitHub gave an earlier update time changes nothing, even after a later
+// read that found no key (close-on-merge.ts).
 export const pullRequestMentions = pgTable(
   "pull_request_mentions",
   {
@@ -1887,15 +1887,15 @@ export const pullRequestMentions = pgTable(
     repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
     /** The pull request's number in its repository. */
     number: integer("number").notNull(),
-    /** The request keys its title, body and branch name mentioned at that read, in upper case. */
+    /** The request keys its title, body and branch name mentioned at that read, in upper case: none when it mentioned none. */
     keys: text("keys").array().notNull(),
-    /** When GitHub last updated the pull request, as that read gave it. */
+    /** When GitHub last updated the pull request, as that read gave it, which an earlier read does not replace. */
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.repositoryId, table.number] }),
     check("pull_request_mentions_ids_positive", sql`${table.repositoryId} > 0 AND ${table.number} > 0`),
-    check("pull_request_mentions_keys_bounded", sql`cardinality(${table.keys}) BETWEEN 1 AND 50`),
+    check("pull_request_mentions_keys_bounded", sql`cardinality(${table.keys}) BETWEEN 0 AND 50`),
   ],
 );
 

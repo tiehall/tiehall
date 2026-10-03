@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { mentionedKeys } from "../src/close-on-merge.ts";
-import { pollGitHubChanges, processDelivery, processGitHubDelivery, type CiCaller, type JobData, type WebSessionCaller } from "../src/index.ts";
+import { mentionedKeys, openMentionsOf, recordOpenMentions } from "../src/close-on-merge.ts";
+import { pollGitHubChanges, processDelivery, processGitHubDelivery, withOrg, type CiCaller, type JobData, type WebSessionCaller } from "../src/index.ts";
 import { storeDelivery } from "./support/github-app.ts";
 import { changesOf, CONTRACT_WORKFLOW, providerOnStub, reportOf, runDueUpdates, type StubProvider } from "./support/contract.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
@@ -490,6 +490,39 @@ describe("a merge on a trial install, whose GitHub App has no webhook", () => {
 
     const { rows: states } = await trial.owner.query("SELECT state FROM requests WHERE id = $1", [request.id]);
     expect(states).toEqual([{ state: "claimed" }]);
+  });
+});
+
+// Reads of an open pull request can be processed out of the order GitHub updated it in, such as two deliveries'
+// jobs that read it at nearly the same time. The record keeps the update time of every read it took, a read that
+// found no key too, so a read GitHub gave an earlier update time is ignored even after a later one emptied it.
+describe("the keys recorded while a pull request is open", () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 10, 9, minute));
+  const record = (number: number, keys: string[], updatedAt: Date) => withOrg(install.db, (context) => recordOpenMentions(context, { repositoryId: 880_001, number, keys, updatedAt }));
+  const recorded = (number: number) => withOrg(install.db, (context) => openMentionsOf(context, 880_001, number), { readOnly: true });
+
+  it("stay empty when a read that found the keys taken out is followed by an earlier read that found them", async () => {
+    await record(41, ["FE-1"], at(1));
+    await record(41, [], at(3));
+    await record(41, ["FE-1"], at(2));
+
+    expect(await recorded(41)).toEqual([]);
+  });
+
+  it("stay empty when the first read found no key and an earlier read that found one comes after it", async () => {
+    await record(42, [], at(3));
+    await record(42, ["FE-2"], at(2));
+
+    expect(await recorded(42)).toEqual([]);
+  });
+
+  it("are the keys of a read GitHub updated later, after one that found none", async () => {
+    await record(43, ["FE-3"], at(1));
+    await record(43, [], at(2));
+    await record(43, ["FE-4"], at(4));
+    await record(43, ["FE-3"], at(3));
+
+    expect(await recorded(43)).toEqual(["FE-4"]);
   });
 });
 
