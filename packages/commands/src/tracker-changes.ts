@@ -26,7 +26,12 @@ import type { RequestRow } from "./request-views.ts";
 // from its own writes and the changes it read before, and with what a write
 // of its own under way will leave it showing (mirrors.ts, trackerChanges()):
 // a read that shows either is an echo of Tiehall's own write, or nothing new,
-// and is dropped. Each change it shows besides, a close, a reopen or new
+// and is dropped. A read taken before a write of the issue's state began or
+// ended, and recorded after, may show the issue as it was before that write:
+// the processing passes the count of such writes it saw before it read, and
+// when the mirror counts more now, the read's open or closed state is not
+// compared, only its assignees, which Tiehall never writes; the delivery the
+// write causes, the poll or the reconciliation reads the issue again. Each change it shows besides, a close, a reopen or new
 // assignees, is recorded on the request: Tiehall's record of it, which holds
 // the tracker accounts it was about, and the domain event
 // request.tracker_changed that names it, with the caller's provenance, the
@@ -96,20 +101,34 @@ async function proposerOf(context: HandlerContext, request: RequestRow, mirror: 
 }
 
 export const TRACKER_CHANGE_HANDLERS: Handlers = {
-  [recordTrackerChange.id]: defineHandler(recordTrackerChange, async ({ mirrorId, issue, by }, context) => {
+  [recordTrackerChange.id]: defineHandler(recordTrackerChange, async ({ mirrorId, issue, by, writesSeen }, context) => {
     if (context.caller.kind !== "integration_event") throw new Refusal("forbidden", "Only a change read from a tracker is recorded as one.");
     const { tx, orgId } = context;
     const [found] = await tx.select({ requestId: mirrors.requestId }).from(mirrors).where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)));
     if (found === undefined) throw new Refusal("record-not-found", "There is no such mirror issue.");
     const request = await lockRequestById(context, found.requestId);
     const [row] = await tx
-      .select({ issue: mirrors.issue, teamId: mirrors.teamId, number: mirrors.number, tracker: mirrors.tracker, trackerState: mirrors.trackerState, expectedState: mirrors.expectedState })
+      .select({
+        issue: mirrors.issue,
+        teamId: mirrors.teamId,
+        number: mirrors.number,
+        tracker: mirrors.tracker,
+        trackerState: mirrors.trackerState,
+        expectedState: mirrors.expectedState,
+        stateWrites: mirrors.stateWrites,
+      })
       .from(mirrors)
       .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)))
       .for("update");
     if (row === undefined || row.issue === null) throw new Refusal("record-not-found", "There is no such mirror issue.");
     const known = (row.trackerState as IssueState | null) ?? AS_MADE;
-    const now: IssueState = { open: issue.open, closeReason: issue.open ? null : issue.closeReason, assignees: issue.assignees };
+    // A write of the issue's state that began or ended since the read began may have come after it: the read may show
+    // the issue as it was before that write, so its state is not compared, and a later read, such as the delivery the
+    // write itself causes or the reconciliation, shows it. Tiehall writes no assignees, so they are.
+    const before = row.stateWrites !== writesSeen;
+    const now: IssueState = before
+      ? { open: known.open, closeReason: known.closeReason, assignees: issue.assignees }
+      : { open: issue.open, closeReason: issue.open ? null : issue.closeReason, assignees: issue.assignees };
     const changes: TrackerChange[] = trackerChanges(known, row.expectedState as Pick<IssueState, "open" | "closeReason"> | null, now);
     const done = changes.some(isTrackerDone);
     const proposer = done ? await proposerOf(context, request, row) : undefined;

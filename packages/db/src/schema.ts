@@ -2964,7 +2964,9 @@ export const trackerMappings = pgTable(
 //   its state label;
 // - what the issue shows as far as Tiehall knows, open or closed and its
 //   assignees, from Tiehall's own writes and the changes it read from the
-//   tracker, and what a write under way will leave it showing;
+//   tracker, what a write under way will leave it showing, and a count of the
+//   writes of its state begun and ended, by which a read taken before one of
+//   them is told apart;
 // - the last event of the request that its comments cover, the request state
 //   they reached, and the comment under way, with a marker of its own that
 //   the comment carries, so a comment retried after the tracker made it is
@@ -2996,6 +2998,12 @@ export const mirrors = pgTable(
     trackerState: jsonb("tracker_state"),
     /** What a write under way will leave the issue showing, which a change read meanwhile is compared with. */
     expectedState: jsonb("expected_state"),
+    /**
+     * How many times a write of the issue's state began or ended: a read of
+     * the issue taken while this count changed may show the issue as it was
+     * before that write, so its open or closed state is not compared.
+     */
+    stateWrites: integer("state_writes").notNull().default(0),
     /** The number of the request's last event the issue's comments cover. */
     commentedThrough: bigint("commented_through", { mode: "number" }).notNull().default(0),
     /** The request's state as the issue's comments reached it; null for a mirror made before comments were kept. */
@@ -3038,6 +3046,7 @@ export const mirrors = pgTable(
     check("mirrors_pushed_is_object", sql`${table.pushed} IS NULL OR jsonb_typeof(${table.pushed}) = 'object'`),
     check("mirrors_tracker_state_is_object", sql`${table.trackerState} IS NULL OR jsonb_typeof(${table.trackerState}) = 'object'`),
     check("mirrors_expected_state_is_object", sql`${table.expectedState} IS NULL OR jsonb_typeof(${table.expectedState}) = 'object'`),
+    check("mirrors_state_writes_not_negative", sql`${table.stateWrites} >= 0`),
     check("mirrors_commented_through_not_negative", sql`${table.commentedThrough} >= 0`),
     check(
       "mirrors_shown_state_known",

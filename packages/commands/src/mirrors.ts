@@ -84,7 +84,11 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   row keeps what the issue shows as far as Tiehall knows, and, while a write
 //   is under way, what that write will leave it showing; a change read from
 //   the tracker that shows either is Tiehall's own, and is dropped
-//   (trackerChanges()).
+//   (trackerChanges()). A write of the issue's state changes only the state
+//   of what Tiehall knows, so assignees read meanwhile stay, and it counts on
+//   the row as it begins and as it ends: a read taken before either and
+//   recorded after may show the issue as it was before the write, so its
+//   state is not compared, and a later read shows it (tracker-changes.ts).
 // - Shipped (contract-changes: Merging the provider PR marks the change
 //   shipped): when the provider pull request of a contract-change request's
 //   change set merges, the event that records it wakes the job, and the
@@ -605,15 +609,40 @@ async function commentFor(
   return text !== undefined;
 }
 
-/** Writes a change of what the issue shows, with the issue's state Tiehall expects back while it is under way, and records what it wrote. */
+/**
+ * Writes a change of what the issue shows, with the issue's state Tiehall
+ * expects back while it is under way, and records what it wrote. A write of
+ * the issue's state is counted as it begins and as it ends, so a read of the
+ * issue taken before either and recorded after is told apart.
+ */
 async function updateIssue(services: MirrorServices, adapter: TrackerAdapter, mirror: MirrorRow & { issue: string }, update: IssueUpdate, pushed: Pushed): Promise<void> {
+  const state = update.state;
   // A change of the issue's state, read back meanwhile, is this write's own.
-  if (update.state !== undefined) await saveMirror(services.database, mirror.id, { expectedState: update.state });
+  if (state !== undefined) {
+    await withOrg(services.database, async ({ tx, orgId }) => {
+      await tx
+        .update(mirrors)
+        .set({ expectedState: state, stateWrites: sql`${mirrors.stateWrites} + 1` })
+        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id)));
+    });
+  }
   await adapter.updateIssue(mirror.target, mirror.issue, mirror.marker, update);
-  const known: IssueState = mirror.trackerState ?? { open: true, closeReason: null, assignees: [] };
-  await saveMirror(services.database, mirror.id, {
-    pushed,
-    ...(update.state === undefined ? {} : { trackerState: { ...known, ...update.state }, expectedState: null }),
+  await withOrg(services.database, async ({ tx, orgId }) => {
+    await tx
+      .update(mirrors)
+      .set({
+        pushed,
+        // Only the state this write set changes what Tiehall knows of the issue: what it read back meanwhile, such as
+        // the issue's new assignees, stays.
+        ...(state === undefined
+          ? {}
+          : {
+              trackerState: sql`coalesce(${mirrors.trackerState}, ${JSON.stringify(AS_MADE)}::jsonb) || ${JSON.stringify({ open: state.open, closeReason: state.closeReason })}::jsonb`,
+              expectedState: null,
+              stateWrites: sql`${mirrors.stateWrites} + 1`,
+            }),
+      })
+      .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirror.id)));
   });
 }
 

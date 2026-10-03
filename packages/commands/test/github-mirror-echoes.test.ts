@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { startGitHubStub, type GitHubStub, type StubDelivery } from "@tiehall/testing/github";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createGitHubIssues, processDelivery, syncMirror, type Execute, type WebSessionCaller } from "../src/index.ts";
+import { createGitHubIssues, createInstallGitHub, processDelivery, syncMirror, type Execute, type InstallGitHub, type TrackerAdapter, type WebSessionCaller } from "../src/index.ts";
 import { providerOnStub, type StubProvider } from "./support/contract.ts";
 import { storeDelivery } from "./support/github-app.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
@@ -26,7 +26,7 @@ let ayse: string;
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  provider = await providerOnStub(install, stub, ["ayse"], { hook: true, repositories: ["acme/fe-intake"] });
+  provider = await providerOnStub(install, stub, ["ayse", "omar"], { hook: true, repositories: ["acme/fe-intake"] });
   const ada: WebSessionCaller = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
   alice = await addUser(install.owner, { login: "alice" });
   ayse = await addUser(install.owner, { login: "ayse", githubAccountId: provider.account("ayse") });
@@ -46,9 +46,9 @@ beforeEach(() => {
   install.sentJobs.splice(0);
 });
 
-async function sync(requestId: string): Promise<void> {
+async function sync(requestId: string, through?: TrackerAdapter): Promise<void> {
   const app = (await provider.github.app())!;
-  await syncMirror({ database: install.db, adapters: { github: createGitHubIssues({ app, database: install.db }) }, installUrl: URL_OF_INSTALL, logger: install.logger }, requestId);
+  await syncMirror({ database: install.db, adapters: { github: through ?? createGitHubIssues({ app, database: install.db }) }, installUrl: URL_OF_INSTALL, logger: install.logger }, requestId);
 }
 
 async function issueNumberOf(requestId: string): Promise<number> {
@@ -83,16 +83,50 @@ const recording: Execute = async (commandId, caller, input, options) => {
 };
 
 /** The `issues` deliveries GitHub made about the issue since the log had `from` entries, stored and processed as the worker does. */
-async function processIssueDeliveries(number: number, from: number): Promise<StubDelivery[]> {
+async function processIssueDeliveries(number: number, from: number, github: InstallGitHub = provider.github): Promise<StubDelivery[]> {
   found = [];
   const deliveries = stub
     .deliveries(provider.app)
     .slice(from)
     .filter(({ event, request }) => event === "issues" && (request.payload as { issue?: { number?: number } }).issue?.number === number);
   for (const delivery of deliveries) {
-    await processDelivery({ database: install.db, github: provider.github, execute: recording }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
+    await processDelivery({ database: install.db, github, execute: recording }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
   }
   return deliveries;
+}
+
+/** The changes recorded on the request, in order. */
+async function trackerChangesOf(requestId: string): Promise<string[]> {
+  const { rows } = await install.owner.query<{ change: string }>(
+    "SELECT data ->> 'change' AS change FROM events WHERE type = 'request.tracker_changed' AND data ->> 'requestId' = $1 ORDER BY number",
+    [requestId],
+  );
+  return rows.map(({ change }) => change);
+}
+
+/** The notices the system added to the request's thread from GitHub. */
+async function noticesOf(requestId: string): Promise<string[]> {
+  const { rows } = await install.owner.query<{ body: string }>(
+    "SELECT v.body FROM messages m JOIN message_versions v ON v.message_id = m.id WHERE m.request_id = $1 AND m.actor_kind = 'system' AND m.surface = 'github' ORDER BY m.number",
+    [requestId],
+  );
+  return rows.map(({ body }) => body);
+}
+
+/** A request Alice opens to FE, which Ayşe claims and starts, with its mirror issue made; its key, id and issue number. */
+async function startedRequest(): Promise<{ key: string; id: string; number: number }> {
+  const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
+  await install.execute("requests.claim", sessionOf(ayse), { key: request.key });
+  await install.execute("requests.set_status", sessionOf(ayse), { key: request.key, state: "in_progress" });
+  await sync(request.id);
+  await stub.settled();
+  return { ...request, number: await issueNumberOf(request.id) };
+}
+
+/** Marks the request done, as Ayşe does in the web UI. */
+async function markDone(key: string): Promise<void> {
+  const done = (await install.execute("requests.set_status", sessionOf(ayse), { key, state: "done" })) as { proposal: { id: string } };
+  expect((await install.confirm(sessionOf(ayse), "proposals.confirm", { proposal: done.proposal.id })).status).toBe(200);
 }
 
 describe("the deliveries that Tiehall's own writes cause", () => {
@@ -146,6 +180,67 @@ describe("the deliveries that Tiehall's own writes cause", () => {
   });
 });
 
+describe("a person's change read while a mirror job writes the issue's state", () => {
+  it("is recorded once when it lands while the job closes the issue", async () => {
+    const request = await startedRequest();
+    await markDone(request.key);
+    // While the job writes the close, Ayşe assigns Omar on GitHub, and that delivery is processed.
+    const real = createGitHubIssues({ app: (await provider.github.app())!, database: install.db });
+    let from = stub.deliveries(provider.app).length;
+    const racing: TrackerAdapter = {
+      ...real,
+      async updateIssue(...args) {
+        await stub.assignIssue("acme/fe-intake", request.number, { by: "ayse", assignees: ["omar"] });
+        await stub.settled();
+        await processIssueDeliveries(request.number, from);
+        from = stub.deliveries(provider.app).length;
+        return real.updateIssue(...args);
+      },
+    };
+
+    await sync(request.id, racing);
+    await stub.settled();
+    // The echoes of Tiehall's own close and label change come in afterwards.
+    await processIssueDeliveries(request.number, from);
+
+    expect(await trackerChangesOf(request.id)).toEqual(["assignees_changed"]);
+    expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "completed", assignees: [{ id: String(provider.account("omar")), login: "omar" }] });
+  });
+
+  it("records no reopen nor close nobody made when its read of the issue was taken just before the job closed it", async () => {
+    const request = await startedRequest();
+    let from = stub.deliveries(provider.app).length;
+    await stub.assignIssue("acme/fe-intake", request.number, { by: "ayse", assignees: ["omar"] });
+    await stub.settled();
+    const assignment = from;
+    from = stub.deliveries(provider.app).length;
+    // The assignment's processing reads the issue, open; right after GitHub answers, the request is marked done and its
+    // mirror job closes the issue, before the processing records what it read.
+    let interposed = false;
+    const slow: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (!interposed && (init?.method ?? "GET") === "GET" && url.pathname.endsWith(`/acme/fe-intake/issues/${request.number}`)) {
+        interposed = true;
+        await markDone(request.key);
+        await sync(request.id);
+        await stub.settled();
+      }
+      return response;
+    };
+    const github = createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: slow, logger: install.logger });
+
+    await processIssueDeliveries(request.number, assignment, github);
+    expect(interposed).toBe(true);
+    // The echoes of Tiehall's own close come in afterwards.
+    await processIssueDeliveries(request.number, from);
+
+    expect(await trackerChangesOf(request.id)).toEqual(["assignees_changed"]);
+    expect(await noticesOf(request.id)).toEqual([]);
+    expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "completed", assignees: [{ id: String(provider.account("omar")), login: "omar" }] });
+  });
+});
+
 describe("a person's change to a mirror issue", () => {
   it("is not taken for an echo: what Tiehall knows of the issue follows it", async () => {
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
@@ -188,7 +283,7 @@ describe("recording what a mirror issue shows", () => {
     await install.execute("requests.claim", sessionOf(ayse), { key: request.key });
     await sync(request.id);
     const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM mirrors WHERE request_id = $1", [request.id]);
-    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [] }, by: null };
+    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [] }, by: null, writesSeen: 0 };
     await expect(install.execute("mirrors.record_tracker_change", sessionOf(ayse), input)).rejects.toMatchObject({ status: 403 });
     const token = { kind: "personal_access_token" as const, userId: ayse, tokenId: randomUUID(), scopes: ["requests:read" as const, "requests:write" as const], surface: "api" as const };
     await expect(install.execute("mirrors.record_tracker_change", token, input)).rejects.toMatchObject({ status: 404 });

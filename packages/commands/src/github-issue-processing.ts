@@ -28,8 +28,10 @@ import { withOrg } from "./with-org.ts";
 // what its write under way will leave it showing, and nothing is added to the
 // request. Edits of an issue's title or body, and comments, which Tiehall's
 // App does not even subscribe to, show nothing Tiehall reads back, so they
-// change nothing either. A mirror issue whose repository no connected
-// installation covers now is not read.
+// change nothing either. The count of the mirror's state writes is taken
+// before the issue is read, so a read that a write of Tiehall's overtook is
+// told apart (tracker-changes.ts). A mirror issue whose repository no
+// connected installation covers now is not read.
 
 const ACCOUNT = z.looseObject({ id: z.number().int().positive(), login: z.string().min(1).max(100) });
 
@@ -48,7 +50,7 @@ export const processIssuesEvent: GitHubEventProcessor = async (event, context) =
     context.database,
     async ({ tx, orgId }) => {
       const [row] = await tx
-        .select({ id: mirrors.id })
+        .select({ id: mirrors.id, stateWrites: mirrors.stateWrites })
         .from(mirrors)
         .where(and(eq(mirrors.orgId, orgId), eq(mirrors.tracker, "github"), eq(mirrors.target, target), eq(mirrors.issue, issue)));
       return row;
@@ -67,5 +69,5 @@ export const processIssuesEvent: GitHubEventProcessor = async (event, context) =
   if (now === undefined) return;
   const sender = payload.data.sender === undefined ? null : { id: String(payload.data.sender.id), login: payload.data.sender.login };
   const by = now.open ? sender : (now.closedBy ?? sender);
-  await context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, { mirrorId: mirror.id, issue: now, by });
+  await context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, { mirrorId: mirror.id, issue: now, by, writesSeen: mirror.stateWrites });
 };

@@ -610,6 +610,13 @@
       "when": 1790987226487,
       "tag": "0086_move_mirrors_on_reassignment",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790991073744,
+      "tag": "0087_count_mirror_state_writes",
+      "breakpoints": true
     }
   ]
 }

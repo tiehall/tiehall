@@ -1,0 +1,2 @@
+ALTER TABLE "mirrors" ADD COLUMN "state_writes" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "mirrors" ADD CONSTRAINT "mirrors_state_writes_not_negative" CHECK ("mirrors"."state_writes" >= 0);

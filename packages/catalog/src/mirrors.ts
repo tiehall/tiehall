@@ -131,6 +131,14 @@ export const recordTrackerChange = defineCommand({
       description:
         "The tracker account that made the change, as the tracker names it: who closed the issue, for a closed one, or who caused the tracker's notice of the change otherwise; null when the tracker names none.",
     }),
+    writesSeen: z
+      .number()
+      .int()
+      .min(0)
+      .meta({
+        description:
+          "How many writes of the issue's state Tiehall had begun or ended, as the mirror counts them, when the read began: a read recorded after the count changed may show the issue as it was before Tiehall's write, so its open or closed state is not compared.",
+      }),
   }),
   output: z.object({
     changes: z.array(z.enum(["closed", "reopened", "assignees_changed"])).meta({ description: "The changes the read showed that Tiehall did not write itself." }),
