@@ -14,6 +14,7 @@ import {
   type ContractDiffFailureJson,
   type ContractDiffJson,
   type ContractReportJson,
+  type ReportedChangesJson,
   type InboxJson,
   type LinkedPullRequestJson,
   type MessagePostJson,
@@ -82,6 +83,11 @@ export function answerText(operationId: string, output: unknown, reader: Reader 
 export function contractDiffOutput(diff: ContractDiffJson, json: boolean): string {
   if (json) return `${JSON.stringify(agentJson({ untrusted: { contract: diff } }), null, 2)}\n`;
   return `${createAgentView().markdown(contractDiffText(diff))}\n`;
+}
+
+/** What `tiehall contract report` prints of the install's answer: the report it took, with what the CLI reported, in Tiehall's words. */
+export function contractReportOutput(report: ContractReportJson, reported: ReportedChangesJson): string {
+  return `${createAgentView().markdown(contractReportText(report, reported))}\n`;
 }
 
 /** What `tiehall contract diff` prints when the engine could not compare the document: its own words, and what the engine wrote, fenced as external. */

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { CLI_VERSION, run } from "../src/index.ts";
+import { contractReportOutput } from "../src/output.ts";
 
 // tiehall contract report, the step the contract Action calls
 // (agent-surfaces: CLI contract and hook commands; contract-changes: One report
@@ -131,6 +132,13 @@ describe("tiehall contract report", () => {
         { id: "endpoint-added", level: "INFO", operation: "GET /refunds" },
       ],
     });
+    // What it prints is the contractReportText path's rendering of the install's answer and what it reported.
+    expect(result.stdout).toBe(
+      contractReportOutput(
+        { id: "0b6f1c1e-0000-4000-8000-000000000001", api: "payments-api" },
+        { pullRequest: 310, install: INSTALL, changes: { ERR: 2, WARN: 1, INFO: 2 } },
+      ),
+    );
     expect(result.stdout).toBe(
       "Reported 5 classified changes of payments-api in pull request #310 to https://tiehall.example.com: 2 breaking, 1 potentially breaking and 2 informational. Tiehall took it as report 0b6f1c1e-0000-4000-8000-000000000001.\n",
     );

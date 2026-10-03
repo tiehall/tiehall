@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
 import type { ContractDiffFailureJson, ContractDiffJson } from "@tiehall/packet/tool-text";
 import { OUTPUT_PATHS, plainCase } from "../../packet/test/support/output-paths.ts";
-import { answerText, contractDiffFailureOutput, contractDiffOutput, RENDERERS, type Render } from "../src/output.ts";
+import { answerText, contractDiffFailureOutput, contractDiffOutput, contractReportOutput, RENDERERS, type Render } from "../src/output.ts";
 
 // Every CLI command's output renders through a path of the fence suite
 // (agent-safety: Content Tiehall did not generate is fenced as data;
@@ -86,6 +86,14 @@ describe("the CLI's command output", () => {
 
   it("prints tiehall contract diff's diff through the contractDiffText path, and a failing engine through contractDiffFailureText", () => {
     expect(contractDiffStrays({ diff: (diff) => contractDiffOutput(diff, false), failure: contractDiffFailureOutput })).toEqual([]);
+  });
+
+  it("prints tiehall contract report's answer, with what it reported, through the contractReportText path", () => {
+    const path = OUTPUT_PATHS["contractReportText, with what the CLI reported"];
+    if (path === undefined) throw new Error("The suite has no path for tiehall contract report's answer.");
+    const { input, reader } = plainCase(path);
+    const { report, reported } = input as { report: Parameters<typeof contractReportOutput>[0]; reported: Parameters<typeof contractReportOutput>[1] };
+    expect(contractReportOutput(report, reported)).toBe(`${createAgentView().markdown(path.render(input, reader))}\n`);
   });
 
   it("prints its diff with --json under untrusted, as agents read JSON", () => {

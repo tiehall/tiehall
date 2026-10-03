@@ -18,6 +18,7 @@ import {
   type ContractDiffFailureJson,
   type ContractDiffJson,
   type ContractReportJson,
+  type ReportedChangesJson,
   type DirectoryJson,
   type InboxJson,
   type LinkedPullRequestJson,
@@ -380,6 +381,26 @@ export const OUTPUT_PATHS: Readonly<Record<string, OutputPath>> = {
     render: (input) => contractReportText(input as ContractReportJson),
     build: () => ({ input: { id: uuid(500), api: "payments-api" } satisfies ContractReportJson, reader: READER, fenced: [], own: [] }),
     misplace: (text) => ({ input: { id: uuid(500), api: text }, reader: READER }),
+  },
+  // What `tiehall contract report` prints: the install's answer with what the CLI reported, all of it values of a form
+  // Tiehall checks (the API's name, the pull request's number, the install's URL and the counts of each level).
+  "contractReportText, with what the CLI reported": {
+    builder: "contractReportText",
+    texts: 0,
+    render: (input) => {
+      const { report, reported } = input as { report: ContractReportJson; reported: ReportedChangesJson };
+      return contractReportText(report, reported);
+    },
+    build: () => ({
+      input: { report: { id: uuid(501), api: "payments-api" }, reported: { pullRequest: 310, install: "https://tiehall.example.com", changes: { ERR: 2, WARN: 1, INFO: 2 } } },
+      reader: READER,
+      fenced: [],
+      own: [],
+    }),
+    misplace: (text) => ({
+      input: { report: { id: uuid(501), api: "payments-api" }, reported: { pullRequest: 310, install: text, changes: { ERR: 2, WARN: 1, INFO: 2 } } },
+      reader: READER,
+    }),
   },
 };
 

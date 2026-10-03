@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { COMMAND_TABLE } from "@tiehall/client";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { installUrlOf } from "./logins.ts";
-import { isProblem, problemText } from "./output.ts";
+import type { ContractReportJson } from "@tiehall/packet/tool-text";
+import { contractReportOutput, isProblem, problemText } from "./output.ts";
 import { CLI_VERSION } from "./version.ts";
 
 // tiehall contract report, the step the contract Action calls (agent-surfaces:
@@ -249,12 +250,14 @@ export async function contractReport(environment: CliEnvironment, globals: { jso
     environment.stdout(`${JSON.stringify(body, null, 2)}\n`);
     return 0;
   }
-  const taken = typeof (body as { id?: unknown } | undefined)?.id === "string" ? ` Tiehall took it as report ${(body as { id: string }).id}.` : "";
+  // The install's answer, with what was reported, through the one renderer (contractReportText), which checks every value.
   const levels = (level: ClassifiedChange["level"]) => changes.filter((change) => change.level === level).length;
-  const summary =
-    changes.length === 0
-      ? `Reported no classified change of ${api} in pull request #${number} to ${install}.`
-      : `Reported ${counted(changes.length, "classified change")} of ${api} in pull request #${number} to ${install}: ${levels("ERR")} breaking, ${levels("WARN")} potentially breaking and ${levels("INFO")} informational.`;
-  environment.stdout(`${summary}${taken}\n`);
+  environment.stdout(
+    contractReportOutput(body as ContractReportJson, {
+      pullRequest: report.pullRequest.number,
+      install,
+      changes: { ERR: levels("ERR"), WARN: levels("WARN"), INFO: levels("INFO") },
+    }),
+  );
   return 0;
 }

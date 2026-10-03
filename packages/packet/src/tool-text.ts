@@ -379,11 +379,38 @@ export interface ContractReportJson {
   api: string;
 }
 
-/** A contract report the install took, in Tiehall's words: the API, by its name, which holds no space, and the report's id. */
-export function contractReportText(report: ContractReportJson): AgentText[] {
+/** What `tiehall contract report` reported, as it counts it: the pull request's number, the install it reported to, and the changes of each level. */
+export interface ReportedChangesJson {
+  pullRequest: number;
+  install: string;
+  changes: { ERR: number; WARN: number; INFO: number };
+}
+
+/** How many of something Tiehall states, such as the changes of a level a report holds: a whole number, none included, never a text. */
+function howMany(value: unknown, what: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ToolTextError(`A ${what} is not a whole number.`);
+  return value;
+}
+
+/**
+ * A contract report the install took, in Tiehall's words: the API, by its
+ * name, which holds no space, and the report's id; with what the CLI
+ * reported, when it says, as `tiehall contract report` prints it: the pull
+ * request's number, the install's URL and how many changes of each level.
+ */
+export function contractReportText(report: ContractReportJson, reported?: ReportedChangesJson): AgentText[] {
   const api = checked(report.api, API_NAME, "API name");
   const id = checked(report.id, UUID, "report id");
-  return [{ origin: "tiehall", text: `Tiehall took the contract report for ${api}, as report ${id}.` }];
+  if (reported === undefined) return [{ origin: "tiehall", text: `Tiehall took the contract report for ${api}, as report ${id}.` }];
+  const number = count(reported.pullRequest, "pull request's number");
+  const install = checked(reported.install, INSTALL_URL, "install URL");
+  const levels = { ERR: howMany(reported.changes.ERR, "number of changes"), WARN: howMany(reported.changes.WARN, "number of changes"), INFO: howMany(reported.changes.INFO, "number of changes") };
+  const total = levels.ERR + levels.WARN + levels.INFO;
+  const summary =
+    total === 0
+      ? `Reported no classified change of ${api} in pull request #${number} to ${install}.`
+      : `Reported ${total} classified change${total === 1 ? "" : "s"} of ${api} in pull request #${number} to ${install}: ${levels.ERR} breaking, ${levels.WARN} potentially breaking and ${levels.INFO} informational.`;
+  return [{ origin: "tiehall", text: `${summary} Tiehall took it as report ${id}.` }];
 }
 
 /** The origin of an install, as TIEHALL_URL gives it: a scheme, a host and a port, and no path. */
