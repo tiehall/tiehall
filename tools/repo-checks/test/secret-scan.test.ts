@@ -91,6 +91,28 @@ describe("the secret scan", { timeout: 120_000 }, () => {
     expect(result.status).toBe(1);
   });
 
+  it("drops the `--` that `pnpm run scan:secrets -- --log-opts=HEAD` passes on, and scans with the options after it", () => {
+    const { repo } = repositoryWithKey("after-dashes");
+
+    const result = scanIn(repo, "--", "--log-opts=HEAD");
+    expect(result.output).toMatch(/ [1-9]\d* commits scanned\./);
+    expect(result.output).toContain("RuleID:      private-key");
+    expect(result.status).toBe(1);
+    expect(scanIn(repository("clean-after-dashes"), "--", "--log-opts=HEAD")).toMatchObject({ status: 0, output: expect.stringContaining("no leaks found") });
+  });
+
+  it.each([
+    ["an option gitleaks does not know", ["--no-such-option"]],
+    ["two folders to scan", ["--", "--log-opts=HEAD", "elsewhere"]],
+  ])("refuses %s with its usage, and never says a secret was found", (_case, args) => {
+    const result = scanIn(repository(`usage-${args.length}`), ...args);
+    expect(result.status).toBe(2);
+    expect(result.output).toContain("gitleaks could not run the scan");
+    expect(result.output).toContain("Usage: node tools/repo-checks/src/scan-secrets.ts [repo] [gitleaks options]");
+    expect(result.output).not.toContain("The secret scan failed");
+    expect(result.output).not.toContain("rotate it");
+  });
+
   it.each([
     ["a folder that is no git repository", () => {
       const folder = join(scratch, "no-repository");

@@ -6,10 +6,14 @@
 // checkout nor send anything out. Findings are redacted in the log.
 // Usage: node tools/repo-checks/src/scan-secrets.ts [repo] [extra gitleaks options, e.g. --log-opts=HEAD]
 // The repository is the current folder when the first argument is an option,
-// as `pnpm run scan:secrets --log-opts=HEAD` passes it. gitleaks scans no
-// commit and finds no leak in a folder whose history it cannot see, so the
-// scan fails unless the folder is the top of a git repository that holds its
-// own history: only the folder is mounted.
+// as `pnpm run scan:secrets --log-opts=HEAD` passes it; a `--`, which
+// `pnpm run scan:secrets -- --log-opts=HEAD` passes on, is dropped. gitleaks
+// scans no commit and finds no leak in a folder whose history it cannot see,
+// so the scan fails unless the folder is the top of a git repository that
+// holds its own history: only the folder is mounted. gitleaks exits with
+// LEAKS_FOUND when it finds a leak, and with another status when it cannot
+// run the scan, such as for an option it does not know; the script says
+// which, so a mistyped option is never reported as a secret.
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
@@ -19,7 +23,11 @@ import process from "node:process";
 export const GITLEAKS_IMAGE =
   "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f";
 
-const args = process.argv.slice(2);
+/** The status gitleaks exits with when it finds a leak; it exits 1 on an error and 126 on an option it does not know. */
+const LEAKS_FOUND = 3;
+const USAGE = "Usage: node tools/repo-checks/src/scan-secrets.ts [repo] [gitleaks options], such as pnpm run scan:secrets --log-opts=HEAD";
+
+const args = process.argv.slice(2).filter((arg) => arg !== "--");
 const repoArgument = args[0]?.startsWith("-") === false ? args[0] : undefined;
 const extra = repoArgument === undefined ? args : args.slice(1);
 const repo = resolve(repoArgument ?? ".");
@@ -65,16 +73,20 @@ const run = spawnSync(
     "--verbose",
     "--no-banner",
     "--no-color",
+    `--exit-code=${LEAKS_FOUND}`,
     ...extra,
   ],
   { stdio: "inherit" },
 );
 
 if (run.error) throw run.error;
-if (run.status !== 0) {
+if (run.status === LEAKS_FOUND) {
   console.error(
     "\nThe secret scan failed. A secret stays in the history after a later commit deletes it: rotate it first, " +
       "then rewrite the history of an unmerged branch, or record a reviewed false positive in .gitleaksignore.",
   );
+  process.exitCode = 1;
+} else if (run.status !== 0) {
+  console.error(`\ngitleaks could not run the scan (status ${run.status ?? "none"}); see its message above. ${USAGE}`);
+  process.exitCode = 2;
 }
-process.exitCode = run.status ?? 1;
