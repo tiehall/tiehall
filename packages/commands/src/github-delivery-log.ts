@@ -48,13 +48,31 @@ export function attemptFailed(attempt: Pick<DeliveryAttempt, "statusCode">): boo
 }
 
 /**
- * Whether an attempt was made after the moment given, such as when the App's
- * credentials were stored. GitHub logs the time to the second, so an attempt
- * logged in the second of that moment may have come just before it, and is not
- * counted as after it.
+ * How far apart GitHub's clock, which logs each attempt, and the database's,
+ * which stamps when the App's credentials were stored, may run: within this
+ * span of that moment the two times cannot tell which came first.
  */
-export function madeAfter(attempt: Pick<DeliveryAttempt, "deliveredAt">, moment: Date): boolean {
-  return attempt.deliveredAt.getTime() >= moment.getTime();
+export const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+/** Where a read of the log starts so that it holds every attempt made after the credentials were stored, whatever GitHub's clock said. */
+export function readFromCredentials(storedAt: Date): Date {
+  return new Date(storedAt.getTime() - CLOCK_SKEW_MS);
+}
+
+/**
+ * Whether an attempt was made after the App's credentials were stored, which
+ * the database stamped (design.md, Readings to confirm: R6). Well away from
+ * that moment GitHub's time to the second decides. Within CLOCK_SKEW_MS of it,
+ * neither clock can be trusted to order the two, and what the attempt is
+ * decides instead: GitHub pings the App's hook when it creates the App, before
+ * Tiehall can convert the manifest's code and store the credentials, and sends
+ * a new App nothing else before its first installation, whose delivery is the
+ * first that counts. So there a ping never counts, and any other attempt does.
+ */
+export function madeAfterCredentials(attempt: Pick<DeliveryAttempt, "deliveredAt" | "event">, storedAt: Date): boolean {
+  const lead = attempt.deliveredAt.getTime() - storedAt.getTime();
+  if (Math.abs(lead) >= CLOCK_SKEW_MS) return lead > 0;
+  return attempt.event !== "ping";
 }
 
 /** How many attempts GitHub gives per page at most, which the reads ask for. */

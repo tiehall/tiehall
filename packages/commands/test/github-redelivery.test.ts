@@ -195,6 +195,20 @@ describe("the redelivery of failed GitHub deliveries", () => {
   });
 });
 
+describe("redelivery, with GitHub's clock a few seconds off the database's", () => {
+  it("asks for a failed delivery that GitHub logged a few seconds before the credentials were stored", async () => {
+    // GitHub's clock runs 18 seconds behind the database's.
+    stub.advanceClock(-20_000);
+    const missed = await missedDelivery();
+    const { rows } = await install.owner.query<{ stored_at: Date }>("SELECT stored_at FROM github_app");
+    expect(Date.parse(missed.deliveredAt)).toBeLessThan(rows[0]!.stored_at.getTime());
+
+    await redeliver();
+
+    expect(asked()).toEqual([missed.id]);
+  });
+});
+
 describe("the limits of redelivery (github-layer-hardening 1.21)", () => {
   it("asks GitHub exactly 5 times to redeliver one failed delivery", async () => {
     const missed = await missedDelivery();

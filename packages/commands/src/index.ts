@@ -192,7 +192,7 @@ export {
   type ListedRepository,
   type ReadInstallationsOptions,
 } from "./github-installations.ts";
-export { askRedelivery, attemptFailed, madeAfter, readDeliveryLog, type DeliveryAttempt } from "./github-delivery-log.ts";
+export { askRedelivery, attemptFailed, CLOCK_SKEW_MS, madeAfterCredentials, readDeliveryLog, readFromCredentials, type DeliveryAttempt } from "./github-delivery-log.ts";
 export {
   checkDeliveryLog,
   checkGitHubDeliveryLog,

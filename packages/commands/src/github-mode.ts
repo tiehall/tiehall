@@ -5,7 +5,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { emailAdminAlerts } from "./admin-alerts.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
-import { attemptFailed, madeAfter, readDeliveryLog } from "./github-delivery-log.ts";
+import { attemptFailed, madeAfterCredentials, readDeliveryLog, readFromCredentials } from "./github-delivery-log.ts";
 import { storeSecret } from "./integration-secrets.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
@@ -228,10 +228,10 @@ export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions
     return row?.appId === app.appId ? row.storedAt : undefined;
   });
   if (stored === undefined) return undefined;
-  const attempts = await readDeliveryLog(app.client, stored, logger);
+  const attempts = await readDeliveryLog(app.client, readFromCredentials(stored), logger);
   // No delivery log at all, as for an App without a webhook: nothing to settle, and nothing failed.
   if (attempts === undefined) return undefined;
-  const counted = attempts.filter((attempt) => madeAfter(attempt, stored));
+  const counted = attempts.filter((attempt) => madeAfterCredentials(attempt, stored));
   if (counted.length === 0) return undefined;
   const settled: GitHubMode = counted.some(attemptFailed) ? "polling" : "webhook";
 

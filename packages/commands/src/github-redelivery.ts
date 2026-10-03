@@ -1,6 +1,6 @@
 import { githubApp, githubDeliveries, githubRedeliveries, type Database } from "@tiehall/db";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
-import { askRedelivery, attemptFailed, madeAfter, readDeliveryLog, type DeliveryAttempt } from "./github-delivery-log.ts";
+import { askRedelivery, attemptFailed, madeAfterCredentials, readDeliveryLog, readFromCredentials, type DeliveryAttempt } from "./github-delivery-log.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { githubModeOf, recordGivenUpDelivery } from "./github-mode.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
@@ -76,7 +76,11 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
   if (state === undefined) return 0;
 
   const since = new Date(
-    Math.max(state.storedAt.getTime(), state.checkedAt === null ? 0 : state.checkedAt.getTime() - OVERLAP_MS, started.getTime() - REDELIVERY_WINDOW_MS),
+    Math.max(
+      readFromCredentials(state.storedAt).getTime(),
+      state.checkedAt === null ? 0 : state.checkedAt.getTime() - OVERLAP_MS,
+      started.getTime() - REDELIVERY_WINDOW_MS,
+    ),
   );
   const attempts = await readDeliveryLog(app.client, since, logger);
   // An App without a webhook has no delivery log, and so nothing to redeliver.
@@ -85,7 +89,7 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
   // The last attempt of each delivery made after the credentials were stored, which counts only when it failed.
   const last = new Map<string, DeliveryAttempt>();
   for (const attempt of attempts) {
-    if (!madeAfter(attempt, state.storedAt)) continue;
+    if (!madeAfterCredentials(attempt, state.storedAt)) continue;
     const seen = last.get(attempt.deliveryId);
     if (seen === undefined || attempt.id > seen.id) last.set(attempt.deliveryId, attempt);
   }

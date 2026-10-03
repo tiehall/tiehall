@@ -183,6 +183,46 @@ describe("the check of the App's delivery log", () => {
   });
 });
 
+// GitHub logs a delivery by its own clock, to the second, and the database stamps when the credentials were stored by
+// its own. Around that moment the two clocks cannot tell the order, so there every delivery but a ping counts: GitHub
+// pings the App's hook when it creates the App, before its credentials can be stored, and sends the App nothing else
+// before its first installation (github-delivery-log.ts).
+describe("the check, with GitHub's clock a few seconds off the database's", () => {
+  it("counts the failed delivery for the first installation that GitHub logged just before the credentials were stored", async () => {
+    // GitHub's clock runs 3 seconds behind the database's.
+    stub.advanceClock(-5_000);
+    stub.setHookReachable(false);
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await stub.settled();
+    const { rows } = await install.owner.query<{ stored_at: Date }>("SELECT stored_at FROM github_app");
+    expect(Date.parse(stub.deliveries(app).at(-1)!.deliveredAt)).toBeLessThan(rows[0]!.stored_at.getTime());
+    await listInstallations();
+
+    await check();
+
+    expect(await mode()).toBe("polling");
+  });
+
+  it("does not count the failed ping from the App's creation that GitHub logged just after the credentials were stored", async () => {
+    // GitHub's clock runs 12 seconds ahead of the database's when it creates another App, whose ping fails.
+    stub.advanceClock(10_000);
+    const later = stub.createApp({ owner: "acme", hook: { url: hooks.url } });
+    await stub.settled();
+    stored = await storeStubApp(install, stub, later);
+    const { rows } = await install.owner.query<{ stored_at: Date }>("SELECT stored_at FROM github_app");
+    expect(stub.deliveries(later)[0]).toMatchObject({ event: "ping", statusCode: 401 });
+    expect(Date.parse(stub.deliveries(later)[0]!.deliveredAt)).toBeGreaterThan(rows[0]!.stored_at.getTime());
+    await stub.install(later, { account: "acme", repositories: ["acme/web"] });
+    await stub.settled();
+    await listInstallations();
+
+    await check();
+
+    expect(await mode()).toBe("webhook");
+    expect(await modeEvents()).toEqual([]);
+  });
+});
+
 describe("an admin's switch of the mode", () => {
   it("switches GitHub between the modes in the web UI, each switch a security event naming the admin", async () => {
     const answer = await switchTo(ada, "polling");
