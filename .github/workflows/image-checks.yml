@@ -11,10 +11,12 @@ name: Image checks
 # Migrations expand, then contract), the end-to-end "It works" test of a
 # fresh install (agent-surfaces: Four agent surfaces; requester-loop: Pull is
 # the contract; requests: Commitments become proposals; requests: Cross-team
-# commitments need a confirmation from each side), and the egress test
+# commitments need a confirmation from each side), the egress test
 # (self-host-install: No telemetry and a documented list of outbound
 # connections; self-host-install: The setting that switches metadata-document
-# fetching off; self-host-install: No model calls). The operator tests that
+# fetching off; self-host-install: No model calls), and the end-to-end test of
+# polling mode (tracker-mirrors: GitHub and Jira each run in webhook mode or
+# polling mode). The operator tests that
 # need the previous image take the image last built from main before the
 # commit under test (get-previous-image.sh): the pull request's base, or the
 # commit main was at before the push.
@@ -171,6 +173,34 @@ jobs:
       # mirror, the contract flow and email; any other DNS query or connection attempt fails it. It runs twice: with
       # metadata-document fetching on, and with TIEHALL_CLIENT_METADATA_FETCH=off.
       - run: pnpm test:install egress
+
+  polling-test:
+    name: Polling mode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Get the image
+        run: tools/image-tests/get-image.sh "$IMAGE"
+        env:
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+      # A fresh install on a trial URL, in the egress test's network, which nothing outside it can reach: GitHub runs
+      # in polling mode, and the loop, close on merge, the contract flow and the GitHub Issues mirror each pick up a
+      # change made on GitHub within 2 minutes.
+      - run: pnpm test:install polling
 
   backup-test:
     name: Backup and restore

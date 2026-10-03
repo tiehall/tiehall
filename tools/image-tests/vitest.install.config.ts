@@ -4,9 +4,10 @@ import { defineProject } from "vitest/config";
 // The operator tests (self-host-install: Backups with the shipped scripts;
 // self-host-install: Upgrades apply migrations before the app starts;
 // self-host-install: Compose runs Tiehall and Postgres), the end-to-end
-// "It works" test (agent-surfaces: Four agent surfaces) and the egress test
+// "It works" test (agent-surfaces: Four agent surfaces), the egress test
 // (self-host-install: No telemetry and a documented list of outbound
-// connections): each boots whole
+// connections) and the polling-mode test (tracker-mirrors: GitHub and Jira
+// each run in webhook mode or polling mode): each boots whole
 // installs from the release files with Docker Compose, so they run apart from
 // the image's container tests, one file at a time, each in a CI job of its
 // own: `pnpm test:install <file>`, such as `pnpm test:install backup`.
