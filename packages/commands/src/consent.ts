@@ -149,9 +149,15 @@ function isLocalhost(uri: string): boolean {
   }
 }
 
-function hostNameOf(uri: string): string {
+/**
+ * Where the browser returns to, as the consent screen names it: the redirect
+ * URI's host name, or, for a URI with none, such as a native app's
+ * private-use scheme (RFC 8252, 7.1), the app at that scheme.
+ */
+function returnsTo(uri: string): string {
   try {
-    return new URL(uri).hostname;
+    const url = new URL(uri);
+    return url.hostname === "" ? `the app at ${url.protocol}` : url.hostname;
   } catch {
     return uri;
   }
@@ -169,7 +175,7 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
       text: "Unverified client: it registered itself with this install, so nothing checks that it is what its name says. Approve it only if you just connected an agent yourself.",
     });
   }
-  lines.push({ text: `After you approve it, your browser returns to ${hostNameOf(redirectUri)}.` });
+  lines.push({ text: `After you approve it, your browser returns to ${returnsTo(redirectUri)}.` });
   if (client.redirectUris.length > 0 && client.redirectUris.every(isLocalhost)) {
     lines.push({
       text: "Every address this client can send you back to is on localhost, the computer it runs on. Continue only if you started this from an agent on your own computer.",

@@ -96,6 +96,18 @@ describe("the consent screen's content", () => {
     expect(textOf(REGISTERED)).toContain("127.0.0.1");
   });
 
+  // A native app's redirect URI of a private-use scheme (RFC 8252, 7.1), such as com.example.app:/callback, has no host
+  // name: the screen names the app's scheme instead, never an empty name.
+  it("names the scheme a redirect URI without a host name returns to, as a native app's private-use scheme", () => {
+    const view: ConsentView = {
+      ...REGISTERED,
+      client: { ...REGISTERED.client, redirectUris: ["com.example.app:/callback"] },
+      redirectUri: "com.example.app:/callback",
+    };
+    expect(textOf(view)).toContain("After you approve it, your browser returns to the app at com.example.app:.");
+    expect(textOf(view)).not.toMatch(/returns to \./);
+  });
+
   it("warns when every redirect URI of the client is on localhost, and not when one is not", () => {
     const loopback: ConsentView = { ...REGISTERED, client: { ...REGISTERED.client, redirectUris: ["http://localhost:4000/cb", "http://127.0.0.1:4000/cb"] } };
     expect(textOf(loopback)).toMatch(/localhost/);
