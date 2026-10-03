@@ -57,6 +57,7 @@ Then create teams, invite people or let your organization's members sign in, con
 - The API reference: every install serves its OpenAPI 3.1 document at `/api/v1/openapi.json` and renders it at `/docs/api`, with its changelog at `/docs/api/changelog`; this repository holds the document as [`openapi/v1.json`](openapi/v1.json) and the MCP tools as [`mcp/tools.json`](mcp/tools.json).
 - The handoff packet: the beta JSON Schema, [`packages/packet/schema/v1-beta.json`](packages/packet/schema/v1-beta.json), with its [conformance fixtures](packages/packet/fixtures), which every install also serves at `/schemas/packet/v1-beta.json`.
 - The contract Action: [its README](actions/contract/README.md), with its inputs and how to pin it.
+- [Security and trust](docs/security-and-trust.md): what the confirmation step and the activity log do not prove, the connections an install makes and the switch for metadata documents, no telemetry, and what the logs hold.
 - The [security review checklist](docs/security/review-checklist.md), with the [record of each review](docs/security/reviews).
 
 How Tiehall is built, and why, is written down as an OpenSpec change:

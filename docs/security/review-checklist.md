@@ -50,7 +50,7 @@ The maintainers review Tiehall against this checklist before a release, and when
 - Test: `packages/commands/test/confirmation-nonce.test.ts`: "is refused with 403 once it has been used, and the second call changes nothing"
 - Test: `packages/commands/test/confirm-url-scan.test.ts`: "finds a confirm URL in every kind of output agents read"
 - Test: `tools/image-tests/test/image.test.ts`: "serves the review pages of the confirmation step, which send a browser without a session to sign in first and cannot be framed"
-- Gap: the security docs that say what the confirmation step does not prove, with the browser-profile advice, are task 28.5.
+- Test: `tools/repo-checks/test/trust-docs.test.ts`: "state what the confirmation step does not prove, advise against a signed-in browser profile for browser-driving agents, and say what reduces the risk without removing it"
 
 ### SR-5 The device flow
 
