@@ -2,7 +2,7 @@
   "name": "@tiehall/testing",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared test harness: one Testcontainers Postgres 17 per Vitest project, a fresh database per test file, a setup file that fails a test file using pg in a way pg 9 removes, a local SMTP test server, the GitHub stub every GitHub test runs against, self-signed certificates for tests that serve HTTPS, and a test issuer of GitHub Actions OIDC tokens.",
+  "description": "Shared test harness: one Testcontainers Postgres 17 per Vitest project, a fresh database per test file, a setup file that fails a test file using pg in a way pg 9 removes, a local SMTP test server, the GitHub stub every GitHub test runs against, self-signed certificates for tests that serve HTTPS, a test issuer of GitHub Actions OIDC tokens, and the scan of what agents read for a confirm URL.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
@@ -15,7 +15,8 @@
     "./smtp": "./src/smtp.ts",
     "./github": "./src/github/index.ts",
     "./tls": "./src/tls.ts",
-    "./oidc": "./src/oidc.ts"
+    "./oidc": "./src/oidc.ts",
+    "./confirm-url-scan": "./src/confirm-url-scan.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

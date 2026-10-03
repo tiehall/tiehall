@@ -1,4 +1,5 @@
 import type { Client } from "@modelcontextprotocol/client";
+import { scannedOutputs } from "@tiehall/testing/confirm-url-scan";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { buildCli, type BuiltCli, type CliMachine } from "../../src/cli.ts";
@@ -29,6 +30,10 @@ import { callTool, connectAgent } from "../../src/mcp.ts";
 // - a decline Dana proposes with `tiehall status` takes effect once Dana
 //   confirms it in the web UI; the receipt links its undo, which restores
 //   in_progress.
+// Every tool result an agent reads over /mcp, and everything the CLI prints,
+// its hooks' output included, is scanned for a confirm URL, which reaches
+// people only in the web UI, never an agent (agent-safety: The confirm URL
+// never reaches the model).
 // CI runs it on every pull request, and on main against the pushed image.
 
 const image = inject("image");
@@ -308,6 +313,16 @@ describe("It works: a fresh install, two people in two teams, and their agents",
     await Promise.all([dana.page.waitForURL(`${install.url}/confirm/*/undo`), receipt.getByRole("link", { name: /^Undo it until / }).click()]);
     await Promise.all([dana.page.waitForNavigation(), dana.page.getByRole("button", { name: "Confirm" }).click()]);
     expect(await read()).toMatchObject({ state: "in_progress", claimant: { login: "dana" }, dueDate: DUE_DATE });
+  });
+});
+
+// agent-safety: The confirm URL never reaches the model. Each scan fails the step whose output held a confirm URL;
+// this says the scans ran over each kind of output the loop gave an agent.
+describe("what the loop gave the agents", () => {
+  it("held no confirm URL: every tool result over /mcp, CLI output and hook output was scanned", () => {
+    expect(scannedOutputs["tool result"]).toBeGreaterThan(0);
+    expect(scannedOutputs["CLI output"]).toBeGreaterThan(0);
+    expect(scannedOutputs["hook output"]).toBeGreaterThan(0);
   });
 });
 

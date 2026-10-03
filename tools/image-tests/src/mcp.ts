@@ -9,6 +9,7 @@ import {
   type StoredOAuthClientInformation,
   type StoredOAuthTokens,
 } from "@modelcontextprotocol/client";
+import { scanMcpAnswer } from "@tiehall/testing/confirm-url-scan";
 import type { Page } from "playwright-core";
 import { freePort } from "./install.ts";
 
@@ -135,6 +136,18 @@ export interface AgentIdentity {
 }
 
 /**
+ * The agent's fetch: every answer of /mcp to a call is scanned for a confirm
+ * URL, which never reaches an agent (agent-safety: The confirm URL never
+ * reaches the model), before the client reads it.
+ */
+async function scanningFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(url, init);
+  const { pathname } = new URL(url);
+  if (pathname === "/mcp" && (init?.method ?? "GET").toUpperCase() === "POST") await scanMcpAnswer(response, `POST ${pathname} (${response.status})`);
+  return response;
+}
+
+/**
  * The agent's MCP client for the person whose signed-in browser `page` is,
  * connected to the install's /mcp once the person approved it on the consent
  * screen; fails the test when a step does not go as it should.
@@ -145,7 +158,7 @@ export async function connectAgent(installUrl: string, page: Page, name: string,
   try {
     identity?.redirectUri(callback.url);
     const authorization = new AgentAuthorization(callback.url, name, identity?.clientMetadataUrl);
-    const transport = new StreamableHTTPClientTransport(endpoint, { authProvider: authorization });
+    const transport = new StreamableHTTPClientTransport(endpoint, { authProvider: authorization, fetch: scanningFetch });
     // The first call gets 401, and the SDK registers the client and asks to send the browser to the authorization.
     const unsigned = clientNamed(name);
     const refused = await unsigned.connect(transport).then(
@@ -166,7 +179,7 @@ export async function connectAgent(installUrl: string, page: Page, name: string,
     await transport.finishAuth(answer);
 
     const client = clientNamed(name);
-    await client.connect(new StreamableHTTPClientTransport(endpoint, { authProvider: authorization }));
+    await client.connect(new StreamableHTTPClientTransport(endpoint, { authProvider: authorization, fetch: scanningFetch }));
     return client;
   } finally {
     await callback.close();

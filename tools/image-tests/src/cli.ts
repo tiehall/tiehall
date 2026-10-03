@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { scanForConfirmUrl } from "@tiehall/testing/confirm-url-scan";
 import { build } from "rolldown";
 
 // The tiehall command for the end-to-end test of an install (agent-surfaces:
@@ -13,7 +14,9 @@ import { build } from "rolldown";
 // runs it on a machine of their own, a configuration folder and home that
 // hold their saved login and nothing else; the command runs as a child
 // process, as a person or a hook types it, and reaches the install over the
-// network.
+// network. Everything it prints, a hook's output included, is scanned for a
+// confirm URL, which never reaches an agent (agent-safety: The confirm URL
+// never reaches the model): a run that prints one fails.
 
 const CLI_PACKAGE = fileURLToPath(new URL("../../../packages/cli/", import.meta.url));
 
@@ -88,6 +91,12 @@ export class CliMachine {
       child.on("error", reject);
       child.on("close", (code) => {
         clearTimeout(timer);
+        try {
+          scanForConfirmUrl(args[0] === "hook" ? "hook output" : "CLI output", `${stdout}\n${stderr}`, `tiehall ${args.join(" ")}`);
+        } catch (error) {
+          reject(error);
+          return;
+        }
         resolve({ code, stdout, stderr });
       });
     });
