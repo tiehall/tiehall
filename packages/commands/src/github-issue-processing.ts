@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { GitHubEventProcessor } from "./github-delivery-processing.ts";
 import { createGitHubIssues, MirrorPlaceUnavailableError } from "./github-issues.ts";
+import type { TrackerAccount } from "./mirrors.ts";
 import { withOrg } from "./with-org.ts";
 
 // The processor of `issues` deliveries (tracker-mirrors: Mirror writes are
@@ -18,10 +19,14 @@ import { withOrg } from "./with-org.ts";
 // the token of the installation that covers its repository now, and records
 // what the issue shows (mirrors.record_tracker_change), as the integration
 // event from GitHub, acting for the member whose GitHub account made the
-// change: the one GitHub names as having closed the issue, for a closed
-// issue, or the delivery's sender otherwise, while that account is a
-// member's, and for no user otherwise (agent-access: Six kinds of caller;
-// github-layer-hardening: design.md, Technical decisions: T7). What
+// change, while that account is a member's, and for no user otherwise
+// (agent-access: Six kinds of caller; github-layer-hardening: design.md,
+// Technical decisions: T7): for a close, the one GitHub names as having
+// closed the issue; for a reopen or a change of the assignees, the sender of
+// the delivery about that change; nobody for a change a delivery about
+// another change shows, or one read without a delivery. When the read's
+// state and its assignees were made by different accounts, each part is
+// recorded on its own, for its account. What
 // Tiehall wrote itself, or is writing, comes back
 // this way too, as the App's bot: a label added or taken off, a close, the
 // issue's opening. The read then shows what Tiehall knows the issue shows, or
@@ -67,7 +72,25 @@ export const processIssuesEvent: GitHubEventProcessor = async (event, context) =
   }
   // An issue GitHub no longer has shows nothing to record.
   if (now === undefined) return;
-  const sender = payload.data.sender === undefined ? null : { id: String(payload.data.sender.id), login: payload.data.sender.login };
-  const by = now.open ? sender : (now.closedBy ?? sender);
-  await context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, { mirrorId: mirror.id, issue: now, by, writesSeen: mirror.stateWrites });
+  const sender: TrackerAccount | null = payload.data.sender === undefined ? null : { id: String(payload.data.sender.id), login: payload.data.sender.login };
+  // Who made each change the read can show, as GitHub names them: for a close, the account GitHub names as having closed
+  // the issue; for a reopen, or a change of the assignees, the sender of the delivery about that change; nobody for a
+  // change the delivery is not about, or one read without a delivery.
+  const stateBy = now.open ? (event.action === "reopened" ? sender : null) : (now.closedBy ?? (event.action === "closed" ? sender : null));
+  const assigneesBy = event.action === "assigned" || event.action === "unassigned" ? sender : null;
+  const record = (by: TrackerAccount | null, only?: "state" | "assignees") =>
+    context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, {
+      mirrorId: mirror.id,
+      issue: now,
+      by,
+      writesSeen: mirror.stateWrites,
+      ...(only === undefined ? {} : { only }),
+    });
+  if (stateBy?.id === assigneesBy?.id) {
+    await record(stateBy);
+  } else {
+    // Each part for the account that made it, the issue's state first.
+    await record(stateBy, "state");
+    await record(assigneesBy, "assignees");
+  }
 };

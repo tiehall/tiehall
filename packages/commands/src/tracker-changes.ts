@@ -19,8 +19,11 @@ import type { RequestRow } from "./request-views.ts";
 // delivery (github-issue-processing.ts), reads the mirror issue from the
 // tracker and runs mirrors.record_tracker_change with what it shows now, as
 // the integration event, acting for the member whose tracker account made
-// the change. Only such an event may run it: it is an internal command, and a
-// web session or a job that is not the tracker's own gets 403.
+// the change; when the tracker names different accounts for the issue's
+// state and for its assignees, it runs it once for each part, acting for the
+// account that made that part. Only such an event may run it: it is an
+// internal command, and a web session or a job that is not the tracker's own
+// gets 403.
 //
 // The handler compares the read with what Tiehall knows the issue shows,
 // from its own writes and the changes it read before, and with what a write
@@ -101,7 +104,7 @@ async function proposerOf(context: HandlerContext, request: RequestRow, mirror: 
 }
 
 export const TRACKER_CHANGE_HANDLERS: Handlers = {
-  [recordTrackerChange.id]: defineHandler(recordTrackerChange, async ({ mirrorId, issue, by, writesSeen }, context) => {
+  [recordTrackerChange.id]: defineHandler(recordTrackerChange, async ({ mirrorId, issue, by, writesSeen, only }, context) => {
     if (context.caller.kind !== "integration_event") throw new Refusal("forbidden", "Only a change read from a tracker is recorded as one.");
     const { tx, orgId } = context;
     const [found] = await tx.select({ requestId: mirrors.requestId }).from(mirrors).where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)));
@@ -125,10 +128,13 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
     // A write of the issue's state that began or ended since the read began may have come after it: the read may show
     // the issue as it was before that write, so its state is not compared, and a later read, such as the delivery the
     // write itself causes or the reconciliation, shows it. Tiehall writes no assignees, so they are.
-    const before = row.stateWrites !== writesSeen;
-    const now: IssueState = before
-      ? { open: known.open, closeReason: known.closeReason, assignees: issue.assignees }
-      : { open: issue.open, closeReason: issue.open ? null : issue.closeReason, assignees: issue.assignees };
+    // A part of the read the call does not record, made by another account, is not compared either.
+    const state = only !== "assignees" && row.stateWrites === writesSeen;
+    const now: IssueState = {
+      open: state ? issue.open : known.open,
+      closeReason: state ? (issue.open ? null : issue.closeReason) : known.closeReason,
+      assignees: only === "state" ? known.assignees : issue.assignees,
+    };
     const changes: TrackerChange[] = trackerChanges(known, row.expectedState as Pick<IssueState, "open" | "closeReason"> | null, now);
     const done = changes.some(isTrackerDone);
     const proposer = done ? await proposerOf(context, request, row) : undefined;

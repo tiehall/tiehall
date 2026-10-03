@@ -178,6 +178,43 @@ describe("a change of the mirror issue's assignees", () => {
   });
 });
 
+describe("who a change is recorded for", () => {
+  it("is the account that changed the assignees of a closed issue, not the one that closed it", async () => {
+    const request = await mirroredRequest();
+    await processChange(request.number, () => stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "not_planned" }));
+    // Omar, whose GitHub account is no member's, changes the assignees of the closed issue.
+    await processChange(request.number, () => stub.assignIssue("acme/fe-intake", request.number, { by: "omar", assignees: ["omar"] }));
+
+    const recorded = await trackerEventsOf(request.id);
+    expect(recorded.map(({ data, actor_user_id, actor }) => ({ change: data.change, actor_user_id, actor: actor?.login }))).toEqual([
+      { change: "closed", actor_user_id: ayse, actor: "ayse" },
+      { change: "assignees_changed", actor_user_id: null, actor: "omar" },
+    ]);
+  });
+
+  it("is, for each change a delivery's read shows, the account that made that change", async () => {
+    const request = await mirroredRequest();
+    const from = stub.deliveries(provider.app).length;
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "completed" });
+    await stub.assignIssue("acme/fe-intake", request.number, { by: "omar", assignees: ["omar"] });
+    await stub.settled();
+    const deliveries = stub
+      .deliveries(provider.app)
+      .slice(from)
+      .filter(({ event, request: { payload } }) => event === "issues" && (payload as { issue?: { number?: number } }).issue?.number === request.number);
+    // GitHub does not promise the order of its deliveries: Omar's comes first, and its read shows Ayşe's close too.
+    for (const delivery of deliveries.reverse()) {
+      await processDelivery({ database: install.db, github: provider.github, execute: install.execute }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
+    }
+
+    const recorded = await trackerEventsOf(request.id);
+    expect(recorded.map(({ data, actor_user_id, actor }) => ({ change: data.change, actor_user_id, actor: actor?.login ?? null }))).toEqual([
+      { change: "closed", actor_user_id: ayse, actor: "ayse" },
+      { change: "assignees_changed", actor_user_id: null, actor: "omar" },
+    ]);
+  });
+});
+
 describe("what else changes on GitHub", () => {
   it("changes nothing: an edit of the issue's title, and a comment on it", async () => {
     const request = await mirroredRequest();

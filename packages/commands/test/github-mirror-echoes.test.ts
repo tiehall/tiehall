@@ -72,13 +72,16 @@ async function trackerStateOf(requestId: string): Promise<unknown> {
   return rows[0]?.tracker_state;
 }
 
-/** The changes each processed delivery's read showed, as mirrors.record_tracker_change found them, in order. */
+/** The changes each processed delivery's read showed, as mirrors.record_tracker_change found them, in order: one entry per delivery that recorded its read. */
 let found: string[][] = [];
+
+/** The changes the recordings of the delivery being processed found, or undefined while none ran; a read whose parts different accounts made is recorded part by part. */
+let delivered: string[] | undefined;
 
 /** execute(), as the worker's, keeping what each recording of a read found. */
 const recording: Execute = async (commandId, caller, input, options) => {
   const output = await install.execute(commandId, caller, input, options);
-  if (commandId === "mirrors.record_tracker_change") found.push((output as { changes: string[] }).changes);
+  if (commandId === "mirrors.record_tracker_change") (delivered ??= []).push(...(output as { changes: string[] }).changes);
   return output;
 };
 
@@ -90,7 +93,9 @@ async function processIssueDeliveries(number: number, from: number, github: Inst
     .slice(from)
     .filter(({ event, request }) => event === "issues" && (request.payload as { issue?: { number?: number } }).issue?.number === number);
   for (const delivery of deliveries) {
+    delivered = undefined;
     await processDelivery({ database: install.db, github, execute: recording }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
+    if (delivered !== undefined) found.push(delivered);
   }
   return deliveries;
 }

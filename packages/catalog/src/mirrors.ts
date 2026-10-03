@@ -129,8 +129,15 @@ export const recordTrackerChange = defineCommand({
     }),
     by: trackerAccount.nullable().meta({
       description:
-        "The tracker account that made the change, as the tracker names it: who closed the issue, for a closed one, or who caused the tracker's notice of the change otherwise; null when the tracker names none.",
+        "The tracker account that made the changes recorded, as the tracker names it: who closed the issue, for its close, or who made the change the tracker's notice is about, for a reopen or new assignees; null when the tracker names none.",
     }),
+    only: z
+      .enum(["state", "assignees"])
+      .optional()
+      .meta({
+        description:
+          "The one part of the read to record, when its parts were made by different accounts: whether the issue is open or closed, or its assignees; the other part is not compared. Both when left out.",
+      }),
     writesSeen: z
       .number()
       .int()
