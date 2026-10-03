@@ -325,6 +325,48 @@ describe("a pull request that does not qualify", () => {
   });
 });
 
+// Close on merge runs once per merge: the first processing that reads the pull request merged records the merge, and a
+// later processing of the same merge, which a redelivery, a delivery about an edit or the poll brings, changes nothing,
+// whatever it reads then.
+describe("a later processing of a merge Tiehall has processed", () => {
+  it("closes nothing for a request that became eligible since, such as one whose decline was undone", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const opened = await stub.openPullRequest("acme/web", { title: `Fix ${request.key}`, head: "fix-undone-decline", author: "bob" });
+    await deliver("acme/web", opened.number, "opened");
+    await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+    // Before Tiehall processes the merge, Bob declines the request, which done does not apply to.
+    const decline = (await install.execute("requests.set_status", sessionOf(bob), { key: request.key, state: "declined" })) as { proposal: { id: string } };
+    expect((await install.confirm(sessionOf(bob), "proposals.confirm", { proposal: decline.proposal.id })).status).toBe(200);
+    await deliver("acme/web", opened.number, "closed");
+    expect((await stateOf(request.id)).state).toBe("declined");
+
+    // Bob undoes the decline within its window: the request is claimed again, which done would apply to.
+    expect((await install.confirm(sessionOf(bob), "proposals.undo", { proposal: decline.proposal.id })).status).toBe(200);
+    expect((await stateOf(request.id)).state).toBe("claimed");
+    // The same merge, processed again, as a redelivery of its close or the poll brings it.
+    await deliver("acme/web", opened.number, "closed");
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect((await stateChangesOf(request.id)).map(({ data }) => data["state"])).toEqual(["declined", "claimed"]);
+  });
+
+  it("closes nothing when it reads a branch name that mentions a key the first processing did not read", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const number = await mergedPullRequest("acme/web", { title: "Bump a dependency", head: "bump-a-dependency", author: "bob" });
+    expect((await stateOf(request.id)).state).toBe("claimed");
+
+    // A later delivery about the merged pull request carries another branch name, one that mentions the key.
+    await stub.editPullRequest("acme/web", number, { head: `${request.key}-bump` });
+    await deliver("acme/web", number, "edited");
+    await deliver("acme/web", number, "closed");
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect(await stateChangesOf(request.id)).toEqual([]);
+  });
+});
+
 describe("linking the merged provider pull request", () => {
   it("creates no done proposal, even for a member of the target team while the state allows done: it is only linked", async () => {
     const opened = await stub.openPullRequest("acme/payments", { title: "Payment fields", head: "deniz-more-payment-fields", author: "deniz" });
