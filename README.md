@@ -20,4 +20,4 @@ In development, toward an open-source, self-hosted v1: one company per install, 
 
 ## License
 
-The server is licensed under AGPL-3.0. The client pieces (the CLI, `@tiehall/client`, the Claude Code plugin, the contract GitHub Action and the handoff-packet schema) are licensed under Apache-2.0. License files arrive with the first release.
+The server is licensed under AGPL-3.0. The client pieces (the CLI, `@tiehall/client`, the Claude Code plugin, the contract GitHub Action and the handoff-packet schema) are licensed under Apache-2.0. The root [LICENSE](LICENSE) holds the AGPL-3.0 text, and each client piece's directory its own `LICENSE` file with the Apache-2.0 text.

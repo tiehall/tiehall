@@ -1,7 +1,12 @@
 {
-  "$comment": "The license map (public-api: The license map; design.md, Self-hosting decisions: S16; D34). The repository's root and every workspace package are licensed under serverLicense, the command catalog included, except the client pieces below, which are licensed under clientLicense. Each client piece is keyed by its folder and names its package. tools/repo-checks/src/check-licenses.ts enforces the map in CI, and .dependency-cruiser.cjs reads the same client pieces to stop them importing AGPL-3.0 code. A published license cannot be taken back, so a change here needs a maintainer decision.",
+  "$comment": "The license map (public-api: The license map; design.md, Self-hosting decisions: S16; D34). The repository's root and every workspace package are licensed under serverLicense, the command catalog included, except the client pieces below, which are licensed under clientLicense. Each client piece is keyed by its folder and names its package, and holds its own LICENSE file; the root's LICENSE file holds the server license. tools/repo-checks/src/check-licenses.ts enforces the map in CI, and .dependency-cruiser.cjs reads the same client pieces to stop them importing AGPL-3.0 code. A published license cannot be taken back, so a change here needs a maintainer decision.",
   "serverLicense": "AGPL-3.0-only",
   "clientLicense": "Apache-2.0",
+  "licenseTexts": {
+    "$comment": "Each license's text, by the SHA-256 of the text with every run of white space made one space and the ends trimmed, so that a line ending or a wrapped line is the same text and a changed word is not. The root's LICENSE file holds the server license's text, and each client piece's folder a LICENSE file with the client license's text: the AGPL-3.0 text as gnu.org publishes it, and the Apache-2.0 text as apache.org publishes it.",
+    "AGPL-3.0-only": "2cd0fb7883a3b3553dedbb0bad171646d46f51e2642951aae7c59cb5cec86c46",
+    "Apache-2.0": "0ffddef9e48f8a09aed5caf2d44f7ba1c1be2d9b8e0a6f693b1635b2d5566645"
+  },
   "clientPieces": {
     "packages/cli": "tiehall",
     "packages/client": "@tiehall/client",

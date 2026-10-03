@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -5,7 +6,9 @@ import { parse } from "yaml";
 // The license map (public-api: The license map; design.md, Self-hosting
 // decisions: S16): the client pieces carry the client license in their package
 // metadata, and the repository's root and every other workspace package the
-// server license.
+// server license. The root's LICENSE file holds the server license's text, and
+// each client piece's folder its own LICENSE file with the client license's
+// text (task 28.1); a text is known by the digest the map gives it.
 
 export interface LicenseMap {
   /** The SPDX identifier of the server: the root and every workspace package that is not a client piece. */
@@ -14,6 +17,8 @@ export interface LicenseMap {
   clientLicense: string;
   /** The client pieces: folder, relative to the root, to package name. */
   clientPieces: Record<string, string>;
+  /** Each license's text, by its SPDX identifier, as the SHA-256 of the text with its white space made single spaces (licenseTextDigest). */
+  licenseTexts: Record<string, string>;
 }
 
 export interface LicenseViolation {
@@ -30,17 +35,62 @@ export interface LicenseReport {
 
 export function loadLicenseMap(): LicenseMap {
   const file = new URL("../license-map.json", import.meta.url);
-  const { serverLicense, clientLicense, clientPieces } = JSON.parse(readFileSync(file, "utf8")) as LicenseMap;
-  return { serverLicense, clientLicense, clientPieces };
+  const { serverLicense, clientLicense, clientPieces, licenseTexts } = JSON.parse(readFileSync(file, "utf8")) as LicenseMap;
+  const texts = Object.fromEntries(Object.entries(licenseTexts).filter(([license]) => !license.startsWith("$")));
+  return { serverLicense, clientLicense, clientPieces, licenseTexts: texts };
 }
 
-/** Checks every workspace package under root against the map. */
+/** Checks the package metadata of every workspace package under root against the map. */
 export function checkLicenses(root: string, map: LicenseMap): LicenseViolation[] {
-  return licenseReport(root, map).violations;
+  return metadataViolations(root, map, workspacePackages(root));
 }
 
+/** The license files and the package metadata under root, checked against the map. */
 export function licenseReport(root: string, map: LicenseMap): LicenseReport {
   const packages = workspacePackages(root);
+  const violations = [...metadataViolations(root, map, packages), ...checkLicenseFiles(root, map)];
+  violations.sort((a, b) => a.file.localeCompare(b.file) || a.detail.localeCompare(b.detail));
+  return { violations, packages };
+}
+
+/** The digest by which the map knows a license's text: the SHA-256 of the text, its white space made single spaces and its ends trimmed. */
+export function licenseTextDigest(text: string): string {
+  return createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex");
+}
+
+/**
+ * Checks the license files: the root's LICENSE file holds the server
+ * license's text, and each client piece's folder a LICENSE file with the
+ * client license's text, each as the map's digest names it.
+ */
+export function checkLicenseFiles(root: string, map: LicenseMap): LicenseViolation[] {
+  const expected = [
+    {
+      file: "LICENSE",
+      license: map.serverLicense,
+      why: `the repository's root license is ${map.serverLicense}, which needs the ${map.serverLicense} text in the root's LICENSE file.`,
+    },
+    ...Object.entries(map.clientPieces).map(([folder, name]) => ({
+      file: `${folder}/LICENSE`,
+      license: map.clientLicense,
+      why: `the license map makes ${folder} (${name}) ${map.clientLicense}, which needs its own LICENSE file with the ${map.clientLicense} text.`,
+    })),
+  ];
+  const violations: LicenseViolation[] = [];
+  for (const { file, license, why } of expected) {
+    if (!existsSync(join(root, file))) {
+      violations.push({ file, detail: `is missing, but ${why}` });
+      continue;
+    }
+    const digest = licenseTextDigest(readFileSync(join(root, file), "utf8"));
+    if (digest === map.licenseTexts[license]) continue;
+    const held = Object.entries(map.licenseTexts).find(([, known]) => known === digest)?.[0];
+    violations.push({ file, detail: `holds ${held === undefined ? "neither license's text" : `the ${held} text`}, but ${why}` });
+  }
+  return violations.sort((a, b) => a.file.localeCompare(b.file) || a.detail.localeCompare(b.detail));
+}
+
+function metadataViolations(root: string, map: LicenseMap, packages: string[]): LicenseViolation[] {
   const violations: LicenseViolation[] = [];
 
   for (const [folder, name] of Object.entries(map.clientPieces)) {
@@ -76,7 +126,7 @@ export function licenseReport(root: string, map: LicenseMap): LicenseReport {
   }
 
   violations.sort((a, b) => a.file.localeCompare(b.file) || a.detail.localeCompare(b.detail));
-  return { violations, packages };
+  return violations;
 }
 
 function countOf(map: LicenseMap): string {
