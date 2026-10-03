@@ -325,16 +325,17 @@ function startsWord(text: string, at: number): boolean {
 
 /**
  * Reads the run of a scheme's characters that starts at `from`, and says where it ends, whether a scheme, a letter
- * at the start of a word and what follows it, ends there: `\b[a-z][a-z0-9+.-]*`, and whether it holds a dot, as a
- * host name does. Every scheme or host name that starts in a run ends where the run ends, because no scheme
- * character can begin `://`, `/` or a port.
+ * and what follows it, ends there: `[a-z][a-z0-9+.-]*`, and whether it holds a dot, as a host name does. A scheme
+ * is found wherever its letter is, so one glued to a word, as in DATABASE_URL_postgres://, is found too. Every
+ * scheme or host name that starts in a run ends where the run ends, because no scheme character can begin `://`,
+ * `/` or a port.
  */
 function schemeRun(text: string, from: number): { end: number; scheme: boolean; dotted: boolean } {
   let scheme = false;
   let dotted = false;
   let end = from;
   for (; end < text.length && isSchemeCharacter(text.charCodeAt(end)); end += 1) {
-    if (!scheme && isLetter(text.charCodeAt(end)) && startsWord(text, end)) scheme = true;
+    if (isLetter(text.charCodeAt(end))) scheme = true;
     if (text.charCodeAt(end) === 46) dotted = true;
   }
   return { end, scheme, dotted };
@@ -353,7 +354,7 @@ function pathFollowsHost(text: string, at: number, dotted: boolean): boolean {
 
 /**
  * The text with the user info of each URL replaced, such as the password in postgres://user:password@host:
- * `\b([a-z][a-z0-9+.-]*:\/\/)[^/\s?#]*@`. The user info ends at the authority's last `@`, as URL parsers end it, so
+ * `([a-z][a-z0-9+.-]*:\/\/)[^/\s?#]*@`. The user info ends at the authority's last `@`, as URL parsers end it, so
  * a password that holds an unencoded `@` is replaced whole.
  */
 function withoutUserInfo(text: string): string {
@@ -381,7 +382,7 @@ function withoutUserInfo(text: string): string {
 
 /**
  * The query strings and fragments of URLs, with or without their scheme, and of paths, as the spans they cover: a
- * URL, `\b[a-z][a-z0-9+.-]*:\/\/`, a host name and the path after it, or a path, `/` at the start or after what
+ * URL, `[a-z][a-z0-9+.-]*:\/\/`, a host name and the path after it, or a path, `/` at the start or after what
  * `leadsPath` names, then `[^\s?#"'<>]*` before `[?#][^\s"'<>]*`. A URL or a path that starts anywhere in a run of
  * its characters ends where the run ends, so each run is read once.
  */

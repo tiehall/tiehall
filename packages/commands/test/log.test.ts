@@ -207,6 +207,7 @@ describe("redaction", () => {
       "authorization: basic canary0123456789": "authorization: [redacted]",
       "Authorization: BEARER canary0123456789": "Authorization: [redacted]",
       "postgres://tiehall:p@ss-canary@db:5432/tiehall": "postgres://[redacted]@db:5432/tiehall",
+      "DATABASE_URL_postgres://tiehall:canary@db:5432/tiehall": "DATABASE_URL_postgres://[redacted]@db:5432/tiehall",
       [`sent ${jwe} once`]: "sent [redacted] once",
       "see tiehall.example.com/api/v1/requests?token=canary": "see tiehall.example.com/api/v1/requests",
       "see localhost:3000/api/v1/requests?token=canary": "see localhost:3000/api/v1/requests",
