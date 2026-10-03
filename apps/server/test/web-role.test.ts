@@ -615,11 +615,13 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
   });
 
   // A review page's form posts to /confirm/<command> without the review page's query, which holds its input, so the
-  // page leads back to the page the browser posted the form from, as its Referer names it on the install; a Referer
-  // on another host leads to the form's own target.
-  it("leads a browser's review page form over 2 MiB back to the review page, with its input, as its Referer names it", async () => {
+  // page leads back to the page the browser posted the form from, as its Referer names it on the install: on
+  // TIEHALL_URL's origin, whatever Host header a proxy in front of the install sends the app. A Referer on any other
+  // origin, the Host header's own included, leads to the form's own target.
+  it("leads a browser's review page form over 2 MiB back to the review page, with its input, as its Referer names it on TIEHALL_URL", async () => {
     const web = await startWebRole();
     const review = "/confirm/members.change_role?input=%7B%22role%22%3A%22admin%22%7D";
+    // The role's TIEHALL_URL is http://localhost:3000; the calls reach it at 127.0.0.1 and its port, as through a proxy that rewrites Host.
     const post = (referer: string) =>
       fetch(`http://127.0.0.1:${web.port}/confirm/members.change_role`, {
         method: "POST",
@@ -627,14 +629,16 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
         body: `confirmation=${"A".repeat(LIMIT)}`,
       });
 
-    const page = await post(`http://127.0.0.1:${web.port}${review}`);
+    const page = await post(`http://localhost:3000${review}`);
     expect(page.status).toBe(413);
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(await page.text()).toContain(`<a href="${review}">`);
 
-    const elsewhere = await post(`https://elsewhere.example${review}`);
-    expect(elsewhere.status).toBe(413);
-    expect(await elsewhere.text()).toContain('<a href="/confirm/members.change_role">');
+    for (const referer of [`https://elsewhere.example${review}`, `http://127.0.0.1:${web.port}${review}`]) {
+      const elsewhere = await post(referer);
+      expect(elsewhere.status).toBe(413);
+      expect(await elsewhere.text()).toContain('<a href="/confirm/members.change_role">');
+    }
   });
 });
 

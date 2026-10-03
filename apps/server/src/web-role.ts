@@ -65,7 +65,7 @@ export async function runWebRole(settings: AppSettings, options: WebRoleOptions)
   await proxies.refresh();
   // The pages the request guard answers itself carry the footer every page carries: the running version and its source.
   showRunningVersion(runningVersion(process.env));
-  const guard = installRequestGuard({ proxies });
+  const guard = installRequestGuard({ proxies, url: settings.url });
   routeConsoleTo(logger);
 
   const setup = options.setup ?? printSetupCode;

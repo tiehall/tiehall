@@ -110,7 +110,7 @@ describe("the request guard on the web server", () => {
 
   /** Starts a server the way the Next.js standalone server does, after the guard, and returns the headers it saw. */
   async function headersSeen(trusted: TrustedProxies, headers: Record<string, string>): Promise<IncomingHttpHeaders> {
-    guard = installRequestGuard({ proxies: trusted });
+    guard = installRequestGuard({ proxies: trusted, url: "https://tiehall.example.com" });
     // The Next.js standalone server creates its server through the http module's object, as here.
     const http = (await import("node:http")).default;
     let seen: IncomingHttpHeaders = {};

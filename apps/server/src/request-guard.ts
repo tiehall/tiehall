@@ -60,8 +60,9 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // URL by that URL's own rule, and on every other page route when its Accept
 // header names text/html (pageRouteNegotiatesHtml). A refused form's
 // link leads back to the page it was posted from when its Referer names a
-// page on the host the form was sent to, as a review page's form, whose
-// target lacks the review page's input, needs.
+// page on TIEHALL_URL's origin, as a review page's form, whose target lacks
+// the review page's input, needs; the Host header does not decide, since a
+// proxy in front of the install may rewrite it.
 //
 // Request URLs (agent-surfaces: Request URL response headers): every answer
 // of a request URL, /<KEY> with or without .md or .json, or of an intake page,
@@ -76,6 +77,8 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 
 export interface RequestGuardOptions {
   proxies: TrustedProxies;
+  /** TIEHALL_URL, the install's public base URL, on whose origin the install's pages lie. */
+  url: string;
 }
 
 export interface ShutdownResult {
@@ -119,6 +122,7 @@ const refusals = new Map<number, { problem: HttpProblem; body: string }>();
 
 /** Installs the guard on every HTTP server the process creates from now on. */
 export function installRequestGuard(options: RequestGuardOptions): RequestGuard {
+  const origin = new URL(options.url).origin;
   const servers = new Set<http.Server>();
   let inFlight = 0;
   let stopping = false;
@@ -134,16 +138,16 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
       if (stopping && inFlight === 0) drained?.();
     });
     const serve = (): void => {
-      if (newDuringShutdown) return shuttingDown(request, response);
+      if (newDuringShutdown) return shuttingDown(request, response, origin);
       setForwardedHeaders(request, options.proxies);
       listener(request, response);
     };
     const limit = bodyLimitFor(request.method ?? "GET", pathOf(request.url));
     const declared = declaredLength(request.headers["content-length"]);
-    if (declared !== undefined) return declared > limit ? refuseBody(request, response, limit) : serve();
+    if (declared !== undefined) return declared > limit ? refuseBody(request, response, limit, origin) : serve();
     // A request with neither a declared length nor chunks has no body.
     if (request.headers["transfer-encoding"] === undefined) return serve();
-    holdBody(request, limit, serve, () => refuseBody(request, response, limit));
+    holdBody(request, limit, serve, () => refuseBody(request, response, limit, origin));
   };
 
   const original = http.createServer;
@@ -187,10 +191,10 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
   };
 }
 
-function shuttingDown(request: IncomingMessage, response: ServerResponse): void {
+function shuttingDown(request: IncomingMessage, response: ServerResponse, origin: string): void {
   // The call's body is not read; the connection closes after the answer.
   request.resume();
-  refuse(request, response, SHUTTING_DOWN, SHUTTING_DOWN_BODY);
+  refuse(request, response, SHUTTING_DOWN, SHUTTING_DOWN_BODY, origin);
 }
 
 /**
@@ -199,8 +203,8 @@ function shuttingDown(request: IncomingMessage, response: ServerResponse): void 
  * for every other, as the routes answer; elsewhere the problem, whose body is
  * given.
  */
-function refuse(request: IncomingMessage, response: ServerResponse, problem: HttpProblem, problemBody: string): void {
-  const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/", referrerOnInstall(request));
+function refuse(request: IncomingMessage, response: ServerResponse, problem: HttpProblem, problemBody: string, origin: string): void {
+  const wayOn = wayOnOfPageRoute(request.method ?? "GET", request.url ?? "/", referrerOnInstall(request, origin));
   const answer =
     wayOn === undefined
       ? { status: problem.status, headers: new Headers(problem.headers), body: problemBody }
@@ -214,15 +218,15 @@ function refuse(request: IncomingMessage, response: ServerResponse, problem: Htt
 }
 
 /**
- * The page the request's Referer names, when it lies on the host the request
- * was sent to, as a form posted from one of the install's pages does: pages
+ * The page the request's Referer names, when it lies on the install's origin,
+ * TIEHALL_URL's, as a form posted from one of the install's pages does: pages
  * send their Referer to the install's own origin only. Undefined otherwise.
  */
-function referrerOnInstall(request: IncomingMessage): string | undefined {
-  const { referer, host } = request.headers;
-  if (referer === undefined || host === undefined) return undefined;
+function referrerOnInstall(request: IncomingMessage, origin: string): string | undefined {
+  const { referer } = request.headers;
+  if (referer === undefined) return undefined;
   try {
-    return new URL(referer).host === host.toLowerCase() ? referer : undefined;
+    return new URL(referer).origin === origin ? referer : undefined;
   } catch {
     return undefined;
   }
@@ -273,7 +277,7 @@ function holdBody(request: IncomingMessage, limit: number, complete: () => void,
  * connection is not read from again, and once the answer is sent it is ended
  * and, after the grace period, closed.
  */
-function refuseBody(request: IncomingMessage, response: ServerResponse, limit: number): void {
+function refuseBody(request: IncomingMessage, response: ServerResponse, limit: number, origin: string): void {
   const socket = request.socket;
   request.push = (): boolean => false;
   // Once an answer is sent, Node resumes a request nobody read, to discard the rest of its body; not this one.
@@ -293,7 +297,7 @@ function refuseBody(request: IncomingMessage, response: ServerResponse, limit: n
     refusal = { problem, body: JSON.stringify(problem.body) };
     refusals.set(limit, refusal);
   }
-  refuse(request, response, refusal.problem, refusal.body);
+  refuse(request, response, refusal.problem, refusal.body, origin);
 }
 
 /** Rewrites a request's forwarded headers to the client the install trusts. */

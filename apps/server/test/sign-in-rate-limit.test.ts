@@ -64,7 +64,7 @@ beforeAll(async () => {
     logger: createLogger({ write: () => {} }),
   });
   // No trusted proxy: every peer's forwarded headers are dropped.
-  guard = installRequestGuard({ proxies: new TrustedProxies([]) });
+  guard = installRequestGuard({ proxies: new TrustedProxies([]), url: URL_OF_INSTALL });
   server = http.createServer((incoming, outgoing) => {
     const headers = new Headers();
     for (const [name, value] of Object.entries(incoming.headers)) if (typeof value === "string") headers.set(name, value);

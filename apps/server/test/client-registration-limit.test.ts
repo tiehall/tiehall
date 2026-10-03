@@ -67,7 +67,7 @@ async function startInstall(proxies: readonly string[]): Promise<Install> {
     github: { fetch: async () => new Response(null, { status: 503 }) },
     logger: createLogger({ write: () => {} }),
   });
-  const guard = installRequestGuard({ proxies: new TrustedProxies(proxies) });
+  const guard = installRequestGuard({ proxies: new TrustedProxies(proxies), url: URL_OF_INSTALL });
   const server = http.createServer((incoming, outgoing) => {
     const chunks: Buffer[] = [];
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
