@@ -20,7 +20,8 @@ import { docsCommands, docsTestName, fencedBlocks, INSTALL_DOCS, installDocsComm
 // trusted proxies, an external Postgres, the setup code, the App and the first
 // admin, GitHub's modes, a move to a new host, backups, restore, upgrades,
 // rollbacks, the commands on the host and the outbound hosts, which name no
-// model vendor.
+// model vendor; and what a trial URL's cookies reach (self-host-install:
+// `TIEHALL_URL` and TLS).
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const docs = readFileSync(join(root, INSTALL_DOCS), "utf8");
@@ -153,6 +154,19 @@ describe("the install docs", () => {
       "Switch GitHub to webhook mode on the admin page",
     ]) {
       expect(flat).toContain(phrase);
+    }
+  });
+
+  // self-host-install: `TIEHALL_URL` and TLS; finding F1 of the security review of 2026-10-03 (task 26.15).
+  it("say that a trial URL shares the install's cookies both ways with every server on localhost, so a trial keeps to a profile of its own and a shared install uses HTTPS", () => {
+    const start = section("Start the install").replace(/\s+/g, " ");
+    for (const phrase of [
+      "On a trial URL, `http://localhost` with or without a port, the browser sends the install's cookies, the setup session's and the web session's, to every server on `localhost`, whatever its port",
+      "and lets any of them set or overwrite those cookies",
+      "a browser profile that visits no other local server",
+      "An install that anyone else uses runs on HTTPS",
+    ]) {
+      expect(start).toContain(phrase);
     }
   });
 

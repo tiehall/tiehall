@@ -48,6 +48,8 @@ docker compose up -d
 
 The app then answers on `127.0.0.1:3000` of the host, for a reverse proxy in front of it, or for your browser on a trial install at `http://localhost:3000`.
 
+On a trial URL, `http://localhost` with or without a port, the browser sends the install's cookies, the setup session's and the web session's, to every server on `localhost`, whatever its port, and lets any of them set or overwrite those cookies: a browser keeps cookies by host, not by port, and over plain HTTP nothing keeps them to the install. A dev server or any other local service you open in the same browser could act with your session, or replace it. So run a trial in a browser profile that visits no other local server. An install that anyone else uses runs on HTTPS, with the `caddy` profile or your own reverse proxy.
+
 ### TLS with the caddy profile
 
 The `caddy` profile runs Caddy in front of the app. Caddy serves `TIEHALL_URL`, obtains its certificate and renews it. The host name must resolve to the host, and ports 80 and 443 must reach it from the internet, for the certificate authority's checks. Start the install with the profile instead:
