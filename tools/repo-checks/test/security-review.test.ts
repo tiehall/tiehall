@@ -12,8 +12,10 @@ import { latestReview, parseChecklist, parseReview, reviewProblems, securityRevi
 // the checklist has no result in the latest record, when a record holds a
 // result for an item the checklist does not have, when an item names a
 // requirement the specs do not hold or a test file that does not hold the
-// test's title, and when an item names neither a test nor a gap. The fixtures
-// are inline texts, checked against stand-ins for the specs and the tests.
+// test's title, when an item names neither a test nor a gap, and when a
+// finding a result names is not described in the record, or names no task of
+// the plan that fixes it. The fixtures are inline texts, checked against
+// stand-ins for the specs, the tests and the plan's tasks.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -53,7 +55,13 @@ const known = {
   requirementExists: (capability: string, name: string) =>
     (capability === "setup-fixture" && name === "The setup code guards the setup screen") || (capability === "tracker-mirrors" && name === "Jira webhooks are hints"),
   testExists: (file: string, title: string) => file === "packages/commands/test/setup-code.test.ts" && title === "stores only a hash of the code",
+  taskExists: (task: string) => task === "26.15",
 };
+
+/** The record with a finding on SR-1, described with the task that fixes it. */
+const WITH_FINDING = RECORD.replace("| SR-1 | Pass |", "| SR-1 | F1 |").concat(
+  ["## Findings", "", "### F1 A trial install's cookies reach every server on localhost", "", "- Item: SR-1", "- Task: 26.15", ""].join("\n"),
+);
 
 describe("the security review checklist", () => {
   it("reads each item with its requirements, checks, tests and gaps", () => {
@@ -105,6 +113,22 @@ describe("the security review checklist", () => {
   it("fails an item that names no requirement, and one that names neither a test nor a gap", () => {
     const checklist = CHECKLIST.replace("- Requirement: tracker-mirrors: Jira webhooks are hints\n", "").replace("- Gap: Jira webhooks are task 25.8.\n", "");
     expect(reviewProblems({ checklist, record: RECORD, ...known })).toEqual(["SR-2 names no requirement.", "SR-2 names neither a test nor a gap."]);
+  });
+
+  it("reads a record's findings, each with the tasks that fix it", () => {
+    expect(parseReview(WITH_FINDING).findings).toEqual([{ id: "F1", title: "A trial install's cookies reach every server on localhost", tasks: ["26.15"] }]);
+  });
+
+  it("passes a finding the record describes, with a task of the plan", () => {
+    expect(reviewProblems({ checklist: CHECKLIST, record: WITH_FINDING, ...known })).toEqual([]);
+  });
+
+  it("fails a finding that names no task, one whose task the plan does not have, and one the record does not describe", () => {
+    expect(reviewProblems({ checklist: CHECKLIST, record: WITH_FINDING.replace("- Task: 26.15\n", ""), ...known })).toEqual(["F1 names no task that fixes it."]);
+    expect(reviewProblems({ checklist: CHECKLIST, record: WITH_FINDING.replace("- Task: 26.15", "- Task: 26.99"), ...known })).toEqual(["F1 names task 26.99, which the plan does not have."]);
+    expect(reviewProblems({ checklist: CHECKLIST, record: WITH_FINDING.replace("| SR-1 | F1 |", "| SR-1 | F1, F2 |"), ...known })).toEqual([
+      "F2, which SR-1's result names, is not described in the latest review record.",
+    ]);
   });
 
   it("finds the latest record by its date", () => {
