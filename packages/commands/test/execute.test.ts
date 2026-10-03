@@ -298,6 +298,24 @@ describe("execute", () => {
     expect(refusal.issues[0]).toEqual({ path: ["requestId"], message: expect.any(String) });
   });
 
+  // A field the schema does not know is named by its key, which the caller chose: a note with thousands of unknown keys,
+  // or with one key thousands of characters long, still makes a short issue.
+  it("names at most 10 unknown keys of one place, each cut short, and says how many more there are", async () => {
+    const keys = Array.from({ length: 1_500 }, (_, index) => `unknown_key_${index}`);
+    const long = "k".repeat(5_000);
+    const notes = [Object.fromEntries([["body", "Fine"], ...keys.map((key) => [key, true])]), { body: "Fine", [long]: true }];
+
+    const refusal = await refusalOf(execute("probes.batch", personalAccessToken, { requestId: randomUUID(), notes }));
+
+    expect(refusal).toMatchObject({ status: 400, reason: "invalid-input" });
+    const [many, longOne] = refusal.issues;
+    expect(many?.path).toEqual(["notes", 0]);
+    expect(many?.message).toBe(`Unrecognized keys: ${keys.slice(0, 10).map((key) => `"${key}"`).join(", ")}, and 1490 more`);
+    expect(longOne?.path).toEqual(["notes", 1]);
+    expect(longOne?.message).toBe(`Unrecognized key: "${"k".repeat(64)}…"`);
+    expect(JSON.stringify(refusal.issues).length).toBeLessThan(1_000);
+  });
+
   // agent-surfaces: Tool schemas that current clients accept. The tool's schema is a kind enum plus optional
   // fields, but execute() still validates with the zod union, whose variants are strict.
   it("refuses an input that mixes variants with 400, though the lowered tool schema would let it through", async () => {

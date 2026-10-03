@@ -1,8 +1,8 @@
 import type { Catalog, SealedField } from "@tiehall/catalog";
-import { Refusal, type RefusalIssue, type Review } from "@tiehall/core";
-import type { z } from "zod";
+import { Refusal, type Review } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationNonces } from "./confirmations.ts";
+import { issuesOf } from "./input-issues.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
@@ -199,10 +199,3 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
   };
 }
 
-/** Where the input fails its schema, by path and by the schema's own message, never with the value. */
-function issuesOf(error: z.ZodError): RefusalIssue[] {
-  return error.issues.map((issue) => ({
-    path: issue.path.map((part) => (typeof part === "number" ? part : String(part))),
-    message: issue.message,
-  }));
-}

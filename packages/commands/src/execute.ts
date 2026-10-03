@@ -1,7 +1,8 @@
 import { dropUnknownVariantKeys, isProposalAnswer, overlongArrays, proposalAnswer, type Catalog, type CommandDefinition } from "@tiehall/catalog";
-import { Refusal, REFUSAL_ISSUES_MAX, type Provenance, type RefusalIssue } from "@tiehall/core";
+import { Refusal, type Provenance, type RefusalIssue } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, catalogSurfaceOf, provenanceOf, type Caller } from "./caller.ts";
+import { issuesOf } from "./input-issues.ts";
 import { confirmationSubjectOf, type ConfirmationSubjects } from "./confirmation-step.ts";
 import type { EventWakeups } from "./event-wakeups.ts";
 import type { InstallGitHub } from "./install-github.ts";
@@ -546,10 +547,3 @@ async function asMemberOrNoUser(context: OrgContext, caller: Caller): Promise<Ca
   return { kind: caller.kind, source: caller.source };
 }
 
-/** Where the input fails its schema, the first places a refusal names, by path and by the schema's own message, never with the value. */
-function issuesOf(error: z.ZodError): RefusalIssue[] {
-  return error.issues.slice(0, REFUSAL_ISSUES_MAX).map((issue) => ({
-    path: issue.path.map((part) => (typeof part === "number" ? part : String(part))),
-    message: issue.message,
-  }));
-}
