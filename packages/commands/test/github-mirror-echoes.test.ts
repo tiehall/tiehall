@@ -276,7 +276,7 @@ describe("a person's change to a mirror issue", () => {
     await stub.settled();
     expect(stub.issue("acme/fe-intake", request.number).state).toBe("open");
 
-    // Before the retry, Ayşe closes the issue herself.
+    // Before the retry, Ayşe closes the issue on GitHub.
     const from = stub.deliveries(provider.app).length;
     await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "completed" });
     await stub.settled();
