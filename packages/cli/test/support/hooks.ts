@@ -121,6 +121,8 @@ export interface StubInstall {
   untilCalls(count: number): Promise<void>;
   /** The access tokens the stub has issued, in order, from the saved login's. */
   issued: string[];
+  /** The user the install signs in, whom whoami names: Sam unless a test signs in another. */
+  user: { id: string; login: string };
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -189,6 +191,7 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
     calls: [],
     cursor: 0,
     issued: [],
+    user: { id: "00000000-0000-4000-8000-00000000005a", login: "sam" },
     async fetch(request) {
       const address = new URL(request.url);
       if (address.origin !== url) throw new TypeError(`fetch failed: ${address.origin} cannot be reached`);
@@ -217,6 +220,9 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
         return json({ access_token: `access-${tokens}`, refresh_token: `refresh-${tokens}`, token_type: "Bearer", expires_in: 600 });
       }
       if (everyCall !== undefined) return everyCall();
+      if (address.pathname === "/api/v1/whoami" && request.method === "GET") {
+        return json({ user: { ...stub.user, kind: "human", bot: false }, teams: [{ id: "team-FE", key: "FE" }], install: { url } });
+      }
       if (address.pathname === "/api/v1/events/wait" && request.method === "GET") {
         const answer = scripted.shift();
         if (answer === "unreachable") throw new TypeError("fetch failed: connect ECONNREFUSED");

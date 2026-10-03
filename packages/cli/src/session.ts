@@ -40,6 +40,8 @@ export type Call = (client: TiehallClient) => Promise<{ data?: unknown; error?: 
 export interface Session {
   /** The install's URL. */
   readonly url: string;
+  /** The id of the user the saved login is for, when the login names them. */
+  readonly userId: string | undefined;
   /** Sends the call, after a refresh of the access token when it needs one, which is given up when `signal` aborts. */
   send(call: Call, signal?: AbortSignal): Promise<Answer>;
 }
@@ -62,6 +64,7 @@ export function sessionFor(environment: CliEnvironment, saved: SavedLogin, { lon
   };
   return {
     url: saved.url,
+    userId: saved.userId,
     async send(call, signal) {
       let refreshedNow = false;
       if ((longRunning || !refreshed) && expiresSoon(environment, login)) {

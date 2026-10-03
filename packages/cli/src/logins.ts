@@ -27,6 +27,8 @@ export interface SavedLogin {
   refreshToken: string;
   /** When the access token expires, as an ISO date and time. */
   expiresAt: string;
+  /** The id of the user the login is for, as whoami named them when the CLI signed in; absent for a login an earlier CLI saved. */
+  userId?: string;
 }
 
 /** The file's contents: the saved logins by install URL. */
@@ -77,7 +79,13 @@ export function installUrlOf(raw: string): string {
 export function savedLogins(configDir: string): SavedLogin[] {
   return Object.entries(readLoginsFile(configDir).logins)
     .filter(([, login]) => typeof login?.accessToken === "string" && typeof login.refreshToken === "string")
-    .map(([url, login]) => ({ url, accessToken: login.accessToken, refreshToken: login.refreshToken, expiresAt: String(login.expiresAt ?? "") }))
+    .map(([url, login]) => ({
+      url,
+      accessToken: login.accessToken,
+      refreshToken: login.refreshToken,
+      expiresAt: String(login.expiresAt ?? ""),
+      ...(typeof login.userId === "string" && login.userId !== "" ? { userId: login.userId } : {}),
+    }))
     .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
@@ -102,7 +110,12 @@ function readLoginsFile(configDir: string): LoginsFile {
 export function saveLogin(configDir: string, login: SavedLogin): void {
   mkdirSync(configDir, { recursive: true, mode: 0o700 });
   const contents = readLoginsFile(configDir);
-  contents.logins[login.url] = { accessToken: login.accessToken, refreshToken: login.refreshToken, expiresAt: login.expiresAt };
+  contents.logins[login.url] = {
+    accessToken: login.accessToken,
+    refreshToken: login.refreshToken,
+    expiresAt: login.expiresAt,
+    ...(login.userId === undefined ? {} : { userId: login.userId }),
+  };
   const file = loginsFileOf(configDir);
   const written = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {

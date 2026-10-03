@@ -5,7 +5,7 @@ import { contractDiff, contractDiffHelp } from "./contract-diff.ts";
 import { callOf, optionOf, optionsOf, type CommandCall } from "./arguments.ts";
 import { CliError, type CliEnvironment } from "./environment.ts";
 import { HOOK_COMMANDS, hookSessionEnd, hookSessionStart, hookWait } from "./hooks.ts";
-import { chooseLogin, configDirOf, installUrlOf } from "./logins.ts";
+import { chooseLogin, configDirOf, installUrlOf, saveLogin } from "./logins.ts";
 import { logIn } from "./oauth.ts";
 import { answerText, isProblem, problemText } from "./output.ts";
 import { sessionFor, type Session } from "./session.ts";
@@ -174,11 +174,25 @@ async function login(environment: CliEnvironment, globals: Globals, rest: readon
   if (raw === undefined || others.length > 0 || raw.startsWith("-")) throw new CliError("tiehall login takes one argument, the install's URL: tiehall login <url>.");
   const url = installUrlOf(raw);
   const configDir = configDirOf(environment.env);
-  await logIn(environment, configDir, url);
-  // The hooks' mark of the news announced starts anew, since this login may be another user's (requester-loop: News is announced once).
+  const login = await logIn(environment, configDir, url);
+  // The login names its user, whose mark of the news announced the hooks keep (requester-loop: News is announced once).
+  const userId = await userIdOf(sessionFor(environment, login));
+  if (userId !== undefined) saveLogin(configDir, { ...login, userId });
+  // A mark of a login that names no user starts anew, since this login may be another user's.
   await forgetAnnounced(configDir, url);
   environment.stdout(`Signed in to ${url}.\n`);
   return 0;
+}
+
+/** The id of the user a login is for, as whoami names them; none when the install does not answer it. */
+async function userIdOf(session: Session): Promise<string | undefined> {
+  try {
+    const answer = await session.send((client) => client.GET("/api/v1/whoami"));
+    const id = answer.ok ? (answer.body as { user?: { id?: unknown } } | undefined)?.user?.id : undefined;
+    return typeof id === "string" && id !== "" ? id : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

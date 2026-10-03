@@ -1,5 +1,5 @@
 import { hookLine, noticeEventType, noticeKey, noticeTeam, noticeUrl, type Notice } from "@tiehall/packet/notices";
-import { announce, announcedThrough } from "./announced.ts";
+import { announce, announcedThrough, type MarkOwner } from "./announced.ts";
 import { abortable, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, configDirOf } from "./logins.ts";
 import { sessionFor, type Answer, type Session } from "./session.ts";
@@ -226,10 +226,10 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
     switch (waited.kind) {
       case "answered": {
         failures = 0;
-        const fresh = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor, stop);
+        const fresh = await announceFresh(configDir, session, noticesOf(session.url, waited.entries), waited.cursor, stop);
         if (fresh !== undefined) return fresh;
         // Everything it answered was announced already: the next call waits past it, and past what the mark holds.
-        cursor = Math.max(waited.cursor, announcedThrough(configDir, session.url));
+        cursor = Math.max(waited.cursor, announcedThrough(configDir, session));
         break;
       }
       case "again":
@@ -254,12 +254,12 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
  */
 export function announceFresh(
   configDir: string,
-  url: string,
+  owner: MarkOwner,
   notices: readonly { seq: number; notice: Notice }[],
   through?: number,
   stop?: AbortSignal,
 ): Promise<{ seq: number; notice: Notice }[] | undefined> {
-  return announce(configDir, url, (announced) => {
+  return announce(configDir, owner, (announced) => {
     if (stop?.aborted === true) return undefined;
     const fresh = notices.filter(({ seq }) => seq > announced);
     if (fresh.length === 0) return undefined;
@@ -348,9 +348,9 @@ async function newsPastTheMark(environment: CliEnvironment, session: Session, st
   stop.addEventListener("abort", onStop, { once: true });
   void sleepOf(environment)(PAST_MARK_MS, read.signal).then(() => read.abort());
   try {
-    const waited = await waitOnce(environment, session, Math.max(announcedThrough(configDir, session.url) - 1, 0), read.signal);
+    const waited = await waitOnce(environment, session, Math.max(announcedThrough(configDir, session) - 1, 0), read.signal);
     if (waited.kind !== "answered") return undefined;
-    const notices = await announceFresh(configDir, session.url, noticesOf(session.url, waited.entries), waited.cursor);
+    const notices = await announceFresh(configDir, session, noticesOf(session.url, waited.entries), waited.cursor);
     // One answer of the wait lists a page of updates at most, as whats_new does: a full one may have more after it.
     return notices === undefined ? undefined : { notices, more: waited.entries.length >= DIGEST_LIMIT };
   } finally {
@@ -382,7 +382,7 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
       team_key: request?.targetTeam?.key,
       url: request?.url,
     }));
-    const onPage = await announceFresh(configDirOf(environment.env), session.url, noticesOf(session.url, entries));
+    const onPage = await announceFresh(configDirOf(environment.env), session, noticesOf(session.url, entries));
     const news: DigestNews | undefined =
       onPage !== undefined ? { notices: onPage, more: page.more === true } : page.more === true ? await newsPastTheMark(environment, session, stop.signal) : undefined;
     if (news === undefined) return 0;

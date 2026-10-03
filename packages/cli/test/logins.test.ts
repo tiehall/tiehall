@@ -135,6 +135,25 @@ describe("tiehall login", () => {
     expect(Object.keys(saved())).toEqual([COM]);
   });
 
+  // requester-loop: News is announced once: the mark of the news announced is the login's user's, whom whoami names.
+  it("keeps with the login the user whoami names, which a refresh of its tokens keeps too", async () => {
+    const com = install(COM);
+    expect((await tiehall(["login", COM], { [COM]: com.handle })).code).toBe(0);
+    expect(com.calls[2]).toMatchObject({ method: "GET", path: "/api/v1/whoami", authorization: "Bearer access-1" });
+    expect(saved()[COM]).toMatchObject({ accessToken: "access-1", userId: "00000000-0000-4000-8000-000000000001" });
+    await tiehall(["inbox"], { [COM]: com.handle }, () => new Date(Date.now() + 3_600_000));
+    expect(saved()[COM]).toMatchObject({ accessToken: "access-2", userId: "00000000-0000-4000-8000-000000000001" });
+  });
+
+  it("signs in still when the install does not answer whoami, keeping a login that names no user", async () => {
+    const com = install(COM);
+    const refusing = (request: Request) => (new URL(request.url).pathname === "/api/v1/whoami" ? Promise.resolve(new Response("Not found", { status: 404 })) : com.handle(request));
+    const result = await tiehall(["login", COM], { [COM]: refusing });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(`Signed in to ${COM}.`);
+    expect(saved()[COM]).not.toHaveProperty("userId");
+  });
+
   it("keeps waiting while the code is pending, and says so when it expired before anyone approved it", async () => {
     let polls = 0;
     const handle = async (request: Request) => {
@@ -179,7 +198,7 @@ describe("every call", () => {
     const com = install(COM);
     await tiehall(["login", COM], { [COM]: com.handle });
     await tiehall(["inbox"], { [COM]: com.handle }, () => new Date(Date.now() + 3_600_000));
-    expect(com.calls.map(({ path }) => path)).toEqual(["/api/auth/device/code", "/api/auth/oauth2/token", "/api/auth/oauth2/token", "/api/v1/inbox", "/api/v1/whoami"]);
+    expect(com.calls.map(({ path }) => path)).toEqual(["/api/auth/device/code", "/api/auth/oauth2/token", "/api/v1/whoami", "/api/auth/oauth2/token", "/api/v1/inbox", "/api/v1/whoami"]);
     expect(com.calls.every(({ cliVersion }) => cliVersion === CLI_VERSION)).toBe(true);
   });
 });

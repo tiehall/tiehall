@@ -170,7 +170,8 @@ export async function refreshLogin(environment: CliEnvironment, configDir: strin
     // An install that cannot answer for now, such as one that restarts, may take the refresh token once it is back.
     if (refreshed.status >= 500) throw new UnreachableError(`${login.url} could not refresh the saved login for now (HTTP ${refreshed.status}): try again once it is back.`);
     if (refreshed.status !== 200) throw new CliError(`The saved login for ${login.url} no longer works: run tiehall login ${login.url} again.`);
-    const next = loginOf(environment, login.url, refreshed.body);
+    // The refreshed tokens are the same user's.
+    const next = { ...loginOf(environment, login.url, refreshed.body), ...(current.userId === undefined ? {} : { userId: current.userId }) };
     saveLogin(configDir, next);
     return next;
   });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { announce } from "../src/announced.ts";
-import { hookInput, INSTALL, manualClock, saveLogin, startCli, stubInstall, type ManualClock, type Running, type StubInstall } from "./support/hooks.ts";
+import { hookInput, INSTALL, manualClock, problem, saveLogin, startCli, stubInstall, type ManualClock, type Running, type StubInstall } from "./support/hooks.ts";
 
 // News is announced once (requester-loop: News is announced once;
 // requester-loop: The hooks read with the CLI's cursor and acknowledge
@@ -14,9 +14,11 @@ import { hookInput, INSTALL, manualClock, saveLogin, startCli, stubInstall, type
 // the user. Neither announces an update the mark holds, and each adds to it
 // the updates it announces, before it announces them. The mark acknowledges
 // nothing: an announced update stays in every pull reader until it is
-// acknowledged. Another install's mark is its own, and signing in to an
-// install again starts its mark anew, since the new login may be another
-// user's.
+// acknowledged. The mark is one per user and install: another install's mark
+// is its own, and `tiehall login` keeps with the login the user whoami names,
+// so signing in again keeps that user's mark and another user's login gets
+// their own. A login an earlier CLI saved names no user: its install's mark
+// is the one such a login keeps, which a new sign-in starts anew.
 
 const NET = "https://tiehall.example.net";
 const MINUTE = 60_000;
@@ -53,10 +55,18 @@ function digest(session = "session-2", fetch = install.fetch, args: string[] = [
   return startCli(["hook", "session-start", ...args], { configDir, clock, fetch, stdin: hookInput(session, "SessionStart") }).done;
 }
 
-/** The mark of each install, as the CLI keeps it. */
-function marks(): Record<string, { through: number }> {
+/** The mark of each install, as the CLI keeps it: the one of a login that names no user, and each user's. */
+function marks(): Record<string, { through?: number; users?: Record<string, { through: number }> }> {
   const file = join(configDir, "announced.json");
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { installs: Record<string, { through: number }> }).installs : {};
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { installs: ReturnType<typeof marks> }).installs : {};
+}
+
+/** Signs in to the install with `tiehall login`, as the stub's user, approving the code at once. */
+async function signIn(): Promise<void> {
+  const login = startCli(["login", INSTALL], { configDir, clock, fetch: install.fetch });
+  await install.untilCalls(install.calls.length + 1);
+  await clock.advance(5_000);
+  expect((await login.done).code).toBe(0);
 }
 
 describe("the waiter", () => {
@@ -137,7 +147,7 @@ describe("the digest behind more announced updates than a page holds", () => {
 
   /** Moves the mark to this number, as earlier hooks announcing up to it did. */
   async function announcedUpTo(through: number): Promise<void> {
-    await announce(configDir, INSTALL, () => ({ through, picked: true }));
+    await announce(configDir, { url: INSTALL }, () => ({ through, picked: true }));
   }
 
   /** The lines of a digest that name an update. */
@@ -213,13 +223,32 @@ describe("the mark", () => {
     expect(statSync(join(configDir, "announced.json")).mode & 0o777).toBe(0o600);
   });
 
-  it("starts anew when the user signs in to the install again, since the login may be another user's", async () => {
+  // requester-loop: News is announced once: the mark is one per user and install.
+  it("is one per user: signing in again keeps the user's mark, and another user's login gets their own", async () => {
+    const sam = install.user;
+    const dana = { id: "00000000-0000-4000-8000-0000000000da", login: "dana" };
+    await signIn();
+    const question = install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    expect((await digest()).stdout).toContain("FE-142");
+    expect(marks()).toEqual({ [INSTALL]: { users: { [sam.id]: { through: question.seq } } } });
+    await signIn();
+    expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
+    install.user = dana;
+    await signIn();
+    expect((await digest()).stdout).toContain("FE-142");
+    install.user = sam;
+    await signIn();
+    expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(marks()).toEqual({ [INSTALL]: { users: { [sam.id]: { through: question.seq }, [dana.id]: { through: question.seq } } } });
+  });
+
+  it("starts anew, for a login an earlier CLI saved with no user, when the user signs in again, since the login may be another user's", async () => {
     install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
     expect((await digest()).stdout).toContain("FE-142");
-    const login = startCli(["login", INSTALL], { configDir, clock, fetch: install.fetch });
-    await install.untilCalls(install.calls.length + 1);
-    await clock.advance(5_000);
-    expect((await login.done).code).toBe(0);
+    expect(Object.keys(marks()[INSTALL] ?? {})).toEqual(["through"]);
+    install.answerEveryCall(() => problem("not-found", 404, "Not found", "No operation answers at this path."));
+    await signIn();
+    install.answerEveryCall(undefined);
     expect(marks()).toEqual({});
     expect((await digest()).stdout).toContain("FE-142");
   });

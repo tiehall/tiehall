@@ -50,13 +50,13 @@ export async function watch(environment: CliEnvironment, install: string | undef
         const notices = noticesOf(login.url, waited.entries);
         let fresh: typeof notices | undefined;
         try {
-          fresh = await announceFresh(configDir, login.url, notices, waited.cursor);
+          fresh = await announceFresh(configDir, login, notices, waited.cursor);
         } catch {
           // A mark the CLI cannot keep does not keep an update from being reported.
           fresh = notices;
         }
         for (const { notice } of fresh ?? []) environment.stdout(watchLine(notice));
-        cursor = Math.max(waited.cursor, announcedThrough(configDir, login.url));
+        cursor = Math.max(waited.cursor, announcedThrough(configDir, login));
         break;
       }
       case "again":
