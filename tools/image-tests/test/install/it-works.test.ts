@@ -218,6 +218,16 @@ describe("It works: a fresh install, two people in two teams, and their agents",
     key = opened.key;
   });
 
+  // agent-surfaces: CLI request commands, "Getting a request by URL". The CLI sends the URL as the path parameter of
+  // the API's read, with its slashes encoded as %2F, which Caddy and the web app pass on as they are.
+  it("lets Dana's CLI read the request by its URL, through the install's proxy and web app", async () => {
+    const run = await dana.cli.run(["get", `${install.url}/${key}`]);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stderr).toBe("");
+    expect(run.stdout).toContain(key);
+    expect(run.stdout).toContain("The order page shows each line's price but not the invoice total.");
+  });
+
   it("wakes Omar's hook wait with code 2 when Dana's CLI claims it, starts work and asks a blocking question, and whats_new lists the question", async () => {
     const claimed = await dana.cli.run(["claim", key]);
     expect(claimed.code, claimed.stderr).toBe(0);
