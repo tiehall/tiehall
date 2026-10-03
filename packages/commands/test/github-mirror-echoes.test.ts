@@ -263,6 +263,28 @@ describe("a person's change to a mirror issue", () => {
     expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "not_planned", assignees: [] });
   });
 
+  it("is recorded when it shows what a write of Tiehall's that GitHub never applied would have", async () => {
+    const request = await startedRequest();
+    await markDone(request.key);
+    // Tiehall's close never reaches GitHub, and the job fails, to be tried again.
+    const refusing: typeof fetch = async (input, init) => {
+      if ((init?.method ?? "GET") === "PATCH") throw new TypeError("fetch failed: the connection was reset");
+      return fetch(input, init);
+    };
+    const refused = createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: refusing, logger: install.logger });
+    await expect(sync(request.id, createGitHubIssues({ app: (await refused.app())!, database: install.db }))).rejects.toThrow();
+    await stub.settled();
+    expect(stub.issue("acme/fe-intake", request.number).state).toBe("open");
+
+    // Before the retry, Ayşe closes the issue herself.
+    const from = stub.deliveries(provider.app).length;
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "completed" });
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+
+    expect(await trackerChangesOf(request.id)).toEqual(["closed"]);
+  });
+
   it("to an issue that mirrors no request changes nothing", async () => {
     const from = stub.deliveries(provider.app).length;
     const app = (await provider.github.app())!;
@@ -288,7 +310,7 @@ describe("recording what a mirror issue shows", () => {
     await install.execute("requests.claim", sessionOf(ayse), { key: request.key });
     await sync(request.id);
     const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM mirrors WHERE request_id = $1", [request.id]);
-    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [] }, by: null, writesSeen: 0 };
+    const input = { mirrorId: rows[0]!.id, issue: { open: false, closeReason: "completed", assignees: [] }, by: null, writesSeen: 0, stateByOther: false };
     await expect(install.execute("mirrors.record_tracker_change", sessionOf(ayse), input)).rejects.toMatchObject({ status: 403 });
     const token = { kind: "personal_access_token" as const, userId: ayse, tokenId: randomUUID(), scopes: ["requests:read" as const, "requests:write" as const], surface: "api" as const };
     await expect(install.execute("mirrors.record_tracker_change", token, input)).rejects.toMatchObject({ status: 404 });
