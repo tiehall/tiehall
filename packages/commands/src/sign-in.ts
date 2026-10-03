@@ -913,6 +913,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           const authorization = isAuthorizationRequest(url.searchParams);
           const back = authorization ? continuePathOf(url.searchParams) : returnPath(url.searchParams.get("return"));
           const error = url.searchParams.get("error");
+          // An authorization the install cannot send back to its client is refused here, in Tiehall's own words.
+          const unreturnable = error === null ? undefined : AUTHORIZATION_ERRORS[error];
+          if (unreturnable !== undefined) return refused(request, new Refusal("invalid-input", unreturnable), TO_HOME);
           // The form posts here, and its answer sends the browser on to GitHub's authorize page. A browser applies the
           // form-action to every redirect after the post, and for a client the person approved before, the
           // authorization's last one goes on to the client's redirect URI, when the client registered it (consent.ts).
@@ -1179,6 +1182,26 @@ function cookieNames(headers: Headers): string[] {
     .map((pair) => pair.trim().split("=")[0] ?? "")
     .filter((name) => name !== "");
 }
+
+/**
+ * Why an agent client's authorization was refused, in Tiehall's own words, by
+ * the OAuth error the authorization server names. These are the errors it
+ * cannot send back to the client, since the client is unknown or not allowed
+ * the authorization, or the address it named to return to is not one it
+ * registered, so it sends them to the sign-in page; the page answers them as
+ * every refusal to a browser is answered (Technical decisions: T5), with the
+ * error, and a way home, rather than as a sign-in that did not complete.
+ */
+const AUTHORIZATION_ERRORS: Readonly<Record<string, string>> = {
+  invalid_client:
+    "The app that sent you here is not registered with this install, or no longer is (invalid_client), so it cannot ask to act for you. Connect it to the install again from the app.",
+  client_disabled: "The app that sent you here is switched off on this install (client_disabled), so it cannot ask to act for you.",
+  unauthorized_client: "The app that sent you here may not ask to act for you this way (unauthorized_client).",
+  invalid_redirect:
+    "The app that sent you here named an address to return to that it did not register with this install (invalid_redirect), so Tiehall sends you nowhere.",
+  unsupported_response_type: "The app that sent you here asked for an answer this install does not give (unsupported_response_type).",
+  unsupported_prompt_select_account: "The app that sent you here asked you to pick an account, which this install does not offer (unsupported_prompt_select_account).",
+};
 
 /** Why a sign-in did not complete, from the error Better Auth returned to the sign-in page with. */
 const ERROR_TEXTS: Readonly<Record<string, string>> = {

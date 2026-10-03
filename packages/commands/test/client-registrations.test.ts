@@ -152,3 +152,40 @@ describe("a registered client", () => {
     });
   });
 });
+
+// An authorization the install cannot send back to its client, because the client is unknown or the address it names
+// to return to is not one it registered, comes to the sign-in page with the OAuth error; the page answers it as every
+// refusal to a browser is answered (Technical decisions: T5): a page in Tiehall's own words that names the error and
+// leads home, not the sign-in form with a sign-in failure.
+describe("an authorization that cannot go back to its client", () => {
+  async function refusedAuthorization(parameters: Record<string, string>): Promise<{ location: URL; page: Response }> {
+    const client = await harness.registerClient();
+    const answer = await harness.authorize(ana.cookie, client, pkcePair(), { scope: "requests:read", ...parameters });
+    const location = new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
+    const page = await harness.handle(new Request(location, { headers: { accept: "text/html", cookie: ana.cookie } }));
+    return { location, page };
+  }
+
+  it.each([
+    ["an unknown client", { client_id: "no-such-client" }, "invalid_client", "is not registered with this install"],
+    ["an address to return to the client did not register", { redirect_uri: "https://elsewhere.example/callback" }, "invalid_redirect", "an address to return to that it did not register"],
+  ])("is answered, for %s, with a page that names the OAuth error in Tiehall's words and leads home", async (_case, parameters, error, words) => {
+    const { location, page } = await refusedAuthorization(parameters);
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("error")).toBe(error);
+    expect(page.status).toBe(400);
+    expect(page.headers.get("content-type")).toMatch(/^text\/html/);
+    const html = (await page.text()).replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+    expect(html).toContain(words);
+    expect(html).toContain(`(${error})`);
+    expect(html).toContain('<a href="/">');
+    expect(html).not.toContain('action="/sign-in"');
+    expect(html).not.toContain("did not complete");
+  });
+
+  it("leaves a sign-in with GitHub that did not complete on the sign-in page, which says why", async () => {
+    const page = await harness.handle(new Request(`${URL_OF_INSTALL}/sign-in?error=state_mismatch`, { headers: { accept: "text/html" } }));
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('action="/sign-in"');
+  });
+});
