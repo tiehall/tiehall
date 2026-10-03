@@ -1,6 +1,7 @@
 import { proposalText, type ProposalJson } from "@tiehall/packet/proposals";
 import { agentJson, createAgentView, type AgentText } from "@tiehall/packet/render";
 import {
+  contractReportText,
   inboxText,
   postedMessageText,
   pullRequestLinkText,
@@ -8,6 +9,7 @@ import {
   requestText,
   revisedPacketText,
   updatesText,
+  type ContractReportJson,
   type InboxJson,
   type LinkedPullRequestJson,
   type MessagePostJson,
@@ -50,11 +52,7 @@ export const RENDERERS: Readonly<Record<string, Render>> = {
   "proposals.propose": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   "contract.attach_changes": (output, reader) => revisedPacketText(output as RevisedPacketJson, reader),
   "updates.read": (output, reader) => updatesText(output as UpdatesJson, reader, "cli"),
-  // The answer to a contract report names the API it was taken for, by its name, which holds no space, and the report's id.
-  "contract.report": (output) => {
-    const { api, id } = output as { api: string; id: string };
-    return [{ origin: "tiehall", text: `Tiehall took the contract report for ${api}, as report ${id}.` }];
-  },
+  "contract.report": (output) => contractReportText(output as ContractReportJson),
 };
 
 /** Whether an answer is the proposal a commitment became, or the proposal a withdrawal ended. */

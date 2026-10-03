@@ -362,6 +362,19 @@ export function revisedPacketText(revised: RevisedPacketJson, reader: Reader): A
   ];
 }
 
+/** What the install answers a contract report with, as `tiehall contract report` prints it: the report's id and the API it was taken for. */
+export interface ContractReportJson {
+  id: string;
+  api: string;
+}
+
+/** A contract report the install took, in Tiehall's words: the API, by its name, which holds no space, and the report's id. */
+export function contractReportText(report: ContractReportJson): AgentText[] {
+  const api = checked(report.api, API_NAME, "API name");
+  const id = checked(report.id, UUID, "report id");
+  return [{ origin: "tiehall", text: `Tiehall took the contract report for ${api}, as report ${id}.` }];
+}
+
 /** The origin of an install, as TIEHALL_URL gives it: a scheme, a host and a port, and no path. */
 const INSTALL_URL = /^https?:\/\/(?:[A-Za-z0-9\.-]+|\[[0-9A-Fa-f:\.]+\])(?::\d{1,5})?$/;
 
