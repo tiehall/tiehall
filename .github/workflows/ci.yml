@@ -16,16 +16,41 @@ on:
 permissions: {}
 
 jobs:
-  test:
-    name: Typecheck and test
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-24.04
-    # The whole suite runs here on a 2-core runner, where the test files run
-    # almost one at a time: it outgrew 20 minutes once group 15's tests landed
-    # (the job needed about 22), and 40 once group 28's did (about 41). The
-    # limit only stops a job that hangs.
-    timeout-minutes: 60
+    timeout-minutes: 15
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+
+  test-shard:
+    name: Test (shard ${{ matrix.shard }} of 3)
+    runs-on: ubuntu-24.04
+    # The whole suite on one 2-core runner, where the test files run almost
+    # one at a time, outgrew 20 minutes once group 15's tests landed and 40
+    # once group 28's did (about 41). So it runs in three shards, each a third
+    # of the test files, side by side; each takes about a third of that. The
+    # limit only stops a job that hangs.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      # Every shard runs to the end, so one run shows every failing test.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
@@ -39,8 +64,27 @@ jobs:
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
-      - run: pnpm test
+      - run: pnpm test --shard=${{ matrix.shard }}/3
+
+  # The check the branch protection requires keeps its name: it passes only
+  # when the typecheck and every shard passed. It runs even when one of them
+  # failed or was cancelled, because GitHub counts a skipped required check
+  # as passed.
+  test:
+    name: Typecheck and test
+    needs: [typecheck, test-shard]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check that the typecheck and every test shard passed
+        env:
+          TYPECHECK: ${{ needs.typecheck.result }}
+          SHARDS: ${{ needs.test-shard.result }}
+        run: |
+          echo "Typecheck: $TYPECHECK. Test shards: $SHARDS."
+          test "$TYPECHECK" = success && test "$SHARDS" = success
 
   dependency-rules:
     name: Dependency rules
