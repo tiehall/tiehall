@@ -30,6 +30,7 @@ let alice: string;
 let ayse: string;
 let mo: string;
 let mobile: string;
+let fe: string;
 
 beforeAll(async () => {
   install = await startTestInstall();
@@ -40,7 +41,7 @@ beforeAll(async () => {
   ayse = await addUser(install.owner, { login: "ayse", githubAccountId: provider.account("ayse") });
   mo = await addUser(install.owner, { login: "mo", githubAccountId: provider.account("mo") });
   const be = await addTeam(install.owner, "BE");
-  const fe = await addTeam(install.owner, "FE");
+  fe = await addTeam(install.owner, "FE");
   mobile = await addTeam(install.owner, "MOBILE");
   await joinTeams(install.owner, alice, be);
   await joinTeams(install.owner, ayse, fe);
@@ -157,6 +158,40 @@ describe("a confirmed reassignment of a mirrored request", () => {
 
     const { rows } = await install.owner.query("SELECT 1 FROM events WHERE type = 'request.tracker_changed' AND data ->> 'requestId' = $1", [request.id]);
     expect(rows).toEqual([]);
+  });
+});
+
+describe("a close of the issue a reassignment left behind", () => {
+  it("adds a notice that names the key the issue mirrored and the request's key now", async () => {
+    await install.execute("mirrors.set_done_proposals", ada, { teamId: fe, on: true });
+    try {
+      const request = await mirroredRequest();
+      await reassignToMobile(request.key);
+      await sync(request.id);
+      const newKey = await keyOf(request.id);
+      const from = stub.deliveries(provider.app).length;
+
+      // Ayşe reopens the old issue and closes it as completed.
+      await stub.reopenIssue("acme/fe-intake", request.issue.number, { by: "ayse" });
+      await stub.closeIssue("acme/fe-intake", request.issue.number, { by: "ayse", reason: "completed" });
+      await stub.settled();
+      for (const delivery of stub.deliveries(provider.app).slice(from)) {
+        if (delivery.event !== "issues") continue;
+        await processDelivery({ database: install.db, github: provider.github, execute: install.execute }, await storeDelivery(install, { ...delivery, guid: randomUUID() }));
+      }
+
+      const { rows } = await install.owner.query<{ body: string }>(
+        `SELECT v.body FROM messages m JOIN message_versions v ON v.message_id = m.id
+          WHERE m.request_id = $1 AND m.actor_kind = 'system' AND m.surface = 'github' ORDER BY m.number`,
+        [request.id],
+      );
+      expect(rows.map(({ body }) => body)).toEqual([
+        `The GitHub mirror issue of ${request.key} was closed. A close in GitHub does not change the request: ${newKey} is still open.`,
+      ]);
+      expect((await install.owner.query("SELECT 1 FROM proposals WHERE request_id = $1 AND kind = 'done'", [request.id])).rows).toEqual([]);
+    } finally {
+      await install.execute("mirrors.set_done_proposals", ada, { teamId: fe, on: false });
+    }
   });
 });
 

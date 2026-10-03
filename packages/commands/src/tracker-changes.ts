@@ -1,7 +1,7 @@
 import { recordTrackerChange } from "@tiehall/catalog";
 import { changeRequest, formatRequestKey, Refusal, requestTrackerChanged } from "@tiehall/core";
 import { mirrors, teams, trackerChangeRecords, trackerMappings } from "@tiehall/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { defineHandler, type Handlers, type HandlerContext } from "./execute.ts";
 import { memberOf, teamsOfMember, type Member } from "./members.ts";
 import { addSystemMessage } from "./messages.ts";
@@ -50,8 +50,9 @@ import type { RequestRow } from "./request-views.ts";
 // GitHub, every close but one with the state_reason not_planned). It never
 // moves the request to done. When its team's mapping has the setting for
 // tracker "Done" proposals on, which is off until an admin turns it on, the
-// mirror is the one in the tracker of the request's target team now, for
-// its key there, not one a reassignment left behind, the
+// mirror is the one in the tracker and place that the mapping of the
+// request's target team names now, for its key there, not one a
+// reassignment or a change of the mapping left behind, the
 // close acts for a member of that team, mapped from the tracker account that
 // closed the issue, and the request's state allows a move to done (claimed,
 // in_progress or needs_info), the call creates a done proposal for that
@@ -89,15 +90,20 @@ function isTrackerDone(change: TrackerChange): boolean {
  * target team, whose mapping has the setting on, the member belongs to that
  * team, and the request's state allows done.
  */
-async function proposerOf(context: HandlerContext, request: RequestRow, mirror: { teamId: string; number: number | null }): Promise<Member | undefined> {
+async function proposerOf(
+  context: HandlerContext,
+  request: RequestRow,
+  mirror: { teamId: string; number: number | null; tracker: string; target: string },
+): Promise<Member | undefined> {
   const userId = context.caller.kind === "integration_event" ? context.caller.userId : undefined;
   // Only the mirror that follows the request now: one a reassignment left behind is not its target team's.
   if (userId === undefined || mirror.teamId !== request.targetTeamId || (mirror.number !== null && mirror.number !== request.number)) return undefined;
   const [mapping] = await context.tx
-    .select({ doneProposals: trackerMappings.doneProposals })
+    .select({ doneProposals: trackerMappings.doneProposals, tracker: trackerMappings.tracker, target: trackerMappings.target })
     .from(trackerMappings)
     .where(and(eq(trackerMappings.orgId, context.orgId), eq(trackerMappings.teamId, request.targetTeamId)));
-  if (mapping?.doneProposals !== true) return undefined;
+  // Nor one in a place the team's mapping no longer names, which Tiehall leaves as it is.
+  if (mapping?.doneProposals !== true || mapping.tracker !== mirror.tracker || mapping.target !== mirror.target) return undefined;
   if (!(await teamsOfMember(context, userId)).some(({ id }) => id === request.targetTeamId)) return undefined;
   if (!changeRequest(await lifecycleOf(context, request), { kind: "done" }).ok) return undefined;
   return memberOf(context, userId);
@@ -116,6 +122,7 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
         teamId: mirrors.teamId,
         number: mirrors.number,
         tracker: mirrors.tracker,
+        target: mirrors.target,
         trackerState: mirrors.trackerState,
         expectedState: mirrors.expectedState,
         stateWrites: mirrors.stateWrites,
@@ -164,14 +171,23 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
           });
         }
         if (done && proposer === undefined) {
-          const [team] = await writer.tx.select({ key: teams.key }).from(teams).where(and(eq(teams.orgId, writer.orgId), eq(teams.id, request.targetTeamId)));
-          const key = formatRequestKey(team?.key ?? "", request.number);
+          const keys = new Map(
+            (
+              await writer.tx
+                .select({ id: teams.id, key: teams.key })
+                .from(teams)
+                .where(and(eq(teams.orgId, writer.orgId), inArray(teams.id, [request.targetTeamId, row.teamId])))
+            ).map(({ id, key }) => [id, key]),
+          );
+          const key = formatRequestKey(keys.get(request.targetTeamId) ?? "", request.number);
+          // The key the issue mirrors, which a reassignment since may have left behind.
+          const mirroredKey = row.number === null ? key : formatRequestKey(keys.get(row.teamId) ?? "", row.number);
           const tracker = TRACKER_NAMES[row.tracker] ?? row.tracker;
           await addSystemMessage(
             writer,
             request.id,
-            `The ${tracker} mirror issue of ${key} was closed. A close in ${tracker} does not change the request: ${key} is still ${request.state}.`,
-            { actorKind: "system", surface: "github" },
+            `The ${tracker} mirror issue of ${mirroredKey} was closed. A close in ${tracker} does not change the request: ${key} is still ${request.state}.`,
+            { actorKind: "system", surface: row.tracker === "jira" ? "jira" : "github" },
           );
         }
       });

@@ -34,7 +34,7 @@ let fe: string;
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  provider = await providerOnStub(install, stub, ["alice", "ayse", "deniz", "omar"], { hook: true, repositories: ["acme/fe-intake"] });
+  provider = await providerOnStub(install, stub, ["alice", "ayse", "deniz", "omar"], { hook: true, repositories: ["acme/fe-intake", "acme/fe-new-intake"] });
   ada = { kind: "web_session", userId: await addUser(install.owner, { role: "admin", login: "ada" }), sessionId: randomUUID() };
   alice = await addUser(install.owner, { login: "alice", githubAccountId: provider.account("alice") });
   ayse = await addUser(install.owner, { login: "ayse", githubAccountId: provider.account("ayse") });
@@ -203,6 +203,30 @@ describe("with the setting on", () => {
     expect(await proposalsOf(request.id)).toEqual([]);
     expect(await noticesOf(request.id)).toHaveLength(1);
     expect(await closesOf(request.id)).toEqual([{ change: "closed", reason: "completed", actor_kind: "integration", surface: "github", actor_user_id: null }]);
+  });
+
+  it("a close of a mirror issue in a repository FE no longer maps only adds a notice: that issue no longer follows the request", async () => {
+    const request = await mirroredRequest();
+    try {
+      // FE moves to a new intake repository, with the setting on; the request gets a new issue there on its next change.
+      await install.execute("mirrors.remove_mapping", ada, { teamId: fe });
+      await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/fe-new-intake" });
+      await install.execute("mirrors.set_done_proposals", ada, { teamId: fe, on: true });
+      await install.execute("messages.post", sessionOf(ayse), { key: request.key, kind: "question", blocking: false, body: "Any news?" });
+      await sync(request.id);
+      await stub.settled();
+
+      // Ayşe closes the old issue, left in acme/fe-intake.
+      await closedOnGitHub(request.number, "ayse");
+
+      expect(await proposalsOf(request.id)).toEqual([]);
+      expect(await noticesOf(request.id)).toEqual([
+        `The GitHub mirror issue of ${request.key} was closed. A close in GitHub does not change the request: ${request.key} is still in_progress.`,
+      ]);
+    } finally {
+      await install.execute("mirrors.remove_mapping", ada, { teamId: fe });
+      await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/fe-intake" });
+    }
   });
 
   it("a close as not planned is no Done: it is recorded, and adds no proposal and no notice", async () => {
