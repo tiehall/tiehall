@@ -70,6 +70,10 @@ How Tiehall is built, and why, is written down as an OpenSpec change:
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start: how to build and test the repository, tests first, how a change goes through OpenSpec before it is built, the license of each directory, the notice rules that keep the API stable, and how the maintainers test Tiehall against real agent clients.
 
+## Security
+
+Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes, never in a public issue. It also says which releases get security fixes.
+
 ## Licenses by directory
 
 The server is licensed under AGPL-3.0: a modified server that is offered to people over a network must offer them its source, and the web UI of every install links to the source of the version it runs. The client pieces, which companies run on developers' machines and in their CI, are licensed under Apache-2.0.
