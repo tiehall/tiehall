@@ -49,6 +49,8 @@ The contract section, `contract`, holds an API change as the diff engine in the 
 
 Every text field is kept exactly as written, and none may be blank. Tiehall refuses a packet that lacks a required field, that names no kind or another one, or that has a field outside its bounds, with 400, and stores nothing.
 
+The schema states each URL, a link's `url` and the pull request's `url`, with the `uri` format, which names no scheme, and a validator need not check formats at all. So a validator of this schema version, the package's own included, does not refuse a URL of another scheme, such as a `javascript:` or `data:` URL, while Tiehall refuses a packet with one, with 400. A tool that shows a packet's links checks their scheme itself.
+
 A request's packet:
 
 ```json

@@ -66,6 +66,26 @@ describe("the packet docs", () => {
     for (const kind of schema.oneOf.map((variant) => variant.properties?.["kind"]?.const)) expect(reference).toContain(`\`${String(kind)}\``);
   });
 
+  it("say what the schema itself refuses of a URL: an http or https URL for Tiehall, and no scheme for a validator while the schema's URL fields name none", () => {
+    const text = part("Fields").replace(/\s+/g, " ");
+    expect(text).toContain("each with its `url`, an `http` or `https` URL");
+    /** Every node of the schema with the uri format. */
+    const uriNodes = (node: unknown): Record<string, unknown>[] => {
+      if (Array.isArray(node)) return node.flatMap(uriNodes);
+      if (typeof node !== "object" || node === null) return [];
+      const own = (node as Record<string, unknown>)["format"] === "uri" ? [node as Record<string, unknown>] : [];
+      return [...own, ...Object.values(node).flatMap(uriNodes)];
+    };
+    const urls = uriNodes(readPacketSchema());
+    expect(urls.length).toBeGreaterThan(0);
+    const schemeless = urls.some((node) => typeof node["pattern"] !== "string" || !/https/i.test(node["pattern"]));
+    // A validator of the schema accepts what the schema accepts; the page says so while the URL fields name no scheme.
+    expect(packetValidator()({ schema_version: "1-beta", kind: "request", untrusted: { need: "A need.", links: [{ url: "javascript:alert(1)" }] } })).toBe(schemeless);
+    const caveat = "does not refuse a URL of another scheme, such as a `javascript:` or `data:` URL";
+    if (schemeless) expect(text).toContain(caveat);
+    else expect(text).not.toContain(caveat);
+  });
+
   it("say how user-written fields are marked untrusted, naming each field the schema marks", () => {
     const text = part("The untrusted marking");
     expect(text).toContain("`x-tiehall-untrusted`");

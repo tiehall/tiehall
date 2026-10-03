@@ -99,6 +99,25 @@ describe("the packet's fields", () => {
     }
     expect(packet.safeParse({ ...base, due_date: "2026-02-30" }).success).toBe(false);
   });
+
+  it("takes only an http or https URL for a link and for the provider pull request, as packages/packet/README.md says", () => {
+    const request = fixture("valid/request-packet.json");
+    const contractPacket = fixture("valid/contract-packet.json");
+    const withLink = (url: string) => ({ ...request, untrusted: { ...(request["untrusted"] as Json), links: [{ url }] } });
+    const contract = (contractPacket["untrusted"] as Json)["contract"] as Json;
+    const withPullRequest = (url: string) => ({
+      ...contractPacket,
+      untrusted: { ...(contractPacket["untrusted"] as Json), contract: { ...contract, provider_pr: { ...(contract["provider_pr"] as Json), url } } },
+    });
+    for (const url of ["https://design.example.com/specs", "http://wiki.example.com/dark-mode", "HTTPS://design.example.com/specs"]) {
+      expect(packet.safeParse(withLink(url)).success, url).toBe(true);
+      expect(packet.safeParse(withPullRequest(url)).success, url).toBe(true);
+    }
+    for (const url of ["javascript:alert(document.domain)", "data:text/html,<script>alert(1)</script>", "ftp://files.example.com/specs", "not a url at all"]) {
+      expect(packet.safeParse(withLink(url)).success, url).toBe(false);
+      expect(packet.safeParse(withPullRequest(url)).success, url).toBe(false);
+    }
+  });
 });
 
 describe("user-written fields", () => {
