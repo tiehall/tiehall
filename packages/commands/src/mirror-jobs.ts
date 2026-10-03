@@ -40,7 +40,7 @@ export const mirrorRequest = defineJobType<{ requestId: string }>("mirror.sync",
   policy: "key_strict_fifo",
 });
 
-/** The events whose change can change what a request's mirror issue shows. */
+/** The events whose change can change what a request's mirror issue shows, such as its provider change shipping (contract-changes: Merging the provider PR marks the change shipped). */
 const MIRRORED_EVENTS: ReadonlySet<string> = new Set([
   "request.opened",
   "request.claimed",
@@ -48,6 +48,7 @@ const MIRRORED_EVENTS: ReadonlySet<string> = new Set([
   "request.released",
   "request.state_changed",
   "request.reassigned",
+  "request.provider_change_shipped",
 ]);
 
 /** Whether an event can change what its request's mirror issue shows: a change of the request, such as of its state, or a question on it. */

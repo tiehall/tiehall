@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { formatRequestKey, isTerminalState, REQUEST_STATES, type RequestState } from "@tiehall/core";
-import { events, eventSequence, mirrors, requests, teams, trackerMappings, type Database } from "@tiehall/db";
-import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
+import { apis, contractChangeRequests, contractChangeSets, events, eventSequence, mirrors, requests, teams, trackerMappings, type Database } from "@tiehall/db";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { installLink, type ServerText } from "./email.ts";
 import { createGitHubIssues } from "./github-issues.ts";
@@ -77,6 +77,11 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   is under way, what that write will leave it showing; a change read from
 //   the tracker that shows either is Tiehall's own, and is dropped
 //   (trackerChanges()).
+// - Shipped (contract-changes: Merging the provider PR marks the change
+//   shipped): when the provider pull request of a contract-change request's
+//   change set merges, the event that records it wakes the job, and the
+//   summary says the change shipped, naming the pull request; that changes
+//   no state, so it adds no comment.
 // Nothing a person wrote in Tiehall reaches the issue but the request's
 // title: its summary and label are server text (mirror-texts.ts).
 
@@ -213,6 +218,8 @@ interface MirroredRequest {
   targetTeamId: string;
   targetKey: string;
   requestingKey: string;
+  /** For a contract-change request whose provider pull request merged: that pull request, which shipped the change it follows. */
+  shipped: { repository: string; number: number } | undefined;
 }
 
 function digest(text: string): string {
@@ -228,7 +235,7 @@ function bodyText(summary: MirrorSummary): string {
 export function projectionOf(request: MirroredRequest, installUrl: string): MirrorProjection {
   return {
     title: mirrorTitle(request.key, request.title),
-    summary: mirrorSummary({ installUrl, key: request.key, targetTeam: request.targetKey, requestingTeam: request.requestingKey }),
+    summary: mirrorSummary({ installUrl, key: request.key, targetTeam: request.targetKey, requestingTeam: request.requestingKey, shipped: request.shipped }),
     label: stateLabel(request.state),
     state: request.state,
     open: !isTerminalState(request.state),
@@ -455,6 +462,13 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
         sql`${events.data} ->> 'requestId' = ${requestId}`,
       ),
     );
+  // A contract-change request's provider change, once its pull request merged (contract-changes: Merging the provider PR marks the change shipped).
+  const [provider] = await tx
+    .select({ repository: apis.repositoryFullName, number: contractChangeSets.pullRequestNumber })
+    .from(contractChangeRequests)
+    .innerJoin(contractChangeSets, and(eq(contractChangeSets.orgId, contractChangeRequests.orgId), eq(contractChangeSets.id, contractChangeRequests.changeSetId)))
+    .innerJoin(apis, and(eq(apis.orgId, contractChangeSets.orgId), eq(apis.id, contractChangeSets.apiId)))
+    .where(and(eq(contractChangeRequests.orgId, orgId), eq(contractChangeRequests.requestId, requestId), isNotNull(contractChangeSets.providerMergedAt)));
   const lastClaim = marks?.claimed === null || marks?.claimed === undefined ? undefined : Number(marks.claimed);
   const lastMove = marks?.reassigned === null || marks?.reassigned === undefined ? undefined : Number(marks.reassigned);
   const request: MirroredRequest = {
@@ -469,6 +483,7 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
     targetTeamId: row.request.targetTeamId,
     targetKey: row.targetKey,
     requestingKey: row.requestingKey,
+    shipped: provider === undefined ? undefined : { repository: provider.repository, number: provider.number },
   };
   const [mapped] = await tx
     .select({ tracker: trackerMappings.tracker, target: trackerMappings.target, mirrorOnOpen: trackerMappings.mirrorOnOpen })

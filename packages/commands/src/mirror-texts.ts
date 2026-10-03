@@ -1,5 +1,5 @@
 import { REQUEST_STATES, type RequestState } from "@tiehall/core";
-import { installLink, requestKey, teamKey, type ServerText } from "./email.ts";
+import { installLink, pullRequestText, requestKey, teamKey, type ServerText } from "./email.ts";
 
 // What a mirror issue says (tracker-mirrors: A mirror is a projection of the
 // request; agent-safety: Tracker mirrors carry a summary and a link, not the
@@ -32,8 +32,19 @@ export interface MirrorSummary {
   readonly link: ServerText;
 }
 
-/** The summary of a request for its mirror issue, from its key, its teams' keys and the install's URL alone. */
-export function mirrorSummary(input: { installUrl: string; key: string; targetTeam: string; requestingTeam: string }): MirrorSummary {
+/**
+ * The summary of a request for its mirror issue, from its key, its teams'
+ * keys and the install's URL alone, and, for a contract-change request whose
+ * provider pull request merged, that pull request, as GitHub names it
+ * (contract-changes: Merging the provider PR marks the change shipped).
+ */
+export function mirrorSummary(input: {
+  installUrl: string;
+  key: string;
+  targetTeam: string;
+  requestingTeam: string;
+  shipped?: { repository: string; number: number } | undefined;
+}): MirrorSummary {
   const key = requestKey(input.key);
   const target = teamKey(input.targetTeam);
   const requesting = teamKey(input.requestingTeam);
@@ -45,6 +56,9 @@ export function mirrorSummary(input: { installUrl: string; key: string; targetTe
     paragraphs: [
       opened as ServerText,
       `The request lives in Tiehall, with its packet and its thread: ${link}` as ServerText,
+      ...(input.shipped === undefined
+        ? []
+        : [`The provider change ${key} follows shipped: ${pullRequestText(input.shipped.repository, input.shipped.number).name} merged.` as ServerText]),
       "Tiehall keeps this issue up to date: its label shows the request's state, and a comment marks each change of that state and each question that waits for an answer. Closing or reopening this issue, or changing its assignees, is recorded on the request in Tiehall, and does not change the request by itself." as ServerText,
     ],
   };
