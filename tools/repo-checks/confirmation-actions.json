@@ -47,7 +47,7 @@
       ]
     },
     {
-      "item": "connecting a GitHub installation, uploading a new private key for the install's GitHub App, and connecting or changing the Jira connection;",
+      "item": "connecting a GitHub installation, uploading a new private key for the install's GitHub App, storing a webhook secret for the install's GitHub App, as the tracker-mirrors capability defines, and connecting or changing the Jira connection;",
       "actions": [
         {
           "action": "connecting a GitHub installation",

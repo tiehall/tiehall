@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,6 +63,47 @@ describe("the plan a list mirrors", () => {
         ["20.6", true],
       ]),
     );
+  });
+
+  it("is the list as the newest change that modifies the requirement words it, with the tasks of the change that added it", () => {
+    const modified = (item: string) => `# Spec Delta: activity-log
+
+## MODIFIED Requirements
+
+### Requirement: Which actions are security events
+
+Tiehall SHALL record a security event for each of these:
+- a role change;
+- ${item};
+- an export of the activity log.
+`;
+    const scratch = mkdtempSync(join(tmpdir(), "tiehall-plan-modified-"));
+    const write = (name: string, path: string, text: string) => {
+      const file = join(scratch, "openspec", "changes", name, path);
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, text);
+    };
+    try {
+      const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: scratch });
+      git("init", "--quiet", "--initial-branch=main");
+      write("zz-add-v1", "tasks.md", "- [ ] 9.8 Remove a member.\n- [x] 20.6 Export.\n");
+      write("zz-add-v1", "specs/activity-log/spec.md", `# activity-log\n\n## ADDED Requirements\n\n${SPEC}`);
+      git("add", ".");
+      git("commit", "--quiet", "-m", "The plan");
+      // A follow-up committed later, whose name sorts first, and one not yet committed, which is the newest.
+      write("a-follow-up", "tasks.md", "- [ ] 1.1 Its own task.\n");
+      write("a-follow-up", "specs/activity-log/spec.md", modified("a revoked invite"));
+      git("add", ".");
+      git("commit", "--quiet", "-m", "A follow-up");
+      expect(planFor(scratch, "activity-log", "Which actions are security events")).toEqual({
+        spec: modified("a revoked invite"),
+        tasks: "- [ ] 9.8 Remove a member.\n- [x] 20.6 Export.\n",
+      });
+      write("b-in-progress", "specs/activity-log/spec.md", modified("a sign-in"));
+      expect(planFor(scratch, "activity-log", "Which actions are security events")?.spec).toBe(modified("a sign-in"));
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 
   it("is the main spec, with no tasks, once the change is archived, and nothing when no spec holds the list", () => {
