@@ -11,7 +11,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/messages",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "key",
       "body"
@@ -88,7 +88,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Claim an open request of one of your teams for yourself; it needs no confirmation.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/claim",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "key"
     ],
@@ -122,7 +122,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Attach a classified OpenAPI diff, such as `tiehall contract diff` computes on your machine, to a request as the contract section of its packet, as its requester side, naming the revision you expect in If-Match. It never routes the changes to the teams that consume the API. Attaching to a claimed request changes its scope, a commitment: it creates a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/contract-changes",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [],
     "input": {},
     "defaults": {},
@@ -249,7 +249,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",
     "method": "GET",
     "path": "/api/v1/requests/{request}/pages",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "request"
     ],
@@ -297,7 +297,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
     "method": "GET",
     "path": "/api/v1/inbox",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [],
     "input": {},
     "defaults": {},
@@ -347,7 +347,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. Linking one that has already merged, as a member of the request's target team while the request is claimed, in_progress or needs_info, also creates a done proposal, answered with 202, which people confirm in the web UI.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/pull-requests",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "key",
       "url"
@@ -391,7 +391,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one. The packet must hold every field the target team requires, which directory lists; a request that lacks one is refused as invalid input naming each missing field, and nothing is opened.",
     "method": "POST",
     "path": "/api/v1/requests",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "targetTeam"
     ],
@@ -451,7 +451,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Propose a commitment that people confirm in the web UI: set, move or remove a request's due date, change its scope (its need, acceptance criteria or contract section) with the next revision of its packet, reassign it to another team, or withdraw it; or withdraw a pending proposal you proposed, by its id. A scope change before the request is claimed is added to the packet at once.",
     "method": "POST",
     "path": "/api/v1/proposals",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "kind",
       "key"
@@ -547,7 +547,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/messages",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "key",
       "body"
@@ -625,7 +625,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
     "method": "POST",
     "path": "/api/v1/requests/{key}/status",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [
       "key",
       "state"
@@ -675,7 +675,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
     "summary": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
     "method": "POST",
     "path": "/api/v1/updates",
-    "stability": "alpha",
+    "stability": "beta",
     "arguments": [],
     "input": {},
     "defaults": {},

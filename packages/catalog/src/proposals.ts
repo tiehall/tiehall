@@ -106,7 +106,7 @@ export const getProposal = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const listRequestProposals = defineCommand({

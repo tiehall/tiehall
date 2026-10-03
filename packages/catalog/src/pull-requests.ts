@@ -56,7 +56,7 @@ export const linkPullRequest = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "link_pr",
   cli: [{ command: "link-pr", arguments: ["key", "url"] }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 // Close on merge (requests: Linked PRs and done on merge; requests: System

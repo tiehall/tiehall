@@ -79,7 +79,7 @@ export const proposeTool = defineCommand({
   tool: "propose",
   cli: [{ command: "propose", arguments: ["kind", "key"] }],
   ifMatch: "expectedRevision",
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const PROPOSE_COMMANDS = [proposeTool];

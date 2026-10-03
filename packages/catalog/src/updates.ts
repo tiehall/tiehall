@@ -77,7 +77,7 @@ export const readUpdates = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "whats_new",
   cli: [{ command: "updates" }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 /**
@@ -117,7 +117,7 @@ export const waitForEvents = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 /**

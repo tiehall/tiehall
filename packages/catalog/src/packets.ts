@@ -37,7 +37,7 @@ export const getPacket = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
   etag: "revision",
 });
 
@@ -55,7 +55,7 @@ export const getPacketRevision = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
   etag: "revision",
 });
 
@@ -80,7 +80,7 @@ export const addPacketRevision = defineCommand({
   commitment: true,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
   ifMatch: "expectedRevision",
   etag: "revision",
 });
@@ -119,7 +119,7 @@ export const getPacketChanges = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const PACKET_COMMANDS = [getPacket, getPacketRevision, addPacketRevision, getPacketChanges];

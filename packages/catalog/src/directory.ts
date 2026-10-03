@@ -58,7 +58,7 @@ export const whoami = defineCommand({
   confirm: false,
   surfaces: ["rest", "mcp"],
   tool: "whoami",
-  stability: "alpha",
+  stability: "beta",
 });
 
 /**
@@ -98,7 +98,7 @@ export const readDirectory = defineCommand({
   confirm: false,
   surfaces: ["mcp"],
   tool: "directory",
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const getTeam = defineCommand({
@@ -113,7 +113,7 @@ export const getTeam = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const DIRECTORY_COMMANDS = [whoami, readDirectory, getTeam];

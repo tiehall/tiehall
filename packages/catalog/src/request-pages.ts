@@ -115,7 +115,7 @@ export const readRequest = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "get_request",
   cli: [{ command: "get", arguments: ["request"] }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const REQUEST_PAGE_COMMANDS = [readRequest];

@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "name": "get_request",
+      "stability": "beta"
+    },
+    {
+      "name": "open_request",
+      "stability": "alpha"
+    }
+  ]
+}

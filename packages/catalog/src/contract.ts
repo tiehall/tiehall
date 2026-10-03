@@ -166,7 +166,7 @@ export const attachContractChanges = defineCommand({
   tool: "attach_contract_changes",
   cli: [{ command: "contract diff" }],
   ifMatch: "expectedRevision",
-  stability: "alpha",
+  stability: "beta",
 });
 
 // Applying a change set's update (contract-changes: Breaking changes open one

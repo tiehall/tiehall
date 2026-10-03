@@ -1273,7 +1273,7 @@
           }
         ],
         "summary": "Read the events about requests after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/events/acknowledge": {
@@ -1451,7 +1451,7 @@
           }
         ],
         "summary": "Acknowledge the events up to a number, so that your next read starts after it. A cursor never moves back.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/events/wait": {
@@ -1624,7 +1624,7 @@
           }
         ],
         "summary": "Wait for your next updates: answers as soon as one of the updates whats_new returns comes after the cursor, with ids and Tiehall's own text only, or with an empty list once 60 seconds pass. It moves no cursor: read the updates themselves with whats_new.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/inbox": {
@@ -2023,7 +2023,7 @@
           }
         ],
         "summary": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -2408,7 +2408,7 @@
           }
         ],
         "summary": "Read a message of a request's thread, with every version of its text.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/messages/{messageId}/versions": {
@@ -2773,7 +2773,7 @@
           }
         ],
         "summary": "Edit a message you posted: its new text becomes its next version, and every earlier version stays as it was.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/proposals": {
@@ -3794,7 +3794,7 @@
           }
         ],
         "summary": "Propose a commitment that people confirm in the web UI: set, move or remove a request's due date, change its scope (its need, acceptance criteria or contract section) with the next revision of its packet, reassign it to another team, or withdraw it; or withdraw a pending proposal you proposed, by its id. A scope change before the request is claimed is added to the packet at once.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -4329,7 +4329,7 @@
           }
         ],
         "summary": "Read a proposal: what it proposes, who proposed it, the confirmations it needs and those it has received, when it expires, and how it ended. Every member can read every proposal.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests": {
@@ -4738,7 +4738,7 @@
           }
         ],
         "summary": "List the install's requests, newest first, optionally only those to one team or in one state.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       },
       "post": {
         "operationId": "requests.create",
@@ -5159,7 +5159,7 @@
           }
         ],
         "summary": "Open a request to a team of the install, from one of the teams you belong to, with its packet, which becomes revision 1; your only team is the default, and a member of several teams names one. The packet must hold every field the target team requires, which directory lists; a request that lacks one is refused as invalid input naming each missing field, and nothing is opened.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -5720,7 +5720,7 @@
           }
         ],
         "summary": "Read a request by its key, with its thread. Every member of the install can read every request.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/claim": {
@@ -6118,7 +6118,7 @@
           }
         ],
         "summary": "Claim an open request of one of your teams for yourself; it needs no confirmation.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -7238,7 +7238,7 @@
           }
         ],
         "summary": "Attach a classified OpenAPI diff, such as `tiehall contract diff` computes on your machine, to a request as the contract section of its packet, as its requester side, naming the revision you expect in If-Match. It never routes the changes to the teams that consume the API. Attaching to a claimed request changes its scope, a commitment: it creates a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -7935,7 +7935,7 @@
           }
         ],
         "summary": "Post a comment, a question or an answer in a request's thread. A blocking question moves the request to needs_info until every blocking question has an answer; an answer names the question it answers.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -8127,7 +8127,7 @@
           }
         ],
         "summary": "Read a request's packet at its current revision.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/packet/changes": {
@@ -8337,7 +8337,7 @@
           }
         ],
         "summary": "Say what changed in a request's packet since a revision: the fields that changed, and an RFC 6902 JSON Patch that turns that revision's packet into the current one. Both are empty since the current revision.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/packet/revisions": {
@@ -9013,7 +9013,7 @@
           }
         ],
         "summary": "Add the next revision of a request's packet, as its requester side, naming the revision you expect in If-Match; a revision keeps the packet's kind. Setting or moving the due date, and changing the need, the acceptance criteria or the contract section of a claimed request, are commitments: they create a proposal based on the revision you expect, answered with 202, which people confirm in the web UI.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/packet/revisions/{revision}": {
@@ -9193,7 +9193,7 @@
           }
         ],
         "summary": "Read a revision of a request's packet by its number; a revision never changes once it is added.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/proposals": {
@@ -10056,7 +10056,7 @@
           }
         ],
         "summary": "Propose a commitment that no other operation makes, which people confirm in the web UI, answered with 202 and the proposal: reassign the request to another team of the install, as a member of its target team, or withdraw it, as its requester side.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/requests/{key}/pull-requests": {
@@ -10984,7 +10984,7 @@
           }
         ],
         "summary": "Link a pull request on GitHub.com to a request, by the pull request's URL; it needs no confirmation. A pull request is linked to a request once: linking it again answers with the same link. Linking one that has already merged, as a member of the request's target team while the request is claimed, in_progress or needs_info, also creates a done proposal, answered with 202, which people confirm in the web UI.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -11839,7 +11839,7 @@
           }
         ],
         "summary": "Change a request's state: in_progress starts work on a claimed request, and open releases its claim, which the claimant may do, or a member of its target team once the claimant is no longer a member. declined and done are commitments: they create a proposal that people confirm in the web UI, answered with 202, and leave the request as it is; done on a request that is done already answers with the request.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -12633,7 +12633,7 @@
           }
         ],
         "summary": "Read a request by its key, such as FE-142, or its URL on this install, with its packet and its thread, in pages of at most 8,000 tokens, each of which shows whether the request waits for a person (needs_human) and names the next. Every member of the install can read every request.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -12810,7 +12810,7 @@
           }
         ],
         "summary": "Read a team by its key, as its intake page shows it: its key, its name, the notes in which it says how it wants requests filed, and the packet fields it requires of the requests opened to it. A team's earlier key names the same team, which comes back under its current key.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     },
     "/api/v1/updates": {
@@ -13341,7 +13341,7 @@
           }
         ],
         "summary": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
-        "x-stability-level": "alpha",
+        "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [
             {
@@ -13564,7 +13564,7 @@
           }
         ],
         "summary": "Say who this connection acts for: the user, and whether an admin flagged them as a bot, the teams they belong to, and the Tiehall install, by its URL; and warn when the Tiehall skill in use is older than the install supports.",
-        "x-stability-level": "alpha"
+        "x-stability-level": "beta"
       }
     }
   }

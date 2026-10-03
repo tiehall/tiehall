@@ -142,7 +142,7 @@ export const createRequest = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "open_request",
   cli: [{ command: "open", arguments: ["targetTeam"] }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const getRequest = defineCommand({
@@ -156,7 +156,7 @@ export const getRequest = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const listRequests = defineCommand({
@@ -176,7 +176,7 @@ export const listRequests = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const listInbox = defineCommand({
@@ -198,7 +198,7 @@ export const listInbox = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "list_inbox",
   cli: [{ command: "inbox" }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const listOpenedRequests = defineCommand({
@@ -232,7 +232,7 @@ export const claimRequest = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "claim",
   cli: [{ command: "claim", arguments: ["key"] }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 /** The states set_status moves a request to directly: in_progress starts work, and open releases the claim. */
@@ -260,7 +260,7 @@ export const setRequestStatus = defineCommand({
   surfaces: ["rest", "mcp", "cli"],
   tool: "set_status",
   cli: [{ command: "status", arguments: ["key", "state"] }],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const proposeCommitment = defineCommand({
@@ -285,7 +285,7 @@ export const proposeCommitment = defineCommand({
   commitment: true,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const REQUEST_COMMANDS = [createRequest, getRequest, listRequests, listInbox, listOpenedRequests, claimRequest, setRequestStatus, proposeCommitment];

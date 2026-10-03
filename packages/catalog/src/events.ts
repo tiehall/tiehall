@@ -37,7 +37,7 @@ export const readEvents = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const acknowledgeEvents = defineCommand({
@@ -53,7 +53,7 @@ export const acknowledgeEvents = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const EVENT_COMMANDS = [readEvents, acknowledgeEvents];

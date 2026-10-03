@@ -38,6 +38,7 @@
     "check:tool-compat": "node tools/repo-checks/src/check-tool-compat.ts",
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts",
+    "release:check-stability": "node tools/repo-checks/src/check-release-stability.ts",
     "oasdiff:fixtures": "pnpm --filter @tiehall/contract-action oasdiff:fixtures"
   },
   "devDependencies": {

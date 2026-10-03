@@ -65,7 +65,7 @@ export const postMessage = defineCommand({
     { command: "ask", arguments: ["key", "body"], defaults: { kind: "question" } },
     { command: "reply", arguments: ["key", "body"], input: { kind: "answer" } },
   ],
-  stability: "alpha",
+  stability: "beta",
 });
 
 /** One version of a message's text. */
@@ -94,7 +94,7 @@ export const getMessage = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const editMessage = defineCommand({
@@ -108,7 +108,7 @@ export const editMessage = defineCommand({
   commitment: false,
   confirm: false,
   surfaces: ["rest"],
-  stability: "alpha",
+  stability: "beta",
 });
 
 export const MESSAGE_COMMANDS = [postMessage, getMessage, editMessage];
