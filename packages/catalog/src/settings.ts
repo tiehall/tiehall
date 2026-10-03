@@ -8,8 +8,9 @@ import { defineCommand } from "./command.ts";
 // agent-safety: Actions that need the confirmation step; teams-and-roles: What
 // admins and members may do). Each needs the confirmation step for that exact
 // change, so no agent surface offers it. The web UI's sign-in policy page
-// shows the policy in force, and its personal access tokens page the PAT
-// switch and the longest lifetime, to admins only.
+// shows the policy in force, its personal access tokens page the PAT switch
+// and the longest lifetime, and its admin page the daily budget of agent
+// writes, to admins only.
 
 /** A daily budget of agent writes: a whole number from 1 to 1,000,000. */
 const dailyWriteBudget = z
@@ -105,8 +106,22 @@ export const getPersonalAccessTokenAdminSettings = defineCommand({
   stability: "beta",
 });
 
+export const getWriteBudget = defineCommand({
+  id: "settings.get_write_budget",
+  summary: "Show an admin the install's daily budget of agent writes.",
+  input: z.object({}),
+  output: z.object({ dailyWriteBudget: z.number().int() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  admin: "agent_access",
+  surfaces: [],
+  stability: "beta",
+});
+
 export const SETTINGS_COMMANDS = [
   setWriteBudget,
+  getWriteBudget,
   setSignInPolicy,
   getSignInPolicy,
   setPersonalAccessTokens,

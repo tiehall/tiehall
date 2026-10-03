@@ -208,6 +208,8 @@ describe("the user and admin docs", () => {
     const people = read("docs/people-and-teams.md");
     for (const path of ["/members", "/admin/invites", "/admin/teams", "/admin/sign-in-policy"]) expect(people, path).toContain(`\`${path}\``);
     expect(read("docs/github-and-jira.md")).toContain("`/admin/github`");
+    // agent-safety: Agent writes are limited per token and budgeted per install: the admin page holds the budget's form.
+    expect(read("docs/agents.md").replace(/\s+/g, " ")).toMatch(/agent writes a UTC day for the whole install by default, which an admin can change on the admin page, `\/admin`, under Agent writes/);
   });
 
   it("point to the Action's own README for its inputs", () => {

@@ -84,3 +84,46 @@ describe("the admin page's backups", () => {
     await expect(install.execute("install.get_status", tokenOf(ada.userId), {})).rejects.toMatchObject({ reason: "route-not-found" });
   });
 });
+
+// agent-safety: Agent writes are limited per token and budgeted per install. The admin page shows the install's daily
+// budget of agent writes, with a form that leads to the review page of the budget it names, where the change takes
+// the confirmation step; a member's form changes nothing.
+describe("the admin page's budget of agent writes", () => {
+  const SET_BUDGET = "settings.set_write_budget";
+
+  function budgetForm(session: WebSessionCaller, dailyWriteBudget: string): Promise<Response> {
+    return page(session)(
+      new Request(`${URL_OF_INSTALL}${ADMIN_PATH}`, {
+        method: "POST",
+        headers: { accept: "text/html", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+        body: new URLSearchParams({ dailyWriteBudget, csrf: install.fromThePage(session).csrfToken ?? "" }).toString(),
+      }),
+    );
+  }
+
+  it("shows the install's daily budget, 5,000 on a new install, with a form for another", async () => {
+    const { html } = await adminPage();
+    expect(html).toContain("The install's agents may make 5,000 writes per UTC day, together.");
+    expect(html).toContain(`<form method="post" action="${ADMIN_PATH}">`);
+    expect(html).toContain('name="dailyWriteBudget"');
+  });
+
+  it("leads an admin's form to the review page of the budget it names, and shows the budget once it is confirmed", async () => {
+    const answer = await budgetForm(ada, "8000");
+    expect(answer.status).toBe(303);
+    expect(answer.headers.get("location")).toBe(`/confirm/${SET_BUDGET}?input=${encodeURIComponent(JSON.stringify({ dailyWriteBudget: 8_000 }))}`);
+    expect((await install.confirm(ada, SET_BUDGET, { dailyWriteBudget: 8_000 })).status).toBe(200);
+    expect((await adminPage()).html).toContain("The install's agents may make 8,000 writes per UTC day, together.");
+    expect((await install.confirm(ada, SET_BUDGET, { dailyWriteBudget: 5_000 })).status).toBe(200);
+  });
+
+  it("gets 403 for a member's form, which changes nothing", async () => {
+    const lee = sessionOf(await addUser(install.owner, { login: "lee-budget" }));
+    expect((await budgetForm(lee, "1")).status).toBe(403);
+    expect((await adminPage()).html).toContain("5,000 writes per UTC day");
+  });
+
+  it("reads the budget through an operation no agent surface offers", async () => {
+    await expect(install.execute("settings.get_write_budget", tokenOf(ada.userId), {})).rejects.toMatchObject({ reason: "route-not-found" });
+  });
+});

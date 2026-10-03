@@ -158,6 +158,7 @@ export {
   setPersonalAccessTokens,
   setSignInPolicy,
   setWriteBudget,
+  getWriteBudget,
   SETTINGS_COMMANDS,
 } from "./settings.ts";
 export {

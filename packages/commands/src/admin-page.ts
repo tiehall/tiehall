@@ -1,13 +1,13 @@
-import { getBanners, getGitHubIntegration, getInstallStatus, listGitHubInstallations, type githubInstallation } from "@tiehall/catalog";
+import { getBanners, getGitHubIntegration, getInstallStatus, getWriteBudget, listGitHubInstallations, setWriteBudget, type githubInstallation } from "@tiehall/catalog";
 import type { z } from "zod";
 import type { Banner } from "./admin-alerts.ts";
 import type { DocsLink } from "./docs-pages.ts";
 import type { EmailStatus } from "./email.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { ADMIN_PATH, adminNav } from "./admin-pages.ts";
+import { ADMIN_PATH, adminNav, reviewPath } from "./admin-pages.ts";
 import type { RunningVersion } from "./running-version.ts";
-import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, link, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The admin page at /admin, the first page of the admin UI (self-host-install:
 // The admin page warns about missing backups; design.md, Self-hosting
@@ -23,10 +23,14 @@ import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOption
 // Optional email through SMTP): how GitHub's changes reach Tiehall, webhook or
 // polling, the installations Tiehall acts on, whether a Jira site is
 // connected and whether email is set up; and, first, the banners about
-// problems with the integrations (admin-alerts.ts). Last, it links each page
-// of the user and admin docs, at the running version's docs (task 28.6;
-// docs-pages.ts). The integrations are an admin's to read, so the page is an
-// admin's: a member gets 403 and no state.
+// problems with the integrations (admin-alerts.ts). It shows the install's
+// daily budget of agent writes, with a form that leads to the review page of
+// the budget it names, where the change takes the confirmation step
+// (agent-safety: Agent writes are limited per token and budgeted per
+// install). Last, it links each page of the user and admin docs, at the
+// running version's docs (task 28.6; docs-pages.ts). The integrations are an
+// admin's to read, so the page is an admin's: a member gets 403 and no state,
+// and their form changes nothing.
 
 export interface AdminRouteOptions extends PageRouteOptions {
   /** The running version and the link to its source; the page shows no version without it. */
@@ -162,6 +166,26 @@ function emailSection(email: EmailStatus | undefined): string[] {
   ];
 }
 
+/** The budget section: the install's daily budget of agent writes, and a form that leads to the review page of another. */
+function writeBudgetSection(dailyWriteBudget: number, csrf: string): string[] {
+  return [
+    "      <h2>Agent writes</h2>",
+    `      <p>${escapeHtml(`The install's agents may make ${dailyWriteBudget.toLocaleString("en-US")} writes per UTC day, together. A write beyond the budget is refused until the next UTC day begins.`)}</p>`,
+    `      <form method="post" action="${ADMIN_PATH}">`,
+    '        <p><label for="daily-write-budget">The daily budget of agent writes, from 1 to 1,000,000</label></p>',
+    `        <p><input type="number" id="daily-write-budget" name="dailyWriteBudget" min="1" max="1000000" value="${dailyWriteBudget}" required></p>`,
+    `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    '        <button type="submit">Review the change</button>',
+    "      </form>",
+  ];
+}
+
+/** A whole number a form gives, or the text as it was typed, which the review page refuses. */
+function numberOf(value: string | null): number | string {
+  const text = (value ?? "").trim();
+  return /^\d{1,7}$/.test(text) ? Number(text) : text;
+}
+
 /** The documentation section: a link to each page of the user and admin docs. */
 function docsSection(docs: readonly DocsLink[] | undefined): string[] {
   if (docs === undefined || docs.length === 0) return [];
@@ -184,6 +208,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
       const { installations } = await read<{ installations: Installation[] }>(listGitHubInstallations.id, {});
       const status = await read<InstallStatus>(getInstallStatus.id, {});
       const { banners } = await read<{ banners: Banner[] }>(getBanners.id, {});
+      const { dailyWriteBudget } = await read<{ dailyWriteBudget: number }>(getWriteBudget.id, {});
       return htmlAnswer(
         htmlPage(
           "Admin",
@@ -196,10 +221,16 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
             ...githubSection(integration, installations),
             ...jiraSection(),
             ...emailSection(options.email),
+            ...writeBudgetSection(dailyWriteBudget, csrf),
             ...docsSection(options.docs),
           ].join("\n"),
         ),
       );
+    },
+    async post(form, { read }) {
+      // Only an admin's form leads on: a member gets 403, as for the page.
+      await read(getWriteBudget.id, {});
+      return seeOther(reviewPath(setWriteBudget.id, { dailyWriteBudget: numberOf(form.get("dailyWriteBudget")) }));
     },
   });
 }

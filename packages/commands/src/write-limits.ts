@@ -1,4 +1,4 @@
-import { setWriteBudget } from "@tiehall/catalog";
+import { getWriteBudget, setWriteBudget } from "@tiehall/catalog";
 import { nextUtcDay, Refusal, secondsUntil, utcDay, WRITE_LIMITS, writeBudgetChanged } from "@tiehall/core";
 import { agentOpenedRequests, agentTokenWrites, agentWriteDays, installSettings } from "@tiehall/db";
 import { and, asc, eq, gt, gte, lt, lte, sql } from "drizzle-orm";
@@ -167,6 +167,7 @@ export const WRITE_LIMIT_HANDLERS: Handlers = {
       return { dailyWriteBudget, previousBudget };
     });
   }),
+  [getWriteBudget.id]: defineHandler(getWriteBudget, async (_input, context) => ({ dailyWriteBudget: await dailyWriteBudgetOf(context) })),
 };
 
 /** The review page of a change to the budget, in Tiehall's own words. */
