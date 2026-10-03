@@ -29,9 +29,13 @@ import type { RequestRow } from "./request-views.ts";
 // from its own writes and the changes it read before, and with what a write
 // of its own under way will leave it showing (mirrors.ts, trackerChanges()):
 // a read that shows either is an echo of Tiehall's own write, or nothing new,
-// and is dropped; but a state the tracker says another account made, such as
-// a person's close, is no echo, even when it matches a write Tiehall began
-// and the tracker never applied. A read taken before a write of the issue's state began or
+// and is dropped; but a close or reopen the tracker says another account
+// made, such as a person's close of an open issue, is no echo, even when it
+// matches a write Tiehall began and the tracker never applied. A change of the
+// close reason alone is not told apart that way: GitHub keeps naming whoever
+// closed the issue as its closer when Tiehall changes only the reason, as it
+// does when it closes, for the request's end, an issue a person closed with
+// another reason. A read taken before a write of the issue's state began or
 // ended, and recorded after, may show the issue as it was before that write:
 // the processing passes the count of such writes it saw before it read, and
 // when the mirror counts more now, the read's open or closed state is not
@@ -144,9 +148,10 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
       closeReason: state ? (issue.open ? null : issue.closeReason) : known.closeReason,
       assignees: only === "state" ? known.assignees : issue.assignees,
     };
-    // A state the tracker says another account made is no echo of Tiehall's, even of a write that it began and the
-    // tracker never applied.
-    const expected = stateByOther ? null : (row.expectedState as Pick<IssueState, "open" | "closeReason"> | null);
+    // A close or reopen the tracker says another account made is no echo of Tiehall's, even of a write that it began and
+    // the tracker never applied. A change of the close reason alone is not one: GitHub keeps naming whoever closed the
+    // issue as its closer when Tiehall changes only the reason, so that read may well be Tiehall's own write.
+    const expected = stateByOther && now.open !== known.open ? null : (row.expectedState as Pick<IssueState, "open" | "closeReason"> | null);
     const changes: TrackerChange[] = trackerChanges(known, expected, now);
     const done = changes.some(isTrackerDone);
     const proposer = done ? await proposerOf(context, request, row) : undefined;

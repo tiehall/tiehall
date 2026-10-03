@@ -304,6 +304,125 @@ describe("a person's change to a mirror issue", () => {
   });
 });
 
+/** The changes recorded on the request, in order, with their reasons, whether they act for Ayşe, and the tracker account each names. */
+async function recordedOf(requestId: string): Promise<unknown[]> {
+  const { rows } = await install.owner.query(
+    `SELECT e.data ->> 'change' AS change, e.data ->> 'reason' AS reason, e.actor_user_id = $2 AS "byAyse", r.actor ->> 'login' AS actor
+       FROM events e JOIN tracker_changes r ON r.id::text = e.data ->> 'trackerChangeId'
+      WHERE e.type = 'request.tracker_changed' AND e.data ->> 'requestId' = $1 ORDER BY e.number`,
+    [requestId, ayse],
+  );
+  return rows;
+}
+
+/** Declines the request, as Ayşe does in the web UI. */
+async function decline(key: string): Promise<void> {
+  const declined = (await install.execute("requests.set_status", sessionOf(ayse), { key, state: "declined" })) as { proposal: { id: string } };
+  expect((await install.confirm(sessionOf(ayse), "proposals.confirm", { proposal: declined.proposal.id })).status).toBe(200);
+}
+
+describe("Tiehall's close, with another reason, of an issue a person closed", () => {
+  // GitHub keeps naming the person who closed the issue as its closer when Tiehall changes only the close reason, so a
+  // read of it still shows the person; it is Tiehall's own write, and adds nothing to the request.
+
+  it("adds nothing when the issue is read after GitHub applied it and before the job recorded it", async () => {
+    const request = await startedRequest();
+    let from = stub.deliveries(provider.app).length;
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "not_planned" });
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+    expect(await trackerChangesOf(request.id)).toEqual(["closed"]);
+
+    await markDone(request.key);
+    const real = createGitHubIssues({ app: (await provider.github.app())!, database: install.db });
+    from = stub.deliveries(provider.app).length;
+    const racing: TrackerAdapter = {
+      ...real,
+      async updateIssue(...args) {
+        await real.updateIssue(...args);
+        await stub.settled();
+        // The deliveries of this write are processed before the job records it.
+        await processIssueDeliveries(request.number, from);
+        from = stub.deliveries(provider.app).length;
+      },
+    };
+    await sync(request.id, racing);
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+
+    expect(stub.issue("acme/fe-intake", request.number).stateReason).toBe("completed");
+    expect(await recordedOf(request.id)).toEqual([{ change: "closed", reason: "not_planned", byAyse: true, actor: "ayse" }]);
+    expect(await noticesOf(request.id)).toEqual([]);
+    expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "completed", assignees: [] });
+  });
+
+  it("adds nothing when GitHub applied it but its answer was lost, read before the job's retry", async () => {
+    const request = await startedRequest();
+    let from = stub.deliveries(provider.app).length;
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "not_planned" });
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+
+    await markDone(request.key);
+    const real = createGitHubIssues({ app: (await provider.github.app())!, database: install.db });
+    from = stub.deliveries(provider.app).length;
+    const losing: TrackerAdapter = {
+      ...real,
+      async updateIssue(...args) {
+        await real.updateIssue(...args);
+        throw new TypeError("fetch failed: the connection was reset");
+      },
+    };
+    await expect(sync(request.id, losing)).rejects.toThrow();
+    await stub.settled();
+    // Read before the retry: the write's deliveries, as the poll or the reconciliation would read it too.
+    await processIssueDeliveries(request.number, from);
+    expect(found).not.toEqual([]);
+    expect(found.flat()).toEqual([]);
+    from = stub.deliveries(provider.app).length;
+    await sync(request.id);
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+
+    expect(await recordedOf(request.id)).toEqual([{ change: "closed", reason: "not_planned", byAyse: true, actor: "ayse" }]);
+    expect(await noticesOf(request.id)).toEqual([]);
+    expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "completed", assignees: [] });
+  });
+
+  it("as not planned, for a decline, adds nothing to a person's close as completed", async () => {
+    const request = await startedRequest();
+    let from = stub.deliveries(provider.app).length;
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "ayse", reason: "completed" });
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+    const notices = await noticesOf(request.id);
+    expect(notices).toHaveLength(1);
+
+    await decline(request.key);
+    const real = createGitHubIssues({ app: (await provider.github.app())!, database: install.db });
+    from = stub.deliveries(provider.app).length;
+    const losing: TrackerAdapter = {
+      ...real,
+      async updateIssue(...args) {
+        await real.updateIssue(...args);
+        throw new TypeError("fetch failed: the connection was reset");
+      },
+    };
+    await expect(sync(request.id, losing)).rejects.toThrow();
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+    from = stub.deliveries(provider.app).length;
+    await sync(request.id);
+    await stub.settled();
+    await processIssueDeliveries(request.number, from);
+
+    expect(stub.issue("acme/fe-intake", request.number).stateReason).toBe("not_planned");
+    expect(await recordedOf(request.id)).toEqual([{ change: "closed", reason: "completed", byAyse: true, actor: "ayse" }]);
+    expect(await noticesOf(request.id)).toEqual(notices);
+    expect(await trackerStateOf(request.id)).toEqual({ open: false, closeReason: "not_planned", assignees: [] });
+  });
+});
+
 describe("recording what a mirror issue shows", () => {
   it("is for a change read from the tracker only: a member's web session gets 403, an agent's token 404, a job 403", async () => {
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });

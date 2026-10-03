@@ -29,9 +29,11 @@ import { withOrg } from "./with-org.ts";
 // What Tiehall wrote itself, or is writing, comes back this way too, as the
 // App's bot: a label added or taken off, a close, the issue's opening. The
 // read then shows what Tiehall knows the issue shows, or what its write under
-// way will leave it showing, and nothing is added to the request; but a state
-// GitHub says another account made, such as a person's close, is never taken
-// for Tiehall's own. Edits of an issue's title or body, and comments, which
+// way will leave it showing, and nothing is added to the request; but a close
+// or reopen GitHub says another account made, such as a person's close of an
+// open issue, is never taken for Tiehall's own (a change of the close reason
+// alone still names whoever closed the issue, so it is not told apart that
+// way). Edits of an issue's title or body, and comments, which
 // Tiehall's App does not even subscribe to, show nothing Tiehall reads back,
 // so they change nothing either. The count of the mirror's state writes is
 // taken before the issue is read, so a read that a write of Tiehall's overtook
@@ -81,7 +83,8 @@ export const processIssuesEvent: GitHubEventProcessor = async (event, context) =
   // change the delivery is not about, or one read without a delivery.
   const stateBy = now.open ? (event.action === "reopened" ? sender : null) : (now.closedBy ?? (event.action === "closed" ? sender : null));
   const assigneesBy = event.action === "assigned" || event.action === "unassigned" ? sender : null;
-  // A state GitHub says another account made is no echo of a write of Tiehall's, even one GitHub never applied.
+  // A state GitHub says another account made is no echo of a write of Tiehall's, even one GitHub never applied, when it
+  // closes or reopens the issue (tracker-changes.ts).
   const stateByOther = stateBy !== null && mirror.bot !== undefined && stateBy.login.toLowerCase() !== mirror.bot;
   const record = (by: TrackerAccount | null, only?: "state" | "assignees") =>
     context.runAs(by === null ? undefined : { id: Number(by.id) }, recordTrackerChange.id, {

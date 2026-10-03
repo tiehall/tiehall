@@ -133,7 +133,7 @@ export const recordTrackerChange = defineCommand({
     }),
     stateByOther: z.boolean().meta({
       description:
-        "Whether the tracker names an account other than Tiehall's own as the one that made the issue's state, such as a person who closed it: that state is no echo of a write of Tiehall's, even one Tiehall began and the tracker never applied.",
+        "Whether the tracker names an account other than Tiehall's own as the one that made the issue's state, such as a person who closed it: a close or reopen that account made is no echo of a write of Tiehall's, even one Tiehall began and the tracker never applied. A change of the close reason alone is not told apart this way, since the tracker keeps naming whoever closed the issue.",
     }),
     only: z
       .enum(["state", "assignees"])
