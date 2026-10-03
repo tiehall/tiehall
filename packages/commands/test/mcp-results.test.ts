@@ -164,6 +164,31 @@ describe("a removed member's agent", () => {
     }
   });
 
+  // The removal is judged before the token's scopes: a removed member's tool call that its token lacks the scope for
+  // gets the removal as a tool error, never insufficient_scope, which would tell the agent to ask for a scope.
+  it("gets the removal, not insufficient_scope, for a tool call its token lacks the scope for, with either kind of token", async () => {
+    const ivy = await mcpPerson(harness, "ivy-fe-read-only", { teams: ["FE"], scopes: ["requests:read"] });
+    const pat = await harness.personalAccessToken({ userId: ivy.userId, cookie: ivy.cookie }, { scopes: ["requests:read"] });
+    const admin = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada-admin-scope" }));
+    expect((await harness.install.confirm(admin, "members.remove", { userId: ivy.userId })).status).toBe(200);
+    for (const [kind, token] of [
+      ["access token", ivy.token],
+      ["personal access token", pat],
+    ] as const) {
+      for (const version of PROTOCOL_VERSIONS) {
+        const log: McpExchange[] = [];
+        const client = await connectMcp(harness, { token, version, log });
+        try {
+          const result = await client.callTool({ name: "post_message", arguments: { request: fe.key, kind: "comment", body: "Still here?" } });
+          expect(problemOf(result).type, `${kind} ${version}`).toBe(`${PROBLEM}removed-member`);
+        } finally {
+          await client.close();
+        }
+        expect(log.some(({ status }) => status === 403), `${kind} ${version}`).toBe(false);
+      }
+    }
+  });
+
   it("opens no event stream: subscriptions/listen gets the removal as HTTP 403, with either kind of token", async () => {
     const kim = await mcpPerson(harness, "kim-fe", { teams: ["FE"] });
     const pat = await harness.personalAccessToken({ userId: kim.userId, cookie: kim.cookie }, { scopes: ["requests:read"] });
