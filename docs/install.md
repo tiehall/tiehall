@@ -80,9 +80,11 @@ The app trusts forwarded headers only from the proxies that `TIEHALL_TRUSTED_PRO
 To use your own Postgres 17 or later instead of the bundled one, set the connection URLs of the database owner and of the app role in `.env`, each with its own password:
 
 ```ini
-TIEHALL_DATABASE_OWNER_URL=postgres://tiehall:owner-password@db.example.com:5432/tiehall
-TIEHALL_DATABASE_APP_URL=postgres://tiehall_app:app-password@db.example.com:5432/tiehall
+TIEHALL_DATABASE_OWNER_URL=postgres://tiehall:owner-password@db.example.com:5432/tiehall?sslmode=verify-full
+TIEHALL_DATABASE_APP_URL=postgres://tiehall_app:app-password@db.example.com:5432/tiehall?sslmode=verify-full
 ```
+
+A database on another host is reached over the network, so connect to it over TLS. With `sslmode=verify-full`, as in the example, the app and the `migrate` step check that the server's certificate is valid and names the host name in the URL, and refuse to connect otherwise; the image trusts the certificate authorities Node.js ships with, so the server needs a certificate one of them issued for that host name. The bundled Postgres needs no TLS: it accepts connections only from the install's own Compose network.
 
 The owner owns the database; the `migrate` step connects as the owner, applies the migrations and creates or updates the app role, which the app connects as and which owns nothing. Only the `migrate` step receives the owner's credentials. Back up an external Postgres with its own tooling: `backup.sh` and `restore.sh` work on the bundled one.
 

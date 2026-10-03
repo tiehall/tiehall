@@ -136,6 +136,17 @@ describe("the install docs", () => {
     for (const phrase of ["TIEHALL_DATABASE_OWNER_URL=", "TIEHALL_DATABASE_APP_URL=", "Postgres 17 or later"]) expect(flat).toContain(phrase);
   });
 
+  // A database on another host is reached over the network, so its connections use TLS that checks the server: the
+  // example's URLs ask for it, and the docs say what it needs.
+  it("connect to an external Postgres over TLS that checks the server's certificate and host name", () => {
+    const external = (section("Start the install").split("### An external Postgres")[1] ?? "").split("\n## ")[0] ?? "";
+    const urls = [...external.matchAll(/^TIEHALL_DATABASE_(?:OWNER|APP)_URL=(\S+)$/gm)].map(([, url]) => url ?? "");
+    expect(urls).toHaveLength(2);
+    for (const url of urls) expect(new URL(url).searchParams.get("sslmode")).toBe("verify-full");
+    const text = external.replace(/\s+/g, " ");
+    for (const phrase of ["`sslmode=verify-full`", "certificate", "host name"]) expect(text).toContain(phrase);
+  });
+
   // `docker compose run` starts the service's dependencies first, the migrate step among them, so an admin command run
   // while the migrate step fails, as after an upgrade gone wrong, would stop there: the commands on the host run with
   // --no-deps, against the database the install already runs.
