@@ -4,12 +4,12 @@ import { memberOrganizations, members, signInBlocks, teamMembers, teams, users, 
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { recordGrantRevocations, revokeAgentAccessOf } from "./agent-grants.ts";
 import type { ReviewHandler } from "./confirmation-step.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { defineHandler, lockingMembers, type HandlerContext, type Handlers } from "./execute.ts";
 import type { JobSender } from "./jobs.ts";
 import { userName } from "./members.ts";
 import { recordTokenRevocations, revokePersonalAccessTokensOf } from "./personal-access-tokens.ts";
 import { cancelProposalsOfRemovedMember, lockProposalsOfMember } from "./proposals.ts";
-import type { OrgContext } from "./with-org.ts";
+import { RemovedMemberError, type OrgContext } from "./with-org.ts";
 import { writeIn, type Origin, type Writer } from "./write.ts";
 
 // Changes to who is a member of the install and in which role
@@ -185,9 +185,28 @@ function keepAnAdmin(): Refusal {
   return new Refusal("conflict", "The install must keep at least one admin, so this change is refused.");
 }
 
+/**
+ * Locks the admins' rows, and judges the admin who makes the change once they
+ * are locked: one an earlier change removed meanwhile gets 403 removed-member,
+ * and one it made a member gets 403 forbidden. A change to who is a member
+ * takes no lock of its caller's own row before (with-org.ts), so this is
+ * where its caller's membership holds until it commits.
+ */
+async function lockAdminsAsAdmin(context: HandlerContext): Promise<string[]> {
+  const admins = await lockAdmins(context);
+  const caller = context.member?.userId;
+  if (caller === undefined || admins.includes(caller)) return admins;
+  const [row] = await context.tx
+    .select({ userId: members.userId })
+    .from(members)
+    .where(and(eq(members.orgId, context.orgId), eq(members.userId, caller)));
+  if (row === undefined) throw new RemovedMemberError();
+  throw new Refusal("forbidden", "Only an admin of the install may do this.");
+}
+
 export const MEMBER_HANDLERS: Handlers = {
-  [changeMemberRole.id]: defineHandler(changeMemberRole, async ({ userId, role }, context) => {
-    const admins = await lockAdmins(context);
+  [changeMemberRole.id]: lockingMembers(defineHandler(changeMemberRole, async ({ userId, role }, context) => {
+    const admins = await lockAdminsAsAdmin(context);
     const member = await memberRecord(context, userId, true);
     if (member.role === role) return { userId, role };
     if (leavesNoAdmin(admins, { kind: "role", userId, role })) throw keepAnAdmin();
@@ -199,17 +218,17 @@ export const MEMBER_HANDLERS: Handlers = {
       await writer.record(memberRoleChanged, { userId, role, previousRole: member.role });
       return { userId, role };
     });
-  }),
+  })),
 
-  [removeMember.id]: defineHandler(removeMember, async ({ userId }, context) => {
-    const admins = await lockAdmins(context);
+  [removeMember.id]: lockingMembers(defineHandler(removeMember, async ({ userId }, context) => {
+    const admins = await lockAdminsAsAdmin(context);
     const member = await memberRecord(context, userId, true);
     if (leavesNoAdmin(admins, { kind: "removal", userId })) throw keepAnAdmin();
     return context.write(async (writer) => {
       await removeMembership(writer, { userId, githubAccountId: member.githubAccountId }, { cause: "admin" });
       return { userId };
     });
-  }),
+  })),
 };
 
 /** The review pages of the changes to members, in Tiehall's own words. */

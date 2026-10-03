@@ -186,8 +186,10 @@ describe("a removal and a confirmation at once", () => {
       expect(removed.status).toBe(200);
       const { state } = (await callApi(install, tokenOf(alice), "GET", `/api/v1/requests/${request.key}`)).body;
       if (round % 2 === 0) {
-        // The removal cancelled the proposal; the confirmation, whose membership re-check came before the removal, finds it ended.
-        expect(confirmed.status).toBe(409);
+        // The removal cancelled the proposal; the confirmation, whose read of Carol's membership row waited for the
+        // removal, finds Carol gone (with-org.ts).
+        expect(confirmed.status).toBe(403);
+        expect(await confirmed.text()).toContain("removed-member");
         expect(await stateOf(proposal)).toEqual({ state: "cancelled", reason: "accountable_removed" });
         expect(state).toBe("open");
       } else {

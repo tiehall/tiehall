@@ -30,12 +30,18 @@ import { memberOf, type Member } from "./members.ts";
 // the user rejoins within them (teams-and-roles: Removing a member). A
 // personal access token is revoked in the removal's own write.
 //
-// A write that gives the user a credential, a personal access token or an
-// agent grant, first locks the user's own membership row (lockMembership()):
+// A write made for a user reads the user's own membership row FOR KEY SHARE
+// (lockMembership()), the first lock of the lock order (event-sequence.ts):
 // a removal locks that row to delete it, so the two wait in a line. A removal
-// that comes second finds the credential and revokes it; a write that comes
-// second finds the user gone and is refused with 403 removed-member. So no
-// credential made as a removal commits outlives it.
+// that comes second waits for the write to commit, and finds a credential the
+// write gave the user and revokes it; a write that comes second finds the
+// user gone and is refused with 403 removed-member. So no write made for a
+// member commits after their removal naming them, and no credential made as a
+// removal commits outlives it. The writes that change who is a member lock the
+// members' rows themselves, admins first, and judge the caller once they hold
+// them (member-changes.ts), so they take no lock here: an admin's own key
+// share lock, held while waiting for the other admins' rows, could otherwise
+// wait in a circle with another admin's change.
 //
 // For a call made with a personal access token, it then reads the install's
 // PAT switch at the time of the call, and refuses the call with 403
@@ -74,6 +80,8 @@ export interface WithOrgOptions {
   personalAccessToken?: boolean;
   /** When the call's access token was issued, which must not be before the user's current membership began. */
   issuedAt?: Date | undefined;
+  /** For a write made for the user: reads their membership row FOR KEY SHARE, so a removal waits for the write (lockMembership()). */
+  lockMember?: boolean;
 }
 
 /** The call's token was issued before its user's current membership began, so a removal revoked it: 401 invalid-token. */
@@ -132,6 +140,7 @@ export async function withOrg<T>(
       const [org] = await tx.select({ id: orgs.id, setupCompletedAt: orgs.setupCompletedAt }).from(orgs).limit(1);
       if (org === undefined || org.setupCompletedAt === null) throw new SetupRequiredError();
       if (options.forUser === undefined) return handler({ tx, orgId: org.id });
+      if (options.lockMember === true && options.readOnly !== true) await lockMembership({ tx, orgId: org.id }, options.forUser);
       const member = await memberOf({ tx, orgId: org.id }, options.forUser);
       if (member === undefined) throw new RemovedMemberError();
       // Membership starts are compared to the second, as a token's issue time is recorded.

@@ -212,8 +212,22 @@ export function actingFor(provenance: Provenance, teamId: string | undefined): P
   return teamId === undefined || provenance.actorKind === "operator" ? provenance : { ...provenance, teamId };
 }
 
-/** Runs one operation: it gets the parsed input and returns the output its schema describes; it may have a step before the call's transaction. */
-export type Handler = ((input: unknown, context: HandlerContext) => Promise<unknown>) & { readonly prepare?: Prepare };
+/**
+ * Runs one operation: it gets the parsed input and returns the output its
+ * schema describes; it may have a step before the call's transaction, and a
+ * handler that changes who is a member locks the members' rows itself
+ * (locksMembers, with-org.ts).
+ */
+export type Handler = ((input: unknown, context: HandlerContext) => Promise<unknown>) & { readonly prepare?: Prepare; readonly locksMembers?: boolean };
+
+/**
+ * Marks a handler that changes who is a member: it locks the members' rows
+ * itself, admins first, and judges its caller once it holds them, so the
+ * call's transaction takes no lock of the caller's own row first (with-org.ts).
+ */
+export function lockingMembers(handler: Handler): Handler {
+  return Object.assign(handler, { locksMembers: true });
+}
 
 /** One handler per operation of the catalog, by the operation's id. */
 export type Handlers = Readonly<Record<string, Handler>>;
@@ -527,7 +541,7 @@ export function createExecute(services: ExecuteServices): Execute {
         };
         return options.around === undefined ? run() : options.around(context, run);
       },
-      { readOnly: options.readOnly === true, forUser, personalAccessToken, issuedAt },
+      { readOnly: options.readOnly === true, forUser, personalAccessToken, issuedAt, lockMember: handler.locksMembers !== true },
     );
   };
 }
