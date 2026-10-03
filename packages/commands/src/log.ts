@@ -239,11 +239,20 @@ function stackFrames(error: Error): string[] {
  * are moving to a format of about 520 characters with `_`, `-` and `.` after
  * the prefix, so no length and no alphabet of letters and digits is assumed
  * (github-app-reachability: design.md, Design rules: Installation tokens).
+ *
+ * A long token can hold the start of another shape, such as `-eyJ` and two
+ * dots, which make a JWT inside an installation token. So scrub() matches every
+ * shape in the same string and redacts all that they match together: no shape
+ * can cut another's match short and leave its tail in the log. Each shape also
+ * ends where a match of it that begins inside it would end, so one scan of a
+ * shape finds all it covers: a JWT runs on through every part after its third,
+ * as a JWE has five, and a Bearer or Basic credential that ends with one of
+ * those words runs on through the credential after it.
  */
-const TOKEN_PATTERNS: RegExp[] = [
+const TOKEN_PATTERNS: readonly RegExp[] = [
   /\bth_pat_[A-Za-z0-9_-]+/g,
-  /\b(?:Bearer|bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/g,
-  /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g,
+  /\b(?:Bearer|bearer|Basic)(?:\s+[A-Za-z0-9._~+/=-]*?\b(?:Bearer|bearer|Basic)(?=\s))*\s+[A-Za-z0-9._~+/=-]+/g,
+  /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_.-]*/g,
   /\bgh[pousr]_[A-Za-z0-9_.-]+/g,
   /\bgithub_pat_[A-Za-z0-9_.-]+/g,
   /\bATATT[A-Za-z0-9_=-]{16,}/g,
@@ -257,7 +266,35 @@ const QUERY = /((?:\b[a-z][a-z0-9+.-]*:\/\/|(?<=^|[\s"'(=])\/)[^\s?#"'<>]*)[?#][
 
 /** A string with every credential shape, user info, query string and fragment removed. */
 export function scrub(text: string): string {
-  let clean = text.replace(USER_INFO, `$1${REDACTED}@`).replace(QUERY, "$1");
-  for (const pattern of TOKEN_PATTERNS) clean = clean.replace(pattern, REDACTED);
-  return clean;
+  // User info goes first, so that a quote in a password cannot hide the query string after it. It cannot cut a
+  // token: it lies between `://` and `@`, and no token shape holds `:` or `@`.
+  const clean = text.replace(USER_INFO, `$1${REDACTED}@`);
+  // Every other pattern is matched in this same string: a query string or a fragment is dropped, a token redacted.
+  const spans: { from: number; to: number; query: boolean }[] = [];
+  for (const match of clean.matchAll(QUERY)) {
+    spans.push({ from: match.index + match[1]!.length, to: match.index + match[0].length, query: true });
+  }
+  for (const pattern of TOKEN_PATTERNS) {
+    for (const match of clean.matchAll(pattern)) spans.push({ from: match.index, to: match.index + match[0].length, query: false });
+  }
+  if (spans.length === 0) return clean;
+  const dropped = new Uint8Array(clean.length);
+  const redacted = new Uint8Array(clean.length);
+  for (const { from, to, query } of spans) (query ? dropped : redacted).fill(1, from, to);
+  // Each run of marked characters becomes one [redacted], or nothing when every token in it lies within a query
+  // string or a fragment, which goes without a trace.
+  let result = "";
+  let kept = 0;
+  for (let start = 0; start < clean.length; start += 1) {
+    if (dropped[start] === 0 && redacted[start] === 0) continue;
+    let end = start;
+    let redact = false;
+    for (; end < clean.length && (dropped[end] === 1 || redacted[end] === 1); end += 1) {
+      if (dropped[end] === 0) redact = true;
+    }
+    result += clean.slice(kept, start) + (redact ? REDACTED : "");
+    kept = end;
+    start = end;
+  }
+  return result + clean.slice(kept);
 }

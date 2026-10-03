@@ -1,6 +1,7 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { makeInstallationToken } from "@tiehall/testing/github";
-import { createLogger, LOGGABLE, routeConsoleTo, type LogEntry } from "../src/index.ts";
+import { createLogger, LOGGABLE, routeConsoleTo, scrub, type LogEntry } from "../src/index.ts";
 
 // Logs carry ids, never message text or credentials (self-host-install: Logs
 // carry ids, never message text or credentials; design.md, Self-hosting
@@ -121,6 +122,78 @@ describe("redaction", () => {
         if (log.includes(piece)) throw new Error(`the log holds part of a ${length}-character token: ${piece}`);
       }
     }
+  });
+
+  // A long installation token holds, by chance, the start of other secret shapes: `-eyJ` and two dots later make a
+  // JWT inside it. Whatever begins inside the token, the line logged is the same line with one [redacted] in the
+  // place of each token, so no part of a token stays in the log. The tokens are made of every character GitHub may
+  // use, 383 characters long as the spike received them, about 520 as in GitHub's new format, and 2,048.
+  it("drops every part of an installation token, whatever other secret shape begins inside it", () => {
+    const characters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-."];
+    // A dot, and the start of every other shape the logger finds, each after a character that ends a word.
+    const starts = [".", "-eyJ", ".eyJ", "-th_pat_", ".ghp_", "-ghu_", "-github_pat_", "-ATATT"];
+    const longest = 2_048;
+    const tokens = fc.record({
+      length: fc.constantFrom(383, 520, longest),
+      characters: fc.string({ unit: fc.constantFrom(...characters), minLength: longest - 4, maxLength: longest - 4 }),
+      starts: fc.array(fc.record({ at: fc.nat({ max: longest }), start: fc.constantFrom(...starts) }), { maxLength: 40 }),
+    });
+    type Token = typeof tokens extends fc.Arbitrary<infer T> ? T : never;
+    const tokenOf = ({ length, characters: body, starts: inside }: Token): string => {
+      const after = [...body.slice(0, length - 4)];
+      for (const { at, start } of inside) after.splice(at % (after.length - start.length + 1), start.length, ...start);
+      return `ghs_${after.join("")}`;
+    };
+    // Tokens that left their tail in the log while each pattern ran on what the one before it left, as fast-check
+    // shrank them: `-eyJ` or `-th_pat_` at the start, and dots that end the shape inside before the token ends.
+    const dotsAt = (...places: number[]) =>
+      [..."A".repeat(longest - 4)].map((character, place) => (places.includes(place) ? "." : character)).join("");
+    const examples: [Token][] = [
+      [{ length: 383, characters: dotsAt(326, 360, 366), starts: [{ at: 0, start: "-eyJ" }] }],
+      [{ length: 383, characters: dotsAt(326, 360, 366), starts: [{ at: 0, start: ".eyJ" }] }],
+      [{ length: 383, characters: dotsAt(366), starts: [{ at: 0, start: "-th_pat_" }] }],
+      [{ length: 520, characters: dotsAt(97), starts: [{ at: 0, start: "-eyJ" }, { at: 8, start: "." }, { at: 13, start: "." }] }],
+      [{ length: 520, characters: dotsAt(), starts: [{ at: 0, start: "-th_pat_" }, { at: 9, start: "." }] }],
+      [{ length: longest, characters: dotsAt(1821, 2028), starts: [{ at: 0, start: "-eyJ" }, { at: 8, start: "." }] }],
+      [{ length: longest, characters: dotsAt(), starts: [{ at: 0, start: "-th_pat_" }, { at: 9, start: "." }] }],
+    ];
+    fc.assert(
+      fc.property(tokens, (input) => {
+        const token = tokenOf(input);
+        expect(token).toHaveLength(input.length);
+        const { entries, logger } = capture();
+        logger.warn(`GitHub refused ${token}`, { note: `retried with token ${token}, then gave up`, pieces: [token, { deeper: `(${token})` }] });
+        expect(entries()).toEqual([
+          {
+            time: "2026-10-01T12:00:00.000Z",
+            level: "warn",
+            msg: "GitHub refused [redacted]",
+            note: "retried with token [redacted], then gave up",
+            pieces: ["[redacted]", { deeper: "([redacted])" }],
+          },
+        ]);
+      }),
+      { seed: 20_261_003, numRuns: 300, examples },
+    );
+  });
+
+  // Every secret shape is found in the whole string, and what they find together is redacted, so no shape cuts
+  // another, or another match of its own, short and leaves a tail of a secret behind.
+  it("drops every secret whole, whatever other secret begins or ends inside it", () => {
+    // Built here, so the secret scan does not take the source for real tokens.
+    const part = (length: number) => "aB3".repeat(length).slice(0, length);
+    const jwt = `eyJ${part(8)}.${part(8)}.${part(8)}`;
+    const nested = {
+      "an installation token holding a JWT": `ghs_${part(30)}-${jwt}.${part(30)}`,
+      "a personal access token running into a JWT": `th_pat_${part(20)}-${jwt}`,
+      "a JWT starting in another's second part": `eyJ${part(8)}.${part(4)}-${jwt}`,
+      "a JWT of five parts": `${jwt}.${part(8)}.${part(8)}`,
+      "an Atlassian token holding an installation token": `ATATT${part(20)}-ghs_${part(20)}=${part(8)}`,
+      "a Basic credential ending with the word Bearer": `Basic ${part(20)}-Bearer ${part(20)}`,
+    };
+    for (const [shape, secret] of Object.entries(nested)) expect(scrub(`sent ${secret} once`), shape).toBe("sent [redacted] once");
+    // A query string that ends with the word Bearer, before the credential.
+    expect(scrub(`GET /api/v1/requests?auth=Bearer ${part(20)} answered 401`)).toBe("GET /api/v1/requests[redacted] answered 401");
   });
 
   it("never logs a body field, such as a message's text", () => {
