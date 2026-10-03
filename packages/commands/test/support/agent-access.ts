@@ -157,10 +157,12 @@ export interface AgentAccessOptions {
   clientMetadata?: AgentClientOptions;
   /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
   wait?: { holdMs?: number; shutdown?: AbortSignal };
+  /** The time the install's execute() tells, such as a test's clock that a contract report's burst runs on; the real time unless given. */
+  now?: () => Date;
 }
 
 export async function startAgentAccess(options: AgentAccessOptions = {}): Promise<AgentAccessHarness> {
-  const install = await startTestInstall(options.wait === undefined ? {} : { wait: options.wait });
+  const install = await startTestInstall({ ...(options.wait === undefined ? {} : { wait: options.wait }), ...(options.now === undefined ? {} : { now: options.now }) });
   const stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
   const signIn = await startSignIn(install, stub, options.clientMetadata === undefined ? {} : { agentClients: options.clientMetadata });
