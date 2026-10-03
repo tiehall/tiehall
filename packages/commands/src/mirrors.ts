@@ -34,19 +34,22 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   gets none, and an issue whose team's mapping no longer names its place is
 //   left as it is.
 // - Reassignment (tracker-mirrors: Reassignment moves the mirror): a request
-//   reassigned to another team gets a key there, and with it a mirror in that
-//   team's tracker under that team's rule; it is open and unclaimed there, so
-//   a team that mirrors on claim waits for a claim made since the
+//   reassigned to another team gets a key there, and with it a mirror in
+//   that team's tracker under that team's rule; it is open and unclaimed
+//   there, so a team that mirrors on claim waits for a claim made since the
 //   reassignment. The issue it left behind gets the comments of the writes
 //   before the one that took the request away, then one notice of the
 //   reassignment, or of its undoing when that took the request away, and is
 //   closed as not planned; it then follows the request no more, and Tiehall
-//   leaves it as people leave it. An undone reassignment gives the request its
-//   old key back, and so its old issue, which gets one notice of the undo and
-//   is reopened with the label of the restored state. A reassignment and its
-//   undo that both land before a job runs leave nothing on the old issue. A
-//   later reassignment back to the old team, which is no undo, gives the
-//   request a new key there, and so a new issue.
+//   leaves it as people leave it. A mirror whose create was under way when
+//   the reassignment took the request away is looked for by its marker: the
+//   issue the tracker made is left the same way, and when it made none,
+//   there is nothing to leave. An undone reassignment gives the request its
+//   old key back, and so its old issue, which gets one notice of the undo
+//   and is reopened with the label of the restored state. A reassignment and
+//   its undo that both land before a job runs leave nothing on the old
+//   issue. A later reassignment back to the old team, which is no undo,
+//   gives the request a new key there, and so a new issue.
 // - Creating it: the job writes the mirror's row, with a random marker and a
 //   record of what the create writes (an open issue that shows the request as
 //   the job read it, whose comments start after the events that read
@@ -432,7 +435,7 @@ interface MirrorPlan {
   request: MirroredRequest;
   mapping: MirrorMapping | undefined;
   mirror: MirrorRow | undefined;
-  /** The mirror issues of the request in other teams, or under another key of its team, that still follow it: a reassignment left them. */
+  /** The mirror issues of the request in other teams, or under another key of its team, that still follow it, made or with their create under way: a reassignment left them. */
   leftBehind: MirrorRow[];
   /** The number of the install's last event when the job read, which every event of the request it read is at or before. */
   latest: number;
@@ -522,7 +525,10 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
     mapping === undefined
       ? undefined
       : (rows.find((candidate) => isCurrent(candidate, request, mapping) && candidate.number !== null) ?? rows.find((candidate) => isCurrent(candidate, request, mapping)));
-  const leftBehind = rows.filter((candidate) => candidate !== mirror && candidate.issue !== null && !candidate.away && isLeftBehind(candidate, request));
+  // A mirror whose create is under way counts too: the tracker may have made its issue, which a retry looks for.
+  const leftBehind = rows.filter(
+    (candidate) => candidate !== mirror && (candidate.issue !== null || candidate.shownState !== null) && !candidate.away && isLeftBehind(candidate, request),
+  );
   // The events since the earliest comments of the mirrors that follow, or followed, the request until now.
   // A mirror whose create is under way has its comments' start recorded too, from the read its create carries.
   const reading = [...(mirror !== undefined && mirror.shownState !== null ? [mirror] : []), ...leftBehind];
@@ -660,7 +666,7 @@ export async function syncMirror(services: MirrorServices, requestId: string): P
   const plan = await withOrg(services.database, (context) => planOf(context, requestId), { readOnly: true });
   if (plan === undefined) return;
   if (plan.mapping !== undefined) await syncFollowing(services, plan, plan.mapping, logger);
-  for (const left of plan.leftBehind) await leave(services, plan, left as MirrorRow & { issue: string }, logger);
+  for (const left of plan.leftBehind) await leave(services, plan, left, logger);
 }
 
 /** The mirror in the target team's tracker: created under the team's rule, then commented and updated to show the request now. */
@@ -793,11 +799,31 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
  * took the request away, then the issue closed as not planned. It follows the
  * request no more, until an undo brings the request back.
  */
-async function leave(services: MirrorServices, plan: MirrorPlan, mirror: MirrorRow & { issue: string }, logger: Logger): Promise<void> {
-  const adapter = services.adapters[mirror.tracker];
+async function leave(services: MirrorServices, plan: MirrorPlan, left: MirrorRow, logger: Logger): Promise<void> {
+  const adapter = services.adapters[left.tracker];
   if (adapter === undefined) {
-    logger.warn("mirror: no adapter for the tracker of a mirror a reassignment left, so nothing is written", { tracker: mirror.tracker });
+    logger.warn("mirror: no adapter for the tracker of a mirror a reassignment left, so nothing is written", { tracker: left.tracker });
     return;
+  }
+  let mirror: MirrorRow & { issue: string };
+  if (left.issue === null) {
+    // Its create was under way when the reassignment took the request away: the issue the tracker may have made is
+    // looked for by its marker, and left as any other; when there is none, there is nothing to leave.
+    const found = await adapter.findCreated(left.target, left.marker, new Date(left.createdAt.getTime() - CREATE_LOOKBACK_MS));
+    if (found === undefined) {
+      await saveMirror(services.database, left.id, { away: true });
+      logger.info("mirror: a reassignment left a mirror whose create made no issue", { mirrorId: left.id });
+      return;
+    }
+    await withOrg(services.database, async ({ tx, orgId }) => {
+      await tx
+        .update(mirrors)
+        .set({ issue: found, issueCreatedAt: sql`now()`, trackerState: AS_MADE })
+        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, left.id), isNull(mirrors.issue)));
+    });
+    mirror = { ...left, issue: found, trackerState: AS_MADE };
+  } else {
+    mirror = left as MirrorRow & { issue: string };
   }
   const { request } = plan;
   const teamKey = plan.teamKeys.get(mirror.teamId);
