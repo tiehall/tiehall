@@ -76,6 +76,33 @@ describe("the route inventory", () => {
   });
 });
 
+// The sign-in library turns its origin and CSRF checks off by itself when NODE_ENV is test or TEST is set, as Vitest
+// sets them, so the service sets both checks on explicitly: the tests then run the checks production runs.
+describe("the sign-in service's origin check, in tests as in production", () => {
+  const registration = (headers: Record<string, string>) =>
+    harness.service.handler(
+      new Request(`${URL_OF_INSTALL}/api/auth/oauth2/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ client_name: "An agent", redirect_uris: ["http://127.0.0.1:43123/callback"], token_endpoint_auth_method: "none", application_type: "native" }),
+      }),
+    );
+
+  it("runs although the test runner sets NODE_ENV to test", () => {
+    expect(process.env["NODE_ENV"]).toBe("test");
+  });
+
+  it("refuses a POST that carries a cookie from another origin with 403, and serves the same POST from the install's own origin", async () => {
+    const refused = await registration({ cookie: "tiehall.session_token=whatever", origin: "https://evil.example" });
+    expect(refused.status).toBe(403);
+    const { rows } = await install.owner.query("SELECT count(*)::int AS count FROM oauth_clients WHERE name = 'An agent'");
+    expect(rows[0].count).toBe(0);
+
+    expect((await registration({ cookie: "tiehall.session_token=whatever", origin: URL_OF_INSTALL })).status).toBe(201);
+    expect((await registration({})).status).toBe(201);
+  });
+});
+
 describe("a blocked route", () => {
   const blocked = Object.entries(SIGN_IN_ROUTES).filter(([, route]) => route.kind === "blocked");
 

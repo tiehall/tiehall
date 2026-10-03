@@ -459,6 +459,10 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         },
       }),
       advanced: {
+        // The library's origin and CSRF checks, on everywhere: left unset, the library turns both off by itself when
+        // NODE_ENV is test or TEST is set, so the tests would not run the checks production runs.
+        disableOriginCheck: false,
+        disableCSRFCheck: false,
         cookiePrefix: "tiehall",
         useSecureCookies: secure,
         database: { generateId: "uuid" },
