@@ -14,7 +14,7 @@
     "test:install": "vitest run --config vitest.install.config.ts"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.1.0",
     "@tiehall/repo-checks": "workspace:*",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
