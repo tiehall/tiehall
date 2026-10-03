@@ -32,7 +32,15 @@ import type { SigningKeys } from "./agent-tokens.ts";
 import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { grantChecks } from "./agent-grants.ts";
 import { continuePathOf, isAuthorizationRequest, policyWithFormAction, redirectSourceOf, registeredRedirectIn } from "./consent.ts";
-import { AUTHORIZATION_ENDPOINT_PATH, authorizationServerPlugins, mcpResourceOf, REFRESH_SCOPE, type AgentClientOptions } from "./authorization-server.ts";
+import {
+  AUTHORIZATION_ENDPOINT_PATH,
+  AUTHORIZATION_SERVER_METADATA_PATH,
+  authorizationServerPlugins,
+  mcpResourceOf,
+  REFRESH_SCOPE,
+  servedMetadata,
+  type AgentClientOptions,
+} from "./authorization-server.ts";
 import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
@@ -882,7 +890,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           }
           if (caller === undefined) forwarded = new Request(request, { headers: withoutCookie(request.headers, sessionCookie) });
         }
-        const answer = await auth.handler(forwarded);
+        const handled = await auth.handler(forwarded);
+        const answer = pathname === AUTHORIZATION_SERVER_METADATA_PATH ? await servedMetadata(handled) : handled;
         // A refusal of the guard, or a route Better Auth does not have: the error model's 404.
         if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
         if (answer.status === 429) return answerRefused(await refusalOfLimit(answer));

@@ -63,6 +63,9 @@ describe("the install's authorization server", () => {
     });
     expect(body["grant_types_supported"]).toEqual(["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"]);
     expect(body["device_authorization_endpoint"]).toBe(`${URL_OF_INSTALL}/api/auth/device/code`);
+    // The install introspects no token for a resource server, and its introspection route answers 404: the metadata names none.
+    expect(Object.keys(body).filter((key) => key.startsWith("introspection_"))).toEqual([]);
+    expect((await harness.handle(new Request(`${URL_OF_INSTALL}/api/auth/oauth2/introspect`, { method: "POST" }))).status).toBe(404);
   });
 
   it("issues access tokens for the MCP resource that live 600 seconds and name the approving user", async () => {

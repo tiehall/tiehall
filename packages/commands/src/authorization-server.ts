@@ -93,6 +93,25 @@ export function mcpResourceOf(url: string): string {
   return `${url}${MCP_PATH}`;
 }
 
+/** Where the authorization server metadata is served (RFC 8414). */
+export const AUTHORIZATION_SERVER_METADATA_PATH = "/.well-known/oauth-authorization-server";
+
+/**
+ * The authorization server metadata as the install serves it: as the sign-in
+ * library writes it, without its introspection endpoint and that endpoint's
+ * methods. The install checks its own access tokens in the same process, and
+ * its introspection route answers 404 (sign-in-routes.ts), so the metadata
+ * names no endpoint a client could not use.
+ */
+export async function servedMetadata(answer: Response): Promise<Response> {
+  if (answer.status !== 200) return answer;
+  const metadata = (await answer.json()) as Record<string, unknown>;
+  const served = Object.fromEntries(Object.entries(metadata).filter(([key]) => !key.startsWith("introspection_")));
+  const headers = new Headers(answer.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify(served), { status: answer.status, headers });
+}
+
 /** Where the protected resource metadata of the install's MCP resource is served. */
 export function resourceMetadataUrlOf(url: string): string {
   return `${url}/.well-known/oauth-protected-resource${MCP_PATH}`;
