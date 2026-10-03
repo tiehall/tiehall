@@ -36,6 +36,13 @@ describe("the Action's README", () => {
     expect(example).toMatch(/fetch-depth: 0/);
   });
 
+  // Runs of the Action for one API on one pull request write the same part of its comment: the newer push's run
+  // cancels the older one rather than racing it (contract-changes: The provider PR's author is the requester).
+  it("gives its example's job a concurrency group for the API on the pull request, which cancels the older run", () => {
+    expect(example).toMatch(/\n {4}concurrency:\n {6}group: [^\n]*payments-api[^\n]*\$\{\{ github\.event\.pull_request\.number \}\}[^\n]*\n {6}cancel-in-progress: true\n/);
+    expect(readme).toMatch(/concurrency group of its own on the pull request/);
+  });
+
   it("pins every action of its example by commit SHA", () => {
     for (const [, uses] of example.matchAll(/uses: (\S+)/g)) expect(uses).toMatch(/@[0-9a-f]{40}$/);
   });

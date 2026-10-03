@@ -25,6 +25,10 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-24.04
+    # One run at a time for this API on a pull request: a newer push cancels the older run.
+    concurrency:
+      group: tiehall-contract-payments-api-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +60,7 @@ The Action runs on `pull_request` events of the types `opened`, `synchronize`, `
 
 ## Who requests the changes
 
-The requests Tiehall opens to the consuming teams come from the author of the pull request, when the GitHub account that opened it belongs to a member of the Tiehall install, with the API's provider team as the requesting team; the consuming teams' questions then reach the author. Otherwise the provider team alone is the requester, its members answer the questions, and the Action says so in a comment on the pull request. It posts that comment once per pull request and updates it in place on later runs; a workflow that checks several APIs on the pull request keeps one comment with a part per API, each showing its latest report. Without `pull-requests: write`, the Action skips the comment with a warning.
+The requests Tiehall opens to the consuming teams come from the author of the pull request, when the GitHub account that opened it belongs to a member of the Tiehall install, with the API's provider team as the requesting team; the consuming teams' questions then reach the author. Otherwise the provider team alone is the requester, its members answer the questions, and the Action says so in a comment on the pull request. It posts that comment once per pull request and updates it in place on later runs; a workflow that checks several APIs on the pull request keeps one comment with a part per API, each showing its latest report. Runs for several APIs at the same moment, in jobs of their own, keep that one comment too: each run reads the comment again a few seconds after writing it, and writes its part again when another run's write dropped it. Give each API's job a concurrency group of its own on the pull request, as the example does, so that a newer push cancels the older run for that API rather than running beside it. Without `pull-requests: write`, the Action skips the comment with a warning.
 
 ## Where the runner must be
 

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
+import { setTimeout as delay } from "node:timers/promises";
 import { runAction, type ExecResult } from "./action.ts";
 
 // The contract Action's entry, which the runner starts with its own Node.js 24
@@ -25,6 +26,7 @@ process.exitCode = await runAction({
   exec,
   fetch: (request) => fetch(request),
   stdout: (text) => void process.stdout.write(text),
+  sleep: (ms) => delay(ms),
   platform: process.platform,
   arch: process.arch,
 });

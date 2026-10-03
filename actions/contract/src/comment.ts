@@ -21,10 +21,19 @@ import type { ActionRuntime } from "./action.ts";
 // installation token, GITHUB_TOKEN's kind and an App's, has no such account
 // to read, and writes as a bot, which no person can write as, so its comment
 // is the bot comment with the mark.
-// Runs for two APIs at the same moment, in jobs of their own, can each miss
-// the other's part or comment; their next runs put it right. GitHub refusing the comment, or not
-// answering, leaves the job as it is, with a warning: the comment is a
-// courtesy, and the Action fails open.
+// Runs for several APIs at the same moment, in jobs of their own, write the
+// one comment together, and GitHub writes a comment with no check that it is
+// still as a run read it. So each run reads the comment again just before it
+// writes it, and keeps every part it holds; then, a while after writing,
+// longer than another run takes between reading the comment and writing it,
+// reads it once more, and writes its part again when another run's write
+// dropped it. Two runs that each found no comment and posted one leave two:
+// the older one takes the newer one's parts, and the newer one is removed. A
+// run writes the comment at most three times, then leaves it to the next run,
+// with a warning. Two runs for the same API write the same part, and the
+// README gives the job a concurrency group so that a newer push cancels the
+// older run. GitHub refusing the comment, or not answering, leaves the job as
+// it is, with a warning: the comment is a courtesy, and the Action fails open.
 
 /** Whose comments a run may take for its own: the account a person's token acts as, or, for an installation token, any bot. */
 type Author = { login: string } | { bot: true };
@@ -70,12 +79,52 @@ function partOf(comment: RequesterComment, env: ActionRuntime["env"]): string {
   ].join("\n");
 }
 
-/** The comment's body: the mark, then each API's part, in the order of the APIs' names, this run's API's part new. */
-function bodyOf(comment: RequesterComment, env: ActionRuntime["env"], earlier: string): string {
-  const parts = partsOf(earlier);
-  parts.set(comment.api, partOf(comment, env));
+/** The run of the workflow that wrote an API's part, from its link, if the part names one. */
+function runOf(part: string): number | undefined {
+  const run = /\/actions\/runs\/(\d+)\)/.exec(part)?.[1];
+  return run === undefined ? undefined : Number(run);
+}
+
+/** Whether `part` comes from a later run of the workflow than `than`. */
+function later(part: string, than: string): boolean {
+  const run = runOf(part);
+  const other = runOf(than);
+  return run !== undefined && other !== undefined && run > other;
+}
+
+/** Whether the comment holds this run's part for its API, as this run wrote it or as a later run did. */
+function holds(body: string, api: string, part: string): boolean {
+  const there = partsOf(body).get(api);
+  return there !== undefined && (there === part || later(there, part));
+}
+
+/**
+ * The comment's body: the mark, then each API's part, in the order of the APIs' names. It keeps the comment's parts,
+ * takes the parts of the Action's other comments that it lacks or that a later run wrote, and puts in this run's part.
+ */
+function bodyOf(keeper: string, others: readonly string[], api: string, part: string): string {
+  const parts = partsOf(keeper);
+  for (const other of others) {
+    for (const [name, text] of partsOf(other)) {
+      const kept = parts.get(name);
+      if (kept === undefined || later(text, kept)) parts.set(name, text);
+    }
+  }
+  parts.set(api, part);
   const apis = [...parts.keys()].sort();
-  return `${[COMMENT_MARK, ...apis.map((api) => parts.get(api) ?? "")].join("\n\n")}\n`;
+  return `${[COMMENT_MARK, ...apis.map((name) => parts.get(name) ?? "")].join("\n\n")}\n`;
+}
+
+/** How long a run waits after writing the comment before reading it again, at least: then up to as long again, at random. */
+export const SETTLE_MS = 2_000;
+
+/** How many times one run writes the comment before it leaves the comment to the next run. */
+export const MAX_WRITES = 3;
+
+/** A comment of the Action's own on the pull request. */
+interface Ours {
+  id: number;
+  body: string;
 }
 
 /** Why a comment was not posted, in a sentence, or nothing when it was. */
@@ -92,35 +141,71 @@ export async function commentOnPullRequest(runtime: ActionRuntime, comment: Requ
     "content-type": "application/json",
     "user-agent": "tiehall-contract-action",
   };
-  const call = async (method: string, url: string, body?: unknown): Promise<Response | string> => {
+  const UNREACHABLE = "GitHub's API could not be reached.";
+  const refused = (answer: Response) => `GitHub answered HTTP ${answer.status}; the job needs the permission pull-requests: write to comment.`;
+  /** GitHub's answer, or nothing when GitHub could not be reached. */
+  const send = async (method: string, url: string, body?: unknown): Promise<Response | undefined> => {
     try {
-      const answer = await runtime.fetch(new Request(url, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
-      if (!answer.ok) return `GitHub answered HTTP ${answer.status}; the job needs the permission pull-requests: write to comment.`;
-      return answer;
+      return await runtime.fetch(new Request(url, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
     } catch {
-      return "GitHub's API could not be reached.";
+      return undefined;
     }
+  };
+  const call = async (method: string, url: string, body?: unknown): Promise<Response | string> => {
+    const answer = await send(method, url, body);
+    if (answer === undefined) return UNREACHABLE;
+    return answer.ok ? answer : refused(answer);
   };
   // The account the token writes as: a person's token's, which GET /user names, or, for an installation token, a bot.
   const user = await call("GET", `${api}/user`);
   const self = typeof user === "string" ? undefined : ((await user.json().catch(() => undefined)) as { login?: unknown } | undefined)?.login;
   const author: Author = typeof self === "string" && self !== "" ? { login: self } : { bot: true };
   const wrote = (by: { login?: unknown; type?: unknown } | null | undefined) => ("login" in author ? by?.login === author.login : by?.type === "Bot");
-  // The Action's own comment on the pull request, if an earlier run posted one.
-  let ours: { id: number; body: string } | undefined;
-  for (let page = 1; ours === undefined; page += 1) {
-    const listed = await call("GET", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments?per_page=100&page=${page}`);
-    if (typeof listed === "string") return listed;
-    const comments = (await listed.json().catch(() => [])) as { id?: unknown; body?: unknown; user?: { login?: unknown; type?: unknown } | null }[];
-    if (!Array.isArray(comments)) return "GitHub's answer listed no comments.";
-    const found = comments.find((each) => typeof each.body === "string" && each.body.includes(COMMENT_MARK) && wrote(each.user) && typeof each.id === "number");
-    if (found !== undefined) ours = { id: found.id as number, body: found.body as string };
-    if (comments.length < 100) break;
+  /** The Action's own comments on the pull request, oldest first, or why they could not be read. */
+  const ourComments = async (): Promise<Ours[] | string> => {
+    const ours: Ours[] = [];
+    for (let page = 1; ; page += 1) {
+      const listed = await call("GET", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments?per_page=100&page=${page}`);
+      if (typeof listed === "string") return listed;
+      const comments = (await listed.json().catch(() => [])) as { id?: unknown; body?: unknown; user?: { login?: unknown; type?: unknown } | null }[];
+      if (!Array.isArray(comments)) return "GitHub's answer listed no comments.";
+      for (const each of comments) {
+        if (typeof each.body === "string" && each.body.includes(COMMENT_MARK) && wrote(each.user) && typeof each.id === "number") ours.push({ id: each.id, body: each.body });
+      }
+      if (comments.length < 100) return ours.sort((a, b) => a.id - b.id);
+    }
+  };
+  const part = partOf(comment, env);
+  const single = `${api}/repos/${repository}/issues/comments`;
+  for (let writes = 0; ; writes += 1) {
+    const ours = await ourComments();
+    if (typeof ours === "string") return ours;
+    const [keeper, ...others] = ours;
+    if (writes > 0 && keeper !== undefined && others.length === 0 && holds(keeper.body, comment.api, part)) return undefined;
+    if (writes === MAX_WRITES) return `other runs of the Action changed the comment at the same time, ${MAX_WRITES} times over; a later run updates it.`;
+    if (keeper === undefined) {
+      const posted = await call("POST", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments`, { body: bodyOf("", [], comment.api, part) });
+      if (typeof posted === "string") return posted;
+    } else {
+      // The comment as it is just before this run writes it, so the parts other runs wrote since the listing stay.
+      const now = await send("GET", `${single}/${keeper.id}`);
+      if (now === undefined) return UNREACHABLE;
+      // A comment removed since the listing (404) is written no more: the next listing finds what is left.
+      if (!now.ok && now.status !== 404) return refused(now);
+      if (now.ok) {
+        const read = ((await now.json().catch(() => undefined)) as { body?: unknown } | undefined)?.body;
+        const body = bodyOf(typeof read === "string" ? read : keeper.body, others.map(({ body: other }) => other), comment.api, part);
+        const patched = await send("PATCH", `${single}/${keeper.id}`, { body });
+        if (patched === undefined) return UNREACHABLE;
+        if (!patched.ok && patched.status !== 404) return refused(patched);
+        // The Action's newer comments, whose parts the comment now holds.
+        for (const other of patched.ok ? others : []) {
+          const removed = await send("DELETE", `${single}/${other.id}`);
+          if (removed === undefined) return UNREACHABLE;
+          if (!removed.ok && removed.status !== 404) return refused(removed);
+        }
+      }
+    }
+    await runtime.sleep(SETTLE_MS + Math.floor(Math.random() * SETTLE_MS));
   }
-  const body = { body: bodyOf(comment, env, ours?.body ?? "") };
-  const written =
-    ours === undefined
-      ? await call("POST", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments`, body)
-      : await call("PATCH", `${api}/repos/${repository}/issues/comments/${ours.id}`, body);
-  return typeof written === "string" ? written : undefined;
 }

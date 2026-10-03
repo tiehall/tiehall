@@ -67,6 +67,8 @@ export interface ActionRuntime {
   fetch(request: Request): Promise<Response>;
   /** The step's standard output, where workflow commands go. */
   stdout(text: string): void;
+  /** Waits that many milliseconds, such as before the Action reads its pull request comment again. */
+  sleep(ms: number): Promise<void>;
   readonly platform: string;
   readonly arch: string;
 }

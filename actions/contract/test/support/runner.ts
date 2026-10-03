@@ -113,6 +113,8 @@ export interface RunOptions {
   fetch?: (request: Request) => Promise<Response>;
   /** Variables the runner sets besides the ones this runner sets. */
   env?: Readonly<Record<string, string>>;
+  /** What the Action's waits do: none at all unless given. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** What one run of the Action did. */
@@ -198,6 +200,7 @@ export async function runActionWith(scratch: string, options: RunOptions = {}): 
     platform: process.platform,
     arch: process.arch,
     stdout: (text) => void (stdout += text),
+    sleep: options.sleep ?? (async () => {}),
     async fetch(request) {
       fetched.push(request.url);
       if (request.url.startsWith("https://github.com/oasdiff/oasdiff/releases/download/")) {

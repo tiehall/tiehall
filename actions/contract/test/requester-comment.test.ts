@@ -29,6 +29,14 @@ interface FakeComment {
   user: { login: string; type: string };
 }
 
+/** What a test does around the fake's calls: holding a call back before GitHub takes it, or seeing a write it applied. */
+interface Hooks {
+  before?: (request: Request) => Promise<void>;
+  written?: (comments: FakeComment[]) => void;
+}
+
+const ACTIONS_BOT = { login: "github-actions[bot]", type: "Bot" };
+
 /**
  * GitHub's API for the pull request's comments: it keeps them, and records every call with its token. It writes a
  * comment as the token's account: GitHub Actions' bot unless a test names another, such as a person's, whose token
@@ -38,11 +46,13 @@ function fakeGitHub(
   comments: FakeComment[],
   calls: { method: string; url: string; authorization: string | null }[],
   refuse = false,
-  author: { login: string; type: string } = { login: "github-actions[bot]", type: "Bot" },
+  author: { login: string; type: string } = ACTIONS_BOT,
+  hooks: Hooks = {},
 ) {
   let next = 9000;
   return async (request: Request): Promise<Response> => {
     calls.push({ method: request.method, url: request.url, authorization: request.headers.get("authorization") });
+    await hooks.before?.(request);
     if (refuse) return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
     if (request.method === "GET" && request.url === "https://api.github.com/user") {
       return author.type === "User" ? Response.json({ login: author.login, type: "User" }) : Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
@@ -52,18 +62,42 @@ function fakeGitHub(
       const { body } = (await request.json()) as { body: string };
       const comment = { id: (next += 1), body, user: author };
       comments.push(comment);
+      hooks.written?.(comments);
       return Response.json(comment, { status: 201 });
     }
-    const patched = /^https:\/\/api\.github\.com\/repos\/acme\/payments\/issues\/comments\/(\d+)$/.exec(request.url);
-    if (request.method === "PATCH" && patched !== null) {
-      const comment = comments.find(({ id }) => id === Number(patched[1]));
-      if (comment === undefined) return Response.json({ message: "Not Found" }, { status: 404 });
+    const one = /^https:\/\/api\.github\.com\/repos\/acme\/payments\/issues\/comments\/(\d+)$/.exec(request.url);
+    const at = one === null ? -1 : comments.findIndex(({ id }) => id === Number(one[1]));
+    if (one !== null && at === -1) return Response.json({ message: "Not Found" }, { status: 404 });
+    if (request.method === "GET" && at !== -1) return Response.json(comments[at]);
+    if (request.method === "PATCH" && at !== -1) {
+      const comment = comments[at]!;
       comment.body = ((await request.json()) as { body: string }).body;
+      hooks.written?.(comments);
       return Response.json(comment);
+    }
+    if (request.method === "DELETE" && at !== -1) {
+      comments.splice(at, 1);
+      hooks.written?.(comments);
+      return new Response(null, { status: 204 });
     }
     return Response.json({ message: "Not Found" }, { status: 404 });
   };
 }
+
+/** A meeting point for `count` calls: each waits there until all of them have come. */
+function together(count: number): () => Promise<void> {
+  let come = 0;
+  let all!: () => void;
+  const met = new Promise<void>((resolve) => (all = resolve));
+  return () => {
+    come += 1;
+    if (come >= count) all();
+    return met;
+  };
+}
+
+/** Whether the call lists the pull request's comments. */
+const lists = (request: Request) => request.method === "GET" && request.url.startsWith(`${COMMENTS}?`);
 
 /** The CLI's stand-in, answering that this requests the changes. */
 const answering = (kind: "author" | "team"): Npx => async (args) => ({
@@ -182,6 +216,131 @@ describe("a report whose requester is the provider team", () => {
 
     expect(run.code).toBe(0);
     expect(run.stdout).toMatch(/^::warning title=Comment not posted::.*pull-requests: write/m);
+  });
+});
+
+// A workflow may check several APIs on the pull request in jobs of their own, which run at the same moment: each run
+// re-reads the comment just before it writes it, and reads it again a while after, writing its part once more when
+// another run's write dropped it. Two runs that each found no comment and posted one leave the older of the two, which
+// takes the newer one's parts before the newer one is removed. A run writes the comment at most three times, then
+// leaves it to the next run, with a warning.
+describe("runs for several APIs at the same moment", () => {
+  const ours = (comments: FakeComment[]) => comments.filter(({ user }) => user.login === "github-actions[bot]");
+
+  it("leave one comment with both APIs' parts when each found no comment and posted one", async () => {
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    // Both runs list the comments before either posts, and each reads the comments again only once both have posted.
+    const listed = together(2);
+    let firstLists = 0;
+    let bothPosted!: () => void;
+    const posted = new Promise<void>((resolve) => (bothPosted = resolve));
+    const github = fakeGitHub(comments, calls, false, ACTIONS_BOT, {
+      before: async (request) => {
+        if (lists(request) && (firstLists += 1) <= 2) await listed();
+      },
+      written: () => {
+        if (calls.filter(({ method }) => method === "POST").length === 2) bothPosted();
+      },
+    });
+    const slept: number[] = [];
+    const sleep = async (ms: number) => {
+      slept.push(ms);
+      await posted;
+    };
+
+    const runs = await Promise.all([
+      runWith({ npx: answering("team"), runId: "7201", github, sleep }),
+      runWith({ npx: answering("team"), runId: "7202", inputs: { api: "billing-api" }, github, sleep }),
+    ]);
+
+    expect(runs.map(({ code }) => code)).toEqual([0, 0]);
+    expect(runs.map(({ stdout }) => stdout).join("")).not.toContain("::warning title=Comment not posted");
+    expect(calls.filter(({ method }) => method === "POST")).toHaveLength(2);
+    expect(ours(comments)).toHaveLength(1);
+    const body = ours(comments)[0]?.body ?? "";
+    expect(body).toContain("Tiehall contract check: payments-api");
+    expect(body).toContain("Tiehall contract check: billing-api");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7201");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7202");
+    // A while, in the Action: longer than another run takes between reading the comment and writing it.
+    expect(Math.min(...slept)).toBeGreaterThanOrEqual(2_000);
+  });
+
+  it("write a part again that another run's write dropped, when both read the comment before either wrote it", async () => {
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    await runWith({ npx: answering("team"), runId: "7301", github: fakeGitHub(comments, calls) });
+    const [comment] = ours(comments);
+    // Both runs read the comment just before writing it, before either writes; each reads it again once both wrote.
+    const read = together(2);
+    let firstReads = 0;
+    let patches = 0;
+    let bothWrote!: () => void;
+    const wrote = new Promise<void>((resolve) => (bothWrote = resolve));
+    const github = fakeGitHub(comments, calls, false, ACTIONS_BOT, {
+      before: async (request) => {
+        if (request.method === "GET" && request.url.endsWith(`/issues/comments/${comment?.id}`) && (firstReads += 1) <= 2) await read();
+      },
+      written: () => {
+        if ((patches += 1) === 2) bothWrote();
+      },
+    });
+    const sleep = () => wrote;
+
+    const runs = await Promise.all([
+      runWith({ npx: answering("team"), runId: "7302", action: "synchronize", github, sleep }),
+      runWith({ npx: answering("team"), runId: "7303", inputs: { api: "billing-api" }, action: "synchronize", github, sleep }),
+    ]);
+
+    expect(runs.map(({ code }) => code)).toEqual([0, 0]);
+    expect(firstReads).toBeGreaterThanOrEqual(2);
+    expect(ours(comments)).toHaveLength(1);
+    const body = ours(comments)[0]?.body ?? "";
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7302");
+    expect(body).not.toContain("actions/runs/7301");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7303");
+    expect(calls.filter(({ method }) => method === "PATCH").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("leave the older of two comments the Action posted, holding the newer one's parts, and remove the newer one", async () => {
+    const [first, second]: FakeComment[][] = [[], []];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    await runWith({ npx: answering("team"), runId: "7401", github: fakeGitHub(first!, calls) });
+    await runWith({ npx: answering("team"), runId: "7402", inputs: { api: "billing-api" }, github: fakeGitHub(second!, calls) });
+    const payments = first?.[0]?.body ?? "";
+    const billing = second?.[0]?.body ?? "";
+    const comments: FakeComment[] = [
+      { id: 21, body: payments, user: ACTIONS_BOT },
+      { id: 22, body: "Looks good to me.", user: { login: "omar", type: "User" } },
+      { id: 23, body: billing, user: ACTIONS_BOT },
+    ];
+
+    const run = await runWith({ npx: answering("team"), runId: "7403", action: "synchronize", github: fakeGitHub(comments, calls) });
+
+    expect(run.code).toBe(0);
+    expect(comments.map(({ id }) => id)).toEqual([21, 22]);
+    const body = comments[0]?.body ?? "";
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7403");
+    expect(body).toContain("https://github.com/acme/payments/actions/runs/7402");
+    expect(body).not.toContain("actions/runs/7401");
+  });
+
+  it("write the comment at most three times in one run, then leave it to the next run with a warning", async () => {
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    // Another run that keeps writing the comment after this one, without this one's part.
+    const github = fakeGitHub(comments, calls, false, ACTIONS_BOT, {
+      written: (now) => {
+        for (const each of now) each.body = "<!-- tiehall-contract-action -->\n";
+      },
+    });
+
+    const run = await runWith({ npx: answering("team"), runId: "7501", github });
+
+    expect(run.code).toBe(0);
+    expect(calls.filter(({ method }) => method === "POST" || method === "PATCH")).toHaveLength(3);
+    expect(run.stdout).toMatch(/^::warning title=Comment not posted::.*other runs of the Action/m);
   });
 });
 
