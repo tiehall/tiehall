@@ -214,6 +214,14 @@ describe("the user and admin docs", () => {
     expect(links(section(read("docs/contract-changes.md"), "The contract Action") ?? "").map(({ target }) => target)).toContain("../actions/contract/README.md");
   });
 
+  it("show a command the CLI takes for attaching a diff by hand: --attach with --pull-request and --if-match", () => {
+    const part = section(read("docs/contract-changes.md"), "Attaching a diff by hand") ?? "";
+    const command = /^tiehall contract diff .+$/m.exec(part)?.[0] ?? "";
+    // packages/cli/src/contract-diff.ts refuses --attach without --pull-request; the install answers 428 without If-Match.
+    for (const option of ["--attach", "--pull-request", "--if-match"]) expect(command, option).toContain(option);
+    expect(part).toContain("`tiehall get FE-142`");
+  });
+
   // The Jira Cloud connection, its bot account and its mirror wait for group 25, which waits for the founder's Jira
   // spikes 1.7 and 1.8; the page says so until then, and this case turns plain with tasks 25.1 to 25.6.
   it.todo("cover the Jira Cloud connection through a dedicated bot account's API token, its expiry reminders, its webhooks and its mirror (tasks 25.1 to 25.6)");

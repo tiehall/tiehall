@@ -424,6 +424,46 @@ describe("--attach", () => {
   });
 });
 
+describe("the command docs/contract-changes.md shows for attaching a diff by hand", () => {
+  /** The `tiehall contract diff` line of the page's section "Attaching a diff by hand", split into its arguments. */
+  function documented(): string[] {
+    const page = readFileSync(new URL("../../../docs/contract-changes.md", import.meta.url), "utf8");
+    const part = page.split("\n## Attaching a diff by hand\n")[1]?.split("\n## ")[0] ?? "";
+    const line = /^tiehall contract diff (.+)$/m.exec(part)?.[1] ?? "";
+    return line.trim().split(/\s+/).filter((arg) => arg !== "");
+  }
+
+  it("runs as written: it names the provider pull request and the revision it expects, and the install takes it", async () => {
+    const args = documented();
+    expect(args).toContain("--attach");
+    const ran = await contractDiff(args, {
+      // As the install answers: 428 without If-Match (public-api: Packet revisions use ETag and If-Match).
+      answer: (request) =>
+        request.method === "POST" && request.headers.get("if-match") === null
+          ? Response.json(
+              { type: "https://tiehall.com/problems/if-match-required", title: "If-Match required", status: 428, detail: "Send the packet's ETag in If-Match." },
+              { status: 428, headers: { "content-type": "application/problem+json" } },
+            )
+          : new URL(request.url).pathname === "/api/v1/whoami"
+            ? Response.json({ user: { id: "u1", login: "deniz", kind: "human", bot: false }, teams: [{ id: "t1", key: "PAY" }], install: { url: INSTALL } })
+            : Response.json(
+                {
+                  request: { id: "r1", key: "FE-142", state: "open", targetTeam: { id: "t2", key: "FE" }, requester: { user: { id: "u1", login: "deniz", kind: "human", bot: false }, team: { id: "t1", key: "PAY" } }, claimant: null, createdAt: "2026-10-02T09:00:00.000Z", needsHuman: false, untrusted: { title: "Move to the new payment fields" } },
+                  packet: { request: { id: "r1", key: "FE-142" }, revision: 4, createdAt: "2026-10-02T09:01:00.000Z", packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "n" } } },
+                },
+                { headers: { etag: '"4"' } },
+              ),
+    });
+
+    expect(ran.stderr).toBe("");
+    expect(ran.code).toBe(0);
+    const attach = ran.calls.find(({ method }) => method === "POST");
+    expect(attach?.url).toBe(`${INSTALL}/api/v1/requests/FE-142/contract-changes`);
+    expect(attach?.headers["if-match"]).toMatch(/^"[1-9][0-9]*"$/);
+    expect((attach?.body as { contract: { provider_pr: unknown } }).contract.provider_pr).toEqual({ repository: "acme/payments", number: 310 });
+  });
+});
+
 describe("tiehall contract", () => {
   it("lists diff and report", async () => {
     let stdout = "";

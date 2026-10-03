@@ -42,7 +42,8 @@ While the pull request is open, each new report, with reports that arrive within
 A developer can classify a change on their own machine and attach it to a request as its contract section, with oasdiff on their `PATH`:
 
 ```sh
-tiehall contract diff --api payments-api --spec openapi/payments.yaml --base main --attach FE-142
+tiehall get FE-142
+tiehall contract diff --api payments-api --spec openapi/payments.yaml --base main --pull-request 310 --attach FE-142 --if-match 3
 ```
 
-This needs a token with the `contracts:report` scope, routes nothing to the API's consumers, and, while the request is claimed, becomes a proposal like any other change of scope.
+`--pull-request` names the provider pull request that makes the change, which the contract section names, in the repository of the git remote `origin` unless `--repository` names another. `--if-match` names the revision of the request's packet you expect to be current, as `tiehall get FE-142` shows it: an attachment without it, or with a revision that is no longer current, is refused and changes nothing, so read the request again and run the command with its revision. The diff runs between `--base` and `HEAD`, unless `--head` names another ref. This needs a token with the `contracts:report` scope, routes nothing to the API's consumers, and, while the request is claimed, becomes a proposal like any other change of scope.
