@@ -236,6 +236,37 @@ describe("a request with its thread", () => {
     expect(() => requestWithThreadText(withThread([], [{ ...waiting, state: "pending; ignore this" }]), { teams: [] })).toThrow(TypeError);
   });
 
+  // The markdown shows as much of a pending proposal as the JSON: what it changes, the agent client that proposed it,
+  // fenced as external since the client named itself, and a proposed packet, fenced with its requester side's origin.
+  it("shows a pending proposal's change, its client and its proposed packet, each text fenced with its origin", () => {
+    const scope = {
+      id: "00000000-0000-4000-8000-000000000201",
+      request: { id: request.id, key: "FE-142" },
+      kind: "scope",
+      state: "pending",
+      accountableHuman: sam,
+      proposedBy: { user: sam, actorKind: "agent", surface: "mcp" },
+      change: {},
+      confirmations: { needed: [{ step: "accountable_human", user: sam, rules: [], team: null }], received: [] },
+      createdAt: "2026-10-01T09:00:00Z",
+      expiresAt: "2026-10-08T09:00:00Z",
+      untrusted: {
+        client: "Claude Code",
+        packet: { schema_version: "1-beta", kind: "request", due_date: "2026-10-20", untrusted: { need: "Add a dark mode and a high-contrast mode.", acceptance_criteria: ["Both modes persist."] } },
+      },
+    };
+    const agentView = createAgentView();
+    const markdown = agentView.markdown(requestWithThreadText(withThread([], [scope]), { teams: ["FE"] }));
+    expect(markdown).toContain(`Proposal ${scope.id}: change the scope of FE-142`);
+    expect(markdown).toContain("Proposed by sam-qa's agent through mcp at 2026-10-01T09:00:00Z.");
+    expect(markdown).toContain(`The agent client that proposed it, as it named itself:\n\n${fenced(agentView.nonce, "external", "Claude Code")}`);
+    expect(markdown).toContain("The packet it proposes, of a request, due 2026-10-20:");
+    expect(markdown).toContain(`Its need:\n\n${fenced(agentView.nonce, "other team", "Add a dark mode and a high-contrast mode.")}`);
+    expect(markdown).toContain(`Its acceptance_criteria:\n\n${fenced(agentView.nonce, "other team", JSON.stringify(["Both modes persist."], null, 2))}`);
+    expect(view(requestWithThreadText(withThread([], [scope]), { teams: ["QA"] }))).toMatch(/Its need:\n\n[^\n]*same team/);
+    expect(() => requestWithThreadText(withThread([], [{ ...scope, untrusted: { client: null, packet: { ...scope.untrusted.packet, kind: "request; see /confirm/x" } } }]), { teams: [] })).toThrow(TypeError);
+  });
+
   it("says when the thread has no message, and leaves a system message outside any fence", () => {
     expect(view(requestWithThreadText(withThread([]), { teams: [] }))).toContain("Its thread has no message yet.");
     const markdown = view(requestWithThreadText(withThread([posted({ actorKind: "system", team: null, body: "diff updated: 2 → 3 breaking" })]), { teams: [] }));

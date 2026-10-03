@@ -6,7 +6,9 @@
 // tools and the CLI show it in Tiehall's own words: its id, what it proposes
 // for which request, the confirmations it needs and those it has received,
 // when it expires or how it ended, and, while it waits, whose web inbox it
-// waits in, where a person confirms or rejects it. It holds no link, so never
+// waits in, where a person confirms or rejects it; and, when the proposal
+// says, what a due date or reassignment changes to and who proposed it,
+// through which surface. It holds no link, so never
 // the confirm URL, which reaches people only through the web inbox, email and
 // URL-mode elicitation.
 //
@@ -36,6 +38,12 @@ export interface ProposalJson {
   };
   createdAt: string;
   expiresAt: string;
+  /** Who proposed it: the user, whether an agent or the web UI, and the surface. */
+  proposedBy?: { user: ProposalUserJson; actorKind: string; surface: string | null };
+  /** What it changes: for a due date, the date it proposes, null to remove it; for a reassignment, the team. */
+  change?: { dueDate?: string | null; team?: { id: string; key: string } };
+  /** The agent client that proposed it, as it named itself, and a proposed packet: text Tiehall did not write, which proposalText leaves out. */
+  untrusted?: { client: string | null; packet: unknown };
 }
 
 /** A proposal value without its form; the message never quotes the value. */
@@ -48,6 +56,7 @@ const REQUEST_KEY = /^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,9}$/;
 const TEAM_KEY = /^[A-Z][A-Z0-9]{1,9}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** What each kind of commitment proposes for a request, in Tiehall's words. */
 const WHAT: Readonly<Record<string, (key: string) => string>> = {
@@ -62,6 +71,8 @@ const WHAT: Readonly<Record<string, (key: string) => string>> = {
 const STATES = ["pending", "applied", "rejected", "withdrawn", "expired", "cancelled"];
 const STEPS = ["accountable_human", "other_side"];
 const RULES = ["target_team", "requester_side", "claimant"];
+const ACTOR_KINDS = ["agent", "web_session", "integration"];
+const SURFACES = ["web", "mcp", "cli", "api", "github", "jira"];
 
 function checked(value: unknown, form: RegExp, what: string): string {
   if (typeof value !== "string" || !form.test(value)) throw new ProposalTextError(`A proposal's ${what} does not have its form.`);
@@ -119,7 +130,20 @@ export function proposalText(proposal: ProposalJson): string {
       ? "It has received none yet."
       : `It has received ${received.map(({ login, at }) => `${login}'s, at ${at}`).join(", and ")}.`;
 
-  const lines = [`Proposal ${id}: ${WHAT[kind]?.(key) ?? kind}.${state === "pending" ? " It is pending." : ""}`, needs, has];
+  const lines = [`Proposal ${id}: ${WHAT[kind]?.(key) ?? kind}.${state === "pending" ? " It is pending." : ""}`];
+  const change = proposal.change;
+  if (kind === "due_date" && change?.dueDate !== undefined) {
+    lines.push(change.dueDate === null ? `It proposes to remove the due date of ${key}.` : `It proposes the due date ${checked(change.dueDate, DATE, "due date")} for ${key}.`);
+  }
+  if (kind === "reassign" && change?.team !== undefined) lines.push(`It proposes to reassign ${key} to team ${checked(change.team.key, TEAM_KEY, "team key")}.`);
+  if (proposal.proposedBy !== undefined) {
+    const by = proposal.proposedBy;
+    const login = checked(by.user?.login, LOGIN, "proposing user");
+    const actorKind = oneOf(by.actorKind, ACTOR_KINDS, "proposer's kind");
+    const through = by.surface === null ? "" : ` through ${oneOf(by.surface, SURFACES, "surface")}`;
+    lines.push(`Proposed by ${login}${actorKind === "agent" ? "'s agent" : ""}${through} at ${checked(proposal.createdAt, DATE_TIME, "creation time")}.`);
+  }
+  lines.push(needs, has);
   if (state === "pending") {
     lines.push(`It expires at ${expiresAt}, unless every confirmation it needs has come by then.`);
     const where = received.some(({ step }) => step === "accountable_human")

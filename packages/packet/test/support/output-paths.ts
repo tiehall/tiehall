@@ -221,7 +221,7 @@ export const OUTPUT_PATHS: Readonly<Record<string, OutputPath>> = {
   },
   requestWithThreadText: {
     builder: "requestWithThreadText",
-    texts: 3,
+    texts: 5,
     render: (input, reader) => requestWithThreadText(input as RequestWithThreadJson, reader),
     build: (texts) => ({
       input: {
@@ -230,11 +230,15 @@ export const OUTPUT_PATHS: Readonly<Record<string, OutputPath>> = {
           { ...facts(1, "web_session", "web", DANA, FE), untrusted: { body: at(texts, 1), client: null } },
           { ...facts(2, "agent", "mcp", SAM, QA), untrusted: { body: at(texts, 2), client: "agent-1" } },
         ],
-        // A pending proposal is stated in Tiehall's own words, with no text anyone wrote.
-        pendingProposals: [proposal(DANA.login)],
+        // A pending proposal is stated in Tiehall's own words; the client that proposed it named itself, and the
+        // packet it proposes is its requester side's, QA's.
+        pendingProposals: [
+          proposal(DANA.login),
+          { ...proposal(SAM.login), kind: "scope", untrusted: { client: at(texts, 3), packet: { schema_version: "1-beta", kind: "request", untrusted: { need: at(texts, 4) } } } },
+        ],
       } satisfies RequestWithThreadJson,
       reader: READER,
-      fenced: [other(at(texts, 0)), same(at(texts, 1)), other(at(texts, 2))],
+      fenced: [other(at(texts, 0)), same(at(texts, 1)), other(at(texts, 2)), { text: at(texts, 3), origin: "external" }, other(at(texts, 4))],
       own: [],
     }),
     misplace: (text) => ({

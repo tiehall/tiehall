@@ -285,9 +285,39 @@ export function requestWithThreadText(request: RequestWithThreadJson, reader: Re
     texts.push({ origin: "tiehall", text: "No proposal on it is pending." });
   } else {
     texts.push({ origin: "tiehall", text: "Its pending proposals, which people confirm or reject in Tiehall's web UI:" });
-    for (const proposal of request.pendingProposals) texts.push({ origin: "tiehall", text: proposalText(proposal) });
+    for (const proposal of request.pendingProposals) texts.push(...pendingProposalTexts(proposal, originOf(request.requester.team, reader)));
   }
   texts.push({ origin: "tiehall", text: `For its packet too, run tiehall get ${key} or call get_request with request "${key}".` });
+  return texts;
+}
+
+/** The fields of a packet, in the order its pages show them. */
+const PACKET_FIELDS = ["need", "acceptance_criteria", "code_refs", "links", "contract", "extensions"] as const;
+
+/**
+ * A pending proposal, as much as its JSON holds: in Tiehall's words, then the
+ * agent client that proposed it, as it named itself, fenced as external, and
+ * the packet it proposes, its kind and due date in Tiehall's words and each
+ * field fenced with the origin of the requester side, which wrote it.
+ */
+function pendingProposalTexts(proposal: ProposalJson, packetOrigin: FencedOrigin): AgentText[] {
+  const texts: AgentText[] = [{ origin: "tiehall", text: proposalText(proposal) }];
+  const client = proposal.untrusted?.client;
+  if (typeof client === "string") {
+    texts.push({ origin: "tiehall", text: "The agent client that proposed it, as it named itself:" }, { origin: "external", text: client });
+  }
+  const packet = proposal.untrusted?.packet as { kind?: unknown; due_date?: unknown; untrusted?: Record<string, unknown> } | null | undefined;
+  if (packet !== null && packet !== undefined) {
+    const kind = checked(packet.kind, WORD, "packet kind").replace(/_/g, " ");
+    const due = packet.due_date === undefined || packet.due_date === null ? "with no due date" : `due ${checked(packet.due_date, DATE, "due date")}`;
+    texts.push({ origin: "tiehall", text: `The packet it proposes, of a ${kind}, ${due}:` });
+    const fields = packet.untrusted ?? {};
+    for (const field of PACKET_FIELDS) {
+      const value = fields[field];
+      if (value === undefined) continue;
+      texts.push({ origin: "tiehall", text: `Its ${field}:` }, { origin: packetOrigin, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
+    }
+  }
   return texts;
 }
 

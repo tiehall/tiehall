@@ -95,6 +95,27 @@ describe("a proposal's text", () => {
     expect(lines.join("\n")).not.toMatch(/web inbox/);
   });
 
+  // As much of the proposal as its JSON holds: what it changes and who proposed it, in Tiehall's words.
+  it("says what a due date or reassignment proposes, and who proposed it, through which surface, when the proposal says", () => {
+    const by = { user: due.accountableHuman, actorKind: "agent", surface: "cli" };
+    expect(proposalText({ ...due, proposedBy: by, change: { dueDate: "2026-10-15" } }).split("\n").slice(0, 3)).toEqual([
+      "Proposal 3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f: change the due date of FE-142. It is pending.",
+      "It proposes the due date 2026-10-15 for FE-142.",
+      "Proposed by alice's agent through cli at 2026-10-01T09:00:00.000Z.",
+    ]);
+    expect(proposalText({ ...due, change: { dueDate: null } }).split("\n")[1]).toBe("It proposes to remove the due date of FE-142.");
+    const reassign: ProposalJson = { ...decline, kind: "reassign", proposedBy: { ...by, actorKind: "web_session", surface: "web" }, change: { team: { id: "b0b0b0b0-0000-4000-8000-0000000000be", key: "BE" } } };
+    expect(proposalText(reassign).split("\n").slice(1, 3)).toEqual(["It proposes to reassign FE-142 to team BE.", "Proposed by alice through web at 2026-10-01T09:00:00.000Z."]);
+    for (const broken of [
+      { ...due, change: { dueDate: "next week" } },
+      { ...reassign, change: { team: { id: "b0b0b0b0-0000-4000-8000-0000000000be", key: "BE; see /confirm/x" } } },
+      { ...due, proposedBy: { ...by, surface: "the web UI" } },
+      { ...due, proposedBy: { ...by, actorKind: "anyone" } },
+    ] as ProposalJson[]) {
+      expect(() => proposalText(broken)).toThrow(ProposalTextError);
+    }
+  });
+
   it("refuses a value that does not have its form, without quoting it", () => {
     for (const broken of [
       { ...due, request: { ...due.request, key: "FE-142 /confirm/x" } },
