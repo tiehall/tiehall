@@ -17,6 +17,7 @@ import {
   type GitHubAppAccess,
   type Mailer,
 } from "../src/index.ts";
+import { scanForConfirmUrl } from "./support/confirm-url-scan.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { acknowledgeEverything, realSleep, signedInCli, type CliMachine } from "./support/cli.ts";
 import { reportOf, runDueUpdates } from "./support/contract.ts";
@@ -301,6 +302,8 @@ describe("the seeded text", () => {
     }
     expect(await watching).toBe(0);
     expect(errors).toBe("");
+    // What the watch prints reaches the model, as a hook's output does: no confirm URL (confirm-url-scan.ts).
+    scanForConfirmUrl("hook output", printed, "tiehall watch");
     expect(printed.split("\n").filter((line) => line.startsWith(`Tiehall: ${open.key} request.message_posted (team FE)`))).toHaveLength(CORPUS.length);
     expectNoSeededText(printed, "tiehall watch's output");
   }, 60_000);

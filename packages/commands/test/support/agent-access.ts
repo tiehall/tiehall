@@ -17,6 +17,7 @@ import {
   type McpRoute,
   type RestHandler,
 } from "../../src/index.ts";
+import { scanApiAnswer, scanMcpAnswer } from "./confirm-url-scan.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./install.ts";
 import { addUser } from "./members.ts";
 import { startSignIn, type SignInHarness } from "./sign-in.ts";
@@ -210,8 +211,19 @@ export async function startAgentAccess(options: AgentAccessOptions = {}): Promis
   const handle = async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith("/api/auth/") || pathname.startsWith("/.well-known/")) return signIn.service.handler(request);
-    if (pathname.startsWith("/api/v1/")) return rest(request);
-    if (pathname === "/mcp") return mcp(request);
+    // What agents and the CLI read here holds no confirm URL (confirm-url-scan.ts): /api/v1's answers, and /mcp's
+    // but an event stream subscriptions/listen holds open, which carries no tool result.
+    if (pathname.startsWith("/api/v1/")) {
+      const response = await rest(request);
+      await scanApiAnswer(request, response);
+      return response;
+    }
+    if (pathname === "/mcp") {
+      const listens = request.method === "POST" && (await request.clone().text()).includes('"subscriptions/listen"');
+      const response = await mcp(request);
+      if (!listens) await scanMcpAnswer(response, `${request.method} /mcp (${response.status})`);
+      return response;
+    }
     if (pathname === "/consent") return consent(request);
     if (pathname === "/device") return device(request);
     if (pathname === TOKENS_PATH) return tokens(request);

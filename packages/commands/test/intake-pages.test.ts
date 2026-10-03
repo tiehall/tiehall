@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
+import { scanUrlAnswer } from "./support/confirm-url-scan.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams, sessionOf } from "./support/requests.ts";
@@ -83,7 +84,17 @@ function call(path: string, headers: Record<string, string> = {}, method = "GET"
     const outgoing = httpRequest({ hostname, port, path, method, headers }, (incoming) => {
       const chunks: Buffer[] = [];
       incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-      incoming.on("end", () => resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, body: Buffer.concat(chunks).toString("utf8") }));
+      incoming.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        try {
+          // What an agent negotiated here holds no confirm URL (confirm-url-scan.ts).
+          scanUrlAnswer(path, incoming.headers["content-type"], body);
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        resolve({ status: incoming.statusCode ?? 0, headers: incoming.headers, body });
+      });
       incoming.on("error", reject);
     });
     outgoing.on("error", reject);

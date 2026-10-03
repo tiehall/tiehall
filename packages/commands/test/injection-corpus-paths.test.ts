@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAgentTokenCheck, createRequestUrlRoute, readInstallations, type CiCaller, type RequestUrlRoute } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { signedInCli, type CliMachine } from "./support/cli.ts";
+import { scanUrlAnswer } from "./support/confirm-url-scan.ts";
 import { reportOf, runDueUpdates } from "./support/contract.ts";
 import { CORPUS, expectFenced, expectStrippedJson, fencesOf, fitted, invisibleIn, unescapeMarkers, visible, type CorpusEntry, type Fence } from "./support/corpus.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
@@ -142,7 +143,9 @@ async function readUrl(person: McpPerson, path: string): Promise<string> {
   const answer = await urls(new Request(`${URL_OF_INSTALL}${path}`, { headers: { authorization: `Bearer ${person.token}` } }));
   if (answer === undefined || !("response" in answer)) throw new Error(`${path} gave no answer of its own.`);
   expect(answer.response.status).toBe(200);
-  return answer.response.text();
+  const body = await answer.response.text();
+  scanUrlAnswer(path, answer.response.headers.get("content-type") ?? undefined, body);
+  return body;
 }
 
 /** Checks a page of a request that holds one entry, as markdown: its title, packet and the two comments, each fenced with its origin for dana. */

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { run } from "tiehall";
+import { scanForConfirmUrl } from "./support/confirm-url-scan.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { acknowledgeEverything, realSleep, signedInCli, type CliMachine } from "./support/cli.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
@@ -91,6 +92,8 @@ describe("tiehall watch", () => {
     }
     expect(await watching).toBe(0);
     expect(errors).toBe("");
+    // What the watch prints reaches the model, as a hook's output does: no confirm URL (confirm-url-scan.ts).
+    scanForConfirmUrl("hook output", printed, "tiehall watch");
     expect(await cursors()).toEqual(before);
   }, 60_000);
 });

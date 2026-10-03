@@ -42,6 +42,7 @@ import {
   type WebSessionCaller,
   type WebWriteRequest,
 } from "../../src/index.ts";
+import { scanningApi } from "./confirm-url-scan.ts";
 
 // An install whose setup is complete, for tests of the real operations. It
 // holds a fresh database built by the migrations, the app role, the org, and
@@ -225,7 +226,8 @@ export async function startTestInstall(
     execute,
     sentJobs,
     step,
-    api: (caller) => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger }),
+    // Every answer of /api/v1 is what an agent or the CLI reads, so none may hold a confirm URL (confirm-url-scan.ts).
+    api: (caller) => scanningApi(createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => caller, logger })),
     web: (caller) => createWebCommands({ execute, session: async () => caller, url: URL_OF_INSTALL, secret: () => secret, logger }),
     fromThePage: (caller) => ({ origin: URL_OF_INSTALL, fetchSite: "same-origin", csrfToken: csrfTokenFor(secret, caller.sessionId) }),
     confirmRoute,

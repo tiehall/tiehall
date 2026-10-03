@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { scanForConfirmUrl } from "./confirm-url-scan.ts";
 import type { AgentAccessHarness, SignedIn } from "./agent-access.ts";
 import { URL_OF_INSTALL } from "./install.ts";
 
@@ -130,6 +131,10 @@ export function cliMachine(harness: AgentAccessHarness, others: Readonly<Record<
         fetch,
         sleep: options.sleep ?? (async () => {}),
       });
+      // Everything the CLI prints reaches the agent that runs it, a hook's output included: no confirm URL (confirm-url-scan.ts).
+      const kind = args[0] === "hook" || args[0] === "watch" ? "hook output" : "CLI output";
+      scanForConfirmUrl(kind, printed, `tiehall ${args.join(" ")}, its standard output`);
+      scanForConfirmUrl(kind, stderr, `tiehall ${args.join(" ")}, its standard error`);
       return { code, stdout: printed, stderr };
     },
     saveLogin(url, tokens, expiresAt = new Date(Date.now() + 10 * 60_000)) {
