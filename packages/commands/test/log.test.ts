@@ -196,6 +196,23 @@ describe("redaction", () => {
     expect(scrub(`GET /api/v1/requests?auth=Bearer ${part(20)} answered 401`)).toBe("GET /api/v1/requests[redacted] answered 401");
   });
 
+  // The logger scrubs every string it writes, and some come from callers who need no account, such as the callbackURL
+  // of a client registration that the sign-in service refuses and logs, in a request body of up to 2 MiB. So the time
+  // a scrub takes grows only with the text's length, whatever the text, and no text can hold the process up.
+  it("scrubs any text in time that grows only with its length", () => {
+    // Runs of a scheme's, a token's or a path's characters, with a place where a shape could start every few
+    // characters and nothing that ends the shape, which made a pattern scan to the run's end from each such place.
+    const shapes = ["-eyJ", "eyJaaaa-", "eyJaaaa.", "eyJaaaa.aaaa", "a.", "a-", "a://", "a://x", "a://a@", "(/", "=/", "ATATT-", "Basic -Bearer-Bearer"];
+    for (const length of [96 * 1024, 2 * 1024 * 1024]) {
+      for (const shape of shapes) {
+        const text = shape.repeat(Math.ceil(length / shape.length)).slice(0, length);
+        const started = performance.now();
+        scrub(text);
+        expect(performance.now() - started, `${length} characters of ${shape}`).toBeLessThan(1_000);
+      }
+    }
+  });
+
   it("never logs a body field, such as a message's text", () => {
     const { lines, entries, logger } = capture();
     logger.info("message stored", {

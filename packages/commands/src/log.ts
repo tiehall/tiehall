@@ -248,32 +248,181 @@ function stackFrames(error: Error): string[] {
  * shape finds all it covers: a JWT runs on through every part after its third,
  * as a JWE has five, and a Bearer or Basic credential that ends with one of
  * those words runs on through the credential after it.
+ *
+ * The logger scrubs text that callers who need no account can send, in bodies
+ * of up to 2 MiB, so a scrub takes time in proportion to the text's length,
+ * whatever the text. Each pattern here fails within a few characters of where
+ * it starts, or matches everything it reads, so no character is read again
+ * from each place a match could start. The shapes that would read a long run
+ * of characters and then fail, a JWT, the user info of a URL and a query
+ * string, are found by the scans below them instead, which read each run once.
  */
 const TOKEN_PATTERNS: readonly RegExp[] = [
   /\bth_pat_[A-Za-z0-9_-]+/g,
   /\b(?:Bearer|bearer|Basic)(?:\s+[A-Za-z0-9._~+/=-]*?\b(?:Bearer|bearer|Basic)(?=\s))*\s+[A-Za-z0-9._~+/=-]+/g,
-  /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_.-]*/g,
   /\bgh[pousr]_[A-Za-z0-9_.-]+/g,
   /\bgithub_pat_[A-Za-z0-9_.-]+/g,
   /\bATATT[A-Za-z0-9_=-]{16,}/g,
 ];
 
-/** The user info of a URL, such as the password in postgres://user:password@host. */
-const USER_INFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@?#]*@/gi;
+/** The characters a scan reads, by their UTF-16 code, as the patterns' classes have them. */
+const isLetter = (code: number) => (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+const isDigit = (code: number) => code >= 48 && code <= 57;
+/** A character of `\w`, which `\b` sets apart from the others. */
+const isWordCharacter = (code: number) => isLetter(code) || isDigit(code) || code === 95;
+/** `\s`: whitespace and line terminators. */
+const isSpace = (code: number) =>
+  (code >= 9 && code <= 13) ||
+  code === 32 ||
+  code === 0xa0 ||
+  code === 0x1680 ||
+  (code >= 0x2000 && code <= 0x200a) ||
+  code === 0x2028 ||
+  code === 0x2029 ||
+  code === 0x202f ||
+  code === 0x205f ||
+  code === 0x3000 ||
+  code === 0xfeff;
+/** A URL scheme's characters: `[a-z0-9+.-]`, in either case. */
+const isSchemeCharacter = (code: number) => isLetter(code) || isDigit(code) || code === 43 || code === 45 || code === 46;
+/** The characters of a JWT's first two parts, `[A-Za-z0-9_-]`, and of its third and later parts, with `.`. */
+const isJwtCharacter = (code: number) => isWordCharacter(code) || code === 45;
+const isJwtTailCharacter = (code: number) => isJwtCharacter(code) || code === 46;
+/** The user info of a URL runs up to `@`, and stops at `/`, `?`, `#` and whitespace: `[^/\s@?#]`. */
+const isUserInfoCharacter = (code: number) => code !== 47 && code !== 64 && code !== 63 && code !== 35 && !isSpace(code);
+/** A query string or a fragment runs up to whitespace, a quote, `<` or `>`: `[^\s"'<>]`. */
+const isQueryCharacter = (code: number) => code !== 34 && code !== 39 && code !== 60 && code !== 62 && !isSpace(code);
+/** A URL or a path runs up to its query string or fragment, and stops where those stop: `[^\s?#"'<>]`. */
+const isPathCharacter = (code: number) => code !== 63 && code !== 35 && isQueryCharacter(code);
+/** What a path may follow: whitespace, a quote, `(` or `=`. */
+const leadsPath = (code: number) => isSpace(code) || code === 34 || code === 39 || code === 40 || code === 61;
 
-/** A URL, or a path after a space, a quote or the start, with its query string or fragment. */
-const QUERY = /((?:\b[a-z][a-z0-9+.-]*:\/\/|(?<=^|[\s"'(=])\/)[^\s?#"'<>]*)[?#][^\s"'<>]*/gi;
+/** Where the run of characters of this class that starts at `from` ends. */
+function runEnd(text: string, from: number, inRun: (code: number) => boolean): number {
+  let end = from;
+  while (end < text.length && inRun(text.charCodeAt(end))) end += 1;
+  return end;
+}
+
+/** Whether `\b` holds before a word character at `at`. */
+function startsWord(text: string, at: number): boolean {
+  return at === 0 || !isWordCharacter(text.charCodeAt(at - 1));
+}
+
+/**
+ * Reads the run of a scheme's characters that starts at `from`, and says where it ends and whether a scheme, a
+ * letter at the start of a word and what follows it, ends there: `\b[a-z][a-z0-9+.-]*`. Every scheme that starts
+ * in a run ends where the run ends, because no scheme character can begin `://`.
+ */
+function schemeRun(text: string, from: number): { end: number; scheme: boolean } {
+  let scheme = false;
+  let end = from;
+  for (; end < text.length && isSchemeCharacter(text.charCodeAt(end)); end += 1) {
+    if (!scheme && isLetter(text.charCodeAt(end)) && startsWord(text, end)) scheme = true;
+  }
+  return { end, scheme };
+}
+
+/**
+ * The text with the user info of each URL replaced, such as the password in postgres://user:password@host:
+ * `\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@?#]*@`.
+ */
+function withoutUserInfo(text: string): string {
+  let result = "";
+  let kept = 0;
+  let at = 0;
+  while (at < text.length) {
+    if (!isSchemeCharacter(text.charCodeAt(at))) {
+      at += 1;
+      continue;
+    }
+    const { end, scheme } = schemeRun(text, at);
+    at = end;
+    if (!scheme || !text.startsWith("://", end)) continue;
+    const from = end + 3;
+    const to = runEnd(text, from, isUserInfoCharacter);
+    if (text.charCodeAt(to) !== 64) continue;
+    result += text.slice(kept, from) + REDACTED;
+    kept = to;
+    at = to + 1;
+  }
+  return result + text.slice(kept);
+}
+
+/**
+ * The query strings and fragments of URLs, and of paths after a space, a quote, `(`, `=` or the start, as the
+ * spans they cover: `(?:\b[a-z][a-z0-9+.-]*:\/\/|(?<=^|[\s"'(=])\/)[^\s?#"'<>]*` before `[?#][^\s"'<>]*`. A URL or
+ * a path that starts anywhere in a run of its characters ends where the run ends, so each run is read once.
+ */
+function queryStrings(text: string): { from: number; to: number }[] {
+  const spans: { from: number; to: number }[] = [];
+  let at = 0;
+  while (at < text.length) {
+    if (!isPathCharacter(text.charCodeAt(at))) {
+      at += 1;
+      continue;
+    }
+    let starts = false;
+    let end = at;
+    while (end < text.length && isPathCharacter(text.charCodeAt(end))) {
+      const code = text.charCodeAt(end);
+      if (!starts && code === 47 && (end === 0 || leadsPath(text.charCodeAt(end - 1)))) {
+        starts = true;
+        end += 1;
+      } else if (!starts && isSchemeCharacter(code)) {
+        const run = schemeRun(text, end);
+        starts = run.scheme && text.startsWith("://", run.end);
+        end = run.end;
+      } else {
+        end += 1;
+      }
+    }
+    at = end;
+    const mark = text.charCodeAt(end);
+    if (!starts || (mark !== 63 && mark !== 35)) continue;
+    at = runEnd(text, end + 1, isQueryCharacter);
+    spans.push({ from: end, to: at });
+  }
+  return spans;
+}
+
+/**
+ * JWTs, as the spans they cover: `\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_.-]*`. A JWT that starts
+ * anywhere in a run of its first part's characters has its first part end where the run ends, so each run is read
+ * once, and the first JWT in it covers every later one.
+ */
+function jwts(text: string): { from: number; to: number }[] {
+  const spans: { from: number; to: number }[] = [];
+  let at = 0;
+  while (at < text.length) {
+    if (!isJwtCharacter(text.charCodeAt(at))) {
+      at += 1;
+      continue;
+    }
+    let from = -1;
+    let first = at;
+    for (; first < text.length && isJwtCharacter(text.charCodeAt(first)); first += 1) {
+      if (from === -1 && text.startsWith("eyJ", first) && startsWord(text, first)) from = first;
+    }
+    at = first;
+    if (from === -1 || first - (from + 3) < 4 || text.charCodeAt(first) !== 46) continue;
+    const second = runEnd(text, first + 1, isJwtCharacter);
+    if (second - (first + 1) < 4 || text.charCodeAt(second) !== 46) continue;
+    at = runEnd(text, second + 1, isJwtTailCharacter);
+    spans.push({ from, to: at });
+  }
+  return spans;
+}
 
 /** A string with every credential shape, user info, query string and fragment removed. */
 export function scrub(text: string): string {
   // User info goes first, so that a quote in a password cannot hide the query string after it. It cannot cut a
   // token: it lies between `://` and `@`, and no token shape holds `:` or `@`.
-  const clean = text.replace(USER_INFO, `$1${REDACTED}@`);
-  // Every other pattern is matched in this same string: a query string or a fragment is dropped, a token redacted.
+  const clean = withoutUserInfo(text);
+  // Every other shape is found in this same string: a query string or a fragment is dropped, a token redacted.
   const spans: { from: number; to: number; query: boolean }[] = [];
-  for (const match of clean.matchAll(QUERY)) {
-    spans.push({ from: match.index + match[1]!.length, to: match.index + match[0].length, query: true });
-  }
+  for (const span of queryStrings(clean)) spans.push({ ...span, query: true });
+  for (const span of jwts(clean)) spans.push({ ...span, query: false });
   for (const pattern of TOKEN_PATTERNS) {
     for (const match of clean.matchAll(pattern)) spans.push({ from: match.index, to: match.index + match[0].length, query: false });
   }
