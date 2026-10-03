@@ -107,26 +107,26 @@ const NOT_THEIRS = { ok: false, refusal: "forbidden" } as const;
 describe("who may confirm, and in what order", () => {
   it.each([
     // A decline Bob proposed takes effect on Bob's confirmation alone.
-    ["Bob confirms his decline", pending(BOB, ["decline"], "target_team"), bob, fe142, ONLY],
+    ["Bob confirms the decline Bob proposed", pending(BOB, ["decline"], "target_team"), bob, fe142, ONLY],
     ["Erin, another member of FE, confirms Bob's decline", pending(BOB, ["decline"], "target_team"), erin, fe142, NOT_THEIRS],
     ["Alice confirms Bob's decline", pending(BOB, ["decline"], "target_team"), alice, fe142, NOT_THEIRS],
-    ["Alice confirms her withdrawal", pending(ALICE, ["withdraw"], "requester_side"), alice, fe142, ONLY],
+    ["Alice confirms the withdrawal Alice proposed", pending(ALICE, ["withdraw"], "requester_side"), alice, fe142, ONLY],
 
-    // A due date Alice proposed waits for a member of the target team after her.
-    ["Alice confirms her due date", pending(ALICE, ["due_date"], "requester_side"), alice, fe142, FIRST],
-    ["Bob, of FE, confirms Alice's due date before she does", pending(ALICE, ["due_date"], "requester_side"), bob, fe142, TOO_EARLY],
-    ["Carol, of a third team, confirms Alice's due date before she does", pending(ALICE, ["due_date"], "requester_side"), carol, fe142, NOT_THEIRS],
-    ["Bob, of FE, confirms Alice's due date after her", pending(ALICE, ["due_date"], "requester_side", true), bob, fe142, SECOND],
-    ["Erin, of FE, confirms Alice's due date after her", pending(ALICE, ["due_date"], "requester_side", true), erin, fe142, SECOND],
-    ["Sam, of Alice's own team BE, confirms her due date after her", pending(ALICE, ["due_date"], "requester_side", true), sam, fe142, NOT_THEIRS],
-    ["Carol, of a third team, confirms Alice's due date after her", pending(ALICE, ["due_date"], "requester_side", true), carol, fe142, NOT_THEIRS],
-    ["Alice confirms her due date again", pending(ALICE, ["due_date"], "requester_side", true), alice, fe142, AGAIN],
+    // A due date Alice proposed waits for a member of the target team after Alice.
+    ["Alice confirms the due date Alice proposed", pending(ALICE, ["due_date"], "requester_side"), alice, fe142, FIRST],
+    ["Bob, of FE, confirms Alice's due date before Alice does", pending(ALICE, ["due_date"], "requester_side"), bob, fe142, TOO_EARLY],
+    ["Carol, of a third team, confirms Alice's due date before Alice does", pending(ALICE, ["due_date"], "requester_side"), carol, fe142, NOT_THEIRS],
+    ["Bob, of FE, confirms Alice's due date after Alice", pending(ALICE, ["due_date"], "requester_side", true), bob, fe142, SECOND],
+    ["Erin, of FE, confirms Alice's due date after Alice", pending(ALICE, ["due_date"], "requester_side", true), erin, fe142, SECOND],
+    ["Sam, of Alice's own team BE, confirms Alice's due date after Alice", pending(ALICE, ["due_date"], "requester_side", true), sam, fe142, NOT_THEIRS],
+    ["Carol, of a third team, confirms Alice's due date after Alice", pending(ALICE, ["due_date"], "requester_side", true), carol, fe142, NOT_THEIRS],
+    ["Alice confirms the due date Alice proposed again", pending(ALICE, ["due_date"], "requester_side", true), alice, fe142, AGAIN],
 
     // A due date Bob proposed for the target team waits for the requester side.
-    ["Sam, of BE, confirms Bob's due date after him", pending(BOB, ["due_date"], "target_team", true), sam, fe142, SECOND],
-    ["Alice, the requesting user, confirms Bob's due date after him", pending(BOB, ["due_date"], "target_team", true), alice, fe142, SECOND],
-    ["Erin, of Bob's own team FE, confirms his due date after him", pending(BOB, ["due_date"], "target_team", true), erin, fe142, NOT_THEIRS],
-    ["Sam confirms Bob's due date before he does", pending(BOB, ["due_date"], "target_team"), sam, fe142, TOO_EARLY],
+    ["Sam, of BE, confirms Bob's due date after Bob", pending(BOB, ["due_date"], "target_team", true), sam, fe142, SECOND],
+    ["Alice, the requesting user, confirms Bob's due date after Bob", pending(BOB, ["due_date"], "target_team", true), alice, fe142, SECOND],
+    ["Erin, of Bob's own team FE, confirms Bob's due date after Bob", pending(BOB, ["due_date"], "target_team", true), erin, fe142, NOT_THEIRS],
+    ["Sam confirms Bob's due date before Bob does", pending(BOB, ["due_date"], "target_team"), sam, fe142, TOO_EARLY],
 
     // A member of both sides needs another person.
     ["Pat, of both teams, confirms their due date", pending(PAT, ["due_date"], "requester_side"), pat, fe142, FIRST],
@@ -138,13 +138,13 @@ describe("who may confirm, and in what order", () => {
     ["Sam confirms again after leaving BE", pending(SAM, ["due_date"], "requester_side", true), samWithoutTeams, fe142, AGAIN],
 
     // A scope change while the request is claimed waits for the claimant.
-    ["Alice confirms her scope change", pending(ALICE, ["scope"], "requester_side"), alice, fe142, FIRST],
-    ["Bob, the claimant, confirms Alice's scope change before she does", pending(ALICE, ["scope"], "requester_side"), bob, fe142, TOO_EARLY],
-    ["Erin confirms Alice's scope change before she does", pending(ALICE, ["scope"], "requester_side"), erin, fe142, NOT_THEIRS],
-    ["Bob, the claimant, confirms Alice's scope change after her", pending(ALICE, ["scope"], "requester_side", true), bob, fe142, SECOND],
-    ["Erin, not the claimant, confirms Alice's scope change after her", pending(ALICE, ["scope"], "requester_side", true), erin, fe142, NOT_THEIRS],
-    ["Erin confirms it once she holds the claim", pending(ALICE, ["scope"], "requester_side", true), erin, claimedByErin, SECOND],
-    ["Bob confirms it after he released the claim and Erin took it", pending(ALICE, ["scope"], "requester_side", true), bob, claimedByErin, NOT_THEIRS],
+    ["Alice confirms the scope change Alice proposed", pending(ALICE, ["scope"], "requester_side"), alice, fe142, FIRST],
+    ["Bob, the claimant, confirms Alice's scope change before Alice does", pending(ALICE, ["scope"], "requester_side"), bob, fe142, TOO_EARLY],
+    ["Erin confirms Alice's scope change before Alice does", pending(ALICE, ["scope"], "requester_side"), erin, fe142, NOT_THEIRS],
+    ["Bob, the claimant, confirms Alice's scope change after Alice", pending(ALICE, ["scope"], "requester_side", true), bob, fe142, SECOND],
+    ["Erin, not the claimant, confirms Alice's scope change after Alice", pending(ALICE, ["scope"], "requester_side", true), erin, fe142, NOT_THEIRS],
+    ["Erin confirms it once Erin holds the claim", pending(ALICE, ["scope"], "requester_side", true), erin, claimedByErin, SECOND],
+    ["Bob confirms it after releasing the claim to Erin", pending(ALICE, ["scope"], "requester_side", true), bob, claimedByErin, NOT_THEIRS],
     ["Erin confirms it while nobody holds the claim", pending(ALICE, ["scope"], "requester_side", true), erin, unclaimed, NOT_THEIRS],
     ["Bob confirms it while nobody holds the claim", pending(ALICE, ["scope"], "requester_side", true), bob, unclaimed, NOT_THEIRS],
     ["Erin confirms it for Dana, a claimant who left the install", pending(ALICE, ["scope"], "requester_side", true), erin, claimedByDana, SECOND],

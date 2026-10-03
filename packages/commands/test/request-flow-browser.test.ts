@@ -11,7 +11,7 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // request URLs; requests: Commitments become proposals; requests: Claiming and
 // starting work need no proposal; design.md, Technical decisions: T3 and T17).
 // Dana, a member of teams BE and FE, opens a request to FE from BE in the web
-// form, lands on its page at its URL, where she sees its packet and its
+// form, lands on its page at its URL, which shows its packet and its
 // thread, claims it, posts a question, and declines it, which becomes a
 // proposal that the page lists with a link to its confirm page. The flow runs
 // in the installed Chrome against the web app as the image runs it
@@ -25,7 +25,7 @@ let install: TestInstall;
 let stub: GitHubStub;
 let web: WebApp;
 let browser: Browser;
-/** Dana's session cookie, as her signed-in browser holds it. */
+/** Dana's session cookie, as Dana's signed-in browser holds it. */
 let cookie: { name: string; value: string };
 
 beforeAll(async () => {

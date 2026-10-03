@@ -120,7 +120,7 @@ describe("security events", () => {
   // events as the pull readers; each case became a plain test when its task landed.
   it.each([
     ["Pia's CLI, an admin's, which holds until the wait ends", () => oauthTokenOf(pia.userId, "tiehall-cli", "cli"), []],
-    ["Bob's CLI, which the new request to his team wakes at once", () => oauthTokenOf(bob, "tiehall-cli", "cli"), ["request.opened"]],
+    ["Bob's CLI, which the new request to Bob's team wakes at once", () => oauthTokenOf(bob, "tiehall-cli", "cli"), ["request.opened"]],
   ])("reach no wait answer of GET /api/v1/events/wait: %s", async (_name, caller, expected) => {
     const response = await install.api(caller())(new Request(`${URL_OF_INSTALL}/api/v1/events/wait?cursor=0`));
     expect(response.status).toBe(200);
@@ -131,7 +131,7 @@ describe("security events", () => {
 
   it.each([
     ["Pia's, an admin's", () => pia, []],
-    ["Bob's, which lists the new request to his team", () => sessionOf(bob), ["request.opened"]],
+    ["Bob's, which lists the new request to Bob's team", () => sessionOf(bob), ["request.opened"]],
   ])("reach no web inbox update feed: %s", async (_name, session, expected) => {
     const result = await install.web(session()).read<{ events: { type: string }[] }>("inbox.updates", {});
     expect(result).toMatchObject({ ok: true });

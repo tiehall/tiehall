@@ -93,7 +93,7 @@ beforeAll(async () => {
   const renamed = await install.web(admin).write("teams.change_key", { teamId: teams["OPS"], key: "SRE" }, install.fromThePage(admin));
   expect(renamed.ok).toBe(true);
 
-  // Dana is removed from the install, which ends her session and revokes her token.
+  // Dana is removed from the install, which ends their session and revokes their token.
   expect((await install.confirm(sessionOf(pia), "members.remove", { userId: dana })).status).toBe(200);
 }, 300_000);
 

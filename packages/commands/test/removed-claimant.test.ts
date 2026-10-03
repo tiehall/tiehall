@@ -127,7 +127,7 @@ describe("a removed member's claim", () => {
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${fe144}/claim`)).body).toMatchObject({ state: "claimed", claimant: { id: bob } });
   });
 
-  it("is released from the web UI the same way, after which Bob claims it for himself", async () => {
+  it("is released from the web UI the same way, after which Bob claims it", async () => {
     const caller = sessionOf(bob);
     expect(await install.web(caller).write("requests.set_status", { key: fe143, state: "open" }, install.fromThePage(caller))).toMatchObject({
       ok: true,

@@ -218,7 +218,7 @@ describe("releasing a claim", () => {
       expect(await stored()).toMatchObject({ state: "claimed", claimant: dana });
     });
 
-    it("refuses Dana herself, who is no longer a member, with 403", async () => {
+    it("refuses Dana, who is no longer a member, with 403", async () => {
       const answer = await setStatus(dana, "open");
       expect(answer).toEqual({ status: 403, body: expect.objectContaining({ type: "https://tiehall.com/problems/removed-member" }) });
       expect(await stored()).toMatchObject({ claimant: dana });

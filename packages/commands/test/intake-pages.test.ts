@@ -61,7 +61,7 @@ beforeAll(async () => {
   // OPS's key becomes SRE, so /OPS is an earlier key of SRE's page.
   const admin = sessionOf(people["pia"]!);
   expect((await install.web(admin).write("teams.change_key", { teamId: teams["OPS"], key: "SRE" }, install.fromThePage(admin))).ok).toBe(true);
-  // Dana is removed from the install, which ends her session and revokes her token.
+  // Dana is removed from the install, which ends their session and revokes their token.
   expect((await install.confirm(admin, "members.remove", { userId: people["dana"]! })).status).toBe(200);
 }, 300_000);
 

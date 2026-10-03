@@ -4,7 +4,7 @@ Thank you for helping. This guide covers how the repository is built and tested,
 
 Report a security problem privately, as [SECURITY.md](SECURITY.md) describes, never in a public issue or pull request.
 
-Start with the [README](README.md), then the change in progress, [`openspec/changes/add-tiehall-oss-v1`](openspec/changes/add-tiehall-oss-v1): its [proposal](openspec/changes/add-tiehall-oss-v1/proposal.md) says why, its [design](openspec/changes/add-tiehall-oss-v1/design.md) holds every decision the specs rest on and how Tiehall is built, its [specs](openspec/changes/add-tiehall-oss-v1/specs) hold one behavior contract per capability, and its [tasks](openspec/changes/add-tiehall-oss-v1/tasks.md) hold the plan by milestone. Everything in the repository, code, docs and commit messages, is in English.
+Start with the [README](README.md), then the change in progress, [`openspec/changes/add-tiehall-oss-v1`](openspec/changes/add-tiehall-oss-v1): its [proposal](openspec/changes/add-tiehall-oss-v1/proposal.md) says why, its [design](openspec/changes/add-tiehall-oss-v1/design.md) holds every decision the specs rest on and how Tiehall is built, its [specs](openspec/changes/add-tiehall-oss-v1/specs) hold one behavior contract per capability, and its [tasks](openspec/changes/add-tiehall-oss-v1/tasks.md) hold the plan by milestone. Everything in the repository, code, docs and commit messages, is in English. It refers to people as they and them, never with a gendered pronoun; `pnpm test` fails on one in a TypeScript or Markdown file outside `openspec/` and the tests' fixtures.
 
 ## Building and testing
 

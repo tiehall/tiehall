@@ -39,7 +39,7 @@ const sam: RequestActor = { userId: SAM, teamIds: [BE] };
 const carol: RequestActor = { userId: CAROL, teamIds: [OPS] };
 /** Pat belongs to both teams. */
 const pat: RequestActor = { userId: PAT, teamIds: [BE, FE] };
-/** Alice after she left team BE: still the requesting user. */
+/** Alice after leaving team BE: still the requesting user. */
 const aliceWithoutTeams: RequestActor = { userId: ALICE, teamIds: [] };
 
 describe("a person's parts in a request", () => {
