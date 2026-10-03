@@ -47,6 +47,8 @@ export interface WorkerServices {
   github?: InstallGitHub;
   /** execute(), through which a job's changes run as a system job or an integration event. */
   execute?: Execute;
+  /** The worker's logger, which a job logs through, so its lines carry the worker's fields and go where the worker's go. */
+  logger?: Logger;
 }
 
 export interface WorkerJob<D extends JobData> {
@@ -133,6 +135,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.installUrl === undefined ? {} : { installUrl: options.installUrl }),
     ...(github === undefined ? {} : { github }),
+    logger,
   };
   let stopping = false;
   /** Jobs whose handler is running, by id, with their queue. */

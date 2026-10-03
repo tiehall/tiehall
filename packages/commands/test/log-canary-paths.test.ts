@@ -265,6 +265,8 @@ describe("a GitHub mirror job", () => {
     }
     const log = [...lines, ...written].join("\n");
     expect(log).toContain("worker: job failed");
+    // The mirror job logs through the worker's own logger, never through one of its own past it.
+    expect(lines.join("\n")).toContain("mirror: created the mirror issue");
     const tokens = stub.issuedInstallationTokens();
     expect(tokens.length).toBeGreaterThan(0);
     expectClean(log, tokens, "the GitHub mirror job");

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubDelivery, type StubInstallation } from "@tiehall/testing/github";
-import { checkDepartures, processDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
+import { checkDepartures, createLogger, processDelivery, processGitHubDelivery, reconcileGitHub, SIGN_IN_REFUSED, type WebSessionCaller } from "../src/index.ts";
 import { storeDelivery } from "./support/github-app.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { invite } from "./support/invites.ts";
@@ -167,6 +167,22 @@ describe("the organization event", () => {
       },
     ]);
     expect(await isBlocked("lee-acme")).toBe(false);
+  });
+
+  // The worker's job that processes a delivery logs through the worker's own logger, as every job does, never
+  // through a logger of its own that writes past the worker's.
+  it("logs the removal through the logger the worker gives the processing job", async () => {
+    const lee = await join("lee-acme");
+    const [delivery] = await stub.removeMember("acme", "lee-acme");
+    expect(delivery).toBeDefined();
+    const deliveryId = await storeDelivery(install, delivery!);
+    const lines: string[] = [];
+    await processGitHubDelivery.handle(
+      { id: randomUUID(), queue: processGitHubDelivery.type.queue, data: { deliveryId }, signal: new AbortController().signal },
+      { database: install.db, now: () => new Date(), github: harness.github, execute: install.execute, jobs: { send: async () => undefined }, logger: createLogger({ write: (line) => void lines.push(line) }) },
+    );
+    expect(await isMember(lee)).toBe(false);
+    expect(lines.join("\n")).toContain("github: a member who left a GitHub organization was removed");
   });
 
   // GitHub's signature covers only a delivery's body, not its delivery id, so a captured body can come back under

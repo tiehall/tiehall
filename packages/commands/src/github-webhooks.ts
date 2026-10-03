@@ -81,11 +81,11 @@ export const processGitHubDelivery: WorkerJob<{ deliveryId: string }> = {
     expireInSeconds: 300,
   }),
   concurrency: 4,
-  async handle(job, { database, now, github, execute, jobs }) {
+  async handle(job, { database, now, github, execute, jobs, logger }) {
     if (github === undefined || execute === undefined) {
       throw new Error("The worker gives this job no GitHub App or execute() to process the delivery with.");
     }
-    await processDelivery({ database, github, execute, now, ...(jobs === undefined ? {} : { jobs }) }, job.data.deliveryId);
+    await processDelivery({ database, github, execute, now, ...(jobs === undefined ? {} : { jobs }), ...(logger === undefined ? {} : { logger }) }, job.data.deliveryId);
   },
 };
 

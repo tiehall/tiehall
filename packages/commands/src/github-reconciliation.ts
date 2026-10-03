@@ -40,11 +40,11 @@ export const reconcileGitHub: WorkerJob<Record<string, never>> = {
     expireInSeconds: 600,
   }),
   schedule: "*/15 * * * *",
-  async handle(_job, { database, github, jobs, now }) {
+  async handle(_job, { database, github, jobs, now, logger: workerLogger }) {
     if (github === undefined || jobs === undefined) throw new Error("The worker gives this job no GitHub App or job queue to reconcile with.");
     const app = await github.app();
     if (app === undefined) return;
-    const logger = createLogger().child({ job: "github.reconcile" });
+    const logger = (workerLogger ?? createLogger()).child({ job: "github.reconcile" });
     try {
       await readInstallations({ database, app, jobs, logger });
       await checkDepartures({ database, app, logger, provenance: { actorKind: "system" } }, { every: true });

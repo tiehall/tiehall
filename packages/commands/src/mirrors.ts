@@ -869,7 +869,10 @@ export const mirrorRequests: WorkerJob<{ requestId: string }> = {
   async handle(job, services) {
     if (services.installUrl === undefined) throw new Error("The worker gives this job no install URL to link the request with.");
     try {
-      await syncMirror({ database: services.database, adapters: await adaptersOf(services), installUrl: services.installUrl }, job.data.requestId);
+      await syncMirror(
+        { database: services.database, adapters: await adaptersOf(services), installUrl: services.installUrl, ...(services.logger === undefined ? {} : { logger: services.logger }) },
+        job.data.requestId,
+      );
       await clearMirrorFailure(services.database, job.data.requestId);
     } catch (error) {
       // Before setup completes there is no request to mirror.
