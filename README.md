@@ -54,6 +54,13 @@ Then create teams, invite people or let your organization's members sign in, con
 ## Documentation
 
 - [Installing and running Tiehall](docs/install.md): the release files, `.env`, TLS, the setup screen, GitHub's modes, backups, restore, upgrades, rollbacks, the commands on the host and the connections an install makes.
+- [Agents and Tiehall](docs/agents.md): the four ways in, the MCP server, the `tiehall` CLI, the Claude Code plugin and request URLs, how agents sign in, and personal access tokens and bot users.
+- [The Claude Code plugin](docs/claude-code-plugin.md): installing it, its skill and its hooks.
+- [The requester loop](docs/requester-loop.md): how news reaches people and agents, the web inbox, commitments and the confirmation step, and email.
+- [People and teams](docs/people-and-teams.md), for admins: roles, who may sign in and the sign-in policy, invites, removals and teams.
+- [GitHub and Jira](docs/github-and-jira.md), for admins: the GitHub App's installations, webhook and polling modes, pull requests and the mirrors.
+- [Contract changes](docs/contract-changes.md): registering APIs, the consumer map, the contract Action and what the consuming teams get.
+- [The activity log](docs/activity-log.md), for admins: what it holds, reading and exporting it, and what it does not prove.
 - The API reference: every install serves its OpenAPI 3.1 document at `/api/v1/openapi.json` and renders it at `/docs/api`, with its changelog at `/docs/api/changelog`; this repository holds the document as [`openapi/v1.json`](openapi/v1.json) and the MCP tools as [`mcp/tools.json`](mcp/tools.json).
 - The handoff packet: the beta JSON Schema, [`packages/packet/schema/v1-beta.json`](packages/packet/schema/v1-beta.json), with its [conformance fixtures](packages/packet/fixtures), which every install also serves at `/schemas/packet/v1-beta.json`.
 - The contract Action: [its README](actions/contract/README.md), with its inputs and how to pin it.

@@ -11,6 +11,7 @@ import { createTeamApisRoute } from "./team-page-actions.ts";
 import { createMirrorRetryRoute } from "./mirror-failures.ts";
 import { showRunningVersion } from "./html.ts";
 import { runningVersion } from "./running-version.ts";
+import { docsLinks } from "./docs-pages.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -341,7 +342,7 @@ export function membersRoute(env: Environment): PageRoute {
 
 /** The admin page at /admin, the first page of the admin UI, for the signed-in user's web session. */
 export function adminRoute(env: Environment): PageRoute {
-  return pageOf("admin", env, (options) => createAdminRoute({ ...options, version: runningVersion(env), email: emailStatus(readSmtp(env)) }));
+  return pageOf("admin", env, (options) => createAdminRoute({ ...options, version: runningVersion(env), docs: docsLinks(env), email: emailStatus(readSmtp(env)) }));
 }
 
 /** The web form that opens a request, at /requests/new, which every member of a team may use, for the signed-in user's web session. */

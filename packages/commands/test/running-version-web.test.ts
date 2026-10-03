@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
+import { DOCS_PAGES } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams, openRequest, tokenOf } from "./support/requests.ts";
@@ -13,7 +14,9 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // and the sign-in page, on the pages Next.js renders, the page of a request and
 // the page for a path no route serves, and on the admin page. The link points to the release's source in the public
 // repository the image was built from, or to TIEHALL_SOURCE_URL when .env sets
-// it, as an operator who runs a modified server does.
+// it, as an operator who runs a modified server does. The admin page also
+// links each page of the user and admin docs, at the release's docs in that
+// repository (task 28.6; docs-pages.ts).
 
 const RELEASE = {
   TIEHALL_VERSION: "1.3.0",
@@ -80,6 +83,20 @@ describe("the running version and its source", { timeout: 300_000 }, () => {
       const section = /<h2>Version<\/h2>([\s\S]*?)(?:<h2>|<\/main>)/.exec(admin.html)?.[1] ?? "";
       expect(section).toContain("Tiehall 1.3.0 is running.");
       expect(section).toContain(source);
+    } finally {
+      await web.close();
+    }
+  });
+
+  it("links the admin page to each docs page, at the running release's docs in the public repository", async () => {
+    const { web, cookie } = await webAppWith(RELEASE);
+    try {
+      const admin = await pageOf(web, "/admin", cookie);
+      const section = /<h2>Documentation<\/h2>([\s\S]*?)(?:<h2>|<\/main>)/.exec(admin.html)?.[1] ?? "";
+      const links = [...section.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((match) => [match[1], match[2]]);
+      expect(links).toEqual(DOCS_PAGES.map(({ path, title }) => [`https://github.com/acme-oss/tiehall/blob/v1.3.0/${path}`, title]));
+      // A browser without a session is sent to sign in first, and gets no links.
+      expect((await pageOf(web, "/admin")).html).not.toContain("<h2>Documentation</h2>");
     } finally {
       await web.close();
     }

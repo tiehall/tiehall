@@ -51,8 +51,19 @@ export function runningVersion(env: Environment): RunningVersion {
   const version = setting(env, "TIEHALL_VERSION") ?? "0.0.0-dev";
   const own = webUrl(setting(env, "TIEHALL_SOURCE_URL"));
   if (own !== undefined) return { version, sourceUrl: own };
+  const { repository, ref } = builtFrom(env);
+  return { version, sourceUrl: ref === undefined ? repository : `${repository}/tree/${ref}` };
+}
+
+/**
+ * The public repository the image was built from, and the ref of its source
+ * there: the release's version tag, a development build's commit, or none for
+ * a development build that names no commit. TIEHALL_SOURCE_URL plays no part.
+ */
+export function builtFrom(env: Environment): { repository: string; ref: string | undefined } {
+  const version = setting(env, "TIEHALL_VERSION") ?? "0.0.0-dev";
   const repository = (webUrl(setting(env, "TIEHALL_SOURCE_REPOSITORY")) ?? DEFAULT_SOURCE_REPOSITORY).replace(/\/+$/, "");
-  if (!DEVELOPMENT.test(version)) return { version, sourceUrl: `${repository}/tree/v${version}` };
+  if (!DEVELOPMENT.test(version)) return { repository, ref: `v${version}` };
   const commit = setting(env, "TIEHALL_COMMIT_SHA");
-  return { version, sourceUrl: commit !== undefined && COMMIT.test(commit) ? `${repository}/tree/${commit}` : repository };
+  return { repository, ref: commit !== undefined && COMMIT.test(commit) ? commit : undefined };
 }

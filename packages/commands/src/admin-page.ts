@@ -1,6 +1,7 @@
 import { getBanners, getGitHubIntegration, getInstallStatus, listGitHubInstallations, type githubInstallation } from "@tiehall/catalog";
 import type { z } from "zod";
 import type { Banner } from "./admin-alerts.ts";
+import type { DocsLink } from "./docs-pages.ts";
 import type { EmailStatus } from "./email.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
@@ -22,14 +23,18 @@ import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOption
 // Optional email through SMTP): how GitHub's changes reach Tiehall, webhook or
 // polling, the installations Tiehall acts on, whether a Jira site is
 // connected and whether email is set up; and, first, the banners about
-// problems with the integrations (admin-alerts.ts). The integrations are an
-// admin's to read, so the page is an admin's: a member gets 403 and no state.
+// problems with the integrations (admin-alerts.ts). Last, it links each page
+// of the user and admin docs, at the running version's docs (task 28.6;
+// docs-pages.ts). The integrations are an admin's to read, so the page is an
+// admin's: a member gets 403 and no state.
 
 export interface AdminRouteOptions extends PageRouteOptions {
   /** The running version and the link to its source; the page shows no version without it. */
   version?: RunningVersion;
   /** Whether email is set up, from the install's SMTP settings, never its login; the page says nothing of email without it. */
   email?: EmailStatus;
+  /** The docs pages, linked at the running version's docs; the page lists no docs without them. */
+  docs?: readonly DocsLink[];
 }
 
 type Integration = z.output<typeof getGitHubIntegration.output>;
@@ -157,6 +162,18 @@ function emailSection(email: EmailStatus | undefined): string[] {
   ];
 }
 
+/** The documentation section: a link to each page of the user and admin docs. */
+function docsSection(docs: readonly DocsLink[] | undefined): string[] {
+  if (docs === undefined || docs.length === 0) return [];
+  return [
+    "      <h2>Documentation</h2>",
+    `      <p>${escapeHtml("The docs of the running version: how people and their agents use Tiehall, and how admins run it.")}</p>`,
+    "      <ul>",
+    ...docs.map(({ title, url }) => `        <li>${link(url, title)}</li>`),
+    "      </ul>",
+  ];
+}
+
 export function createAdminRoute(options: AdminRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: ADMIN_PATH,
@@ -179,6 +196,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
             ...githubSection(integration, installations),
             ...jiraSection(),
             ...emailSection(options.email),
+            ...docsSection(options.docs),
           ].join("\n"),
         ),
       );
