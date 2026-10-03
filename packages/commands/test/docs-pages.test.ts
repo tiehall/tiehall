@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SOURCE_REPOSITORY, DOCS_PAGES, docsLinks } from "../src/index.ts";
+import { DEFAULT_SOURCE_REPOSITORY, DOCS_PAGES, docsLinks, docsUrl } from "../src/index.ts";
 
 // The docs pages the admin UI links (task 28.6; agent-surfaces: Four agent
 // surfaces; contract-changes: The contract Action; design.md, Where the specs
@@ -42,5 +42,20 @@ describe("the docs pages the admin UI links", () => {
   it("keep to the public repository when a modified server sets TIEHALL_SOURCE_URL", () => {
     const links = docsLinks({ TIEHALL_VERSION: "1.3.0", TIEHALL_SOURCE_REPOSITORY: "https://github.com/acme-oss/tiehall", TIEHALL_SOURCE_URL: "https://git.acme.example/tiehall-fork" });
     expect(links[0]?.url).toBe(`https://github.com/acme-oss/tiehall/blob/v1.3.0/${DOCS_PAGES[0]?.path}`);
+  });
+});
+
+// Every page's footer links the docs too, for every person who uses the install, not only admins: the docs folder
+// of the public repository, at the running version's docs, as the admin page's links are.
+describe("the docs the footer links", () => {
+  it("are the docs folder at the running version's docs in the public repository, whatever TIEHALL_SOURCE_URL says", () => {
+    expect(docsUrl({ TIEHALL_VERSION: "1.3.0", TIEHALL_SOURCE_REPOSITORY: "https://github.com/acme-oss/tiehall" })).toBe("https://github.com/acme-oss/tiehall/tree/v1.3.0/docs");
+    expect(docsUrl({ TIEHALL_VERSION: "0.0.0-dev", TIEHALL_COMMIT_SHA: COMMIT, TIEHALL_SOURCE_REPOSITORY: "https://github.com/acme-oss/tiehall" })).toBe(
+      `https://github.com/acme-oss/tiehall/tree/${COMMIT}/docs`,
+    );
+    expect(docsUrl({})).toBe(`${DEFAULT_SOURCE_REPOSITORY}/tree/main/docs`);
+    expect(docsUrl({ TIEHALL_VERSION: "1.3.0", TIEHALL_SOURCE_REPOSITORY: "https://github.com/acme-oss/tiehall", TIEHALL_SOURCE_URL: "https://git.acme.example/tiehall-fork" })).toBe(
+      "https://github.com/acme-oss/tiehall/tree/v1.3.0/docs",
+    );
   });
 });

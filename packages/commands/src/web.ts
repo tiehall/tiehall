@@ -11,7 +11,7 @@ import { createTeamApisRoute } from "./team-page-actions.ts";
 import { createMirrorRetryRoute } from "./mirror-failures.ts";
 import { showRunningVersion } from "./html.ts";
 import { runningVersion } from "./running-version.ts";
-import { docsLinks } from "./docs-pages.ts";
+import { docsLinks, docsUrl } from "./docs-pages.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
 import { createConfirmationStep, type ConfirmationStep } from "./confirmation-step.ts";
 import { createConfirmationNonces } from "./confirmations.ts";
@@ -47,6 +47,7 @@ import type { WebSessionCaller } from "./caller.ts";
 
 export type { WebResult } from "./web-commands.ts";
 export { runningVersion, type RunningVersion } from "./running-version.ts";
+export { docsUrl } from "./docs-pages.ts";
 export { sessionCookiesOf, type SessionCookie } from "./session-renewal.ts";
 export { PACKET_SCHEMA_PATH, packetSchemaRoute } from "./packet-schema-route.ts";
 export { AUTH_BASE_PATH, SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
@@ -77,8 +78,8 @@ let activityLog: ActivityLogRoute | undefined;
 /** The process's one execute(), confirmation step and sign-in service, built from the install's settings on first use. */
 function servicesOf(env: Environment): Services {
   if (services !== undefined) return services;
-  // Every page's footer shows the running version and the link to its source (html.ts).
-  showRunningVersion(runningVersion(env));
+  // Every page's footer shows the running version, the link to its source and the link to its docs (html.ts).
+  showRunningVersion(runningVersion(env), docsUrl(env));
   const logger = createLogger().child({ role: "web" });
   const connection = readAppDatabase(env);
   const database = openAppDatabase(connection, { applicationName: "tiehall web", logger, role: "web" });

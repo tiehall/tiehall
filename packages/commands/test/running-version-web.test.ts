@@ -16,7 +16,8 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // repository the image was built from, or to TIEHALL_SOURCE_URL when .env sets
 // it, as an operator who runs a modified server does. The admin page also
 // links each page of the user and admin docs, at the release's docs in that
-// repository (task 28.6; docs-pages.ts).
+// repository (task 28.6; docs-pages.ts), and every page's footer links the
+// docs folder there, for every person, not only admins.
 
 const RELEASE = {
   TIEHALL_VERSION: "1.3.0",
@@ -63,20 +64,24 @@ describe("the running version and its source", { timeout: 300_000 }, () => {
     const { web, cookie } = await webAppWith(RELEASE);
     try {
       const source = 'href="https://github.com/acme-oss/tiehall/tree/v1.3.0"';
+      const docs = '<a href="https://github.com/acme-oss/tiehall/tree/v1.3.0/docs">Documentation</a>';
       for (const path of ["/members", "/FE-1", "/admin"]) {
         const { status, footer } = await pageOf(web, path, cookie);
         expect(status, path).toBe(200);
         expect(footer, path).toContain("Tiehall 1.3.0");
         expect(footer, path).toContain(source);
+        expect(footer, path).toContain(docs);
       }
       // A visitor who is not signed in sees it too, on the sign-in page.
       expect((await pageOf(web, "/sign-in")).footer).toContain(source);
+      expect((await pageOf(web, "/sign-in")).footer).toContain(docs);
       // So does the page Next.js answers a path no route serves with, which it renders for each call too.
       for (const cookieOf of [undefined, cookie]) {
         const missing = await pageOf(web, "/no/such/page", cookieOf);
         expect(missing.status).toBe(404);
         expect(missing.footer).toContain("Tiehall 1.3.0");
         expect(missing.footer).toContain(source);
+        expect(missing.footer).toContain(docs);
       }
       // The admin page says which version runs, and where its source is.
       const admin = await pageOf(web, "/admin", cookie);
@@ -108,8 +113,12 @@ describe("the running version and its source", { timeout: 300_000 }, () => {
       const fork = 'href="https://git.acme.example/tiehall-fork"';
       for (const path of ["/members", "/FE-1", "/admin", "/no/such/page"]) {
         const { footer } = await pageOf(web, path, cookie);
-        expect(footer, path).toContain(fork);
-        expect(footer, path).not.toContain("github.com/acme-oss");
+        expect(footer, path).toContain(`<a ${fork}>Source code</a>`);
+        // The docs stay the public repository's, which the modified server is built on.
+        expect([...(footer ?? "").matchAll(/href="([^"]+)"/g)].map((match) => match[1]), path).toEqual([
+          "https://git.acme.example/tiehall-fork",
+          "https://github.com/acme-oss/tiehall/tree/v1.3.0/docs",
+        ]);
       }
       expect((await pageOf(web, "/no/such/page")).footer).toContain(fork);
       const admin = await pageOf(web, "/admin", cookie);

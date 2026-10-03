@@ -11,7 +11,9 @@ import type { Environment } from "./settings.ts";
 // (running-version.ts). A modified server's TIEHALL_SOURCE_URL names where
 // its source is, which need not lay its docs out as the public repository
 // does, so the docs links keep to the public repository the image was built
-// from, at the version the server is built on.
+// from, at the version the server is built on. Every page's footer links
+// the docs folder there too (html.ts), for every person who uses the install,
+// where the admin page links each page.
 
 export interface DocsPage {
   /** The page in the repository, under docs/. */
@@ -43,4 +45,10 @@ export interface DocsLink {
 export function docsLinks(env: Environment): DocsLink[] {
   const { repository, ref } = builtFrom(env);
   return DOCS_PAGES.map(({ path, title }) => ({ title, url: `${repository}/blob/${ref ?? "main"}/${path}` }));
+}
+
+/** The docs folder at the running version's docs, in the public repository the image was built from, which every page's footer links. */
+export function docsUrl(env: Environment): string {
+  const { repository, ref } = builtFrom(env);
+  return `${repository}/tree/${ref ?? "main"}/docs`;
 }

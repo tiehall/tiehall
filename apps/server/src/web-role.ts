@@ -1,6 +1,6 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { createLogger, openDatabase, routeConsoleTo, runningVersion, showRunningVersion, startSetup, startShutdown, type AppSettings, type Logger } from "@tiehall/commands";
+import { createLogger, docsUrl, openDatabase, routeConsoleTo, runningVersion, showRunningVersion, startSetup, startShutdown, type AppSettings, type Logger } from "@tiehall/commands";
 import { installRequestGuard } from "./request-guard.ts";
 import { TrustedProxies } from "./trusted-proxies.ts";
 
@@ -63,8 +63,8 @@ export async function runWebRole(settings: AppSettings, options: WebRoleOptions)
   process.env["NEXT_MANUAL_SIG_HANDLE"] = "true";
   const proxies = new TrustedProxies(settings.trustedProxies);
   await proxies.refresh();
-  // The pages the request guard answers itself carry the footer every page carries: the running version and its source.
-  showRunningVersion(runningVersion(process.env));
+  // The pages the request guard answers itself carry the footer every page carries: the running version, its source and its docs.
+  showRunningVersion(runningVersion(process.env), docsUrl(process.env));
   const guard = installRequestGuard({ proxies, url: settings.url });
   routeConsoleTo(logger);
 

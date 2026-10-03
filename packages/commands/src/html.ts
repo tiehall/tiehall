@@ -26,23 +26,31 @@ export const PAGE_HEADERS = {
 } as const;
 
 // The footer of every page (self-host-install: The running version links to
-// its source; design.md, Self-hosting decisions: S16): the running version and
-// a link to its source. The process that serves the pages sets it once, from
-// its settings, when it starts serving them (web.ts, and the web role's
-// request guard); a page rendered before, such as in a test that sets none,
-// has no footer.
-let footer: RunningVersion | undefined;
+// its source; design.md, Self-hosting decisions: S16): the running version, a
+// link to its source and a link to the docs of the running version
+// (docs-pages.ts), for every person who uses the install. The process that
+// serves the pages sets it once, from its settings, when it starts serving
+// them (web.ts, and the web role's request guard); a page rendered before,
+// such as in a test that sets none, has no footer.
 
-/** Sets the running version, which the footer of every page shows from then on, with the link to its source. */
-export function showRunningVersion(version: RunningVersion | undefined): void {
-  footer = version;
+/** What the footer shows: the running version with the link to its source, and where its docs are. */
+export interface Footer extends RunningVersion {
+  docsUrl?: string;
 }
 
-/** The footer's HTML: the running version and the link to its source; empty until a version is set. */
-export function footerHtml(version: RunningVersion | undefined = footer): string {
+let footer: Footer | undefined;
+
+/** Sets the running version, which the footer of every page shows from then on, with the link to its source and to its docs. */
+export function showRunningVersion(version: RunningVersion | undefined, docsUrl?: string): void {
+  footer = version === undefined ? undefined : { ...version, ...(docsUrl === undefined ? {} : { docsUrl }) };
+}
+
+/** The footer's HTML: the running version, the link to its source and the link to its docs; empty until a version is set. */
+export function footerHtml(version: Footer | undefined = footer): string {
   if (version === undefined) return "";
+  const docs = version.docsUrl === undefined ? "" : ` · <a href="${escapeHtml(version.docsUrl)}">Documentation</a>`;
   return `    <footer>
-      <p>${escapeHtml(`Tiehall ${version.version}`)} · <a href="${escapeHtml(version.sourceUrl)}">Source code</a></p>
+      <p>${escapeHtml(`Tiehall ${version.version}`)} · <a href="${escapeHtml(version.sourceUrl)}">Source code</a>${docs}</p>
     </footer>
 `;
 }
