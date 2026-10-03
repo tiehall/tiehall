@@ -18,9 +18,16 @@ const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 /** What a test source imports to start a child process, a browser or a container. */
 const STARTS_PROCESSES = /from\s+"(?:node:child_process|playwright-core|testcontainers)"/;
 
-/** The Vitest projects of the workspace, as the root vitest.config.ts lists them: every package under apps, packages, actions and tools. */
+/**
+ * The workspace's packages: every package directly under apps, packages,
+ * actions and tools. They are the Vitest projects the root vitest.config.ts
+ * lists, and tools/image-tests, which `pnpm test:image` runs on its own. The
+ * pathspecs are globs whose `*` stays within one folder, so the package.json
+ * files of the tests' fixtures, deeper down, are not packages.
+ */
 function projects(): string[] {
-  const files = execFileSync("git", ["ls-files", "apps/*/package.json", "packages/*/package.json", "actions/*/package.json", "tools/*/package.json"], {
+  const packages = ["apps", "packages", "actions", "tools"].map((folder) => `:(glob)${folder}/*/package.json`);
+  const files = execFileSync("git", ["ls-files", ...packages], {
     cwd: repoRoot,
     encoding: "utf8",
   });
@@ -54,6 +61,14 @@ function timeoutIn(config: string, name: "testTimeout" | "hookTimeout"): number 
   const match = new RegExp(`\\b${name}:\\s*([\\d_]+)`).exec(config);
   return match === null ? undefined : Number(match[1]!.replaceAll("_", ""));
 }
+
+describe("the workspace's packages the check reads", () => {
+  it("are the packages under apps, packages, actions and tools, without the package.json files of the tests' fixtures", () => {
+    const found = projects();
+    expect(found).toEqual(expect.arrayContaining(["apps/server", "packages/commands", "actions/contract", "tools/repo-checks", "tools/image-tests"]));
+    expect(found.filter((project) => project.split("/").length !== 2)).toEqual([]);
+  });
+});
 
 describe("the Vitest projects whose tests start browsers, child processes or containers", () => {
   it("are found: the ones with the Postgres container, the browsers and the repository's checks", () => {
