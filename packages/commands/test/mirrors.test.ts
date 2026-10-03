@@ -252,17 +252,37 @@ describe("the writes a mirror's comments tell", () => {
         "claimed",
       ),
     ).toEqual([
-      { through: 10, state: "in_progress", changed: true, question: false },
-      { through: 13, state: "needs_info", changed: true, question: true },
-      { through: 15, state: "needs_info", changed: false, question: false },
+      { through: 10, state: "in_progress", changed: true, question: false, moves: [], undone: false },
+      { through: 13, state: "needs_info", changed: true, question: true, moves: [], undone: false },
+      { through: 15, state: "needs_info", changed: false, question: false, moves: [], undone: false },
     ]);
   });
 
   it("follow a release that keeps a request waiting on its questions, which changes no state", () => {
     expect(writesOf([event(20, "t1", "request.released"), event(22, "t2", "request.released")], "needs_info")).toEqual([
-      { through: 20, state: "needs_info", changed: false, question: false },
-      { through: 22, state: "needs_info", changed: false, question: false },
+      { through: 20, state: "needs_info", changed: false, question: false, moves: [], undone: false },
+      { through: 22, state: "needs_info", changed: false, question: false, moves: [], undone: false },
     ]);
-    expect(writesOf([event(30, "t1", "request.released")], "in_progress")).toEqual([{ through: 30, state: "open", changed: true, question: false }]);
+    expect(writesOf([event(30, "t1", "request.released")], "in_progress")).toEqual([{ through: 30, state: "open", changed: true, question: false, moves: [], undone: false }]);
+  });
+
+  it("name the reassignment a write made, and whether it undid one", () => {
+    const fe = "00000000-0000-4000-8000-0000000000fe";
+    const mobile = "00000000-0000-4000-8000-0000000000ab";
+    expect(
+      writesOf(
+        [
+          event(40, "t1", "request.reassigned", { teamId: mobile, previousTeamId: fe }),
+          event(41, "t1", "request.state_changed", { state: "open", previousState: "in_progress" }),
+          event(44, "t2", "proposal.undone", { proposalId: requestId }),
+          event(45, "t2", "request.reassigned", { teamId: fe, previousTeamId: mobile }),
+          event(46, "t2", "request.state_changed", { state: "in_progress", previousState: "open" }),
+        ],
+        "in_progress",
+      ),
+    ).toEqual([
+      { through: 41, state: "open", changed: true, question: false, moves: [{ teamId: mobile, previousTeamId: fe }], undone: false },
+      { through: 46, state: "in_progress", changed: true, question: false, moves: [{ teamId: fe, previousTeamId: mobile }], undone: true },
+    ]);
   });
 });

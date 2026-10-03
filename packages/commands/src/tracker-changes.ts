@@ -42,7 +42,8 @@ import type { RequestRow } from "./request-views.ts";
 // GitHub, every close but one with the state_reason not_planned). It never
 // moves the request to done. When its team's mapping has the setting for
 // tracker "Done" proposals on, which is off until an admin turns it on, the
-// mirror is the one in the tracker of the request's target team now, the
+// mirror is the one in the tracker of the request's target team now, for
+// its key there, not one a reassignment left behind, the
 // close acts for a member of that team, mapped from the tracker account that
 // closed the issue, and the request's state allows a move to done (claimed,
 // in_progress or needs_info), the call creates a done proposal for that
@@ -80,9 +81,10 @@ function isTrackerDone(change: TrackerChange): boolean {
  * target team, whose mapping has the setting on, the member belongs to that
  * team, and the request's state allows done.
  */
-async function proposerOf(context: HandlerContext, request: RequestRow, mirrorTeamId: string): Promise<Member | undefined> {
+async function proposerOf(context: HandlerContext, request: RequestRow, mirror: { teamId: string; number: number | null }): Promise<Member | undefined> {
   const userId = context.caller.kind === "integration_event" ? context.caller.userId : undefined;
-  if (userId === undefined || mirrorTeamId !== request.targetTeamId) return undefined;
+  // Only the mirror that follows the request now: one a reassignment left behind is not its target team's.
+  if (userId === undefined || mirror.teamId !== request.targetTeamId || (mirror.number !== null && mirror.number !== request.number)) return undefined;
   const [mapping] = await context.tx
     .select({ doneProposals: trackerMappings.doneProposals })
     .from(trackerMappings)
@@ -101,7 +103,7 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
     if (found === undefined) throw new Refusal("record-not-found", "There is no such mirror issue.");
     const request = await lockRequestById(context, found.requestId);
     const [row] = await tx
-      .select({ issue: mirrors.issue, teamId: mirrors.teamId, tracker: mirrors.tracker, trackerState: mirrors.trackerState, expectedState: mirrors.expectedState })
+      .select({ issue: mirrors.issue, teamId: mirrors.teamId, number: mirrors.number, tracker: mirrors.tracker, trackerState: mirrors.trackerState, expectedState: mirrors.expectedState })
       .from(mirrors)
       .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)))
       .for("update");
@@ -110,7 +112,7 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
     const now: IssueState = { open: issue.open, closeReason: issue.open ? null : issue.closeReason, assignees: issue.assignees };
     const changes: TrackerChange[] = trackerChanges(known, row.expectedState as Pick<IssueState, "open" | "closeReason"> | null, now);
     const done = changes.some(isTrackerDone);
-    const proposer = done ? await proposerOf(context, request, row.teamId) : undefined;
+    const proposer = done ? await proposerOf(context, request, row) : undefined;
     if (changes.length > 0) {
       await context.write(async (writer) => {
         await writer.changesRequest(request.id);

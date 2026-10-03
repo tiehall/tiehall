@@ -2948,10 +2948,13 @@ export const trackerMappings = pgTable(
 // The mirror issues of requests (tracker-mirrors: A mirror is a projection of
 // the request; tracker-mirrors: Mirror writes are idempotent and never echo;
 // design.md, Design rules: Tracker mirrors; design.md, Technical decisions:
-// T16). One row per request and place a team's mapping names: the request,
-// the team whose tracker holds the issue, the tracker and the place in it,
-// and, once it exists, the tracker's reference of the issue, such as its
-// number in the repository. The mirror job writes the row, with a random
+// T16). One row per request, key and place a team's mapping names: the
+// request, the team whose tracker holds the issue and the request's number in
+// that team, the tracker and the place in it, and, once it exists, the
+// tracker's reference of the issue, such as its number in the repository. A
+// reassignment leaves the row of the old team's issue behind, marked away once
+// the issue got its notice and was closed (tracker-mirrors: Reassignment moves
+// the mirror); undoing it brings the request back to that row. The mirror job writes the row, with a random
 // marker, before it asks the tracker to create the issue, and the issue
 // carries the marker, so a create that is retried after the tracker made the
 // issue finds that issue instead of making a second one. The row then keeps
@@ -2999,10 +3002,25 @@ export const mirrors = pgTable(
     shownState: text("shown_state"),
     /** The comment under way: the last event it covers, the state it names, its marker, and when it was started. */
     pendingComment: jsonb("pending_comment"),
+    /**
+     * The request's number in the team when the mirror was made, which with
+     * the team's key is the key the issue mirrors: a request reassigned back
+     * to a team later gets a new number there, and with it a new mirror; an
+     * undone reassignment gives it back its number, and its mirror. Null for
+     * a mirror made before reassignments moved mirrors.
+     */
+    number: integer("number"),
+    /**
+     * Whether the issue follows the request no more, because a reassignment
+     * moved the request away from the team: the issue got the notice of it
+     * and was closed as not planned. An undone reassignment makes it follow
+     * the request again.
+     */
+    away: boolean("away").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
-    uniqueIndex("mirrors_request_place").on(table.orgId, table.requestId, table.teamId, table.tracker, table.target),
+    uniqueIndex("mirrors_request_place_number").on(table.orgId, table.requestId, table.teamId, table.number, table.tracker, table.target),
     uniqueIndex("mirrors_issue").on(table.orgId, table.tracker, table.target, table.issue).where(sql`${table.issue} IS NOT NULL`),
     foreignKey({
       name: "mirrors_request_fk",
@@ -3026,6 +3044,7 @@ export const mirrors = pgTable(
       sql`${table.shownState} IS NULL OR ${table.shownState} IN ('open', 'claimed', 'in_progress', 'needs_info', 'done', 'declined', 'withdrawn')`,
     ),
     check("mirrors_pending_comment_is_object", sql`${table.pendingComment} IS NULL OR jsonb_typeof(${table.pendingComment}) = 'object'`),
+    check("mirrors_number_positive", sql`${table.number} IS NULL OR ${table.number} > 0`),
   ],
 );
 

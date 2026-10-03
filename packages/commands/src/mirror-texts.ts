@@ -80,3 +80,36 @@ export function questionComment(input: { key: string; link: ServerText; state?: 
       : `A question on ${key} waits for an answer in Tiehall, and ${key} is now ${stateName(input.state)}: ${input.link}`
   ) as ServerText;
 }
+
+/**
+ * The comment on a mirror issue that a reassignment left behind
+ * (tracker-mirrors: Reassignment moves the mirror): the key the issue
+ * mirrored, the team the request is with now and its key there, and that the
+ * issue follows it no more; for a reassignment that was undone, which took the
+ * request away from the team of this issue, that the reassignment was undone.
+ */
+export function awayComment(input: { mirroredKey: string; key: string; team: string; link: ServerText; undone: boolean }): ServerText {
+  const mirrored = requestKey(input.mirroredKey);
+  const key = requestKey(input.key);
+  const team = teamKey(input.team);
+  return (
+    input.undone
+      ? `The reassignment that made this request ${mirrored} was undone in Tiehall: it is ${key} again, with team ${team}, and this issue no longer follows it: ${input.link}`
+      : `${mirrored} was reassigned to team ${team} in Tiehall, as ${key}, and this issue no longer follows it: ${input.link}`
+  ) as ServerText;
+}
+
+/**
+ * The comment on a mirror issue that follows its request again, once the
+ * reassignment that took the request away from its team was undone: the
+ * request's key, the team it had moved to, and the state it is in now.
+ */
+export function backComment(input: { key: string; from: string | undefined; state: RequestState; link: ServerText; undone: boolean }): ServerText {
+  const key = requestKey(input.key);
+  const state = stateName(input.state);
+  return (
+    input.undone && input.from !== undefined
+      ? `The reassignment of ${key} to team ${teamKey(input.from)} was undone in Tiehall: this issue follows ${key} again, which is ${state}: ${input.link}`
+      : `${key} is back with this issue's team in Tiehall, and this issue follows it again; it is ${state}: ${input.link}`
+  ) as ServerText;
+}

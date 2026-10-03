@@ -603,6 +603,13 @@
       "when": 1790986798794,
       "tag": "0085_add_installation_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790987226487,
+      "tag": "0086_move_mirrors_on_reassignment",
+      "breakpoints": true
     }
   ]
 }
