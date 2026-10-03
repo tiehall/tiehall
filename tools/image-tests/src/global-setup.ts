@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
-import { docker, dockerOk } from "./docker.ts";
+import { docker, dockerOk, foreignPlatformOf } from "./docker.ts";
 
 /** The tag of a local build, used when TIEHALL_IMAGE is not set. */
 export const LOCAL_IMAGE = "tiehall:image-tests";
@@ -22,6 +22,12 @@ export default function setup(project: TestProject): void {
   } else if (docker(["image", "inspect", image]).status !== 0) {
     dockerOk(["pull", "--quiet", image], 600);
   }
+  // An image built for another platform than the host's, such as CI's linux/amd64 image on an arm64 laptop, runs
+  // under emulation, and docker warns about it on standard error at every run, which the tests that expect a role
+  // to write nothing there would read as the role's. Every docker and Compose command the tests run asks for the
+  // image's platform instead, unless DOCKER_DEFAULT_PLATFORM already names one.
+  const platform = foreignPlatformOf(image);
+  if (platform !== undefined && (process.env["DOCKER_DEFAULT_PLATFORM"] ?? "") === "") process.env["DOCKER_DEFAULT_PLATFORM"] = platform;
   project.provide("image", image);
   // The image of the release before this one, or before the first release the image last built from main, for the
   // backup, upgrade and rollback tests: TIEHALL_PREVIOUS_IMAGE, which CI resolves with get-previous-image.sh.

@@ -22,6 +22,28 @@ export function dockerOk(args: string[], timeoutSeconds = 120): string {
   return run.stdout.trim();
 }
 
+/** The platform an image runs on, as os/architecture, or undefined when docker cannot say. */
+function platformOf(image: string, platform?: string): string | undefined {
+  const run = docker(["image", "inspect", ...(platform === undefined ? [] : ["--platform", platform]), "--format", "{{.Os}}/{{.Architecture}}", image]);
+  const found = run.stdout.trim();
+  return run.status === 0 && found !== "/" && found !== "" ? found : undefined;
+}
+
+/**
+ * The platform to run an image on when it is not the host's, such as
+ * linux/amd64 for the image CI builds on an arm64 host; undefined when the
+ * image runs on the host's own platform. Docker runs such an image under
+ * emulation and warns on standard error unless it is asked for the platform.
+ * An image pulled into Docker Desktop's containerd store is an index whose
+ * own os and architecture are empty, so it is asked for each platform.
+ */
+export function foreignPlatformOf(image: string): string | undefined {
+  const host = dockerOk(["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"]);
+  if (platformOf(image, host) === host) return undefined;
+  const own = platformOf(image) ?? ["linux/amd64", "linux/arm64"].find((platform) => platformOf(image, platform) === platform);
+  return own === undefined || own === host ? undefined : own;
+}
+
 /** A name that no other test run uses. */
 export function uniqueName(prefix: string): string {
   return `${prefix}-${randomBytes(4).toString("hex")}`;
