@@ -6,10 +6,12 @@ import { dirname, join, normalize } from "node:path";
 // 28.7; design.md, Decisions this change rests on: D38): its headings, the
 // section under a heading, its links, and whether each link resolves, so that
 // a public page never points at a file the repository does not hold, at a
-// heading a page lacks, or at the git-ignored planning folder. A link
-// resolves when it is a web or mail address, or when the file or folder it
-// names is in the repository, tracked or about to be, and the heading its
-// fragment names is a heading of that page, by the anchor GitHub gives it.
+// heading a page lacks, or at the git-ignored planning folder. A link is an
+// inline link, an HTML link or image, or the target of a link reference
+// definition, through which a reference-style link points. A link resolves
+// when it is a web or mail address, or when the file or folder it names is in
+// the repository, tracked or about to be, and the heading its fragment names
+// is a heading of that page, by the anchor GitHub gives it.
 
 export interface Heading {
   /** 1 for "#", 2 for "##" and so on. */
@@ -80,16 +82,44 @@ export function section(markdown: string, heading: string): string | undefined {
   return lines.slice(found.line, next === undefined ? lines.length : next.line - 1).join("\n");
 }
 
-/** The inline links of a Markdown text, outside fenced blocks and code spans, in order; images count as links. */
+/** An inline link or image: [text](target "title"). */
+const INLINE_LINK = /\[((?:[^\]\\]|\\.)*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+/** An HTML link, <a href="target">text</a>, on one line. */
+const HTML_LINK = /<a\b[^>]*?\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))[^>]*>(.*?)<\/a\s*>/gi;
+/** An HTML image, <img src="target" alt="text">. */
+const HTML_IMAGE = /<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))[^>]*>/gi;
+/** A link reference definition, [label]: target "title", which a reference-style link such as [text][label] uses; a footnote's [^1]: is none. */
+const REFERENCE_DEFINITION = /^ {0,3}\[((?:[^\]\\^]|\\.)(?:[^\]\\]|\\.)*)\]:\s*(?:<([^>\s]*)>|(\S+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
+
+/**
+ * The links of a Markdown text, outside fenced blocks and code spans, in
+ * order: inline links, HTML links and the targets of link reference
+ * definitions, through which reference-style links such as [text][label]
+ * point; images count as links.
+ */
 export function links(markdown: string): Link[] {
   return linesOutsideFences(markdown).flatMap(({ text, fenced }, index) => {
     if (fenced) return [];
+    const line = index + 1;
     const outsideCode = text.replace(/`+[^`]*`+/g, (code) => " ".repeat(code.length));
-    return [...outsideCode.matchAll(/\[((?:[^\]\\]|\\.)*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((match) => ({
-      text: match[1] ?? "",
-      target: match[2] ?? "",
-      line: index + 1,
-    }));
+    const definition = REFERENCE_DEFINITION.exec(outsideCode);
+    if (definition !== null) return [{ text: definition[1] ?? "", target: definition[2] ?? definition[3] ?? "", line }];
+    const found: (Link & { at: number })[] = [
+      ...[...outsideCode.matchAll(INLINE_LINK)].map((match) => ({ text: match[1] ?? "", target: match[2] ?? "", line, at: match.index })),
+      ...[...outsideCode.matchAll(HTML_LINK)].map((match) => ({
+        text: (match[4] ?? "").replace(/<[^>]*>/g, "").trim(),
+        target: match[1] ?? match[2] ?? match[3] ?? "",
+        line,
+        at: match.index,
+      })),
+      ...[...outsideCode.matchAll(HTML_IMAGE)].map((match) => ({
+        text: /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(match[0])?.slice(1).find((alt) => alt !== undefined) ?? "",
+        target: match[1] ?? match[2] ?? match[3] ?? "",
+        line,
+        at: match.index,
+      })),
+    ];
+    return found.sort((a, b) => a.at - b.at).map(({ text: linkText, target, line: at }) => ({ text: linkText, target, line: at }));
   });
 }
 

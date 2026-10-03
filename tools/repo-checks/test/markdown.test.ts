@@ -59,6 +59,31 @@ describe("the links of a page", () => {
     ]);
   });
 
+  it("include reference-style definitions and HTML links and images, outside fenced blocks and code spans", () => {
+    const page = [
+      "# A page",
+      "",
+      "See [the plan][plan], [the setup] [setup] and <a href=\"docs/install.md#the-setup-screen\">the install</a>, with <img src='docs/logo.svg' alt='logo'>.",
+      "Code: `<a href=\"in-code.md\">` and `[x]: in-code.md`.",
+      "",
+      "```md",
+      "[fenced]: fenced.md",
+      "<a href=\"fenced.md\">fenced</a>",
+      "```",
+      "",
+      "[plan]: private/docs/plan.md",
+      "  [Setup]: <docs/install.md#the-setup-screen> \"The setup screen\"",
+      "[site]: https://tiehall.com/",
+    ].join("\n");
+    expect(links(page).map(({ text, target, line }) => [text, target, line])).toEqual([
+      ["the install", "docs/install.md#the-setup-screen", 3],
+      ["logo", "docs/logo.svg", 3],
+      ["plan", "private/docs/plan.md", 11],
+      ["Setup", "docs/install.md#the-setup-screen", 12],
+      ["site", "https://tiehall.com/", 13],
+    ]);
+  });
+
   describe("that do not resolve", () => {
     let root: string;
 
@@ -93,6 +118,14 @@ describe("the links of a page", () => {
         ["docs/install.md#backups", "names the heading #backups, which docs/install.md does not have"],
         ["packages/cli/LICENSE#top", "names the heading #top in packages/cli/LICENSE, which is no Markdown page"],
         ["#nowhere", "names the heading #nowhere, which README.md does not have"],
+      ]);
+    });
+
+    it("are found in reference-style definitions and HTML links too", () => {
+      writeFileSync(join(root, "docs/refs.md"), "# Refs\n\nSee [the plan][plan] and <a href=\"../nowhere.md\">this</a>.\n\n[plan]: ../private/docs/plan.md\n");
+      expect(linkProblems(root, "docs/refs.md", new Set([...files, "docs/refs.md"])).map(({ target, problem }) => [target, problem])).toEqual([
+        ["../nowhere.md", "points to nowhere.md, which the repository does not hold"],
+        ["../private/docs/plan.md", "points to private/docs/plan.md, which the repository does not hold"],
       ]);
     });
 
