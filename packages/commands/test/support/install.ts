@@ -23,6 +23,7 @@ import {
   CONFIRM_REDIRECTS,
   CONFIRMATION_SUBJECTS,
   createEventWakeups,
+  openJobQueue,
   type ConfirmationStep,
   type Caller,
   type ConfirmRoute,
@@ -30,8 +31,11 @@ import {
   type Logger,
   type Execute,
   type InstallGitHub,
+  type DefinedJobType,
   type JobData,
   type JobOptions,
+  type JobQueue,
+  type JobSender,
   type RestHandler,
   type SecretBox,
   type WebCommands,
@@ -116,6 +120,11 @@ export async function startTestInstall(
     now?: () => Date;
     /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
     wait?: { holdMs?: number; shutdown?: AbortSignal };
+    /**
+     * Sends the jobs of these types to the real job queue, as the app role, so
+     * a worker the test starts runs them; the jobs then join no sentJobs.
+     */
+    jobTypes?: readonly DefinedJobType<JobData>[];
   } = {},
 ): Promise<TestInstall> {
   const migrationsFolder = fileURLToPath(new URL("../../../db/migrations/", import.meta.url));
@@ -137,18 +146,20 @@ export async function startTestInstall(
   const logger = createLogger({ write: () => {} });
   const confirmations = createConfirmationNonces({ secret });
   const sentJobs: { queue: string; data: JobData; startAfter?: Date; singletonKey?: string }[] = [];
-  const store = {
-    database: db,
-    jobs: {
-      send: async (_tx: unknown, queue: string, data: JobData, options: JobOptions = {}) =>
-        void sentJobs.push({
-          queue,
-          data,
-          ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }),
-          ...(options.singletonKey === undefined ? {} : { singletonKey: options.singletonKey }),
-        }),
-    },
+  const jobQueue: JobQueue | undefined =
+    options.jobTypes === undefined
+      ? undefined
+      : await openJobQueue({ connection: { connectionString: url.toString(), password: appRole.password }, jobTypes: options.jobTypes, logger });
+  const jobs: JobSender = jobQueue ?? {
+    send: async (_tx: unknown, queue: string, data: JobData, options: JobOptions = {}) =>
+      void sentJobs.push({
+        queue,
+        data,
+        ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }),
+        ...(options.singletonKey === undefined ? {} : { singletonKey: options.singletonKey }),
+      }),
   };
+  const store = { database: db, jobs };
   const subjects = CONFIRMATION_SUBJECTS;
   let installGitHub: InstallGitHub | undefined;
   const github: InstallGitHub = {
@@ -225,6 +236,7 @@ export async function startTestInstall(
       installGitHub = value;
     },
     async close() {
+      await jobQueue?.stop({ timeoutMs: 0 });
       await wakeups.close();
       await db.$client.end();
       await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);

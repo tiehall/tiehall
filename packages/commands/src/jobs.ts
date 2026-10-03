@@ -38,6 +38,16 @@ export interface JobOptions {
 export interface JobSender {
   /** Sends a job inside the caller's transaction. */
   send(tx: Transaction, queue: string, data: JobData, options?: JobOptions): Promise<void>;
+  /**
+   * Runs again, inside the caller's transaction, the job of a queue that runs
+   * one key at a time (JobSettings.policy key_strict_fifo) whose attempts
+   * were used up, so it moved to the dead-letter queue, such as a request's
+   * mirror job: the job gets one more attempt, at once, and the later jobs of
+   * its key, which it held back, run after it. Returns false when the key has
+   * no such job, as when it is being tried again already. A sender without a
+   * queue behind it, such as a test's, has none.
+   */
+  retryFailed?(tx: Transaction, queue: string, key: string): Promise<boolean>;
 }
 
 /** How the queue retries a kind of job. */

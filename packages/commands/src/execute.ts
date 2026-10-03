@@ -191,6 +191,14 @@ export interface HandlerContext extends OrgContext {
    */
   enqueue<D extends JobData>(type: JobType<D>, data: D, options?: JobOptions): Promise<void>;
   /**
+   * Runs again, in the call's transaction, the job of a type whose jobs run
+   * one key at a time, such as a request's mirror job, that used up its
+   * attempts and moved to the dead-letter queue: it gets one more attempt,
+   * once the call has committed. False when the key has no such job, as when
+   * it runs again already, or the process sends jobs to no queue.
+   */
+  retryFailed<D extends JobData>(type: JobType<D>, key: string): Promise<boolean>;
+  /**
    * Creates the proposal for a commitment the call makes on a request whose
    * row it has locked, instead of applying it; only an operation flagged as a
    * commitment may. The handler answers with what it returns.
@@ -496,6 +504,7 @@ export function createExecute(services: ExecuteServices): Execute {
               writeOptions,
             ),
           enqueue: (type, data, jobOptions) => store.jobs.send(context.tx, type.queue, data, jobOptions),
+          retryFailed: async (type, key) => (store.jobs.retryFailed === undefined ? false : store.jobs.retryFailed(context.tx, type.queue, key)),
           propose: async (request, commitment) => {
             if (!definition.commitment) throw new Error(`${commandId} is not flagged as a commitment, so it creates no proposal.`);
             const answer = await createProposal(handlerContext, request, commitment);

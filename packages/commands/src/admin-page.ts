@@ -74,13 +74,33 @@ function versionSection(version: RunningVersion | undefined): string[] {
   ];
 }
 
-/** The banners, first on the page, each with the page that says more. */
-export function bannersSection(banners: readonly Banner[]): string[] {
+/**
+ * The banners, first on the page, each with the page that says more, and its
+ * button, such as Retry for a failed mirror job: a form that posts the
+ * button's fields to its path on the install, with the session's CSRF token
+ * and the page to lead back to.
+ */
+export function bannersSection(banners: readonly Banner[], form: { csrf: string; back: string }): string[] {
   if (banners.length === 0) return [];
   return [
     '      <section aria-label="Alerts">',
-    ...banners.map((banner) => `        <p><strong>${escapeHtml(banner.text)}</strong> ${link(banner.link.href, banner.link.text)}</p>`),
+    ...banners.flatMap((banner) => [
+      `        <p><strong>${escapeHtml(banner.text)}</strong> ${link(banner.link.href, banner.link.text)}</p>`,
+      ...(banner.button === undefined ? [] : bannerForm(banner.button, form)),
+    ]),
     "      </section>",
+  ];
+}
+
+/** A banner's button, as a form that posts to the install. */
+function bannerForm(button: NonNullable<Banner["button"]>, form: { csrf: string; back: string }): string[] {
+  return [
+    `        <form method="post" action="${escapeHtml(button.action)}">`,
+    `          <input type="hidden" name="csrf" value="${escapeHtml(form.csrf)}">`,
+    ...Object.entries(button.fields).map(([name, value]) => `          <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`),
+    `          <input type="hidden" name="back" value="${escapeHtml(form.back)}">`,
+    `          <button type="submit">${escapeHtml(button.label)}</button>`,
+    "        </form>",
   ];
 }
 
@@ -141,7 +161,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: ADMIN_PATH,
     name: "admin",
-    async get(_query, { read }) {
+    async get(_query, { read, csrf }) {
       // The integrations are an admin's: a member's read of them is refused with 403, and the page shows nothing.
       const integration = await read<Integration>(getGitHubIntegration.id, {});
       const { installations } = await read<{ installations: Installation[] }>(listGitHubInstallations.id, {});
@@ -153,7 +173,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
           [
             "      <h1>Admin</h1>",
             adminNav(),
-            ...bannersSection(banners),
+            ...bannersSection(banners, { csrf, back: ADMIN_PATH }),
             ...versionSection(options.version),
             ...backupsSection(status),
             ...githubSection(integration, installations),

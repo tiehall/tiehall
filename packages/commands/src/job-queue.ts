@@ -82,6 +82,7 @@ export interface JobQueueOptions {
 export interface JobQueue extends JobSender {
   /** The pg-boss instance, for the worker in this package. */
   readonly boss: PgBoss;
+  retryFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string): Promise<boolean>;
   /**
    * Stops taking jobs, gives the active ones up to the timeout to finish, then
    * releases the rest, which run again once a worker starts, and closes the
@@ -130,6 +131,18 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
         ...(options.singletonKey === undefined ? {} : { singletonKey: options.singletonKey }),
       });
     },
+    async retryFailed(tx, queue, key) {
+      const db = fromDrizzle(tx, sql);
+      // A queue that runs one key at a time holds at most one failed job per key, which holds back the key's later jobs.
+      const failed = (await boss.findJobs(queue, { key, db })).filter(({ state }) => state === "failed");
+      if (failed.length === 0) return false;
+      await boss.retry(
+        queue,
+        failed.map(({ id }) => id),
+        { db },
+      );
+      return true;
+    },
     async stop({ timeoutMs = 10_000 } = {}) {
       await boss.stop({ graceful: true, timeout: timeoutMs, close: true });
     },
@@ -137,21 +150,25 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
 }
 
 /**
- * A job sender that opens its queue when it first sends a job, as the web
- * role's does, and opens it again on the next send when opening it failed. It
- * passes each job's options on, such as the key a job runs under, which a
- * queue that runs one key at a time refuses a job without, and when a job may
- * start.
+ * A job sender that opens its queue when it first sends a job, or runs a
+ * failed one again, as the web role's does, and opens it again on the next
+ * call when opening it failed. It passes each job's options on, such as the
+ * key a job runs under, which a queue that runs one key at a time refuses a
+ * job without, and when a job may start.
  */
 export function lazyJobSender(open: () => Promise<JobQueue>): JobSender {
   let queue: Promise<JobQueue> | undefined;
+  const opened = () =>
+    (queue ??= open().catch((error: unknown) => {
+      queue = undefined;
+      throw error;
+    }));
   return {
     async send(tx, name, data, options) {
-      queue ??= open().catch((error: unknown) => {
-        queue = undefined;
-        throw error;
-      });
-      await (await queue).send(tx, name, data, options);
+      await (await opened()).send(tx, name, data, options);
+    },
+    async retryFailed(tx, name, key) {
+      return (await opened()).retryFailed(tx, name, key);
     },
   };
 }

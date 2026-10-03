@@ -36,6 +36,7 @@ import { PULL_REQUEST_LINK_HANDLERS } from "./pull-request-links.ts";
 import { REQUEST_PAGE_HANDLERS } from "./request-pages.ts";
 import { REQUEST_HANDLERS } from "./requests.ts";
 import { TEAM_HANDLERS } from "./teams.ts";
+import { MIRROR_FAILURE_HANDLERS } from "./mirror-failures.ts";
 import { TRACKER_CHANGE_HANDLERS } from "./tracker-changes.ts";
 import { TRACKER_MAPPING_HANDLERS } from "./tracker-mappings.ts";
 import { UPDATE_HANDLERS } from "./updates.ts";
@@ -89,4 +90,5 @@ export const HANDLERS: Handlers = {
   ...CONTRACT_FAN_OUT_HANDLERS,
   ...TRACKER_MAPPING_HANDLERS,
   ...TRACKER_CHANGE_HANDLERS,
+  ...MIRROR_FAILURE_HANDLERS,
 };

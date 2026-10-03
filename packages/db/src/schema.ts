@@ -3081,6 +3081,35 @@ export const trackerChangeRecords = pgTable(
   ],
 );
 
+// The requests whose mirror job used up its attempts and moved to the
+// dead-letter queue (tracker-mirrors: Failed mirror jobs are shown with a
+// Retry button). One row per request, which the worker writes when the job
+// reaches the dead-letter queue, and which a banner in the web UI shows, with
+// a Retry button, to the admins and the members of the request's target team.
+// Retry records when it was pressed; the row goes when a mirror job of the
+// request next succeeds.
+export const mirrorFailures = pgTable(
+  "mirror_failures",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    requestId: uuid("request_id").notNull(),
+    /** When the job's last attempt failed and it moved to the dead-letter queue. */
+    failedAt: timestamp("failed_at", { withTimezone: true }).notNull(),
+    /** When someone pressed Retry since; null until then. */
+    retriedAt: timestamp("retried_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.requestId] }),
+    foreignKey({
+      name: "mirror_failures_request_fk",
+      columns: [table.orgId, table.requestId],
+      foreignColumns: [requests.orgId, requests.id],
+    }),
+  ],
+);
+
 // The repositories whose GitHub mirror issues the 15-minute reconciliation
 // read (tracker-mirrors: Reconciliation catches missed changes; design.md,
 // Design rules: Tracker mirrors). One row per repository, by GitHub's id, with

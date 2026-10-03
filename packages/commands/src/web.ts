@@ -8,6 +8,7 @@ import { resourceMetadataUrlOf, type AgentClientOptions } from "./authorization-
 import { createAdminRoute } from "./admin-page.ts";
 import { createApisRoute } from "./apis-page.ts";
 import { createTeamApisRoute } from "./team-page-actions.ts";
+import { createMirrorRetryRoute } from "./mirror-failures.ts";
 import { showRunningVersion } from "./html.ts";
 import { runningVersion } from "./running-version.ts";
 import { createInvitesRoute, createMembersRoute, createPersonalAccessTokenSettingsRoute, createSignInPolicyRoute, createTeamsRoute } from "./admin-pages.ts";
@@ -384,6 +385,15 @@ export function tokensRoute(env: Environment): PageRoute {
 /** The target of the forms of a team's page, /teams/apis, which declare and remove the team's declarations, for the signed-in member's web session. */
 export function teamApisRoute(env: Environment): PageRoute {
   return pageOf("team APIs", env, createTeamApisRoute);
+}
+
+/**
+ * The target of the Retry button of a failed mirror job's banner,
+ * /mirrors/retry, which runs the job again, for the signed-in member's web
+ * session.
+ */
+export function mirrorRetryRoute(env: Environment): PageRoute {
+  return pageOf("mirror retry", env, createMirrorRetryRoute);
 }
 
 /** The APIs page of the admin UI under /admin/apis, for the signed-in admin's web session. */

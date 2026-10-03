@@ -6,6 +6,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { ServerText } from "./email.ts";
 import { createGitHubIssues } from "./github-issues.ts";
 import { createLogger, type Logger } from "./log.ts";
+import { clearMirrorFailure, recordMirrorFailure } from "./mirror-failures.ts";
 import { mirrorRequest } from "./mirror-jobs.ts";
 import { mirrorSummary, mirrorTitle, questionComment, stateComment, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -558,7 +559,12 @@ export async function adaptersOf(services: Pick<WorkerServices, "database" | "gi
   return app === undefined ? {} : { github: createGitHubIssues({ app, database: services.database }) };
 }
 
-/** The worker's mirror job: brings one request's mirror issue up to date. */
+/**
+ * The worker's mirror job: brings one request's mirror issue up to date, and
+ * then forgets a failed mirror job of the request, whose banner goes. A job
+ * that used up its attempts reaches the dead-letter queue, which the worker
+ * works to record it for its banner (mirror-failures.ts).
+ */
 export const mirrorRequests: WorkerJob<{ requestId: string }> = {
   type: mirrorRequest,
   concurrency: 4,
@@ -566,9 +572,13 @@ export const mirrorRequests: WorkerJob<{ requestId: string }> = {
     if (services.installUrl === undefined) throw new Error("The worker gives this job no install URL to link the request with.");
     try {
       await syncMirror({ database: services.database, adapters: await adaptersOf(services), installUrl: services.installUrl }, job.data.requestId);
+      await clearMirrorFailure(services.database, job.data.requestId);
     } catch (error) {
       // Before setup completes there is no request to mirror.
       if (!(error instanceof SetupRequiredError)) throw error;
     }
+  },
+  async deadLetter(job, { database, now }) {
+    await recordMirrorFailure(database, job.data.requestId, now());
   },
 };

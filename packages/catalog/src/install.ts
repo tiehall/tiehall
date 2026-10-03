@@ -6,7 +6,8 @@ import { defineCommand } from "./command.ts";
 // S11): when the last backup finished, as backup.sh recorded it on the host,
 // and whether the page warns because none has finished yet, or none in the
 // last 7 days; and the banners of the web UI about problems with the
-// integrations (tracker-mirrors: Broken integrations are surfaced; design.md,
+// integrations (tracker-mirrors: Broken integrations are surfaced;
+// tracker-mirrors: Failed mirror jobs are shown with a Retry button; design.md,
 // Decisions this change rests on: D28 #41, #83). Only the web UI reads them.
 
 /** How many days may pass after the last backup before the admin page warns. */
@@ -43,12 +44,18 @@ export const banner = z.object({
   text: z.string(),
   /** The page that says more, on the install. */
   link: z.object({ href: z.string(), text: z.string() }),
+  /**
+   * A button that acts on the problem from the banner, such as Retry for a
+   * failed mirror job: a form that posts these fields to this path on the
+   * install, with the session's CSRF token.
+   */
+  button: z.object({ label: z.string(), action: z.string(), fields: z.record(z.string(), z.string()) }).optional(),
 });
 
 export const getBanners = defineCommand({
   id: "install.get_banners",
   summary:
-    "The banners the web UI shows you: the problems with the install's integrations that you may act on. Admins see every one; a team's members see those of the integrations their team's mirrors go through.",
+    "The banners the web UI shows you: the problems with the install's integrations that you may act on. Admins see every one; a team's members see those of the integrations their team's mirrors go through, and the failed mirror jobs of their team's requests.",
   input: z.object({}),
   output: z.object({ banners: z.array(banner) }),
   scopes: [],

@@ -20,15 +20,23 @@ import type { OrgContext } from "./with-org.ts";
 // the request's id), so two jobs never write the same mirror issue together,
 // and every mirror of the request is a mirror of that one key. Other
 // requests' jobs run beside them. A failing job is tried 5 times over about
-// an hour, as every integration job is, then moves to the dead-letter queue
-// (design.md, Decisions this change rests on: D28 #83).
+// an hour, then moves to the dead-letter queue (tracker-mirrors: Failed
+// mirror jobs are shown with a Retry button; design.md, Decisions this change
+// rests on: D28 #83): each next attempt comes a fixed 14 minutes after the
+// one before failed, with no backoff, whose random spread would carry the
+// fifth attempt past the hour, and an attempt counts as failed after 2
+// minutes at the most. So the fifth attempt comes 56 minutes after the first
+// when each attempt fails at once, and 64 when each runs until it expires:
+// between 50 and 70 minutes after the first, as the rule wants. A job in the
+// dead-letter queue is shown with a Retry button (mirror-failures.ts), and
+// holds back the request's later jobs until it runs again.
 
 /** A mirror job: bring the request's mirror issue up to date with the request as it is now. */
 export const mirrorRequest = defineJobType<{ requestId: string }>("mirror.sync", 1, {
   retryLimit: 4,
-  retryDelaySeconds: 240,
-  retryBackoff: true,
-  expireInSeconds: 300,
+  retryDelaySeconds: 14 * 60,
+  retryBackoff: false,
+  expireInSeconds: 120,
   policy: "key_strict_fifo",
 });
 

@@ -143,4 +143,23 @@ export const recordTrackerChange = defineCommand({
   stability: "alpha",
 });
 
-export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, setDoneProposals, removeTrackerMapping, recordTrackerChange];
+/**
+ * Retry for a request's mirror job that used up its attempts and moved to the
+ * dead-letter queue (tracker-mirrors: Failed mirror jobs are shown with a
+ * Retry button): the job runs again, and the banner about it goes once a
+ * mirror job of the request succeeds. The admins and the members of the
+ * request's target team, who see the banner, may press it, in the web UI.
+ */
+export const retryMirrorJob = defineCommand({
+  id: "mirrors.retry_job",
+  summary: "Run again a request's mirror job that failed until it moved to the dead-letter queue.",
+  input: z.object({ requestId: z.uuid() }),
+  output: z.object({ requestId: z.uuid() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const MIRROR_COMMANDS = [listTrackerMappings, mapIntakeRepository, setMirrorOnOpen, setDoneProposals, removeTrackerMapping, recordTrackerChange, retryMirrorJob];

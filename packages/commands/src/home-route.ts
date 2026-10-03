@@ -29,7 +29,10 @@ import { csrfTokenFor } from "./web-writes.ts";
 // session it read, when the read renewed it (sign-in: Signing out and ending
 // sessions; session-renewal.ts). Above the links it shows the banners the
 // signed-in member may act on, such as a problem with an integration to an
-// admin (tracker-mirrors: Broken integrations are surfaced; admin-alerts.ts).
+// admin (tracker-mirrors: Broken integrations are surfaced; admin-alerts.ts),
+// or a failed mirror job of their team's request, whose Retry button is a
+// form that carries the session's CSRF token (tracker-mirrors: Failed mirror
+// jobs are shown with a Retry button; mirror-failures.ts).
 
 export interface HomeRouteOptions {
   /**
@@ -63,7 +66,7 @@ export function createHomeRoute(options: HomeRouteOptions): HomeRoute {
         htmlPage(
           "Tiehall",
           `      <h1>Tiehall</h1>
-${bannersSection(banners).map((line) => `${line}\n`).join("")}      <p>You are signed in.</p>
+${bannersSection(banners, { csrf, back: "/" }).map((line) => `${line}\n`).join("")}      <p>You are signed in.</p>
       <p><a href="${INBOX_PATH}">Inbox</a></p>
       <p><a href="${EMAIL_SETTINGS_PATH}">Email settings</a></p>
       <p><a href="${REQUEST_LISTS_PATH}">Requests</a></p>

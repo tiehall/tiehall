@@ -209,6 +209,7 @@ export {
 export { REDELIVERY_ASKS, redeliverFailedDeliveries, redeliverGitHubDeliveries, type RedeliveryOptions } from "./github-redelivery.ts";
 export { changeKeyOf, polledDeliveryId, pullRequestChangeKey } from "./github-changes.ts";
 export { changesMirror, mirrorRequest, wakeMirror } from "./mirror-jobs.ts";
+export { clearMirrorFailure, createMirrorRetryRoute, MIRROR_RETRY_PATH, mirrorFailureBanners, recordMirrorFailure } from "./mirror-failures.ts";
 export { commentMarkerLine, createGitHubIssues, issueBody, markerLine, MirrorPlaceUnavailableError, type GitHubIssuesOptions } from "./github-issues.ts";
 export { mirrorSummary, mirrorTitle, questionComment, stateComment, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
 export {

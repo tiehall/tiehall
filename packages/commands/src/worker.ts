@@ -57,6 +57,13 @@ export interface WorkerJob<D extends JobData> {
   concurrency?: number;
   /** A cron expression, in UTC, on which the worker schedules a job of this type with no data. */
   schedule?: string;
+  /**
+   * Runs once for each job of this type that used up its attempts and moved
+   * to the dead-letter queue, with that job's data, such as to show it to the
+   * people who can retry it; a type without it leaves its dead letters in the
+   * queue, for an operator to read.
+   */
+  deadLetter?(job: RunningJob<D>, services: WorkerServices): Promise<void>;
 }
 
 export interface WorkerOptions {
@@ -157,6 +164,30 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           }
         },
       );
+      const deadLetter = job.deadLetter;
+      if (deadLetter !== undefined) {
+        const letters = job.type.deadLetterQueue;
+        await queue.boss.work<JobData>(
+          letters,
+          {
+            batchSize: 1,
+            ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds }),
+          },
+          async ([running]) => {
+            if (running === undefined) return;
+            active.set(running.id, letters);
+            try {
+              await deadLetter.call(job, { id: running.id, queue: letters, data: running.data, signal: running.signal }, services);
+            } catch (error) {
+              logger.error("worker: a dead letter's job failed", { queue: letters, jobId: running.id, ids: idsOf(running.data), error });
+              throw error;
+            } finally {
+              active.delete(running.id);
+              if (stopping && running.signal.aborted) released.set(running.id, letters);
+            }
+          },
+        );
+      }
       if (job.schedule !== undefined) {
         // Once a day at most is missed while the install is down; the next start sends it once.
         await queue.boss.schedule(name, job.schedule, {}, { tz: "UTC", missed: "once" });
@@ -167,10 +198,9 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     await services.database.$client.end();
     throw error;
   }
-  const count = options.jobs.length;
-  logger.info(`worker: started, working ${count} queue${count === 1 ? "" : "s"}`, {
-    queues: options.jobs.map(({ type }) => type.queue),
-  });
+  const queues = options.jobs.flatMap(({ type, deadLetter }) => (deadLetter === undefined ? [type.queue] : [type.queue, type.deadLetterQueue]));
+  const count = queues.length;
+  logger.info(`worker: started, working ${count} queue${count === 1 ? "" : "s"}`, { queues });
   return {
     async stop() {
       if (stopping) return;

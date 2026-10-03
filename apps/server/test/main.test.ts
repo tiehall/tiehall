@@ -139,7 +139,8 @@ describe("a role with a trial URL and secrets in files", () => {
     expect(run.code).toBe(0);
     expect(logLines(run.stdout).map(({ msg }) => msg)).toEqual([
       expect.stringMatching(/^tiehall worker: starting as uid/),
-      `worker: started, working ${WORKER_JOBS.length} queues`,
+      // Each job type's queue, and the dead-letter queue of each type that works its own.
+      `worker: started, working ${WORKER_JOBS.length + WORKER_JOBS.filter(({ deadLetter }) => deadLetter !== undefined).length} queues`,
       "worker: stopped",
     ]);
     expect(run.stdout).not.toContain(appRole.password);

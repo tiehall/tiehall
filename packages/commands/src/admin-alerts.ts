@@ -6,6 +6,8 @@ import { fanOutBanner, waitingFanOuts } from "./contract-fan-out.ts";
 import { apiNameText, CONTRACT_FAN_OUT_ALERT, countText, GITHUB_WEBHOOK_ALERT, installLink, repositoryText, teamKeysText, type Mailer, type ServerText } from "./email.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { defineJobType } from "./jobs.ts";
+import type { Member } from "./members.ts";
+import { mirrorFailureBanners } from "./mirror-failures.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
 
@@ -27,6 +29,11 @@ import type { WorkerJob } from "./worker.ts";
 // see it once the GitHub Issues mirror maps teams (group 24). The write that
 // records the give-up when none is recorded starts the email to the admins
 // (github-mode.ts), so later give-ups while the banner shows start none.
+//
+// The admins and the members of a request's target team also see a banner,
+// with a Retry button, for each of the team's requests whose mirror job failed
+// until it moved to the dead-letter queue (tracker-mirrors: Failed mirror
+// jobs are shown with a Retry button; mirror-failures.ts); it sends no email.
 //
 // The admins also see a banner for each contract-change fan-out that waits for
 // an admin's confirmation (agent-safety: One PR reaches at most 10 consumer
@@ -56,7 +63,8 @@ function pollingSentence(polling: boolean): string {
 }
 
 /** The banners the web UI shows the member this call acts for: every one to an admin. */
-export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, role: string | undefined): Promise<Banner[]> {
+export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, member: Pick<Member, "userId" | "role"> | undefined): Promise<Banner[]> {
+  const role = member?.role;
   const banners: Banner[] = [];
   const webhook = await githubWebhookProblem(context);
   if (webhook !== undefined && role === "admin") {
@@ -69,11 +77,12 @@ export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, role
     });
   }
   if (role === "admin") for (const fanOut of await waitingFanOuts(context)) banners.push(fanOutBanner(fanOut));
+  banners.push(...(await mirrorFailureBanners(context, member)));
   return banners;
 }
 
 export const ADMIN_ALERT_HANDLERS: Handlers = {
-  [getBanners.id]: defineHandler(getBanners, async (_input, context) => ({ banners: await bannersFor(context, context.member?.role) })),
+  [getBanners.id]: defineHandler(getBanners, async (_input, context) => ({ banners: await bannersFor(context, context.member) })),
 };
 
 export interface AdminAlertEmailData extends Record<string, unknown> {
