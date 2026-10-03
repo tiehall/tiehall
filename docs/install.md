@@ -192,16 +192,18 @@ After a contract step has run, the previous image refuses to start: its `migrate
 
 The image's `admin` role runs two commands on the host, without the web UI, connected as the app role. Each run is recorded in the activity log, naming the command.
 
+Each command runs with `--no-deps`, so Compose starts nothing else first: without it, `docker compose run` would run the migrate step before the command, and a migrate step that fails, as after an upgrade that went wrong, would stop the command too. The command needs the install's database running; if it is not, start it alone with `docker compose up -d postgres`.
+
 To make a member an admin, for example when nobody can sign in as an admin any more, name their GitHub login:
 
 ```sh docs-test=operator-grant
-docker compose run --rm app admin grant <github-login>
+docker compose run --rm --no-deps app admin grant <github-login>
 ```
 
 To create the GitHub App again, for example after its credentials leaked or it was deleted, reopen the setup screen's App step. The command prints a new setup code; enter it at `TIEHALL_URL/setup`, create and install the new App, and sign in with GitHub as an admin, which closes the step. Until a new App is created there, the install keeps serving its members with the App in use. The new App replaces the old one, whose installations are no longer connected; delete the old App in its settings on GitHub.
 
 ```sh docs-test=operator-reopen
-docker compose run --rm app admin setup reopen
+docker compose run --rm --no-deps app admin setup reopen
 ```
 
 ## What an install connects to

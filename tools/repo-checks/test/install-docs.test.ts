@@ -136,6 +136,17 @@ describe("the install docs", () => {
     for (const phrase of ["TIEHALL_DATABASE_OWNER_URL=", "TIEHALL_DATABASE_APP_URL=", "Postgres 17 or later"]) expect(flat).toContain(phrase);
   });
 
+  // `docker compose run` starts the service's dependencies first, the migrate step among them, so an admin command run
+  // while the migrate step fails, as after an upgrade gone wrong, would stop there: the commands on the host run with
+  // --no-deps, against the database the install already runs.
+  it("run the commands on the host with --no-deps, against the running database, so a failing migrate step does not stop them", () => {
+    const commands = installDocsCommands(root);
+    expect(commands.get("operator-grant")?.text).toBe("docker compose run --rm --no-deps app admin grant <github-login>");
+    expect(commands.get("operator-reopen")?.text).toBe("docker compose run --rm --no-deps app admin setup reopen");
+    const host = section("Commands on the host").replace(/\s+/g, " ");
+    for (const phrase of ["`--no-deps`", "the migrate step", "docker compose up -d postgres"]) expect(host).toContain(phrase);
+  });
+
   it("cover the setup code, the App and the first admin", () => {
     const setup = section("The setup screen").replace(/\s+/g, " ");
     expect(installDocsCommands(root).get("install-setup-code")?.text).toBe("docker compose logs app");

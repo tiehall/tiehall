@@ -3,8 +3,8 @@ import { grantAdmin, isGitHubLogin, openDatabase, readAppSettings, reopenSetup, 
 // The admin role (self-host-install: Operator commands on the host; design.md,
 // Self-hosting decisions: S3): the commands an operator runs on the host, for
 // example
-//   docker compose run --rm app admin grant dana-gh
-//   docker compose run --rm app admin setup reopen
+//   docker compose run --rm --no-deps app admin grant dana-gh
+//   docker compose run --rm --no-deps app admin setup reopen
 // `admin grant` makes a member an admin; `setup reopen` reopens the setup
 // screen's GitHub App step and prints a new setup code, the one secret this
 // role prints, for the operator to enter on the setup screen.
