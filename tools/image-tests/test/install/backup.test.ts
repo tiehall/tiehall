@@ -179,7 +179,10 @@ describe("backup.sh and restore.sh", () => {
     expect(install.sql("SELECT count(*) FROM backups")).toBe("1");
   });
 
-  it("brings a dump from the previous release's image, or before the first release the image last built from main, up to date with migrate", async () => {
+  // The previous image may hold every migration this one holds, as on a pull request that adds none: its dump then
+  // needs no migration, so the test restores it and reports itself skipped, rather than pass without the upgrade
+  // it is about.
+  it("brings a dump from the previous release's image, or before the first release the image last built from main, up to date with migrate", async (context) => {
     expect(previousImage, "Set TIEHALL_PREVIOUS_IMAGE to the previous release's image, or the image last built from main").not.toBe("");
     const previous = await started(previousImage, "tiehall-backup-previous");
     const { token, requestKey, requestTitle } = await seed(previous);
@@ -197,7 +200,10 @@ describe("backup.sh and restore.sh", () => {
     // The migrate step applied this release's newer migrations to the older dump before the app started.
     const journal = JSON.parse(readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8")) as { entries: unknown[] };
     expect(Number(install.sql("SELECT count(*) FROM tiehall_migrate.applied_migrations"))).toBe(journal.entries.length);
-    expect(journal.entries.length).toBeGreaterThanOrEqual(appliedBefore);
     expect(await readRequest(install, token, requestKey)).toEqual({ status: 200, title: requestTitle });
+    if (appliedBefore === journal.entries.length) {
+      context.skip(`the previous image holds every one of this image's ${appliedBefore} migrations, so its dump needed none`);
+    }
+    expect(appliedBefore).toBeLessThan(journal.entries.length);
   });
 });
