@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CATALOG } from "@tiehall/catalog";
 import { describe, expect, it } from "vitest";
 import { INSTALL_DOCS } from "../src/docs-commands.ts";
 import { headings, linkProblems, section } from "../src/markdown.ts";
@@ -56,6 +57,35 @@ describe("the security and trust docs", () => {
     ]) {
       expect(text, phrase).toContain(phrase);
     }
+  });
+
+  it("name the changes the confirmation step guards as the catalog does, and say that changing who belongs to a team is not among them", () => {
+    const text = flat(page, "What the confirmation step does not prove");
+    const confirm = new Map(CATALOG.commands.map(({ id, confirm }) => [id, confirm]));
+    // What the page names among the confirmations, and the commands that take them.
+    const named: [string, string][] = [
+      ["a role change", "members.change_role"],
+      ["a member's removal", "members.remove"],
+      ["an invite", "invites.create"],
+      ["the sign-in policy", "settings.set_sign_in_policy"],
+      ["the rules for personal access tokens", "settings.set_personal_access_tokens"],
+      ["the daily budget of agent writes", "settings.set_write_budget"],
+      ["a new personal access token", "personal_access_tokens.create"],
+      ["the approval of an agent client", "agent_clients.approve"],
+      ["connecting GitHub", "github.connect_installation"],
+      ["changing its App's key or webhook secret", "github.upload_private_key"],
+      ["changing its App's key or webhook secret", "github.store_webhook_secret"],
+      ["registering an API", "apis.register"],
+      ["exporting the activity log", "activity_log.export"],
+    ];
+    for (const [phrase, command] of named) {
+      expect(text, phrase).toContain(phrase);
+      expect(confirm.get(command), command).toBe(true);
+    }
+    // Team membership decides whose inbox a team's requests reach and who gives a team's side of a commitment.
+    expect(text).toContain("An admin adds people to a team or takes them out of it without the confirmation step");
+    for (const command of ["teams.add_member", "teams.remove_member"]) expect(confirm.get(command), command).toBe(false);
+    expect(text).not.toContain("every change to who may do what");
   });
 
   it("say which confirmations give a receipt, and where the others show: receipts are for commitments and undos only (requests: Receipts)", () => {
