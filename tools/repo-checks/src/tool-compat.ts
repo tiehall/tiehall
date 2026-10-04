@@ -21,8 +21,23 @@ import { runOnDocuments } from "./oasdiff.ts";
 //   days ahead, as its operation would be;
 // - a stable tool only gains things: any breaking change fails, deprecated or
 //   not, so the new behavior ships under a new tool name, and the old tool is
-//   removed only on or after a sunset announced at least 180 days ahead;
+//   removed only on or after a sunset announced at least 180 days ahead, which
+//   the six months below make longer;
 // - an alpha tool changes freely, and a tool's level never goes down.
+// A breaking change to the tool of a stable operation adds a new tool name
+// and keeps the old tool for at least six months, so the check also holds a
+// stable tool to six calendar months, a little more than the 180 days oasdiff
+// asks of a stable operation (public-api: MCP tools follow the same
+// compatibility rules):
+// - a deprecation of a stable tool that is new or changes, a sunset added to
+//   one included, sets its sunset at least six months after the later of the
+//   deprecation's day and today;
+// - a stable tool is removed only once it was deprecated with a sunset, and
+//   at least six months after the deprecation's day;
+// - a new tool may not take the name of a stable tool that an earlier
+//   snapshot on the base branch held, in a shape that breaks it: oasdiff
+//   compares the two as it compares any tool, so the same tool may come back,
+//   and a breaking change gets a new name instead.
 // A tool the merge base's snapshot records no level for is read as alpha: the
 // snapshot recorded no levels before this check existed, when every tool's
 // operation was alpha. The api-breaking label lets a break through only with a
@@ -34,12 +49,17 @@ import { runOnDocuments } from "./oasdiff.ts";
 export const TOOL_SNAPSHOT = "mcp/tools.json";
 const CHANGELOG = "openapi/changelog.json";
 
+/** The calendar months a stable tool stays after its deprecation, at least. */
+export const STABLE_TOOL_MONTHS = 6;
+
 /** A tool as the snapshot records it. */
 interface SnapshotTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
+  /** The id of the operation the tool runs; snapshots written before it was recorded have none. */
+  operationId?: string;
   stability?: string;
   deprecated?: { since: string; sunset?: string };
 }
@@ -55,7 +75,10 @@ export class ToolSnapshotError extends Error {
  * mcp/tools.json when the snapshot cannot be read.
  */
 export function toolDocument(snapshot: string): string {
-  const tools = parseSnapshot(snapshot);
+  return toolsDocument(parseSnapshot(snapshot));
+}
+
+function toolsDocument(tools: readonly SnapshotTool[]): string {
   const paths: Record<string, unknown> = {};
   for (const tool of tools) {
     paths[`/tools/${tool.name}`] = {
@@ -110,12 +133,36 @@ function isDay(text: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00Z`).toISOString().startsWith(text);
 }
 
-/** Compares a revision of the snapshot with its base, both as JSON text, by the notice rules of their operations. */
-export async function compareToolSnapshots(base: string, revision: string): Promise<CompatResult> {
+/**
+ * Compares a revision of the snapshot with its base, both as JSON text, by the
+ * notice rules of their operations, and holds a stable tool to its six months;
+ * `history` holds the earlier snapshots of the base branch, newest first, which
+ * a new tool's name is looked up in, and `today` the day the notice counts from.
+ */
+export async function compareToolSnapshots(
+  base: string,
+  revision: string,
+  options: { history?: readonly EarlierSnapshot[]; today?: string } = {},
+): Promise<CompatResult> {
+  const baseTools = parseSnapshot(base);
+  const revisionTools = parseSnapshot(revision);
+  const found = await oasdiffErrors(toolsDocument(baseTools), toolsDocument(revisionTools));
+  // A sunset oasdiff already finds too close is reported once, in its words.
+  const tooClose = new Set(found.filter(({ id }) => SUNSET_FINDINGS.has(id)).map(({ operationId }) => operationId));
+  const own = await stableToolErrors(baseTools, revisionTools, options.history ?? [], options.today ?? new Date().toISOString().slice(0, 10));
+  const errors = [...found, ...own.filter(({ id, operationId }) => !(id === "stable-tool-sunset-within-six-months" && tooClose.has(operationId)))];
+  return { passed: errors.length === 0, errors };
+}
+
+/** oasdiff's findings of a sunset closer than the notice period. */
+const SUNSET_FINDINGS = new Set(["api-sunset-date-too-small", "api-sunset-date-changed-too-small"]);
+
+/** oasdiff's error-level findings between two tool documents. */
+async function oasdiffErrors(base: string, revision: string): Promise<Finding[]> {
   const run = await runOnDocuments(
     ["breaking", "--format=json", "--fail-on=ERR", `--deprecation-days-beta=${DEPRECATION_DAYS.beta}`, `--deprecation-days-stable=${DEPRECATION_DAYS.stable}`],
-    toolDocument(base),
-    toolDocument(revision),
+    base,
+    revision,
   );
   let findings: Finding[];
   try {
@@ -123,7 +170,7 @@ export async function compareToolSnapshots(base: string, revision: string): Prom
   } catch {
     throw new Error(`oasdiff could not compare the tool snapshots (exit ${run.status}): ${run.stderr.trim()}`);
   }
-  const errors = findings
+  return findings
     .filter(({ level }) => level >= 3)
     .map(({ id, level, text, operationId, path }) => ({
       id,
@@ -132,7 +179,92 @@ export async function compareToolSnapshots(base: string, revision: string): Prom
       ...(operationId === undefined ? {} : { operationId }),
       ...(path === undefined ? {} : { path }),
     }));
-  return { passed: errors.length === 0, errors };
+}
+
+/** A snapshot of mcp/tools.json at an earlier commit of the base branch. */
+export interface EarlierSnapshot {
+  commit: string;
+  /** mcp/tools.json at that commit, as JSON text. */
+  snapshot: string;
+}
+
+/** The calendar day a number of months after a day, on the last day of the month when that month is shorter. */
+export function addMonths(day: string, months: number): string {
+  const [year = 0, month = 1, date = 1] = day.split("-").map(Number);
+  const index = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = index % 12;
+  const last = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, targetMonth, Math.min(date, last))).toISOString().slice(0, 10);
+}
+
+/** The six months of a stable tool: its deprecation's sunset, its removal, and its name once removed. */
+async function stableToolErrors(base: readonly SnapshotTool[], revision: readonly SnapshotTool[], history: readonly EarlierSnapshot[], today: string): Promise<Finding[]> {
+  const errors: Finding[] = [];
+  const error = (tool: string, id: string, text: string) => errors.push({ id, level: 3, text, operationId: tool, path: `/tools/${tool}` });
+  const before = new Map(base.map((tool) => [tool.name, tool]));
+  const after = new Map(revision.map((tool) => [tool.name, tool]));
+  for (const tool of revision) {
+    const { deprecated } = tool;
+    if (tool.stability !== "stable" || deprecated?.sunset === undefined) continue;
+    const was = before.get(tool.name);
+    const unchanged = was?.stability === "stable" && was.deprecated?.since === deprecated.since && was.deprecated?.sunset === deprecated.sunset;
+    if (unchanged) continue;
+    const from = deprecated.since > today ? deprecated.since : today;
+    const earliest = addMonths(from, STABLE_TOOL_MONTHS);
+    if (deprecated.sunset < earliest) {
+      error(
+        tool.name,
+        "stable-tool-sunset-within-six-months",
+        `the stable tool's sunset \`${deprecated.sunset}\` is less than six months away: a stable tool stays at least six months after ${from}, so its sunset is \`${earliest}\` or later`,
+      );
+    }
+  }
+  for (const tool of base) {
+    const { deprecated } = tool;
+    if (tool.stability !== "stable" || after.has(tool.name) || deprecated === undefined) continue;
+    // A removal before the sunset, or with no deprecation at all, is oasdiff's to report.
+    if (deprecated.sunset === undefined) {
+      error(tool.name, "stable-tool-removed-without-sunset", "the stable tool is removed although its deprecation set no sunset: a stable tool stays until a sunset at least six months after its deprecation");
+    } else if (deprecated.sunset <= today && addMonths(deprecated.since, STABLE_TOOL_MONTHS) > today) {
+      error(
+        tool.name,
+        "stable-tool-removed-within-six-months",
+        `the stable tool is removed less than six months after its deprecation of \`${deprecated.since}\`: it stays until \`${addMonths(deprecated.since, STABLE_TOOL_MONTHS)}\` at least`,
+      );
+    }
+  }
+  const added = revision.filter((tool) => !before.has(tool.name));
+  for (const tool of added) {
+    const earlier = newestEarlier(history, tool.name);
+    if (earlier === undefined || earlier.tool.stability !== "stable") continue;
+    const { deprecated: _old, ...old } = earlier.tool;
+    const breaks = await oasdiffErrors(toolsDocument([old]), toolsDocument([tool]));
+    if (breaks.length > 0) {
+      error(
+        tool.name,
+        "stable-tool-name-reused",
+        `the tool takes the name of the stable tool ${tool.name} that ${earlier.commit.slice(0, 12)} held, in a shape that breaks it ` +
+          `(${breaks.map(({ id }) => id).join(", ")}): a breaking change to a stable tool ships under a new tool name`,
+      );
+    }
+  }
+  return errors;
+}
+
+/** The newest earlier snapshot that holds a tool of this name, with that tool; none when no earlier snapshot does. */
+function newestEarlier(history: readonly EarlierSnapshot[], name: string): { commit: string; tool: SnapshotTool } | undefined {
+  for (const { commit, snapshot } of history) {
+    let tools: SnapshotTool[];
+    try {
+      tools = parseSnapshot(snapshot);
+    } catch {
+      continue;
+    }
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (tool !== undefined) return { commit, tool };
+  }
+  return undefined;
 }
 
 /** A pull request, as the check sees it: the snapshot and the changelog at its merge base and in it, and its labels. */
@@ -146,6 +278,10 @@ export interface ToolPullRequest {
   changelogBase?: string;
   /** openapi/changelog.json in the pull request. */
   changelogRevision: string;
+  /** The earlier snapshots of the base branch, newest first, that a new tool's name is looked up in; none when unread. */
+  history?: readonly EarlierSnapshot[];
+  /** Today, as a calendar day in UTC, which a stable tool's six months count from; the real day when unset. */
+  today?: string;
 }
 
 export interface ToolPullRequestResult extends CompatResult {
@@ -174,7 +310,10 @@ export async function checkToolPullRequest(pullRequest: ToolPullRequest): Promis
   }
   let errors: Finding[] = [];
   try {
-    ({ errors } = await compareToolSnapshots(pullRequest.base, pullRequest.revision));
+    ({ errors } = await compareToolSnapshots(pullRequest.base, pullRequest.revision, {
+      ...(pullRequest.history === undefined ? {} : { history: pullRequest.history }),
+      ...(pullRequest.today === undefined ? {} : { today: pullRequest.today }),
+    }));
   } catch (error) {
     if (!(error instanceof ToolSnapshotError)) throw error;
     problems.push(error.message);
@@ -207,6 +346,8 @@ export interface ToolPullRequestFiles {
   revision: string;
   changelogBase?: string;
   changelogRevision: string;
+  /** The earlier snapshots of the base branch, newest first, read only as far back as a tool the pull request adds is named. */
+  history: EarlierSnapshot[];
 }
 
 /** Reads mcp/tools.json and openapi/changelog.json at the merge base of HEAD with the base ref, and in the checkout. */
@@ -222,11 +363,39 @@ export function readToolPullRequest(root: string, baseRef: string): ToolPullRequ
   };
   const base = atMergeBase(TOOL_SNAPSHOT);
   const changelogBase = atMergeBase(CHANGELOG);
+  const revision = readFileSync(join(root, TOOL_SNAPSHOT), "utf8");
+  // A tool the pull request adds is looked up in the base branch's earlier snapshots, newest first, as far back as needed.
+  const history: EarlierSnapshot[] = [];
+  const wanted = new Set(namesIn(revision));
+  for (const name of namesIn(base ?? "")) wanted.delete(name);
+  if (base !== undefined && wanted.size > 0) {
+    for (const commit of git("log", "--format=%H", mergeBase, "--", TOOL_SNAPSHOT).split("\n").filter(Boolean)) {
+      let snapshot: string;
+      try {
+        snapshot = git("show", `${commit}:${TOOL_SNAPSHOT}`);
+      } catch {
+        continue;
+      }
+      history.push({ commit, snapshot });
+      for (const name of namesIn(snapshot)) wanted.delete(name);
+      if (wanted.size === 0) break;
+    }
+  }
   return {
     mergeBase,
     ...(base === undefined ? {} : { base }),
-    revision: readFileSync(join(root, TOOL_SNAPSHOT), "utf8"),
+    revision,
     ...(changelogBase === undefined ? {} : { changelogBase }),
     changelogRevision: readFileSync(join(root, CHANGELOG), "utf8"),
+    history,
   };
+}
+
+/** The names of a snapshot's tools; none when it does not parse. */
+function namesIn(snapshot: string): string[] {
+  try {
+    return parseSnapshot(snapshot).map(({ name }) => name);
+  } catch {
+    return [];
+  }
 }

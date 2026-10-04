@@ -67,10 +67,12 @@ jobs:
       # the same oasdiff and notice periods, reading each tool as an operation
       # at the stability level and with the deprecation the snapshot records:
       # a beta tool is removed, or gains a required argument, only after the
-      # notice, and a stable tool only gains things. With the api-breaking
-      # label, a break passes only when the pull request also adds a changelog
-      # entry of kind breaking. ci.yml's MCP tools job has checked that the
-      # snapshot is what the catalog generates.
+      # notice, and a stable tool only gains things: a breaking change takes a
+      # new tool name, never one a stable tool had in an earlier snapshot of
+      # the base branch, and the old tool stays at least six months after its
+      # deprecation. With the api-breaking label, a break passes only when the
+      # pull request also adds a changelog entry of kind breaking. ci.yml's MCP
+      # tools job has checked that the snapshot is what the catalog generates.
       - run: node tools/repo-checks/src/check-tool-compat.ts
         env:
           BASE_REF: ${{ github.base_ref }}

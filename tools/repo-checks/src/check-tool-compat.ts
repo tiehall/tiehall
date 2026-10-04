@@ -34,6 +34,7 @@ const result = await checkToolPullRequest({
   labels,
   ...(files.changelogBase === undefined ? {} : { changelogBase: files.changelogBase }),
   changelogRevision: files.changelogRevision,
+  history: files.history,
 });
 const levels = recordedLevels(files.base);
 const findings = result.errors.map(({ id, text, operationId }) => {
@@ -56,8 +57,9 @@ if (result.passed && result.errors.length === 0) {
     console.error(
       "A tool follows the notice rules of its operation. A beta tool is removed, or gains a required argument, in three steps: " +
         "add the new shape, deprecate the old one with a sunset at least 14 days later, and remove it on or after that date. " +
-        "A stable tool only gains things: a breaking change ships under a new tool name, and the old tool stays until a sunset " +
-        `at least 180 days later. Only an urgent security fix may skip the notice, with the ${API_BREAKING_LABEL} label and a ` +
+        "A stable tool only gains things: a breaking change ships under a new tool name, never one a stable tool had before, and the old " +
+        "tool stays until a sunset at least six months after its deprecation. " +
+        `Only an urgent security fix may skip the notice, with the ${API_BREAKING_LABEL} label and a ` +
         "changelog entry of kind breaking in openapi/changelog.json.",
     );
   }

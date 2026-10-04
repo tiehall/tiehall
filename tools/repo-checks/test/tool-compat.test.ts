@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEPRECATION_DAYS } from "../src/api-compat.ts";
 import { oasdiff } from "../src/oasdiff.ts";
-import { checkToolPullRequest, toolDocument, type ToolPullRequest, type ToolPullRequestResult } from "../src/tool-compat.ts";
+import { addMonths, checkToolPullRequest, STABLE_TOOL_MONTHS, toolDocument, type ToolPullRequest, type ToolPullRequestResult } from "../src/tool-compat.ts";
 
 // MCP tools follow the same compatibility rules (public-api: MCP tools follow
 // the same compatibility rules; public-api: Notice before a breaking change is
@@ -19,9 +19,9 @@ import { checkToolPullRequest, toolDocument, type ToolPullRequest, type ToolPull
 // which the snapshot records. So a beta tool is removed, or gains a required
 // argument, only on or after the sunset of a deprecation announced at least
 // 14 days ahead; a stable tool only gains things, a breaking change ships
-// under a new tool name, and the old tool stays until a sunset at least 180
-// days ahead; an alpha tool changes freely; and a tool's level never goes
-// down. The api-breaking label lets a break through only with a changelog
+// under a new tool name, never one a stable tool had, and the old tool stays
+// until a sunset at least six months after its deprecation; an alpha tool
+// changes freely; and a tool's level never goes down. The api-breaking label lets a break through only with a changelog
 // entry of kind breaking that the pull request adds.
 //
 // Each fixture pull request below is a pair of snapshots with dates relative to
@@ -30,6 +30,11 @@ import { checkToolPullRequest, toolDocument, type ToolPullRequest, type ToolPull
 /** A calendar day this many days from today, in UTC. */
 function day(offset: number): string {
   return new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The whole days from today to a calendar day, in UTC. */
+function daysUntil(date: string): number {
+  return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${day(0)}T00:00:00Z`)) / 86_400_000);
 }
 
 interface Tool {
@@ -146,8 +151,84 @@ describe("the tool compatibility check", () => {
     const { deprecated: _notice, ...undeprecated } = required;
     const renamed: Tool = { ...undeprecated, name: "claim_with_body" };
     expect((await checkToolPullRequest(pullRequest([stable], [stable, renamed]))).passed).toBe(true);
-    // The old tool goes once its sunset, at least 180 days after it was announced, has come.
+    // The old tool goes once its sunset, at least six months after it was announced, has come.
     expect((await checkToolPullRequest(pullRequest([stable, renamed], [renamed]))).passed).toBe(true);
+  });
+
+  // public-api: MCP tools follow the same compatibility rules. A breaking change to the tool of a stable operation
+  // adds a new tool name, and the old tool stays for at least six months: the pull request that adds the new name
+  // deprecates the old tool with a sunset six calendar months away or more, and a later one removes it on or after
+  // that day. Six months is a little more than the 180 days a stable operation's REST form gets, so the check
+  // holds a stable tool to it on top of oasdiff's notice.
+  it("fails a breaking change to a stable tool, and passes the same change under a new name with the old tool kept for six months", async () => {
+    expect(STABLE_TOOL_MONTHS).toBe(6);
+    const stable = tool("claim", { stability: "stable" });
+    const withBody = input({ key: { type: "string" }, body: { type: "string" } }, ["key", "body"]);
+    const inPlace = await checkToolPullRequest(pullRequest([stable], [{ ...stable, inputSchema: withBody }]));
+    expect(inPlace.passed).toBe(false);
+    expect(ids(inPlace)).toEqual(["claim request-property-became-required"]);
+    const renamed = tool("claim_with_body", { stability: "stable", inputSchema: withBody });
+    const sixMonths = { since: day(0), sunset: addMonths(day(0), 6) };
+    expect(await checkToolPullRequest(pullRequest([stable], [{ ...stable, deprecated: sixMonths }, renamed]))).toMatchObject({ passed: true, errors: [] });
+    // A sunset a day short of six months fails, although it is at least the 180 days oasdiff asks of a stable operation.
+    const short = { since: day(0), sunset: day(-1 + daysUntil(addMonths(day(0), 6))) };
+    expect(daysUntil(short.sunset)).toBeGreaterThanOrEqual(180);
+    const early = await checkToolPullRequest(pullRequest([stable], [{ ...stable, deprecated: short }, renamed]));
+    expect(ids(early)).toEqual(["claim stable-tool-sunset-within-six-months"]);
+    expect(early.errors[0]?.text).toContain(`at least six months after ${day(0)}`);
+  });
+
+  it("measures a stable tool's six months from today when its deprecation names an earlier day, and holds a sunset moved or added later to them", async () => {
+    const stable = tool("claim", { stability: "stable" });
+    const backdated = { since: day(-60), sunset: day(-1 + daysUntil(addMonths(day(0), 6))) };
+    expect(ids(await checkToolPullRequest(pullRequest([stable], [{ ...stable, deprecated: backdated }])))).toEqual(["claim stable-tool-sunset-within-six-months"]);
+    // A deprecation that had no sunset gains one 30 days away, which oasdiff alone lets through.
+    const open = { ...stable, deprecated: { since: day(-10) } };
+    expect(ids(await checkToolPullRequest(pullRequest([open], [{ ...stable, deprecated: { since: day(-10), sunset: day(30) } }])))).toEqual([
+      "claim stable-tool-sunset-within-six-months",
+    ]);
+    // An unchanged deprecation is not judged again.
+    const kept = { ...stable, deprecated: { since: day(-10), sunset: addMonths(day(-10), 6) } };
+    expect((await checkToolPullRequest(pullRequest([kept], [kept]))).passed).toBe(true);
+    // A beta tool keeps its 14 days.
+    const beta = tool("claim");
+    expect((await checkToolPullRequest(pullRequest([beta], [{ ...beta, deprecated: { since: day(0), sunset: day(20) } }]))).passed).toBe(true);
+  });
+
+  it("removes a stable tool only six months after its deprecation, and only once it had a sunset", async () => {
+    const stable = tool("claim", { stability: "stable" });
+    const soon = { ...stable, deprecated: { since: day(-100), sunset: day(-1) } };
+    expect(ids(await checkToolPullRequest(pullRequest([soon], [])))).toEqual(["claim stable-tool-removed-within-six-months"]);
+    const noSunset = { ...stable, deprecated: { since: day(-200) } };
+    expect(ids(await checkToolPullRequest(pullRequest([noSunset], [])))).toEqual(["claim stable-tool-removed-without-sunset"]);
+    const kept = { ...stable, deprecated: { since: day(-190), sunset: day(-1) } };
+    expect(await checkToolPullRequest(pullRequest([kept], []))).toMatchObject({ passed: true, errors: [] });
+  });
+
+  it("fails a new tool that takes the name of a removed stable tool in a shape that breaks it, since a breaking change gets a new name", async () => {
+    const stable = tool("claim", { stability: "stable", deprecated: { since: day(-200), sunset: day(-10) } });
+    const history = [
+      { commit: "c0ffee1", snapshot: snapshot(tool("get_request")) },
+      { commit: "c0ffee0", snapshot: snapshot(stable, tool("get_request")) },
+    ];
+    const withBody = input({ key: { type: "string" }, body: { type: "string" } }, ["key", "body"]);
+    const reused = await checkToolPullRequest(pullRequest([tool("get_request")], [tool("get_request"), tool("claim", { stability: "stable", inputSchema: withBody })], { history }));
+    expect(reused.passed).toBe(false);
+    expect(ids(reused)).toEqual(["claim stable-tool-name-reused"]);
+    expect(reused.errors[0]?.text).toContain("c0ffee0");
+    expect(reused.errors[0]?.text).toContain("request-property-became-required");
+    // The same tool back again breaks nothing, and neither does the name of a tool that was only ever beta.
+    const restored = await checkToolPullRequest(pullRequest([tool("get_request")], [tool("get_request"), tool("claim", { stability: "stable" })], { history }));
+    expect(restored).toMatchObject({ passed: true, errors: [] });
+    const betaHistory = [{ commit: "c0ffee0", snapshot: snapshot(tool("claim"), tool("get_request")) }];
+    expect((await checkToolPullRequest(pullRequest([tool("get_request")], [tool("get_request"), tool("claim", { inputSchema: withBody })], { history: betaHistory }))).passed).toBe(true);
+  });
+
+  it("counts six calendar months, ending on the last day of a shorter month", () => {
+    expect(addMonths("2026-03-01", 6)).toBe("2026-09-01");
+    expect(addMonths("2026-08-31", 6)).toBe("2027-02-28");
+    expect(addMonths("2027-08-31", 6)).toBe("2028-02-29");
+    expect(addMonths("2026-12-15", 6)).toBe("2027-06-15");
   });
 
   it("fails a tool whose stability level goes down", async () => {
@@ -253,6 +334,26 @@ describe("the tool compatibility script", { timeout: 120_000 }, () => {
     expect(result.status).toBe(1);
     expect(result.output).toContain("mcp/tools.json breaks the notice rules");
     expect(result.output).toMatch(/claim \(beta\): .*\[api-path-removed-without-deprecation\]/);
+  });
+
+  it("fails a pull request that gives a removed stable tool's name a breaking shape, reading the base branch's history", () => {
+    const repo = join(scratch, "reuses-stable-name");
+    mkdirSync(join(repo, "mcp"), { recursive: true });
+    mkdirSync(join(repo, "openapi"));
+    git(repo, "init", "--quiet", "--initial-branch=main");
+    writeFileSync(join(repo, "openapi", "changelog.json"), EMPTY_CHANGELOG);
+    writeFileSync(join(repo, "mcp", "tools.json"), snapshot(tool("claim", { stability: "stable", deprecated: { since: day(-200), sunset: day(-10) } }), tool("get_request")));
+    git(repo, "add", ".");
+    git(repo, "commit", "--quiet", "-m", "A stable claim, deprecated");
+    writeFileSync(join(repo, "mcp", "tools.json"), snapshot(tool("get_request")));
+    git(repo, "commit", "--quiet", "-am", "Remove claim after its sunset");
+    git(repo, "checkout", "--quiet", "-b", "pull-request");
+    const withBody = input({ key: { type: "string" }, body: { type: "string" } }, ["key", "body"]);
+    writeFileSync(join(repo, "mcp", "tools.json"), snapshot(tool("claim", { stability: "stable", inputSchema: withBody }), tool("get_request")));
+    git(repo, "commit", "--quiet", "-am", "Bring claim back with a required body");
+    const result = check(repo);
+    expect(result.status).toBe(1);
+    expect(result.output).toMatch(/claim \(new\): .*takes the name of the stable tool .*\[stable-tool-name-reused\]/);
   });
 
   it("passes a pull request that removes an alpha tool", () => {

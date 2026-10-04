@@ -27,7 +27,7 @@ Each operation carries one stability level in the document, as `x-stability-leve
 - A `beta` operation changes in three steps: the new shape is added; the old one is marked `deprecated: true` with an `x-sunset` date at least 14 days later; and the old one is removed on or after that date.
 - A `stable` operation gets at least 180 days between its deprecation and its removal. A breaking change to it is made under `/api/v2`, and `/api/v1` keeps serving it next to the new one for at least six months.
 - While the API is beta, the document's `info.version` has the form `0.N.0`, and every release with a breaking change raises it.
-- MCP tools follow the rules of their operation: a `beta` tool is removed, or gains a required argument, only after the same notice, and a breaking change to a `stable` tool ships under a new tool name, while the old tool keeps working for at least six months.
+- MCP tools follow the rules of their operation: a `beta` tool is removed, or gains a required argument, only after the same notice, and a breaking change to a `stable` tool ships under a new tool name, while the old tool keeps working for at least six months; the name of a `stable` tool is never given to a tool that breaks it.
 - CI holds every pull request to these rules: it compares the document and the tool list with those at the pull request's merge base, and fails on a breaking change that skips a step or a sunset closer than the notice period.
 - The one exception is an urgent security fix that cannot wait for its notice. Its pull request carries the `api-breaking` label, adds a changelog entry for the break and raises `info.version`, so the break is announced where every other change is.
 
