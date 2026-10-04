@@ -60,6 +60,24 @@ describe("CI's typecheck and test", () => {
   });
 });
 
+// The coverage checks read a mirrored list as the newest change that modifies it words it, by when commits added the
+// changes (plan.ts), and refuse a shallow clone once two changes in progress modify one list, since a checkout at depth
+// 1 holds one commit, which seems to add every change at once. The checks run in jobs of their own and, on the real
+// tree, in the suite's tests, so each job that runs them checks out the whole history.
+describe("CI's checkouts for the coverage checks", () => {
+  const PLAN_READERS = [/\bpnpm test\b/, /\bpnpm check:confirmations\b/, /\bpnpm check:security-events\b/];
+
+  it("fetch the whole history in every job that runs the suite or a check that reads the plan", () => {
+    const readers = jobs.filter(([, job]) => PLAN_READERS.some((pattern) => pattern.test(runs(job))));
+    expect(readers.map(([name]) => name).sort()).toEqual(["confirmation-coverage", "security-event-coverage", "test-shard"]);
+    for (const [name, job] of readers) {
+      const checkouts = (job.steps ?? []).filter((step) => typeof step["uses"] === "string" && step["uses"].startsWith("actions/checkout@"));
+      expect(checkouts, name).toHaveLength(1);
+      expect((checkouts[0]!["with"] as Mapping | undefined)?.["fetch-depth"], name).toBe(0);
+    }
+  });
+});
+
 // agent-surfaces: The CLI package. The CLI says it runs on Node.js 22 or later, while the repository builds and tests
 // on the version in .node-version: one job builds its bundle and runs its tests on Node.js 22, so the claim is tried.
 describe("CI's run of the CLI on Node.js 22", () => {
