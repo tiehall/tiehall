@@ -77,6 +77,15 @@ describe("the release notes", () => {
     expect(notes).toContain("/docs/api/changelog");
   });
 
+  // public-api: Each operation graduates on its own. A release that marks an operation stable records the maintainers'
+  // decision to graduate it, and its notes say so.
+  it("carry the maintainers' decision to graduate an operation", () => {
+    const graduation = { date: "2026-11-02", kind: "graduation" as const, text: "requests.get is stable after four weeks with no breaking change.", operationIds: ["requests.get"] };
+    expect(releaseNotes({ version: "1.5.0", date: "2026-11-03", apiVersion: "0.3.0", entries: [graduation], changes: [] })).toContain(
+      "- Graduated (requests.get): requests.get is stable after four weeks with no breaking change.",
+    );
+  });
+
   it("say so when a release changes nothing in the API", () => {
     expect(releaseNotes({ version: "1.4.1", date: "2026-12-02", apiVersion: "0.3.0", entries: [], changes: [] })).toContain(
       "No change to the API.",

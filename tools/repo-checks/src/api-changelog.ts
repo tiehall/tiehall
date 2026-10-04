@@ -102,6 +102,7 @@ function orderRelease({ version, date, apiVersion, entries, changes }: Changelog
 const LABELS: Readonly<Record<ChangelogItem["kind"], string>> = {
   breaking: "Breaking",
   note: "Note",
+  graduation: "Graduated",
   error: "Breaking",
   warning: "Warning",
   info: "",

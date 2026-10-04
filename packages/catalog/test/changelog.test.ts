@@ -73,11 +73,50 @@ describe("the changelog file", () => {
     })();
     expect(problems).toEqual([
       "unreleased[0]: date is a calendar day, such as 2026-12-15.",
-      "unreleased[1]: kind is one of breaking, note.",
+      "unreleased[1]: kind is one of breaking, note, graduation.",
       "unreleased[2]: text says what changed.",
       "unreleased[3]: operationIds lists operation ids, such as requests.get.",
       "unreleased[4]: extra is not a field of an entry.",
     ]);
+  });
+});
+
+// The maintainers' decision to graduate an operation to stable (public-api:
+// Each operation graduates on its own): an entry of kind graduation, dated the
+// day they decided, names each operation it graduates, and the graduation
+// check (tools/repo-checks/src/graduation.ts) reads it.
+describe("a graduation entry", () => {
+  const graduation = {
+    date: "2026-11-02",
+    kind: "graduation" as const,
+    text: "requests.get is stable: no breaking change to it was needed for four weeks, and the maintainers have decided to graduate it.",
+    operationIds: ["requests.get"],
+  };
+
+  it("parses, naming the operations it graduates", () => {
+    expect(parseChangelog(changelog([graduation])).unreleased).toEqual([graduation]);
+    expect(parseChangelog(changelog([], [{ ...release, entries: [graduation] }])).releases[0]?.entries).toEqual([graduation]);
+  });
+
+  it("is refused when it names no operation, or names a schema, since only an operation graduates", () => {
+    const { operationIds: _ids, ...unnamed } = graduation;
+    const problems = (() => {
+      try {
+        parseChangelog(changelog([unnamed, { ...graduation, operationIds: [] }, { ...graduation, schemas: ["packet"] }]));
+      } catch (error) {
+        return (error as Error).message.split("\n");
+      }
+      return [];
+    })();
+    expect(problems).toEqual([
+      "unreleased[0]: a graduation names the operations it graduates in operationIds.",
+      "unreleased[1]: a graduation names the operations it graduates in operationIds.",
+      "unreleased[2]: a graduation is about operations, so it names no schemas.",
+    ]);
+  });
+
+  it("is shown with what it is about, like any other entry", () => {
+    expect(releaseItems({ entries: [graduation], changes: [] })).toEqual([{ kind: "graduation", operationIds: ["requests.get"], text: graduation.text }]);
   });
 });
 
@@ -109,7 +148,7 @@ describe("a release in the changelog", () => {
       "releases[0]: version is a release version, such as 1.4.0.",
       "releases[1]: date is a calendar day, such as 2026-12-15.",
       "releases[1]: apiVersion is the document's info.version, such as 0.4.0.",
-      "releases[2].entries[0]: kind is one of breaking, note.",
+      "releases[2].entries[0]: kind is one of breaking, note, graduation.",
       "releases[2].changes[0]: level is 1 (information), 2 (warning) or 3 (error).",
       "releases[3].changes[0]: text says what changed.",
     ]);

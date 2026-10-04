@@ -39,6 +39,13 @@ describe("the changelog page", () => {
     expect(text).toContain("Note (requests.list): requests.list is deprecated: read a team's requests with its search operation instead.");
   });
 
+  // public-api: Each operation graduates on its own: the release that marks an operation stable records the decision.
+  it("lists the maintainers' decision to graduate an operation", async () => {
+    const graduation = { date: "2026-11-02", kind: "graduation" as const, text: "requests.get is stable after four weeks with no breaking change.", operationIds: ["requests.get"] };
+    const { text } = await page({ ...fixture, releases: [{ version: "1.5.0", date: "2026-11-03", apiVersion: "0.3.0", entries: [graduation], changes: [] }, ...fixture.releases] });
+    expect(text).toContain("Graduated (requests.get): requests.get is stable after four weeks with no breaking change.");
+  });
+
   it("lists every release, newest first, with its day and the API's version", async () => {
     const { text } = await page();
     expect(text.indexOf("Release 1.4.0")).toBeLessThan(text.indexOf("Release 1.3.0"));

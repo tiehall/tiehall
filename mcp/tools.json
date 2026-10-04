@@ -218,6 +218,7 @@
         "type": "object"
       },
       "name": "attach_contract_changes",
+      "operationId": "contract.attach_changes",
       "outputSchema": {
         "description": "The operation's result. A call that makes a commitment returns only proposal, the proposal it created, which people confirm in the web UI, instead of the fields above.",
         "properties": {
@@ -2236,6 +2237,7 @@
         "type": "object"
       },
       "name": "claim",
+      "operationId": "requests.claim",
       "outputSchema": {
         "properties": {
           "claimant": {
@@ -2488,6 +2490,7 @@
         "type": "object"
       },
       "name": "directory",
+      "operationId": "directory.get",
       "outputSchema": {
         "properties": {
           "apis": {
@@ -2684,6 +2687,7 @@
         "type": "object"
       },
       "name": "get_request",
+      "operationId": "requests.read",
       "outputSchema": {
         "properties": {
           "next": {
@@ -3375,6 +3379,7 @@
         "type": "object"
       },
       "name": "link_pr",
+      "operationId": "requests.link_pr",
       "outputSchema": {
         "description": "The operation's result. A call that makes a commitment returns only proposal, the proposal it created, which people confirm in the web UI, instead of the fields above.",
         "properties": {
@@ -4787,6 +4792,7 @@
         "type": "object"
       },
       "name": "list_inbox",
+      "operationId": "requests.inbox",
       "outputSchema": {
         "properties": {
           "requests": {
@@ -5727,6 +5733,7 @@
         "type": "object"
       },
       "name": "open_request",
+      "operationId": "requests.create",
       "outputSchema": {
         "properties": {
           "claimant": {
@@ -6025,6 +6032,7 @@
         "type": "object"
       },
       "name": "post_message",
+      "operationId": "messages.post",
       "outputSchema": {
         "properties": {
           "message": {
@@ -7179,6 +7187,7 @@
         "type": "object"
       },
       "name": "propose",
+      "operationId": "proposals.propose",
       "outputSchema": {
         "description": "The operation's result. A call that makes a commitment returns only proposal, the proposal it created, which people confirm in the web UI, instead of the fields above.",
         "properties": {
@@ -9208,6 +9217,7 @@
         "type": "object"
       },
       "name": "set_status",
+      "operationId": "requests.set_status",
       "outputSchema": {
         "description": "The operation's result. A call that makes a commitment returns only proposal, the proposal it created, which people confirm in the web UI, instead of the fields above.",
         "properties": {
@@ -10520,6 +10530,7 @@
         "type": "object"
       },
       "name": "whats_new",
+      "operationId": "updates.read",
       "outputSchema": {
         "properties": {
           "cursor": {
@@ -10899,6 +10910,7 @@
         "type": "object"
       },
       "name": "whoami",
+      "operationId": "users.whoami",
       "outputSchema": {
         "properties": {
           "install": {

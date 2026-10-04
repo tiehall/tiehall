@@ -261,19 +261,22 @@ describe("the snapshot lint", () => {
     expect(toolSnapshotDrift(CATALOG, committed)).toBeUndefined();
   });
 
-  it("records each tool with its operation's stability level and, once deprecated, its deprecation dates", () => {
+  it("records each tool with its operation, that operation's stability level and, once deprecated, its deprecation dates", () => {
     const deprecated = { since: "2026-12-01", sunset: "2026-12-15" };
     const catalog = defineCatalog([tool({ stability: "beta", deprecated }), tool({ id: "reports.list", tool: "list_reports", input: z.object({}) })]);
     const [filed, listed] = toolSnapshot(catalog);
-    expect(filed).toEqual({ ...toolDescriptions(catalog)[0], stability: "beta", deprecated });
-    expect(listed).toEqual({ ...toolDescriptions(catalog)[1], stability: "alpha" });
+    expect(filed).toEqual({ ...toolDescriptions(catalog)[0], operationId: "reports.create", stability: "beta", deprecated });
+    expect(listed).toEqual({ ...toolDescriptions(catalog)[1], operationId: "reports.list", stability: "alpha" });
     expect(Object.keys(listed ?? {})).not.toContain("deprecated");
     expect(toolSnapshot(catalog)).toBe(toolSnapshot(catalog));
-    // The committed snapshot records every tool's level.
-    const committed = JSON.parse(readFileSync(committedToolSnapshotPath(), "utf8")) as { tools: { name: string; stability?: string }[] };
-    for (const { name, stability } of committed.tools) {
-      expect(stability, name).toBe(CATALOG.commands.find(({ tool: toolName }) => toolName === name)?.stability);
+    // The committed snapshot records every tool's operation and its level, also for an operation offered only on MCP,
+    // which no OpenAPI document holds.
+    const committed = JSON.parse(readFileSync(committedToolSnapshotPath(), "utf8")) as { tools: { name: string; operationId?: string; stability?: string }[] };
+    for (const { name, operationId, stability } of committed.tools) {
+      const operation = CATALOG.commands.find(({ tool: toolName }) => toolName === name);
+      expect([name, operationId, stability]).toEqual([name, operation?.id, operation?.stability]);
     }
+    expect(committed.tools.find(({ name }) => name === "directory")?.operationId).toBe("directory.get");
   });
 
   it("reports a tool change that was not regenerated, as a diff of the snapshot", () => {

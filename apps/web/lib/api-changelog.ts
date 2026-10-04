@@ -40,6 +40,7 @@ const HEADERS = {
 const LABELS: Readonly<Record<ChangelogItem["kind"], { text: string; tone: string } | undefined>> = {
   breaking: { text: "Breaking", tone: "breaking" },
   note: { text: "Note", tone: "note" },
+  graduation: { text: "Graduated", tone: "graduation" },
   error: { text: "Breaking", tone: "breaking" },
   warning: { text: "Warning", tone: "warning" },
   info: undefined,

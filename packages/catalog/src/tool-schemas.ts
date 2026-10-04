@@ -29,11 +29,14 @@ import { proposalAnswer } from "./proposals.ts";
 // The schemas are computed once per catalog. Their snapshot, mcp/tools.json,
 // is committed; CI regenerates it and lints it on every pull request, so every
 // change to a tool is reviewed as a diff of that file. The snapshot also
-// records each tool's stability level and, once deprecated, its deprecation
-// dates, those of its operation, so that CI can compare it at a pull
-// request's merge base with the pull request's by the notice rules of each
-// tool's operation (public-api: MCP tools follow the same compatibility
-// rules; tools/repo-checks/src/tool-compat.ts).
+// records each tool's operation, by its id, and that operation's stability
+// level and, once deprecated, its deprecation dates, so that CI can compare it
+// at a pull request's merge base with the pull request's by the notice rules
+// of each tool's operation (public-api: MCP tools follow the same
+// compatibility rules; tools/repo-checks/src/tool-compat.ts), and can find the
+// graduation of a stable tool's operation in the changelog, also for an
+// operation offered only on MCP (public-api: Each operation graduates on its
+// own; tools/repo-checks/src/graduation.ts).
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -242,8 +245,10 @@ export function toolDescriptions(catalog: Catalog): readonly ToolDescription[] {
   return tools;
 }
 
-/** A tool as mcp/tools.json records it: as the tool list shows it, with its operation's stability level and deprecation. */
+/** A tool as mcp/tools.json records it: as the tool list shows it, with its operation's id, stability level and deprecation. */
 export interface ToolSnapshotEntry extends ToolDescription {
+  /** The id of the operation the tool runs, such as requests.claim, which the changelog's entries name. */
+  operationId: string;
   stability: StabilityLevel;
   deprecated?: Deprecation;
 }
@@ -258,8 +263,8 @@ export function toolSnapshot(catalog: Catalog): readonly ToolSnapshotEntry[] {
     snapshot = toolDescriptions(catalog).map((description) => {
       const definition = byTool.get(description.name);
       if (definition === undefined) throw new Error(`The tool ${description.name} has no operation.`);
-      const { stability, deprecated } = definition;
-      return { ...description, stability, ...(deprecated === undefined ? {} : { deprecated: { ...deprecated } }) };
+      const { id: operationId, stability, deprecated } = definition;
+      return { ...description, operationId, stability, ...(deprecated === undefined ? {} : { deprecated: { ...deprecated } }) };
     });
     SNAPSHOTS.set(catalog, snapshot);
   }

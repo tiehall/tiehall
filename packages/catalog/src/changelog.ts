@@ -20,9 +20,12 @@ export const API_BREAKING_LABEL = "api-breaking";
 /**
  * The kinds of entry: `breaking`, a breaking change released without the
  * usual notice, which the api-breaking label needs; `note`, anything else the
- * maintainers announce.
+ * maintainers announce; `graduation`, the maintainers' decision to graduate
+ * the operations it names to stable, dated the day they decided, which an
+ * operation needs before it carries x-stability-level stable (public-api:
+ * Each operation graduates on its own; tools/repo-checks/src/graduation.ts).
  */
-export const CHANGELOG_ENTRY_KINDS = ["breaking", "note"] as const;
+export const CHANGELOG_ENTRY_KINDS = ["breaking", "note", "graduation"] as const;
 export type ChangelogEntryKind = (typeof CHANGELOG_ENTRY_KINDS)[number];
 
 /**
@@ -195,6 +198,10 @@ function entryProblems(entry: unknown): string[] {
   }
   if (schemas !== undefined && (!Array.isArray(schemas) || !schemas.every((name) => (CHANGELOG_SCHEMAS as readonly unknown[]).includes(name)))) {
     problems.push(`schemas lists schemas, of ${CHANGELOG_SCHEMAS.join(", ")}.`);
+  }
+  if (kind === "graduation") {
+    if (!Array.isArray(operationIds) || operationIds.length === 0) problems.push("a graduation names the operations it graduates in operationIds.");
+    if (schemas !== undefined) problems.push("a graduation is about operations, so it names no schemas.");
   }
   for (const key of Object.keys(entry)) if (!ENTRY_FIELDS.has(key)) problems.push(`${key} is not a field of an entry.`);
   return problems;

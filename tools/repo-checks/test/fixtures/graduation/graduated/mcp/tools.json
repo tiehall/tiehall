@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "description": "Read a request.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "name": "get_request",
+      "operationId": "requests.read",
+      "outputSchema": {
+        "type": "object"
+      },
+      "stability": "beta"
+    }
+  ]
+}

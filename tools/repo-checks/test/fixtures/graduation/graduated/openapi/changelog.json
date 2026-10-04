@@ -1,0 +1,54 @@
+{
+  "unreleased": [],
+  "releases": [
+    {
+      "version": "1.1.0",
+      "date": "2026-02-12",
+      "apiVersion": "0.4.0",
+      "entries": [
+        {
+          "date": "2026-02-10",
+          "kind": "graduation",
+          "text": "requests.get is stable: no breaking change to it was needed for four weeks, and the maintainers have decided to graduate it.",
+          "operationIds": [
+            "requests.get"
+          ]
+        }
+      ],
+      "changes": [
+        {
+          "id": "api-stability-increased",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}",
+          "operationId": "requests.get",
+          "text": "endpoint stability level increased from `beta` to `stable`"
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-01-05",
+      "apiVersion": "0.4.0",
+      "entries": [],
+      "changes": [
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/contract-reports",
+          "operationId": "contract.report",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}",
+          "operationId": "requests.get",
+          "text": "endpoint added"
+        }
+      ]
+    }
+  ]
+}

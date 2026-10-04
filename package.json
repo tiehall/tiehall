@@ -42,6 +42,7 @@
     "check:packet-releases": "node tools/repo-checks/src/check-packet-releases.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts",
     "release:check-stability": "node tools/repo-checks/src/check-release-stability.ts",
+    "check:graduation": "node tools/repo-checks/src/check-graduation.ts",
     "check:release-gates": "node tools/repo-checks/src/check-release-gates.ts",
     "oasdiff:fixtures": "pnpm --filter @tiehall/contract-action oasdiff:fixtures"
   },

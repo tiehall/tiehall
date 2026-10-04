@@ -235,11 +235,19 @@ jobs:
           package-manager-cache: false
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/catalog
+      # The graduation check reads openapi/changelog.json through
+      # @tiehall/catalog/changelog, which imports only Node built-ins.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/catalog --filter @tiehall/repo-checks
       # Regenerates openapi/v1.json from the catalog and fails when it differs
       # from the committed file, so every API change is reviewed as a diff of
       # that file (public-api: Every API change is reviewed as a document diff).
       - run: pnpm check:openapi
+      # Fails when an operation other than contract.report is stable in a
+      # committed document or the tool snapshot without a graduation in
+      # openapi/changelog.json, the maintainers' decision, recorded at least
+      # four weeks after the last breaking change to it (public-api: Each
+      # operation graduates on its own).
+      - run: pnpm check:graduation
 
   client-package:
     name: Client package

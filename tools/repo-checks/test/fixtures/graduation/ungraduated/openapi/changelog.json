@@ -1,0 +1,29 @@
+{
+  "unreleased": [],
+  "releases": [
+    {
+      "version": "1.0.0",
+      "date": "2026-01-05",
+      "apiVersion": "0.4.0",
+      "entries": [],
+      "changes": [
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/contract-reports",
+          "operationId": "contract.report",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}",
+          "operationId": "requests.get",
+          "text": "endpoint added"
+        }
+      ]
+    }
+  ]
+}

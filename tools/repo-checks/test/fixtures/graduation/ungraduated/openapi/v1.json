@@ -1,0 +1,31 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Tiehall API",
+    "version": "0.4.0"
+  },
+  "paths": {
+    "/api/v1/contract-reports": {
+      "post": {
+        "operationId": "contract.report",
+        "x-stability-level": "stable",
+        "responses": {
+          "202": {
+            "description": "Accepted."
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{key}": {
+      "get": {
+        "operationId": "requests.get",
+        "x-stability-level": "stable",
+        "responses": {
+          "200": {
+            "description": "The request."
+          }
+        }
+      }
+    }
+  }
+}
