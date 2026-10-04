@@ -1,5 +1,5 @@
 import { githubApp, githubDeliveries, githubRedeliveries, type Database } from "@tiehall/db";
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lt, notExists, sql } from "drizzle-orm";
 import { askRedelivery, attemptFailed, madeAfterCredentials, readDeliveryLog, readFromCredentials, type DeliveryAttempt } from "./github-delivery-log.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { githubModeOf, recordGivenUpDelivery } from "./github-mode.ts";
@@ -38,7 +38,10 @@ import type { WorkerJob } from "./worker.ts";
 // than the attempt that request named) and still failed, or whose fifth
 // request GitHub refused, and that Tiehall does not hold, gives it up, once;
 // while GitHub has not logged the redelivery it owes, the run waits for the
-// next: in one write it marks the
+// next, until a run reads its log only from after the fifth request: GitHub
+// then made no redelivery for as long as it may log one late, and the
+// delivery, still failed after Tiehall's last request, is given up too.
+// In one write the run marks the
 // delivery given up, so later runs record nothing more for it, and records the
 // give-up on the App's row, which moves GitHub to polling mode unless an
 // admin chose webhook mode (github-mode.ts). The parameters are the design's:
@@ -100,7 +103,29 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
   const failed = [...last.values()].filter(attemptFailed).sort((a, b) => a.id - b.id);
 
   const { toAsk, toGiveUp } = await withOrg(database, async ({ tx, orgId }) => {
-    if (failed.length === 0) return { toAsk: [], toGiveUp: [] };
+    // Asked for 5 times since the credentials were stored, the fifth time before this run's log begins, and neither
+    // held nor given up: GitHub logged no redelivery after the fifth request that an earlier run did not read.
+    const unanswered = (
+      await tx
+        .select({ deliveryId: githubRedeliveries.deliveryId })
+        .from(githubRedeliveries)
+        .where(
+          and(
+            eq(githubRedeliveries.orgId, orgId),
+            gte(githubRedeliveries.asks, REDELIVERY_ASKS),
+            isNull(githubRedeliveries.givenUpAt),
+            gt(githubRedeliveries.lastAskedAt, state.storedAt),
+            lt(githubRedeliveries.lastAskedAt, since),
+            notExists(
+              tx
+                .select({ deliveryId: githubDeliveries.deliveryId })
+                .from(githubDeliveries)
+                .where(and(eq(githubDeliveries.orgId, githubRedeliveries.orgId), eq(githubDeliveries.deliveryId, githubRedeliveries.deliveryId))),
+            ),
+          ),
+        )
+    ).map(({ deliveryId }) => deliveryId);
+    if (failed.length === 0) return { toAsk: [], toGiveUp: unanswered };
     const ids = failed.map(({ deliveryId }) => deliveryId);
     const stored = new Set(
       (
@@ -129,10 +154,17 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
       // Asked for 5 times, and the redelivery the fifth request made failed too, or GitHub refused that request: given
       // up, once. Until GitHub logs the redelivery it owes, the log's latest attempt is the one the fifth request named,
       // and the run waits for the next.
-      toGiveUp: missing.filter(({ deliveryId, id }) => {
-        const seen = asked.get(deliveryId);
-        return seen !== undefined && seen.asks >= REDELIVERY_ASKS && !seen.givenUp && (seen.lastAskedAttemptId === null || id > seen.lastAskedAttemptId);
-      }),
+      toGiveUp: [
+        ...new Set([
+          ...missing
+            .filter(({ deliveryId, id }) => {
+              const seen = asked.get(deliveryId);
+              return seen !== undefined && seen.asks >= REDELIVERY_ASKS && !seen.givenUp && (seen.lastAskedAttemptId === null || id > seen.lastAskedAttemptId);
+            })
+            .map(({ deliveryId }) => deliveryId),
+          ...unanswered,
+        ]),
+      ],
     };
   });
 
@@ -169,10 +201,7 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
         .where(
           and(
             eq(githubRedeliveries.orgId, context.orgId),
-            inArray(
-              githubRedeliveries.deliveryId,
-              toGiveUp.map(({ deliveryId }) => deliveryId),
-            ),
+            inArray(githubRedeliveries.deliveryId, toGiveUp),
             isNull(githubRedeliveries.givenUpAt),
           ),
         )

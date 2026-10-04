@@ -446,6 +446,39 @@ describe("a delivery given up (github-layer-hardening 1.21)", () => {
     expect((await appRow()).given_up_at).not.toBeNull();
   });
 
+  // GitHub may accept the fifth request and never make its redelivery: the delivery is still failed after the last
+  // request, so it is given up once the job's runs have read past the request for as long as GitHub may log an attempt
+  // late, by the worker's runs 10 minutes apart.
+  it("gives up a delivery whose fifth redelivery GitHub accepted but never made, once the runs read past that request", async () => {
+    await missedDelivery();
+    stub.setHookReachable(false);
+    for (let run = 0; run < REDELIVERY_ASKS - 1; run += 1) await redeliver();
+    const dropped = reachingGitHubThrough(async (input, init) => {
+      if ((init?.method ?? "GET").toUpperCase() === "POST" && /^\/app\/hook\/deliveries\/\d+\/attempts$/.test(pathOf(input))) {
+        return new Response("{}", { status: 202, headers: { "content-type": "application/json" } });
+      }
+      return fetch(input, init);
+    });
+    const fifth = Date.now();
+    await redeliver(dropped, () => new Date(fifth));
+    const { rows } = await install.owner.query<{ asks: number }>("SELECT asks FROM github_redeliveries");
+    expect(rows).toEqual([{ asks: REDELIVERY_ASKS }]);
+
+    // The next two runs still read from before the fifth request, where GitHub could yet log its redelivery late.
+    for (const minutes of [10, 20]) {
+      await redeliver(stored.github, () => new Date(fifth + minutes * MINUTE));
+      expect((await appRow()).given_up_at).toBeNull();
+    }
+    // The run after reads from after it: GitHub logged no redelivery, so the delivery is given up, once.
+    await redeliver(stored.github, () => new Date(fifth + 30 * MINUTE));
+    const row = await appRow();
+    expect(row).toMatchObject({ mode: "polling", given_up_at: expect.any(Date) });
+    await redeliver(stored.github, () => new Date(fifth + 40 * MINUTE));
+    expect(await appRow()).toEqual(row);
+    expect((await modeEvents()).map(({ data }) => data["cause"])).toEqual(["given_up_delivery"]);
+    expect(asked()).toHaveLength(REDELIVERY_ASKS - 1);
+  });
+
   it("is cleared by an admin's switch of the mode, and the same delivery is not given up again", async () => {
     await missedDelivery();
     await giveUp();
