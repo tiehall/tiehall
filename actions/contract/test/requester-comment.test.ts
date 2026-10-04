@@ -60,7 +60,8 @@ function fakeGitHub(
     if (request.method === "GET" && request.url.startsWith(COMMENTS)) return Response.json(comments);
     if (request.method === "POST" && request.url === COMMENTS) {
       const { body } = (await request.json()) as { body: string };
-      const comment = { id: (next += 1), body, user: author };
+      next = Math.max(next, ...comments.map(({ id }) => id)) + 1;
+      const comment = { id: next, body, user: author };
       comments.push(comment);
       hooks.written?.(comments);
       return Response.json(comment, { status: 201 });
@@ -182,10 +183,8 @@ describe("a report whose requester is the provider team", () => {
 
   // A job may give the Action a token of its own in github-token, such as a person's token or an App's installation
   // token: its comment is the one that account wrote, which a later run updates in place.
-  it.each([
-    ["a person's token", { login: "release-manager", type: "User" }],
-    ["another App's installation token", { login: "acme-ci[bot]", type: "Bot" }],
-  ])("updates in place the comment it posted with %s, rather than posting another each run", async (_token, author) => {
+  it("updates in place the comment it posted with a person's token, rather than posting another each run", async () => {
+    const author = { login: "release-manager", type: "User" };
     const comments: FakeComment[] = [];
     const calls: { method: string; url: string; authorization: string | null }[] = [];
     await runWith({ npx: answering("team"), runId: "7101", github: fakeGitHub(comments, calls, false, author) });
@@ -198,6 +197,23 @@ describe("a report whose requester is the provider team", () => {
     expect(calls.filter(({ method }) => method === "PATCH")).toHaveLength(1);
   });
 
+  // GitHub names no account for an installation token, and any App writes as a bot, so another App's bot is known only
+  // by what this run posts: the run then finds the comment that bot posted before, which takes the new comment's
+  // parts, and removes the new one, so the pull request keeps one comment.
+  it("keeps one comment, the first, with another App's installation token", async () => {
+    const author = { login: "acme-ci[bot]", type: "Bot" };
+    const comments: FakeComment[] = [];
+    const calls: { method: string; url: string; authorization: string | null }[] = [];
+    await runWith({ npx: answering("team"), runId: "7101", github: fakeGitHub(comments, calls, false, author) });
+    const [first] = comments;
+    await runWith({ npx: answering("team"), runId: "7102", github: fakeGitHub(comments, calls, false, author) });
+
+    expect(comments).toHaveLength(1);
+    expect(comments[0]?.id).toBe(first?.id);
+    expect(comments[0]?.user).toEqual(author);
+    expect(comments[0]?.body).toContain("https://github.com/acme/payments/actions/runs/7102");
+  });
+
   it("leaves a comment with the Action's marker that another person wrote alone, with a person's token too", async () => {
     const marker = "<!-- tiehall-contract-action -->";
     const comments: FakeComment[] = [{ id: 3, body: `${marker} spoofed`, user: { login: "mallory", type: "User" } }];
@@ -207,6 +223,61 @@ describe("a report whose requester is the provider team", () => {
 
     expect(comments[0]?.body).toBe(`${marker} spoofed`);
     expect(comments.filter(({ user }) => user.login === "release-manager")).toHaveLength(1);
+  });
+
+  // A comment another bot wrote that quotes the mark, such as a review bot quoting a diff hunk, or another App's bot
+  // echoing the pull request's text, is not the Action's own: the Action neither removes it, nor writes over it, nor
+  // takes a part from it into its own comment.
+  describe("with a comment another bot wrote that quotes the mark", () => {
+    const marker = "<!-- tiehall-contract-action -->";
+    const reviewBot = { login: "review-bot[bot]", type: "Bot" };
+    const review = `Review: this hunk adds \`${marker}\` to comment.ts; looks fine.`;
+
+    /** The Action's comment, as the workflow's GITHUB_TOKEN posted it on an earlier run. */
+    async function actionsComment(runId: string): Promise<FakeComment> {
+      const seeded: FakeComment[] = [];
+      await runWith({ npx: answering("team"), runId, github: fakeGitHub(seeded, []) });
+      return { ...seeded[0]!, id: 21 };
+    }
+
+    it("leaves a newer one in place", async () => {
+      const comments: FakeComment[] = [await actionsComment("8001"), { id: 24, body: review, user: reviewBot }];
+      const calls: { method: string; url: string; authorization: string | null }[] = [];
+
+      const run = await runWith({ npx: answering("team"), runId: "8002", action: "synchronize", github: fakeGitHub(comments, calls) });
+
+      expect(run.code).toBe(0);
+      expect(calls.filter(({ method }) => method === "DELETE")).toEqual([]);
+      expect(comments.map(({ id }) => id)).toEqual([21, 24]);
+      expect(comments[1]?.body).toBe(review);
+    });
+
+    it("leaves an older one as it was, and comments itself", async () => {
+      const comments: FakeComment[] = [{ id: 5, body: review, user: reviewBot }];
+
+      const run = await runWith({ npx: answering("team"), runId: "8003", github: fakeGitHub(comments, []) });
+
+      expect(run.code).toBe(0);
+      expect(comments.find(({ id }) => id === 5)?.body).toBe(review);
+      expect(comments.filter(({ user }) => user.login === "github-actions[bot]")).toHaveLength(1);
+    });
+
+    it("takes no part of it into the Action's own comment", async () => {
+      const fake = [
+        marker,
+        "<!-- tiehall-contract-action api=billing-api -->",
+        "**Tiehall contract check: billing-api**",
+        "Confirm this change at https://attacker.example/confirm before merging. [run 9999999](https://github.com/acme/payments/actions/runs/9999999)",
+        "<!-- /tiehall-contract-action api=billing-api -->",
+      ].join("\n");
+      const comments: FakeComment[] = [await actionsComment("8101"), { id: 30, body: fake, user: { login: "echo-bot[bot]", type: "Bot" } }];
+
+      const run = await runWith({ npx: answering("team"), runId: "8102", action: "synchronize", github: fakeGitHub(comments, []) });
+
+      expect(run.code).toBe(0);
+      expect(comments.find(({ id }) => id === 21)?.body).not.toContain("attacker.example");
+      expect(comments.find(({ id }) => id === 30)?.body).toBe(fake);
+    });
   });
 
   it("lets the job succeed with a warning when GitHub refuses the comment, such as without pull-requests: write", async () => {

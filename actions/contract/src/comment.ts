@@ -14,13 +14,16 @@ import type { ActionRuntime } from "./action.ts";
 // per API, between hidden lines that name it: each run writes its own API's
 // part, which shows its latest run, and keeps the others' parts as they were.
 // A comment is the Action's own when it carries the mark and the account the
-// token acts as wrote it, so a comment someone else wrote with the mark is
-// left alone. The job's github-token input may be the workflow's own
-// GITHUB_TOKEN, which writes as GitHub Actions' bot, or a token of its own:
-// for a person's token, GitHub's GET /user names its account; an
-// installation token, GITHUB_TOKEN's kind and an App's, has no such account
-// to read, and writes as a bot, which no person can write as, so its comment
-// is the bot comment with the mark.
+// token acts as wrote it, so a comment someone else wrote with the mark, a
+// person or another bot, is left alone: never written over, never removed,
+// and no part of it taken. The job's github-token input may be the
+// workflow's own GITHUB_TOKEN, which writes as GitHub Actions' bot, or a
+// token of its own: for a person's token, GitHub's GET /user names its
+// account. An installation token, GITHUB_TOKEN's kind and an App's, has no
+// such account to read, so the run takes GitHub Actions' bot for its account
+// until it posts a comment, whose author GitHub then names: another App's
+// bot is known that way, and the run finds the comment that bot posted
+// before, which takes the new comment's parts, and removes the new one.
 // Runs for several APIs at the same moment, in jobs of their own, write the
 // one comment together, and GitHub writes a comment with no check that it is
 // still as a run read it. So each run reads the comment again just before it
@@ -35,8 +38,8 @@ import type { ActionRuntime } from "./action.ts";
 // older run. GitHub refusing the comment, or not answering, leaves the job as
 // it is, with a warning: the comment is a courtesy, and the Action fails open.
 
-/** Whose comments a run may take for its own: the account a person's token acts as, or, for an installation token, any bot. */
-type Author = { login: string } | { bot: true };
+/** The account the workflow's own GITHUB_TOKEN writes as, which an installation token is taken to write as until it posts. */
+const ACTIONS_BOT = "github-actions[bot]";
 
 /** What the comment says: the API, the install, the provider team, and the run that wrote it. */
 export interface RequesterComment {
@@ -156,11 +159,12 @@ export async function commentOnPullRequest(runtime: ActionRuntime, comment: Requ
     if (answer === undefined) return UNREACHABLE;
     return answer.ok ? answer : refused(answer);
   };
-  // The account the token writes as: a person's token's, which GET /user names, or, for an installation token, a bot.
+  // The account the token writes as: a person's token's, which GET /user names, or, for an installation token, GitHub
+  // Actions' bot, until a comment this run posts names the bot it wrote as.
   const user = await call("GET", `${api}/user`);
   const self = typeof user === "string" ? undefined : ((await user.json().catch(() => undefined)) as { login?: unknown } | undefined)?.login;
-  const author: Author = typeof self === "string" && self !== "" ? { login: self } : { bot: true };
-  const wrote = (by: { login?: unknown; type?: unknown } | null | undefined) => ("login" in author ? by?.login === author.login : by?.type === "Bot");
+  let author = typeof self === "string" && self !== "" ? self : ACTIONS_BOT;
+  const wrote = (by: { login?: unknown } | null | undefined) => by?.login === author;
   /** The Action's own comments on the pull request, oldest first, or why they could not be read. */
   const ourComments = async (): Promise<Ours[] | string> => {
     const ours: Ours[] = [];
@@ -186,6 +190,9 @@ export async function commentOnPullRequest(runtime: ActionRuntime, comment: Requ
     if (keeper === undefined) {
       const posted = await call("POST", `${api}/repos/${repository}/issues/${comment.pullRequest}/comments`, { body: bodyOf("", [], comment.api, part) });
       if (typeof posted === "string") return posted;
+      // The account GitHub wrote the comment as, which is the token's own.
+      const by = ((await posted.json().catch(() => undefined)) as { user?: { login?: unknown } | null } | undefined)?.user?.login;
+      if (typeof by === "string" && by !== "") author = by;
     } else {
       // The comment as it is just before this run writes it, so the parts other runs wrote since the listing stay.
       const now = await send("GET", `${single}/${keeper.id}`);
