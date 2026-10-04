@@ -3,6 +3,7 @@ import { Refusal, requestPacketRevised } from "@tiehall/core";
 import { packetRevisions } from "@tiehall/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
+import { packetAsItStands } from "./packet-as-it-stands.ts";
 import { cancelProposals, lockPendingProposals } from "./proposals.ts";
 import { lockRequestById, stampOf } from "./request-changes.ts";
 import { requestView } from "./request-views.ts";
@@ -40,7 +41,7 @@ export async function insertPacketRevision(
   packet: Packet,
   stamp: ReturnType<typeof stampOf>,
 ): Promise<void> {
-  await tx.insert(packetRevisions).values({ orgId, requestId, number, packet, ...stamp });
+  await tx.insert(packetRevisions).values({ orgId, requestId, number, packet: packetAsItStands(packet), ...stamp });
 }
 
 /**
@@ -87,5 +88,5 @@ export async function packetRevisionOf(context: OrgContext, requestId: string, r
     .limit(1);
   if (row === undefined) throw noSuchRevision();
   const { id, key } = await requestView(context, requestId);
-  return { request: { id, key }, revision: row.number, createdAt: row.createdAt.toISOString(), packet: row.packet as Packet };
+  return { request: { id, key }, revision: row.number, createdAt: row.createdAt.toISOString(), packet: packetAsItStands(row.packet) };
 }

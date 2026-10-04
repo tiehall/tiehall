@@ -1,26 +1,32 @@
 import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { publicationProblems } from "./packet-publication.ts";
 import { LATEST_V1, readReleaseTree, releasedVersions, releaseHistoryProblems, releaseTreeProblems, releaseUrl, RELEASES_FOLDER } from "./packet-releases.ts";
 
 // CI's check of the packet schema's release-URL tree (handoff-packet: Fixed
 // release URLs): packages/packet/releases/ holds v1.0.json and the releases
 // after it, each with its URL as $id, and v1.json, which is the latest of them
 // byte for byte; and no commit's release file was changed or removed since.
-// Before the first release the tree is empty and the check says so.
+// Before the first release the tree is empty and the check says so. The
+// publication switch, packages/packet/publication.json, is on exactly when the
+// tree holds a release, and the packet's spec labels the schema beta before,
+// and names its media type from then on (handoff-packet: The beta label;
+// handoff-packet: The packet media type; packet-publication.ts).
 // Usage: node tools/repo-checks/src/check-packet-releases.ts
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const tree = readReleaseTree(join(root, RELEASES_FOLDER));
-const problems = [...releaseTreeProblems(tree), ...releaseHistoryProblems(root)];
+const problems = [...releaseTreeProblems(tree), ...releaseHistoryProblems(root), ...publicationProblems(root)];
 const released = releasedVersions(tree);
 
 if (problems.length > 0) {
-  console.error(`${RELEASES_FOLDER}/ breaks the fixed release URLs:`);
+  console.error(`${RELEASES_FOLDER}/ breaks the fixed release URLs, or the publication does not turn over together:`);
   for (const problem of problems) console.error(`- ${problem}`);
   console.error(
     "\nEach published release keeps its file, with its URL as $id, byte for byte, and v1.json is a copy of the latest v1.x release " +
-      "(handoff-packet: Fixed release URLs).",
+      "(handoff-packet: Fixed release URLs); the publication switch turns on with the first release, and the spec then names the " +
+      "packet's media type (handoff-packet: The packet media type).",
   );
   process.exitCode = 1;
 } else if (released.length === 0) {

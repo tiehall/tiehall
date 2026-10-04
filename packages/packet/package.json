@@ -14,6 +14,7 @@
     "./notices": "./src/notices.ts",
     "./render": "./src/render.ts",
     "./schema/v1-beta.json": "./schema/v1-beta.json",
+    "./publication.json": "./publication.json",
     "./proposals": "./src/proposals.ts",
     "./tool-text": "./src/tool-text.ts"
   },

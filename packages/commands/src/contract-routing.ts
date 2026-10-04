@@ -1,4 +1,4 @@
-import { applyChangeSet, packet as packetSchema, type ContractSection, type Packet } from "@tiehall/catalog";
+import { applyChangeSet, PACKET_SCHEMA_VERSION, packet as packetSchema, type ContractSection, type Packet } from "@tiehall/catalog";
 import { formatRequestKey, isTerminalState, requestOpened, requestStateChanged, type RequestLifecycle, type RequestState } from "@tiehall/core";
 import { apiConsumers, apis, contractChangeRequests, contractChangeSets, contractReports, requests, teams } from "@tiehall/db";
 import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
@@ -324,7 +324,7 @@ export function packetOf(section: ContractSection, team: string): Packet {
     `The provider pull request ${pr} makes ${counted(breaking, "breaking change")} to ${section.api}, which ${team} declared it consumes. ` +
     "The contract section lists every change the diff engine classified, each with its level. " +
     `Change how ${team} uses ${section.api} before the provider change ships, and close this request with ${team}'s own pull request, one that mentions this request's key or is linked to it.`;
-  return packetSchema.parse({ schema_version: "1-beta", kind: "contract_change", untrusted: { need, contract: section } });
+  return packetSchema.parse({ schema_version: PACKET_SCHEMA_VERSION, kind: "contract_change", untrusted: { need, contract: section } });
 }
 
 /** The title of a contract-change request, in Tiehall's words, within the 200 characters of a title. */

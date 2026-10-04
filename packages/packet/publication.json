@@ -1,0 +1,4 @@
+{
+  "$comment": "The publication switch of the packet schema tiehall.packet/v1 (handoff-packet: The beta label; handoff-packet: When the schema is published). It is false until the maintainers publish the schema: packets carry schema_version \"1-beta\" and the schema's $id is https://tiehall.com/schemas/packet/v1-beta.json. The publication turns it on, together with the first release in releases/ and the published spec, which pnpm check:packet-releases holds together: packets then carry \"1.0\", and the schema's $id is its v1.0 release URL. The catalog reads it at build time, so a release of Tiehall carries the state it was built with.",
+  "published": false
+}

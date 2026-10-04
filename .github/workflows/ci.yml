@@ -354,7 +354,11 @@ jobs:
       - run: pnpm check:packet-forward
       # packages/packet/releases/ holds each published release with its URL
       # as $id and v1.json as a copy of the latest, and no commit's release
-      # file was changed or removed since (handoff-packet: Fixed release URLs).
+      # file was changed or removed since (handoff-packet: Fixed release URLs);
+      # the publication switch, packages/packet/publication.json, is on exactly
+      # when it holds a release, and the packet's spec labels the schema beta
+      # before and names its media type from then on (handoff-packet: The
+      # packet media type).
       - run: pnpm check:packet-releases
 
   confirmation-coverage:

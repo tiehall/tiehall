@@ -8,6 +8,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
+import { packetAsItStands } from "./packet-as-it-stands.ts";
 import { actingUserOf } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
 import { requestView, threadOf, type MessageView } from "./request-views.ts";
@@ -110,7 +111,7 @@ async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
   for (const field of PACKET_FIELDS) {
     fields.set(field, await writerOf({ tx, orgId }, requestId, row.number, (packet) => sql`(${packet} -> 'untrusted' -> ${field})::jsonb`));
   }
-  return { number: row.number, packet: row.packet as Packet, team, fields };
+  return { number: row.number, packet: packetAsItStands(row.packet), team, fields };
 }
 
 /** The team that added the first revision whose `text`, read from its packet, is the one revision `current` holds. */

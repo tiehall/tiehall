@@ -1,4 +1,4 @@
-import { createRequest, readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
+import { createRequest, PACKET_SCHEMA_VERSION, readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
 import { Refusal, type RefusalIssue } from "@tiehall/core";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
 import { escapeHtml, htmlPage } from "./html.ts";
@@ -113,7 +113,7 @@ function inputOf(form: URLSearchParams): Record<string, unknown> {
     ...(requestingTeam === "" ? {} : { requestingTeam }),
     title: text("title"),
     packet: {
-      schema_version: "1-beta",
+      schema_version: PACKET_SCHEMA_VERSION,
       kind: "request",
       ...(dueDate === "" ? {} : { due_date: dueDate }),
       untrusted,

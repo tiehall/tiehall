@@ -18,6 +18,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember } from "./members.ts";
+import { packetAsItStands } from "./packet-as-it-stands.ts";
 import { actingUserOf, partiesOf, stampOf, teamActedFor } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
 import { resolveRequestKey } from "./request-keys.ts";
@@ -246,7 +247,9 @@ export async function proposalView(context: OrgContext, proposalId: string): Pro
   const userOf = await usersNamed(context, [stored.accountableUserId, ...received.map(({ userId }) => userId)]);
   const accountableHuman = userOf(stored.accountableUserId);
   const rules = stored.secondConfirmation as SecondConfirmer[];
-  const change = stored.change as { packet?: Packet; teamId?: string };
+  const storedChange = stored.change as { packet?: Packet; teamId?: string };
+  // A proposed packet reads as the schema stands now, as a stored revision does.
+  const change = storedChange.packet === undefined ? storedChange : { ...storedChange, packet: packetAsItStands(storedChange.packet) };
   // The requester side's rule names the requesting team; the target team's and the claimant's, the target team.
   const teamIds = [rules.includes("requester_side") ? request.requestingTeamId : request.targetTeamId, ...(change.teamId === undefined ? [] : [change.teamId])];
   const teamRows = await context.tx

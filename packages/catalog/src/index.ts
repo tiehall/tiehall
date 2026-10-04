@@ -116,13 +116,17 @@ export {
   packet,
   PACKET_COMPONENT,
   PACKET_KINDS,
+  PACKET_MEDIA_TYPE,
+  PACKET_PUBLISHED,
   PACKET_SCHEMA_ID,
   PACKET_SCHEMA_VERSION,
+  packetStage,
   PROVIDER_STATUSES,
   UNTRUSTED_MARK,
   type ContractSection,
   type Packet,
   type PacketKind,
+  type PacketStage,
 } from "./packet.ts";
 export {
   addPacketRevision,
@@ -195,6 +199,7 @@ export { overlongArrays } from "./input-bounds.ts";
 export { OPENAPI_DOCUMENTS, OPENAPI_JSON } from "./openapi-json.ts";
 export { untrustedFieldProblems, type UntrustedFieldProblem } from "./untrusted-fields.ts";
 export { PACKET_SCHEMA_JSON } from "./packet-schema-json.ts";
+export { packetJsonSchema } from "./packet-schema.ts";
 export {
   dropUnknownVariantKeys,
   lowerToolSchema,
