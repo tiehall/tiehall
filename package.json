@@ -39,6 +39,7 @@
     "check:tool-compat": "node tools/repo-checks/src/check-tool-compat.ts",
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
     "check:packet-forward": "node tools/repo-checks/src/check-packet-forward.ts",
+    "check:packet-releases": "node tools/repo-checks/src/check-packet-releases.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts",
     "release:check-stability": "node tools/repo-checks/src/check-release-stability.ts",
     "check:release-gates": "node tools/repo-checks/src/check-release-gates.ts",

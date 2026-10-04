@@ -352,6 +352,10 @@ jobs:
       # valid fixture validates against every release (handoff-packet: v1 only
       # gains optional fields after publication). Before v1.0, it passes.
       - run: pnpm check:packet-forward
+      # packages/packet/releases/ holds each published release with its URL
+      # as $id and v1.json as a copy of the latest, and no commit's release
+      # file was changed or removed since (handoff-packet: Fixed release URLs).
+      - run: pnpm check:packet-releases
 
   confirmation-coverage:
     name: Confirmation coverage

@@ -1,8 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { checkPacketForward, type PacketRelease } from "./packet-forward.ts";
 import { fixtureVersionsEver, validFixturesInTree } from "./packet-history.ts";
+import { readReleaseTree, releasedVersions, RELEASES_FOLDER } from "./packet-releases.ts";
 
 // CI's forward-compatibility check of the packet (handoff-packet: v1 only
 // gains optional fields after publication): once v1.0 is published, the
@@ -15,19 +17,11 @@ import { fixtureVersionsEver, validFixturesInTree } from "./packet-history.ts";
 // Usage: node tools/repo-checks/src/check-packet-forward.ts
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-/** The release-URL tree: each published release as v1.<minor>.json. */
-const RELEASES = `${root}packages/packet/releases/`;
 /** The committed schema, which the next release would publish. */
 const CANDIDATE = `${root}packages/packet/schema/v1-beta.json`;
-const RELEASE_FILE = /^v1\.(0|[1-9]\d*)\.json$/;
 
-const releases: PacketRelease[] = (existsSync(RELEASES) ? readdirSync(RELEASES) : [])
-  .flatMap((name) => {
-    const minor = RELEASE_FILE.exec(name)?.[1];
-    return minor === undefined ? [] : [{ minor: Number(minor), version: `1.${minor}`, text: readFileSync(`${RELEASES}${name}`, "utf8") }];
-  })
-  .sort((a, b) => a.minor - b.minor)
-  .map(({ version, text }) => ({ version, text }));
+const tree = readReleaseTree(join(root, RELEASES_FOLDER));
+const releases: PacketRelease[] = releasedVersions(tree).map((version) => ({ version, text: tree.get(`v${version}.json`) ?? "" }));
 
 if (releases.length === 0) {
   console.log(
