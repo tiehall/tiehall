@@ -50,7 +50,7 @@ const pagePart = z.discriminatedUnion("kind", [
     ...partPlace,
     team: teamRef.nullable().meta({
       description:
-        "The team whose member wrote this field's text: the team that added the latest revision that changed this field; null for text Tiehall added.",
+        "The team whose member wrote this field's text: the team that added the first revision that held this field's text as it is now, so text a later revision brings back, as undoing a scope change does, keeps its writer; null for text Tiehall added.",
     }),
     untrusted: z.object({
       text: z.string().meta({ description: "The field's text, or, for a field that is not text, its JSON: all of it, or this part." }),
@@ -79,7 +79,7 @@ export const requestPage = z.object({
       .nullable()
       .meta({
         description:
-          "The team whose member wrote the packet's text: the team that added the latest revision that changed it, which a revision that only moves the due date does not; null for text Tiehall added.",
+          "The team whose member wrote the packet's text: the team that added the first revision that held it as it is now, which a revision that only moves the due date, or brings back earlier text, does not; null for text Tiehall added.",
       }),
   }),
   section: pageSection.meta({ description: "The sections this page reads: all, or the one named." }),

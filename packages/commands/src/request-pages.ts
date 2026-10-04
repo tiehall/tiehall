@@ -3,7 +3,7 @@ import { REQUEST_KEY, Refusal } from "@tiehall/core";
 import { packetRevisions, teams } from "@tiehall/db";
 import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestPageText, type Reader } from "@tiehall/packet/tool-text";
-import { and, desc, eq, notExists, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, exists, sql, type Column, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -89,11 +89,13 @@ type Writer = { id: string; key: string } | null;
  * text, and, for each field, the team whose member wrote that field's text
  * (agent-safety: Every string shown to agents has an origin). The text is the
  * packet's `untrusted` object, and the writer of the packet's text, or of a
- * field's, is the team that added the latest revision that changed it: a
- * revision that kept it as it was, such as the one a due date the target team
- * proposed adds once it is confirmed, wrote none of it, and a revision by
- * another team that changes one field wrote that field alone, so each other
- * field keeps its origin.
+ * field's, is the team that added the first revision that held it as it is
+ * now: a revision that kept it as it was, such as the one a due date the
+ * target team proposed adds once it is confirmed, wrote none of it; a
+ * revision by another team that changes one field wrote that field alone, so
+ * each other field keeps its origin; and a revision that brought back text an
+ * earlier revision held, as undoing a scope change does, wrote none of it
+ * either, so that text keeps the origin of the team that first wrote it.
  */
 async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
   const [row] = await tx
@@ -103,17 +105,22 @@ async function currentRevision({ tx, orgId }: OrgContext, requestId: string) {
     .orderBy(desc(packetRevisions.number))
     .limit(1);
   if (row === undefined) throw new Error("A request has no packet revision.");
-  const team = await writerOf({ tx, orgId }, requestId, sql`(${packetRevisions.packet} -> 'untrusted')::jsonb`, sql`(previous.packet -> 'untrusted')::jsonb`);
+  const team = await writerOf({ tx, orgId }, requestId, row.number, (packet) => sql`(${packet} -> 'untrusted')::jsonb`);
   const fields = new Map<string, Writer>();
   for (const field of PACKET_FIELDS) {
-    fields.set(field, await writerOf({ tx, orgId }, requestId, sql`(${packetRevisions.packet} -> 'untrusted' -> ${field})::jsonb`, sql`(previous.packet -> 'untrusted' -> ${field})::jsonb`));
+    fields.set(field, await writerOf({ tx, orgId }, requestId, row.number, (packet) => sql`(${packet} -> 'untrusted' -> ${field})::jsonb`));
   }
   return { number: row.number, packet: row.packet as Packet, team, fields };
 }
 
-/** The team that added the latest revision whose value of `current` differs from the revision before it, the first revision's included. */
-async function writerOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, requestId: string, current: SQL, before: SQL): Promise<Writer> {
-  const previous = alias(packetRevisions, "previous");
+/** The team that added the first revision whose `text`, read from its packet, is the one revision `current` holds. */
+async function writerOf(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  requestId: string,
+  current: number,
+  text: (packet: Column) => SQL,
+): Promise<Writer> {
+  const now = alias(packetRevisions, "now");
   const [writer] = await tx
     .select({ teamId: teams.id, teamKey: teams.key })
     .from(packetRevisions)
@@ -122,22 +129,22 @@ async function writerOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, request
       and(
         eq(packetRevisions.orgId, orgId),
         eq(packetRevisions.requestId, requestId),
-        notExists(
+        exists(
           tx
-            .select({ number: previous.number })
-            .from(previous)
+            .select({ number: now.number })
+            .from(now)
             .where(
               and(
-                eq(previous.orgId, packetRevisions.orgId),
-                eq(previous.requestId, packetRevisions.requestId),
-                eq(previous.number, sql`${packetRevisions.number} - 1`),
-                sql`${before} IS NOT DISTINCT FROM ${current}`,
+                eq(now.orgId, packetRevisions.orgId),
+                eq(now.requestId, packetRevisions.requestId),
+                eq(now.number, current),
+                sql`${text(now.packet)} IS NOT DISTINCT FROM ${text(packetRevisions.packet)}`,
               ),
             ),
         ),
       ),
     )
-    .orderBy(desc(packetRevisions.number))
+    .orderBy(asc(packetRevisions.number))
     .limit(1);
   return writer === undefined || writer.teamId === null || writer.teamKey === null ? null : { id: writer.teamId, key: writer.teamKey };
 }

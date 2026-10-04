@@ -4999,7 +4999,7 @@ export interface operations {
                             kind: "request" | "contract_change";
                             /** @description The current revision's number, from 1 for the packet the request was opened with. */
                             revision: number;
-                            /** @description The team whose member wrote the packet's text: the team that added the latest revision that changed it, which a revision that only moves the due date does not; null for text Tiehall added. */
+                            /** @description The team whose member wrote the packet's text: the team that added the first revision that held it as it is now, which a revision that only moves the due date, or brings back earlier text, does not; null for text Tiehall added. */
                             team: {
                                 /** Format: uuid */
                                 id: string;
@@ -5018,7 +5018,7 @@ export interface operations {
                             part: number;
                             /** @description How many parts the field or message is split into; 1 when it is whole. */
                             parts: number;
-                            /** @description The team whose member wrote this field's text: the team that added the latest revision that changed this field; null for text Tiehall added. */
+                            /** @description The team whose member wrote this field's text: the team that added the first revision that held this field's text as it is now, so text a later revision brings back, as undoing a scope change does, keeps its writer; null for text Tiehall added. */
                             team: {
                                 /** Format: uuid */
                                 id: string;

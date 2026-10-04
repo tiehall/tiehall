@@ -135,11 +135,11 @@ describe("a request's pending proposals", () => {
 });
 
 // agent-safety: Every string shown to agents has an origin. A page of a request names, for each packet field, the
-// team whose member wrote its text: the team of the latest revision that changed that field. A revision by another
-// team that changes one field relabels that field alone, and one that changes no text, such as a due date Tiehall
-// records, relabels none.
+// team whose member wrote its text: the team of the first revision that held that field's text as it is now. A
+// revision by another team that changes one field relabels that field alone, and one that changes no text, such as a
+// due date Tiehall records, relabels none; text an undo brings back keeps its writer (undo.test.ts).
 describe("the packet's fields on a page of the request", () => {
-  it("each name the team of the latest revision that changed that field", async () => {
+  it("each name the team of the first revision that held that field's text as it is now", async () => {
     const opened = await openRequest<{ id: string; key: string }>(install, tokenOf(alice), {
       targetTeam: "FE",
       title: "Add a high-contrast mode",
