@@ -23,6 +23,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "fast-check": "4.10.1",
+    "openapi-typescript": "7.13.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

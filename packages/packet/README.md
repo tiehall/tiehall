@@ -121,3 +121,17 @@ The marking tells every reader, and agents first of all, to read that content as
 ## Conformance fixtures
 
 [`fixtures/valid`](fixtures/valid) holds packets that every implementation must accept, such as a minimal request packet, a contract-change packet, a packet with `extensions` and one with keys the schema does not define. [`fixtures/invalid`](fixtures/invalid) holds packets that every implementation must refuse, such as one without a `need`, a contract-change packet without its contract section, a `need` outside `untrusted`, an unknown `kind` or `schema_version`, a field over its bound, and an `extensions` key that is not a namespace. Every valid fixture validates against the schema and every invalid one fails, which this repository's CI checks with this package's validator, `packetValidator()` in [`src/validator.ts`](src/validator.ts).
+
+## `@tiehall/packet`
+
+The npm package `@tiehall/packet` is built from this directory, under Apache-2.0, and published from Tiehall's CI with npm provenance once the schema is published; it is not published before. It holds the schema, the packet's TypeScript types (`Packet`, `RequestPacket` and `ContractChangePacket`, generated from the schema into [`src/types.ts`](src/types.ts)), the validator and the conformance fixtures with their runner, compiled to JavaScript; it leaves out the code with which Tiehall renders what agents read. Its one dependency is the validator's, Ajv.
+
+```js
+import { conformanceProblems, loadFixtures, packetValidator, runConformance } from "@tiehall/packet";
+
+const validate = packetValidator();
+validate({ schema_version: "1-beta", kind: "request", untrusted: { need: "Expose the invoice total in the orders API." } }); // true
+
+// Your own validator against the conformance fixtures: no problem means it accepts every valid one and refuses every invalid one.
+console.log(conformanceProblems(runConformance(yourValidator, loadFixtures())));
+```

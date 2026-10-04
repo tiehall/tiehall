@@ -26,7 +26,7 @@
     "check:openapi": "node packages/catalog/src/check-openapi.ts",
     "mcp:generate": "node packages/catalog/src/write-tool-snapshot.ts",
     "check:mcp-tools": "node packages/catalog/src/check-tool-snapshot.ts",
-    "packet:generate": "node packages/catalog/src/write-packet-schema.ts",
+    "packet:generate": "node packages/catalog/src/write-packet-schema.ts && node packages/packet/src/write-types.ts",
     "check:packet-schema": "node packages/catalog/src/check-packet-schema.ts",
     "client:generate": "node packages/client/src/write-client.ts",
     "check:client": "node packages/client/src/check-client.ts",

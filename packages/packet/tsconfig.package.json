@@ -1,0 +1,11 @@
+{
+  "$comment": "Compiles @tiehall/packet's entry, src/index.ts, and what it imports, the validator, the fixture runner and the types, to JavaScript with declarations (handoff-packet: The npm package). src/build-package.ts runs it with --outDir; the renderer is never imported from the entry, so it is never compiled into the package.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "files": ["src/index.ts"]
+}

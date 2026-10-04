@@ -4,6 +4,9 @@
     "build.yml#build": [
       "packages"
     ],
+    "packet-package.yml#publish": [
+      "id-token"
+    ],
     "release.yml#release": [
       "attestations",
       "contents",

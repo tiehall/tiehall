@@ -41,7 +41,7 @@ pnpm check:security-events
 pnpm check:error-model
 ```
 
-Some files are generated, committed, and compared by CI with what the code generates: the OpenAPI document `openapi/v1.json`, the MCP tool snapshot `mcp/tools.json`, the packet schema `packages/packet/schema/v1-beta.json` and the generated part of `@tiehall/client`. When a change touches an operation, a tool or the packet, regenerate them and commit them with it:
+Some files are generated, committed, and compared by CI with what the code generates: the OpenAPI document `openapi/v1.json`, the MCP tool snapshot `mcp/tools.json`, the packet schema `packages/packet/schema/v1-beta.json` with the packet's types `packages/packet/src/types.ts`, and the generated part of `@tiehall/client`. When a change touches an operation, a tool or the packet, regenerate them and commit them with it:
 
 ```sh
 pnpm openapi:generate

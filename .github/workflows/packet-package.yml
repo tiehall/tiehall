@@ -1,0 +1,85 @@
+name: Packet package
+
+# Publishes @tiehall/packet to npm (handoff-packet: The npm package; public-api:
+# Client pieces are built from public source with provenance; design.md,
+# Technical decisions: T13): the package of the Apache-2.0 schema directory,
+# built from this repository with the packet's types, the validator and the
+# fixtures and without the fencing renderer, and published from CI with npm's
+# trusted publishing and provenance, never from a laptop.
+#
+# It stays off until the schema is published (handoff-packet: When the schema
+# is published): a maintainer starts it, and its publish job runs only once
+# packages/packet/releases/ holds a release, whose version the package takes.
+# The job holds the OIDC token permission, through which npm's trusted
+# publishing authenticates it and signs the provenance, and nothing else, and it
+# runs only GitHub's own actions (.github/workflow-policy.json).
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+# One publish at a time.
+concurrency:
+  group: packet-package
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Read the publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.publication.outputs.published }}
+      version: ${{ steps.publication.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      # published=true and the package's version once the release-URL tree holds a release; published=false before.
+      - name: Read whether the packet schema is published
+        id: publication
+        run: node tools/repo-checks/src/read-packet-publication.ts >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish @tiehall/packet
+    needs: prepare
+    if: needs.prepare.outputs.published == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # npm's trusted publishing authenticates the publish with the job's OIDC token and signs its provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/packet
+      - name: Build the package
+        run: node packages/packet/src/build-package.ts --version "$VERSION" --out "$RUNNER_TEMP/package"
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+      # The pack dry run holds no renderer and no source, and the validator, installed from the tarball, accepts every
+      # valid fixture and rejects every invalid one.
+      - name: Check the package's content and its validator
+        run: node packages/packet/src/check-package.ts "$RUNNER_TEMP/package"
+      - name: Publish the package with provenance
+        working-directory: ${{ runner.temp }}/package
+        run: npm publish --provenance --access public --ignore-scripts
