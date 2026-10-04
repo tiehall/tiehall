@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, inject, it } from "vitest";
-import { docker, dockerOk, uniqueName } from "../src/docker.ts";
+import { docker, dockerOk, IMAGE_PLATFORMS, uniqueName } from "../src/docker.ts";
+import { Install } from "../src/install.ts";
 
 // The image under test runs on its own platform without a word from docker
 // (design.md, Technical decisions: T17). The image CI builds is linux/amd64;
@@ -39,4 +40,39 @@ describe("another image", () => {
     expect(run.status, run.stderr).toBe(0);
     expect(run.stdout.trim()).toBe(machine[host] ?? host);
   });
+});
+
+describe("an install of an image whose platform is not the host's", () => {
+  // Compose asks for the image's platform through a file of the tests' own, outside the install's folder: it goes with
+  // the install, so a run on a host of another platform leaves nothing behind in the temporary directory.
+  it("leaves no Compose file of the tests' own behind once destroyed", async () => {
+    const before = process.env[IMAGE_PLATFORMS];
+    const platforms = JSON.parse(before ?? "{}") as Record<string, string>;
+    // On a host of the image's own platform, the tests ask for that platform as they would for another one.
+    const platform = platforms[image] ?? dockerOk(["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"]);
+    process.env[IMAGE_PLATFORMS] = JSON.stringify({ ...platforms, [image]: platform });
+    let install: Install | undefined;
+    try {
+      install = await Install.create({ image, name: "tiehall-platform-file" });
+      const dir = install.dir;
+      const own = (install.environment()["COMPOSE_FILE"] ?? "").split(":").filter((file) => file !== "" && !file.startsWith(`${dir}/`));
+      expect(own).toHaveLength(1);
+      expect(readFileSync(own[0]!, "utf8")).toContain(`platform: ${platform}`);
+      // Compose reads it from there, for Tiehall's own services alone.
+      const config = install.compose(["config", "--format", "json"]);
+      expect(config.status, config.stderr).toBe(0);
+      const services = (JSON.parse(config.stdout) as { services: Record<string, { platform?: string }> }).services;
+      expect([services["app"]?.platform, services["migrate"]?.platform, services["postgres"]?.platform]).toEqual([platform, platform, undefined]);
+
+      install.destroy();
+      install = undefined;
+
+      expect(existsSync(dir)).toBe(false);
+      expect(existsSync(own[0]!)).toBe(false);
+    } finally {
+      install?.destroy();
+      if (before === undefined) delete process.env[IMAGE_PLATFORMS];
+      else process.env[IMAGE_PLATFORMS] = before;
+    }
+  }, 300_000);
 });

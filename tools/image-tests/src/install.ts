@@ -18,9 +18,9 @@ import { platformFlags, waitFor, type Run } from "./docker.ts";
 // name, so several installs can run side by side and none meets another's.
 // On a host whose platform is not the image's, such as CI's linux/amd64 image
 // on an arm64 laptop, Compose needs the image's platform to pull such an image
-// from a registry: a Compose file of the tests' own, outside the folder, asks
-// for it for Tiehall's own services alone, so Postgres, Caddy and every other
-// service keep the host's platform.
+// from a registry: a Compose file of the tests' own, beside the folder and
+// outside it, removed with it, asks for it for Tiehall's own services alone,
+// so Postgres, Caddy and every other service keep the host's platform.
 
 const DEPLOY = fileURLToPath(new URL("../../../deploy/", import.meta.url));
 
@@ -48,14 +48,12 @@ export interface InstallOptions {
   name?: string;
 }
 
-/** A Compose file of the tests' own, outside every install's folder, that asks for this platform for Tiehall's own services alone. */
-function platformFile(platform: string): string {
-  const file = join(tmpdir(), `tiehall-image-tests-platform-${platform.replace(/[^A-Za-z0-9]+/g, "-")}.yaml`);
+/** Writes a Compose file of the tests' own that asks for this platform for Tiehall's own services alone. */
+function writePlatformFile(file: string, platform: string): void {
   writeFileSync(
     file,
     ["# Written by the image tests (tools/image-tests/src/install.ts).", "services:", "  migrate:", `    platform: ${platform}`, "  app:", `    platform: ${platform}`, ""].join("\n"),
   );
-  return file;
 }
 
 export class Install {
@@ -67,8 +65,11 @@ export class Install {
   readonly port: number;
   /** TIEHALL_URL: http://localhost and the port, a trial URL on one machine. */
   readonly url: string;
-  /** The platform of the image the install was created with, when it is not the host's. */
-  private platform: string | undefined;
+  /**
+   * For an image whose platform is not the host's, the tests' Compose file that asks for it: beside the install's
+   * folder, outside it, and removed with it.
+   */
+  private platformFile: string | undefined;
 
   private constructor(dir: string, project: string, port: number) {
     this.dir = dir;
@@ -84,15 +85,19 @@ export class Install {
    */
   static async create(options: InstallOptions): Promise<Install> {
     const install = await Install.empty(options);
-    install.platform = platformFlags(options.image)[1];
+    const platform = platformFlags(options.image)[1];
     try {
+      if (platform !== undefined) {
+        install.platformFile = `${install.dir}.platform.yaml`;
+        writePlatformFile(install.platformFile, platform);
+      }
       for (const file of RELEASE_FILES) copyFileSync(join(DEPLOY, file), join(install.dir, file));
       const init = install.shell(`docker run --rm --network none ${quote(options.image)} init --url ${quote(install.url)} --image ${quote(options.image)} > .env`);
       if (init.status !== 0) throw new Error(`init failed: ${init.stderr}`);
       install.publishOnItsPort();
       return install;
     } catch (error) {
-      rmSync(install.dir, { recursive: true, force: true });
+      install.removeFiles();
       throw error;
     }
   }
@@ -116,9 +121,9 @@ export class Install {
    */
   environment(): Record<string, string> {
     const env: Record<string, string> = { COMPOSE_PROJECT_NAME: this.project };
-    if (this.platform !== undefined && existsSync(join(this.dir, "compose.yaml"))) {
+    if (this.platformFile !== undefined && existsSync(join(this.dir, "compose.yaml"))) {
       const own = ["compose.yaml", "compose.override.yaml"].map((name) => join(this.dir, name)).filter((file) => existsSync(file));
-      env["COMPOSE_FILE"] = [...own, platformFile(this.platform)].join(":");
+      env["COMPOSE_FILE"] = [...own, this.platformFile].join(":");
     }
     for (const [name, value] of Object.entries(process.env)) {
       if (value !== undefined && !name.startsWith("TIEHALL_") && !name.startsWith("COMPOSE_")) env[name] ??= value;
@@ -224,10 +229,16 @@ export class Install {
     );
   }
 
-  /** Stops the stack and removes it with its volumes, and the folder. */
+  /** Stops the stack and removes it with its volumes, the folder and the tests' file beside it. */
   destroy(): void {
     this.compose(["--profile", "caddy", "down", "--volumes", "--remove-orphans", "--timeout", "10"], { timeoutSeconds: 120 });
+    this.removeFiles();
+  }
+
+  /** Removes the folder and the tests' Compose file beside it. */
+  private removeFiles(): void {
     rmSync(this.dir, { recursive: true, force: true });
+    if (this.platformFile !== undefined) rmSync(this.platformFile, { force: true });
   }
 }
 
