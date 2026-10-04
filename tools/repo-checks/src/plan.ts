@@ -79,6 +79,11 @@ export function planFor(root: string, capability: string, requirement: string): 
   const age = additionOrder(root);
   const newest = (path: string) => age.get(relative(root, path)) ?? Number.MAX_SAFE_INTEGER;
   const modifying = holding.filter(({ modifies }) => modifies).sort((a, b) => newest(a.file) - newest(b.file));
+  if (modifying.length > 1 && isShallow(root)) {
+    throw new Error(
+      `${modifying.length} changes in progress modify the requirement "${requirement}", and this is a shallow clone, whose history cannot tell which of them is newer; fetch the repository's whole history, as a CI checkout does with fetch-depth: 0.`,
+    );
+  }
   const wording = modifying.at(-1) ?? adding;
   if (wording !== undefined) return { spec: wording.spec, tasks: tasksOf((adding ?? wording).change) };
   const spec = holds(join(root, "openspec", "specs", capability, "spec.md"));
@@ -91,6 +96,15 @@ function modifies(spec: string, requirement: string): boolean {
   const at = lines.findIndex((line) => line.trim() === `### Requirement: ${requirement}`);
   const section = lines.slice(0, at).findLast((line) => line.startsWith("## "));
   return section?.trim() === "## MODIFIED Requirements";
+}
+
+/** Whether the repository is a shallow clone, such as a CI job's checkout at depth 1, which holds only the latest commits. */
+function isShallow(root: string): boolean {
+  try {
+    return execFileSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "true";
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -106,6 +106,38 @@ Tiehall SHALL record a security event for each of these:
     }
   });
 
+  // A shallow clone, such as a CI job's checkout at depth 1, holds one commit, which seems to add every change at once,
+  // so it cannot tell which of two changes that modify the requirement is the newer one: the check says so, rather than
+  // reading the list as the change whose name sorts last words it.
+  it("is refused in a shallow clone that cannot tell which of two modifying changes is newer", () => {
+    const modified = (item: string) => `# Spec Delta: activity-log\n\n## MODIFIED Requirements\n\n${SPEC.replace("- a role change;", `- a role change;\n- ${item};`)}`;
+    const scratch = mkdtempSync(join(tmpdir(), "tiehall-plan-shallow-"));
+    const origin = join(scratch, "origin");
+    const write = (name: string, path: string, text: string) => {
+      const file = join(origin, "openspec", "changes", name, path);
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, text);
+    };
+    try {
+      mkdirSync(origin);
+      const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd });
+      git(origin, "init", "--quiet", "--initial-branch=main");
+      write("add-v1", "specs/activity-log/spec.md", `# activity-log\n\n## ADDED Requirements\n\n${SPEC}`);
+      write("zz-first-follow-up", "specs/activity-log/spec.md", modified("a revoked invite"));
+      git(origin, "add", ".");
+      git(origin, "commit", "--quiet", "-m", "The plan and a follow-up");
+      write("a-second-follow-up", "specs/activity-log/spec.md", modified("a sign-in"));
+      git(origin, "add", ".");
+      git(origin, "commit", "--quiet", "-m", "A second follow-up");
+      expect(planFor(origin, "activity-log", "Which actions are security events")?.spec).toBe(modified("a sign-in"));
+
+      git(scratch, "clone", "--quiet", "--depth", "1", `file://${origin}`, "shallow");
+      expect(() => planFor(join(scratch, "shallow"), "activity-log", "Which actions are security events")).toThrow(/shallow.*fetch-depth: 0/s);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
   it("is the main spec, with no tasks, once the change is archived, and nothing when no spec holds the list", () => {
     expect(planFor(root, "activity-log", "Another requirement without a list")).toBeUndefined();
     expect(planFor(root, "agent-safety", "Which actions are security events")).toBeUndefined();
