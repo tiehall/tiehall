@@ -1,0 +1,13 @@
+{
+  "$comment": "A fixture: release 1.3.0 must not be skipped.",
+  "releases": [
+    {
+      "version": "1.3.0",
+      "reason": "Its worker copies each thing's name into its title, which the contract step of 1.4.0 relies on."
+    },
+    {
+      "version": "1.5.0",
+      "reason": "A later release, which the notes of 1.4.0 leave out."
+    }
+  ]
+}

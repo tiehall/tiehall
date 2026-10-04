@@ -59,6 +59,13 @@ jobs:
         run: node tools/repo-checks/src/read-release-tag.ts "$TAG"
         env:
           TAG: ${{ github.ref_name }}
+      # Before anything is built: openapi/changelog.json records the release's API changes, its contract steps since
+      # the previous release follow expand steps of earlier releases, and release/no-skip.json is well formed.
+      - name: Check that the release notes can be written
+        run: node tools/repo-checks/src/write-release-notes.ts "$VERSION" --previous "$PREVIOUS" --check
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          PREVIOUS: ${{ steps.tag.outputs.previous }}
 
   build:
     name: Build the image
@@ -150,6 +157,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The previous release's tag, whose migrations tell which contract steps this release adds.
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
@@ -201,13 +210,17 @@ jobs:
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
+      # The notes name the image, its attestations and files, the install and the upgrade, every release up to this
+      # one that must not be skipped, the contract steps this release adds, and its API changes.
       - name: Gather the release files and write the release notes
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS: ${{ needs.prepare.outputs.previous }}
           IMAGE: ${{ steps.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ steps.push.outputs.digest }}
         run: |
           node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"
           node tools/repo-checks/src/write-release-notes.ts "$VERSION" \
+            --previous "$PREVIOUS" \
             --image "$IMAGE" \
             --repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --output "$RUNNER_TEMP/release/release-notes.md"

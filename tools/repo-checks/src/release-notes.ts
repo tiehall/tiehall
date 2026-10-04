@@ -1,5 +1,9 @@
+import type { ChangelogRelease } from "@tiehall/catalog/changelog";
+import { compareVersions } from "@tiehall/core";
+import { releaseNotes as apiChangesSection } from "./api-changelog.ts";
 import { documentedCommand, INSTALL_DOCS } from "./docs-commands.ts";
 import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "./release-files.ts";
+import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 
 // The release notes (self-host-install: Releases carry signed attestations;
 // self-host-install: `init` prints a complete `.env`; design.md, Technical
@@ -9,7 +13,14 @@ import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "./release-files.ts";
 // GitHub's artifact attestation verification, which needs no credentials for
 // a public repository's image; list the files the release offers; and show
 // the install docs' commands with the release's own values, so the install
-// command carries --image with the release's reference, and the upgrade.
+// command carries --image with the release's reference, and the upgrade. The
+// upgrade names every release up to this one that must not be skipped and
+// flags the contract steps the release adds, after which the way back is the
+// backup taken before the upgrade (self-host-install: Upgrades apply
+// migrations before the app starts; self-host-install: Migrations expand,
+// then contract); and the notes end with the release's API changes, the same
+// entries as the changelog page of an install running it (public-api: The
+// changelog page and the release notes).
 
 /** The SPDX predicate type of the image's SBOM attestation, which the scanner writes as SPDX 2.3. */
 export const SBOM_PREDICATE_TYPE = "https://spdx.dev/Document/v2.3";
@@ -63,6 +74,12 @@ export interface ReleaseNotesInput {
   image: ReleaseImage;
   /** The repository's web address, such as https://github.com/acme/tiehall. */
   repository: string;
+  /** The release's API changes, as openapi/changelog.json records them. */
+  api: ChangelogRelease;
+  /** The contract steps the release adds since the previous release. */
+  contractSteps: readonly ContractStep[];
+  /** The releases up to this one that must not be skipped. */
+  noSkip: readonly NoSkipRelease[];
 }
 
 /** A Markdown block of shell commands. */
@@ -71,7 +88,7 @@ function commands(...lines: string[]): string {
 }
 
 /** The release's notes, in Markdown. */
-export function renderReleaseNotes({ root, version, image, repository }: ReleaseNotesInput): string {
+export function renderReleaseNotes({ root, version, image, repository, api, contractSteps, noSkip }: ReleaseNotesInput): string {
   const web = repository.replace(/\/+$/, "");
   const name = repositoryName(web);
   const tag = `v${version}`;
@@ -110,11 +127,40 @@ export function renderReleaseNotes({ root, version, image, repository }: Release
       documentedCommand(root, "install-up"),
     ),
     "## Upgrade",
+    ...skipping(version, noSkip),
+    ...contracting(contractSteps, docs),
     `Back up the install, set its \`TIEHALL_IMAGE\` in \`.env\` to this release's image, then pull the image and start it. ` +
       `The [upgrade docs](${docs}#upgrade) cover each step.`,
     commands(documentedCommand(root, "upgrade-backup")),
     ["```", `TIEHALL_IMAGE=${reference}`, "```"].join("\n"),
     commands(documentedCommand(root, "upgrade-pull-up")),
+    apiChangesSection(api).trimEnd(),
   ];
   return `${sections.join("\n\n")}\n`;
+}
+
+/** What the notes say about skipping releases: each release up to this one that must not be skipped, oldest first. */
+function skipping(version: string, noSkip: readonly NoSkipRelease[]): string[] {
+  const named = [...noSkip].filter((entry) => compareVersions(entry.version, version) <= 0).sort((a, b) => compareVersions(a.version, b.version));
+  if (named.length === 0) return ["No release must be skipped: an install on any earlier release upgrades straight to this one, because the migrations run in order."];
+  return named.map(({ version: release, reason }) =>
+    release === version
+      ? `This release must not be skipped: ${reason} An install upgrades to it before it upgrades to a later release.`
+      : `Release ${release} must not be skipped: ${reason} An install on a release before ${release} upgrades to ${release} first, and to this release after it.`,
+  );
+}
+
+/** What the notes say about contract steps: the ones the release adds, flagged with the way back after them. */
+function contracting(steps: readonly ContractStep[], docs: string): string[] {
+  const rollback = `[rollback docs](${docs}#rollback)`;
+  if (steps.length === 0) {
+    return [`This release has no contract step, so until a later release's contract step has run, going back to the previous release's image works as the ${rollback} describe.`];
+  }
+  const one = steps.length === 1;
+  return [
+    `This release has ${one ? "a contract step, which removes" : "contract steps, which remove"} or rewrite${one ? "s" : ""} what an earlier release replaced:`,
+    steps.map(({ migration, after }) => `- \`${migration}\`, after the expand step of ${after}`).join("\n"),
+    `Once ${one ? "it has" : "they have"} run, an image of an earlier release no longer starts on the install's database: ` +
+      `the way back is the backup taken before the upgrade, restored with the previous image, as the ${rollback} describe. Take that backup first.`,
+  ];
 }

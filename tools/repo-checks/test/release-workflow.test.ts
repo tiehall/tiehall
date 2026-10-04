@@ -71,6 +71,15 @@ describe("the release workflow", () => {
     expect(writes(job)).toEqual([]);
   });
 
+  it("checks, before anything is built, that the release notes can be written from the changelog, the migrations and the no-skip list", () => {
+    const job = workflow.jobs["prepare"] as Job;
+    const order = steps(job).map(({ id, run }) => id ?? (run?.includes("write-release-notes.ts") ? "notes" : undefined));
+    expect(order.indexOf("tag")).toBeLessThan(order.indexOf("notes"));
+    const check = steps(job).find(({ run }) => run?.includes("write-release-notes.ts"));
+    expect(check?.run?.trim()).toBe('node tools/repo-checks/src/write-release-notes.ts "$VERSION" --previous "$PREVIOUS" --check');
+    expect(check?.env).toEqual({ VERSION: "${{ steps.tag.outputs.version }}", PREVIOUS: "${{ steps.tag.outputs.previous }}" });
+  });
+
   it("builds the image once, as the Build workflow does, but for the release's version, in a job that can write nothing", () => {
     const builds = jobs.filter(([, job]) => /\bdocker build\b/.test(runs(job)));
     expect(builds.map(([id]) => id)).toEqual(["build"]);
@@ -144,6 +153,10 @@ describe("the release workflow", () => {
     expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"');
     expect(script).toContain('node tools/repo-checks/src/write-release-notes.ts "$VERSION"');
     expect(script).toContain('--image "$IMAGE"');
+    // The previous release's migrations, read from its tag, tell which contract steps this release adds.
+    expect(script).toContain('--previous "$PREVIOUS"');
+    expect(steps(job).find(({ run }) => run?.includes("write-release-notes.ts"))?.env?.["PREVIOUS"]).toBe("${{ needs.prepare.outputs.previous }}");
+    expect(steps(job).find(({ uses }) => uses?.startsWith("actions/checkout@"))?.with).toEqual({ "persist-credentials": false, "fetch-depth": 0 });
     expect(script).toContain('--output "$RUNNER_TEMP/release/release-notes.md"');
     expect(script).toMatch(/gh release create "\$TAG" --repo "\$GITHUB_REPOSITORY" --verify-tag --title "Tiehall \$VERSION" --notes-file "\$RUNNER_TEMP\/release\/release-notes\.md" "\$\{prerelease\[@\]\}" "\$RUNNER_TEMP"\/release\/\*/);
     const publish = steps(job).find(({ run }) => run?.includes("gh release create"));

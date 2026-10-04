@@ -1,37 +1,62 @@
 // Writes a release's notes for the release workflow (self-host-install:
-// Releases carry signed attestations), from the image it pushed, pinned by
-// version and digest, and the repository's web address. The notes go to
-// standard output unless --output names a file.
-// Usage: node tools/repo-checks/src/write-release-notes.ts <version> --image <repository>:<version>@sha256:<digest> --repository <web address> [--output <file>] [--root <repository>]
+// Releases carry signed attestations; public-api: The changelog page and the
+// release notes; self-host-install: Migrations expand, then contract;
+// self-host-install: Upgrades apply migrations before the app starts), from
+// the image it pushed, pinned by version and digest, the repository's web
+// address, and the repository at the release's tag: the API changes
+// openapi/changelog.json records for the release, the contract steps it adds
+// since the previous release's tag, and the releases release/no-skip.json
+// names. The notes go to standard output unless --output names a file. With
+// --check and no image, it only checks, before the image is built, that the
+// notes can be written, and says what they will hold.
+// Usage: node tools/repo-checks/src/write-release-notes.ts <version> [--previous <tag>] (--image <repository>:<version>@sha256:<digest> --repository <web address> [--output <file>] | --check) [--root <repository>]
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
 import { parseReleaseImage, renderReleaseNotes, repositoryName } from "./release-notes.ts";
+import { releaseSources } from "./release-sources.ts";
 
 const USAGE =
-  "Usage: node tools/repo-checks/src/write-release-notes.ts <version> --image <repository>:<version>@sha256:<digest> " +
-  "--repository <web address> [--output <file>] [--root <repository>]";
+  "Usage: node tools/repo-checks/src/write-release-notes.ts <version> [--previous <tag>] " +
+  "(--image <repository>:<version>@sha256:<digest> --repository <web address> [--output <file>] | --check) [--root <repository>]";
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
+    previous: { type: "string" },
     image: { type: "string" },
     repository: { type: "string" },
     output: { type: "string" },
+    check: { type: "boolean", default: false },
     root: { type: "string", default: "." },
   },
 });
 const [version] = positionals;
-if (version === undefined || positionals.length !== 1 || values.image === undefined || values.repository === undefined) {
+const writing = values.image !== undefined && values.repository !== undefined;
+if (version === undefined || positionals.length !== 1 || (values.check ? values.image !== undefined || values.output !== undefined : !writing)) {
   console.error(USAGE);
   process.exit(2);
 }
+/** A count with its noun, such as 1 entry or 2 entries. */
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 try {
-  repositoryName(values.repository);
-  const notes = renderReleaseNotes({ root: resolve(values.root), version, image: parseReleaseImage(values.image, version), repository: values.repository });
-  if (values.output === undefined) process.stdout.write(notes);
-  else writeFileSync(values.output, notes);
+  const image = values.check ? undefined : parseReleaseImage(values.image as string, version);
+  if (!values.check) repositoryName(values.repository as string);
+  // The workflow passes an empty value for the first release, which has no previous release.
+  const previous = values.previous === undefined || values.previous === "" ? undefined : values.previous;
+  const sources = releaseSources(resolve(values.root), version, previous);
+  if (image === undefined) {
+    console.log(
+      `The notes of ${version} can be written: ${count(sources.api.changes.length, "API change", "API changes")} and ` +
+        `${count(sources.api.entries.length, "entry", "entries")}, ${count(sources.contractSteps.length, "contract step", "contract steps")}, ` +
+        `${count(sources.noSkip.length, "release that must not be skipped", "releases that must not be skipped")}.`,
+    );
+  } else {
+    const notes = renderReleaseNotes({ root: resolve(values.root), version, image, repository: values.repository as string, ...sources });
+    if (values.output === undefined) process.stdout.write(notes);
+    else writeFileSync(values.output, notes);
+  }
 } catch (error) {
   console.error((error as Error).message);
   process.exitCode = 1;

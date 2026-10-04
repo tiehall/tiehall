@@ -1,0 +1,4 @@
+{
+  "$comment": "The releases an install must not skip when it upgrades (self-host-install: Upgrades apply migrations before the app starts). Releases can be skipped, because the migrations run in order; a release must not be skipped when a later release relies on something it does while it runs, such as a background job that backfills what a later contract step drops, or the jobs it moves off a queue it renames. The maintainers list such a release here, with the reason in a sentence, when they prepare it or as soon as a later release relies on it. Each release's notes name every release up to it listed here.",
+  "releases": []
+}
