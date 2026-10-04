@@ -1,0 +1,32 @@
+// CI check of the release's gates (self-host-install: Upgrades apply
+// migrations before the app starts; public-api: Each operation carries a
+// stability level): the fresh-install, upgrade, backup-and-restore,
+// polling-mode and egress tests and the release check of stability levels
+// each run in the release workflow, or in a workflow of this repository it
+// calls, and a failure in any of them stops every job of the release workflow
+// that can push or publish. It fails when one of them does not run, or when a
+// job that can write would still run after it failed.
+// Usage: node tools/repo-checks/src/check-release-gates.ts [root]
+import { resolve } from "node:path";
+import process from "node:process";
+import { gateSites, publishingAfterFailure, RELEASE_GATES, RELEASE_WORKFLOW, releaseGateProblems } from "./release-gates.ts";
+
+const root = resolve(process.argv[2] ?? ".");
+const problems = releaseGateProblems(root);
+for (const gate of RELEASE_GATES) {
+  for (const site of gateSites(root, gate)) {
+    if (publishingAfterFailure(root, site).length === 0) {
+      console.log(`${gate.name} runs in ${site.file}#${site.job}; when it fails, no job that pushes or publishes runs.`);
+    }
+  }
+}
+if (problems.length > 0) {
+  for (const problem of problems) console.error(problem);
+  console.error(
+    `\nA release is published only after these gates pass on its image and documents: every job of ${RELEASE_WORKFLOW} that can push or ` +
+      "publish must need, directly or through jobs that run only when theirs succeeded, each job that runs a gate, and no gate may continue on error.",
+  );
+  process.exitCode = 1;
+} else {
+  console.log(`\nEvery gate stops the release when it fails: no job of ${RELEASE_WORKFLOW} that can push or publish runs after it.`);
+}

@@ -40,6 +40,7 @@
     "check:packet-compat": "node tools/repo-checks/src/check-packet-compat.ts",
     "changelog:release": "node tools/repo-checks/src/record-release.ts",
     "release:check-stability": "node tools/repo-checks/src/check-release-stability.ts",
+    "check:release-gates": "node tools/repo-checks/src/check-release-gates.ts",
     "oasdiff:fixtures": "pnpm --filter @tiehall/contract-action oasdiff:fixtures"
   },
   "devDependencies": {

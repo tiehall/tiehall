@@ -189,8 +189,14 @@ jobs:
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
       # Actions pinned by commit SHA, declared permissions, writes and secrets
-      # only where the policy lists them, and frozen, script-free installs.
+      # only where the policy lists them, first-party steps only in the jobs
+      # that can write, and frozen, script-free installs.
       - run: pnpm check:workflows
+      # A failure in the fresh-install, upgrade, backup-and-restore,
+      # polling-mode or egress test, or in the release check of stability
+      # levels, stops every job of the release workflow that can push or
+      # publish.
+      - run: pnpm check:release-gates
 
   license-map:
     name: License map

@@ -80,6 +80,30 @@ describe("the release workflow", () => {
     expect(check?.env).toEqual({ VERSION: "${{ steps.tag.outputs.version }}", PREVIOUS: "${{ steps.tag.outputs.previous }}" });
   });
 
+  it("runs the release check of stability levels before anything is built, and the image checks on the release's own image", () => {
+    const prepare = steps(workflow.jobs["prepare"]).map(({ run }) => run?.trim());
+    expect(prepare).toContain("pnpm release:check-stability");
+    const image = workflow.jobs["image"] as Job & { with?: Record<string, unknown> };
+    expect(image.uses).toBe("./.github/workflows/image-checks.yml");
+    expect(needs(image)).toEqual(["prepare", "build"]);
+    expect(image.with).toEqual({ "image-artifact": "image", "previous-base": "${{ github.sha }}^" });
+    expect(image.permissions).toEqual({ contents: "read", packages: "read" });
+    expect(needs(workflow.jobs["release"] as Job)).toEqual(["prepare", "build", "sbom", "image"]);
+    // The image checks load the saved image and take the previous image from the base the release gives.
+    const checks = parse(readFileSync(join(root, ".github/workflows/image-checks.yml"), "utf8")) as Workflow & { on: { workflow_call: { inputs: Record<string, unknown> } } };
+    expect(Object.keys(checks.on.workflow_call.inputs)).toEqual(["image", "image-artifact", "previous-base"]);
+    for (const [id, job] of Object.entries(checks.jobs)) {
+      const download = steps(job).findIndex(({ uses }) => uses?.startsWith("actions/download-artifact@"));
+      const get = steps(job).findIndex(({ run }) => run?.startsWith("tools/image-tests/get-image.sh"));
+      expect(download, id).toBeGreaterThanOrEqual(0);
+      expect(download, id).toBeLessThan(get);
+      expect(steps(job)[download]?.if, id).toBe("inputs.image-artifact != ''");
+      expect(steps(job)[get]?.env?.["IMAGE_ARCHIVE"], id).toBe("${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}");
+      const previous = steps(job).find(({ run }) => run?.startsWith("tools/image-tests/get-previous-image.sh"));
+      if (previous !== undefined) expect(previous.env?.["BASE"], id).toBe("${{ inputs.previous-base || github.event.pull_request.base.sha || github.event.before }}");
+    }
+  });
+
   it("builds the image once, as the Build workflow does, but for the release's version, in a job that can write nothing", () => {
     const builds = jobs.filter(([, job]) => /\bdocker build\b/.test(runs(job)));
     expect(builds.map(([id]) => id)).toEqual(["build"]);

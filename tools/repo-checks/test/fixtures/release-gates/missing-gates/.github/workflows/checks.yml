@@ -1,0 +1,32 @@
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  fresh-install:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install fresh-install
+  backup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install backup
+  upgrade:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install upgrade rollback
+  egress:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install egress

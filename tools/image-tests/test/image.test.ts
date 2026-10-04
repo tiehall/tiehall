@@ -158,6 +158,15 @@ function revision(): string {
   return dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image]);
 }
 
+/**
+ * The release the image is, such as 1.3.0, which the release workflow builds it for, or undefined for a
+ * development build, such as each build of main and a pull request's, which carries 0.0.0-dev.
+ */
+function release(): string | undefined {
+  const version = dockerOk(["image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.version"}}', image]);
+  return version.endsWith("-dev") ? undefined : version;
+}
+
 /** Starts a role in the background and returns the container name. */
 function start(role: string, ...options: string[]): string {
   const name = uniqueName(`tiehall-${role}`);
@@ -361,7 +370,8 @@ describe("the init role", () => {
     const name = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .Config.Env}}", image]))
       .find((entry: string) => entry.startsWith("TIEHALL_IMAGE_NAME="))
       ?.slice("TIEHALL_IMAGE_NAME=".length);
-    expect(values.get("TIEHALL_IMAGE")).toBe(`${name}:sha-${revision()}`);
+    // A release is named by its version, as the release workflow tags it; any other build by its commit, as the Build workflow tags it.
+    expect(values.get("TIEHALL_IMAGE")).toBe(`${name}:${release() ?? `sha-${revision()}`}`);
     for (const secret of ["TIEHALL_DATABASE_OWNER_PASSWORD", "TIEHALL_DATABASE_APP_PASSWORD", "TIEHALL_SECRET_KEY", "TIEHALL_AUTH_SECRET"]) {
       const value = values.get(secret) ?? "";
       expect(value, secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -463,12 +473,15 @@ describe.each(["web", "all"])("the %s role", (role) => {
   });
 
   // self-host-install: The running version links to its source.
-  it("shows the running version in every page's footer, with a link to the source of the commit it was built from", async () => {
+  it("shows the running version in every page's footer, with a link to the source of the release, or of the commit it was built from", async () => {
     const html = await (await fetch(`http://127.0.0.1:${port}/sign-in`)).text();
     const footer = /<footer>([\s\S]*?)<\/footer>/.exec(html)?.[1] ?? "";
-    // A build that names no release is a development build, whose source is its commit.
-    expect(footer).toContain("Tiehall 0.0.0-dev");
-    expect(footer).toMatch(new RegExp(`href="https://github\\.com/[^/"]+/[^/"]+/tree/${revision()}"`));
+    // A release's source is its version tag; a build that names no release is a development build, whose source is
+    // its commit.
+    const version = release();
+    expect(footer).toContain(`Tiehall ${version ?? "0.0.0-dev"}`);
+    const ref = version === undefined ? revision() : `v${version.replaceAll(".", "\\.")}`;
+    expect(footer).toMatch(new RegExp(`href="https://github\\.com/[^/"]+/[^/"]+/tree/${ref}"`));
   });
 
   it("tags its pages with the commit as the deployment id", async () => {

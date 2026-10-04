@@ -16,16 +16,30 @@ name: Image checks
 # connections; self-host-install: The setting that switches metadata-document
 # fetching off; self-host-install: No model calls), and the end-to-end test of
 # polling mode (tracker-mirrors: GitHub and Jira each run in webhook mode or
-# polling mode). The operator tests that
-# need the previous image take the image last built from main before the
-# commit under test (get-previous-image.sh): the pull request's base, or the
-# commit main was at before the push.
+# polling mode). The release workflow calls it too, on the image it built for
+# the release, saved as a workflow artifact, before it publishes anything
+# (self-host-install: Upgrades apply migrations before the app starts). The
+# operator tests that need the previous image take the image of the newest
+# final release the commit before the one under test holds, or before the
+# first release the image last built from main before it
+# (get-previous-image.sh): the pull request's base, the commit main was at
+# before the push, or the parent of the release's commit.
 
 on:
   workflow_call:
     inputs:
       image:
         description: The image to test, pinned by digest. Empty tests a build of the checked-out commit.
+        type: string
+        required: false
+        default: ""
+      image-artifact:
+        description: The workflow artifact that holds the image to test, saved as image.tar, such as the image a release built. Empty uses the image input.
+        type: string
+        required: false
+        default: ""
+      previous-base:
+        description: The commit before the one under test, for the previous image. Empty takes the pull request's base, or the commit main was at before the push.
         type: string
         required: false
         default: ""
@@ -51,10 +65,17 @@ jobs:
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile --filter @tiehall/image-tests
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # Each role on a read-only root filesystem, as a non-root uid; an unknown role exits non-zero.
       - run: pnpm test:image
@@ -74,10 +95,17 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # Boots deploy/compose.yaml with the image in role all against stock
       # postgres:17 and waits for /healthz to report healthy.
@@ -103,10 +131,17 @@ jobs:
       # The GitHub stub and the install docs' commands come from @tiehall/testing and @tiehall/repo-checks,
       # workspace dependencies of the image tests.
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # The install docs' commands, run by name: the release files downloaded, the .env init prints,
       # deploy/compose.yaml started with and without the caddy profile, the setup code from `docker compose logs
@@ -134,10 +169,17 @@ jobs:
       # The GitHub stub, the tiehall CLI, which the test builds from the repository, and the MCP SDK client come with
       # the image tests' workspace dependencies.
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # A fresh install set up through the setup screen against the GitHub stub in the runner's Chrome; two people in
       # two teams signed in with GitHub, their CLIs signed in through the device flow and an MCP SDK client approved on
@@ -163,10 +205,17 @@ jobs:
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # A fresh install with SMTP settings, in a Docker network where only the stubs of GitHub, GitHub Actions' OIDC
       # keys, an SMTP server and an agent vendor's host are reachable, through setup, the loop, the GitHub Issues
@@ -192,10 +241,17 @@ jobs:
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       # A fresh install on a trial URL, in the egress test's network, which nothing outside it can reach: GitHub runs
       # in polling mode, and the loop, close on merge, the contract flow and the GitHub Issues mirror each pick up a
@@ -223,15 +279,22 @@ jobs:
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       # The install docs' commands come from @tiehall/repo-checks, a workspace dependency of the image tests.
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       - name: Get the previous image
         run: tools/image-tests/get-previous-image.sh "$BASE"
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ inputs.previous-base || github.event.pull_request.base.sha || github.event.before }}
           GHCR_TOKEN: ${{ github.token }}
       # backup.sh writes a timestamped dump only its owner can read and records the finished backup; restore.sh
       # restores it into an empty database and the app boots with the data; a dump from the previous image is
@@ -259,15 +322,22 @@ jobs:
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       # The install docs' commands come from @tiehall/repo-checks, a workspace dependency of the image tests.
       - run: pnpm install --frozen-lockfile --filter "@tiehall/image-tests..."
+      - name: Download the image
+        if: inputs.image-artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.image-artifact }}
+          path: ${{ runner.temp }}/image
       - name: Get the image
         run: tools/image-tests/get-image.sh "$IMAGE"
         env:
           IMAGE: ${{ inputs.image }}
+          IMAGE_ARCHIVE: ${{ inputs.image-artifact != '' && format('{0}/image/image.tar', runner.temp) || '' }}
           GHCR_TOKEN: ${{ github.token }}
       - name: Get the previous image
         run: tools/image-tests/get-previous-image.sh "$BASE"
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ inputs.previous-base || github.event.pull_request.base.sha || github.event.before }}
           GHCR_TOKEN: ${{ github.token }}
       # The previous image with seeded data, upgraded with `docker compose pull && docker compose up -d`: the seeded
       # data is served after the upgrade, a failing fixture migration keeps the app off the new image and the schema

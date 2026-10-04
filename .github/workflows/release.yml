@@ -14,6 +14,13 @@ name: Release
 # Nothing is pushed or published before the job that publishes, the only job
 # that holds a write permission (.github/workflow-policy.json), which runs only
 # GitHub's own actions. The image travels between the jobs as a saved image.
+# The release is gated (self-host-install: Upgrades apply migrations before the
+# app starts; public-api: Each operation carries a stability level): the
+# release check of stability levels runs before anything is built, and the
+# image checks, the fresh-install, upgrade, backup-and-restore, polling-mode
+# and egress tests among them, run on the release's own image; the job that
+# publishes needs every one of them, so a failure in any stops it.
+# `pnpm check:release-gates` checks that a failure in each gate does.
 # The SBOM comes from the third-party scanner, pinned by digest, in a job of its
 # own with no permissions, no secrets and no network, which reads only the saved
 # image.
@@ -53,6 +60,8 @@ jobs:
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
       - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      # A release offers no operation or tool at alpha, and every operation carries a stability level.
+      - run: pnpm release:check-stability
       # The tag names a semantic version, which becomes the image's version tag, and points to a commit of main.
       - name: Read the release from its tag
         id: tag
@@ -139,9 +148,24 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The image tests, the self-host boot test and the operator tests, on the release's own image: the fresh install,
+  # the end-to-end "It works" test, the egress and polling-mode tests, backup and restore, and the upgrade from the
+  # previous release's image, the newest final release the tagged commit's parent holds, or before the first release
+  # the image last built from main before it.
+  image:
+    name: Image
+    needs: [prepare, build]
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/image-checks.yml
+    with:
+      image-artifact: image
+      previous-base: ${{ github.sha }}^
+
   release:
     name: Publish the release
-    needs: [prepare, build, sbom]
+    needs: [prepare, build, sbom, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
