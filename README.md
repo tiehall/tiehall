@@ -22,10 +22,11 @@ In development, toward an open-source, self-hosted v1. There is no release yet, 
 
 You need a host with Docker and the Docker Compose plugin, a GitHub organization where you can create and install a GitHub App, and a host name for the install served over HTTPS; for a trial on one machine, `http://localhost:3000` works without TLS, in a browser profile that visits no other local server, since the browser shares a trial's cookies with every server on `localhost`, as [Start the install](docs/install.md#start-the-install) explains. The [install docs](docs/install.md) cover each step in full, with TLS, backups, upgrades and the connections an install makes.
 
-1. In a new folder, download the release's files, where `<release>` is the address of the release's files:
+1. In a new folder, download the release's files, where `<release>` is the address of the release's files that the release notes give:
 
    ```sh
-   for file in compose.yaml Caddyfile .env.example backup.sh restore.sh; do curl --fail --silent --show-error --location --remote-name "<release>/$file"; done
+   for file in compose.yaml Caddyfile backup.sh restore.sh; do curl --fail --silent --show-error --location --remote-name "<release>/$file"; done
+   curl --fail --silent --show-error --location --output .env.example "<release>/env.example"
    chmod +x backup.sh restore.sh
    ```
 

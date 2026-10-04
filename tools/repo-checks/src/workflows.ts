@@ -4,8 +4,10 @@ import { parse } from "yaml";
 
 // The rules of self-host-install: Release pipeline integrity that can be read
 // from the repository: how workflows reference actions, which token
-// permissions and secrets each job holds, how CI installs dependencies, and
-// which packages may run install scripts.
+// permissions and secrets each job holds, that a job holding a write
+// permission, such as the jobs that push the image, runs only first-party
+// steps, how CI installs dependencies, and which packages may run install
+// scripts.
 
 export type Rule =
   | "action-not-pinned"
@@ -14,7 +16,8 @@ export type Rule =
   | "unlisted-write-permission"
   | "unlisted-secret"
   | "unsafe-install"
-  | "install-scripts";
+  | "install-scripts"
+  | "third-party-in-write-job";
 
 export interface Violation {
   rule: Rule;
@@ -48,6 +51,8 @@ const POLICY = join(".github", "workflow-policy.json");
 /** owner/repo[/path]@<full commit SHA>. A tag, a branch or an abbreviated SHA can be moved or become ambiguous. */
 const PINNED_ACTION = /^[^@\s]+@[0-9a-f]{40}$/;
 const PINNED_DOCKER_ACTION = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
+/** A first-party action or workflow: GitHub's own (the actions and github organizations), or the repository's own. */
+const FIRST_PARTY = /^(?:\.\/|(?:actions|github)\/)/;
 /** An expression, ${{ ... }}: the only place a workflow can read the secrets context. */
 const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
 /** A secret named inside an expression: secrets.NAME or secrets['NAME']. */
@@ -141,6 +146,14 @@ function checkJob(file: string, job: string, definition: Mapping, policy: Policy
     const allowed = policy.writePermissions[key] ?? [];
     for (const scope of writesIn(permissions)) {
       if (!allowed.includes(scope)) add("unlisted-write-permission", `${scope}: write`);
+    }
+  }
+
+  // A job that can write runs only first-party steps: GitHub's own actions and the repository's own, never a
+  // third-party action, Docker action or reusable workflow, which would run with its write access.
+  if (isMapping(permissions) && writesIn(permissions).length > 0) {
+    for (const uses of references) {
+      if (typeof uses === "string" && !FIRST_PARTY.test(uses)) add("third-party-in-write-job", uses);
     }
   }
 

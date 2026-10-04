@@ -122,7 +122,9 @@ describe("the install docs' commands", () => {
 describe("the install docs", () => {
   it("cover downloading the release files, init, and starting with and without the caddy profile", () => {
     const commands = installDocsCommands(root);
-    expect(commands.get("install-download")?.text).toContain("compose.yaml Caddyfile .env.example backup.sh restore.sh");
+    // GitHub keeps no leading period in a release file's name, so the release page offers .env.example as env.example.
+    expect(commands.get("install-download")?.text).toContain("for file in compose.yaml Caddyfile backup.sh restore.sh;");
+    expect(commands.get("install-download")?.text).toContain('--output .env.example "<release>/env.example"');
     expect(commands.get("install-init")?.text).toContain("init --url https://tiehall.example.com --image <image> > .env");
     expect(commands.get("install-up")?.text).toBe("docker compose up -d");
     expect(commands.get("install-up-caddy")?.text).toBe("docker compose --profile caddy up -d");

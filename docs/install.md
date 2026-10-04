@@ -13,10 +13,11 @@ The commands below run in the install's folder on the host, which holds the rele
 
 ## Download the release files
 
-Each release names its image, pinned by version and digest, and publishes these files: `compose.yaml`, the `Caddyfile`, `.env.example`, `backup.sh` and `restore.sh`. In a new folder for the install, download them from the release, where `<release>` is the address of the release's files that the release page gives:
+Each release names its image, pinned by version and digest, and publishes these files: `compose.yaml`, the `Caddyfile`, `.env.example`, which the release page names `env.example` because GitHub keeps no leading period in a release file's name, `backup.sh` and `restore.sh`. The release notes also show how to check, with `gh attestation verify`, the signed build provenance and SBOM the image carries. In a new folder for the install, download the files from the release, where `<release>` is the address of the release's files that the release notes give:
 
 ```sh docs-test=install-download
-for file in compose.yaml Caddyfile .env.example backup.sh restore.sh; do curl --fail --silent --show-error --location --remote-name "<release>/$file"; done
+for file in compose.yaml Caddyfile backup.sh restore.sh; do curl --fail --silent --show-error --location --remote-name "<release>/$file"; done
+curl --fail --silent --show-error --location --output .env.example "<release>/env.example"
 chmod +x backup.sh restore.sh
 ```
 

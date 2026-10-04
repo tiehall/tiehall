@@ -1,0 +1,226 @@
+name: Release
+
+# A version tag makes a release (self-host-install: Releases carry signed
+# attestations; self-host-install: Release pipeline integrity; design.md,
+# Technical decisions: T13): v<major>.<minor>.<patch>, or a release candidate
+# such as v1.3.0-rc.1, on a commit of main. The image is built once, for the
+# release's version, from this repository; it is pushed once, by digest and
+# tagged with the version, and that digest gets signed build-provenance and
+# SBOM attestations (GitHub artifact attestations), pushed beside it to GHCR,
+# which operators check with `gh attestation verify`. The release page names
+# the digest and the version tag and offers compose.yaml, the Caddyfile,
+# .env.example, backup.sh, restore.sh and the release notes.
+#
+# Nothing is pushed or published before the job that publishes, the only job
+# that holds a write permission (.github/workflow-policy.json), which runs only
+# GitHub's own actions. The image travels between the jobs as a saved image.
+# The SBOM comes from the third-party scanner, pinned by digest, in a job of its
+# own with no permissions, no secrets and no network, which reads only the saved
+# image.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+# One run per tag at a time.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Read the release from its tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      previous: ${{ steps.tag.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The tags and main's history, to check that the tag's commit is on main and to find the previous release.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      # The tag names a semantic version, which becomes the image's version tag, and points to a commit of main.
+      - name: Read the release from its tag
+        id: tag
+        run: node tools/repo-checks/src/read-release-tag.ts "$TAG"
+        env:
+          TAG: ${{ github.ref_name }}
+
+  build:
+    name: Build the image
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # As each build of main is built (build.yml), with the release's version: the migrate role records it with each
+      # migration, init names the image by it, and the web UI links to the source at the release's tag.
+      - name: Build the image once, for the release's version, and save it
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          repository="ghcr.io/$owner/tiehall"
+          docker build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" \
+            --build-arg TIEHALL_VERSION="$VERSION" \
+            --build-arg TIEHALL_IMAGE_NAME="$repository" \
+            --build-arg TIEHALL_SOURCE_REPOSITORY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$repository:$VERSION" \
+            .
+          docker save "$repository:$VERSION" --output "$RUNNER_TEMP/image.tar"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image
+          path: ${{ runner.temp }}/image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  sbom:
+    name: Write the image's SBOM
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The scanner is third-party code: no token permissions and no secrets, and it reads only the saved image.
+    permissions: {}
+    env:
+      # Third-party, pinned by digest, the same as the Build workflow's scan; Renovate proposes new digests after the
+      # 7-day release age.
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image
+          path: ${{ runner.temp }}/image
+      # The scanner runs with no network, a read-only root filesystem and no capabilities, as the runner's user, who
+      # owns the saved image, and writes the SBOM as an SPDX document.
+      - name: List the image's packages as an SPDX document
+        run: |
+          mkdir "$RUNNER_TEMP/sbom"
+          docker run --rm --network none --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" \
+            --volume "$RUNNER_TEMP/image/image.tar:/image.tar:ro" \
+            --volume "$RUNNER_TEMP/sbom:/sbom" \
+            "$TRIVY_IMAGE" image --input /image.tar --cache-dir /tmp/trivy \
+            --format spdx-json --output /sbom/sbom.spdx.json --no-progress
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom/sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish the release
+    needs: [prepare, build, sbom]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      # To create the release and upload its files.
+      contents: write
+      # To push the image and its attestations.
+      packages: write
+      # To sign the attestations with the workflow's identity.
+      id-token: write
+      # To store the attestations.
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image
+          path: ${{ runner.temp }}/image
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+      # The one push of the image: by digest, tagged with the release's version. The job stays logged in to GHCR for
+      # the attestations, which are pushed beside the image, and logs out after them.
+      - name: Push the image by digest, tagged with its version
+        id: push
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          repository="ghcr.io/$owner/tiehall"
+          docker load --input "$RUNNER_TEMP/image/image.tar"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$repository:$VERSION"
+          digest="$(docker buildx imagetools inspect "$repository:$VERSION" --format '{{.Manifest.Digest}}')"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed \`$repository:$VERSION@$digest\`." >> "$GITHUB_STEP_SUMMARY"
+      # Without a predicate, the action attests the build provenance of the run that built the image.
+      - name: Attest the image's build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Attest the image's SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/sbom/sbom.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io
+      - name: Gather the release files and write the release notes
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE: ${{ steps.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ steps.push.outputs.digest }}
+        run: |
+          node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"
+          node tools/repo-checks/src/write-release-notes.ts "$VERSION" \
+            --image "$IMAGE" \
+            --repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --output "$RUNNER_TEMP/release/release-notes.md"
+      # The notes are the release page's text and one of its files. gh uploads the files to a draft and publishes it
+      # once every file is there; a release candidate is marked as a pre-release.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          prerelease=()
+          if [ "$PRERELEASE" = true ]; then prerelease=(--prerelease); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Tiehall $VERSION" \
+            --notes-file "$RUNNER_TEMP/release/release-notes.md" "${prerelease[@]}" "$RUNNER_TEMP"/release/*

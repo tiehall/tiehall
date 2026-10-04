@@ -1,0 +1,8 @@
+{
+  "writePermissions": {
+    "release.yml#publish": ["contents", "packages"],
+    "release.yml#reuse": ["packages"],
+    "release.yml#docker": ["packages"]
+  },
+  "secrets": {}
+}

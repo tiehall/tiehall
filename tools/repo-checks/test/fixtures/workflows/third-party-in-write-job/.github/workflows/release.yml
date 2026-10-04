@@ -1,0 +1,35 @@
+name: Third-party code in a job that can write
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  # Reads only: a third-party action is allowed here.
+  scan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: aquasecurity/trivy-action@3d3c42e5aac5ba805825da76410c181273ba90b1 # v1.0.0
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      # GitHub's own actions and the repository's own are first-party.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/upload-sarif@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - uses: ./.github/actions/local
+      - uses: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - run: docker push ghcr.io/acme/tiehall:1.3.0
+  docker:
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  reuse:
+    permissions:
+      packages: write
+    uses: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1

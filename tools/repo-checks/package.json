@@ -10,7 +10,8 @@
   },
   "exports": {
     "./docs-commands": "./src/docs-commands.ts",
-    "./model-sdks": "./src/model-sdks.ts"
+    "./model-sdks": "./src/model-sdks.ts",
+    "./release-files": "./src/release-files.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

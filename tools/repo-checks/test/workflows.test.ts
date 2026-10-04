@@ -111,6 +111,16 @@ describe("the workflow check", () => {
     ]);
   });
 
+  it("fails a job that holds a write permission and runs an action that is not GitHub's own or the repository's", () => {
+    const run = check(fixture("third-party-in-write-job"));
+    expect(run.status).toBe(1);
+    expect(violationsOf(checkWorkflows(fixture("third-party-in-write-job")), "third-party-in-write-job")).toEqual([
+      "release.yml#docker: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release.yml#publish: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "release.yml#reuse: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    ]);
+  });
+
   it("passes pinned actions, declared permissions, listed writes and secrets, and safe installs", () => {
     expect(checkWorkflows(fixture("clean"))).toEqual([]);
     const run = check(fixture("clean"));
@@ -129,12 +139,19 @@ describe("the workflow check", () => {
     expect(run.stdout).toContain("ci.yml#test");
   });
 
-  it("leaves packages: write to the build job alone, and no other write permission to any job", () => {
+  it("leaves packages: write to the build job, the release's writes to its publishing job, and no write permission to any other job", () => {
     const writes = jobPermissions(repoRoot).flatMap(({ job, permissions }) =>
       Object.entries((permissions ?? {}) as Record<string, string>)
         .filter(([, level]) => level === "write")
-        .map(([scope]) => `${job}: ${scope}`),
+        .map(([scope]) => `${job}: ${scope}`)
+        .sort(),
     );
-    expect(writes).toEqual(["build.yml#build: packages"]);
+    expect(writes).toEqual([
+      "build.yml#build: packages",
+      "release.yml#release: attestations",
+      "release.yml#release: contents",
+      "release.yml#release: id-token",
+      "release.yml#release: packages",
+    ]);
   });
 });

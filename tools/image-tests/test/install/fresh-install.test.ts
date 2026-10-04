@@ -3,12 +3,13 @@ import { createServer, type Server } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RELEASE_FILES as PUBLISHED_FILES } from "@tiehall/repo-checks/release-files";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { documented } from "../../src/docs.ts";
 import { waitFor } from "../../src/docker.ts";
 import { stubGitHubFor, type StubbedGitHub } from "../../src/github.ts";
-import { freePort, Install, quote, RELEASE_FILES } from "../../src/install.ts";
+import { freePort, Install, quote } from "../../src/install.ts";
 
 // The fresh-install test (self-host-install: Compose runs Tiehall and
 // Postgres; self-host-install: Setup names the company and makes the first
@@ -26,7 +27,8 @@ import { freePort, Install, quote, RELEASE_FILES } from "../../src/install.ts";
 // the stub (github.ts). CI runs it on every pull request.
 
 const image = inject("image");
-const DEPLOY = fileURLToPath(new URL("../../../../deploy/", import.meta.url));
+const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const DEPLOY = join(ROOT, "deploy");
 
 let release: { server: Server; url: string };
 let install: Install;
@@ -34,16 +36,20 @@ let github: StubbedGitHub;
 let browser: Browser;
 let page: Page;
 
-/** Serves the release's files, as a release page offers them for download. */
+/**
+ * Serves the release's files, as a release page offers them for download: by
+ * the names the release workflow uploads them under, .env.example as
+ * env.example, since GitHub keeps no leading period in a release file's name.
+ */
 async function serveReleaseFiles(): Promise<{ server: Server; url: string }> {
-  const files = [...RELEASE_FILES, ".env.example"];
   const server = createServer((incoming, outgoing) => {
-    const name = (incoming.url ?? "").replace(/^\//, "");
-    if (!files.includes(name)) {
+    const asset = (incoming.url ?? "").replace(/^\//, "");
+    const file = PUBLISHED_FILES.find((published) => published.asset === asset);
+    if (file === undefined) {
       outgoing.writeHead(404).end();
       return;
     }
-    outgoing.writeHead(200, { "content-type": "application/octet-stream" }).end(readFileSync(join(DEPLOY, name)));
+    outgoing.writeHead(200, { "content-type": "application/octet-stream" }).end(readFileSync(join(ROOT, file.source)));
   });
   const port = await freePort();
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -89,7 +95,7 @@ const sql = (query: string) => install.sql(query);
 describe("a fresh install, as the install docs go", () => {
   it("downloads the release files, writes .env with init, and starts, serving the setup screen", async () => {
     await run(install, documented("install-download", { "<release>": release.url }));
-    for (const file of [...RELEASE_FILES, ".env.example"]) expect(readFileSync(join(install.dir, file), "utf8")).toBe(readFileSync(join(DEPLOY, file), "utf8"));
+    for (const { name } of PUBLISHED_FILES) expect(readFileSync(join(install.dir, name), "utf8")).toBe(readFileSync(join(DEPLOY, name), "utf8"));
     await run(install, documented("install-init", { "<image>": image, "https://tiehall.example.com": install.url }));
     // What init printed runs the image under test at the install's URL; the test publishes the app on a free port.
     expect(install.readEnv("TIEHALL_IMAGE")).toBe(image);

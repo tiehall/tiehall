@@ -3,6 +3,12 @@
   "writePermissions": {
     "build.yml#build": [
       "packages"
+    ],
+    "release.yml#release": [
+      "attestations",
+      "contents",
+      "id-token",
+      "packages"
     ]
   },
   "secrets": {}

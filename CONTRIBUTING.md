@@ -116,3 +116,11 @@ Agents sign in to an install as OAuth clients, and the MCP clients differ in wha
 5. In the same sessions, record which clients open a URL-mode elicitation for a commitment and retry the tool call afterwards, and whether Claude Code's Stop hook with `asyncRewake` wakes the session when news arrives.
 
 Commit the record of the run with a result in every cell. Triage each failing cell: a failure on Tiehall's side becomes a task with a reproducing test first; a failure only the client can fix gets its fallback documented for that client, which is Dynamic Client Registration, a personal access token, or the web inbox in place of URL-mode elicitation.
+
+## Making a release
+
+A release is made from a version tag on a commit of `main`: `v<major>.<minor>.<patch>`, such as `v1.3.0`, or a release candidate such as `v1.3.0-rc.1`, which the release page marks as a pre-release. Releases use semantic versions, and the version becomes the image's version tag.
+
+Before tagging, record the release's API changes in `openapi/changelog.json` with `pnpm changelog:release <version> --previous <previous release's tag>`, leaving out `--previous` for the first release, and merge that through a pull request, so the image built from the tag lists them on `/docs/api/changelog`.
+
+Pushing the tag starts the [release workflow](.github/workflows/release.yml), the only way a release is made; nothing is published from a laptop. It checks that the tag names a version and points to a commit of `main`, builds the image once for that version, writes the image's SBOM with the pinned scanner in a job without permissions, pushes the image by digest, tagged with its version, attests the digest's build provenance and SBOM, and publishes the release with its notes, `compose.yaml`, the `Caddyfile`, `.env.example` (as `env.example`, because GitHub keeps no leading period in a release file's name), `backup.sh` and `restore.sh`.
