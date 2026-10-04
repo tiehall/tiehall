@@ -32,6 +32,7 @@ pnpm check:model-sdks
 pnpm check:openapi
 pnpm check:mcp-tools
 pnpm check:packet-schema
+pnpm check:packet-forward
 pnpm check:client
 pnpm check:plugin
 pnpm check:confirmations

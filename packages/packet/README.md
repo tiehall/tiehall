@@ -116,7 +116,7 @@ The marking tells every reader, and agents first of all, to read that content as
 
 **Publication** comes once no breaking packet change has been needed for four weeks and at least three companies, by their own reports, exchange packets, contract packets included; installs send no usage data, so only what companies report counts. The maintainers decide, and record the decision in the changelog. Publication is four things at once: this directory with a short spec and a changelog; fixed release URLs under `https://tiehall.com/schemas/`, `v1.0.json` and those after it, with `v1.json` for the latest v1.x; the `@tiehall/packet` package on npm, with the types, a validator and the fixtures; and the media type `application/vnd.tiehall.packet+json; version=1`. Packets then carry `"1.0"`. Tiehall's API keeps serving packets as `application/json`.
 
-**After publication**, v1 only gains optional fields: a packet built against a newer v1.x validates against every older v1.x.
+**After publication**, v1 only gains optional fields: a packet built against a newer v1.x validates against every older v1.x. A v1.x release adds no required field, removes no field and changes no constraint of a field an earlier release defines, neither narrower, which would refuse an older packet, nor wider, such as another enum value or a longer maximum, which would let a newer packet fail an older release; it adds optional fields only where an earlier release leaves an object open. Every conformance fixture that ever validated against a release still validates, and CI checks every change against every published release.
 
 ## Conformance fixtures
 

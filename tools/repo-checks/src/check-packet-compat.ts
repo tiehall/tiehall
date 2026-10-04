@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { API_BREAKING_LABEL } from "@tiehall/catalog/changelog";
 import { parseLabels } from "./api-compat.ts";
-import { checkPacketPullRequest, PACKET_NOTICE_DAYS, type FixtureVersion } from "./packet-compat.ts";
+import { checkPacketPullRequest, PACKET_NOTICE_DAYS } from "./packet-compat.ts";
+import { fileAt, fixtureVersionsEver, validFixturesAt, validFixturesInTree } from "./packet-history.ts";
 
 // CI's fixture-compatibility check on a pull request (handoff-packet: Breaking
 // packet changes before publication): every version of every valid packet
@@ -19,46 +20,19 @@ import { checkPacketPullRequest, PACKET_NOTICE_DAYS, type FixtureVersion } from 
 // label names as a JSON list; none when it is unset.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const VALID = "packages/packet/fixtures/valid/";
 const SCHEMA = "packages/packet/schema/v1-beta.json";
 const CHANGELOG = "openapi/changelog.json";
 const baseRef = process.argv[2] ?? `origin/${process.env["BASE_REF"] || "main"}`;
 const labels = parseLabels(process.env["PR_LABELS"]);
-const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
-const lines = (text: string) => text.split("\n").filter((line) => line !== "");
-const show = (ref: string, file: string): string | undefined => {
-  try {
-    return git("show", `${ref}:${file}`);
-  } catch {
-    return undefined;
-  }
-};
-
-const mergeBase = git("merge-base", baseRef, "HEAD").trim();
+const mergeBase = execFileSync("git", ["merge-base", baseRef, "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const at = mergeBase.slice(0, 12);
 
 // Each version of a valid fixture is read from the commit that made it.
-const fixturesEver: FixtureVersion[] = [];
-for (const commit of lines(git("log", "--format=%H", mergeBase, "--", VALID))) {
-  for (const file of lines(git("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", commit, "--", VALID))) {
-    const text = file.endsWith(".json") ? show(commit, file) : undefined;
-    if (text !== undefined) fixturesEver.push({ name: `valid/${file.slice(VALID.length)}`, text, commit });
-  }
-}
-const validBase = Object.fromEntries(
-  lines(git("ls-tree", "-r", "--name-only", mergeBase, "--", VALID))
-    .filter((file) => file.endsWith(".json"))
-    .map((file) => [`valid/${file.slice(VALID.length)}`, show(mergeBase, file) ?? ""]),
-);
-const validRevision = existsSync(`${root}${VALID}`)
-  ? Object.fromEntries(
-      readdirSync(`${root}${VALID}`)
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => [`valid/${name}`, readFileSync(`${root}${VALID}${name}`, "utf8")]),
-    )
-  : {};
-const schemaBase = show(mergeBase, SCHEMA);
-const changelogBase = show(mergeBase, CHANGELOG);
+const fixturesEver = fixtureVersionsEver(root, mergeBase);
+const validBase = validFixturesAt(root, mergeBase);
+const validRevision = validFixturesInTree(root);
+const schemaBase = fileAt(root, mergeBase, SCHEMA);
+const changelogBase = fileAt(root, mergeBase, CHANGELOG);
 
 const result = checkPacketPullRequest({
   fixturesEver,

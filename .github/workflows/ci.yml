@@ -328,13 +328,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The whole history: the forward-compatibility check reads every
+          # version of every valid packet fixture.
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/catalog
+      - run: pnpm install --frozen-lockfile --filter @tiehall/catalog --filter @tiehall/repo-checks
       # Regenerates packages/packet/schema/v1-beta.json from the catalog's
       # packet definition and fails when it differs from the committed file,
       # when it and openapi/v1.json's packet component define different fields
@@ -343,6 +346,12 @@ jobs:
       # packet component (handoff-packet: One definition for the schema and the
       # API; handoff-packet: Open objects, strict server).
       - run: pnpm check:packet-schema
+      # From the first published release on, the committed schema only adds
+      # optional fields to every release in packages/packet/releases/, every
+      # fixture that validated against a release still validates, and every
+      # valid fixture validates against every release (handoff-packet: v1 only
+      # gains optional fields after publication). Before v1.0, it passes.
+      - run: pnpm check:packet-forward
 
   confirmation-coverage:
     name: Confirmation coverage
