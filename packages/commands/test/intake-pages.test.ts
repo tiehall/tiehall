@@ -168,10 +168,13 @@ describe("a team's intake page", () => {
     }
   });
 
-  it("answers a removed member's browser with 403 and nothing from the page", async () => {
+  it("answers a removed member's browser with 403 and nothing from the page, and leads it to sign in", async () => {
     const answer = await call("/FE", { cookie: browser["dana"] ?? "", accept: BROWSER });
     expect(answer.status).toBe(403);
     holdsNothingOfFe(answer);
+    // A removal ends the member's web sessions, so the way on is the sign-in page, never the page again.
+    expect(answer.body).toContain('<a href="/sign-in">Go to the sign-in page</a>');
+    expect(answer.body).not.toContain('<a href="/FE">');
   });
 
   it("sends a browser without a session to sign-in with nothing from the page, and refuses markdown and JSON without credentials with 401", async () => {

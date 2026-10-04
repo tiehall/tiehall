@@ -4,7 +4,7 @@ import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestWithThreadText, teamIntakeText, type RequestWithThreadJson, type TeamIntakeJson } from "@tiehall/packet/tool-text";
 import type { Caller, WebSessionCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
-import { refusalAnswerAs, type WayOn } from "./html.ts";
+import { refusalAnswerAs, wayOnFor, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { MEDIA_TYPES, NEGOTIATED_CACHE_CONTROL, NEGOTIATED_VARY, negotiate, negotiatedUrlOf, plainPathOf, type Representation, type RequestUrlPath } from "./negotiation.ts";
 import { readRequestPage, requestPageFacts, type RequestWithThreadView } from "./request-page-data.ts";
@@ -283,7 +283,9 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     } catch (error) {
       if (!(error instanceof Refusal)) logger.error("request URL: the read failed", { error });
       const problem = error instanceof Refusal ? httpProblem(challenged(error)) : internalErrorProblem();
-      return answer(refused(representation === "html", problem, { href: plain, text: "Open the page again" }, head));
+      // A browser asked for the page again, unless a removal ended its session, which would refuse it again: then to sign in.
+      const again: WayOn = { href: plain, text: "Open the page again" };
+      return answer(refused(representation === "html", problem, error instanceof Refusal ? wayOnFor(error.reason, again) : again, head));
     }
   };
 }

@@ -222,8 +222,10 @@ function isRemovedMember(html: boolean) {
     expect(answer.body).not.toContain(TITLE);
     expect(answer.body).not.toContain(FE_TEXT);
     if (html) {
-      // A page with a way on, which runs no script and cannot be framed.
-      expect(answer.body).toContain('<a href="/FE-1">');
+      // A page with a way on, which runs no script and cannot be framed. A removal ends the member's web sessions, so
+      // the way on is the sign-in page, never the URL again, which would refuse the browser again.
+      expect(answer.body).toContain('<a href="/sign-in">Go to the sign-in page</a>');
+      expect(answer.body).not.toMatch(/<a href="\/[A-Z]/);
       expect(answer.body).not.toContain("<script");
       expect(answer.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     }
