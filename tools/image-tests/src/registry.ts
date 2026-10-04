@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { docker, dockerOk, uniqueName, waitFor } from "./docker.ts";
+import { docker, dockerOk, platformFlags, sharePlatform, uniqueName, waitFor } from "./docker.ts";
 import { freePort } from "./install.ts";
 
 // A registry of the test's own on 127.0.0.1, so the upgrade and rollback tests
@@ -50,6 +50,8 @@ export class Registry {
     const digests = JSON.parse(dockerOk(["image", "inspect", "--format", "{{json .RepoDigests}}", named])) as string[];
     const digest = digests.find((reference) => reference.startsWith(`${this.host}/tiehall@`))?.split("@")[1];
     if (digest === undefined) throw new Error(`the registry gave ${named} no digest: ${digests.join(", ")}`);
+    // The pushed image runs on the platform of the image it copies.
+    sharePlatform(`${named}@${digest}`, image);
     return `${named}@${digest}`;
   }
 
@@ -96,7 +98,9 @@ export function buildFixtureImage(base: string, options: { name: string; migrati
       ].join("\n"),
     );
     const tag = `${uniqueName("tiehall-test-fixture")}:${options.name}`;
-    dockerOk(["build", "--quiet", "--tag", tag, context], 600);
+    // Built for the platform of the image it is built on, when that is not the host's.
+    dockerOk(["build", "--quiet", ...platformFlags(base), "--tag", tag, context], 600);
+    sharePlatform(tag, base);
     return tag;
   } finally {
     rmSync(context, { recursive: true, force: true });

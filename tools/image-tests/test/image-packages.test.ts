@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { deniedPackages, loadDenylist, loadTelemetryDenylist } from "@tiehall/repo-checks/model-sdks";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-import { docker, uniqueName } from "../src/docker.ts";
+import { docker, platformFlags, uniqueName } from "../src/docker.ts";
 import { imagePackages, type ImagePackage } from "../src/packages.ts";
 
 // The model SDK check, run on the built image (self-host-install: No model
@@ -31,7 +31,8 @@ let packages: ImagePackage[];
 
 beforeAll(() => {
   packages = imagePackages(image);
-  const build = spawnSync("docker", ["build", "--quiet", "--tag", fixture, "-"], { input: FIXTURE_DOCKERFILE, encoding: "utf8", timeout: 300_000 });
+  // Built for the platform of the image under test, when that is not the host's.
+  const build = spawnSync("docker", ["build", "--quiet", ...platformFlags(image), "--tag", fixture, "-"], { input: FIXTURE_DOCKERFILE, encoding: "utf8", timeout: 300_000 });
   if (build.status !== 0) throw new Error(`building the fixture image failed: ${build.stderr}`);
 });
 

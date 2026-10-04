@@ -8,9 +8,57 @@ export interface Run {
   stderr: string;
 }
 
+/**
+ * The environment variable in which the global setup names the platform of
+ * each image under test that does not run on the host's own, as JSON that
+ * maps the image to its platform, such as linux/amd64 for the image CI
+ * builds on an arm64 host.
+ */
+export const IMAGE_PLATFORMS = "TIEHALL_TEST_IMAGE_PLATFORMS";
+
+/** The images under test that run on another platform than the host's, with their platforms. */
+function imagePlatforms(): Record<string, string> {
+  try {
+    const platforms: unknown = JSON.parse(process.env[IMAGE_PLATFORMS] ?? "{}");
+    return typeof platforms === "object" && platforms !== null ? (platforms as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Gives `image`, a copy of an image under test, such as its tag in a test's
+ * registry or a fixture image built on it, the platform of `like`, when that
+ * is not the host's, so that it is asked for wherever the original is.
+ */
+export function sharePlatform(image: string, like: string): void {
+  const platforms = imagePlatforms();
+  if (!Object.hasOwn(platforms, like)) return;
+  process.env[IMAGE_PLATFORMS] = JSON.stringify({ ...platforms, [image]: platforms[like] });
+}
+
+/** The flags that ask docker for an image's own platform, when it is an image under test that is not the host's; none for any other. */
+export function platformFlags(image: string): string[] {
+  const platforms = imagePlatforms();
+  const platform = Object.hasOwn(platforms, image) ? platforms[image] : undefined;
+  return platform === undefined ? [] : ["--platform", platform];
+}
+
+/**
+ * A `docker run` or `docker create` of an image under test asks for the
+ * image's own platform; every other command, and every other image, such as
+ * Postgres or Caddy, is left to docker, which runs the host's platform.
+ */
+function withPlatform(args: readonly string[]): string[] {
+  const [command, ...rest] = args;
+  if ((command !== "run" && command !== "create") || rest.includes("--platform")) return [...args];
+  const image = rest.find((arg) => platformFlags(arg).length > 0);
+  return image === undefined ? [...args] : [command, ...platformFlags(image), ...rest];
+}
+
 /** Runs the docker CLI and returns its exit status and output. */
 export function docker(args: string[], timeoutSeconds = 120): Run {
-  const run = spawnSync("docker", args, { encoding: "utf8", timeout: timeoutSeconds * 1000, maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync("docker", withPlatform(args), { encoding: "utf8", timeout: timeoutSeconds * 1000, maxBuffer: 64 * 1024 * 1024 });
   if (run.error) throw run.error;
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }

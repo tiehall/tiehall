@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
-import { docker, dockerOk, foreignPlatformOf } from "./docker.ts";
+import { docker, dockerOk, foreignPlatformOf, IMAGE_PLATFORMS } from "./docker.ts";
 
 /** The tag of a local build, used when TIEHALL_IMAGE is not set. */
 export const LOCAL_IMAGE = "tiehall:image-tests";
@@ -22,18 +22,24 @@ export default function setup(project: TestProject): void {
   } else if (docker(["image", "inspect", image]).status !== 0) {
     dockerOk(["pull", "--quiet", image], 600);
   }
-  // An image built for another platform than the host's, such as CI's linux/amd64 image on an arm64 laptop, runs
-  // under emulation, and docker warns about it on standard error at every run, which the tests that expect a role
-  // to write nothing there would read as the role's. Every docker and Compose command the tests run asks for the
-  // image's platform instead, unless DOCKER_DEFAULT_PLATFORM already names one.
-  const platform = foreignPlatformOf(image);
-  if (platform !== undefined && (process.env["DOCKER_DEFAULT_PLATFORM"] ?? "") === "") process.env["DOCKER_DEFAULT_PLATFORM"] = platform;
   project.provide("image", image);
   // The image of the release before this one, or before the first release the image last built from main, for the
   // backup, upgrade and rollback tests: TIEHALL_PREVIOUS_IMAGE, which CI resolves with get-previous-image.sh.
   const previous = process.env["TIEHALL_PREVIOUS_IMAGE"] ?? "";
   if (previous !== "" && docker(["image", "inspect", previous]).status !== 0) dockerOk(["pull", "--quiet", previous], 600);
   project.provide("previousImage", previous);
+  // An image built for another platform than the host's, such as CI's linux/amd64 image on an arm64 laptop, runs
+  // under emulation, and docker warns about it on standard error at every run, which the tests that expect a role
+  // to write nothing there would read as the role's, and Compose cannot pull such an image from a registry. The tests
+  // ask for its own platform for these images alone, and for the copies the tests make of them: their docker commands
+  // (docker.ts) and an install's migrate and app services (install.ts). Every other image, such as the Postgres and
+  // Caddy images an install runs, keeps the host's platform.
+  const platforms: Record<string, string> = {};
+  for (const each of new Set([image, previous].filter((name) => name !== ""))) {
+    const platform = foreignPlatformOf(each);
+    if (platform !== undefined) platforms[each] = platform;
+  }
+  process.env[IMAGE_PLATFORMS] = JSON.stringify(platforms);
 }
 
 declare module "vitest" {
