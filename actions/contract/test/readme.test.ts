@@ -29,6 +29,11 @@ describe("the Action's README", () => {
     expect(example).not.toMatch(/uses: [^\n]*actions\/contract@(?![0-9a-f]{40}\b)/);
   });
 
+  // Each release's notes give the line with the commit the release's tag points to (tools/repo-checks/src/release-notes.ts).
+  it("says that each release's notes give the line to pin, with the release's own commit and tag", () => {
+    expect(readme.replace(/\s+/g, " ")).toMatch(/release's notes[^.]*give this line with the release's own commit and tag/);
+  });
+
   it("runs on the pull_request types the Action reports, with the OIDC token permission and the install's URL", () => {
     expect(example).toMatch(/types: \[opened, synchronize, reopened, ready_for_review\]/);
     expect(example).toMatch(/id-token: write/);

@@ -9,7 +9,11 @@ name: Release
 # SBOM attestations (GitHub artifact attestations), pushed beside it to GHCR,
 # which operators check with `gh attestation verify`. The release page names
 # the digest and the version tag and offers compose.yaml, the Caddyfile,
-# .env.example, backup.sh, restore.sh and the release notes.
+# .env.example, backup.sh, restore.sh and the release notes. The tag is also
+# the release of the client pieces the repository itself serves: the notes pin
+# the contract Action to the tag's commit by its SHA, with the tag as a
+# comment, and install the Claude Code plugin from the repository's plugin
+# marketplace at the tag.
 #
 # Nothing is pushed or published before the job that publishes, the only job
 # that holds a write permission (.github/workflow-policy.json), which runs only
@@ -235,7 +239,8 @@ jobs:
         if: always()
         run: docker logout ghcr.io
       # The notes name the image, its attestations and files, the install and the upgrade, every release up to this
-      # one that must not be skipped, the contract steps this release adds, and its API changes.
+      # one that must not be skipped, the contract steps this release adds, the contract Action pinned by the commit the
+      # tag points to (GITHUB_SHA of a tag's run), the Claude Code plugin at the tag, and its API changes.
       - name: Gather the release files and write the release notes
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -247,6 +252,7 @@ jobs:
             --previous "$PREVIOUS" \
             --image "$IMAGE" \
             --repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --commit "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/release/release-notes.md"
       # The notes are the release page's text and one of its files. gh uploads the files to a draft and publishes it
       # once every file is there; a release candidate is marked as a pre-release.

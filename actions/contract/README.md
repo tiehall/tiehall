@@ -43,7 +43,7 @@ jobs:
           spec: openapi/payments.yaml
 ```
 
-Pin the Action by its full commit SHA, as every action should be: a tag can be moved, a commit cannot. The comment after it names the release, which lets Renovate and Dependabot propose the next one.
+Pin the Action by its full commit SHA, as every action should be: a tag can be moved, a commit cannot. The comment after it names the release, which lets Renovate and Dependabot propose the next one. The SHA above only shows the form: each release's notes, on the repository's releases page, give this line with the release's own commit and tag, under "The contract Action".
 
 ## Inputs
 

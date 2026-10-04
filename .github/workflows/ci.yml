@@ -289,7 +289,9 @@ jobs:
       # keeps; the manifest has only the keys Claude Code knows, the skill is in
       # the Agent Skills format, and the MCP connection points at the /mcp of
       # the install whose URL the user gives (agent-surfaces: The Claude Code
-      # plugin).
+      # plugin). The repository's .claude-plugin/marketplace.json, through which
+      # Claude Code installs the plugin from the repository, lists it with only
+      # the keys Claude Code reads.
       - run: pnpm check:plugin
 
   mcp-tools:

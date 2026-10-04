@@ -9,7 +9,18 @@ You need:
 - the `tiehall` CLI on your `PATH`, signed in to the install with `tiehall login <url>`, as [Agents and Tiehall](agents.md#the-four-ways-in) describes: the hooks run the CLI, and without it they stay quiet;
 - the install's URL in `TIEHALL_URL`, such as `https://tiehall.example.com`, in the environment Claude Code starts in. The plugin's MCP connection is `TIEHALL_URL/mcp`, and its hooks read news from that install.
 
-Until the plugin is published through Claude Code's plugin marketplace, load it from a checkout of this repository:
+This repository is a Claude Code plugin marketplace: its [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json), named `tiehall`, lists one plugin, `tiehall`, from `packages/claude-plugin`. Add the marketplace and install the plugin from it, in your shell:
+
+```sh
+claude plugin marketplace add muhmmdcnkl/Tiehall
+claude plugin install tiehall@tiehall
+```
+
+In a Claude Code session, `/plugin marketplace add muhmmdcnkl/Tiehall` and `/plugin install tiehall@tiehall` do the same. Claude Code clones the repository and copies the plugin's folder into its own plugin cache.
+
+Added this way, the marketplace follows the repository's `main` branch, which can hold changes no release carries yet: `claude plugin marketplace update tiehall` fetches it again, and `claude plugin update tiehall@tiehall` then installs the plugin's new version once its version has changed. To hold the plugin at the release your install runs, add the marketplace at that release's tag instead, such as `claude plugin marketplace add muhmmdcnkl/Tiehall#v1.3.0`, as each release's notes show. A marketplace added at a tag stays on that tag: to move to a later release, remove it with `claude plugin marketplace remove tiehall`, which also uninstalls the plugin, then add it at the new tag and install the plugin again.
+
+To try the plugin from a checkout of this repository, load it for one session instead:
 
 ```sh
 TIEHALL_URL=https://tiehall.example.com claude --plugin-dir packages/claude-plugin

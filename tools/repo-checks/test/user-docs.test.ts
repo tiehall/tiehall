@@ -49,7 +49,16 @@ const TOPICS: Topic[] = [
     topic: "the plugin and skill",
     page: "docs/claude-code-plugin.md",
     heading: "Installing the plugin",
-    says: ["`TIEHALL_URL`", "claude --plugin-dir packages/claude-plugin", "claude mcp add --transport http tiehall", "`tiehall` CLI"],
+    says: [
+      "`TIEHALL_URL`",
+      "claude plugin marketplace add muhmmdcnkl/Tiehall",
+      "claude plugin install tiehall@tiehall",
+      "#v1.3.0",
+      "claude plugin marketplace remove tiehall",
+      "claude --plugin-dir packages/claude-plugin",
+      "claude mcp add --transport http tiehall",
+      "`tiehall` CLI",
+    ],
   },
   {
     topic: "the plugin and skill",
@@ -152,7 +161,7 @@ const TOPICS: Topic[] = [
     topic: "the Action with its runner notes and SHA pinning",
     page: "docs/contract-changes.md",
     heading: "The contract Action",
-    says: ["commit SHA", "version comment", "GitHub-hosted runner", "reachable from the internet", "self-hosted runner inside", "`id-token: write`", "fails open"],
+    says: ["commit SHA", "version comment", "release's notes", "GitHub-hosted runner", "reachable from the internet", "self-hosted runner inside", "`id-token: write`", "fails open"],
   },
   {
     topic: "the activity log",

@@ -26,6 +26,8 @@ const fixtures = fileURLToPath(new URL("./fixtures/release-notes/", import.meta.
 const digest = `sha256:${"a1".repeat(32)}`;
 const reference = `ghcr.io/acme/tiehall:1.3.0@${digest}`;
 const repository = "https://github.com/acme/tiehall";
+/** The commit the release's tag points to. */
+const commit = "0123456789abcdef0123456789abcdef01234567";
 /** A release that changed nothing in the API. */
 const unchanged = (version: string): ChangelogRelease => ({ version, date: "2026-11-02", apiVersion: "0.3.0", entries: [], changes: [] });
 
@@ -34,6 +36,7 @@ const notes = renderReleaseNotes({
   version: "1.3.0",
   image: parseReleaseImage(reference, "1.3.0"),
   repository,
+  commit,
   api: unchanged("1.3.0"),
   contractSteps: [],
   noSkip: [],
@@ -77,12 +80,30 @@ describe("the release notes", () => {
     expect(notes).toContain(documentedCommand(root, "upgrade-pull-up"));
   });
 
+  // contract-changes: The contract Action; public-api: Client pieces are built from public source with provenance.
+  it("pin the contract Action to the release's commit by its full SHA, with the release's tag as a comment", () => {
+    expect(notes).toContain("## The contract Action");
+    expect(notes).toContain(["```yaml", `- uses: acme/tiehall/actions/contract@${commit} # v1.3.0`, "```"].join("\n"));
+    expect(flat).toContain("Renovate and Dependabot");
+    expect(notes).toContain(`${repository}/blob/v1.3.0/actions/contract/README.md`);
+  });
+
+  // agent-surfaces: The Claude Code plugin.
+  it("show how to install the release's Claude Code plugin from the repository's marketplace, at the release's tag", () => {
+    const manifest = JSON.parse(readFileSync(join(root, "packages/claude-plugin/.claude-plugin/plugin.json"), "utf8")) as { version: string };
+    expect(notes).toContain("## The Claude Code plugin");
+    expect(flat).toContain(`the Claude Code plugin tiehall ${manifest.version}`);
+    expect(notes).toContain(["```sh", "claude plugin marketplace add acme/tiehall#v1.3.0", "claude plugin install tiehall@tiehall", "```"].join("\n"));
+    expect(notes).toContain(`${repository}/blob/v1.3.0/docs/claude-code-plugin.md`);
+  });
+
   it("say that a release candidate is one", () => {
     const candidate = renderReleaseNotes({
       root,
       version: "1.3.0-rc.1",
       image: parseReleaseImage(`ghcr.io/acme/tiehall:1.3.0-rc.1@${digest}`, "1.3.0-rc.1"),
       repository,
+      commit,
       api: unchanged("1.3.0-rc.1"),
       contractSteps: [],
       noSkip: [],
@@ -122,6 +143,9 @@ describe("the notes of a release with a deprecation, a contract step and a relea
     git("config", "tag.gpgsign", "false");
     mkdirSync(join(repo, "docs"));
     cpSync(join(root, "docs/install.md"), join(repo, "docs/install.md"));
+    // The release's Claude Code plugin and the marketplace that lists it, which the notes name.
+    cpSync(join(root, ".claude-plugin"), join(repo, ".claude-plugin"), { recursive: true });
+    cpSync(join(root, "packages/claude-plugin"), join(repo, "packages/claude-plugin"), { recursive: true, filter: (source) => !source.includes("node_modules") });
     cpSync(join(fixtures, "previous"), repo, { recursive: true });
     git("add", "--all");
     git("commit", "--quiet", "--message", "Release 1.3.0");
@@ -129,7 +153,7 @@ describe("the notes of a release with a deprecation, a contract step and a relea
     cpSync(join(fixtures, "current"), repo, { recursive: true });
     git("add", "--all");
     git("commit", "--quiet", "--message", "Release 1.4.0");
-    const run = write("1.4.0", "--previous", "v1.3.0", "--image", image, "--repository", repository);
+    const run = write("1.4.0", "--previous", "v1.3.0", "--image", image, "--repository", repository, "--commit", commit);
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     fixtureNotes = run.stdout;
@@ -167,6 +191,7 @@ describe("the notes of a release with a deprecation, a contract step and a relea
       version: "1.3.0",
       image: parseReleaseImage(reference, "1.3.0"),
       repository,
+      commit,
       api: unchanged("1.3.0"),
       contractSteps: [],
       noSkip: [{ version: "1.3.0", reason: "Its worker moves the jobs of the old queue." }],
@@ -176,7 +201,7 @@ describe("the notes of a release with a deprecation, a contract step and a relea
 
   it("are written into a file when the release workflow names one", () => {
     const output = join(repo, "..", `${repo.split("/").pop()}-notes.md`);
-    const run = write("1.4.0", "--previous", "v1.3.0", "--image", image, "--repository", repository, "--output", output);
+    const run = write("1.4.0", "--previous", "v1.3.0", "--image", image, "--repository", repository, "--commit", commit, "--output", output);
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toBe("");
@@ -245,12 +270,21 @@ describe("the image a release names", () => {
 
 describe("the release workflow's writing of the notes", () => {
   it("refuses an image that is not the release's, and a repository that is no web address", () => {
-    const wrong = spawnSync(process.execPath, [script, "1.3.0", "--image", `ghcr.io/acme/tiehall:1.2.0@${digest}`, "--repository", repository], { cwd: root, encoding: "utf8" });
+    const wrong = spawnSync(process.execPath, [script, "1.3.0", "--image", `ghcr.io/acme/tiehall:1.2.0@${digest}`, "--repository", repository, "--commit", commit], { cwd: root, encoding: "utf8" });
     expect(wrong.status).toBe(1);
     expect(wrong.stdout).toBe("");
     expect(wrong.stderr).toMatch(/pinned by version and digest/);
-    const address = spawnSync(process.execPath, [script, "1.3.0", "--image", reference, "--repository", "acme/tiehall"], { cwd: root, encoding: "utf8" });
+    const address = spawnSync(process.execPath, [script, "1.3.0", "--image", reference, "--repository", "acme/tiehall", "--commit", commit], { cwd: root, encoding: "utf8" });
     expect(address.status).toBe(1);
     expect(address.stderr).toContain("The repository must be its web address, such as https://github.com/acme/tiehall.");
+  });
+
+  it("refuses notes without the release's commit, or with one that is not a full commit SHA", () => {
+    const without = spawnSync(process.execPath, [script, "1.3.0", "--image", reference, "--repository", repository], { cwd: root, encoding: "utf8" });
+    expect(without.status).toBe(2);
+    expect(without.stderr).toContain("--commit <sha>");
+    const short = spawnSync(process.execPath, [script, "1.3.0", "--image", reference, "--repository", repository, "--commit", "0123456"], { cwd: root, encoding: "utf8" });
+    expect(short.status).toBe(1);
+    expect(short.stderr).toContain("The release's commit must be its full SHA, 40 lower-case hexadecimal digits, such as $GITHUB_SHA of the tag's run; \"0123456\" is not.");
   });
 });

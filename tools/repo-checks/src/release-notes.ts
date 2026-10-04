@@ -1,7 +1,8 @@
 import type { ChangelogRelease } from "@tiehall/catalog/changelog";
-import { compareVersions } from "@tiehall/core";
+import { compareVersions, MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION } from "@tiehall/core";
 import { releaseNotes as apiChangesSection } from "./api-changelog.ts";
 import { documentedCommand, INSTALL_DOCS } from "./docs-commands.ts";
+import { checkMarketplace, type ListedPlugin } from "./marketplace.ts";
 import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "./release-files.ts";
 import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 
@@ -21,9 +22,35 @@ import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 // then contract); and the notes end with the release's API changes, the same
 // entries as the changelog page of an install running it (public-api: The
 // changelog page and the release notes).
+//
+// Each release is also a release of the client pieces that the repository
+// itself serves rather than npm (public-api: Client pieces are built from
+// public source with provenance). The notes pin the contract Action to the
+// commit the release's tag points to, by its full SHA with the tag as a
+// comment, which dependency-update tools bump (contract-changes: The contract
+// Action), and show how to install the release's Claude Code plugin from the
+// repository's plugin marketplace at the release's tag (agent-surfaces: The
+// Claude Code plugin).
 
 /** The SPDX predicate type of the image's SBOM attestation, which the scanner writes as SPDX 2.3. */
 export const SBOM_PREDICATE_TYPE = "https://spdx.dev/Document/v2.3";
+
+/** The contract Action's folder in the repository, which a workflow names after the repository in `uses:`. */
+export const CONTRACT_ACTION = "actions/contract";
+
+/** The page of the plugin docs, relative to the repository's root. */
+export const PLUGIN_DOCS = "docs/claude-code-plugin.md";
+
+/** A full commit SHA, which is what a workflow pins an action by. */
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
+
+/** The commit a release's tag points to, as the notes pin the contract Action by; it throws on anything but a full SHA. */
+export function parseReleaseCommit(commit: string): string {
+  if (!COMMIT_SHA.test(commit)) {
+    throw new Error(`The release's commit must be its full SHA, 40 lower-case hexadecimal digits, such as $GITHUB_SHA of the tag's run; ${JSON.stringify(commit)} is not.`);
+  }
+  return commit;
+}
 
 /** The workflow that builds and attests each release's image, which the verification names as the signer. */
 export const RELEASE_WORKFLOW = ".github/workflows/release.yml";
@@ -74,6 +101,10 @@ export interface ReleaseNotesInput {
   image: ReleaseImage;
   /** The repository's web address, such as https://github.com/acme/tiehall. */
   repository: string;
+  /** The commit the release's tag points to, its full SHA. */
+  commit: string;
+  /** The marketplace that lists the release's Claude Code plugin, and the plugin; read from the repository unless given. */
+  plugin?: { marketplace: string; plugin: ListedPlugin };
   /** The release's API changes, as openapi/changelog.json records them. */
   api: ChangelogRelease;
   /** The contract steps the release adds since the previous release. */
@@ -88,7 +119,7 @@ function commands(...lines: string[]): string {
 }
 
 /** The release's notes, in Markdown. */
-export function renderReleaseNotes({ root, version, image, repository, api, contractSteps, noSkip }: ReleaseNotesInput): string {
+export function renderReleaseNotes({ root, version, image, repository, commit, plugin, api, contractSteps, noSkip }: ReleaseNotesInput): string {
   const web = repository.replace(/\/+$/, "");
   const name = repositoryName(web);
   const tag = `v${version}`;
@@ -134,9 +165,36 @@ export function renderReleaseNotes({ root, version, image, repository, api, cont
     commands(documentedCommand(root, "upgrade-backup")),
     ["```", `TIEHALL_IMAGE=${reference}`, "```"].join("\n"),
     commands(documentedCommand(root, "upgrade-pull-up")),
+    ...clientPieces(name, web, tag, parseReleaseCommit(commit), plugin ?? releasePlugin(root)),
     apiChangesSection(api).trimEnd(),
   ];
   return `${sections.join("\n\n")}\n`;
+}
+
+/** The marketplace and the plugin it lists, as the repository at this root holds them; it throws when the marketplace check fails. */
+export function releasePlugin(root: string): { marketplace: string; plugin: ListedPlugin } {
+  const report = checkMarketplace(root, { plugin: MINIMUM_PLUGIN_VERSION, skill: MINIMUM_SKILL_VERSION });
+  const plugin = report.plugins[0];
+  if (report.problems.length > 0 || report.name === undefined || plugin === undefined) {
+    throw new Error(`The release's Claude Code plugin marketplace does not pass its check (pnpm check:plugin):\n${report.problems.join("\n")}`);
+  }
+  return { marketplace: report.name, plugin };
+}
+
+/** What the notes say about the client pieces the release itself carries: the contract Action and the Claude Code plugin. */
+function clientPieces(name: string, web: string, tag: string, commit: string, { marketplace, plugin }: { marketplace: string; plugin: ListedPlugin }): string[] {
+  return [
+    "## The contract Action",
+    `This release's contract Action is \`${CONTRACT_ACTION}\` at the commit the tag \`${tag}\` points to. ` +
+      `Pin it by that commit's full SHA, with the tag as a comment, as [its README](${web}/blob/${tag}/${CONTRACT_ACTION}/README.md) shows: ` +
+      "a tag can be moved, a commit cannot, and the comment lets Renovate and Dependabot propose the next release.",
+    ["```yaml", `- uses: ${name}/${CONTRACT_ACTION}@${commit} # ${tag}`, "```"].join("\n"),
+    "## The Claude Code plugin",
+    `This release holds the Claude Code plugin ${plugin.name} ${plugin.version}. ` +
+      `Add the repository's plugin marketplace at the tag \`${tag}\`, then install the plugin, ` +
+      `as [the plugin docs](${web}/blob/${tag}/${PLUGIN_DOCS}) describe with what it needs: the \`tiehall\` CLI and \`TIEHALL_URL\`.`,
+    commands(`claude plugin marketplace add ${name}#${tag}`, `claude plugin install ${plugin.name}@${marketplace}`),
+  ];
 }
 
 /** What the notes say about skipping releases: each release up to this one that must not be skipped, oldest first. */

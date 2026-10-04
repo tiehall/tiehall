@@ -177,6 +177,8 @@ describe("the release workflow", () => {
     expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"');
     expect(script).toContain('node tools/repo-checks/src/write-release-notes.ts "$VERSION"');
     expect(script).toContain('--image "$IMAGE"');
+    // The commit the tag points to, which the notes pin the contract Action by (contract-changes: The contract Action).
+    expect(script).toContain('--commit "$GITHUB_SHA"');
     // The previous release's migrations, read from its tag, tell which contract steps this release adds.
     expect(script).toContain('--previous "$PREVIOUS"');
     expect(steps(job).find(({ run }) => run?.includes("write-release-notes.ts"))?.env?.["PREVIOUS"]).toBe("${{ needs.prepare.outputs.previous }}");

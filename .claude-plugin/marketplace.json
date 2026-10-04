@@ -1,0 +1,16 @@
+{
+  "name": "tiehall",
+  "description": "Tiehall's Claude Code plugin, from Tiehall's public repository: the MCP connection to your Tiehall install, the Tiehall skill and the requester loop's hooks.",
+  "owner": {
+    "name": "The Tiehall maintainers",
+    "url": "https://github.com/muhmmdcnkl/Tiehall"
+  },
+  "plugins": [
+    {
+      "name": "tiehall",
+      "source": "./packages/claude-plugin",
+      "description": "Your team's Tiehall install as an MCP server, the skill that teaches Claude to open, read and answer requests between teams, and hooks that tell Claude of news on your requests. Set TIEHALL_URL to your install's URL before you enable it.",
+      "category": "productivity"
+    }
+  ]
+}
