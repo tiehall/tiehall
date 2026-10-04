@@ -40,7 +40,12 @@ import type { WorkerJob } from "./worker.ts";
 // while GitHub has not logged the redelivery it owes, the run waits for the
 // next, until a run reads its log only from after the fifth request: GitHub
 // then made no redelivery for as long as it may log one late, and the
-// delivery, still failed after Tiehall's last request, is given up too.
+// delivery, still failed after Tiehall's last request, is given up too. That
+// waiting ends early for a delivery whose latest attempt, newer than the one
+// Tiehall's last request named, succeeded: a redelivery reached the install,
+// so the delivery is no longer failed, though /webhooks/github stored nothing
+// when it held the change already under another delivery id, and the run
+// forgets the requests made for it.
 // In one write the run marks the
 // delivery given up, so later runs record nothing more for it, and records the
 // give-up on the App's row, which moves GitHub to polling mode unless an
@@ -103,8 +108,29 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
   const failed = [...last.values()].filter(attemptFailed).sort((a, b) => a.id - b.id);
 
   const { toAsk, toGiveUp } = await withOrg(database, async ({ tx, orgId }) => {
+    // A delivery Tiehall asked for whose latest attempt, newer than the one its last request named, succeeded: a
+    // redelivery reached the install, which /webhooks/github answers with 202 even when it stores nothing because it
+    // holds the change under another delivery id. The delivery is no longer failed, so nothing waits on the redelivery
+    // GitHub owed, and how often Tiehall asked no longer matters. The log holds every attempt made since `since`, so a
+    // delivery's latest attempt in it is its latest of all.
+    const reached = (
+      await tx
+        .select({ deliveryId: githubRedeliveries.deliveryId, lastAskedAttemptId: githubRedeliveries.lastAskedAttemptId })
+        .from(githubRedeliveries)
+        .where(and(eq(githubRedeliveries.orgId, orgId), isNull(githubRedeliveries.givenUpAt)))
+    )
+      .filter(({ deliveryId, lastAskedAttemptId }) => {
+        const latest = last.get(deliveryId);
+        return latest !== undefined && !attemptFailed(latest) && (lastAskedAttemptId === null || latest.id > lastAskedAttemptId);
+      })
+      .map(({ deliveryId }) => deliveryId);
+    if (reached.length > 0) {
+      await tx
+        .delete(githubRedeliveries)
+        .where(and(eq(githubRedeliveries.orgId, orgId), inArray(githubRedeliveries.deliveryId, reached), isNull(githubRedeliveries.givenUpAt)));
+    }
     // Asked for 5 times since the credentials were stored, the fifth time before this run's log begins, and neither
-    // held nor given up: GitHub logged no redelivery after the fifth request that an earlier run did not read.
+    // held, reached nor given up: GitHub logged no redelivery after the fifth request that an earlier run did not read.
     const unanswered = (
       await tx
         .select({ deliveryId: githubRedeliveries.deliveryId })

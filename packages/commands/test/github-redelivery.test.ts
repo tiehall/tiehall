@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubApp, type StubDelivery } from "@tiehall/testing/github";
 import {
+  changeKeyOf,
   connectInstallations,
   createGitHubAdminRoute,
   createInstallGitHub,
   GITHUB_ADMIN_PATH,
+  polledDeliveryId,
   processDelivery,
   processGitHubDelivery,
   readInstallations,
@@ -477,6 +479,35 @@ describe("a delivery given up (github-layer-hardening 1.21)", () => {
     expect(await appRow()).toEqual(row);
     expect((await modeEvents()).map(({ data }) => data["cause"])).toEqual(["given_up_delivery"]);
     expect(asked()).toHaveLength(REDELIVERY_ASKS - 1);
+  });
+
+  // /webhooks/github answers a delivery whose change it holds already under another delivery id, such as a change the
+  // poll stored, with 202 and stores nothing: a redelivery answered so reached the install, and the delivery, no longer
+  // failed, is not given up once the runs read past the fifth request, as GitHub's log shows the redelivery succeeded.
+  it("does not give up a delivery whose fifth redelivery reached the install, though the change is stored under another delivery id", async () => {
+    const missed = await missedDelivery();
+    const key = changeKeyOf("pull_request", missed.request.payload as Record<string, unknown>)!;
+    stub.setHookReachable(false);
+    for (let run = 0; run < REDELIVERY_ASKS - 1; run += 1) await redeliver();
+    // The poll stored the same change, as a poll does that runs just after an admin's switch of the mode.
+    await install.owner.query(
+      "INSERT INTO github_deliveries (org_id, delivery_id, event, payload, change_key) SELECT id, $1, 'pull_request', $2::jsonb, $3 FROM orgs",
+      [polledDeliveryId(key), JSON.stringify(missed.request.payload), key],
+    );
+    stub.setHookReachable(true);
+    const fifth = Date.now();
+    await redeliver(stored.github, () => new Date(fifth));
+    // GitHub made the fifth redelivery, which the install answered with 202 and did not store again.
+    expect(asked()).toHaveLength(REDELIVERY_ASKS);
+    expect(stub.deliveries(app).filter(({ guid }) => guid === missed.guid).at(-1)).toMatchObject({ redelivery: true, statusCode: 202 });
+    expect(await storedDeliveries()).not.toContain(missed.guid);
+
+    for (const minutes of [10, 20, 30, 40]) {
+      await redeliver(stored.github, () => new Date(fifth + minutes * MINUTE));
+      expect(await appRow()).toEqual({ mode: "webhook", given_up_at: null });
+    }
+    expect(await modeEvents()).toEqual([]);
+    expect(asked()).toHaveLength(REDELIVERY_ASKS);
   });
 
   it("is cleared by an admin's switch of the mode, and the same delivery is not given up again", async () => {
