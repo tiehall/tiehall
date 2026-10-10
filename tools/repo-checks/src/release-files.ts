@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, mkdirSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // The files a release publishes beside its image (self-host-install: Releases
@@ -40,15 +40,43 @@ export const RELEASE_NOTES_ASSET = "release-notes.md";
  */
 export const KEPT_ASSET_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
-/** Copies the release files from the repository at root into folder, under their asset names; returns their paths. */
-export function stageReleaseFiles(root: string, folder: string): string[] {
-  mkdirSync(folder, { recursive: true });
-  return RELEASE_FILES.map(({ asset, source, executable }) => {
+/**
+ * Copies the release files from the repository at root into folder, under their asset names, and with notes the
+ * release notes from that folder; returns their paths. The folder must be new or empty, so it holds only what was
+ * staged. The notes come from a workflow artifact written by a job that runs the repository's dependencies, so their
+ * folder must hold release-notes.md alone, as a regular file: not a forged compose.yaml beside it, nor a folder or a
+ * link in its place.
+ */
+export function stageReleaseFiles(root: string, folder: string, notes?: string): string[] {
+  const sources = RELEASE_FILES.map(({ source }) => {
     const from = join(root, source);
     if (!statSync(from, { throwIfNoEntry: false })?.isFile()) throw new Error(`The release file ${source} is missing.`);
+    return from;
+  });
+  let notesFile: string | undefined;
+  if (notes !== undefined) {
+    const entries = statSync(notes, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(notes).sort() : [];
+    if (entries.length !== 1 || entries[0] !== RELEASE_NOTES_ASSET) {
+      throw new Error(`The notes folder ${notes} must hold only ${RELEASE_NOTES_ASSET}; it holds ${entries.length === 0 ? "nothing" : entries.join(", ")}.`);
+    }
+    notesFile = join(notes, RELEASE_NOTES_ASSET);
+    if (!lstatSync(notesFile).isFile()) throw new Error(`${RELEASE_NOTES_ASSET} in ${notes} is not a regular file.`);
+  }
+  if ((statSync(folder, { throwIfNoEntry: false })?.isDirectory() ?? false) && readdirSync(folder).length > 0) {
+    throw new Error(`The folder ${folder} already holds files, which would be published with the release.`);
+  }
+  mkdirSync(folder, { recursive: true });
+  const staged = RELEASE_FILES.map(({ asset, executable }, index) => {
     const to = join(folder, asset);
-    copyFileSync(from, to);
+    copyFileSync(sources[index] as string, to);
     chmodSync(to, executable ? 0o755 : 0o644);
     return to;
   });
+  if (notesFile !== undefined) {
+    const to = join(folder, RELEASE_NOTES_ASSET);
+    copyFileSync(notesFile, to);
+    chmodSync(to, 0o644);
+    staged.push(to);
+  }
+  return staged;
 }

@@ -24,7 +24,10 @@ name: Release
 # No package is installed and no dependency's code runs while they hold their
 # permissions. The release notes, whose script needs the repository's
 # dependencies, are written between them, from the digest the push job pushed,
-# in a job that can write nothing.
+# in a job that can write nothing. The release job takes only the notes from
+# it, staged only when their artifact holds release-notes.md alone, as a
+# regular file, and publishes the files it names, the other five from the
+# tag's own commit, so that job's dependencies cannot change them.
 # The image travels between the jobs as a saved image, a workflow artifact,
 # which any job of the run could replace. So the build job gives the saved
 # image's digest and the image's ID as its outputs, which no other job can
@@ -337,17 +340,22 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      # The release files come from the tag's own commit. The script imports only Node's own modules and the list of
-      # release files, so nothing is installed for it.
-      - name: Gather the release files
-        run: node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"
+      # The notes, in a folder of their own: the notes job runs the repository's dependencies, whose code could put
+      # other files in the artifact, or a folder in the notes' place.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: notes
-          path: ${{ runner.temp }}/release
-      # The notes are the release page's text and one of its files. gh uploads the files to a draft and publishes it
-      # once every file is there; a release candidate is marked as a pre-release.
+          path: ${{ runner.temp }}/notes
+      # The release files come from the tag's own commit, and the notes from that folder only when it holds
+      # release-notes.md alone, as a regular file, into a new folder. The script imports only Node's own modules and
+      # the list of release files, so nothing is installed for it.
+      - name: Gather the release files
+        run: node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release" --notes "$RUNNER_TEMP/notes"
+      # The notes are the release page's text and one of its files, and the release publishes the files it names and
+      # no other. gh uploads them to a draft and publishes it once every file is there; a release candidate is marked
+      # as a pre-release.
       - name: Publish the release
+        working-directory: ${{ runner.temp }}/release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -357,4 +365,5 @@ jobs:
           prerelease=()
           if [ "$PRERELEASE" = true ]; then prerelease=(--prerelease); fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Tiehall $VERSION" \
-            --notes-file "$RUNNER_TEMP/release/release-notes.md" "${prerelease[@]}" "$RUNNER_TEMP"/release/*
+            --notes-file release-notes.md "${prerelease[@]}" \
+            compose.yaml Caddyfile env.example backup.sh restore.sh release-notes.md

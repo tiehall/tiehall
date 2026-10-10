@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,5 +91,84 @@ describe("staging the release files", () => {
     const empty = mkdtempSync(join(tmpdir(), "tiehall-release-files-empty-"));
     expect(() => stageReleaseFiles(empty, join(empty, "release"))).toThrow("The release file deploy/compose.yaml is missing.");
     rmSync(empty, { recursive: true, force: true });
+  });
+});
+
+// The release notes reach the job that publishes the release as a workflow
+// artifact written by a job that runs the repository's dependencies, whose
+// code could put anything in it: a forged compose.yaml beside the notes, or a
+// folder or a link in their place. The notes are staged only from a folder
+// that holds release-notes.md alone, as a regular file, into a staging folder
+// that held nothing, so the release publishes the operator files from the
+// tag's own commit and nothing else beside the notes.
+describe("staging the release notes", () => {
+  let folder: string;
+  const notesText = "# Tiehall 1.3.0\n\nThe notes.\n";
+  /** A folder the notes artifact was downloaded into, holding the given files and folders. */
+  const notesFolder = (name: string, files: Record<string, string>, folders: string[] = []): string => {
+    const notes = join(folder, name);
+    mkdirSync(notes);
+    for (const each of folders) mkdirSync(join(notes, each), { recursive: true });
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(notes, file), text);
+    return notes;
+  };
+  const stageWith = (release: string, notes: string) => spawnSync(process.execPath, [stage, release, "--notes", notes], { cwd: root, encoding: "utf8" });
+
+  beforeAll(() => {
+    folder = mkdtempSync(join(tmpdir(), "tiehall-release-notes-"));
+  });
+
+  afterAll(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+
+  it("copies the notes beside the release files when their folder holds them alone, as a regular file", () => {
+    const release = join(folder, "release");
+    const run = stageWith(release, notesFolder("notes", { [RELEASE_NOTES_ASSET]: notesText }));
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("Staged 6 release files");
+    expect(readdirSync(release).sort()).toEqual([...RELEASE_FILES.map(({ asset }) => asset), RELEASE_NOTES_ASSET].sort());
+    expect(readFileSync(join(release, RELEASE_NOTES_ASSET), "utf8")).toBe(notesText);
+    expect(statSync(join(release, RELEASE_NOTES_ASSET)).mode & 0o777).toBe(0o644);
+    for (const { asset, source } of RELEASE_FILES) expect(readFileSync(join(release, asset), "utf8"), asset).toBe(readFileSync(join(root, source), "utf8"));
+  });
+
+  it("refuses notes that come with other files, such as a forged compose.yaml, and stages nothing", () => {
+    const release = join(folder, "release-forged");
+    const run = stageWith(release, notesFolder("notes-forged", { [RELEASE_NOTES_ASSET]: notesText, "compose.yaml": "services: {}\n" }));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`must hold only ${RELEASE_NOTES_ASSET}`);
+    expect(run.stderr).toContain("compose.yaml");
+    expect(statSync(release, { throwIfNoEntry: false })).toBeUndefined();
+  });
+
+  it("refuses notes that are a folder, a link or missing", () => {
+    // A folder in the notes' place, whose files would otherwise be published beside the notes.
+    const asFolder = notesFolder("notes-folder", { [`${RELEASE_NOTES_ASSET}/compose.yaml`]: "services: {}\n" }, [RELEASE_NOTES_ASSET]);
+    const linked = notesFolder("notes-link", {});
+    writeFileSync(join(folder, "elsewhere.md"), notesText);
+    symlinkSync(join(folder, "elsewhere.md"), join(linked, RELEASE_NOTES_ASSET));
+    for (const [name, notes] of [["folder", asFolder], ["link", linked]] as const) {
+      const run = stageWith(join(folder, `release-${name}`), notes);
+      expect(run.status, name).toBe(1);
+      expect(run.stderr, name).toContain(`${RELEASE_NOTES_ASSET} in ${notes} is not a regular file.`);
+      expect(statSync(join(folder, `release-${name}`), { throwIfNoEntry: false }), name).toBeUndefined();
+    }
+    for (const [name, notes] of [["empty", notesFolder("notes-empty", {})], ["missing", join(folder, "no-notes")]] as const) {
+      const run = stageWith(join(folder, `release-${name}`), notes);
+      expect(run.status, name).toBe(1);
+      expect(run.stderr, name).toContain(`must hold only ${RELEASE_NOTES_ASSET}`);
+    }
+  });
+
+  it("refuses a staging folder that already holds files, which would be published with the release", () => {
+    const release = join(folder, "release-used");
+    mkdirSync(release);
+    writeFileSync(join(release, "compose.yaml"), "services: {}\n");
+    const run = stageWith(release, notesFolder("notes-used", { [RELEASE_NOTES_ASSET]: notesText }));
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`The folder ${release} already holds files`);
+    expect(readFileSync(join(release, "compose.yaml"), "utf8")).toBe("services: {}\n");
   });
 });

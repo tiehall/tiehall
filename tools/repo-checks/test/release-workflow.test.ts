@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { RELEASE_FILES } from "../src/release-files.ts";
+import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "../src/release-files.ts";
 import { checkWorkflows } from "../src/workflows.ts";
 
 // The release workflow (self-host-install: Releases carry signed
@@ -30,6 +30,7 @@ interface Step {
   if?: string;
   with?: Record<string, unknown>;
   env?: Record<string, string>;
+  "working-directory"?: string;
 }
 interface Job {
   name?: string;
@@ -258,16 +259,30 @@ describe("the release workflow", () => {
     expect(needs(job)).toEqual(["prepare", "push", "notes"]);
     const script = runs(job).replace(/\\\n\s*/g, "");
     // The release files come from the tag's own commit, staged by the script from the list the notes and the docs' download use.
-    expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"');
+    expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release" --notes "$RUNNER_TEMP/notes"');
     expect(RELEASE_FILES).toHaveLength(5);
-    const download = steps(job).find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
-    expect(download?.with).toEqual({ name: "notes", path: "${{ runner.temp }}/release" });
-    expect(script).toMatch(/gh release create "\$TAG" --repo "\$GITHUB_REPOSITORY" --verify-tag --title "Tiehall \$VERSION" --notes-file "\$RUNNER_TEMP\/release\/release-notes\.md" "\$\{prerelease\[@\]\}" "\$RUNNER_TEMP"\/release\/\*/);
     const publish = steps(job).find(({ run }) => run?.includes("gh release create"));
+    expect(publish?.["working-directory"]).toBe("${{ runner.temp }}/release");
+    const command = (publish?.run ?? "").replace(/\\\n\s*/g, "").split("\n").find((line) => line.includes("gh release create"))?.trim();
+    expect(command).toBe(
+      'gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Tiehall $VERSION" --notes-file release-notes.md "${prerelease[@]}" ' +
+        [...RELEASE_FILES.map(({ asset }) => asset), RELEASE_NOTES_ASSET].join(" "),
+    );
     expect(publish?.env).toMatchObject({ GH_TOKEN: "${{ github.token }}", TAG: "${{ github.ref_name }}", PRERELEASE: "${{ needs.prepare.outputs.prerelease }}" });
     const order = steps(job).map(({ run, uses }) => (run?.includes("gh release create") ? "publish" : run?.includes("stage-release-files.ts") ? "stage" : uses?.startsWith("actions/download-artifact@") ? "notes" : "other"));
+    expect(order.indexOf("notes")).toBeLessThan(order.indexOf("stage"));
     expect(order.indexOf("stage")).toBeLessThan(order.indexOf("publish"));
-    expect(order.indexOf("notes")).toBeLessThan(order.indexOf("publish"));
+  });
+
+  it("takes from the notes job only the notes, in a folder of their own, and publishes only the files it names", () => {
+    // The notes job runs the repository's dependencies, whose code could put a forged compose.yaml in the notes
+    // artifact, or a folder of files in the notes' place; the staging script stages the notes only when their folder
+    // holds release-notes.md alone, as a regular file, and the release names each file it publishes.
+    const job = workflow.jobs["release"] as Job;
+    const downloads = steps(job).filter(({ uses }) => uses?.startsWith("actions/download-artifact@"));
+    expect(downloads.map(({ with: inputs }) => inputs)).toEqual([{ name: "notes", path: "${{ runner.temp }}/notes" }]);
+    const publish = steps(job).find(({ run }) => run?.includes("gh release create"));
+    expect(publish?.run).not.toMatch(/[*?]|\$RUNNER_TEMP\/notes/);
   });
 
   it("holds write permissions only in the push job and the release job, which use only GitHub's own actions", () => {
