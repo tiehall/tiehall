@@ -24,8 +24,15 @@ name: Release
 # No package is installed and no dependency's code runs while they hold their
 # permissions. The release notes, whose script needs the repository's
 # dependencies, are written between them, from the digest the push job pushed,
-# in a job that can write nothing. The image travels between the jobs as a
-# saved image.
+# in a job that can write nothing.
+# The image travels between the jobs as a saved image, a workflow artifact,
+# which any job of the run could replace. So the build job gives the saved
+# image's digest and the image's ID as its outputs, which no other job can
+# change; the SBOM job scans the saved image only once its digest matches, and
+# gives the SBOM's digest in turn; and the push job checks both downloads
+# against those digests, loads the image and checks its ID before it pushes,
+# so the image pushed and attested is the one the build job built, and the
+# SBOM attested the one written from it.
 # The release is gated (self-host-install: Upgrades apply migrations before the
 # app starts; public-api: Each operation carries a stability level): the
 # release check of stability levels runs before anything is built, and the
@@ -96,6 +103,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      image-id: ${{ steps.build.outputs.image-id }}
+      archive-sha256: ${{ steps.build.outputs.archive-sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,6 +113,7 @@ jobs:
       # As each build of main is built (build.yml), with the release's version: the migrate role records it with each
       # migration, init names the image by it, and the web UI links to the source at the release's tag.
       - name: Build the image once, for the release's version, and save it
+        id: build
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
@@ -120,6 +131,8 @@ jobs:
             --tag "$repository:$VERSION" \
             .
           docker save "$repository:$VERSION" --output "$RUNNER_TEMP/image.tar"
+          echo "image-id=$(docker image inspect "$repository:$VERSION" --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+          echo "archive-sha256=$(sha256sum "$RUNNER_TEMP/image.tar" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image
@@ -134,6 +147,8 @@ jobs:
     timeout-minutes: 15
     # The scanner is third-party code: no token permissions and no secrets, and it reads only the saved image.
     permissions: {}
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
     env:
       # Third-party, pinned by digest, the same as the Build workflow's scan; Renovate proposes new digests after the
       # 7-day release age.
@@ -143,6 +158,10 @@ jobs:
         with:
           name: image
           path: ${{ runner.temp }}/image
+      - name: Check the saved image against the build job's digest
+        env:
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+        run: echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image/image.tar" | sha256sum --check --strict
       # The scanner runs with no network, a read-only root filesystem and no capabilities, as the runner's user, who
       # owns the saved image, and writes the SBOM as an SPDX document.
       - name: List the image's packages as an SPDX document
@@ -154,6 +173,10 @@ jobs:
             --volume "$RUNNER_TEMP/sbom:/sbom" \
             "$TRIVY_IMAGE" image --input /image.tar --cache-dir /tmp/trivy \
             --format spdx-json --output /sbom/sbom.spdx.json --no-progress
+      # Once the scanner has exited: the digest the push job checks the SBOM it attests against.
+      - name: Give the SBOM's digest
+        id: digest
+        run: echo "sha256=$(sha256sum "$RUNNER_TEMP/sbom/sbom.spdx.json" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom
@@ -201,17 +224,32 @@ jobs:
         with:
           name: sbom
           path: ${{ runner.temp }}/sbom
+      # The image the build job saved and the SBOM the SBOM job wrote, not files another job of the run put in their place.
+      - name: Check the saved image and the SBOM against the digests their jobs gave
+        id: check
+        env:
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+          SBOM_SHA256: ${{ needs.sbom.outputs.sha256 }}
+        run: |
+          echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image/image.tar" | sha256sum --check --strict
+          echo "$SBOM_SHA256  $RUNNER_TEMP/sbom/sbom.spdx.json" | sha256sum --check --strict
       # The one push of the image: by digest, tagged with the release's version. The job stays logged in to GHCR for
       # the attestations, which are pushed beside the image, and logs out after them.
       - name: Push the image by digest, tagged with its version
         id: push
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE_ID: ${{ needs.build.outputs.image-id }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           repository="ghcr.io/$owner/tiehall"
           docker load --input "$RUNNER_TEMP/image/image.tar"
+          loaded="$(docker image inspect "$repository:$VERSION" --format '{{.Id}}')"
+          if [ "$loaded" != "$IMAGE_ID" ]; then
+            echo "::error::The loaded image $loaded is not the image the build job built, $IMAGE_ID."
+            exit 1
+          fi
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           docker push "$repository:$VERSION"
           digest="$(docker buildx imagetools inspect "$repository:$VERSION" --format '{{.Manifest.Digest}}')"

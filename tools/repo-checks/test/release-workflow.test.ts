@@ -34,6 +34,7 @@ interface Step {
 interface Job {
   name?: string;
   needs?: string | string[];
+  outputs?: Record<string, string>;
   permissions?: Record<string, string>;
   "timeout-minutes"?: number;
   env?: Record<string, string>;
@@ -179,6 +180,51 @@ describe("the release workflow", () => {
     expect(attests.map((attest) => attest.with?.["predicate-type"] ?? attest.with?.["predicate-path"])).toEqual([undefined, undefined]);
     const order = steps(job).map(({ id, uses, run }) => id ?? uses?.split("@")[0] ?? run?.split("\n")[0]);
     expect(order.indexOf("push")).toBeLessThan(order.indexOf("actions/attest"));
+  });
+
+  it("the job that pushes checks that the image it loads is the one the build job built, and the SBOM the one the SBOM job wrote", () => {
+    // The build job gives the saved image's digest and the image's ID, which no other job can change.
+    const build = workflow.jobs["build"] as Job;
+    expect(build.outputs).toEqual({ "image-id": "${{ steps.build.outputs.image-id }}", "archive-sha256": "${{ steps.build.outputs.archive-sha256 }}" });
+    const built = steps(build).find(({ id }) => id === "build")?.run ?? "";
+    const save = built.indexOf('docker save "$repository:$VERSION" --output "$RUNNER_TEMP/image.tar"');
+    expect(save).toBeGreaterThanOrEqual(0);
+    expect(built.indexOf(`echo "image-id=$(docker image inspect "$repository:$VERSION" --format '{{.Id}}')" >> "$GITHUB_OUTPUT"`)).toBeGreaterThan(save);
+    expect(built.indexOf(`echo "archive-sha256=$(sha256sum "$RUNNER_TEMP/image.tar" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"`)).toBeGreaterThan(save);
+
+    // The SBOM job scans only that saved image, and gives the SBOM's digest once the scanner has written it.
+    const sbom = workflow.jobs["sbom"] as Job;
+    const sbomSteps = steps(sbom);
+    const sbomCheck = sbomSteps.findIndex(({ run }) => run?.trim() === 'echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image/image.tar" | sha256sum --check --strict');
+    expect(sbomCheck).toBeGreaterThan(sbomSteps.findIndex(({ uses }) => uses?.startsWith("actions/download-artifact@")));
+    expect(sbomCheck).toBeLessThan(sbomSteps.findIndex(({ run }) => run?.includes("--format spdx-json")));
+    expect(sbomSteps[sbomCheck]?.env).toEqual({ ARCHIVE_SHA256: "${{ needs.build.outputs.archive-sha256 }}" });
+    expect(sbom.outputs).toEqual({ sha256: "${{ steps.digest.outputs.sha256 }}" });
+    const digest = sbomSteps.findIndex(({ id }) => id === "digest");
+    expect(digest).toBeGreaterThan(sbomSteps.findIndex(({ run }) => run?.includes("--format spdx-json")));
+    expect(sbomSteps[digest]?.run).toContain(`echo "sha256=$(sha256sum "$RUNNER_TEMP/sbom/sbom.spdx.json" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"`);
+
+    // The push job checks both downloads before it loads the image, and the loaded image's ID before it pushes it.
+    const push = workflow.jobs["push"] as Job;
+    const pushSteps = steps(push);
+    const check = pushSteps.findIndex(({ id }) => id === "check");
+    expect(check).toBeGreaterThan(pushSteps.map(({ uses }) => uses?.startsWith("actions/download-artifact@") ?? false).lastIndexOf(true));
+    expect(check).toBeLessThan(pushSteps.findIndex(({ id }) => id === "push"));
+    expect(pushSteps[check]?.env).toEqual({ ARCHIVE_SHA256: "${{ needs.build.outputs.archive-sha256 }}", SBOM_SHA256: "${{ needs.sbom.outputs.sha256 }}" });
+    expect(pushSteps[check]?.run).toContain('echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image/image.tar" | sha256sum --check --strict');
+    expect(pushSteps[check]?.run).toContain('echo "$SBOM_SHA256  $RUNNER_TEMP/sbom/sbom.spdx.json" | sha256sum --check --strict');
+    const step = pushSteps.find(({ id }) => id === "push");
+    expect(step?.env?.["IMAGE_ID"]).toBe("${{ needs.build.outputs.image-id }}");
+    const script = step?.run ?? "";
+    const load = script.indexOf('docker load --input "$RUNNER_TEMP/image/image.tar"');
+    const inspect = script.indexOf(`loaded="$(docker image inspect "$repository:$VERSION" --format '{{.Id}}')"`);
+    const compare = script.indexOf('if [ "$loaded" != "$IMAGE_ID" ]; then');
+    const login = script.indexOf("docker login");
+    expect(load).toBeGreaterThanOrEqual(0);
+    expect(inspect).toBeGreaterThan(load);
+    expect(compare).toBeGreaterThan(inspect);
+    expect(login).toBeGreaterThan(compare);
+    expect(script.slice(compare, login)).toContain("exit 1");
   });
 
   it("writes the release notes from the pushed digest in a job that can write nothing", () => {
