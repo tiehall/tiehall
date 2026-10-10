@@ -8,7 +8,7 @@ Defines how an install's web UI looks and behaves for the people who use it: the
 
 ### Requirement: The install serves its own assets
 
-The web role SHALL serve every asset the web UI's pages use itself: the stylesheet at `/assets/tiehall.css`, the live hall's script at `/assets/hall.js`, the icons `/assets/icon.svg`, `/assets/icon-180.png`, `/assets/icon-192.png`, `/assets/icon-512.png` and `/favicon.ico`, the web app manifest at `/assets/manifest.webmanifest`, the fonts under `/assets/fonts/`, and the fonts' license at `/assets/fonts/OFL.txt`. The assets hold nothing of the install's data: they SHALL be served to anyone, without a session, and before setup completes, as the self-host-install capability defines for the setup gate; an asset's answer SHALL read no session and SHALL set no cookie. Each answer SHALL carry the asset's exact media type, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin`, the Content-Security-Policy `default-src 'none'; frame-ancestors 'none'; sandbox`, and a strong `ETag` of its content, and SHALL answer 304 with no body to an `If-None-Match` that names that `ETag`. Pages SHALL name each asset by a URL whose `v` query parameter is a digest of the asset's current content. An answer to a URL whose `v` is that digest SHALL carry `Cache-Control: public, max-age=31536000, immutable`; an answer to any other URL of the asset SHALL carry the current content with `Cache-Control: no-cache`. A path under `/assets/` that names no asset, and any method but GET and HEAD, SHALL get 404, as the public-api capability's error model defines for a route the surface does not offer.
+In this capability, a page of the web UI is every HTML page the install serves other than the API reference page at `/docs/api`, which keeps the look and the policy the public-api capability defines and names only the icons in its head. The web role SHALL serve every asset the web UI's pages use itself: the stylesheet at `/assets/tiehall.css`, the live hall's script at `/assets/hall.js`, the icons `/assets/icon.svg`, `/assets/icon-180.png`, `/assets/icon-192.png`, `/assets/icon-512.png` and `/favicon.ico`, the web app manifest at `/assets/manifest.webmanifest`, the fonts under `/assets/fonts/`, and the fonts' license at `/assets/fonts/OFL.txt`. The assets hold nothing of the install's data: they SHALL be served to anyone, without a session, and before setup completes, as the self-host-install capability defines for the setup gate; an asset's answer SHALL read no session and SHALL set no cookie. Each answer SHALL carry the asset's exact media type, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin`, the Content-Security-Policy `default-src 'none'; frame-ancestors 'none'; sandbox`, and a strong `ETag` of its content, and SHALL answer 304 with no body to an `If-None-Match` that names that `ETag`. Pages SHALL name each asset by a URL whose `v` query parameter is a digest of the asset's current content. An answer to a URL whose `v` is that digest SHALL carry `Cache-Control: public, max-age=31536000, immutable`; an answer to any other URL of the asset SHALL carry the current content with `Cache-Control: no-cache`. A path under `/assets/` that names no asset, and any method but GET and HEAD, SHALL get 404, as the public-api capability's error model defines for a route the surface does not offer.
 
 Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; design.md, Design: The install's assets
 
@@ -42,10 +42,10 @@ Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; des
 
 ### Requirement: One stylesheet with named design tokens
 
-Every page of the web UI SHALL take its look from the install's stylesheet, which it SHALL link from the install, and SHALL carry no `style` element and no `style` attribute. The API reference page at `/docs/api` is the one exception: it keeps the look and the policy the public-api capability defines. The stylesheet SHALL define every color it uses as a named design token, with these values for the main tokens:
-- in the light theme: ink `#14161B` for text, secondary text `#4A5060`, line blue `#2B4ACB` for links, primary buttons and the focus ring, signal amber `#F2B33D` for lamps that call for attention, ground `#F6F7F9` behind the page, surface `#FFFFFF` for panels and the top bar, and border `#E3E6EB`;
-- in the dark theme: ink `#E8EAF0`, secondary text `#8A93A6`, line blue `#9DB2FF` for links and the focus ring and `#4C69E6` for primary buttons, signal amber `#F2B33D`, ground `#0E1117`, surface `#151A23`, and border `#2A3040`.
-Signal amber SHALL NOT be used for text on the light theme's ground or surface.
+Every page of the web UI SHALL take its look from the install's stylesheet, which it SHALL link from the install, and SHALL be served with markup that holds no `style` element and no `style` attribute. The stylesheet SHALL define every color it uses as a named design token, with these values for the main tokens:
+- in the light theme: ink `#14161B` for text, secondary text `#4A5060`, line blue `#2B4ACB` for links, primary buttons and the focus ring, signal amber `#F2B33D` as the brand's accent, `#B26B00` for lamps that call for attention, ground `#F6F7F9` behind the page, surface `#FFFFFF` for panels and the top bar, and border `#E3E6EB`;
+- in the dark theme: ink `#E8EAF0`, secondary text `#8A93A6`, line blue `#9DB2FF` for links and the focus ring and `#4C69E6` for primary buttons, signal amber `#F2B33D`, also for lamps that call for attention, ground `#0E1117`, surface `#151A23`, and border `#2A3040`.
+Signal amber `#F2B33D` SHALL NOT be used for text, nor for a lamp, on the light theme's ground or surface.
 
 Source: D57 (1); design.md, Decisions this change rests on; design.md, Design: The design tokens
 
@@ -53,7 +53,7 @@ Source: D57 (1); design.md, Decisions this change rests on; design.md, Design: T
 
 - **WHEN** a signed-in member opens `/inbox`
 - **THEN** the page links the stylesheet `/assets/tiehall.css` from the install
-- **AND** its markup holds no `style` element and no `style` attribute
+- **AND** the markup it is served with holds no `style` element and no `style` attribute
 
 #### Scenario: The light theme's ground and ink
 
@@ -65,21 +65,21 @@ Source: D57 (1); design.md, Decisions this change rests on; design.md, Design: T
 
 - **WHEN** a signed-in member opens `https://tiehall.example.com/FE-142`
 - **THEN** the page links the same stylesheet
-- **AND** its markup holds no `style` element and no `style` attribute
+- **AND** the markup it is served with holds no `style` element and no `style` attribute
 
 ### Requirement: A request's state looks the same everywhere
 
-Every page that shows a request's state SHALL show it as a chip that names the state in words and uses that state's colors, and the live hall SHALL show the requests of each state with a lamp of that state's color and the count in words beside it:
+Every page that shows a request's state SHALL show it as a chip that names the state in words and uses that state's colors. Where a page shows a state as a lamp, as the live hall does for the requests of each state, with their count in words beside it, and the request page's timeline for each event, the lamp SHALL take that state's lamp color for the page's theme: the light theme's lamp in the light theme, and the dark theme's lamp in the dark theme and always on the live hall.
 
-| State | Words | Light chip: background / text | Dark chip: background / text | Live hall lamp |
-| --- | --- | --- | --- | --- |
-| `open` | Open | `#EEF0F4` / `#3B4252` | `#232938` / `#C9CFDB` | `#8A93A6` |
-| `claimed` | Claimed | `#E6EBFB` / `#1E3596` | `#1A2340` / `#B7C6FF` | `#9DB2FF` |
-| `in_progress` | In progress | `#2B4ACB` / `#FFFFFF` | `#4C69E6` / `#FFFFFF` | `#4C69E6` |
-| `needs_info` | Needs info | `#FCEFD2` / `#7A4A00` | `#3A2C10` / `#F2C66D` | `#F2B33D` |
-| `done` | Done | `#DDF1E6` / `#145A37` | `#12301F` / `#7EE2A3` | `#4ADE80` |
-| `declined` | Declined | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none |
-| `withdrawn` | Withdrawn | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none |
+| State | Words | Light chip: background / text | Dark chip: background / text | Lamp, light theme | Lamp, dark theme and the live hall |
+| --- | --- | --- | --- | --- | --- |
+| `open` | Open | `#EEF0F4` / `#3B4252` | `#232938` / `#C9CFDB` | `#7A8294` | `#8A93A6` |
+| `claimed` | Claimed | `#E6EBFB` / `#1E3596` | `#1A2340` / `#B7C6FF` | `#4C69E6` | `#9DB2FF` |
+| `in_progress` | In progress | `#2B4ACB` / `#FFFFFF` | `#4C69E6` / `#FFFFFF` | `#2B4ACB` | `#4C69E6` |
+| `needs_info` | Needs info | `#FCEFD2` / `#7A4A00` | `#3A2C10` / `#F2C66D` | `#B26B00` | `#F2B33D` |
+| `done` | Done | `#DDF1E6` / `#145A37` | `#12301F` / `#7EE2A3` | `#1E8A4C` | `#4ADE80` |
+| `declined` | Declined | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none | none |
+| `withdrawn` | Withdrawn | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none | none |
 
 A request flagged `needs_human`, as the agent-safety capability defines, SHALL also show a second chip that says in words that it waits for a person.
 
@@ -101,9 +101,14 @@ Source: D57 (1), (8); design.md, Decisions this change rests on; design.md, Desi
 - **WHEN** agents' writes have flagged FE-142 `needs_human` and a member opens its page
 - **THEN** beside its state chip, a second chip says that it waits for a person
 
+#### Scenario: A lamp in the light theme
+
+- **WHEN** an agent's blocking question moved FE-142 to `needs_info`, and a member whose browser prefers the light color scheme opens FE-142's page
+- **THEN** the timeline's entry for that move has a lamp in `#B26B00`, beside words that say FE-142 needs info
+
 ### Requirement: The mark, the favicon and the app icon
 
-The install's mark SHALL be TM1: in a 32 by 32 view box, drawn with round caps and round joins at a stroke width of 2.5, which MAY grow to at most 3.5 at sizes of 24 pixels and less, the paths `M6.5 16 V7 L16 15.5 L25.5 7 V16` and `M16 17.9 V24` and two circles of radius 2.4 centered at (16, 15.5) and (16, 26.6). Every page's top bar SHALL show the mark beside the name Tiehall, with the mark hidden from assistive technology. The install's icon SHALL be the mark in white on an ink (`#14161B`) rounded square, and every page SHALL name it in its head: `/assets/icon.svg` as an SVG icon, `/favicon.ico`, which SHALL hold images of 16, 32 and 48 pixels, `/assets/icon-180.png` as the touch icon, and the manifest `/assets/manifest.webmanifest`, which SHALL give the name Tiehall, the start URL `/`, the display mode `browser`, and the icons `/assets/icon-192.png` and `/assets/icon-512.png` with those sizes.
+The install's mark SHALL be TM1: in a 32 by 32 view box, drawn with round caps and round joins at a stroke width of 2.5, which MAY grow to at most 3.5 at sizes under 32 pixels, the paths `M6.5 16 V7 L16 15.5 L25.5 7 V16` and `M16 17.9 V24` and two circles of radius 2.4 centered at (16, 15.5) and (16, 26.6). Every page's top bar SHALL show the mark beside the name Tiehall, with the mark hidden from assistive technology. The install's icon SHALL be the mark in white on an ink (`#14161B`) rounded square, and every page SHALL name it in its head: `/assets/icon.svg` as an SVG icon, `/favicon.ico`, which SHALL hold images of 16, 32 and 48 pixels, `/assets/icon-180.png` as the touch icon, and the manifest `/assets/manifest.webmanifest`, which SHALL give the name Tiehall, the start URL `/`, the display mode `browser`, and the icons `/assets/icon-192.png` and `/assets/icon-512.png` with those sizes. The API reference page at `/docs/api` SHALL name the same three icons in its head, and not the manifest.
 
 Source: D57 (2), (10); design.md, Decisions this change rests on; design.md, Design: The mark and the icons
 
@@ -130,6 +135,12 @@ Source: D57 (2), (10); design.md, Decisions this change rests on; design.md, Des
 - **THEN** it gives the name Tiehall, the start URL `/` and the display mode `browser`
 - **AND** it names `/assets/icon-192.png` at 192 by 192 pixels and `/assets/icon-512.png` at 512 by 512 pixels
 
+#### Scenario: The API reference page names the icons
+
+- **WHEN** a signed-in member opens `/docs/api`
+- **THEN** the page's head names `/assets/icon.svg`, `/favicon.ico` and `/assets/icon-180.png`, and names no manifest
+- **AND** the browser reports no violation of the page's Content-Security-Policy
+
 ### Requirement: Fonts served by the install
 
 The web UI SHALL set its text in IBM Plex Sans, at the weights 400, 500, 600 and 700, and request keys, team keys, ids and code in IBM Plex Mono, at the weights 400 and 500, with the system's sans-serif and monospace fonts as the fallbacks. The install SHALL serve the font files itself, as IBM publishes them under the SIL Open Font License 1.1 and unmodified, split into subsets that the browser loads only for the characters a page uses, which SHALL cover at least the Basic Latin, Latin-1 Supplement and Latin Extended-A blocks, so Turkish among other languages; and it SHALL serve the license's text, with IBM's copyright notice, at `/assets/fonts/OFL.txt`. No page SHALL load a font from another host.
@@ -154,9 +165,9 @@ Source: D57 (3), (14); design.md, Decisions this change rests on; design.md, Des
 
 ### Requirement: The page shell and its navigation
 
-Every page of the web UI, apart from the API reference page at `/docs/api`, SHALL share one shell: a link that skips to the page's main content, the first element the keyboard reaches; a top bar with the mark; the page's content in one main landmark with one first-level heading; and the footer with the running version and its source link, as the self-host-install capability defines. The shell SHALL take one of two forms:
+Every page of the web UI SHALL share one shell: a link that skips to the page's main content, the first element the keyboard reaches; a top bar with the mark; the page's content in one main landmark with one first-level heading; and the footer with the running version and its source link, as the self-host-install capability defines. The shell SHALL take one of two forms:
 - the app shell, on the pages a signed-in member uses other than those below: its top bar SHALL hold the mark and the name Tiehall as a link to `/`; the navigation, with the links Live hall (`/hall`), Inbox (`/inbox`), Requests (`/requests`), Members (`/members`) and, for an admin only, Admin (`/admin`), the current page marked as current; beside the Inbox link, while proposals wait for the member's own confirmation, as the requester-loop capability defines the web inbox's standing list, their number with words a screen reader reads; a New request link to `/requests/new`; and a menu named by the member's GitHub login with Email settings (`/settings/email`), Connected agents and tokens (`/tokens`) and the sign-out form, as the sign-in capability defines;
-- the focused shell, on the sign-in page, the setup screen, every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, every refusal page, the page for a path no route serves, and the API changelog page: its top bar SHALL hold the mark and the name and nothing else.
+- the focused shell, on the sign-in page, the setup screen, every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, every refusal page, the page for a path no route serves, the page shown when a page fails to render, and the API changelog page: its top bar SHALL hold the mark and the name and nothing else.
 The navigation and the member's menu SHALL open and close without script. In a viewport narrower than 768 CSS pixels, the navigation, the New request link and the member's menu SHALL fold into one menu that opens without script.
 
 Source: D57 (4), (7), (8); design.md, Decisions this change rests on; design.md, Design: The page shell and navigation
@@ -182,6 +193,12 @@ Source: D57 (4), (7), (8); design.md, Decisions this change rests on; design.md,
 - **WHEN** Bob opens the review page of a decline proposal on FE-142
 - **THEN** its top bar holds the mark and the name Tiehall and no navigation
 - **AND** its footer shows the running version with the link to its source
+
+#### Scenario: A path no route serves
+
+- **WHEN** a signed-in member opens `https://tiehall.example.com/no-such-page/at-all`
+- **THEN** the answer is 404 with a page whose top bar holds the mark and the name Tiehall and no navigation
+- **AND** the page links the install's stylesheet
 
 #### Scenario: The menu on a phone without script
 
@@ -218,14 +235,14 @@ Source: D57 (5); design.md, Decisions this change rests on; design.md, Design: L
 
 ### Requirement: Motion, and reduced motion
 
-An animation SHALL show something that happens, such as a request moving along its line, a person or an agent at work, or a new entry arriving, and nothing SHALL flash more than three times in any one second. Pages SHALL animate only through the install's stylesheet and, on the live hall, its script. On every page but the live hall, an animation that repeats SHALL stop within 5 seconds of starting, and the words it goes with SHALL stay. The live hall SHALL offer a Pause motion button, which SHALL say whether motion is paused and SHALL stop and restart every animation on the page; while motion is paused, changes of state, counts and new entries SHALL still show, without moving. When the browser reports that the system prefers reduced motion, no page SHALL run an animation or a transition, and the live hall SHALL start with motion paused.
+An animation SHALL show something that happens, such as a request moving along its line, a person or an agent at work, or a new entry arriving, and nothing SHALL flash more than three times in any one second. Pages SHALL animate only through the install's stylesheet and, on the live hall, its script. On every page but the live hall, an animation that repeats SHALL stop within 5 seconds of starting, and the words it goes with SHALL stay. On the live hall, repeating animations SHALL run only once its script runs; without scripts the page SHALL follow the 5-second rule as every other page does. The live hall SHALL offer a Pause motion button, shown only while its script runs, which SHALL say whether motion is paused and SHALL stop and restart every animation on the page; while motion is paused, changes of state, counts and new entries SHALL still show, without moving. When the browser reports that the system prefers reduced motion, no page SHALL run an animation or a transition, and the live hall SHALL start with motion paused.
 
 Source: D57 (6), (8); design.md, Decisions this change rests on; design.md, Design: Motion and reduced motion
 
 #### Scenario: A repeating animation stops
 
 - **WHEN** a member opens FE-142's page while Mert's agent is at work on it, which the page shows with an animation
-- **THEN** no animation runs on the page 5 seconds later
+- **THEN** 5.5 seconds after the page loads, no animation runs on it
 - **AND** the page still says that Mert's agent is working on FE-142
 
 #### Scenario: Reduced motion on every page
@@ -247,7 +264,7 @@ Source: D57 (6), (8); design.md, Decisions this change rests on; design.md, Desi
 
 ### Requirement: Pages work at phone width
 
-Every page of the web UI SHALL work in a viewport 320 CSS pixels wide, and when zoomed to 200 percent in a viewport 640 CSS pixels wide: its content SHALL reflow so that the page does not scroll sideways, except that a table or a block of code MAY scroll sideways inside its own box; no text SHALL be cut off or overlap other text; and every control SHALL stay usable and at least 24 by 24 CSS pixels.
+Every page of the web UI SHALL work in a viewport 320 CSS pixels wide, and when zoomed to 200 percent in a viewport 640 CSS pixels wide: its content SHALL reflow so that the page does not scroll sideways, except that a table or a block of code MAY scroll sideways inside its own box; no text SHALL be cut off or overlap other text; and every control SHALL stay usable and at least 24 by 24 CSS pixels, apart from a link inside a sentence or a block of text, as WCAG 2.2 success criterion 2.5.8 allows.
 
 Source: D57 (7); design.md, Decisions this change rests on; design.md, Design: Phone width
 
@@ -265,8 +282,8 @@ Source: D57 (7); design.md, Decisions this change rests on; design.md, Design: P
 ### Requirement: Pages are accessible
 
 Every page of the web UI SHALL meet these rules in the light theme, in the dark theme and on the live hall:
-- text SHALL contrast with its background by at least 4.5:1, and the focus ring, the borders that show where a form control is, and lamps by at least 3:1;
-- every action SHALL be a button, and every move to another page a link with a target;
+- text SHALL contrast with its background by at least 4.5:1, and the focus ring, the borders that show where a form control is, and lamps by at least 3:1, each against the background it sits on;
+- every action SHALL be a button, and every move to another page a link with an `href`;
 - every form control SHALL have a label, and a refused form SHALL say which fields it refused, next to those fields;
 - every element the keyboard can reach SHALL show a focus ring at least 2 CSS pixels wide while it has the keyboard's focus, and the keyboard SHALL reach every control in the order the page reads;
 - a state, a lamp or a chip SHALL NOT say anything by color alone: its words, or a count in words, SHALL be beside it;
@@ -305,9 +322,9 @@ Source: D57 (8); design.md, Decisions this change rests on; design.md, Design: A
 
 ### Requirement: The content security policy of each kind of page
 
-Every HTML page of the web UI SHALL send a Content-Security-Policy that lets it load styles, fonts, images and its manifest from the install alone, and that no other site can frame: `default-src 'none'`, `style-src 'self'`, `font-src 'self'`, `img-src 'self'`, `manifest-src 'self'`, `base-uri 'none'`, `frame-ancestors 'none'`, and `form-action 'self'`, which the setup screen and the sign-in page extend with GitHub's web origin, the consent screen with the client's redirect URI as its source (its origin, or its scheme for an app's own scheme), and the API changelog page narrows to `'none'`. No policy of the web UI SHALL allow `'unsafe-inline'` or `'unsafe-eval'`, or name another host in any directive but `form-action`, apart from the policy of the API reference page at `/docs/api`, which the public-api capability defines. Scripts SHALL run on two kinds of page only:
+Every page of the web UI SHALL send a Content-Security-Policy that lets it load styles, fonts, images and its manifest from the install alone, and that no other site can frame: `default-src 'none'`, `style-src 'self'`, `font-src 'self'`, `img-src 'self'`, `manifest-src 'self'`, `base-uri 'none'`, `frame-ancestors 'none'`, and `form-action 'self'`, which the setup screen extends with GitHub's web origin; the sign-in page with GitHub's web origin and, while an agent client's authorization waits on sign-in, that client's registered redirect URI as the consent screen gives it; the consent screen with the client's redirect URI as its source (its origin, or its scheme for an app's own scheme); and which the API changelog page narrows to `'none'`. No policy of the web UI SHALL allow `'unsafe-inline'` or `'unsafe-eval'`, or name another host in any directive but `form-action`. Scripts SHALL run on two kinds of page only:
 - the live hall at `/hall` SHALL add `script-src 'self'` and `connect-src 'self'`, so it runs only its script from the install and reads only from the install, and `require-trusted-types-for 'script'` with `trusted-types 'none'`, so its script cannot write markup into the page;
-- the pages the web UI renders through its framework, which are a request's page, a team's intake page and the page for a path no route serves, SHALL add `script-src` with a nonce made for each answer and `'strict-dynamic'`, `connect-src 'self'` and `object-src 'none'`, so only the framework's scripts that carry the nonce run.
+- the pages the web UI renders through its framework, which are a request's page, a team's intake page, the page for a path no route serves and the page shown when one of them fails to render, SHALL add `script-src` with a nonce made for each answer and `'strict-dynamic'`, `connect-src 'self'` and `object-src 'none'`, so only the framework's scripts that carry the nonce run.
 Every other page SHALL allow no script, and so in any case SHALL every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, the setup screen, the sign-in page and every refusal page. A JSON answer of the live hall SHALL send `default-src 'none'; frame-ancestors 'none'`. No page SHALL break its own policy: a browser that shows any page of the web UI SHALL report no violation of it.
 
 Source: D57 (9), (14); design.md, Decisions this change rests on; design.md, Design: The content security policy of each kind of page
@@ -337,6 +354,18 @@ Source: D57 (9), (14); design.md, Decisions this change rests on; design.md, Des
 - **THEN** its policy's `form-action` allows the install and GitHub's web origin
 - **AND** its policy allows no script
 
+#### Scenario: The sign-in page while an agent client's authorization waits
+
+- **WHEN** a browser with no session reaches the sign-in page from the authorization request of an agent client that registered the redirect URI `https://client.example.com/callback`
+- **THEN** the sign-in page's policy's `form-action` allows the install, GitHub's web origin and `https://client.example.com`
+- **AND** its policy allows no script
+
+#### Scenario: The page for a path no route serves has a policy
+
+- **WHEN** a signed-in member opens `https://tiehall.example.com/no-such-page/at-all` twice
+- **THEN** each answer's Content-Security-Policy has `default-src 'none'`, `style-src 'self'` and a `script-src` that names a nonce and `'strict-dynamic'` and nothing else
+- **AND** the two answers name different nonces
+
 #### Scenario: No page breaks its own policy
 
 - **WHEN** a browser shows every page of the web UI, as a signed-in admin, as a signed-in member and as a browser with no session
@@ -357,7 +386,7 @@ Source: D57 (15); design.md, Decisions this change rests on; design.md, Design: 
 #### Scenario: The timeline
 
 - **WHEN** FE-142 was opened, then claimed by Mert, then an agent asked a blocking question that Selin answered, and then work started, and a member opens FE-142's page
-- **THEN** the timeline lists those five events, newest first, each with who did it and when
+- **THEN** the timeline lists those seven events, newest first: the start of work, the return to `claimed`, the answer, the move to `needs_info`, the blocking question, the claim and the opening, each with who did it and when
 - **AND** no entry holds the question's or the answer's text
 
 ### Requirement: The live hall
@@ -405,15 +434,23 @@ Source: D57 (11), (13); design.md, Decisions this change rests on; design.md, De
 - **WHEN** a browser with scripts switched off opens `/hall`
 - **THEN** the page shows the teams, the lines between them, the people and agents at work and the feed as they stood when it was served
 - **AND** it says that it updates only with scripts on
+- **AND** 5.5 seconds after the page loads, no animation runs on it, and no Pause motion button is shown
 
 #### Scenario: An agent's token cannot read the hall
 
 - **WHEN** an agent calls `/hall`, `/hall/state` or `/hall/wait` with an OAuth access token or a personal access token and no session
-- **THEN** the call gets no part of the live hall
+- **THEN** `/hall` redirects to `/sign-in?return=%2Fhall`, and `/hall/state` and `/hall/wait` answer 401 with an RFC 9457 problem
+- **AND** no answer holds a team, a request or an event
+
+#### Scenario: A reassigned request
+
+- **WHEN** FE-142, opened by team BE, is reassigned to team OPS as OPS-7 while a member's browser shows the live hall
+- **THEN** the live hall shows OPS-7 on the line from BE to OPS
+- **AND** it no longer shows FE-142 on the line from BE to FE
 
 ### Requirement: What the live hall shows of the people and agents at work
 
-The live hall SHALL show as at work each person and each agent that a domain event on a request names as its actor within the last 10 minutes, the most recent first, at most 12 of them on its map and all of them in its list. For each it SHALL show: the GitHub login of the user the event names, marked as a bot when an admin flagged the user as one; whether they acted as an agent or in the web UI; for an agent, the client's name: for a client identified by a Client ID Metadata Document, the name its document gives, with the document's verified host; for a client registered through Dynamic Client Registration, the name it registered with, marked as unverified, as the agent-access capability defines for the consent screen; `tiehall CLI` with its version for the `tiehall` CLI; and `personal access token` for a personal access token; the request's key and title; what they did last, in Tiehall's own words; and how long ago. A change Tiehall makes itself SHALL be shown as made by Tiehall, and a change from GitHub or Jira as made by GitHub or Jira. A client's name is text its client chose: it SHALL be shown as text, cut to 40 characters, and never as a link or as markup. The live hall SHALL show only what domain events record: a read, such as an agent reading a request's packet, leaves no event and SHALL NOT be shown.
+The live hall SHALL show as at work each person and each agent that a domain event on a request, recorded with the actor kind `agent` or `web_session`, names as its actor within the last 10 minutes: one entry per user, actor kind and client, showing the request of that entry's latest event, the most recent first, at most 12 of them on its map and all of them in its list. For each it SHALL show: the GitHub login of the user the event names, marked as a bot when an admin flagged the user as one; whether they acted as an agent or in the web UI; for an agent, the client's name: for a client identified by a Client ID Metadata Document, the name its document gives, with the document's verified host; for a client registered through Dynamic Client Registration, the name it registered with, marked as unverified, as the agent-access capability defines for the consent screen, and a client that registered no name SHALL be shown as an unnamed client, marked as unverified; `tiehall CLI` with its version for the `tiehall` CLI; and `personal access token` for a personal access token; the request's key and title; what they did last, in Tiehall's own words; and how long ago. An event recorded with the actor kind `system` SHALL be shown as made by Tiehall, and one recorded with the actor kind `integration` as made by GitHub or Jira, by the surface it came through; neither is shown at work. A client's name is text its client chose: it SHALL be shown as text, cut to 40 characters, and never as a link or as markup. The live hall SHALL show only what domain events record: a read, such as an agent reading a request's packet, leaves no event and SHALL NOT be shown.
 
 Source: D57 (11), (13); design.md, Decisions this change rests on; design.md, Design: The live hall
 
@@ -426,6 +463,17 @@ Source: D57 (11), (13); design.md, Decisions this change rests on; design.md, De
 
 - **WHEN** Deniz's agent, whose client registered through Dynamic Client Registration with the name `Claude Code`, posts a comment on FE-139
 - **THEN** the live hall shows Deniz's agent with the client's name `Claude Code`, marked as unverified
+
+#### Scenario: A client with no name
+
+- **WHEN** Deniz's agent, whose client registered through Dynamic Client Registration without a name, posts a comment on FE-139
+- **THEN** the live hall shows Deniz's agent with an unnamed client, marked as unverified
+
+#### Scenario: One entry per person, kind and client
+
+- **WHEN** Mert's agent, through one client, posts a comment on FE-139 and then one on FE-142 within a minute, and Mert posts a comment on FE-142 from the request's page
+- **THEN** the live hall shows Mert's agent once, at work on FE-142
+- **AND** it shows Mert in the web UI once, at work on FE-142
 
 #### Scenario: A person in the web UI
 
@@ -449,7 +497,7 @@ Source: D57 (11), (13); design.md, Decisions this change rests on; design.md, De
 
 ### Requirement: The live hall's reads and its long-poll
 
-The live hall SHALL read through two internal reads of the web UI, which run only for a web session, which every member may run, and which no agent surface offers: its state, at `GET /hall/state`, which answers with what the page shows and the number of the newest domain event about a request that it includes, its cursor; and its wait, at `GET /hall/wait?after=<cursor>`, a long-poll in the style of the requester-loop capability's wait endpoint. Both SHALL take the page's `team` and `agents`. The wait SHALL answer as soon as a domain event about a request exists after the cursor, with the new events as the feed says them, the current lines of the requests those events name, the current counts of the teams those requests involve, the people and agents at work, and the new cursor; otherwise it SHALL hold the call at most 25 seconds and then answer 200 with no events and the cursor it was given. When more than 50 such events exist after the cursor, it SHALL answer, with no events, that the page must read its state again. While the app shuts down, the wait SHALL end at once with 503 and `Retry-After: 0`. A security event SHALL NOT end a wait. Both reads SHALL answer JSON with `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`; a call without a session SHALL get 401 and a removed member's call 403, as the public-api capability's error model defines, and a credential in an `Authorization` header SHALL NOT stand in for a session. Neither SHALL stream: each answer SHALL be one complete JSON document in answer to one GET. The page SHALL read its state when it starts and then wait again as soon as each wait answers, so that a domain event that commits while its wait holds SHALL reach the page within 2 seconds. While the browser hides the page, it SHALL hold no wait, and once shown again it SHALL wait from its cursor. After a failed wait, it SHALL wait again after 1 second, doubling the delay up to 30 seconds, and SHALL say on the page that it is reconnecting; after a 401, it SHALL stop and say that the member must sign in again. Times on the page SHALL stay current to within 15 seconds without a read.
+The live hall SHALL read through two internal reads of the web UI, which run only for a web session, which every member may run, and which no agent surface offers: its state, at `GET /hall/state`, which answers with what the page shows and the number of the newest domain event about a request that it includes, its cursor; and its wait, at `GET /hall/wait?after=<cursor>`, a long-poll in the style of the requester-loop capability's wait endpoint. Both SHALL take the page's `team` and `agents`. The wait SHALL answer as soon as a domain event about a request exists after the cursor, with the new events as the feed says them, the current lines of the requests those events name, the current counts of the teams those requests involve, the people and agents at work, and the new cursor; otherwise it SHALL hold the call at most 25 seconds and then answer 200 with no events and the cursor it was given. When more than 50 such events exist after the cursor, it SHALL answer, with no events, that the page must read its state again. While the app shuts down, the wait SHALL end at once with 503 and `Retry-After: 0`. A security event SHALL NOT end a wait. Both reads SHALL answer JSON with `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`; a call without a session SHALL get 401 and a removed member's call 403, as the public-api capability's error model defines, and a credential in an `Authorization` header SHALL NOT stand in for a session. A read of `/hall/state` or `/hall/wait` SHALL NOT extend the web session, as the sign-in capability defines a use's extension: the page makes these reads on its own; opening `/hall`, as opening any page, does extend it. Neither SHALL stream: each answer SHALL be one complete JSON document in answer to one GET. The page SHALL read its state when it starts and then wait again as soon as each wait answers, so that a domain event that commits while its wait holds SHALL reach the page within 2 seconds. While the browser hides the page, it SHALL hold no wait, and once shown again it SHALL wait from its cursor. After a failed wait, it SHALL wait again after 1 second, doubling the delay up to 30 seconds, and SHALL say on the page that it is reconnecting; after a 401, it SHALL stop and say that the member must sign in again. Times on the page SHALL stay current to within 15 seconds without a read.
 
 Source: D57 (12); design.md, Decisions this change rests on; design.md, Design: The live hall
 
@@ -493,6 +541,12 @@ Source: D57 (12); design.md, Decisions this change rests on; design.md, Design: 
 - **WHEN** a member's session ends while their live hall waits
 - **THEN** the page stops waiting
 - **AND** it says that the member must sign in again
+
+#### Scenario: An unattended hall does not keep its session
+
+- **WHEN** Carol signs in at 09:00 UTC on 2026-10-01, opens `/hall` at 10:00 UTC on 2026-10-02, and leaves it open on a wall screen, where its waits go on, without opening another page
+- **THEN** the web session expires at 10:00 UTC on 2026-10-09, 7 days after the use that opened `/hall` extended it
+- **AND** the page then stops waiting and says that Carol must sign in again
 
 #### Scenario: No stream
 

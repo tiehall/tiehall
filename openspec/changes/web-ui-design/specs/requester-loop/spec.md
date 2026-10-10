@@ -8,7 +8,7 @@ States that the web UI's live hall reads by pull, with a long-poll and no stream
 
 ### Requirement: No push paths other than the hooks
 
-In v1, the only push path SHALL be the Claude Code hooks, or the plugin monitor in place of the Stop-hook waiter. Claude Code channels SHALL NOT ship in v1, and Tiehall SHALL NOT offer a server-sent event stream, a WebSocket or any other stream of events; the wait endpoint serves the loop. The web UI's live hall, which the web-ui capability defines, reads by pull as well: it reads its state and then holds a long-poll read in the style of the wait endpoint, offered to web sessions only and on no agent surface, and it is no path by which updates reach a requester or an agent.
+In v1, the only push path SHALL be the Claude Code hooks, or the plugin monitor in place of the Stop-hook waiter. Claude Code channels SHALL NOT ship in v1, and Tiehall SHALL NOT offer a stream of the event log's events, whether as server-sent events, over a WebSocket or otherwise; the wait endpoint serves the loop. The web UI's live hall, which the web-ui capability defines, reads by pull as well: it reads its state and then holds a long-poll read in the style of the wait endpoint, offered to web sessions only and on no agent surface, and it is no path by which updates reach a requester or an agent.
 
 Source: D8; D57 (12); design.md, Decisions this change rests on; design.md, Design: The live hall; design.md, Rules carried from earlier changes
 
