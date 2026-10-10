@@ -8,11 +8,16 @@ name: Packet package
 # trusted publishing and provenance, never from a laptop.
 #
 # It stays off until the schema is published (handoff-packet: When the schema
-# is published): a maintainer starts it, and its publish job runs only once
-# packages/packet/releases/ holds a release, whose version the package takes.
-# The job holds the OIDC token permission, through which npm's trusted
-# publishing authenticates it and signs the provenance, and nothing else, and it
-# runs only GitHub's own actions (.github/workflow-policy.json).
+# is published): a maintainer starts it, and its build and publish jobs run
+# only once packages/packet/releases/ holds a release, whose version the
+# package takes. The build job, which can write nothing, installs the
+# package's dependencies, builds the package, checks it and packs it. The
+# publish job holds the OIDC token permission, through which npm's trusted
+# publishing authenticates it and signs the provenance, and nothing else, and
+# it runs only GitHub's own actions and npm itself, never a dependency's code
+# (self-host-install: Release pipeline integrity; .github/workflow-policy.json):
+# it publishes the tarball the build job packed, once its digest matches the
+# one that job gave.
 
 on:
   workflow_dispatch:
@@ -50,13 +55,61 @@ jobs:
         id: publication
         run: node tools/repo-checks/src/read-packet-publication.ts >> "$GITHUB_OUTPUT"
 
-  publish:
-    name: Publish @tiehall/packet
+  build:
+    name: Build and check @tiehall/packet
     needs: prepare
     if: needs.prepare.outputs.published == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
+      contents: read
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter @tiehall/packet
+      - name: Build the package
+        run: node packages/packet/src/build-package.ts --version "$VERSION" --out "$RUNNER_TEMP/package"
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+      # The pack dry run holds no renderer and no source, and the validator, installed from the tarball, accepts every
+      # valid fixture and rejects every invalid one.
+      - name: Check the package's content and its validator
+        run: node packages/packet/src/check-package.ts "$RUNNER_TEMP/package"
+      # The tarball npm publishes as it is; npm pack prints its file name.
+      - name: Pack the package
+        id: pack
+        run: |
+          mkdir "$RUNNER_TEMP/tarball"
+          tarball="$(npm pack "$RUNNER_TEMP/package" --ignore-scripts --pack-destination "$RUNNER_TEMP/tarball" --loglevel error)"
+          sha256="$(cd "$RUNNER_TEMP/tarball" && sha256sum "$tarball" | cut -d ' ' -f 1)"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "Packed \`$tarball\`, sha256 \`$sha256\`." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package
+          path: ${{ runner.temp }}/tarball/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish @tiehall/packet
+    needs: [prepare, build]
+    if: needs.prepare.outputs.published == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # To read .node-version.
       contents: read
       # npm's trusted publishing authenticates the publish with the job's OIDC token and signs its provenance.
       id-token: write
@@ -69,17 +122,19 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
-      - name: Install pnpm (the version in package.json "packageManager")
-        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/packet
-      - name: Build the package
-        run: node packages/packet/src/build-package.ts --version "$VERSION" --out "$RUNNER_TEMP/package"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: package
+          path: ${{ runner.temp }}/tarball
+      # The tarball the build job checked and packed, not one another job put in its place.
+      - name: Check the tarball against the build job's digest
+        working-directory: ${{ runner.temp }}/tarball
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-      # The pack dry run holds no renderer and no source, and the validator, installed from the tarball, accepts every
-      # valid fixture and rejects every invalid one.
-      - name: Check the package's content and its validator
-        run: node packages/packet/src/check-package.ts "$RUNNER_TEMP/package"
+          TARBALL: ${{ needs.build.outputs.tarball }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: echo "$SHA256  $TARBALL" | sha256sum --check --strict
       - name: Publish the package with provenance
-        working-directory: ${{ runner.temp }}/package
-        run: npm publish --provenance --access public --ignore-scripts
+        working-directory: ${{ runner.temp }}/tarball
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: npm publish "./$TARBALL" --provenance --access public --ignore-scripts

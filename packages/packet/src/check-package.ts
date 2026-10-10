@@ -9,7 +9,8 @@ import { packageContentProblems, packedFiles, packTarball, tarballConformance } 
 // runner, the schema and the fixtures, and no renderer or source; and its
 // tarball, installed as a consumer installs it, has a validator that accepts
 // every valid fixture and rejects every invalid one, and types a consumer's
-// TypeScript compiles against. The CI job that publishes runs it first.
+// TypeScript compiles against. The CI workflow that publishes runs it in its
+// build job, before it packs the tarball the publish job publishes.
 // Usage: node packages/packet/src/check-package.ts <built package folder>
 
 const folder = process.argv[2];
