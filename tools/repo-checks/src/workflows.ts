@@ -17,6 +17,23 @@ import { parse } from "yaml";
 // repository's instructions in containers that get none of the job's secrets,
 // unless the build is given them, the host's network or more privileges. A
 // job that can write runs in no container and beside no service container.
+//
+// Known limits of the write-job rule. It reads the workflows' shell text only:
+// it does not follow PATH, a cd, or what a script or module the step runs
+// does. It matches program names as plain words, so it misses one that is
+// escaped or partly quoted (\pnpm, p"np"m). It finds a download run as code
+// only when it is piped into a shell or an interpreter on its own line or the
+// next, or run inside one, so it misses a pipe carried over a blank or comment
+// line, a process substitution (curl ... > >(bash)) and a file saved and run
+// later (curl -o x.sh ... && bash x.sh). It does not know node -e with a
+// require of a package, buildah, gh extension install, the system's package
+// managers (apt-get, brew) or other ecosystems' (poetry, composer, maven and
+// more), and it counts a build of the checkout as first-party even when a
+// --build-arg hands it a secret. And it refuses some harmless lines: a
+// manager's name inside echoed text (echo "ready to go run it"), and every
+// docker buildx bake, since it does not read bake files. These are the
+// repository's own workflow files, which people review as well: the rule
+// guards them against mistakes, not against someone set on getting past it.
 
 export type Rule =
   | "action-not-pinned"

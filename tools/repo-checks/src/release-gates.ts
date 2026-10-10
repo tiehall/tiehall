@@ -40,6 +40,20 @@ import { parse } from "yaml";
 // out what runs when such conditions skip the gate. Every job of the release
 // workflow that holds a write permission pushes or publishes, so none may run
 // after a gate fails or is skipped.
+//
+// Known limits. The check reads the workflows' shell text only: it does not
+// follow PATH (an export PATH=... that puts another pnpm first), a cd into a
+// folder with another package.json, or what a script the step calls, the
+// gate's own command included, does. It matches the commands that change what
+// runs as plain words, so it misses one that is quoted, escaped or named
+// through a variable ('set' +e, \eval, e""val, "trap", s=set; $s +e), and
+// builtins that set a variable or run code named in their arguments (declare
+// 'BASH_CMDS[pnpm]=...', printf -v, mapfile -C). It reads a line continuation
+// as a space, so it takes a # right after one for a comment, which bash does
+// not. And it refuses some harmless lines before a gate, such as
+// echo "$(date)", echo ${VAR} and set -E. These are the repository's own
+// workflow files, which people review as well: the check guards them against
+// mistakes, not against someone set on getting past it.
 
 export interface Gate {
   /** The gate's name, as the check reports it. */
