@@ -9,8 +9,10 @@ import { parse } from "yaml";
 // steps, how CI installs dependencies, and which packages may run install
 // scripts. A first-party step is one of GitHub's own actions or the
 // repository's own, or a script that installs no package and runs no package
-// manager or container: a dependency's code would run with the job's write
-// access as surely as a third-party action's.
+// manager, no package's program or module and no container, wherever in a
+// command it names one, a shell's -c text and xargs's arguments included: a
+// dependency's code would run with the job's write access as surely as a
+// third-party action's.
 
 export type Rule =
   | "action-not-pinned"
@@ -245,21 +247,51 @@ function programAndArguments(command: string): string[] {
 /** Package managers and runners: whatever they install or run is a package's code, not the repository's. */
 const PACKAGE_RUNNERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bun", "bunx", "corepack", "pip", "pip3", "pipx", "uv", "uvx"]);
 
+/** Programs that run containers, and their subcommands that start one. */
+const CONTAINER_RUNNERS = new Set(["docker", "podman", "nerdctl"]);
+const STARTS_A_CONTAINER = new Set(["run", "create", "compose"]);
+/** Options through which node loads a module before the script: one named by a package, not a path, is a package's. */
+const NODE_LOADERS = new Set(["--import", "--require", "-r", "--loader", "--experimental-loader"]);
+/** A module specifier that names a file or a built-in module, not a package. */
+const NOT_A_PACKAGE = /^(?:\.|\/|node:|file:|data:)/;
+
+/**
+ * The words of a command, taken apart at quotes, substitutions, groupings, operators and equals signs, so that a
+ * program named in a shell's -c text, a command substitution, another program's arguments (such as xargs's) or an
+ * environment variable (such as NODE_OPTIONS) is a word of its own.
+ */
+function wordsOf(command: string): string[] {
+  return command.split(/[\s"'`$(){};|&<>=]+/).filter((word) => word.length > 0);
+}
+
+/** A word's last path segment: the program a path such as /usr/bin/npm names. */
+function baseName(word: string): string {
+  return word.slice(word.lastIndexOf("/") + 1);
+}
+
 /**
  * Why a command would run code that is not first-party, in a job that can write: a package manager, which installs
- * or runs packages, or a container. npm publishing a package without running its scripts runs only npm itself. The
- * command's own program counts, and so does each program a command substitution in it starts.
+ * or runs packages, a package's own program from node_modules, a module node loads by a package's name, or a
+ * container. Each word of the command counts wherever it stands, so a package manager run through a shell's -c text,
+ * xargs or a command substitution counts as surely as one run directly. npm publishing a package without running its
+ * scripts runs only npm itself.
  */
 function thirdPartyCode(command: string): string | undefined {
-  const starts = [0, ...[...command.matchAll(/\$\(|`/g)].map((match) => match.index + match[0].length)];
-  for (const start of starts) {
-    const [program, ...rest] = programAndArguments(command.slice(start).replace(/^[\s"'(]+/, ""));
-    if (program === undefined) continue;
-    const subcommand = subcommandOf(rest);
-    if (program === "npm" && subcommand === "publish" && rest.includes("--ignore-scripts")) continue;
-    if (PACKAGE_RUNNERS.has(program)) return "runs a package manager, and with it packages' code, in a job that can write";
-    if ((program === "docker" && ["run", "create", "compose"].includes(subcommand ?? "")) || program === "docker-compose") {
-      return "runs a container in a job that can write";
+  const [program, ...rest] = programAndArguments(command);
+  const publishes = program === "npm" && subcommandOf(rest) === "publish" && rest.includes("--ignore-scripts");
+  const words = wordsOf(publishes ? rest.join(" ") : command);
+  if (words.some((word) => PACKAGE_RUNNERS.has(baseName(word)))) return "runs a package manager, and with it packages' code, in a job that can write";
+  if (words.some((word) => word.includes("node_modules"))) return "runs a package's code from node_modules in a job that can write";
+  const node = words.findIndex((word) => ["node", "nodejs", "NODE_OPTIONS"].includes(baseName(word)));
+  for (const [index, word] of words.entries()) {
+    const next = words[index + 1];
+    if (node >= 0 && index > node && NODE_LOADERS.has(word) && next !== undefined && !NOT_A_PACKAGE.test(next)) {
+      return "loads a package's module into node in a job that can write";
+    }
+    if (["docker-compose", "podman-compose"].includes(baseName(word))) return "runs a container in a job that can write";
+    if (CONTAINER_RUNNERS.has(baseName(word))) {
+      const subcommand = next === "container" ? words[index + 2] : next;
+      if (STARTS_A_CONTAINER.has(subcommand ?? "")) return "runs a container in a job that can write";
     }
   }
   return undefined;

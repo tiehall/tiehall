@@ -41,6 +41,18 @@ jobs:
           npm publish --provenance
           docker run --rm alpine:3.22 cat /etc/os-release
           sudo pip install awscli==1.40.0
+      # A package manager or a package's code reached through another program: a shell's -c text, xargs, a package's
+      # own binary, a module node loads by name, or a container run from a shell.
+      - run: bash -c "pnpm install --frozen-lockfile"
+      - run: sh -c 'npm ci --ignore-scripts'
+      - run: echo tools | xargs npx --yes cowsay
+      - run: node_modules/.bin/semver 1.0.0
+      - run: node --import tsx tools/notes.ts
+      - run: NODE_OPTIONS="--require=ts-node/register" node tools/notes.ts
+      - run: bash -c 'docker run --rm alpine:3.22 true'
+      # A module node loads by its path in the repository, and a copy whose -r is not node's, are first-party.
+      - run: node --import ./tools/register.ts tools/write-notes.ts
+      - run: cp -r deploy release
   docker:
     runs-on: ubuntu-24.04
     permissions:

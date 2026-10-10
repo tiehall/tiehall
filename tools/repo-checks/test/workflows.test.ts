@@ -123,6 +123,13 @@ describe("the workflow check", () => {
       `release.yml#notes: npm publish --provenance (${packages})`,
       "release.yml#notes: docker run --rm alpine:3.22 cat /etc/os-release (runs a container in a job that can write)",
       `release.yml#notes: sudo pip install awscli==1.40.0 (${packages})`,
+      `release.yml#notes: bash -c "pnpm install --frozen-lockfile" (${packages})`,
+      `release.yml#notes: sh -c 'npm ci --ignore-scripts' (${packages})`,
+      `release.yml#notes: xargs npx --yes cowsay (${packages})`,
+      "release.yml#notes: node_modules/.bin/semver 1.0.0 (runs a package's code from node_modules in a job that can write)",
+      "release.yml#notes: node --import tsx tools/notes.ts (loads a package's module into node in a job that can write)",
+      `release.yml#notes: NODE_OPTIONS="--require=ts-node/register" node tools/notes.ts (loads a package's module into node in a job that can write)`,
+      "release.yml#notes: bash -c 'docker run --rm alpine:3.22 true' (runs a container in a job that can write)",
       "release.yml#publish: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1",
       "release.yml#reuse: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1",
     ]);
