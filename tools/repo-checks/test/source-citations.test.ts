@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { citationProblems, readSources, repositoryFiles } from "../src/source-citations.ts";
+import { citationProblems, readCitedText, readSources, repositoryFiles } from "../src/source-citations.ts";
 
 // Source citations (task 3.4; design.md, Decisions this change rests on: D38).
 // Every citation of a requirement or a design decision in the repository's
@@ -88,17 +88,29 @@ describe("the files the check reads", () => {
       rmSync(scratch, { recursive: true, force: true });
     }
   });
+
+  // The install's fonts and icons are files of the repository (web-ui: The install serves its own assets; design.md,
+  // Design: The install's assets; D57 (14)), and the bytes of a font or an image can spell a decision number. Every
+  // WOFF2, PNG and ICO file holds a NUL byte, which no text file of the repository does.
+  it("leave out a file that holds a NUL byte, such as a font or an image, and one that cannot be read", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "tiehall-citations-"));
+    try {
+      writeFileSync(join(scratch, "font.woff2"), Buffer.from("wOF2\u0000 the bytes spell D99"));
+      writeFileSync(join(scratch, "notes.ts"), "// D99\n");
+      expect(readCitedText(scratch, "font.woff2")).toBeUndefined();
+      expect(readCitedText(scratch, "notes.ts")).toBe("// D99\n");
+      expect(readCitedText(scratch, "missing.ts")).toBeUndefined();
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the repository's citations", () => {
   it("name only current requirements and the decisions design.md lists", () => {
     const problems = repositoryFiles(root).flatMap((file) => {
-      let text: string;
-      try {
-        text = readFileSync(join(root, file), "utf8");
-      } catch {
-        return [];
-      }
+      const text = readCitedText(root, file);
+      if (text === undefined) return [];
       return citationProblems(file, text, sources).map(({ line, citation, problem }) => `${file}:${line}: ${citation} (${problem})`);
     });
     expect(problems).toEqual([]);

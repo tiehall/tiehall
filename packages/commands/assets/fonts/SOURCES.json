@@ -1,0 +1,201 @@
+{
+  "$comment": "IBM Plex, as IBM publishes it in its npm packages, kept unmodified in this folder rather than installed, because both packages run IBM's telemetry tool when they are installed (web-ui: Fonts served by the install; design.md, Design: Type and the self-hosted fonts; D57 (3)). Each package's tarball was fetched with npm pack, which runs no install script, and checked against the registry's integrity; each file is listed with its path in the package and its SHA-256, which packages/commands/test/fonts.test.ts checks. OFL.txt is IBM's license.txt from the same folders, the SIL Open Font License 1.1 with IBM's copyright notice. To update, repeat this for a newer release in a reviewed pull request.",
+  "packages": [
+    {
+      "name": "@ibm/plex-sans",
+      "version": "1.1.0",
+      "integrity": "sha512-WPgvO6Yfj2w5YbhyAr1tv95RUz4LRJlqN+CmYvBglabXteufP1D1E9BABMde+ZIKdRbFJDoKF5eQzfhpnbgZcQ==",
+      "tarball": "https://registry.npmjs.org/@ibm/plex-sans/-/plex-sans-1.1.0.tgz",
+      "files": [
+        {
+          "path": "IBMPlexSans-Regular-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Cyrillic.woff2",
+          "sha256": "23bfb7e9081dd8b2a312ef808b6775e7fca15410d6142612452954693e8ea898"
+        },
+        {
+          "path": "IBMPlexSans-Regular-Greek.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Greek.woff2",
+          "sha256": "3b8a8b6b655aeba128d65b7a5904766d743574e19450b83a7185facfe285ae15"
+        },
+        {
+          "path": "IBMPlexSans-Regular-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Latin1.woff2",
+          "sha256": "b5ad7bd39f996144915f0ad9849a90183b27d8c28ad97ed98af5b1bebc51f6b1"
+        },
+        {
+          "path": "IBMPlexSans-Regular-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Latin2.woff2",
+          "sha256": "fcfa82e0d46ed01a8df38610b451860ca7e7518770c52fdd2a1d136247c40f28"
+        },
+        {
+          "path": "IBMPlexSans-Regular-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Latin3.woff2",
+          "sha256": "17593bcbd539b6557d297e14d6571cd9a88a10d0b7847d59b2464b7eaac99a60"
+        },
+        {
+          "path": "IBMPlexSans-Regular-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Regular-Pi.woff2",
+          "sha256": "1487059829a180f975627e473acc81ff22c2c0faf1da09b314c27eeb41b7f2e4"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Cyrillic.woff2",
+          "sha256": "18e0f4b1bcc0a814181673071f31581c25ffd2608da0fe23bf5a04e4b1dc6207"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Greek.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Greek.woff2",
+          "sha256": "aaec2cf906c26eec857f92b941f85ed14653bb21d810d9aac3b4137c55d2818c"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Latin1.woff2",
+          "sha256": "b5610af04d0d4b5a14a621d96d974b993e945a065db1a8861918f69ef9321934"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Latin2.woff2",
+          "sha256": "46fbe4f398e7ff3cc7773a1156b1efef0f81e4d034f682369c221de587f443ca"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Latin3.woff2",
+          "sha256": "3a2c97295f5c2b494f143ea18df0a07309745cee3aea5ae8a18c991dc7213860"
+        },
+        {
+          "path": "IBMPlexSans-Medium-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Medium-Pi.woff2",
+          "sha256": "bf05f10c977353cfb5a5c11e8973adf77c2b93a4798da3aa0dd8ba5088e12515"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Cyrillic.woff2",
+          "sha256": "b992c62cfae2988a51d062c61c1c22f828248f76b421e32cf7f3b604450ddc5f"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Greek.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Greek.woff2",
+          "sha256": "b262d4716b1ae6f02171ecd562c7f816e8b6d31dd0fc2f4b6cef1455f7ff84b6"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Latin1.woff2",
+          "sha256": "fff0ab3a88b0b4aa0b693e4f0201359a15183b08e3fa5696d1918d8f0ade8ad5"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Latin2.woff2",
+          "sha256": "2bc85a8e53540c4c211f7af36e806bb045ba7da8946bb221d87144c12c83d577"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Latin3.woff2",
+          "sha256": "b4c24052476df528da6c40c841d2bdb0c2b6dffe9ca161c83fa86268f600bbf8"
+        },
+        {
+          "path": "IBMPlexSans-SemiBold-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-SemiBold-Pi.woff2",
+          "sha256": "768421433d850d3a30118dddf05972625d99ee49bc32c5a8fd26bbe020c4d0f9"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Cyrillic.woff2",
+          "sha256": "0f42c5f35f2980a335ef1a8719ae50a71eb56ac615183a6720d191b939043a6b"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Greek.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Greek.woff2",
+          "sha256": "01545c06457d4ebecc6a1bd21a056ec9a32077399424e3a565a2833d72b600c4"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Latin1.woff2",
+          "sha256": "914f1400f363e636b6f9cc7965aa807ff01e93586e1437617525cba0a62aa78d"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Latin2.woff2",
+          "sha256": "56e3282a5068bfabb5c71cb19400695a707e710e03393a67d3bd059156b60933"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Latin3.woff2",
+          "sha256": "39d166f161b025033944af7a9346eb96b9ac821f81310be9e5a9754f42ce648c"
+        },
+        {
+          "path": "IBMPlexSans-Bold-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexSans-Bold-Pi.woff2",
+          "sha256": "be77a1e1773f42f0abf473795b0890da2d098e36f49fe15ef95480acf4be91d8"
+        },
+        {
+          "path": "OFL.txt",
+          "from": "fonts/split/woff2/license.txt",
+          "sha256": "91c25c350d3cac39da2736d74f7ba37ef648f5237a4e330a240615bc8d8c4360"
+        }
+      ]
+    },
+    {
+      "name": "@ibm/plex-mono",
+      "version": "2.5.0",
+      "integrity": "sha512-STBJIPxPomOYPmBMO7z5TKPJUotAF9u3gAUumTqVgwgrAO+K4FRNh0MlhsoJjKhJKsMbBJR10/bk4inkj/wc1w==",
+      "tarball": "https://registry.npmjs.org/@ibm/plex-mono/-/plex-mono-2.5.0.tgz",
+      "files": [
+        {
+          "path": "IBMPlexMono-Regular-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Regular-Cyrillic.woff2",
+          "sha256": "44e877f4d7718832f438809250ec677f75b0bba9dcb3b0076aaf00f08d9385d4"
+        },
+        {
+          "path": "IBMPlexMono-Regular-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Regular-Latin1.woff2",
+          "sha256": "e8993d946649b9d01abb1ed06d574b19d8ea3e66b5c3948602db335c44c18e56"
+        },
+        {
+          "path": "IBMPlexMono-Regular-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Regular-Latin2.woff2",
+          "sha256": "8c5e48e4c6ee60346744db62fd8bbf530c21e531e1a1498c3a410ed8f7d3986e"
+        },
+        {
+          "path": "IBMPlexMono-Regular-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Regular-Latin3.woff2",
+          "sha256": "1ff2d301f841079fa2ad3908cfb34a60edd80966e8c9dd3b82d8a8ec8e4df947"
+        },
+        {
+          "path": "IBMPlexMono-Regular-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Regular-Pi.woff2",
+          "sha256": "b8002770aa636f544ba43e124da6a227301769754f295eae26e16475b469c767"
+        },
+        {
+          "path": "IBMPlexMono-Medium-Cyrillic.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Medium-Cyrillic.woff2",
+          "sha256": "b7b352381265d31cc4845ca9d6321b869ae5913c4504bf61aed30baedab77a27"
+        },
+        {
+          "path": "IBMPlexMono-Medium-Latin1.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Medium-Latin1.woff2",
+          "sha256": "41201b658a328b9d00368215c2f1102770f80b15952ab82631e4006255e6365d"
+        },
+        {
+          "path": "IBMPlexMono-Medium-Latin2.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Medium-Latin2.woff2",
+          "sha256": "86208dbe8e00256a77bc3edd09aa6a584b0da393caa1fb200d44eac1d578512c"
+        },
+        {
+          "path": "IBMPlexMono-Medium-Latin3.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Medium-Latin3.woff2",
+          "sha256": "a90d0ca2314298c0bc32791af9996e2ea2a0c541fee8fbde9601d82556c87d45"
+        },
+        {
+          "path": "IBMPlexMono-Medium-Pi.woff2",
+          "from": "fonts/split/woff2/IBMPlexMono-Medium-Pi.woff2",
+          "sha256": "92bd18415e8c43a2569f615e4e84a94b1b1c4e0377ba9d8f4d894bbf6ffcc39d"
+        },
+        {
+          "path": "OFL.txt",
+          "from": "fonts/split/woff2/license.txt",
+          "sha256": "91c25c350d3cac39da2736d74f7ba37ef648f5237a4e330a240615bc8d8c4360"
+        }
+      ]
+    }
+  ]
+}

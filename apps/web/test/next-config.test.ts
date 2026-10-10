@@ -26,3 +26,12 @@ describe("the framework's cap on the bodies its proxy copies", () => {
     expect(GITHUB_WEBHOOK_BODY_LIMIT).toBeGreaterThanOrEqual(CONTRACT_REPORT_BODY_LIMIT);
   });
 });
+
+// The install's assets are read from packages/commands/assets/ by the asset route at run time (web-ui: The install
+// serves its own assets; design.md, Design: The install's assets; D57 (14)), so the standalone output, which the image
+// copies, carries the folder for that route.
+describe("the files the standalone output carries for the asset route", () => {
+  it("are every file of packages/commands/assets/", () => {
+    expect(nextConfig.outputFileTracingIncludes).toEqual({ "/assets/**": ["../../packages/commands/assets/**"] });
+  });
+});

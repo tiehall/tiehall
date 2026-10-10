@@ -690,6 +690,27 @@ describe("/healthz", () => {
     expect(ownerQuery(database, "SELECT count(*) FROM orgs WHERE setup_completed_at IS NOT NULL")).toBe("0");
   });
 
+  // web-ui: The install serves its own assets; web-ui: Fonts served by the install; self-host-install: The setup code
+  // guards the setup screen. The setup screen has its look before anyone is signed in: the image carries the fonts and
+  // their license beside the web app, and serves them before setup to a browser without a session.
+  it("before setup, serves the fonts and their license from the image to a browser without a session", async () => {
+    const font = await fetch(`http://127.0.0.1:${port}/assets/fonts/IBMPlexSans-Regular-Latin1.woff2`, { redirect: "manual" });
+    expect(font.status).toBe(200);
+    expect(font.headers.get("content-type")).toBe("font/woff2");
+    expect(font.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(font.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(font.headers.get("content-security-policy")).toBe("default-src 'none'; frame-ancestors 'none'; sandbox");
+    expect(font.headers.get("set-cookie")).toBeNull();
+    expect(new TextDecoder().decode((await font.arrayBuffer()).slice(0, 4))).toBe("wOF2");
+    const license = await fetch(`http://127.0.0.1:${port}/assets/fonts/OFL.txt`, { redirect: "manual" });
+    expect(license.status).toBe(200);
+    expect(license.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(license.headers.get("set-cookie")).toBeNull();
+    const text = await license.text();
+    expect(text).toContain('Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"');
+    expect(text).toContain("SIL OPEN FONT LICENSE Version 1.1");
+  });
+
   // self-host-install: The setup code guards the setup screen.
   it("prints a setup code to its log at start, which opens a setup session only from the install's URL", async () => {
     const line = await waitFor("the setup code in the log", () =>

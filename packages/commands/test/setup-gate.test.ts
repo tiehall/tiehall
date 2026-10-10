@@ -19,8 +19,9 @@ import {
 // public-api: One error model for Tiehall's own refusals; design.md,
 // Self-hosting decisions: S3). Until setup is complete, every page leads to
 // /setup, and every API call answers 503 with the problem type
-// setup-required, the OpenAPI document included. Only /setup, /healthz and,
-// once the GitHub App's credentials are stored, /webhooks/github are served.
+// setup-required, the OpenAPI document included. Only /setup, /healthz, the
+// web UI's assets (/favicon.ico and every path under /assets/) and, once the
+// GitHub App's credentials are stored, /webhooks/github are served.
 // The App's credentials count as stored from its private key, which every App
 // has, with or without a webhook secret, which an App created without a
 // webhook lacks (github-app-reachability: design.md, Technical decisions: T3).
@@ -140,6 +141,24 @@ describe.each([
   it("serves the setup screen's own steps under /setup", async () => {
     await arrange();
     expect(await ask(createSetupGate({ database: db, url: ORIGIN }), "/setup/github/app")).toBe("served");
+  });
+
+  // The web UI's assets hold nothing of the install's data, and the setup screen needs its stylesheet, fonts and
+  // icons while nobody is signed in (web-ui: The install serves its own assets; design.md, Design: The install's
+  // assets; D57 (14)).
+  it.each(["/favicon.ico", "/favicon.ico?v=abc", "/assets/tiehall.css", "/assets/fonts/IBMPlexSans-Regular-Latin1.woff2", "/assets/fonts/OFL.txt", "/assets/nothing.css"])(
+    "serves the web UI's asset path %s",
+    async (path) => {
+      await arrange();
+      const gate = createSetupGate({ database: db, url: ORIGIN });
+      expect(await ask(gate, path)).toBe("served");
+      expect(await ask(gate, path, { method: "HEAD" })).toBe("served");
+    },
+  );
+
+  it.each(["/assets", "/assetsx/tiehall.css", "/favicon.icon", "/favicon.ico/x", "/fonts/OFL.txt"])("still redirects the page %s to /setup", async (path) => {
+    await arrange();
+    expect(await ask(createSetupGate({ database: db, url: ORIGIN }), path)).toEqual(toSetup(307));
   });
 
   it("does not serve /webhooks/github before the App's credentials are stored, and stores nothing", async () => {

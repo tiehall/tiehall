@@ -80,6 +80,7 @@ const NOT_PAGES: Readonly<Record<string, string>> = {
   "mirrors/retry/route.ts": "the target of a failed mirror job's Retry button, which only answers its post",
   "docs/api/reference.js/route.ts": "a script of the API reference page, which that page loads",
   "docs/api/scalar.js/route.ts": "a script of the API reference page, which that page loads",
+  "assets/[...path]/route.ts": "the install's own assets, such as its stylesheet, fonts and icons, which the pages load",
 };
 
 /** Every route file of the web app: its route handlers and its pages. */

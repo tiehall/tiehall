@@ -1,14 +1,19 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import { integrationSecrets, orgs, type Database } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
+import { ASSETS_PATH, FAVICON_PATH } from "./assets.ts";
 import { createLogger, type Logger } from "./log.ts";
 
 // The setup gate (self-host-install: The setup code guards the setup screen;
 // public-api: One error model for Tiehall's own refusals; design.md, Technical
 // decisions: T7 and T16; design.md, Self-hosting decisions: S3). Until the
-// first admin completes setup, the web role serves only three routes:
+// first admin completes setup, the web role serves only four routes:
 // - /setup, the setup screen, with its steps under it;
 // - /healthz, which Compose's health check and monitors read;
+// - the web UI's assets, /favicon.ico and every path under /assets/, which
+//   hold nothing of the install's data and which the setup screen needs while
+//   nobody is signed in (web-ui: The install serves its own assets; design.md,
+//   Design: The install's assets; D57 (14));
 // - /webhooks/github, from the moment the setup screen has stored the GitHub
 //   App's credentials, with or without a webhook secret, so a delivery that
 //   arrives during setup is verified and stored, to be processed once setup
@@ -106,9 +111,14 @@ function under(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
+/** The web UI's assets: /favicon.ico, which Next.js rewrites to the asset route, and every path under /assets/. */
+export function isAssetPath(pathname: string): boolean {
+  return pathname === FAVICON_PATH || pathname.startsWith(`${ASSETS_PATH}/`);
+}
+
 /** The routes served before setup completes whatever the state, which need no read of the database. */
 function alwaysServed(pathname: string): boolean {
-  return pathname === HEALTH_PATH || under(pathname, SETUP_PATH);
+  return pathname === HEALTH_PATH || under(pathname, SETUP_PATH) || isAssetPath(pathname);
 }
 
 /**

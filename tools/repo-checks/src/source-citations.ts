@@ -100,6 +100,23 @@ export function repositoryFiles(root: string): string[] {
     );
 }
 
+/**
+ * A repository file's text, as the check reads it; undefined for a file that
+ * holds a NUL byte, as every font, image and icon does, whose bytes could
+ * spell a decision number but cite nothing (web-ui: The install serves its own
+ * assets; design.md, Design: The install's assets; D57 (14)), and for one that
+ * cannot be read, such as a file deleted but not yet staged.
+ */
+export function readCitedText(root: string, file: string): string | undefined {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(join(root, file));
+  } catch {
+    return undefined;
+  }
+  return bytes.includes(0) ? undefined : bytes.toString("utf8");
+}
+
 function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

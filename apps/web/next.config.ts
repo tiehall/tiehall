@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Trace files from the whole monorepo, so workspace packages land in the standalone output.
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
+  // The install's assets, which the asset route reads from packages/commands/assets/ at run time rather than
+  // importing them, so the standalone output and the image carry the folder beside apps/web (web-ui: The install
+  // serves its own assets; design.md, Design: The install's assets; D57 (14)).
+  outputFileTracingIncludes: { "/assets/**": ["../../packages/commands/assets/**"] },
   ...(commitSha ? { deploymentId: commitSha } : {}),
   // A server action's body may be 2 MiB, the limit the web role's request guard applies to the web UI's forms,
   // so the framework's own cap, 1 MB by default and refused with an error of its own shape, never answers before
