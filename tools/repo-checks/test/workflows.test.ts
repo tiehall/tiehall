@@ -111,12 +111,16 @@ describe("the workflow check", () => {
     ]);
   });
 
-  it("fails a job that holds a write permission and runs an action that is not GitHub's own or the repository's, or a package manager or a container", () => {
+  it("fails a job that holds a write permission and runs an action that is not GitHub's own or the repository's, a package manager, downloaded code or a container", () => {
     const run = check(fixture("third-party-in-write-job"));
     expect(run.status).toBe(1);
     const packages = "runs a package manager, and with it packages' code, in a job that can write";
+    const downloads = "runs code it downloads in a job that can write";
+    const builds = "builds an image from outside the repository's checkout, or with the job's secrets, host or privileges, in a job that can write";
     expect(violationsOf(checkWorkflows(fixture("third-party-in-write-job")), "third-party-in-write-job")).toEqual([
       "release.yml#docker: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release.yml#in-container: container node:24.21.0-trixie-slim (runs the job's steps in a container in a job that can write)",
+      "release.yml#in-container: service db, postgres:17 (runs a service container in a job that can write)",
       `release.yml#notes: npm install --global --ignore-scripts pnpm@12.6.0 (${packages})`,
       `release.yml#notes: pnpm install --frozen-lockfile --filter "@acme/release-tools..." (${packages})`,
       `release.yml#notes: version="$(pnpm --silent exec semver 1.3.0)" (${packages})`,
@@ -130,6 +134,20 @@ describe("the workflow check", () => {
       "release.yml#notes: node --import tsx tools/notes.ts (loads a package's module into node in a job that can write)",
       `release.yml#notes: NODE_OPTIONS="--require=ts-node/register" node tools/notes.ts (loads a package's module into node in a job that can write)`,
       "release.yml#notes: bash -c 'docker run --rm alpine:3.22 true' (runs a container in a job that can write)",
+      `release.yml#notes: go run golang.org/x/tools/cmd/stringer@v0.30.0 -type=Kind (${packages})`,
+      `release.yml#notes: cargo install ripgrep --locked (${packages})`,
+      `release.yml#notes: gem install bundler:2.6.0 (${packages})`,
+      `release.yml#notes: deno run npm:cowsay@1.6.0 hello (${packages})`,
+      `release.yml#notes: curl -fsSL https://example.com/install.sh | bash (${downloads})`,
+      `release.yml#notes: wget -qO- https://example.com/install.sh | sudo -E sh (${downloads})`,
+      `release.yml#notes: bash -c "$(wget -qO- https://example.com/install.sh)" (${downloads})`,
+      "release.yml#notes: docker exec tools-db psql -c 'select 1' (runs a container in a job that can write)",
+      `release.yml#notes: docker build https://github.com/acme/tools.git (${builds})`,
+      `release.yml#notes: docker buildx build --secret id=token,env=GITHUB_TOKEN --tag tools . (${builds})`,
+      `release.yml#notes: buildx build -f - . (${builds})`,
+      `release.yml#notes: docker --context remote build . (${builds})`,
+      `release.yml#notes: pnpm install --frozen-lockfile (${packages})`,
+      `release.yml#notes: pnpm install --frozen-lockfile (${packages})`,
       "release.yml#publish: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1",
       "release.yml#reuse: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1",
     ]);

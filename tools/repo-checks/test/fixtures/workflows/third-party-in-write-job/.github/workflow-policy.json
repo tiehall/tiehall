@@ -3,7 +3,8 @@
     "release.yml#publish": ["contents", "packages"],
     "release.yml#notes": ["contents"],
     "release.yml#reuse": ["packages"],
-    "release.yml#docker": ["packages"]
+    "release.yml#docker": ["packages"],
+    "release.yml#in-container": ["packages"]
   },
   "secrets": {}
 }

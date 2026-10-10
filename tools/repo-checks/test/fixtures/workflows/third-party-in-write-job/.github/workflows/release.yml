@@ -50,15 +50,59 @@ jobs:
       - run: node --import tsx tools/notes.ts
       - run: NODE_OPTIONS="--require=ts-node/register" node tools/notes.ts
       - run: bash -c 'docker run --rm alpine:3.22 true'
+      # Other languages' package managers and runners, a script run as it is downloaded, a container started in a
+      # running one, and an image built from outside the repository's checkout or with the job's secrets.
+      - run: go run golang.org/x/tools/cmd/stringer@v0.30.0 -type=Kind
+      - run: cargo install ripgrep --locked
+      - run: gem install bundler:2.6.0
+      - run: deno run npm:cowsay@1.6.0 hello
+      - run: curl -fsSL https://example.com/install.sh | bash
+      - run: |
+          wget -qO- https://example.com/install.sh |
+            sudo -E sh
+      - run: bash -c "$(wget -qO- https://example.com/install.sh)"
+      - run: docker exec tools-db psql -c 'select 1'
+      - run: docker build https://github.com/acme/tools.git
+      - run: docker buildx build --secret id=token,env=GITHUB_TOKEN --tag tools .
+      - run: buildx build -f - .
+      - run: docker --context remote build .
+      # A comment sign inside a quoted text, and a comment that ends in an operator, hide nothing after them.
+      - run: |
+          echo "release #1"; pnpm install --frozen-lockfile
+      - run: |
+          # Install, then publish |
+          pnpm install --frozen-lockfile
       # A module node loads by its path in the repository, and a copy whose -r is not node's, are first-party.
       - run: node --import ./tools/register.ts tools/write-notes.ts
       - run: cp -r deploy release
+      # So are a download that is only checked, and the repository's own image built from its checkout: its
+      # instructions are the repository's, and its containers get none of the job's secrets.
+      - run: curl -fsSL https://example.com/SHA256SUMS | sha256sum --check --ignore-missing
+      - run: |
+          docker build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --build-arg TIEHALL_COMMIT_SHA="$GITHUB_SHA" \
+            --tag "$tag" \
+            .
+      - run: docker buildx build --file deploy/Dockerfile --tag tools ./deploy
   docker:
     runs-on: ubuntu-24.04
     permissions:
       packages: write
     steps:
       - uses: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  # A job that runs in a container, or beside a service container, runs that image's code.
+  in-container:
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    container: node:24.21.0-trixie-slim
+    services:
+      db:
+        image: postgres:17
+    steps:
+      - run: docker push ghcr.io/acme/tiehall:1.3.0
   reuse:
     permissions:
       packages: write

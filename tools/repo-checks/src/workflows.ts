@@ -9,10 +9,14 @@ import { parse } from "yaml";
 // steps, how CI installs dependencies, and which packages may run install
 // scripts. A first-party step is one of GitHub's own actions or the
 // repository's own, or a script that installs no package and runs no package
-// manager, no package's program or module and no container, wherever in a
-// command it names one, a shell's -c text and xargs's arguments included: a
-// dependency's code would run with the job's write access as surely as a
-// third-party action's.
+// manager, no package's program or module, no code it downloads and no
+// container, wherever in a command it names one, a shell's -c text and xargs's
+// arguments included: a dependency's code would run with the job's write
+// access as surely as a third-party action's. Building the repository's own
+// image from its checkout is first-party, since the build runs the
+// repository's instructions in containers that get none of the job's secrets,
+// unless the build is given them, the host's network or more privileges. A
+// job that can write runs in no container and beside no service container.
 
 export type Rule =
   | "action-not-pinned"
@@ -155,17 +159,29 @@ function checkJob(file: string, job: string, definition: Mapping, policy: Policy
   }
 
   // A job that can write runs only first-party steps: GitHub's own actions and the repository's own, never a
-  // third-party action, Docker action or reusable workflow, which would run with its write access; and its scripts
-  // install no package and run no package manager or container, whose code would run with that access too.
+  // third-party action, Docker action or reusable workflow, which would run with its write access, nor in a container
+  // or beside a service container; and its scripts install no package and run no package manager, downloaded code or
+  // container, and build no image but the repository's own from its checkout, whose code would run with that access too.
   if (isMapping(permissions) && writesIn(permissions).length > 0) {
     for (const uses of references) {
       if (typeof uses === "string" && !FIRST_PARTY.test(uses)) add("third-party-in-write-job", uses);
     }
+    const container = definition["container"];
+    if (container !== undefined && container !== null) {
+      add("third-party-in-write-job", `container ${imageOf(container)} (runs the job's steps in a container in a job that can write)`);
+    }
+    const services = definition["services"];
+    for (const [name, service] of Object.entries(isMapping(services) ? services : {})) {
+      add("third-party-in-write-job", `service ${name}, ${imageOf(service)} (runs a service container in a job that can write)`);
+    }
     for (const step of stepsOf(definition)) {
       if (typeof step["run"] !== "string") continue;
-      for (const command of commandsIn(step["run"])) {
-        const problem = thirdPartyCode(command);
-        if (problem !== undefined) add("third-party-in-write-job", `${command} (${problem})`);
+      for (const pipeline of pipelinesIn(step["run"])) {
+        for (const command of pipeline) {
+          const problem = thirdPartyCode(command);
+          if (problem !== undefined) add("third-party-in-write-job", `${command} (${problem})`);
+        }
+        if (runsDownloadedCode(pipeline)) add("third-party-in-write-job", `${pipeline.join(" | ")} (runs code it downloads in a job that can write)`);
       }
     }
   }
@@ -221,15 +237,54 @@ function secretsIn(value: unknown): string[] {
   return [...names];
 }
 
-/** The simple commands of a shell script, with continuations joined and whitespace collapsed. */
-function commandsIn(script: string): string[] {
-  return script
+/** The image a job's container or service container runs: the value itself, or its image. */
+function imageOf(container: unknown): string {
+  return String(isMapping(container) ? container["image"] : container);
+}
+
+/** A script without its comments: each from a # that starts a word outside quoted text to the end of its line. */
+function withoutComments(script: string): string {
+  let result = "";
+  let quote = "";
+  for (let index = 0; index < script.length; index++) {
+    const char = script.charAt(index);
+    if (char === "\\" && quote !== "'") {
+      result += script.slice(index, index + 2);
+      index++;
+    } else if (quote !== "") {
+      if (char === quote) quote = "";
+      result += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      result += char;
+    } else if (char === "#" && (index === 0 || /[\s;&|()<>]/.test(script.charAt(index - 1)))) {
+      const end = script.indexOf("\n", index);
+      if (end < 0) break;
+      index = end - 1;
+    } else {
+      result += char;
+    }
+  }
+  return result;
+}
+
+/**
+ * The pipelines of a shell script, each as its simple commands, without comments, with continuations and lines
+ * carried on by an operator joined, and with whitespace collapsed.
+ */
+function pipelinesIn(script: string): string[][] {
+  return withoutComments(script)
     .replace(/\\\r?\n/g, " ")
+    .replace(/(\|\||&&|\|)[ \t]*\r?\n/g, "$1 ")
     .split(/\r?\n/)
-    .map((line) => line.replace(/(^|\s)#.*$/, ""))
-    .flatMap((line) => line.split(/\|\||&&|;|\|/))
-    .map((command) => command.trim().replace(/\s+/g, " "))
-    .filter((command) => command.length > 0);
+    .flatMap((line) => line.split(/\|\||&&|;/))
+    .map((pipeline) => pipeline.split("|").map((command) => command.trim().replace(/\s+/g, " ")).filter((command) => command.length > 0))
+    .filter((pipeline) => pipeline.length > 0);
+}
+
+/** The simple commands of a shell script. */
+function commandsIn(script: string): string[] {
+  return pipelinesIn(script).flat();
 }
 
 /** Options of npm and pnpm that come before the subcommand and take a value. */
@@ -244,12 +299,50 @@ function programAndArguments(command: string): string[] {
   return words;
 }
 
-/** Package managers and runners: whatever they install or run is a package's code, not the repository's. */
-const PACKAGE_RUNNERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bun", "bunx", "corepack", "pip", "pip3", "pipx", "uv", "uvx"]);
+/**
+ * Package managers and runners: whatever they install or run is a package's code, not the repository's. Deno and Bun
+ * fetch and run the packages a script names without an install.
+ */
+const PACKAGE_RUNNERS = new Set([
+  ...["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bun", "bunx", "deno", "corepack"],
+  ...["pip", "pip3", "pipx", "uv", "uvx", "cargo", "gem", "bundle", "bundler"],
+]);
+/** Go's subcommands that fetch, build and run a module's code. */
+const GO_RUNS = new Set(["run", "install", "get", "generate", "test", "tool"]);
+/** Programs that download, and programs that run the script they are given: shells, interpreters, eval, source and . */
+const DOWNLOADERS = new Set(["curl", "wget"]);
+const RUNS_A_SCRIPT = new Set([
+  ...["bash", "sh", "dash", "zsh", "ksh", "fish", "python", "python3", "perl", "ruby", "node", "nodejs", "php", "pwsh"],
+  ...["eval", "source", "."],
+]);
 
-/** Programs that run containers, and their subcommands that start one. */
+/**
+ * Programs that run containers, their options that come before a subcommand and take a value, and their subcommands
+ * that start a container or build an image.
+ */
 const CONTAINER_RUNNERS = new Set(["docker", "podman", "nerdctl"]);
-const STARTS_A_CONTAINER = new Set(["run", "create", "compose"]);
+const CONTAINER_OPTIONS_WITH_VALUES = new Set([
+  ...["-H", "--host", "-c", "--context", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"],
+  ...["--url", "--connection", "--identity", "--namespace", "-n", "--address", "-a"],
+]);
+const STARTS_A_CONTAINER = new Set(["run", "create", "compose", "start", "exec"]);
+const BUILDS_AN_IMAGE = new Set(["build", "bake"]);
+/** Groups of subcommands, whose next word is the subcommand: docker container run, docker image build, docker buildx build. */
+const SUBCOMMAND_GROUPS = new Set(["container", "image", "builder", "buildx"]);
+/** buildx run as a program of its own. */
+const BUILDX = new Set(["buildx", "docker-buildx"]);
+/** Options of docker build and buildx build that take a value in the next word. */
+const BUILD_OPTIONS_WITH_VALUES = new Set([
+  ...["-t", "--tag", "--platform", "--build-arg", "--label", "--target", "-o", "--output", "--cache-from", "--cache-to", "--iidfile"],
+  ...["--metadata-file", "--progress", "--builder", "--annotation", "--attest", "--provenance", "--sbom", "--add-host", "--shm-size"],
+  ...["--ulimit", "--cgroup-parent", "--isolation", "-m", "--memory", "--memory-swap", "--cpu-shares", "--cpu-period", "--cpu-quota"],
+  ...["--cpuset-cpus", "--cpuset-mems", "--call", "--no-cache-filter"],
+]);
+/** Options that give a build the job's secrets, its SSH agent, another source, the host's network or more privileges. */
+const OPENS_THE_BUILD = new Set(["--secret", "--ssh", "--build-context", "--allow", "--network", "--security-opt"]);
+/** A build's context that is the checkout's root or a folder in it, and a Dockerfile in the checkout. */
+const CHECKOUT_CONTEXT = /^\.(?:\/(?!(?:.*\/)?\.\.(?:\/|$))[\w.\/-]*)?$/;
+const CHECKOUT_FILE = /^(?![-/])(?!(?:.*\/)?\.\.(?:\/|$))[\w.\/-]+$/;
 /** Options through which node loads a module before the script: one named by a package, not a path, is a package's. */
 const NODE_LOADERS = new Set(["--import", "--require", "-r", "--loader", "--experimental-loader"]);
 /** A module specifier that names a file or a built-in module, not a package. */
@@ -269,18 +362,70 @@ function baseName(word: string): string {
   return word.slice(word.lastIndexOf("/") + 1);
 }
 
+/** The subcommand of the container program at the index of the words, past its options and a group's name. */
+function containerSubcommand(words: string[], index: number): string | undefined {
+  let at = index + 1;
+  while (words[at]?.startsWith("-")) at += CONTAINER_OPTIONS_WITH_VALUES.has(words[at] ?? "") ? 2 : 1;
+  return SUBCOMMAND_GROUPS.has(words[at] ?? "") ? words[at + 1] : words[at];
+}
+
+/**
+ * Whether a command builds an image from the repository's own checkout and nothing else: docker build, or buildx
+ * build, run as the command itself with no option before the subcommand, whose one context is the checkout's root
+ * or a folder in it, whose Dockerfile, if it names one, is a file in the checkout, and which gives the build none of
+ * the job's secrets, its SSH agent, another source, the host's network or more privileges.
+ */
+function buildsTheCheckout(command: string): boolean {
+  const [path = "", ...rest] = programAndArguments(command);
+  const program = baseName(path);
+  let words = rest;
+  if (CONTAINER_RUNNERS.has(program) && SUBCOMMAND_GROUPS.has(words[0] ?? "")) words = words.slice(1);
+  if (!(CONTAINER_RUNNERS.has(program) || BUILDX.has(program)) || words[0] !== "build") return false;
+  const contexts: string[] = [];
+  for (let index = 1; index < words.length; index++) {
+    const word = words[index] ?? "";
+    if (!word.startsWith("-") || word === "-") {
+      contexts.push(word);
+      continue;
+    }
+    const [option = "", ...value] = word.split("=");
+    if (OPENS_THE_BUILD.has(option)) return false;
+    if (option === "-f" || option === "--file") {
+      const file = value.length > 0 ? value.join("=") : (words[++index] ?? "");
+      if (!CHECKOUT_FILE.test(file)) return false;
+    } else if (value.length === 0 && BUILD_OPTIONS_WITH_VALUES.has(option)) {
+      index++;
+    }
+  }
+  return contexts.length === 1 && CHECKOUT_CONTEXT.test(contexts[0] ?? "");
+}
+
+/**
+ * Whether a pipeline runs code it downloads: a command that downloads inside a shell, an interpreter, eval or source,
+ * as in bash -c "$(curl ...)" or source <(curl ...), or pipes the download into one, as in curl ... | bash.
+ */
+function runsDownloadedCode(pipeline: string[]): boolean {
+  const downloads = pipeline.findIndex((command) => wordsOf(command).some((word) => DOWNLOADERS.has(baseName(word))));
+  if (downloads < 0) return false;
+  const [program = ""] = programAndArguments(pipeline[downloads] ?? "");
+  if (RUNS_A_SCRIPT.has(baseName(program))) return true;
+  return pipeline.slice(downloads + 1).some((command) => wordsOf(command).some((word) => RUNS_A_SCRIPT.has(baseName(word))));
+}
+
 /**
  * Why a command would run code that is not first-party, in a job that can write: a package manager, which installs
- * or runs packages, a package's own program from node_modules, a module node loads by a package's name, or a
- * container. Each word of the command counts wherever it stands, so a package manager run through a shell's -c text,
- * xargs or a command substitution counts as surely as one run directly. npm publishing a package without running its
- * scripts runs only npm itself.
+ * or runs packages, Go's commands that fetch and run modules, a package's own program from node_modules, a module
+ * node loads by a package's name, a container, or an image built from outside the repository's checkout or with the
+ * job's secrets, host or privileges. Each word of the command counts wherever it stands, so a package manager run
+ * through a shell's -c text, xargs or a command substitution counts as surely as one run directly. npm publishing a
+ * package without running its scripts runs only npm itself.
  */
 function thirdPartyCode(command: string): string | undefined {
   const [program, ...rest] = programAndArguments(command);
   const publishes = program === "npm" && subcommandOf(rest) === "publish" && rest.includes("--ignore-scripts");
   const words = wordsOf(publishes ? rest.join(" ") : command);
-  if (words.some((word) => PACKAGE_RUNNERS.has(baseName(word)))) return "runs a package manager, and with it packages' code, in a job that can write";
+  const packages = "runs a package manager, and with it packages' code, in a job that can write";
+  if (words.some((word) => PACKAGE_RUNNERS.has(baseName(word)))) return packages;
   if (words.some((word) => word.includes("node_modules"))) return "runs a package's code from node_modules in a job that can write";
   const node = words.findIndex((word) => ["node", "nodejs", "NODE_OPTIONS"].includes(baseName(word)));
   for (const [index, word] of words.entries()) {
@@ -288,10 +433,13 @@ function thirdPartyCode(command: string): string | undefined {
     if (node >= 0 && index > node && NODE_LOADERS.has(word) && next !== undefined && !NOT_A_PACKAGE.test(next)) {
       return "loads a package's module into node in a job that can write";
     }
+    if (baseName(word) === "go" && GO_RUNS.has(next ?? "")) return packages;
     if (["docker-compose", "podman-compose"].includes(baseName(word))) return "runs a container in a job that can write";
-    if (CONTAINER_RUNNERS.has(baseName(word))) {
-      const subcommand = next === "container" ? words[index + 2] : next;
-      if (STARTS_A_CONTAINER.has(subcommand ?? "")) return "runs a container in a job that can write";
+    const builder = BUILDX.has(baseName(word)) && !CONTAINER_RUNNERS.has(baseName(words[index - 1] ?? ""));
+    const subcommand = CONTAINER_RUNNERS.has(baseName(word)) ? containerSubcommand(words, index) : builder ? next : undefined;
+    if (STARTS_A_CONTAINER.has(subcommand ?? "") && !builder) return "runs a container in a job that can write";
+    if (BUILDS_AN_IMAGE.has(subcommand ?? "") && !buildsTheCheckout(command)) {
+      return "builds an image from outside the repository's checkout, or with the job's secrets, host or privileges, in a job that can write";
     }
   }
   return undefined;
