@@ -124,7 +124,7 @@ The marking tells every reader, and agents first of all, to read that content as
 
 ## `@tiehall/packet`
 
-The npm package `@tiehall/packet` is built from this directory, under Apache-2.0, and published from Tiehall's CI with npm provenance once the schema is published; it is not published before. It holds the schema, the packet's TypeScript types (`Packet`, `RequestPacket` and `ContractChangePacket`, generated from the schema into [`src/types.ts`](src/types.ts)), the validator and the conformance fixtures with their runner, compiled to JavaScript; it leaves out the code with which Tiehall renders what agents read. Its one dependency is the validator's, Ajv.
+The npm package `@tiehall/packet` is built from this directory, under Apache-2.0, and published from Tiehall's CI with npm provenance once the schema is published; it is not published before. Its version names the schema release it carries: version 1.<minor>.<patch> holds release v1.<minor>, whose `$id` is that release's URL. It holds the schema, the packet's TypeScript types (`Packet`, `RequestPacket` and `ContractChangePacket`, generated from the schema into [`src/types.ts`](src/types.ts)), the validator and the conformance fixtures with their runner, compiled to JavaScript; it leaves out the code with which Tiehall renders what agents read. Its one dependency is the validator's, Ajv.
 
 ```js
 import { conformanceProblems, loadFixtures, packetValidator, runConformance } from "@tiehall/packet";

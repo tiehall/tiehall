@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,6 +88,58 @@ describe("the @tiehall/packet package", () => {
 
   it("refuses a version that is no semantic version", () => {
     expect(() => buildPackage({ out: join(scratch, "unversioned"), version: "v1" })).toThrow(PackageBuildError);
+  });
+});
+
+describe("the package of a published release", () => {
+  // From publication on, the publish job versions the package after the latest release of the release-URL tree,
+  // v1.<minor> as 1.<minor>.0 (handoff-packet: Fixed release URLs), so the package carries that release's schema,
+  // whose $id is its release URL. The tests simulate v1.0 and v1.1, which adds an optional field.
+  const releases = join(scratch, "releases");
+  const release = (minor: number) => {
+    const schema = JSON.parse(readFileSync(join(directory, "schema", "v1-beta.json"), "utf8")) as Record<string, unknown> & {
+      oneOf: { properties: { schema_version: Record<string, unknown>; untrusted: { properties: Record<string, unknown> } } }[];
+    };
+    for (const variant of schema.oneOf) {
+      variant.properties.schema_version["const"] = "1.0";
+      if (minor > 0) variant.properties.untrusted.properties["priority"] = { enum: ["low", "high"], type: "string", "x-tiehall-untrusted": true };
+    }
+    return `${JSON.stringify({ ...schema, $id: `https://tiehall.com/schemas/packet/v1.${minor}.json` }, null, 2)}\n`;
+  };
+  const packaged = (folder: string) => readFileSync(join(folder, "schema", "v1-beta.json"), "utf8");
+
+  beforeAll(() => {
+    mkdirSync(releases);
+    writeFileSync(join(releases, "v1.0.json"), release(0));
+    writeFileSync(join(releases, "v1.1.json"), release(1));
+    writeFileSync(join(releases, "v1.json"), release(1));
+  });
+
+  it("the package the publish job versions as 1.1.0 carries the v1.1 release", () => {
+    const folder = buildPackage({ out: join(scratch, "v1.1"), version: "1.1.0", releases });
+    expect(packaged(folder)).toBe(release(1));
+    expect((JSON.parse(packaged(folder)) as { $id: string }).$id).toBe("https://tiehall.com/schemas/packet/v1.1.json");
+    expect(readdirSync(join(folder, "schema"))).toEqual(["v1-beta.json"]);
+  });
+
+  it("carries the release its version names, an earlier one or a patch of one too", () => {
+    expect(packaged(buildPackage({ out: join(scratch, "v1.0"), version: "1.0.0", releases }))).toBe(release(0));
+    expect(packaged(buildPackage({ out: join(scratch, "v1.0.1"), version: "1.0.1", releases }))).toBe(release(0));
+  });
+
+  it("refuses a version that names no published release", () => {
+    for (const version of ["1.2.0", "2.0.0", "0.9.0"]) {
+      expect(() => buildPackage({ out: join(scratch, "unreleased"), version, releases }), version).toThrow(
+        `The packet schema is published, so the package's version names one of its releases: 1.<minor>.<patch> carries release v1.<minor>, and the releases are v1.0 and v1.1; ${version} names none.`,
+      );
+    }
+  });
+
+  it("carries the working schema while the tree holds no release, before publication", () => {
+    const empty = join(scratch, "no-releases");
+    mkdirSync(empty);
+    expect(packaged(buildPackage({ out: join(scratch, "beta"), version: "1.0.0", releases: empty }))).toBe(readFileSync(join(directory, "schema", "v1-beta.json"), "utf8"));
+    expect(packaged(out)).toBe(readFileSync(join(directory, "schema", "v1-beta.json"), "utf8"));
   });
 });
 

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import process from "node:process";
@@ -12,8 +12,12 @@ import { parseArgs } from "node:util";
 // it is: the packet's types, the validator and the fixture runner, compiled
 // from src/index.ts and what it imports to JavaScript with their declarations
 // (tsconfig.package.json), so the package runs on Node.js without TypeScript;
-// the schema the validator reads; the conformance fixtures; the license and
-// the spec; and a manifest with the version given, the license Apache-2.0,
+// the schema the validator reads, which once the schema is published is the
+// release the version names, version 1.<minor>.<patch> carrying release
+// v1.<minor> of the release-URL tree, releases/, with that release's URL as
+// its $id (handoff-packet: Fixed release URLs), and before then the working
+// schema; the conformance fixtures; the license and the spec; and a manifest
+// with the version given, the license Apache-2.0,
 // the validator's one dependency at the version this directory pins, and the
 // repository and folder it is built from, which npm's provenance checks. The
 // fencing renderer and the notice and proposal texts stay out: the entry
@@ -25,6 +29,15 @@ export const DIRECTORY = fileURLToPath(new URL("../", import.meta.url));
 
 /** The repository the package is built from, as its manifest names it for npm's provenance. */
 export const REPOSITORY = { type: "git", url: "git+https://github.com/muhmmdcnkl/Tiehall.git", directory: "packages/packet" } as const;
+
+/** The release-URL tree, which holds no release until the schema is published. */
+export const RELEASES = join(DIRECTORY, "releases");
+
+/** A release's file in the tree: v1.<minor>.json. */
+const RELEASE_FILE = /^v1\.(0|[1-9]\d*)\.json$/;
+
+/** The package's schema file, which its validator reads. */
+const SCHEMA = join("schema", "v1-beta.json");
 
 /** A semantic version without build metadata, which npm takes. */
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
@@ -39,6 +52,31 @@ export interface BuildOptions {
   out: string;
   /** The package's version, such as 1.0.0. */
   version: string;
+  /** The release-URL tree; this directory's releases/ unless given. */
+  releases?: string;
+}
+
+/**
+ * The release a version of the package carries once the schema is published: 1.<minor>.<patch> carries release
+ * v1.<minor>. Undefined while the tree holds no release, when the package carries the working schema.
+ */
+function releaseFor(releases: string, version: string): string | undefined {
+  const minors = (existsSync(releases) ? readdirSync(releases) : [])
+    .map((name) => RELEASE_FILE.exec(name)?.[1])
+    .filter((minor): minor is string => minor !== undefined)
+    .map(Number)
+    .sort((a, b) => a - b);
+  if (minors.length === 0) return undefined;
+  const minor = /^1\.(0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-|$)/.exec(version)?.[1];
+  if (minor === undefined || !minors.includes(Number(minor))) {
+    const names = minors.map((each) => `v1.${each}`);
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
+    throw new PackageBuildError(
+      `The packet schema is published, so the package's version names one of its releases: 1.<minor>.<patch> carries release v1.<minor>, ` +
+        `and the releases are ${list ?? ""}; ${version} names none.`,
+    );
+  }
+  return join(releases, `v1.${minor}.json`);
 }
 
 /** The manifest of the built package. */
@@ -69,8 +107,9 @@ function manifest(version: string): Record<string, unknown> {
 }
 
 /** Builds the package into the folder; returns the folder. */
-export function buildPackage({ out, version }: BuildOptions): string {
+export function buildPackage({ out, version, releases = RELEASES }: BuildOptions): string {
   if (!VERSION.test(version)) throw new PackageBuildError(`The package's version must be a semantic version, such as 1.0.0; ${JSON.stringify(version)} is not.`);
+  const release = releaseFor(releases, version);
   const folder = resolve(out);
   rmSync(folder, { recursive: true, force: true });
   mkdirSync(folder, { recursive: true });
@@ -83,6 +122,7 @@ export function buildPackage({ out, version }: BuildOptions): string {
     writeFileSync(file, readFileSync(file, "utf8").replace(/(from\s+["']\.{1,2}\/[^"']+)\.ts(["'])/g, "$1.js$2"));
   }
   for (const path of ["schema", "fixtures"]) cpSync(join(DIRECTORY, path), join(folder, path), { recursive: true });
+  if (release !== undefined) cpSync(release, join(folder, SCHEMA));
   for (const file of ["LICENSE", "README.md"]) cpSync(join(DIRECTORY, file), join(folder, file));
   writeFileSync(join(folder, "package.json"), `${JSON.stringify(manifest(version), null, 2)}\n`);
   return folder;
