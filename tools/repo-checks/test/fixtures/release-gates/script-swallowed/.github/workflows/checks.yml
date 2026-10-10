@@ -1,0 +1,132 @@
+on:
+  workflow_call:
+permissions: {}
+# A shell of the workflow's own, bash without -e, for every step that names none and whose job names none.
+defaults:
+  run:
+    shell: bash {0}
+jobs:
+  # The job's default shell, bash, which GitHub runs with -e and pipefail, overrides the workflow's.
+  fresh-install:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install fresh-install 2>&1 | tee "$RUNNER_TEMP/fresh-install.log"
+  # The workflow's default shell goes on past the failing test.
+  upgrade:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: |
+          pnpm test:install upgrade rollback
+          echo "upgrade done"
+  # A block over several lines, whose failure the list lets through.
+  backup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          {
+            pnpm test:install backup
+          } || true
+  # A condition over several lines, which may skip the test.
+  backup-if:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          if [ -n "$RUN_BACKUP" ]; then
+            pnpm test:install backup
+          fi
+  # pipefail turned off before a pipeline.
+  polling:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          set +o pipefail
+          pnpm test:install polling | tee "$RUNNER_TEMP/polling.log"
+  # A list begun on the line before: echo succeeds, so the test never runs.
+  polling-or:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo "polling" ||
+            pnpm test:install polling
+  # A trap that ends the script in success whatever made it exit.
+  egress:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          trap 'exit 0' EXIT
+          pnpm test:install egress
+  # A function that takes the place of pnpm.
+  egress-function:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          pnpm() { echo "skipped"; }
+          pnpm test:install egress
+  # An exit before the test, which never runs.
+  egress-exit:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          exit 0
+          pnpm test:install egress
+  # The test inside a quoted text over several lines, which only prints it.
+  egress-quoted:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo "the egress test:
+          pnpm test:install egress
+          "
+  # The test in a here-document, which only prints it.
+  egress-heredoc:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          cat <<'SCRIPT'
+          pnpm test:install egress
+          SCRIPT

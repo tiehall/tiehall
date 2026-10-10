@@ -108,6 +108,36 @@ describe("the release's gates", () => {
     expect(check(fixture("script-goes-on")).status).toBe(1);
   });
 
+  it("are refused when the shell GitHub runs the script with, or the lines before the gate's command, let its failure through", () => {
+    // GitHub runs a script with no shell named as bash -e, without pipefail, and only shell: bash with pipefail; a
+    // job's defaults.run.shell, and else its workflow's, names the shell of a step that names none. A block or a list
+    // over several lines, a trap, a function in pnpm's place, an exit, or a quoted text or here-document around the
+    // command may also let the failure through, or keep the gate from running.
+    const sites = Object.fromEntries(RELEASE_GATES.flatMap((each) => gateSites(fixture("script-swallowed"), each).map((site) => [`${site.file}#${site.job}`, site.goesOn])));
+    expect(sites).toEqual({
+      "checks.yml#fresh-install": false,
+      "checks.yml#upgrade": true,
+      "checks.yml#backup": true,
+      "checks.yml#backup-if": true,
+      "checks.yml#polling": true,
+      "checks.yml#polling-or": true,
+      "checks.yml#egress": true,
+      "checks.yml#egress-function": true,
+      "checks.yml#egress-exit": true,
+      "checks.yml#egress-quoted": true,
+      "checks.yml#egress-heredoc": true,
+      "release.yml#prepare": true,
+      "release.yml#stability": false,
+    });
+    const problems = releaseGateProblems(fixture("script-swallowed"));
+    expect(problems).toHaveLength(11);
+    expect(problems).toContain("When the release check of stability levels fails in release.yml#prepare, step 2, the release still runs release.yml#release, which can push or publish.");
+    expect(problems).toContain("When the upgrade test fails in checks.yml#upgrade, step 2, the release still runs release.yml#release, which can push or publish.");
+    expect(problems).toContain("When the backup-and-restore test fails in checks.yml#backup, step 2, the release still runs release.yml#release, which can push or publish.");
+    expect(problems.join("\n")).not.toMatch(/checks\.yml#fresh-install|release\.yml#stability/);
+    expect(check(fixture("script-swallowed")).status).toBe(1);
+  });
+
   it("are refused when a condition on the job that runs one, or on a job it needs, may skip it in a workflow the release calls", () => {
     // A skipped job fails neither the workflow that calls it nor the jobs that need it, so the release goes on untested.
     expect(publishingAfterSkip(fixture("skipped-gate-job"), gateSites(fixture("skipped-gate-job"), gate("the egress test"))[0]!)).toEqual(["release"]);

@@ -19,11 +19,18 @@ import { parse } from "yaml";
 // failing step fails its job unless it, or its job, may continue on error. A
 // condition on the gate's own step might skip it, and the check counts it as
 // skipped; and it counts as passing a script that may go on, or end in
-// success, after the gate's command fails: one that runs the command anywhere
-// but at the start of a line of its own, with ||, &&, ; or & beside it, or
-// piped under sh, which has no pipefail, or after set +e, or in a shell other
-// than bash or sh. A
-// condition on the gate's job, or on a job it needs, that may not hold when
+// success, after the gate's command fails, or never run it. GitHub runs a
+// script as bash -e when no shell is named, as bash -e with pipefail for
+// shell: bash and as sh -e for shell: sh; a step that names no shell takes its
+// job's defaults.run.shell, and else its workflow's. So the check counts as
+// passing a script in any other shell; one that runs the command anywhere but
+// at the start of a line of its own, with ||, &&, ; or & beside it, or piped
+// without pipefail; and one whose lines before the command leave it inside a
+// block, a condition, a loop, a list, a quoted text or a here-document, or
+// turn off -e or pipefail, set a trap, define a function or an alias, or
+// exit.
+//
+// A condition on the gate's job, or on a job it needs, that may not hold when
 // the jobs it needs succeeded might skip the gate instead, and a skipped job
 // fails neither the workflow that calls it nor the jobs that need it, which
 // are skipped in turn unless they run whatever happened: the check also works
@@ -71,19 +78,40 @@ const RUNS_WHATEVER = /\b(?:always|failure|cancelled)\s*\(/;
 const HOLDS_ON_SUCCESS = /^(?:\$\{\{\s*)?(?:always\(\)|success\(\)|!\s*cancelled\(\)|true)(?:\s*\}\})?$/;
 /** Environment assignments in front of a command. */
 const ASSIGNMENTS = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*$/;
+/** Where a command starts on a line: at its start, or after a separator or an opening parenthesis. */
+const AT_COMMAND = "(?:^|[\\s;&|(])";
 /** set +e, or set +o errexit, which lets a script go on after a failing command. */
-const ERREXIT_OFF = /(?:^|[\s;&|(])set\s+(?:[-+][A-Za-z]*\s+)*(?:\+[A-Za-z]*e[A-Za-z]*\b|\+o\s+errexit\b)/;
+const ERREXIT_OFF = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?(?:\\+[A-Za-z]*e[A-Za-z]*\\b|\\+o\\s+errexit\\b)`);
+/** set -o pipefail, alone or with other options, such as set -euo pipefail. */
+const PIPEFAIL_ON = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?-[A-Za-z]*o\\s+pipefail\\b`);
+/** set +o pipefail. */
+const PIPEFAIL_OFF = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?\\+[A-Za-z]*o\\s+pipefail\\b`);
+/**
+ * Lines that may keep a later failing command from failing the script, or keep it from running: a trap, which can
+ * end the script in success whatever made it exit; a function or an alias, which can take a command's place; and an
+ * exit, a return or an exec.
+ */
+const CHANGES_WHAT_RUNS = new RegExp(`${AT_COMMAND}(?:trap|alias|function|exit|return|exec)\\b|[A-Za-z_][\\w:.-]*\\s*\\(\\s*\\)`);
+/** Words that open a compound command, and words that close one. */
+const OPENS = new Set(["if", "while", "until", "for", "select", "case", "{"]);
+const CLOSES = new Set(["fi", "done", "esac", "}"]);
+/** An operator at the end of a line, which carries a list or a pipeline on to the next line. */
+const CARRIES_ON = /(?:\|\||&&|\|&?)\s*$/;
 
 function isMapping(value: unknown): value is Mapping {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function jobsOf(root: string, file: string): Map<string, Mapping> {
+function workflowOf(root: string, file: string): Mapping {
   const path = join(root, WORKFLOWS, file);
-  if (!existsSync(path)) return new Map();
+  if (!existsSync(path)) return {};
   const workflow = parse(readFileSync(path, "utf8")) as unknown;
-  const jobs = isMapping(workflow) && isMapping(workflow["jobs"]) ? workflow["jobs"] : {};
-  return new Map(Object.entries(jobs).map(([id, job]) => [id, isMapping(job) ? job : {}]));
+  return isMapping(workflow) ? workflow : {};
+}
+
+function jobsOf(root: string, file: string): Map<string, Mapping> {
+  const jobs = workflowOf(root, file)["jobs"];
+  return new Map(Object.entries(isMapping(jobs) ? jobs : {}).map(([id, job]) => [id, isMapping(job) ? job : {}]));
 }
 
 function stepsOf(job: Mapping): Mapping[] {
@@ -117,23 +145,47 @@ function maySkip(job: Mapping): boolean {
   return !(typeof condition === "string" && HOLDS_ON_SUCCESS.test(condition.trim()));
 }
 
+/** A line with each quoted text replaced by a placeholder and any comment removed; a quote left over opens a text. */
+function plain(line: string): string {
+  return line
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "_")
+    .replace(/(^|\s)#.*$/, "")
+    .trim();
+}
+
 /**
- * Whether the step's script may go on, or end in success, after the gate's command fails. GitHub runs bash with
- * -e and pipefail, and sh with -e, so a script stops at a failing command that starts a line of its own, piped
- * into another under bash; a list or a condition around the command, set +e before it, or another shell may let
- * the failure through.
+ * Whether the step's script may go on, or end in success, after the gate's command fails, or may never run it.
+ * GitHub runs a script that names no shell as bash -e, shell: bash as bash -e with pipefail, and shell: sh as sh -e,
+ * so a script stops at a failing command that starts a line of its own at the top level, piped into another only
+ * under pipefail; another shell, a list or a condition around the command, or lines before it that open a block,
+ * turn off -e or pipefail, or change what runs may let the failure through.
  */
-function goesOn(step: Mapping, gate: Gate): boolean {
-  const shell = step["shell"];
+function goesOn(script: string, shell: unknown, gate: Gate): boolean {
   if (shell !== undefined && shell !== "bash" && shell !== "sh") return true;
-  const lines = String(step["run"])
-    .replace(/\\\r?\n/g, " ")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/(^|\s)#.*$/, "").trim());
+  let pipefail = shell === "bash";
+  const lines = script.replace(/\\\r?\n/g, " ").split(/\r?\n/);
   const index = lines.findIndex((line) => gate.command.test(line));
   if (index < 0) return true;
-  if (lines.slice(0, index + 1).some((line) => ERREXIT_OFF.test(line))) return true;
-  const line = lines[index] ?? "";
+  let depth = 0;
+  for (const raw of lines.slice(0, index)) {
+    const line = plain(raw);
+    if (/['"]/.test(line) || /<<(?!<)/.test(line)) return true;
+    if (ERREXIT_OFF.test(line) || CHANGES_WHAT_RUNS.test(line)) return true;
+    if (PIPEFAIL_ON.test(line) && shell !== "sh") pipefail = true;
+    if (PIPEFAIL_OFF.test(line)) pipefail = false;
+    const words = line.split(/[\s;&|]+/);
+    depth += words.filter((word) => OPENS.has(word)).length - words.filter((word) => CLOSES.has(word)).length;
+    depth += (line.match(/\(/g) ?? []).length - (line.match(/\)/g) ?? []).length;
+    if (depth < 0) return true;
+  }
+  if (depth !== 0) return true;
+  const previous = lines
+    .slice(0, index)
+    .map(plain)
+    .filter((line) => line.length > 0)
+    .at(-1);
+  if (previous !== undefined && CARRIES_ON.test(previous)) return true;
+  const line = (lines[index] ?? "").replace(/(^|\s)#.*$/, "").trim();
   const match = gate.command.exec(line);
   if (match === null || !ASSIGNMENTS.test(line.slice(0, match.index))) return true;
   // Quoted text and redirections such as 2>&1 hold no operator.
@@ -141,19 +193,32 @@ function goesOn(step: Mapping, gate: Gate): boolean {
     .slice(match.index)
     .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''")
     .replace(/\d*[<>]&\d*-?|&>>?/g, " ");
-  // bash runs with pipefail, so a pipeline fails with the command; sh does not.
-  return /\|\||&&|[;&]/.test(rest) || (shell === "sh" && rest.includes("|"));
+  // Under pipefail a pipeline fails with the command; without it, it ends as its last command does.
+  return /\|\||&&|[;&]/.test(rest) || (!pipefail && rest.includes("|"));
+}
+
+/** The shell GitHub runs a step's script with: the step's own, else its job's default, else its workflow's. */
+function shellOf(step: Mapping, job: Mapping, workflow: Mapping): unknown {
+  const defaultShell = (holder: Mapping): unknown => {
+    const defaults = holder["defaults"];
+    const run = isMapping(defaults) ? defaults["run"] : undefined;
+    return isMapping(run) ? run["shell"] : undefined;
+  };
+  return step["shell"] ?? defaultShell(job) ?? defaultShell(workflow);
 }
 
 /** The steps that run a gate, in the release workflow and the local workflows it calls. */
 export function gateSites(root: string, gate: Gate): Site[] {
-  return reachable(root, RELEASE_WORKFLOW).flatMap((file) =>
-    [...jobsOf(root, file)].flatMap(([job, definition]) =>
-      stepsOf(definition).flatMap((step, index) =>
-        typeof step["run"] === "string" && gate.command.test(step["run"]) ? [{ file, job, step: index, goesOn: goesOn(step, gate) }] : [],
-      ),
-    ),
-  );
+  return reachable(root, RELEASE_WORKFLOW).flatMap((file) => {
+    const workflow = workflowOf(root, file);
+    return [...jobsOf(root, file)].flatMap(([job, definition]) =>
+      stepsOf(definition).flatMap((step, index) => {
+        const script = step["run"];
+        if (typeof script !== "string" || !gate.command.test(script)) return [];
+        return [{ file, job, step: index, goesOn: goesOn(script, shellOf(step, definition, workflow), gate) }];
+      }),
+    );
+  });
 }
 
 /** The jobs of the site's workflow whose conditions might skip the gate: its job and the jobs it needs, at any depth. */

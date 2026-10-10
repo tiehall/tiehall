@@ -1,0 +1,44 @@
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: node tools/read-release-tag.ts
+      # With no shell named, GitHub runs bash -e, without pipefail: tee's success hides the check's failure.
+      - run: pnpm release:check-stability | tee "$RUNNER_TEMP/stability.log"
+  stability:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # The script turns pipefail on, so the pipeline fails with the check.
+      - run: |
+          set -eo pipefail
+          pnpm release:check-stability | tee "$RUNNER_TEMP/stability.log"
+  build:
+    needs: [prepare, stability]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: docker build --tag tiehall:release .
+  image:
+    needs: [prepare, build]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/checks.yml
+  release:
+    needs: [prepare, stability, build, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - run: docker push ghcr.io/acme/tiehall:1.3.0
+      - if: always()
+        run: docker logout ghcr.io
