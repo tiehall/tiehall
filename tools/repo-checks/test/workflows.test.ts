@@ -111,14 +111,22 @@ describe("the workflow check", () => {
     ]);
   });
 
-  it("fails a job that holds a write permission and runs an action that is not GitHub's own or the repository's", () => {
+  it("fails a job that holds a write permission and runs an action that is not GitHub's own or the repository's, or a package manager or a container", () => {
     const run = check(fixture("third-party-in-write-job"));
     expect(run.status).toBe(1);
+    const packages = "runs a package manager, and with it packages' code, in a job that can write";
     expect(violationsOf(checkWorkflows(fixture("third-party-in-write-job")), "third-party-in-write-job")).toEqual([
       "release.yml#docker: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      `release.yml#notes: npm install --global --ignore-scripts pnpm@12.6.0 (${packages})`,
+      `release.yml#notes: pnpm install --frozen-lockfile --filter "@acme/release-tools..." (${packages})`,
+      `release.yml#notes: version="$(pnpm --silent exec semver 1.3.0)" (${packages})`,
+      `release.yml#notes: npm publish --provenance (${packages})`,
+      "release.yml#notes: docker run --rm alpine:3.22 cat /etc/os-release (runs a container in a job that can write)",
+      `release.yml#notes: sudo pip install awscli==1.40.0 (${packages})`,
       "release.yml#publish: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1",
       "release.yml#reuse: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1",
     ]);
+    expect(run.stderr).toContain(`release.yml#notes: [third-party-in-write-job] pnpm install --frozen-lockfile --filter "@acme/release-tools..." (${packages})`);
   });
 
   it("passes pinned actions, declared permissions, listed writes and secrets, and safe installs", () => {
@@ -139,7 +147,7 @@ describe("the workflow check", () => {
     expect(run.stdout).toContain("ci.yml#test");
   });
 
-  it("leaves packages: write to the build job, the release's writes to its publishing job, the OIDC token to the packet's publish job, and no write permission to any other job", () => {
+  it("leaves packages: write to the build job, the release's writes to its push and release jobs, the OIDC token to the packet's publish job, and no write permission to any other job", () => {
     const writes = jobPermissions(repoRoot).flatMap(({ job, permissions }) =>
       Object.entries((permissions ?? {}) as Record<string, string>)
         .filter(([, level]) => level === "write")
@@ -149,10 +157,10 @@ describe("the workflow check", () => {
     expect(writes).toEqual([
       "build.yml#build: packages",
       "packet-package.yml#publish: id-token",
-      "release.yml#release: attestations",
+      "release.yml#push: attestations",
+      "release.yml#push: id-token",
+      "release.yml#push: packages",
       "release.yml#release: contents",
-      "release.yml#release: id-token",
-      "release.yml#release: packages",
     ]);
   });
 });

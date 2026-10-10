@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { RELEASE_FILES } from "../src/release-files.ts";
+import { checkWorkflows } from "../src/workflows.ts";
 
 // The release workflow (self-host-install: Releases carry signed
 // attestations; self-host-install: Release pipeline integrity; design.md,
@@ -12,8 +13,12 @@ import { RELEASE_FILES } from "../src/release-files.ts";
 // version, and that digest gets signed build-provenance and SBOM attestations,
 // pushed beside it; the release page names the digest and the version tag and
 // offers compose.yaml, the Caddyfile, .env.example, backup.sh, restore.sh and
-// the release notes. Only the job that publishes holds write permissions, and
-// the SBOM comes from the third-party scanner in a job with no permissions.
+// the release notes. Only the job that pushes and attests the image and the
+// job that publishes the release hold write permissions, and neither runs a
+// third-party action or any package's code: the notes, whose script needs the
+// repository's dependencies, are written between them in a job that can write
+// nothing. The SBOM comes from the third-party scanner in a job with no
+// permissions.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -88,7 +93,8 @@ describe("the release workflow", () => {
     expect(needs(image)).toEqual(["prepare", "build"]);
     expect(image.with).toEqual({ "image-artifact": "image", "previous-base": "${{ github.sha }}^" });
     expect(image.permissions).toEqual({ contents: "read", packages: "read" });
-    expect(needs(workflow.jobs["release"] as Job)).toEqual(["prepare", "build", "sbom", "image"]);
+    expect(needs(workflow.jobs["push"] as Job)).toEqual(["prepare", "build", "sbom", "image"]);
+    expect(needs(workflow.jobs["release"] as Job)).toEqual(expect.arrayContaining(["push"]));
     // The image checks load the saved image and take the previous image from the base the release gives.
     const checks = parse(readFileSync(join(root, ".github/workflows/image-checks.yml"), "utf8")) as Workflow & { on: { workflow_call: { inputs: Record<string, unknown> } } };
     expect(Object.keys(checks.on.workflow_call.inputs)).toEqual(["image", "image-artifact", "previous-base"]);
@@ -140,21 +146,26 @@ describe("the release workflow", () => {
     expect(steps(job).find(({ uses }) => uses?.startsWith("actions/upload-artifact@"))?.with).toMatchObject({ name: "sbom", "if-no-files-found": "error" });
   });
 
-  it("pushes the image once, in the job that publishes, by digest and tagged with its version", () => {
+  it("pushes the image once, in the push job, by digest and tagged with its version", () => {
     const pushes = jobs.filter(([, job]) => /\bdocker push\b/.test(runs(job)));
-    expect(pushes.map(([id]) => id)).toEqual(["release"]);
+    expect(pushes.map(([id]) => id)).toEqual(["push"]);
     const [, job] = pushes[0] as [string, Job];
     const push = steps(job).find(({ id }) => id === "push");
     expect(push?.run).toContain('docker load --input "$RUNNER_TEMP/image/image.tar"');
     expect(push?.run).toContain('docker push "$repository:$VERSION"');
     expect(push?.run).toContain(`digest="$(docker buildx imagetools inspect "$repository:$VERSION" --format '{{.Manifest.Digest}}')"`);
     expect((push?.run?.match(/\bdocker push\b/g) ?? []).length).toBe(1);
+    expect((job as Job & { outputs?: Record<string, string> }).outputs).toEqual({
+      repository: "${{ steps.push.outputs.repository }}",
+      digest: "${{ steps.push.outputs.digest }}",
+    });
   });
 
   it("attests the pushed digest's build provenance and its SBOM, signed and pushed beside the image", () => {
-    const job = workflow.jobs["release"];
+    const job = workflow.jobs["push"];
     const attests = steps(job).filter(({ uses }) => uses?.startsWith("actions/attest@"));
     expect(attests).toHaveLength(2);
+    expect(jobs.filter(([, each]) => steps(each).some(({ uses }) => uses?.startsWith("actions/attest@"))).map(([id]) => id)).toEqual(["push"]);
     for (const attest of attests) {
       expect(attest.with).toMatchObject({
         "subject-name": "${{ steps.push.outputs.repository }}",
@@ -170,37 +181,76 @@ describe("the release workflow", () => {
     expect(order.indexOf("push")).toBeLessThan(order.indexOf("actions/attest"));
   });
 
-  it("publishes the release for its tag with the notes and every release file, after the attestations", () => {
-    const job = workflow.jobs["release"] as Job;
-    expect(needs(job)).toEqual(expect.arrayContaining(["prepare", "build", "sbom"]));
+  it("writes the release notes from the pushed digest in a job that can write nothing", () => {
+    const [id, job] = jobRunning(/node tools\/repo-checks\/src\/write-release-notes\.ts "\$VERSION" \\/);
+    expect(id).toBe("notes");
+    expect(writes(job)).toEqual([]);
+    expect(needs(job)).toEqual(["prepare", "push"]);
     const script = runs(job).replace(/\\\n\s*/g, "");
-    expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"');
-    expect(script).toContain('node tools/repo-checks/src/write-release-notes.ts "$VERSION"');
     expect(script).toContain('--image "$IMAGE"');
     // The commit the tag points to, which the notes pin the contract Action by (contract-changes: The contract Action).
     expect(script).toContain('--commit "$GITHUB_SHA"');
     // The previous release's migrations, read from its tag, tell which contract steps this release adds.
     expect(script).toContain('--previous "$PREVIOUS"');
-    expect(steps(job).find(({ run }) => run?.includes("write-release-notes.ts"))?.env?.["PREVIOUS"]).toBe("${{ needs.prepare.outputs.previous }}");
+    expect(script).toContain('--output "$RUNNER_TEMP/notes/release-notes.md"');
+    const notes = steps(job).find(({ run }) => run?.includes("write-release-notes.ts"));
+    expect(notes?.env).toEqual({
+      VERSION: "${{ needs.prepare.outputs.version }}",
+      PREVIOUS: "${{ needs.prepare.outputs.previous }}",
+      IMAGE: "${{ needs.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ needs.push.outputs.digest }}",
+    });
     expect(steps(job).find(({ uses }) => uses?.startsWith("actions/checkout@"))?.with).toEqual({ "persist-credentials": false, "fetch-depth": 0 });
-    expect(script).toContain('--output "$RUNNER_TEMP/release/release-notes.md"');
+    expect(steps(job).find(({ uses }) => uses?.startsWith("actions/upload-artifact@"))?.with).toMatchObject({
+      name: "notes",
+      path: "${{ runner.temp }}/notes/release-notes.md",
+      "if-no-files-found": "error",
+    });
+  });
+
+  it("publishes the release for its tag with the notes and every release file, after the attestations", () => {
+    const job = workflow.jobs["release"] as Job;
+    expect(needs(job)).toEqual(["prepare", "push", "notes"]);
+    const script = runs(job).replace(/\\\n\s*/g, "");
+    // The release files come from the tag's own commit, staged by the script from the list the notes and the docs' download use.
+    expect(script).toContain('node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"');
+    expect(RELEASE_FILES).toHaveLength(5);
+    const download = steps(job).find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
+    expect(download?.with).toEqual({ name: "notes", path: "${{ runner.temp }}/release" });
     expect(script).toMatch(/gh release create "\$TAG" --repo "\$GITHUB_REPOSITORY" --verify-tag --title "Tiehall \$VERSION" --notes-file "\$RUNNER_TEMP\/release\/release-notes\.md" "\$\{prerelease\[@\]\}" "\$RUNNER_TEMP"\/release\/\*/);
     const publish = steps(job).find(({ run }) => run?.includes("gh release create"));
     expect(publish?.env).toMatchObject({ GH_TOKEN: "${{ github.token }}", TAG: "${{ github.ref_name }}", PRERELEASE: "${{ needs.prepare.outputs.prerelease }}" });
-    const notes = steps(job).find(({ run }) => run?.includes("write-release-notes.ts"));
-    expect(notes?.env?.["IMAGE"]).toBe("${{ steps.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ steps.push.outputs.digest }}");
-    const order = steps(job).map(({ run, uses }) => (run?.includes("gh release create") ? "publish" : uses?.startsWith("actions/attest@") ? "attest" : "other"));
-    expect(order.lastIndexOf("attest")).toBeLessThan(order.indexOf("publish"));
-    // Every release file is staged by the script, from the list the notes and the docs' download use.
-    expect(RELEASE_FILES).toHaveLength(5);
+    const order = steps(job).map(({ run, uses }) => (run?.includes("gh release create") ? "publish" : run?.includes("stage-release-files.ts") ? "stage" : uses?.startsWith("actions/download-artifact@") ? "notes" : "other"));
+    expect(order.indexOf("stage")).toBeLessThan(order.indexOf("publish"));
+    expect(order.indexOf("notes")).toBeLessThan(order.indexOf("publish"));
   });
 
-  it("holds write permissions only in the job that publishes, which uses only GitHub's own actions", () => {
-    expect(jobs.filter(([, job]) => writes(job).length > 0).map(([id]) => id)).toEqual(["release"]);
-    expect(writes(workflow.jobs["release"] as Job)).toEqual(["attestations", "contents", "id-token", "packages"]);
-    for (const { uses } of steps(workflow.jobs["release"])) if (uses !== undefined) expect(uses).toMatch(/^actions\/[a-z-]+@[0-9a-f]{40}$/);
+  it("holds write permissions only in the push job and the release job, which use only GitHub's own actions", () => {
+    expect(jobs.filter(([, job]) => writes(job).length > 0).map(([id]) => id)).toEqual(["push", "release"]);
+    expect(writes(workflow.jobs["push"] as Job)).toEqual(["attestations", "id-token", "packages"]);
+    expect(writes(workflow.jobs["release"] as Job)).toEqual(["contents"]);
+    for (const id of ["push", "release"]) for (const { uses } of steps(workflow.jobs[id])) if (uses !== undefined) expect(uses, id).toMatch(/^actions\/[a-z-]+@[0-9a-f]{40}$/);
     // The job's token goes to GHCR only for the push and the attestations, and the job logs out after them.
-    const logout = steps(workflow.jobs["release"]).find(({ run }) => run?.trim() === "docker logout ghcr.io");
+    const logout = steps(workflow.jobs["push"]).find(({ run }) => run?.trim() === "docker logout ghcr.io");
     expect(logout?.if).toBe("always()");
+  });
+
+  it("the job that pushes the image runs no third-party code", () => {
+    const push = workflow.jobs["push"] as Job;
+    // No checkout, no Node and no package manager: only GitHub's own actions, Docker and the shell.
+    expect(steps(push).filter(({ uses }) => uses !== undefined).map(({ uses }) => uses?.split("@")[0])).toEqual([
+      "actions/download-artifact",
+      "actions/download-artifact",
+      "actions/attest",
+      "actions/attest",
+    ]);
+    expect(runs(push)).not.toMatch(/\b(?:npm|npx|pnpm|yarn|node)\b|docker (?:run|create|compose)\b/);
+    // The release job runs the repository's script that stages the release files, which imports only Node's own
+    // modules, and installs nothing.
+    const release = workflow.jobs["release"] as Job;
+    expect(runs(release)).not.toMatch(/\b(?:npm|npx|pnpm|yarn)\b|docker (?:run|create|compose)\b/);
+    const staging = readFileSync(join(root, "tools/repo-checks/src/stage-release-files.ts"), "utf8") + readFileSync(join(root, "tools/repo-checks/src/release-files.ts"), "utf8");
+    for (const [, specifier] of staging.matchAll(/^import [^"]*"([^"]+)";$/gm)) expect(specifier).toMatch(/^node:|^\.\/release-files\.ts$/);
+    // And the workflow check finds nothing in the release workflow, whose write jobs it holds to the same rule.
+    expect(checkWorkflows(root).filter(({ file }) => file === "release.yml")).toEqual([]);
   });
 });

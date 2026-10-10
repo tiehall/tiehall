@@ -29,8 +29,8 @@ describe("the release's gates", () => {
     ]);
   });
 
-  it("each stop the real release when they fail: the job that pushes and publishes then never runs", () => {
-    expect(publishingJobs(root)).toEqual(["release"]);
+  it("each stop the real release when they fail: the jobs that push and publish then never run", () => {
+    expect(publishingJobs(root)).toEqual(["push", "release"]);
     for (const each of RELEASE_GATES) {
       const sites = gateSites(root, each);
       expect(sites.length, each.name).toBeGreaterThan(0);

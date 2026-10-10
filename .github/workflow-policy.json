@@ -7,11 +7,13 @@
     "packet-package.yml#publish": [
       "id-token"
     ],
-    "release.yml#release": [
+    "release.yml#push": [
       "attestations",
-      "contents",
       "id-token",
       "packages"
+    ],
+    "release.yml#release": [
+      "contents"
     ]
   },
   "secrets": {}

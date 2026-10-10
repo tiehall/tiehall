@@ -2,7 +2,8 @@
 // workflow references an action by tag or branch, when a workflow or job does not
 // declare its token permissions, when a job holds a write permission or a
 // secret that .github/workflow-policy.json does not list, when a job that holds
-// a write permission runs a step that is not first-party, when CI installs
+// a write permission runs a step that is not first-party (a third-party action,
+// or a script that runs a package manager or a container), when CI installs
 // without the frozen lockfile or with npm install scripts, or when pnpm would
 // run install scripts outside the allowlist in pnpm-workspace.yaml.
 // Usage: node tools/repo-checks/src/check-workflows.ts [root]

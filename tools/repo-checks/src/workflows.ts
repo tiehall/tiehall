@@ -7,7 +7,10 @@ import { parse } from "yaml";
 // permissions and secrets each job holds, that a job holding a write
 // permission, such as the jobs that push the image, runs only first-party
 // steps, how CI installs dependencies, and which packages may run install
-// scripts.
+// scripts. A first-party step is one of GitHub's own actions or the
+// repository's own, or a script that installs no package and runs no package
+// manager or container: a dependency's code would run with the job's write
+// access as surely as a third-party action's.
 
 export type Rule =
   | "action-not-pinned"
@@ -150,10 +153,18 @@ function checkJob(file: string, job: string, definition: Mapping, policy: Policy
   }
 
   // A job that can write runs only first-party steps: GitHub's own actions and the repository's own, never a
-  // third-party action, Docker action or reusable workflow, which would run with its write access.
+  // third-party action, Docker action or reusable workflow, which would run with its write access; and its scripts
+  // install no package and run no package manager or container, whose code would run with that access too.
   if (isMapping(permissions) && writesIn(permissions).length > 0) {
     for (const uses of references) {
       if (typeof uses === "string" && !FIRST_PARTY.test(uses)) add("third-party-in-write-job", uses);
+    }
+    for (const step of stepsOf(definition)) {
+      if (typeof step["run"] !== "string") continue;
+      for (const command of commandsIn(step["run"])) {
+        const problem = thirdPartyCode(command);
+        if (problem !== undefined) add("third-party-in-write-job", `${command} (${problem})`);
+      }
     }
   }
 
@@ -222,13 +233,40 @@ function commandsIn(script: string): string[] {
 /** Options of npm and pnpm that come before the subcommand and take a value. */
 const OPTIONS_WITH_VALUES = new Set(["--filter", "-F", "--dir", "-C", "--workspace", "-w", "--prefix"]);
 
-function installProblem(command: string): string | undefined {
-  const words = command.split(" ");
-  // Skip environment assignments and wrappers in front of the program.
-  while (words.length > 0 && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "") || ["sudo", "time", "exec"].includes(words[0] ?? ""))) {
+/** A command's program and its arguments, without the environment assignments and wrappers in front of it. */
+function programAndArguments(command: string): string[] {
+  const words = command.split(" ").filter((word) => word.length > 0);
+  while (words.length > 0 && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "") || ["sudo", "time", "exec", "env", "command"].includes(words[0] ?? ""))) {
     words.shift();
   }
-  const [program, ...rest] = words;
+  return words;
+}
+
+/** Package managers and runners: whatever they install or run is a package's code, not the repository's. */
+const PACKAGE_RUNNERS = new Set(["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bun", "bunx", "corepack", "pip", "pip3", "pipx", "uv", "uvx"]);
+
+/**
+ * Why a command would run code that is not first-party, in a job that can write: a package manager, which installs
+ * or runs packages, or a container. npm publishing a package without running its scripts runs only npm itself. The
+ * command's own program counts, and so does each program a command substitution in it starts.
+ */
+function thirdPartyCode(command: string): string | undefined {
+  const starts = [0, ...[...command.matchAll(/\$\(|`/g)].map((match) => match.index + match[0].length)];
+  for (const start of starts) {
+    const [program, ...rest] = programAndArguments(command.slice(start).replace(/^[\s"'(]+/, ""));
+    if (program === undefined) continue;
+    const subcommand = subcommandOf(rest);
+    if (program === "npm" && subcommand === "publish" && rest.includes("--ignore-scripts")) continue;
+    if (PACKAGE_RUNNERS.has(program)) return "runs a package manager, and with it packages' code, in a job that can write";
+    if ((program === "docker" && ["run", "create", "compose"].includes(subcommand ?? "")) || program === "docker-compose") {
+      return "runs a container in a job that can write";
+    }
+  }
+  return undefined;
+}
+
+function installProblem(command: string): string | undefined {
+  const [program, ...rest] = programAndArguments(command);
   if (program === undefined) return undefined;
   if (["npx", "pnpx", "bunx"].includes(program)) return "runs a package from outside the lockfile";
 

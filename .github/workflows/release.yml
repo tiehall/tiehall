@@ -15,16 +15,25 @@ name: Release
 # comment, and install the Claude Code plugin from the repository's plugin
 # marketplace at the tag.
 #
-# Nothing is pushed or published before the job that publishes, the only job
-# that holds a write permission (.github/workflow-policy.json), which runs only
-# GitHub's own actions. The image travels between the jobs as a saved image.
+# Nothing is pushed or published before the two jobs that do, the only jobs
+# that hold a write permission (.github/workflow-policy.json): the push job,
+# which pushes the image and attests it, and the release job, which publishes
+# the release. Both run only first-party steps: GitHub's own actions, the
+# shell, Docker and gh, and in the release job the repository's own script
+# that stages the release files, which imports nothing but Node's own modules.
+# No package is installed and no dependency's code runs while they hold their
+# permissions. The release notes, whose script needs the repository's
+# dependencies, are written between them, from the digest the push job pushed,
+# in a job that can write nothing. The image travels between the jobs as a
+# saved image.
 # The release is gated (self-host-install: Upgrades apply migrations before the
 # app starts; public-api: Each operation carries a stability level): the
 # release check of stability levels runs before anything is built, and the
 # image checks, the fresh-install, upgrade, backup-and-restore, polling-mode
-# and egress tests among them, run on the release's own image; the job that
-# publishes needs every one of them, so a failure in any stops it.
-# `pnpm check:release-gates` checks that a failure in each gate does.
+# and egress tests among them, run on the release's own image; the push job
+# needs every one of them and the release job needs the push job, so a
+# failure in any stops both. `pnpm check:release-gates` checks that a failure
+# in each gate does.
 # The SBOM comes from the third-party scanner, pinned by digest, in a job of its
 # own with no permissions, no secrets and no network, which reads only the saved
 # image.
@@ -167,33 +176,23 @@ jobs:
       image-artifact: image
       previous-base: ${{ github.sha }}^
 
-  release:
-    name: Publish the release
+  push:
+    name: Push and attest the image
     needs: [prepare, build, sbom, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      # To create the release and upload its files.
-      contents: write
       # To push the image and its attestations.
       packages: write
       # To sign the attestations with the workflow's identity.
       id-token: write
       # To store the attestations.
       attestations: write
+    outputs:
+      repository: ${{ steps.push.outputs.repository }}
+      digest: ${{ steps.push.outputs.digest }}
+    # No checkout and no Node: the job runs GitHub's own actions, Docker and the shell, and nothing of a package.
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # The previous release's tag, whose migrations tell which contract steps this release adds.
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Install pnpm (the version in package.json "packageManager")
-        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: image
@@ -238,22 +237,76 @@ jobs:
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
-      # The notes name the image, its attestations and files, the install and the upgrade, every release up to this
-      # one that must not be skipped, the contract steps this release adds, the contract Action pinned by the commit the
-      # tag points to (GITHUB_SHA of a tag's run), the Claude Code plugin at the tag, and its API changes.
-      - name: Gather the release files and write the release notes
+
+  # The notes name the image, its attestations and files, the install and the upgrade, every release up to this one
+  # that must not be skipped, the contract steps this release adds, the contract Action pinned by the commit the tag
+  # points to (GITHUB_SHA of a tag's run), the Claude Code plugin at the tag, and its API changes. The script needs the
+  # repository's dependencies, so it runs here, in a job that can write nothing, and not in a job that pushes or
+  # publishes.
+  notes:
+    name: Write the release notes
+    needs: [prepare, push]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The previous release's tag, whose migrations tell which contract steps this release adds.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pnpm (the version in package.json "packageManager")
+        run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      - name: Write the release notes
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PREVIOUS: ${{ needs.prepare.outputs.previous }}
-          IMAGE: ${{ steps.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ steps.push.outputs.digest }}
+          IMAGE: ${{ needs.push.outputs.repository }}:${{ needs.prepare.outputs.version }}@${{ needs.push.outputs.digest }}
         run: |
-          node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"
+          mkdir "$RUNNER_TEMP/notes"
           node tools/repo-checks/src/write-release-notes.ts "$VERSION" \
             --previous "$PREVIOUS" \
             --image "$IMAGE" \
             --repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --commit "$GITHUB_SHA" \
-            --output "$RUNNER_TEMP/release/release-notes.md"
+            --output "$RUNNER_TEMP/notes/release-notes.md"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes/release-notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish the release
+    needs: [prepare, push, notes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # To create the release and upload its files.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      # The release files come from the tag's own commit. The script imports only Node's own modules and the list of
+      # release files, so nothing is installed for it.
+      - name: Gather the release files
+        run: node tools/repo-checks/src/stage-release-files.ts "$RUNNER_TEMP/release"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: notes
+          path: ${{ runner.temp }}/release
       # The notes are the release page's text and one of its files. gh uploads the files to a draft and publishes it
       # once every file is there; a release candidate is marked as a pre-release.
       - name: Publish the release
