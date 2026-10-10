@@ -1,0 +1,35 @@
+name: Checks
+
+# Jobs that run the repository's scripts after installs of different reach, read by workflow-installs.test.ts.
+
+on:
+  push:
+
+permissions: {}
+
+jobs:
+  packet-left-out:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      - run: pnpm check:packet-forward
+  nothing-installed:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: node tools/repo-checks/src/check-graduation.ts
+  with-dependencies:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm install --frozen-lockfile --filter "@tiehall/repo-checks..."
+      - run: |
+          pnpm check:packet-forward
+          node tools/repo-checks/src/check-graduation.ts
+  everything-installed:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:packet-forward
+  only-node-built-ins:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: node tools/repo-checks/src/check-model-sdks.ts

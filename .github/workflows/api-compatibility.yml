@@ -97,7 +97,8 @@ jobs:
           package-manager-cache: false
       - name: Install pnpm (the version in package.json "packageManager")
         run: npm install --global --ignore-scripts "$(node -p 'require("./package.json").packageManager')"
-      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks
+      # The check validates the fixtures with the packet's own validator, so packages/packet is installed too.
+      - run: pnpm install --frozen-lockfile --filter @tiehall/repo-checks --filter @tiehall/packet
       # Every version of every valid packet fixture up to the merge base that
       # validates against the packet schema there must still validate against
       # the pull request's, and a valid fixture changes or goes only with the
