@@ -1,0 +1,1582 @@
+/*
+ * Tiehall's stylesheet, the one every page of the web UI takes its look from (web-ui: One stylesheet with named
+ * design tokens; web-ui: A request's state looks the same everywhere; web-ui: Light and dark themes follow the
+ * system; web-ui: Motion, and reduced motion; web-ui: Pages work at phone width; web-ui: Pages are accessible;
+ * design.md, Design: The design tokens; D57 (1), (5) to (8)). Every color is a design token below, every page links
+ * it from the install, and no page carries a style element or attribute. The install serves it at
+ * /assets/tiehall.css, and names each font in its url()s with the font's digest when it serves it (assets.ts).
+ */
+
+/* IBM Plex Sans and IBM Plex Mono, IBM's own files under the SIL Open Font License 1.1 (fonts/OFL.txt), each subset
+   with the unicode-range IBM gives it, so a browser loads only the subsets a page's characters need (web-ui: Fonts
+   served by the install; design.md, Design: Type and the self-hosted fonts; D57 (3)). No local() source: a font
+   installed on the person's machine can be another version. */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Greek.woff2") format("woff2");
+  unicode-range: U+037E, U+0386-038A, U+038C, U+038E-03A1, U+03A3-03CE;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Latin1.woff2") format("woff2");
+  unicode-range: U+0000, U+000D, U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Regular-Pi.woff2") format("woff2");
+  unicode-range: U+0E3F, U+2000-200D, U+2015, U+2028-2029, U+202F, U+2032-2033, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+221A, U+221E, U+222B, U+2248, U+2260, U+2264-2265, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+ECE0, U+EFCC, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Greek.woff2") format("woff2");
+  unicode-range: U+037E, U+0386-038A, U+038C, U+038E-03A1, U+03A3-03CE;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Latin1.woff2") format("woff2");
+  unicode-range: U+0000, U+000D, U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Medium-Pi.woff2") format("woff2");
+  unicode-range: U+0E3F, U+2000-200D, U+2015, U+2028-2029, U+202F, U+2032-2033, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+221A, U+221E, U+222B, U+2248, U+2260, U+2264-2265, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+ECE0, U+EFCC, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Greek.woff2") format("woff2");
+  unicode-range: U+037E, U+0386-038A, U+038C, U+038E-03A1, U+03A3-03CE;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Latin1.woff2") format("woff2");
+  unicode-range: U+0000, U+000D, U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-SemiBold-Pi.woff2") format("woff2");
+  unicode-range: U+0E3F, U+2000-200D, U+2015, U+2028-2029, U+202F, U+2032-2033, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+221A, U+221E, U+222B, U+2248, U+2260, U+2264-2265, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+ECE0, U+EFCC, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Greek.woff2") format("woff2");
+  unicode-range: U+037E, U+0386-038A, U+038C, U+038E-03A1, U+03A3-03CE;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Latin1.woff2") format("woff2");
+  unicode-range: U+0000, U+000D, U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/IBMPlexSans-Bold-Pi.woff2") format("woff2");
+  unicode-range: U+0E3F, U+2000-200D, U+2015, U+2028-2029, U+202F, U+2032-2033, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+221A, U+221E, U+222B, U+2248, U+2260, U+2264-2265, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+ECE0, U+EFCC, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Regular-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Regular-Latin1.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Regular-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Regular-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1E0C-1E0D, U+1E12-1E13, U+1E24-1E25, U+1E36-1E37, U+1E3C-1E3D, U+1E40-1E47, U+1E4A-1E4B, U+1E62-1E63, U+1E6C-1E6D, U+1E70-1E71, U+1E92-1E93, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Regular-Pi.woff2") format("woff2");
+  unicode-range: U+03C0, U+0E3F, U+2000-200D, U+2010-2012, U+2015, U+2028-2029, U+202F, U+2032-2033, U+203E, U+205F, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+2219-221A, U+221E, U+222B, U+2236, U+2248, U+2260, U+2264-2265, U+2400-2421, U+2500-259F, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+3000, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Medium-Cyrillic.woff2") format("woff2");
+  unicode-range: U+0400-045F, U+0462-0463, U+046A-046B, U+0472-0475, U+0490-04C2, U+04CF-04D9, U+04DC-04E9, U+04EE-04F9, U+0524-0525;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Medium-Latin1.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Medium-Latin2.woff2") format("woff2");
+  unicode-range: U+0100-0101, U+0104-0130, U+0132-0151, U+0154-017F, U+018F, U+0192, U+01A0-01A1, U+01AF-01B0, U+01FA-01FF, U+0218-021B, U+0237, U+0259, U+1E80-1E85, U+1E9E, U+20A1, U+20A4, U+20A6, U+20A8-20AA, U+20AD-20AE, U+20B1-20B2, U+20B4-20B5, U+20B8-20BA, U+20BD, U+20BF;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Medium-Latin3.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+01CD-01DC, U+1E0C-1E0D, U+1E12-1E13, U+1E24-1E25, U+1E36-1E37, U+1E3C-1E3D, U+1E40-1E47, U+1E4A-1E4B, U+1E62-1E63, U+1E6C-1E6D, U+1E70-1E71, U+1E92-1E93, U+1EA0-1EF9, U+20AB;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/IBMPlexMono-Medium-Pi.woff2") format("woff2");
+  unicode-range: U+03C0, U+0E3F, U+2000-200D, U+2010-2012, U+2015, U+2028-2029, U+202F, U+2032-2033, U+203E, U+205F, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+2219-221A, U+221E, U+222B, U+2236, U+2248, U+2260, U+2264-2265, U+2400-2421, U+2500-259F, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+3000, U+FEFF, U+FFFD;
+}
+
+/* The design tokens (web-ui: One stylesheet with named design tokens; design.md, Design: The design tokens; D57 (1)):
+   every color of the web UI is one of these, in the light theme here, the dark theme under prefers-color-scheme:
+   dark, and the live hall, which is dark whatever the preference. */
+:root {
+  color-scheme: light dark;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --ink: #14161B;
+  --ink-2: #4A5060;
+  --line: #2B4ACB;
+  --line-hover: #1E3596;
+  --button: #2B4ACB;
+  --button-hover: #1E3596;
+  --button-ink: #FFFFFF;
+  --signal: #F2B33D;
+  --on-signal: #14161B;
+  --lamp-open: #7A8294;
+  --lamp-claimed: #4C69E6;
+  --lamp-in-progress: #2B4ACB;
+  --lamp-needs-info: #B26B00;
+  --lamp-done: #1E8A4C;
+  --ground: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #EEF0F4;
+  --border: #E3E6EB;
+  --control-border: #7A8294;
+  --notice: #FCEFD2;
+  --notice-ink: #7A4A00;
+  --chip-open: #EEF0F4;
+  --chip-open-ink: #3B4252;
+  --chip-claimed: #E6EBFB;
+  --chip-claimed-ink: #1E3596;
+  --chip-in-progress: #2B4ACB;
+  --chip-in-progress-ink: #FFFFFF;
+  --chip-needs-info: #FCEFD2;
+  --chip-needs-info-ink: #7A4A00;
+  --chip-done: #DDF1E6;
+  --chip-done-ink: #145A37;
+  --chip-declined: #F1F2F4;
+  --chip-declined-ink: #5B6170;
+  --chip-withdrawn: #F1F2F4;
+  --chip-withdrawn-ink: #5B6170;
+  --mark-tile: #14161B;
+  --mark-ink: #FFFFFF;
+  --shadow-menu: 0 8px 24px #14161B1F, 0 1px 2px #14161B14;
+  --glow: #2B4ACB59;
+  --glow-strong: #4C69E68C;
+
+  --duration-fast: 150ms;
+  --duration: 250ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --radius-tag: 6px;
+  --radius: 8px;
+  --radius-card: 12px;
+  --radius-node: 14px;
+  --radius-panel: 16px;
+  --content: 1200px;
+  --gutter: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #E8EAF0;
+    --ink-2: #8A93A6;
+    --line: #9DB2FF;
+    --line-hover: #C9D4FF;
+    --button: #4C69E6;
+    --button-hover: #3B57D9;
+    --button-ink: #FFFFFF;
+    --signal: #F2B33D;
+    --on-signal: #14161B;
+    --lamp-open: #8A93A6;
+    --lamp-claimed: #9DB2FF;
+    --lamp-in-progress: #4C69E6;
+    --lamp-needs-info: #F2B33D;
+    --lamp-done: #4ADE80;
+    --ground: #0E1117;
+    --surface: #151A23;
+    --surface-2: #1C2230;
+    --border: #2A3040;
+    --control-border: #6B7385;
+    --notice: #3A2C10;
+    --notice-ink: #F2C66D;
+    --live: #4ADE80;
+    --chip-open: #232938;
+    --chip-open-ink: #C9CFDB;
+    --chip-claimed: #1A2340;
+    --chip-claimed-ink: #B7C6FF;
+    --chip-in-progress: #4C69E6;
+    --chip-in-progress-ink: #FFFFFF;
+    --chip-needs-info: #3A2C10;
+    --chip-needs-info-ink: #F2C66D;
+    --chip-done: #12301F;
+    --chip-done-ink: #7EE2A3;
+    --chip-declined: #202530;
+    --chip-declined-ink: #A3ABBD;
+    --chip-withdrawn: #202530;
+    --chip-withdrawn-ink: #A3ABBD;
+    --mark-tile: #2B4ACB;
+    --mark-ink: #FFFFFF;
+    --shadow-menu: 0 8px 24px #00000066, 0 1px 2px #00000040;
+    --glow: #2B4ACB59;
+    --glow-strong: #4C69E68C;
+  }
+}
+
+/* The live hall is dark in both themes (web-ui: Light and dark themes follow the system; design.md, Design: Light and
+   dark themes; D57 (5)): its body carries the class hall. */
+.hall {
+  color-scheme: dark;
+  --ink: #E8EAF0;
+  --ink-2: #8A93A6;
+  --line: #9DB2FF;
+  --line-hover: #C9D4FF;
+  --button: #4C69E6;
+  --button-hover: #3B57D9;
+  --button-ink: #FFFFFF;
+  --signal: #F2B33D;
+  --on-signal: #14161B;
+  --lamp-open: #8A93A6;
+  --lamp-claimed: #9DB2FF;
+  --lamp-in-progress: #4C69E6;
+  --lamp-needs-info: #F2B33D;
+  --lamp-done: #4ADE80;
+  --ground: #0E1117;
+  --surface: #151A23;
+  --surface-2: #1C2230;
+  --border: #2A3040;
+  --control-border: #6B7385;
+  --notice: #3A2C10;
+  --notice-ink: #F2C66D;
+  --live: #4ADE80;
+  --chip-open: #232938;
+  --chip-open-ink: #C9CFDB;
+  --chip-claimed: #1A2340;
+  --chip-claimed-ink: #B7C6FF;
+  --chip-in-progress: #4C69E6;
+  --chip-in-progress-ink: #FFFFFF;
+  --chip-needs-info: #3A2C10;
+  --chip-needs-info-ink: #F2C66D;
+  --chip-done: #12301F;
+  --chip-done-ink: #7EE2A3;
+  --chip-declined: #202530;
+  --chip-declined-ink: #A3ABBD;
+  --chip-withdrawn: #202530;
+  --chip-withdrawn-ink: #A3ABBD;
+  --mark-tile: #2B4ACB;
+  --mark-ink: #FFFFFF;
+  --shadow-menu: 0 8px 24px #00000066, 0 1px 2px #00000040;
+  --glow: #2B4ACB59;
+  --glow-strong: #4C69E68C;
+  --live-glow: #4ADE8099;
+  --live-glow-end: #4ADE8000;
+  --signal-glow: #F2B33DB3;
+  --signal-glow-end: #F2B33D00;
+}
+
+/* The page. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 30px;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+h3 {
+  font-size: 16px;
+}
+
+a {
+  color: var(--line);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--line-hover);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+/* The focus is always visible (web-ui: Pages are accessible; design.md, Design: Accessibility; D57 (8)): a 2-pixel
+   ring in line blue, at least 3:1 against both grounds, on every element the keyboard reaches. */
+:focus-visible {
+  outline: 2px solid var(--line);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The link that skips to the page's main content, the first thing Tab reaches, shown while it has the focus. */
+.skip {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  z-index: 30;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--button);
+  color: var(--button-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+  color: var(--button-ink);
+}
+
+/* The shell (web-ui: The page shell and its navigation; design.md, Design: The page shell and navigation; D57 (4)):
+   the top bar with the mark, the navigation and the member's menu, the main content and the footer. */
+.topbar {
+  position: relative;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
+  max-width: var(--content);
+  min-height: 60px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.brand:hover {
+  color: var(--ink);
+}
+
+.mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mark-tile);
+  color: var(--mark-ink);
+}
+
+.mark svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.topbar-wide {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  gap: 4px;
+}
+
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
+}
+
+.nav a:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.nav a[aria-current="page"] {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--button);
+  color: var(--button-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.topbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The menus open and close without script (details and summary). */
+.menu {
+  position: relative;
+}
+
+.menu > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--duration-fast) var(--ease);
+}
+
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu > summary:hover,
+.menu[open] > summary {
+  background: var(--surface-2);
+}
+
+.initials {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chip-claimed);
+  color: var(--chip-claimed-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 25;
+  width: max-content;
+  min-width: 240px;
+  max-width: calc(100vw - 32px);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-menu);
+}
+
+.menu[open] > .menu-panel {
+  animation: menuopen 150ms var(--ease) both;
+}
+
+.menu-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-panel a,
+.menu-panel button {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  text-decoration: none;
+}
+
+.menu-panel a:hover,
+.menu-panel button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.menu-panel a[aria-current="page"] {
+  background: var(--surface-2);
+  font-weight: 500;
+}
+
+.menu-panel form {
+  margin: 4px 0 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.menu-panel .menu-who {
+  padding: 8px 12px 4px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.menu-panel .button {
+  justify-content: center;
+  margin: 4px 0;
+  background: var(--button);
+  color: var(--button-ink);
+  font-weight: 600;
+}
+
+.menu-panel .button:hover {
+  background: var(--button-hover);
+  color: var(--button-ink);
+}
+
+/* The folded menu of a narrow screen, which holds the navigation, New request and the member's menu. */
+.menu-all {
+  display: none;
+  margin-left: auto;
+}
+
+.menu-all > summary {
+  padding: 4px 14px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+main {
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 32px var(--gutter) 64px;
+  overflow-wrap: anywhere;
+}
+
+main.focused {
+  max-width: 760px;
+}
+
+body > footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+body > footer > * {
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 20px var(--gutter);
+}
+
+body > footer p {
+  margin: 0;
+}
+
+body > footer a {
+  color: var(--ink-2);
+}
+
+body > footer a:hover {
+  color: var(--ink);
+}
+
+/* What the pages hold, as they write it: headings, text, lists, tables and forms. Each rule has no more weight than
+   the element it names, so a component's class overrides it. */
+:where(main) > h1 {
+  margin-bottom: 24px;
+}
+
+:where(main) h2 {
+  margin: 32px 0 12px;
+}
+
+:where(main) h3 {
+  margin: 20px 0 8px;
+}
+
+:where(main) p {
+  margin: 0 0 12px;
+}
+
+:where(main) ul,
+:where(main) ol {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+:where(main) li + li {
+  margin-top: 8px;
+}
+
+:where(main) form {
+  margin: 0 0 16px;
+}
+
+:where(main) pre {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-tag);
+  background: var(--surface-2);
+  overflow-x: auto;
+  overflow-wrap: normal;
+  line-height: 1.5;
+}
+
+:where(main) :not(pre) > code {
+  padding: 1px 6px;
+  border-radius: var(--radius-tag);
+  background: var(--surface-2);
+}
+
+:where(main) table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font-size: 14px;
+}
+
+:where(main) th {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+:where(main) td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+:where(main) tr:last-child > td {
+  border-bottom: 0;
+}
+
+:where(main) blockquote {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--control-border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+:where(main) blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  transition: border-color var(--duration-fast) var(--ease);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+input[type="search"],
+input:not([type]) {
+  width: 100%;
+  max-width: 480px;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  margin: 0 8px 0 0;
+  vertical-align: middle;
+  accent-color: var(--button);
+}
+
+input[type="file"] {
+  max-width: 100%;
+  font: inherit;
+  font-size: 14px;
+}
+
+::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+/* Buttons: an action is a button, a move to another page a link; a link styled as a button carries the class
+   button. */
+button,
+.button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--button);
+  border-radius: var(--radius);
+  background: var(--button);
+  color: var(--button-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+
+button:hover,
+.button:hover {
+  border-color: var(--button-hover);
+  background: var(--button-hover);
+  color: var(--button-ink);
+}
+
+button.secondary,
+.button.secondary {
+  border-color: var(--control-border);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+button.secondary:hover,
+.button.secondary:hover {
+  border-color: var(--control-border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* A request's state, the same on every page (web-ui: A request's state looks the same everywhere; design.md,
+   Design: Request states; D57 (1)): a chip names it in words, a lamp sits beside words that say it. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.chip.open {
+  background: var(--chip-open);
+  color: var(--chip-open-ink);
+}
+
+.chip.claimed {
+  background: var(--chip-claimed);
+  color: var(--chip-claimed-ink);
+}
+
+.chip.in-progress {
+  background: var(--chip-in-progress);
+  color: var(--chip-in-progress-ink);
+}
+
+.chip.needs-info {
+  background: var(--chip-needs-info);
+  color: var(--chip-needs-info-ink);
+}
+
+.chip.done {
+  background: var(--chip-done);
+  color: var(--chip-done-ink);
+}
+
+.chip.declined {
+  background: var(--chip-declined);
+  color: var(--chip-declined-ink);
+}
+
+.chip.withdrawn {
+  background: var(--chip-withdrawn);
+  color: var(--chip-withdrawn-ink);
+}
+
+/* A request flagged needs_human: it waits for a person. */
+.chip.waits {
+  background: var(--notice);
+  color: var(--notice-ink);
+}
+
+.lamp {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--lamp-open);
+}
+
+.lamp.open {
+  background: var(--lamp-open);
+}
+
+.lamp.claimed {
+  background: var(--lamp-claimed);
+}
+
+.lamp.in-progress {
+  background: var(--lamp-in-progress);
+}
+
+.lamp.needs-info {
+  background: var(--lamp-needs-info);
+}
+
+.lamp.done {
+  background: var(--lamp-done);
+}
+
+/* A waiting lamp, such as the inbox's: it blinks three times, then stays lit. */
+.lamp.blink {
+  animation: lampblink 1.6s ease-in-out 3;
+}
+
+/* A request or team key, in mono. */
+.key {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tag);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+/* A section label: small, upper case and tracked. */
+.label {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.panel > :last-child {
+  margin-bottom: 0;
+}
+
+.cards {
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.cards > li + li {
+  margin-top: 0;
+}
+
+.card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.card h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.card .button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+/* Banners and refusals: the notice colors, with no lamp on them. */
+.notice,
+[role="alert"] {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--notice);
+  color: var(--notice-ink);
+}
+
+.notice a,
+[role="alert"] a {
+  color: var(--notice-ink);
+}
+
+.notice > :last-child,
+[role="alert"] > :last-child {
+  margin-bottom: 0;
+}
+
+.banners {
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.banners form {
+  display: inline;
+  margin: 0 0 0 8px;
+}
+
+/* A refusal page: the status as a large number, the title, the detail and the way on. */
+.refusal .status {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.refusal .problem-type {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* An agent at work: three dots that pulse three times, beside words that say so. */
+.typing {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.typing > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: typing 1.2s ease-in-out 3 both;
+}
+
+.typing > span:nth-child(2) {
+  animation: typing 1.2s ease-in-out 0.15s 3 both;
+}
+
+.typing > span:nth-child(3) {
+  animation: typing 1.2s ease-in-out 0.3s 3 both;
+}
+
+/* A line between two teams, which flows from the requesting team to the target team three times. */
+.line-flow {
+  stroke-dasharray: 6 6;
+  animation: cordflow 1.4s linear 3;
+}
+
+.slide-in {
+  animation: slidein 0.5s var(--ease) both;
+}
+
+/* The live hall (web-ui: The live hall; design.md, Design: The live hall; D57 (11)). Its repeating motion runs only
+   once its script has put the class live on its body; Pause motion puts the class paused there. */
+.hall .node {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-node);
+  background: var(--surface);
+}
+
+/* A team with nothing live: only its border dims, its text and lamps keep their contrast. */
+.hall .node.dimmed {
+  border-color: var(--surface-2);
+}
+
+.hall .live-lamp {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--live);
+}
+
+.hall .lamp.needs-info,
+.hall .chip.waits {
+  animation: lampblink 1.6s ease-in-out 3;
+}
+
+.hall .feed .new {
+  animation: slidein 0.6s var(--ease) both;
+}
+
+.hall.live .live-lamp {
+  animation: livepulse 1.8s ease-out infinite;
+}
+
+.hall.live .lamp.needs-info,
+.hall.live .chip.waits {
+  animation: lampblink 1.6s ease-in-out infinite;
+}
+
+.hall.live .node.active {
+  animation: glow 2.4s ease-in-out infinite;
+}
+
+.hall.live .line-flow {
+  animation: cordflow 1.4s linear infinite;
+}
+
+.hall.live .typing > span {
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+.hall.live .typing > span:nth-child(2) {
+  animation: typing 1.2s ease-in-out 0.15s infinite;
+}
+
+.hall.live .typing > span:nth-child(3) {
+  animation: typing 1.2s ease-in-out 0.3s infinite;
+}
+
+.hall.paused *,
+.hall.paused *::before,
+.hall.paused *::after {
+  animation-play-state: paused;
+}
+
+/* Motion (web-ui: Motion, and reduced motion; design.md, Design: Motion and reduced motion; D57 (6)): only what shows
+   something that happens, nothing faster than once in 1.2 seconds. */
+@keyframes cordflow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+@keyframes lampblink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes livepulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--live-glow);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px var(--live-glow-end);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 var(--live-glow-end);
+  }
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes slidein {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--lamp-in-progress), 0 0 24px var(--glow);
+  }
+
+  50% {
+    box-shadow: 0 0 0 1px var(--button), 0 0 36px var(--glow-strong);
+  }
+}
+
+@keyframes menuopen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Phone width (web-ui: Pages work at phone width; design.md, Design: Phone width; D57 (7)): one column, the
+   navigation folded into one menu, controls at least 44 pixels high, tables scrolling in their own box. */
+@media (max-width: 767px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  h1 {
+    font-size: 22px;
+  }
+
+  .topbar-inner {
+    gap: 12px;
+  }
+
+  .topbar-wide {
+    display: none;
+  }
+
+  .menu-all {
+    display: block;
+  }
+
+  .menu-all > .menu-panel {
+    width: calc(100vw - 32px);
+    max-width: 360px;
+  }
+
+  main {
+    padding-top: 24px;
+    padding-bottom: 48px;
+  }
+
+  button,
+  .button,
+  .menu > summary,
+  .menu-panel a,
+  .menu-panel button,
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select {
+    min-height: 44px;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="url"],
+  input[type="search"],
+  input:not([type]),
+  select {
+    width: 100%;
+    max-width: none;
+  }
+
+  :where(main) form button,
+  :where(main) .card .button {
+    width: 100%;
+  }
+
+  :where(main) table {
+    display: block;
+    overflow-x: auto;
+    overflow-wrap: normal;
+  }
+
+  :where(main) td {
+    min-width: 120px;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Reduced motion: no animation and no transition on any page. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Forced colors: the system's colors, with every border and the focus outline kept, so nothing shows only by a
+   fill. */
+@media (forced-colors: active) {
+  .chip,
+  .lamp,
+  .badge,
+  .button,
+  button,
+  .mark,
+  .key,
+  .notice,
+  [role="alert"],
+  .hall .live-lamp {
+    border: 1px solid CanvasText;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+}

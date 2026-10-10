@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ASSET_FILES, assetDigest, assetUrl, createAssetRoute, mediaTypeOf } from "../src/assets.ts";
+import { ASSET_FILES, assetDigest, assetUrl, createAssetRoute, mediaTypeOf, stylesheetWithVersions } from "../src/assets.ts";
 import { ASSET_DIGESTS } from "../src/asset-digests.ts";
 
 // The install's own assets (web-ui: The install serves its own assets; web-ui:
@@ -25,6 +25,7 @@ const ASSETS = fileURLToPath(new URL("../assets/", import.meta.url));
 const ORIGIN = "https://tiehall.example.com";
 const FONT = "/assets/fonts/IBMPlexSans-Regular-Latin1.woff2";
 const LICENSE = "/assets/fonts/OFL.txt";
+const STYLESHEET = "/assets/tiehall.css";
 const POLICY = "default-src 'none'; frame-ancestors 'none'; sandbox";
 
 const route = createAssetRoute({ folder: ASSETS });
@@ -44,9 +45,43 @@ describe("the assets' media types", () => {
     expect(mediaTypeOf(file)).toBe(type);
   });
 
-  it("serves the fonts and their license", () => {
+  it("serves the stylesheet, the fonts and their license", () => {
+    expect(ASSET_FILES[STYLESHEET]).toBe("tiehall.css");
     expect(ASSET_FILES[FONT]).toBe("fonts/IBMPlexSans-Regular-Latin1.woff2");
     expect(ASSET_FILES[LICENSE]).toBe("fonts/OFL.txt");
+  });
+});
+
+describe("the stylesheet's answer", () => {
+  it("names each font by its served URL with its current digest", async () => {
+    const answer = await get(assetUrl(STYLESHEET));
+    expect(answer.status).toBe(200);
+    expect(answer.headers.get("content-type")).toBe("text/css; charset=utf-8");
+    expect(answer.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const text = await answer.text();
+    const urls = [...text.matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1] ?? "");
+    expect(urls).toHaveLength(34);
+    for (const url of urls) {
+      const [path = "", version] = url.split("?v=");
+      expect(ASSET_FILES[path], url).toBeDefined();
+      expect(version, url).toBe(ASSET_DIGESTS[path]);
+      expect(url).toBe(assetUrl(path));
+    }
+  });
+
+  it("is the file with its url()s rewritten, and its ETag is the committed digest of what it serves", async () => {
+    const file = await readFile(join(ASSETS, "tiehall.css"), "utf8");
+    const answer = await get(STYLESHEET);
+    const text = await answer.text();
+    expect(text).toBe(stylesheetWithVersions(file));
+    expect(text.replace(/\?v=[A-Za-z0-9_-]+/g, "").replaceAll('url("/assets/fonts/', 'url("fonts/')).toBe(file);
+    expect(answer.headers.get("etag")).toBe(`"${ASSET_DIGESTS[STYLESHEET]}"`);
+  });
+
+  it("rewrites only url()s that name an asset of the install", () => {
+    expect(stylesheetWithVersions('a { b: url("fonts/OFL.txt") } c { d: url("nothing.png") } e { f: url("/x.png") }', { "/assets/fonts/OFL.txt": "abc" })).toBe(
+      'a { b: url("/assets/fonts/OFL.txt?v=abc") } c { d: url("nothing.png") } e { f: url("/x.png") }',
+    );
   });
 });
 

@@ -36,4 +36,5 @@ export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
   "/assets/fonts/IBMPlexSans-SemiBold-Latin3.woff2": "tMJAUkdt9SjabEDIQdK9sM",
   "/assets/fonts/IBMPlexSans-SemiBold-Pi.woff2": "doQhQz2FDTowEY3d8FlyYl",
   "/assets/fonts/OFL.txt": "kcJcNQ08rDnaJzbXT3ujfv",
+  "/assets/tiehall.css": "ZQGyqL4211nhquEE49utnS",
 };

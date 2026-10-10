@@ -43,6 +43,20 @@ describe("the web app's assets, before setup", () => {
     expect(await license.text()).toContain('Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"');
   });
 
+  it("serves the stylesheet, which names each font by its current digest, and each of them", async () => {
+    const stylesheet = await web.fetch(assetUrl("/assets/tiehall.css"));
+    expect(stylesheet.status).toBe(200);
+    expect(stylesheet.headers.get("content-type")).toBe("text/css; charset=utf-8");
+    expect(stylesheet.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const urls = [...(await stylesheet.text()).matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1] ?? "");
+    expect(urls).toHaveLength(34);
+    for (const url of urls) {
+      const font = await web.fetch(url);
+      expect(font.status, url).toBe(200);
+      expect(font.headers.get("cache-control"), url).toBe("public, max-age=31536000, immutable");
+    }
+  });
+
   it("keeps the current version for a year, and answers a revalidation with 304", async () => {
     const current = await web.fetch(assetUrl("/assets/fonts/IBMPlexMono-Regular-Latin1.woff2"));
     expect(current.status).toBe(200);
