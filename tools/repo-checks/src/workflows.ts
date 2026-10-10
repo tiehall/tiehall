@@ -242,27 +242,36 @@ function imageOf(container: unknown): string {
   return String(isMapping(container) ? container["image"] : container);
 }
 
-/** A script without its comments: each from a # that starts a word outside quoted text to the end of its line. */
+/**
+ * A script without its comments: each from a # that starts a word outside quoted text to the end of its line. A #
+ * after an escaped character is part of that character's word.
+ */
 function withoutComments(script: string): string {
   let result = "";
   let quote = "";
+  // Whether the next character starts a word.
+  let startsAWord = true;
   for (let index = 0; index < script.length; index++) {
     const char = script.charAt(index);
     if (char === "\\" && quote !== "'") {
       result += script.slice(index, index + 2);
       index++;
+      // An escaped character is part of a word; an escaped line break only joins two lines and leaves the word as is.
+      if (quote === "" && script.charAt(index) !== "\n") startsAWord = false;
     } else if (quote !== "") {
       if (char === quote) quote = "";
       result += char;
     } else if (char === "'" || char === '"') {
       quote = char;
       result += char;
-    } else if (char === "#" && (index === 0 || /[\s;&|()<>]/.test(script.charAt(index - 1)))) {
+      startsAWord = false;
+    } else if (char === "#" && startsAWord) {
       const end = script.indexOf("\n", index);
       if (end < 0) break;
       index = end - 1;
     } else {
       result += char;
+      startsAWord = /[\s;&|()<>]/.test(char);
     }
   }
   return result;

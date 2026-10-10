@@ -148,6 +148,7 @@ describe("the workflow check", () => {
       `release.yml#notes: docker --context remote build . (${builds})`,
       `release.yml#notes: pnpm install --frozen-lockfile (${packages})`,
       `release.yml#notes: pnpm install --frozen-lockfile (${packages})`,
+      `release.yml#notes: pnpm install --frozen-lockfile (${packages})`,
       "release.yml#publish: docker/login-action@3d3c42e5aac5ba805825da76410c181273ba90b1",
       "release.yml#reuse: octo-org/shared/.github/workflows/push.yml@3d3c42e5aac5ba805825da76410c181273ba90b1",
     ]);

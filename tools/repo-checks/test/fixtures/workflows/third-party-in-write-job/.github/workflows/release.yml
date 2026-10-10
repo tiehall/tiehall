@@ -66,12 +66,15 @@ jobs:
       - run: docker buildx build --secret id=token,env=GITHUB_TOKEN --tag tools .
       - run: buildx build -f - .
       - run: docker --context remote build .
-      # A comment sign inside a quoted text, and a comment that ends in an operator, hide nothing after them.
+      # A comment sign inside a quoted text or after an escaped character, and a comment that ends in an operator,
+      # hide nothing after them.
       - run: |
           echo "release #1"; pnpm install --frozen-lockfile
       - run: |
           # Install, then publish |
           pnpm install --frozen-lockfile
+      - run: |
+          echo ready\ #; pnpm install --frozen-lockfile
       # A module node loads by its path in the repository, and a copy whose -r is not node's, are first-party.
       - run: node --import ./tools/register.ts tools/write-notes.ts
       - run: cp -r deploy release

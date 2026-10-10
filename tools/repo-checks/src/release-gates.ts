@@ -156,11 +156,14 @@ interface Line {
 function read(line: string): Line | undefined {
   let text = "";
   let index = 0;
+  // Whether the next character starts a word: a # starts a comment only there, so not after an escaped character.
+  let startsAWord = true;
   while (index < line.length) {
     const char = line.charAt(index);
     if (char === "\\") {
       text += "_";
       index += 2;
+      startsAWord = false;
     } else if (char === "'" || (char === "$" && line.charAt(index + 1) === "'")) {
       // A single-quoted text holds no escape; an ANSI-C quoted one, $'...', does.
       const escapes = char === "$";
@@ -169,6 +172,7 @@ function read(line: string): Line | undefined {
       if (end >= line.length) return undefined;
       text += "_";
       index = end + 1;
+      startsAWord = false;
     } else if (char === '"') {
       let end = index + 1;
       let substitutions = "";
@@ -180,11 +184,13 @@ function read(line: string): Line | undefined {
       if (end >= line.length) return undefined;
       text += `_${substitutions}`;
       index = end + 1;
-    } else if (char === "#" && (index === 0 || /[\s;&|()<>]/.test(line.charAt(index - 1)))) {
+      startsAWord = false;
+    } else if (char === "#" && startsAWord) {
       break;
     } else {
       text += char;
       index += 1;
+      startsAWord = /[\s;&|()<>]/.test(char);
     }
   }
   return { code: line.slice(0, index), text };

@@ -116,9 +116,10 @@ describe("the release's gates", () => {
     // (an escaped or ANSI-C quoted one included), a set other than one that turns on -e, -u, -x, -v or pipefail (set
     // -n, -o noexec and -t among them), or a trap, alias, function, exit, return, exec, eval, source, ., shopt, hash or
     // enable lets the failure through, or keeps the gate from running; so does a list carried on from the line before,
-    // and a list after the command, even past a comment sign inside a quoted text. Run as GitHub runs them, in bash
-    // 5.2 with a pnpm that exits 1 (and a sourced tools/test-env.sh that defines pnpm as a function), every site refused
-    // here can exit 0, and the three that pass exit 1.
+    // and a list after the command. A comment sign inside a quoted text, or after an escaped character, is part of a
+    // word and hides none of these, on the gate's line or a line before it. Run as GitHub runs them, in bash 5.2 with
+    // a pnpm that exits 1 (and a sourced tools/test-env.sh that defines pnpm as a function), every site refused here
+    // can exit 0, and the three that pass exit 1.
     const sites = Object.fromEntries(RELEASE_GATES.flatMap((each) => gateSites(fixture("script-swallowed"), each).map((site) => [`${site.file}#${site.job}`, site.goesOn])));
     expect(sites).toEqual({
       "checks.yml#fresh-install": false,
@@ -146,11 +147,13 @@ describe("the release's gates", () => {
       "checks.yml#egress-shopt": true,
       "checks.yml#egress-hash": true,
       "checks.yml#egress-quoted-hash": true,
+      "checks.yml#egress-escaped-space-hash": true,
+      "checks.yml#egress-escaped-space-before": true,
       "release.yml#prepare": true,
       "release.yml#stability": false,
     });
     const problems = releaseGateProblems(fixture("script-swallowed"));
-    expect(problems).toHaveLength(24);
+    expect(problems).toHaveLength(26);
     expect(problems).toContain("When the release check of stability levels fails in release.yml#prepare, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(problems).toContain("When the upgrade test fails in checks.yml#upgrade, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(problems).toContain("When the backup-and-restore test fails in checks.yml#backup, step 2, the release still runs release.yml#release, which can push or publish.");

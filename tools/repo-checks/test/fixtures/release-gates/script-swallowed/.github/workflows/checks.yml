@@ -296,3 +296,25 @@ jobs:
       - shell: bash
         run: |
           pnpm test:install egress --reporter "dot #" || true
+  # An escaped space keeps the comment sign after it inside a word, so the list after it lets the failure through.
+  egress-escaped-space-hash:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          pnpm test:install egress --reporter dot\ #x || true
+  # Likewise on a line before the test: the set after it turns off -e.
+  egress-escaped-space-before:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo ready\ #; set +e
+          pnpm test:install egress
+          echo done
