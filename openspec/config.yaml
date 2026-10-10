@@ -26,7 +26,7 @@ context: |
   Capabilities use flat kebab-case paths: self-host-install, teams-and-roles,
   sign-in, agent-access, requests, handoff-packet, agent-surfaces,
   requester-loop, contract-changes, tracker-mirrors, agent-safety, activity-log,
-  public-api.
+  public-api, web-ui.
 
   Secrets, tokens and customer data never go into specs. Nothing in the
   repository links to the optional, git-ignored private/ folder.
