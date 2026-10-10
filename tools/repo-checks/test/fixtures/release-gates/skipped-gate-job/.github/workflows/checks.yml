@@ -1,0 +1,51 @@
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  # Conditions that hold whenever the jobs it needs succeeded skip nothing.
+  fresh-install:
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install fresh-install
+  backup:
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install backup
+  upgrade:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install upgrade rollback
+  setup:
+    if: inputs.mode == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+  polling:
+    needs: setup
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install polling
+  egress:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install egress

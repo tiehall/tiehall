@@ -5,17 +5,18 @@
 // each run in the release workflow, or in a workflow of this repository it
 // calls, and a failure in any of them stops every job of the release workflow
 // that can push or publish. It fails when one of them does not run, or when a
-// job that can write would still run after it failed.
+// job that can write would still run after it failed, after its script went on
+// past its failing command, or after a condition skipped it.
 // Usage: node tools/repo-checks/src/check-release-gates.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";
-import { gateSites, publishingAfterFailure, RELEASE_GATES, RELEASE_WORKFLOW, releaseGateProblems } from "./release-gates.ts";
+import { gateSites, publishingAfterFailure, publishingAfterSkip, RELEASE_GATES, RELEASE_WORKFLOW, releaseGateProblems } from "./release-gates.ts";
 
 const root = resolve(process.argv[2] ?? ".");
 const problems = releaseGateProblems(root);
 for (const gate of RELEASE_GATES) {
   for (const site of gateSites(root, gate)) {
-    if (publishingAfterFailure(root, site).length === 0) {
+    if (publishingAfterFailure(root, site).length === 0 && publishingAfterSkip(root, site).length === 0) {
       console.log(`${gate.name} runs in ${site.file}#${site.job}; when it fails, no job that pushes or publishes runs.`);
     }
   }

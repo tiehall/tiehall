@@ -1,0 +1,49 @@
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  fresh-install:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: |
+          if pnpm test:install fresh-install; then echo "fresh install passed"; fi
+  backup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash {0}
+        run: |
+          pnpm test:install backup
+          echo "backup done"
+  upgrade:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      # Piped under bash, which runs with pipefail, and redirected: the failure still fails the step.
+      - run: |
+          set -euo pipefail
+          pnpm test:install upgrade rollback 2>&1 | tee "$RUNNER_TEMP/upgrade.log"
+  polling:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: |
+          set +e
+          pnpm test:install polling
+          echo "polling done"
+  egress:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - run: pnpm test:install egress || true

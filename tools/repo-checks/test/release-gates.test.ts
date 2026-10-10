@@ -1,15 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { gateSites, publishingAfterFailure, publishingJobs, RELEASE_GATES, releaseGateProblems } from "../src/release-gates.ts";
+import { gateSites, publishingAfterFailure, publishingAfterSkip, publishingJobs, RELEASE_GATES, releaseGateProblems } from "../src/release-gates.ts";
 
 // The release's gates (self-host-install: Upgrades apply migrations before the
 // app starts; public-api: Each operation carries a stability level): the
 // fresh-install, upgrade, backup-and-restore, polling-mode and egress tests
 // and the release check of stability levels each stop the release when they
-// fail. Each test below makes a gate fail, in the real release workflow and
-// in fixture workflows, and works out which jobs that push or publish would
-// still run, as GitHub runs a workflow.
+// fail. Each test below makes a gate fail, or a condition skip it, in the real
+// release workflow and in fixture workflows, and works out which jobs that
+// push or publish would still run, as GitHub runs a workflow.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/release-gates/${name}/`, import.meta.url));
@@ -87,6 +87,41 @@ describe("the release's gates", () => {
     expect(releaseGateProblems(fixture("conditional-step"))).toEqual([
       "When the fresh-install test fails in checks.yml#fresh-install, step 2, the release still runs release.yml#release, which can push or publish.",
     ]);
+  });
+
+  it("are refused when the script that runs one goes on, or ends in success, after it fails", () => {
+    const sites = Object.fromEntries(RELEASE_GATES.flatMap((each) => gateSites(fixture("script-goes-on"), each).map((site) => [each.name, site.goesOn])));
+    expect(sites).toEqual({
+      "the fresh-install test": true,
+      "the upgrade test": false,
+      "the backup-and-restore test": true,
+      "the polling-mode test": true,
+      "the egress test": true,
+      "the release check of stability levels": false,
+    });
+    expect(releaseGateProblems(fixture("script-goes-on"))).toEqual([
+      "When the fresh-install test fails in checks.yml#fresh-install, step 2, the release still runs release.yml#release, which can push or publish.",
+      "When the backup-and-restore test fails in checks.yml#backup, step 2, the release still runs release.yml#release, which can push or publish.",
+      "When the polling-mode test fails in checks.yml#polling, step 2, the release still runs release.yml#release, which can push or publish.",
+      "When the egress test fails in checks.yml#egress, step 2, the release still runs release.yml#release, which can push or publish.",
+    ]);
+    expect(check(fixture("script-goes-on")).status).toBe(1);
+  });
+
+  it("are refused when a condition on the job that runs one, or on a job it needs, may skip it in a workflow the release calls", () => {
+    // A skipped job fails neither the workflow that calls it nor the jobs that need it, so the release goes on untested.
+    expect(publishingAfterSkip(fixture("skipped-gate-job"), gateSites(fixture("skipped-gate-job"), gate("the egress test"))[0]!)).toEqual(["release"]);
+    expect(releaseGateProblems(fixture("skipped-gate-job"))).toEqual([
+      "When a job's condition skips the polling-mode test in checks.yml#polling, the release still runs release.yml#release, which can push or publish.",
+      "When a job's condition skips the egress test in checks.yml#egress, the release still runs release.yml#release, which can push or publish.",
+    ]);
+    const run = check(fixture("skipped-gate-job"));
+    expect(run.status).toBe(1);
+    // Skipping the release workflow's own gate job skips every job that needs it, the jobs that publish among them.
+    expect(publishingAfterSkip(fixture("skipped-gate-job"), gateSites(fixture("skipped-gate-job"), gate("the release check of stability levels"))[0]!)).toEqual([]);
+    expect(run.stdout).toContain("the release check of stability levels runs in release.yml#prepare; when it fails, no job that pushes or publishes runs.");
+    // The real release has no such condition.
+    for (const each of RELEASE_GATES) for (const site of gateSites(root, each)) expect(publishingAfterSkip(root, site), each.name).toEqual([]);
   });
 
   it("are refused when one does not run in the release at all, or runs only in the job that publishes", () => {

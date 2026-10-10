@@ -18,8 +18,18 @@ import { parse } from "yaml";
 // job that calls a workflow fails when a job of that workflow fails; and a
 // failing step fails its job unless it, or its job, may continue on error. A
 // condition on the gate's own step might skip it, and the check counts it as
-// skipped. Every job of the release workflow that holds a write permission
-// pushes or publishes, so none may run after a gate fails.
+// skipped; and it counts as passing a script that may go on, or end in
+// success, after the gate's command fails: one that runs the command anywhere
+// but at the start of a line of its own, with ||, &&, ; or & beside it, or
+// piped under sh, which has no pipefail, or after set +e, or in a shell other
+// than bash or sh. A
+// condition on the gate's job, or on a job it needs, that may not hold when
+// the jobs it needs succeeded might skip the gate instead, and a skipped job
+// fails neither the workflow that calls it nor the jobs that need it, which
+// are skipped in turn unless they run whatever happened: the check also works
+// out what runs when such conditions skip the gate. Every job of the release
+// workflow that holds a write permission pushes or publishes, so none may run
+// after a gate fails or is skipped.
 
 export interface Gate {
   /** The gate's name, as the check reports it. */
@@ -46,6 +56,8 @@ export interface Site {
   job: string;
   /** The step's index in its job, from 0. */
   step: number;
+  /** Whether the step's script may go on, or end in success, after the gate's command fails. */
+  goesOn: boolean;
 }
 
 type Result = "success" | "failure" | "skipped";
@@ -55,6 +67,12 @@ const WORKFLOWS = join(".github", "workflows");
 const LOCAL_WORKFLOW = /^\.\/\.github\/workflows\/([^/@]+\.ya?ml)$/;
 /** A status function that runs a job, or a step, whatever the jobs it needs did. */
 const RUNS_WHATEVER = /\b(?:always|failure|cancelled)\s*\(/;
+/** A condition that holds whenever the jobs a job needs succeeded, so it never skips a job that would run without it. */
+const HOLDS_ON_SUCCESS = /^(?:\$\{\{\s*)?(?:always\(\)|success\(\)|!\s*cancelled\(\)|true)(?:\s*\}\})?$/;
+/** Environment assignments in front of a command. */
+const ASSIGNMENTS = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*$/;
+/** set +e, or set +o errexit, which lets a script go on after a failing command. */
+const ERREXIT_OFF = /(?:^|[\s;&|(])set\s+(?:[-+][A-Za-z]*\s+)*(?:\+[A-Za-z]*e[A-Za-z]*\b|\+o\s+errexit\b)/;
 
 function isMapping(value: unknown): value is Mapping {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -92,17 +110,71 @@ function reachable(root: string, file: string, seen = new Set<string>()): string
   return [file, ...called.flatMap((each) => reachable(root, each, seen))];
 }
 
+/** Whether a job's condition might skip it when every job it needs succeeded. */
+function maySkip(job: Mapping): boolean {
+  const condition = job["if"];
+  if (condition === undefined || condition === null || condition === true) return false;
+  return !(typeof condition === "string" && HOLDS_ON_SUCCESS.test(condition.trim()));
+}
+
+/**
+ * Whether the step's script may go on, or end in success, after the gate's command fails. GitHub runs bash with
+ * -e and pipefail, and sh with -e, so a script stops at a failing command that starts a line of its own, piped
+ * into another under bash; a list or a condition around the command, set +e before it, or another shell may let
+ * the failure through.
+ */
+function goesOn(step: Mapping, gate: Gate): boolean {
+  const shell = step["shell"];
+  if (shell !== undefined && shell !== "bash" && shell !== "sh") return true;
+  const lines = String(step["run"])
+    .replace(/\\\r?\n/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/(^|\s)#.*$/, "").trim());
+  const index = lines.findIndex((line) => gate.command.test(line));
+  if (index < 0) return true;
+  if (lines.slice(0, index + 1).some((line) => ERREXIT_OFF.test(line))) return true;
+  const line = lines[index] ?? "";
+  const match = gate.command.exec(line);
+  if (match === null || !ASSIGNMENTS.test(line.slice(0, match.index))) return true;
+  // Quoted text and redirections such as 2>&1 hold no operator.
+  const rest = line
+    .slice(match.index)
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''")
+    .replace(/\d*[<>]&\d*-?|&>>?/g, " ");
+  // bash runs with pipefail, so a pipeline fails with the command; sh does not.
+  return /\|\||&&|[;&]/.test(rest) || (shell === "sh" && rest.includes("|"));
+}
+
 /** The steps that run a gate, in the release workflow and the local workflows it calls. */
 export function gateSites(root: string, gate: Gate): Site[] {
   return reachable(root, RELEASE_WORKFLOW).flatMap((file) =>
     [...jobsOf(root, file)].flatMap(([job, definition]) =>
-      stepsOf(definition).flatMap((step, index) => (typeof step["run"] === "string" && gate.command.test(step["run"]) ? [{ file, job, step: index }] : [])),
+      stepsOf(definition).flatMap((step, index) =>
+        typeof step["run"] === "string" && gate.command.test(step["run"]) ? [{ file, job, step: index, goesOn: goesOn(step, gate) }] : [],
+      ),
     ),
   );
 }
 
-/** The result of each job of a workflow when the step at the site fails, as GitHub would run it. */
-function run(root: string, file: string, failing: Site, calls: string[] = []): Map<string, Result> {
+/** The jobs of the site's workflow whose conditions might skip the gate: its job and the jobs it needs, at any depth. */
+function skippingJobs(root: string, site: Site): string[] {
+  const jobs = jobsOf(root, site.file);
+  const seen = new Set<string>();
+  const visit = (id: string): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const job = jobs.get(id);
+    if (job !== undefined) needsOf(job).forEach(visit);
+  };
+  visit(site.job);
+  return [...seen].filter((id) => maySkip(jobs.get(id) ?? {}));
+}
+
+/**
+ * The result of each job of a workflow when the step at the site fails, as GitHub would run it; with skipped, when
+ * those jobs of the site's workflow are skipped by their conditions instead of running.
+ */
+function run(root: string, file: string, failing: Site, skipped: readonly string[] = [], calls: string[] = []): Map<string, Result> {
   const jobs = jobsOf(root, file);
   const results = new Map<string, Result>();
   const resultOf = (id: string, path: string[]): Result => {
@@ -115,14 +187,14 @@ function run(root: string, file: string, failing: Site, calls: string[] = []): M
     const condition = job["if"];
     const runs = (typeof condition === "string" && RUNS_WHATEVER.test(condition)) || needed.every((result) => result === "success");
     let result: Result = "skipped";
-    if (runs) {
+    if (runs && !(failing.file === file && skipped.includes(id))) {
       const called = typeof job["uses"] === "string" ? LOCAL_WORKFLOW.exec(job["uses"])?.[1] : undefined;
       let failed = false;
       if (called !== undefined && !calls.includes(called)) {
-        failed = [...run(root, called, failing, [...calls, file]).values()].includes("failure");
+        failed = [...run(root, called, failing, skipped, [...calls, file]).values()].includes("failure");
       } else if (failing.file === file && failing.job === id) {
         const step = stepsOf(job)[failing.step] ?? {};
-        failed = step["if"] === undefined && !mayContinue(step["continue-on-error"]);
+        failed = step["if"] === undefined && !mayContinue(step["continue-on-error"]) && !failing.goesOn;
       }
       result = failed && !mayContinue(job["continue-on-error"]) ? "failure" : "success";
     }
@@ -146,6 +218,14 @@ export function publishingAfterFailure(root: string, failing: Site): string[] {
   return publishingJobs(root).filter((id) => results.get(id) !== "skipped");
 }
 
+/** The publishing jobs of the release workflow that would still run if conditions skipped the gate at the site. */
+export function publishingAfterSkip(root: string, site: Site): string[] {
+  const skipped = skippingJobs(root, site);
+  if (skipped.length === 0) return [];
+  const results = run(root, RELEASE_WORKFLOW, site, skipped);
+  return publishingJobs(root).filter((id) => results.get(id) !== "skipped");
+}
+
 /** What keeps a failing gate from stopping the release, as sentences; none when every gate stops it. */
 export function releaseGateProblems(root: string): string[] {
   if (!existsSync(join(root, WORKFLOWS, RELEASE_WORKFLOW))) return [`The repository has no release workflow, ${WORKFLOWS}/${RELEASE_WORKFLOW}.`];
@@ -154,12 +234,17 @@ export function releaseGateProblems(root: string): string[] {
   for (const gate of RELEASE_GATES) {
     const sites = gateSites(root, gate);
     if (sites.length === 0) problems.push(`${gate.name} runs in no step of ${RELEASE_WORKFLOW} or of a workflow it calls.`);
+    const jobs = (running: string[]) => running.map((id) => `${RELEASE_WORKFLOW}#${id}`).join(" and ");
     for (const site of sites) {
       const running = publishingAfterFailure(root, site);
       if (running.length > 0) {
+        problems.push(`When ${gate.name} fails in ${site.file}#${site.job}, step ${site.step + 1}, the release still runs ${jobs(running)}, which can push or publish.`);
+      }
+      const unchecked = publishingAfterSkip(root, site);
+      if (unchecked.length > 0) {
         problems.push(
-          `When ${gate.name} fails in ${site.file}#${site.job}, step ${site.step + 1}, ` +
-            `the release still runs ${running.map((id) => `${RELEASE_WORKFLOW}#${id}`).join(" and ")}, which can push or publish.`,
+          `When a job's condition skips ${gate.name} in ${site.file}#${site.job}, ` +
+            `the release still runs ${jobs(unchecked)}, which can push or publish.`,
         );
       }
     }
