@@ -116,8 +116,9 @@ describe("the release's gates", () => {
     // (an escaped or ANSI-C quoted one included), a set other than one that turns on -e, -u, -x, -v or pipefail (set
     // -n, -o noexec and -t among them), or a trap, alias, function, exit, return, exec, eval, source, ., shopt, hash or
     // enable lets the failure through, or keeps the gate from running; so does a list carried on from the line before,
-    // and a list after the command, even past a comment sign inside a quoted text. Each such site exits 0 in bash 5
-    // with the gate replaced by false.
+    // and a list after the command, even past a comment sign inside a quoted text. Run as GitHub runs them, in bash
+    // 5.2 with a pnpm that exits 1 (and a sourced tools/test-env.sh that defines pnpm as a function), every site refused
+    // here can exit 0, and the three that pass exit 1.
     const sites = Object.fromEntries(RELEASE_GATES.flatMap((each) => gateSites(fixture("script-swallowed"), each).map((site) => [`${site.file}#${site.job}`, site.goesOn])));
     expect(sites).toEqual({
       "checks.yml#fresh-install": false,

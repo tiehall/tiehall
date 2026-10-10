@@ -285,7 +285,8 @@ jobs:
         run: |
           hash -p /usr/bin/true pnpm
           pnpm test:install egress
-  # A comment sign inside a quoted text starts no comment, so the list after it lets the failure through.
+  # A comment sign inside a quoted text starts no comment, so the list after it lets the failure through. A block
+  # scalar keeps the line whole: in a plain one, YAML would read " #" as the start of a comment of its own.
   egress-quoted-hash:
     runs-on: ubuntu-24.04
     permissions:
@@ -293,4 +294,5 @@ jobs:
     steps:
       - run: tools/get-image.sh
       - shell: bash
-        run: pnpm test:install egress --reporter "dot #" || true
+        run: |
+          pnpm test:install egress --reporter "dot #" || true
