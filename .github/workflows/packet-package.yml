@@ -10,7 +10,8 @@ name: Packet package
 # It stays off until the schema is published (handoff-packet: When the schema
 # is published): a maintainer starts it, and its build and publish jobs run
 # only once packages/packet/releases/ holds a release, whose version the
-# package takes. The build job, which can write nothing, installs the
+# package takes, and only on main: npm's trusted publishing trusts this
+# workflow file whichever branch runs it, so the jobs refuse any other ref. The build job, which can write nothing, installs the
 # package's dependencies, builds the package, checks it and packs it. The
 # publish job holds the OIDC token permission, through which npm's trusted
 # publishing authenticates it and signs the provenance, and nothing else, and
@@ -58,7 +59,7 @@ jobs:
   build:
     name: Build and check @tiehall/packet
     needs: prepare
-    if: needs.prepare.outputs.published == 'true'
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.published == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -105,7 +106,7 @@ jobs:
   publish:
     name: Publish @tiehall/packet
     needs: [prepare, build]
-    if: needs.prepare.outputs.published == 'true'
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.published == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

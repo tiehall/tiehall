@@ -18,8 +18,9 @@ import { RELEASES_FOLDER } from "../src/packet-releases.ts";
 // holding only the OIDC token permission and running only GitHub's own
 // actions and npm itself, never a dependency's code. It stays off until the
 // schema is published: a maintainer starts the workflow, and its build and
-// publish jobs run only when the release-URL tree holds a release, whose
-// version the package takes (handoff-packet: When the schema is published).
+// publish jobs run only on main and only when the release-URL tree holds a
+// release, whose version the package takes (handoff-packet: When the schema is
+// published).
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/read-packet-publication.ts", import.meta.url));
@@ -68,9 +69,13 @@ describe("the workflow that publishes @tiehall/packet", () => {
     expect(runs(prepare)).toContain('node tools/repo-checks/src/read-packet-publication.ts >> "$GITHUB_OUTPUT"');
     expect(prepare.outputs).toEqual({ published: "${{ steps.publication.outputs.published }}", version: "${{ steps.publication.outputs.version }}" });
     expect(build.needs).toBe("prepare");
-    expect(build.if).toBe("needs.prepare.outputs.published == 'true'");
     expect(publish.needs).toEqual(["prepare", "build"]);
-    expect(publish.if).toBe("needs.prepare.outputs.published == 'true'");
+    for (const job of [build, publish]) expect(job.if).toContain("needs.prepare.outputs.published == 'true'");
+  });
+
+  it("publishes only from main, whichever branch a maintainer starts it on", () => {
+    // npm's trusted publishing trusts the workflow file, not the branch, so the jobs refuse every other ref themselves.
+    for (const job of [build, publish]) expect(job.if).toBe("github.ref == 'refs/heads/main' && needs.prepare.outputs.published == 'true'");
   });
 
   it("builds the package, checks its content and validator and packs it in a job that can write nothing", () => {
