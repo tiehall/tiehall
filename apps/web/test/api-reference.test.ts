@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assetUrl, createAssetRoute } from "@tiehall/commands/assets";
 import { BUNDLE_PATH, REFERENCE_PATH, SCRIPT_PATH, referencePage, referenceScript, scalarBundle } from "../lib/api-reference.ts";
 
 // The API reference page at /docs/api (public-api: The API reference page at
@@ -22,6 +24,7 @@ import { BUNDLE_PATH, REFERENCE_PATH, SCRIPT_PATH, referencePage, referenceScrip
 
 const DOCUMENT = readFileSync(new URL("../../../packages/catalog/test/fixtures/openapi/v1.json", import.meta.url), "utf8");
 
+const assets = createAssetRoute({ folder: fileURLToPath(new URL("../../../packages/commands/assets/", import.meta.url)) });
 let server: Server;
 let origin: string;
 let browser: Browser;
@@ -34,6 +37,8 @@ async function answer(request: IncomingMessage, response: ServerResponse): Promi
   else if (url.pathname === SCRIPT_PATH) answered = referenceScript();
   else if (url.pathname === BUNDLE_PATH) answered = await scalarBundle(webRequest);
   else if (url.pathname === "/api/v1/openapi.json") answered = new Response(DOCUMENT, { headers: { "content-type": "application/json" } });
+  // The install's assets, as the asset route and the rewrite of /favicon.ico serve them.
+  else if (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.ico") answered = await assets(webRequest, url.pathname === "/favicon.ico" ? "/assets/favicon.ico" : url.pathname);
   else answered = new Response("Not found", { status: 404 });
   response.writeHead(answered.status, Object.fromEntries(answered.headers));
   response.end(Buffer.from(await answered.arrayBuffer()));
@@ -86,6 +91,20 @@ async function visit(options: { bypassCSP?: boolean } = {}): Promise<Visit> {
   const violations = await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations);
   return { page, status: response?.status(), csp: response?.headers()["content-security-policy"], loaded, violations };
 }
+
+// The page names the install's icons in its head, which its img-src 'self' allows, and not the manifest, which its
+// policy would block (web-ui: The mark, the favicon and the app icon; design.md, Design: The mark and the icons; D57
+// (10)); its policy stays as the public-api capability defines it.
+describe("the API reference page's head", () => {
+  it("names the SVG icon, the favicon and the touch icon with their digests, and no manifest", async () => {
+    const html = await referencePage().text();
+    expect(html).toContain(`<link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">`);
+    expect(html).toContain(`<link rel="icon" href="${assetUrl("/favicon.ico")}" sizes="16x16 32x32 48x48">`);
+    expect(html).toContain(`<link rel="apple-touch-icon" href="${assetUrl("/assets/icon-180.png")}">`);
+    expect(assetUrl("/favicon.ico")).toMatch(/^\/favicon\.ico\?v=[A-Za-z0-9_-]+$/);
+    expect(html).not.toContain("manifest");
+  });
+});
 
 describe("the API reference page", { timeout: 60_000 }, () => {
   it("is read by an anonymous browser, with a 200 and the install's document", async () => {

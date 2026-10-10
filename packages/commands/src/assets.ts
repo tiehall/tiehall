@@ -46,7 +46,17 @@ export const FAVICON_PATH = "/favicon.ico";
 
 /** The assets, by the path the install serves each at, to its file in the assets folder. */
 export const ASSET_FILES: Readonly<Record<string, string>> = Object.fromEntries(
-  ["tiehall.css", ...FONT_FILES.map((file) => `fonts/${file}`), "fonts/OFL.txt"].map((file) => [`${ASSETS_PATH}/${file}`, file]),
+  [
+    "tiehall.css",
+    "icon.svg",
+    "icon-180.png",
+    "icon-192.png",
+    "icon-512.png",
+    "favicon.ico",
+    "manifest.webmanifest",
+    ...FONT_FILES.map((file) => `fonts/${file}`),
+    "fonts/OFL.txt",
+  ].map((file) => [`${ASSETS_PATH}/${file}`, file]),
 );
 
 /** The stylesheet every page of the web UI links (web-ui: One stylesheet with named design tokens). */

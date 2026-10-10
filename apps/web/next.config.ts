@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
   // importing them, so the standalone output and the image carry the folder beside apps/web (web-ui: The install
   // serves its own assets; design.md, Design: The install's assets; D57 (14)).
   outputFileTracingIncludes: { "/assets/**": ["../../packages/commands/assets/**"] },
+  // Browsers ask for /favicon.ico by themselves. Next.js takes a file or route at app/favicon.ico for a static
+  // metadata file, so the asset route serves the icon as /assets/favicon.ico, and this rewrite, which keeps the query,
+  // leads /favicon.ico there; the setup gate, which runs before it, lets /favicon.ico through before setup (web-ui: The
+  // mark, the favicon and the app icon; design.md, Design: The install's assets; D57 (10)).
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/assets/favicon.ico" }];
+  },
   ...(commitSha ? { deploymentId: commitSha } : {}),
   // A server action's body may be 2 MiB, the limit the web role's request guard applies to the web UI's forms,
   // so the framework's own cap, 1 MB by default and refused with an error of its own shape, never answers before

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { assetUrl } from "@tiehall/commands/assets";
 
 // The API reference page at /docs/api (public-api: The API reference page at
 // `/docs/api`; design.md, Technical decisions: T10; design.md, Self-hosting
@@ -22,7 +23,11 @@ import { readFile } from "node:fs/promises";
 //   compile its validators; the page tells it beforehand that it may not, so
 //   the policy is never tested by the probe.
 // - anyone can read it, without signing in: it shows the document, which
-//   holds nothing of the install.
+//   holds nothing of the install;
+// - its head names the install's icons, which its img-src 'self' allows, and
+//   not the web app manifest, which its policy would block (web-ui: The mark,
+//   the favicon and the app icon; design.md, Design: The mark and the icons;
+//   D57 (10)).
 
 export const REFERENCE_PATH = "/docs/api";
 export const BUNDLE_PATH = "/docs/api/scalar.js";
@@ -79,6 +84,9 @@ export function referencePage(): Response {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tiehall API reference</title>
+    <link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">
+    <link rel="icon" href="${assetUrl("/favicon.ico")}" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="${assetUrl("/assets/icon-180.png")}">
   </head>
   <body>
     <noscript>The API reference needs JavaScript. The OpenAPI document is at <a href="${DOCUMENT_PATH}">${DOCUMENT_PATH}</a>.</noscript>

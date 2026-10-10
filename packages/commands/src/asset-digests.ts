@@ -1,6 +1,7 @@
 // The digest of each asset the install serves, by its path, as the asset route serves it (assets.ts). Written by
 // `pnpm assets:digests` (write-asset-digests.ts) from packages/commands/assets/; do not edit it by hand.
 export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
+  "/assets/favicon.ico": "8qf3-rAZcqkkijIgmjcyaB",
   "/assets/fonts/IBMPlexMono-Medium-Cyrillic.woff2": "t7NSOBJl0xzEhFyp1jIbhp",
   "/assets/fonts/IBMPlexMono-Medium-Latin1.woff2": "QSAbZYoyi50ANoIVwvEQJ3",
   "/assets/fonts/IBMPlexMono-Medium-Latin2.woff2": "hiCNvo4AJWp3vD7dCapqWE",
@@ -36,5 +37,10 @@ export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
   "/assets/fonts/IBMPlexSans-SemiBold-Latin3.woff2": "tMJAUkdt9SjabEDIQdK9sM",
   "/assets/fonts/IBMPlexSans-SemiBold-Pi.woff2": "doQhQz2FDTowEY3d8FlyYl",
   "/assets/fonts/OFL.txt": "kcJcNQ08rDnaJzbXT3ujfv",
+  "/assets/icon-180.png": "UiAAmS97yCQVy6Ej2-vEf8",
+  "/assets/icon-192.png": "lpp3bXthLUXl3L2jBXqapy",
+  "/assets/icon-512.png": "Cwu5m8r1MQkVbAaaJUJmXG",
+  "/assets/icon.svg": "mFVSqgqCrkaGjglgsln9oW",
+  "/assets/manifest.webmanifest": "GwKfBFvRuZweYkd6tYwq_b",
   "/assets/tiehall.css": "ZQGyqL4211nhquEE49utnS",
 };

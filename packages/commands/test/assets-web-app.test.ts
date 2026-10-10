@@ -57,6 +57,25 @@ describe("the web app's assets, before setup", () => {
     }
   });
 
+  it("serves /favicon.ico, rewritten to the asset route with its query, and the icons and the manifest", async () => {
+    for (const path of ["/favicon.ico", assetUrl("/favicon.ico")]) {
+      const favicon = await web.fetch(path);
+      expect(favicon.status, path).toBe(200);
+      expect(favicon.headers.get("content-type"), path).toBe("image/x-icon");
+      expect(favicon.headers.get("content-security-policy"), path).toBe("default-src 'none'; frame-ancestors 'none'; sandbox");
+      expect(favicon.headers.get("cache-control"), path).toBe(path === "/favicon.ico" ? "no-cache" : "public, max-age=31536000, immutable");
+    }
+    for (const [path, type] of [
+      ["/assets/icon.svg", "image/svg+xml"],
+      ["/assets/icon-180.png", "image/png"],
+      ["/assets/manifest.webmanifest", "application/manifest+json"],
+    ]) {
+      const answer = await web.fetch(path ?? "");
+      expect(answer.status, path).toBe(200);
+      expect(answer.headers.get("content-type"), path).toBe(type);
+    }
+  });
+
   it("keeps the current version for a year, and answers a revalidation with 304", async () => {
     const current = await web.fetch(assetUrl("/assets/fonts/IBMPlexMono-Regular-Latin1.woff2"));
     expect(current.status).toBe(200);

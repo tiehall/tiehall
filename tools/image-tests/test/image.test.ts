@@ -693,7 +693,7 @@ describe("/healthz", () => {
   // web-ui: The install serves its own assets; web-ui: Fonts served by the install; self-host-install: The setup code
   // guards the setup screen. The setup screen has its look before anyone is signed in: the image carries the fonts and
   // their license beside the web app, and serves them before setup to a browser without a session.
-  it("before setup, serves the stylesheet, the fonts and their license from the image to a browser without a session", async () => {
+  it("before setup, serves the stylesheet, the favicon, the fonts and their license from the image to a browser without a session", async () => {
     const stylesheet = await fetch(`http://127.0.0.1:${port}/assets/tiehall.css`, { redirect: "manual" });
     expect(stylesheet.status).toBe(200);
     expect(stylesheet.headers.get("content-type")).toBe("text/css; charset=utf-8");
@@ -702,6 +702,13 @@ describe("/healthz", () => {
     expect(urls).toHaveLength(34);
     expect(urls.some((url) => url.startsWith("/assets/fonts/IBMPlexSans-Regular-Latin1.woff2?v="))).toBe(true);
     expect((await fetch(`http://127.0.0.1:${port}${urls[0]}`)).status).toBe(200);
+    const favicon = await fetch(`http://127.0.0.1:${port}/favicon.ico`, { redirect: "manual" });
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toBe("image/x-icon");
+    expect(favicon.headers.get("etag")).toMatch(/^"[A-Za-z0-9_-]+"$/);
+    expect(favicon.headers.get("cache-control")).toBe("no-cache");
+    expect(favicon.headers.get("content-security-policy")).toBe("default-src 'none'; frame-ancestors 'none'; sandbox");
+    expect(favicon.headers.get("set-cookie")).toBeNull();
     const font = await fetch(`http://127.0.0.1:${port}/assets/fonts/IBMPlexSans-Regular-Latin1.woff2`, { redirect: "manual" });
     expect(font.status).toBe(200);
     expect(font.headers.get("content-type")).toBe("font/woff2");
