@@ -110,9 +110,14 @@ describe("the release's gates", () => {
 
   it("are refused when the shell GitHub runs the script with, or the lines before the gate's command, let its failure through", () => {
     // GitHub runs a script with no shell named as bash -e, without pipefail, and only shell: bash with pipefail; a
-    // job's defaults.run.shell, and else its workflow's, names the shell of a step that names none. A block or a list
-    // over several lines, a trap, a function in pnpm's place, an exit, or a quoted text or here-document around the
-    // command may also let the failure through, or keep the gate from running.
+    // job's defaults.run.shell, and else its workflow's, names the shell of a step that names none. Every gate step of
+    // the real workflows is one line, so a line before the command that holds a reserved word, such as case or a
+    // block's keyword given as an argument, a parenthesis or brace, a backtick, a here-document or a quote left open
+    // (an escaped or ANSI-C quoted one included), a set other than one that turns on -e, -u, -x, -v or pipefail (set
+    // -n, -o noexec and -t among them), or a trap, alias, function, exit, return, exec, eval, source, ., shopt, hash or
+    // enable lets the failure through, or keeps the gate from running; so does a list carried on from the line before,
+    // and a list after the command, even past a comment sign inside a quoted text. Each such site exits 0 in bash 5
+    // with the gate replaced by false.
     const sites = Object.fromEntries(RELEASE_GATES.flatMap((each) => gateSites(fixture("script-swallowed"), each).map((site) => [`${site.file}#${site.job}`, site.goesOn])));
     expect(sites).toEqual({
       "checks.yml#fresh-install": false,
@@ -126,14 +131,29 @@ describe("the release's gates", () => {
       "checks.yml#egress-exit": true,
       "checks.yml#egress-quoted": true,
       "checks.yml#egress-heredoc": true,
+      "checks.yml#fresh-install-prelude": false,
+      "checks.yml#egress-case": true,
+      "checks.yml#egress-backtick": true,
+      "checks.yml#egress-noexec": true,
+      "checks.yml#polling-noexec": true,
+      "checks.yml#backup-onecmd": true,
+      "checks.yml#upgrade-keyword-argument": true,
+      "checks.yml#egress-ansi-c": true,
+      "checks.yml#egress-escaped-quote": true,
+      "checks.yml#egress-source": true,
+      "checks.yml#egress-eval": true,
+      "checks.yml#egress-shopt": true,
+      "checks.yml#egress-hash": true,
+      "checks.yml#egress-quoted-hash": true,
       "release.yml#prepare": true,
       "release.yml#stability": false,
     });
     const problems = releaseGateProblems(fixture("script-swallowed"));
-    expect(problems).toHaveLength(11);
+    expect(problems).toHaveLength(24);
     expect(problems).toContain("When the release check of stability levels fails in release.yml#prepare, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(problems).toContain("When the upgrade test fails in checks.yml#upgrade, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(problems).toContain("When the backup-and-restore test fails in checks.yml#backup, step 2, the release still runs release.yml#release, which can push or publish.");
+    expect(problems).toContain("When the egress test fails in checks.yml#egress-case, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(problems.join("\n")).not.toMatch(/checks\.yml#fresh-install|release\.yml#stability/);
     expect(check(fixture("script-swallowed")).status).toBe(1);
   });

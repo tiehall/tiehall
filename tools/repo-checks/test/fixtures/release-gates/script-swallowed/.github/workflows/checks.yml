@@ -130,3 +130,167 @@ jobs:
           cat <<'SCRIPT'
           pnpm test:install egress
           SCRIPT
+  # Lines before the test that only turn on -e and -u, print a quoted comment sign, and comment: its failure still
+  # fails the step.
+  fresh-install-prelude:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          set -eu
+          # The fresh-install test, on the saved image.
+          echo "fresh install #1"
+          pnpm test:install fresh-install
+  # A case whose pattern may not match, which skips the test.
+  egress-case:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          case "$SUITE" in
+            egress)
+              pnpm test:install egress
+              ;;
+          esac
+  # A backtick substitution over several lines, whose output echo prints: echo succeeds whatever the test did.
+  egress-backtick:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo `
+          pnpm test:install egress
+          `
+  # set -n reads the rest of the script without running it.
+  egress-noexec:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          set -n
+          pnpm test:install egress
+  # set -o noexec, by its name.
+  polling-noexec:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          set -o noexec
+          pnpm test:install polling
+  # set -t ends the script after the next command, before the test.
+  backup-onecmd:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          set -t
+          echo "backup"
+          pnpm test:install backup
+  # A block's keyword as an argument: the loop never runs, and the test is its body.
+  upgrade-keyword-argument:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          while false; do echo fi
+          pnpm test:install upgrade rollback
+          done
+  # An ANSI-C quoted text holds an escaped quote, so the quote after it opens a text the test sits in.
+  egress-ansi-c:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo $'\'' ; echo '
+          pnpm test:install egress
+          '
+  # An escaped quote, likewise.
+  egress-escaped-quote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          echo \" ; echo "
+          pnpm test:install egress
+          "
+  # A file the check does not read, which may define pnpm as a function.
+  egress-source:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          . tools/test-env.sh
+          pnpm test:install egress
+  # Text run as a command, here a function in pnpm's place.
+  egress-eval:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          eval "pnpm() { :; }"
+          pnpm test:install egress
+  # shopt turns off -e as set +o errexit does.
+  egress-shopt:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          shopt -u -o errexit
+          pnpm test:install egress
+          echo "egress done"
+  # hash puts another program in pnpm's place.
+  egress-hash:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: |
+          hash -p /usr/bin/true pnpm
+          pnpm test:install egress
+  # A comment sign inside a quoted text starts no comment, so the list after it lets the failure through.
+  egress-quoted-hash:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: tools/get-image.sh
+      - shell: bash
+        run: pnpm test:install egress --reporter "dot #" || true

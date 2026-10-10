@@ -25,10 +25,13 @@ import { parse } from "yaml";
 // job's defaults.run.shell, and else its workflow's. So the check counts as
 // passing a script in any other shell; one that runs the command anywhere but
 // at the start of a line of its own, with ||, &&, ; or & beside it, or piped
-// without pipefail; and one whose lines before the command leave it inside a
-// block, a condition, a loop, a list, a quoted text or a here-document, or
-// turn off -e or pipefail, set a trap, define a function or an alias, or
-// exit.
+// without pipefail; and, since every gate step of the release is one line,
+// one with a line before the command that carries a list on to it, leaves a
+// quote open, or holds a reserved word, a parenthesis or a brace, a backtick,
+// a here-document, a set other than one that turns on -e, -u, -x, -v or
+// pipefail, or trap, alias, function, exit, return, exec, eval, source, .,
+// shopt, hash or enable, any of which may leave the command inside a block, a
+// condition, a loop or a quoted text, or change whether and how it runs.
 //
 // A condition on the gate's job, or on a job it needs, that may not hold when
 // the jobs it needs succeeded might skip the gate instead, and a skipped job
@@ -76,25 +79,22 @@ const LOCAL_WORKFLOW = /^\.\/\.github\/workflows\/([^/@]+\.ya?ml)$/;
 const RUNS_WHATEVER = /\b(?:always|failure|cancelled)\s*\(/;
 /** A condition that holds whenever the jobs a job needs succeeded, so it never skips a job that would run without it. */
 const HOLDS_ON_SUCCESS = /^(?:\$\{\{\s*)?(?:always\(\)|success\(\)|!\s*cancelled\(\)|true)(?:\s*\}\})?$/;
-/** Environment assignments in front of a command. */
-const ASSIGNMENTS = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*$/;
-/** Where a command starts on a line: at its start, or after a separator or an opening parenthesis. */
-const AT_COMMAND = "(?:^|[\\s;&|(])";
-/** set +e, or set +o errexit, which lets a script go on after a failing command. */
-const ERREXIT_OFF = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?(?:\\+[A-Za-z]*e[A-Za-z]*\\b|\\+o\\s+errexit\\b)`);
-/** set -o pipefail, alone or with other options, such as set -euo pipefail. */
-const PIPEFAIL_ON = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?-[A-Za-z]*o\\s+pipefail\\b`);
-/** set +o pipefail. */
-const PIPEFAIL_OFF = new RegExp(`${AT_COMMAND}set\\s(?:[^;&|]*\\s)?\\+[A-Za-z]*o\\s+pipefail\\b`);
+/** Environment assignments in front of a command, after any indentation. */
+const ASSIGNMENTS = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*$/;
+/** Words the shell reads as its own, which open, carry on or close a compound command, or change how one runs. */
+const RESERVED_WORDS = new Set(["!", "[[", "]]", "case", "coproc", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if", "in", "select", "then", "time", "until", "while"]);
 /**
- * Lines that may keep a later failing command from failing the script, or keep it from running: a trap, which can
- * end the script in success whatever made it exit; a function or an alias, which can take a command's place; and an
- * exit, a return or an exec.
+ * Commands that may keep a later failing command from failing the script, or from running: a trap, which can end
+ * the script in success whatever made it exit; an alias or a function, which can take a command's place, as hash and
+ * enable can; an exit, a return or an exec; eval, source and ., which run text or a file the check does not read; and
+ * shopt, which can turn off -e as set can.
  */
-const CHANGES_WHAT_RUNS = new RegExp(`${AT_COMMAND}(?:trap|alias|function|exit|return|exec)\\b|[A-Za-z_][\\w:.-]*\\s*\\(\\s*\\)`);
-/** Words that open a compound command, and words that close one. */
-const OPENS = new Set(["if", "while", "until", "for", "select", "case", "{"]);
-const CLOSES = new Set(["fi", "done", "esac", "}"]);
+const CHANGES_WHAT_RUNS = new Set(["trap", "alias", "function", "exit", "return", "exec", "eval", "source", ".", "shopt", "hash", "enable"]);
+/** The shell's tables of commands and aliases, an assignment to which can put another program in a command's place. */
+const COMMAND_TABLES = /\bBASH_(?:CMDS|ALIASES)\b/;
+/** The options of set that only stop a script sooner or show what it runs: -e, -u, -x and -v, and by name, pipefail. */
+const SAFE_SET_FLAGS = /^-[euxv]+$/;
+const SAFE_SET_NAMES = new Set(["errexit", "nounset", "xtrace", "verbose", "pipefail"]);
 /** An operator at the end of a line, which carries a list or a pipeline on to the next line. */
 const CARRIES_ON = /(?:\|\||&&|\|&?)\s*$/;
 
@@ -145,20 +145,85 @@ function maySkip(job: Mapping): boolean {
   return !(typeof condition === "string" && HOLDS_ON_SUCCESS.test(condition.trim()));
 }
 
-/** A line with each quoted text replaced by a placeholder and any comment removed; a quote left over opens a text. */
-function plain(line: string): string {
-  return line
-    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "_")
-    .replace(/(^|\s)#.*$/, "")
-    .trim();
+/** A line as the shell reads it: its code, before any comment, and that code's text. */
+interface Line {
+  code: string;
+  /** The code with each quoted text and escaped character replaced by _, keeping the $( or backtick of a substitution inside double quotes. */
+  text: string;
+}
+
+/** A line as the shell reads it, or undefined when it leaves a quote open, so that the text goes on to the next line. */
+function read(line: string): Line | undefined {
+  let text = "";
+  let index = 0;
+  while (index < line.length) {
+    const char = line.charAt(index);
+    if (char === "\\") {
+      text += "_";
+      index += 2;
+    } else if (char === "'" || (char === "$" && line.charAt(index + 1) === "'")) {
+      // A single-quoted text holds no escape; an ANSI-C quoted one, $'...', does.
+      const escapes = char === "$";
+      let end = index + (escapes ? 2 : 1);
+      while (end < line.length && line.charAt(end) !== "'") end += escapes && line.charAt(end) === "\\" ? 2 : 1;
+      if (end >= line.length) return undefined;
+      text += "_";
+      index = end + 1;
+    } else if (char === '"') {
+      let end = index + 1;
+      let substitutions = "";
+      while (end < line.length && line.charAt(end) !== '"') {
+        if (line.charAt(end) === "`") substitutions += "`";
+        if (line.startsWith("$(", end)) substitutions += "$(";
+        end += line.charAt(end) === "\\" ? 2 : 1;
+      }
+      if (end >= line.length) return undefined;
+      text += `_${substitutions}`;
+      index = end + 1;
+    } else if (char === "#" && (index === 0 || /[\s;&|()<>]/.test(line.charAt(index - 1)))) {
+      break;
+    } else {
+      text += char;
+      index += 1;
+    }
+  }
+  return { code: line.slice(0, index), text };
+}
+
+/**
+ * Whether a line before the gate's command may let its failure through, or keep it from running; and whether it turns
+ * on pipefail. Every gate step of the release is one line, so the check reads any line before the command that holds a
+ * reserved word, a parenthesis or a brace, a backtick, a here-document, a set other than one that turns on -e, -u, -x,
+ * -v or pipefail, or a command that changes what runs as doing so.
+ */
+function before(text: string): { letsThrough: boolean; pipefail: boolean } {
+  const letsThrough = { letsThrough: true, pipefail: false };
+  if (/[`(){}]|(?<!<)<<(?!<)/.test(text) || COMMAND_TABLES.test(text)) return letsThrough;
+  let pipefail = false;
+  for (const command of text.split(/[;&|]+/)) {
+    const words = command.split(/[\s<>]+/).filter((word) => word.length > 0);
+    if (words.some((word) => RESERVED_WORDS.has(word) || CHANGES_WHAT_RUNS.has(word))) return letsThrough;
+    const set = words.indexOf("set");
+    if (set < 0) continue;
+    const options = words.slice(set + 1);
+    for (let index = 0; index < options.length; index++) {
+      const option = options[index] ?? "";
+      const name = options[index + 1] ?? "";
+      if (SAFE_SET_FLAGS.test(option)) continue;
+      if (!/^-[euxv]*o$/.test(option) || !SAFE_SET_NAMES.has(name)) return letsThrough;
+      pipefail ||= name === "pipefail";
+      index++;
+    }
+  }
+  return { letsThrough: false, pipefail };
 }
 
 /**
  * Whether the step's script may go on, or end in success, after the gate's command fails, or may never run it.
  * GitHub runs a script that names no shell as bash -e, shell: bash as bash -e with pipefail, and shell: sh as sh -e,
  * so a script stops at a failing command that starts a line of its own at the top level, piped into another only
- * under pipefail; another shell, a list or a condition around the command, or lines before it that open a block,
- * turn off -e or pipefail, or change what runs may let the failure through.
+ * under pipefail; another shell, a list around the command, or lines before it that may change what runs let the
+ * failure through.
  */
 function goesOn(script: string, shell: unknown, gate: Gate): boolean {
   if (shell !== undefined && shell !== "bash" && shell !== "sh") return true;
@@ -166,35 +231,26 @@ function goesOn(script: string, shell: unknown, gate: Gate): boolean {
   const lines = script.replace(/\\\r?\n/g, " ").split(/\r?\n/);
   const index = lines.findIndex((line) => gate.command.test(line));
   if (index < 0) return true;
-  let depth = 0;
+  let previous = "";
   for (const raw of lines.slice(0, index)) {
-    const line = plain(raw);
-    if (/['"]/.test(line) || /<<(?!<)/.test(line)) return true;
-    if (ERREXIT_OFF.test(line) || CHANGES_WHAT_RUNS.test(line)) return true;
-    if (PIPEFAIL_ON.test(line) && shell !== "sh") pipefail = true;
-    if (PIPEFAIL_OFF.test(line)) pipefail = false;
-    const words = line.split(/[\s;&|]+/);
-    depth += words.filter((word) => OPENS.has(word)).length - words.filter((word) => CLOSES.has(word)).length;
-    depth += (line.match(/\(/g) ?? []).length - (line.match(/\)/g) ?? []).length;
-    if (depth < 0) return true;
+    const line = read(raw);
+    if (line === undefined) return true;
+    const { letsThrough, pipefail: turnsOn } = before(line.text);
+    if (letsThrough) return true;
+    if (turnsOn && shell !== "sh") pipefail = true;
+    if (line.text.trim().length > 0) previous = line.text;
   }
-  if (depth !== 0) return true;
-  const previous = lines
-    .slice(0, index)
-    .map(plain)
-    .filter((line) => line.length > 0)
-    .at(-1);
-  if (previous !== undefined && CARRIES_ON.test(previous)) return true;
-  const line = (lines[index] ?? "").replace(/(^|\s)#.*$/, "").trim();
-  const match = gate.command.exec(line);
-  if (match === null || !ASSIGNMENTS.test(line.slice(0, match.index))) return true;
+  if (CARRIES_ON.test(previous)) return true;
+  const line = read(lines[index] ?? "");
+  const match = line === undefined ? null : gate.command.exec(line.code);
+  if (line === undefined || match === null) return true;
+  const prefix = read(line.code.slice(0, match.index));
+  const rest = read(line.code.slice(match.index));
+  if (prefix === undefined || rest === undefined || !ASSIGNMENTS.test(prefix.text)) return true;
   // Quoted text and redirections such as 2>&1 hold no operator.
-  const rest = line
-    .slice(match.index)
-    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''")
-    .replace(/\d*[<>]&\d*-?|&>>?/g, " ");
+  const operators = rest.text.replace(/\d*[<>]&\d*-?|&>>?/g, " ");
   // Under pipefail a pipeline fails with the command; without it, it ends as its last command does.
-  return /\|\||&&|[;&]/.test(rest) || (!pipefail && rest.includes("|"));
+  return /\|\||&&|[;&]/.test(operators) || (!pipefail && operators.includes("|"));
 }
 
 /** The shell GitHub runs a step's script with: the step's own, else its job's default, else its workflow's. */
