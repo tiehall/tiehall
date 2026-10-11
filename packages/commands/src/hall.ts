@@ -91,7 +91,7 @@ function byAgents(agents: boolean): SQL {
  * The requests r that match the condition, with the time of each one's latest
  * domain event, through events_request_number, the most recently changed
  * first, at most `limit` of them. The latest event is read in the index's own
- * order, number DESC NULLS LAST, so the index gives it at once.
+ * order, number DESC, so the index gives it at once.
  */
 export function requestLinesQuery(orgId: string, where: SQL, limit?: number): SQL {
   return sql`SELECT r.id, r.number, r.title, r.state, r.requesting_team_id AS from_id, r.target_team_id AS to_id, r.claimant_user_id, r.needs_human,
@@ -100,7 +100,7 @@ export function requestLinesQuery(orgId: string, where: SQL, limit?: number): SQ
     LEFT JOIN LATERAL (
       SELECT e.occurred_at FROM events e
        WHERE e.org_id = ${orgId} AND e.class = 'domain' AND (e.data ->> 'requestId') = r.id::text
-       ORDER BY e.number DESC NULLS LAST LIMIT 1
+       ORDER BY e.number DESC LIMIT 1
     ) last ON true
     WHERE r.org_id = ${orgId} AND ${where}
     ORDER BY coalesce(last.occurred_at, r.created_at) DESC, r.id${limit === undefined ? sql`` : sql` LIMIT ${limit}`}`;

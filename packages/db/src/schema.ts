@@ -111,7 +111,7 @@ export const events = pgTable(
     // (15)), and the domain events within a time, such as the people and agents at work in the last 10 minutes.
     // Both are built concurrently, in a migration of their own outside a transaction.
     index("events_request_number")
-      .on(table.orgId, sql`(${table.data} ->> 'requestId')`, table.number.desc())
+      .on(table.orgId, sql`(${table.data} ->> 'requestId')`, table.number.desc().nullsFirst())
       .where(sql`class = 'domain'`)
       .concurrently(),
     index("events_domain_occurred_at").on(table.orgId, table.occurredAt).where(sql`class = 'domain'`).concurrently(),

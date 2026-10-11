@@ -318,7 +318,7 @@ describe("requests.activity", () => {
 });
 
 describe("the read's query plan", () => {
-  it("reads a request's latest events through events_request_number on a log of 10,000 events", async () => {
+  it("reads a request's latest events through events_request_number, in the index's own order, on a log of 10,000 events", async () => {
     const { rows } = await install.owner.query<{ id: string; org_id: string }>("SELECT id, org_id FROM requests WHERE number = 1");
     const { id: requestId, org_id: orgId } = rows[0] ?? { id: "", org_id: "" };
     // 10,000 events about 500 other requests, after the ones the tests made.
@@ -334,6 +334,8 @@ describe("the read's query plan", () => {
       const { sql, params } = query.toSQL();
       const plan = await install.owner.query<{ "QUERY PLAN": unknown }>(`EXPLAIN (FORMAT JSON) ${sql}`, params);
       expect(JSON.stringify(plan.rows[0]?.["QUERY PLAN"]), sql).toContain("events_request_number");
+      // The index holds each request's events newest first, as design.md gives it (number DESC), so no sort follows the scan.
+      expect(JSON.stringify(plan.rows[0]?.["QUERY PLAN"]), sql).not.toContain('"Node Type":"Sort"');
     }
   });
 });

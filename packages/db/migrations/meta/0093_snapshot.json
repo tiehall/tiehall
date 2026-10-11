@@ -2334,7 +2334,7 @@
               "expression": "number",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
