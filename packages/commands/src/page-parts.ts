@@ -1,6 +1,8 @@
 import type { RequestState } from "@tiehall/core";
-import { relativeTime, STATE_WORDS } from "./event-lines.ts";
+import { relativeTime, STATE_WORDS, utcWords } from "./event-lines.ts";
 import { escapeHtml } from "./html.ts";
+
+export { leftWords, untilWords, utcWords } from "./event-lines.ts";
 
 // The pieces the web role's pages draw a request with, the same on every page
 // (web-ui: A request's state looks the same everywhere; web-ui: Pages are
@@ -8,8 +10,11 @@ import { escapeHtml } from "./html.ts";
 // chip that names it in words, in the state's colors; a request that waits
 // for a person with a second chip that says so; a lamp, which never stands
 // alone, in its state's lamp color; a key in a mono tag; and a moment as how
-// long ago it was, with the moment itself as the time element's date. The
-// pages Next.js renders draw the same classes (apps/web/lib/request-page.tsx).
+// long ago it was, with the moment itself as the time element's date. A
+// moment people read is how long ago or until it is, such as "in 6 days" or
+// "12 min left", or a date and time in UTC, such as "Oct 18, 2026, 04:14 UTC",
+// never a raw ISO 8601 date. The pages Next.js renders draw the same classes
+// (apps/web/lib/request-page.tsx).
 
 /** A state's class, as the stylesheet names its chip and its lamp, such as in-progress. */
 export function stateClass(state: string): string {
@@ -53,14 +58,9 @@ export function panelHtml(id: string, title: string, body: readonly string[], cl
   ].join("\n");
 }
 
-/** How long until a moment, from now, in words: "in 6 days", "in 5 hours", "in 12 minutes", or "soon". */
-export function untilWords(at: string, now: string): string {
-  const minutes = Math.floor((Date.parse(at) - Date.parse(now)) / 60_000);
-  if (minutes < 1) return "soon";
-  if (minutes < 60) return minutes === 1 ? "in 1 minute" : `in ${minutes} minutes`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
-  return `in ${Math.floor(hours / 24)} days`;
+/** A moment as a time element whose date is the moment and whose text is its date and time in UTC. */
+export function utcHtml(at: string): string {
+  return `<time datetime="${escapeHtml(at)}">${escapeHtml(utcWords(at))}</time>`;
 }
 
 /**

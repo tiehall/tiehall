@@ -111,7 +111,7 @@ describe("the confirm page", () => {
       expect(await confirmOnPage(sessionOf(alice), proposal)).toBe(200);
       const page = await openPage(sessionOf(bob), proposal);
       expect(page.html).toContain("alice (a bot user) proposed it through an agent on the cli surface, as its accountable human.");
-      expect(page.html).toMatch(/It needs a confirmation from alice \(a bot user\), its accountable human: given by alice \(a bot user\) at \d{4}-/);
+      expect(page.html).toMatch(/It needs a confirmation from alice \(a bot user\), its accountable human: given by alice \(a bot user\) on [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC\./);
     } finally {
       await install.owner.query("UPDATE users SET bot = false WHERE id = $1", [alice]);
     }
@@ -129,7 +129,9 @@ describe("the confirm page", () => {
     expect(page.html).toMatch(new RegExp(`<blockquote class="untrusted" data-origin="external">.*${CLIENT.replace(/[./]/g, "\\$&")}`, "s"));
     expect(page.html).toContain("It needs a confirmation from alice, its accountable human: not given yet.");
     expect(page.html).toContain("It needs a confirmation from a member of team FE: not given yet.");
-    expect(page.html).toMatch(/It expires at \d{4}-\d{2}-\d{2}T/);
+    expect(page.html).toMatch(/It expires on [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC\./);
+    // A person reads the times on the page as a date and a time in UTC, never as a raw ISO 8601 date.
+    expect(page.html.replace(/<[^>]+>/g, " ")).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
     expect(page.forms.map((form) => Object.keys(form).sort())).toEqual([["csrf", "input", "nonce"], ["action", "csrf"]]);
     expect(await install.owner.query("SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM proposal_confirmations) AS confirmations")).toMatchObject({
       rows: before.rows,
@@ -171,7 +173,7 @@ describe("the confirm page", () => {
     expect(await confirmOnPage(sessionOf(alice), proposal)).toBe(200);
     const bob_ = sessionOf(bob);
     const bobsPage = await openPage(bob_, proposal);
-    expect(bobsPage.html).toMatch(/It needs a confirmation from alice, its accountable human: given by alice at \d{4}-/);
+    expect(bobsPage.html).toMatch(/It needs a confirmation from alice, its accountable human: given by alice on [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC\./);
     expect(bobsPage.html).toContain("It needs a confirmation from a member of team FE: not given yet.");
     expect(await post(bob_, proposal, bobsPage.forms[0] ?? {})).toBe(200);
     expect(await dueDate(request)).toBe("2026-10-15");

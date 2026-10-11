@@ -10,6 +10,7 @@ import {
   type Execute,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { utcWords } from "../src/page-parts.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { controlProblems, element, mainOf } from "./support/markup.ts";
@@ -82,15 +83,16 @@ function waitingProposal(reader: WebSessionCaller) {
 }
 
 /** Runs the inbox route on a standing list and a feed the test gives, for this reader. */
-async function inboxOf(reader: WebSessionCaller): Promise<{ html: string; waiting: ReturnType<typeof waitingProposal>; receipt: string }> {
+async function inboxOf(reader: WebSessionCaller): Promise<{ html: string; waiting: ReturnType<typeof waitingProposal>; receipt: string; undoUntil: string }> {
   const waiting = waitingProposal(reader);
   const receipt = randomUUID();
+  const undoUntil = iso(12 * 60_000);
   const requestId = randomUUID();
   const outputs: Readonly<Record<string, unknown>> = {
     "web.shell": { login: "ada", kind: "human", bot: false, admin: false, waiting: 1 },
     "inbox.standing_list": {
       waiting: [waiting],
-      receipts: [{ id: randomUUID(), text: "You confirmed the decline of FE-3; it took effect.", undoUntil: iso(12 * 60_000), proposal: { ...waitingProposal(reader), id: receipt } }],
+      receipts: [{ id: randomUUID(), text: "You confirmed the decline of FE-3; it took effect.", undoUntil, proposal: { ...waitingProposal(reader), id: receipt } }],
       reminders: [{ id: randomUUID(), text: "Your personal access token Deploy expires on 2026-10-20." }],
       warnDigests: [
         {
@@ -116,7 +118,7 @@ async function inboxOf(reader: WebSessionCaller): Promise<{ html: string; waitin
   const execute = (async (commandId: string) => outputs[commandId]) as Execute;
   const route = createInboxRoute({ execute, session: async () => reader, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
   const html = await (await route(new Request(`${URL_OF_INSTALL}/inbox`, { headers: { accept: "text/html" } }))).text();
-  return { html, waiting, receipt };
+  return { html, waiting, receipt, undoUntil };
 }
 
 describe("the home page", () => {
@@ -158,7 +160,8 @@ describe("the inbox", () => {
     expect(card).toMatch(new RegExp(`Expires <time datetime="${waiting.expiresAt}">in 6 days</time>`));
     expect(card).toContain("<h3>A proposal to decline it</h3>");
     expect(card).toContain("<p>Made by erin&#39;s agent through the API.</p>");
-    expect(card).toContain(`It still needs the confirmation of you, then the requesting user or a member of team BE. It expires at ${waiting.expiresAt}.`);
+    expect(card).toContain(`It still needs the confirmation of you, then the requesting user or a member of team BE. It expires on <time datetime="${waiting.expiresAt}">${utcWords(waiting.expiresAt)}</time>.`);
+    expect(utcWords("2026-10-18T04:14:11.789Z")).toBe("Oct 18, 2026, 04:14 UTC");
     expect(card).toContain(`<a class="button" href="/confirm/${waiting.id}">Review and confirm</a>`);
     expect(card).toMatch(new RegExp(`<form method="post" action="/inbox">\\s*<input type="hidden" name="action" value="reject">\\s*<input type="hidden" name="proposal" value="${waiting.id}">[\\s\\S]*<button type="submit" class="secondary">Reject</button>`));
   });
@@ -175,15 +178,20 @@ describe("the inbox", () => {
   });
 
   it("shows the receipts with the undo link while its window is open, then the reminders, the WARN digests and the declarations to re-confirm", async () => {
-    const { html, receipt } = await inboxOf(ada);
+    const { html, receipt, undoUntil } = await inboxOf(ada);
     const main = mainOf(html);
     const receipts = element(main, /<section class="panel" aria-labelledby="receipts-heading"/, "section");
-    expect(receipts).toMatch(new RegExp(`<li class="receipt"><svg class="receipt-mark"[^>]*aria-hidden="true"[\\s\\S]*<p>You confirmed the decline of FE-3; it took effect.</p> <a class="button secondary" href="/confirm/${receipt}/undo">Undo it until `));
+    expect(receipts).toMatch(new RegExp(`<li class="receipt"><svg class="receipt-mark"[^>]*aria-hidden="true"[\\s\\S]*<p>You confirmed the decline of FE-3; it took effect.</p> <a class="button secondary" href="/confirm/${receipt}/undo">Undo · <time datetime="${undoUntil}">1[12] min left</time></a>`));
     const order = ["receipts-heading", "reminders-heading", "warn-digests-heading", "reconfirmations-heading"].map((id) => main.indexOf(`aria-labelledby="${id}"`));
     expect(order.every((at, index) => at > 0 && (index === 0 || at > (order[index - 1] ?? 0)))).toBe(true);
     expect(element(main, /<section class="panel" aria-labelledby="warn-digests-heading"/, "section")).toContain('(<a href="https://github.com/acme/payments/pull/88" rel="noreferrer">the provider pull request</a>)');
     expect(element(main, /<section class="panel" aria-labelledby="reconfirmations-heading"/, "section")).toMatch(/<input type="hidden" name="action" value="reconfirm">[\s\S]*<button type="submit" class="secondary">Re-confirm that FE consumes payments-api<\/button>/);
     expect(controlProblems(main)).toEqual([]);
+  });
+
+  it("says every time as how long until or ago, or as a date and time in UTC, never as a raw ISO 8601 date, each in a time element", async () => {
+    const main = mainOf((await inboxOf(ada)).html);
+    expect(main.replace(/<[^>]+>/g, " ")).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
   });
 
   it("says that nothing waits, with no lamp, when nothing does", async () => {

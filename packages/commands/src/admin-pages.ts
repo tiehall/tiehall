@@ -36,7 +36,7 @@ import { ACTIVITY_LOG_PATH } from "./activity-log-route.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { fieldHtml, keyTag, panelSections } from "./page-parts.ts";
+import { fieldHtml, keyTag, panelSections, utcHtml } from "./page-parts.ts";
 import { initialsOf, type PageShell } from "./shell.ts";
 import { INVITE_LIFETIME_DAYS } from "./invites.ts";
 import { userName } from "./members.ts";
@@ -251,7 +251,7 @@ function invitesPage(invites: readonly Invite[], csrf: string, shell: PageShell)
   const waiting = invites.map((invite) =>
     [
       '        <li class="item">',
-      `          <p>${escapeHtml(`${invite.githubLogin}, invited as ${invite.role}, valid until ${invite.expiresAt}.`)}</p>`,
+      `          <p>${escapeHtml(`${invite.githubLogin}, invited as ${invite.role}, valid until`)} ${utcHtml(invite.expiresAt)}.</p>`,
       postForm(INVITES_PATH, { action: "revoke", invite: invite.id }, csrf, `Revoke the invite for ${invite.githubLogin}`, "          ", "secondary"),
       "        </li>",
     ].join("\n"),

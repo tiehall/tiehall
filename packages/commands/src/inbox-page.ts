@@ -4,7 +4,7 @@ import type { z } from "zod";
 import { commitmentPhrase } from "./email.ts";
 import { eventLine } from "./event-lines.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { agoHtml, keyTag, panelHtml, untilWords } from "./page-parts.ts";
+import { agoHtml, keyTag, leftWords, panelHtml, untilWords, utcHtml } from "./page-parts.ts";
 import type { RequestView } from "./request-views.ts";
 import type { UpdatesPage } from "./updates.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -180,7 +180,7 @@ function waitingCard(view: ProposalView, csrf: string, readerId: string, now: st
     `          <p class="card-top">${keyTag(view.request.key, `/${view.request.key}`)}<span class="muted">Expires <time datetime="${escapeHtml(view.expiresAt)}">${escapeHtml(untilWords(view.expiresAt, now))}</time></span></p>`,
     `          <h3>${escapeHtml(`${what.charAt(0).toUpperCase()}${what.slice(1)}`)}</h3>`,
     `          <p>${escapeHtml(proposalBy(view))}</p>`,
-    `          <p class="hint">${escapeHtml(`${proposalNeeds(view, readerId)} It expires at ${view.expiresAt}.`)}</p>`,
+    `          <p class="hint">${escapeHtml(proposalNeeds(view, readerId))} It expires on ${utcHtml(view.expiresAt)}.</p>`,
     '          <div class="card-actions">',
     `            <a class="button" href="/confirm/${escapeHtml(view.id)}">Review and confirm</a>`,
     postForm(INBOX_PATH, { action: "reject", proposal: view.id }, csrf, "Reject", "            ", "secondary"),
@@ -211,7 +211,7 @@ function waitingSection(list: StandingList, csrf: string, readerId: string, now:
 }
 
 /** The standing list's other panels: the member's receipts, their reminders, their teams' WARN digests and the declarations to re-confirm. */
-function standingSections(list: StandingList, csrf: string): string[] {
+function standingSections(list: StandingList, csrf: string, now: string): string[] {
   const receipts = panelHtml(
     "receipts-heading",
     "Receipts",
@@ -220,7 +220,10 @@ function standingSections(list: StandingList, csrf: string): string[] {
       : [
           '        <ul class="receipts" id="receipts">',
           ...list.receipts.map(({ text, undoUntil, proposal: view }) => {
-            const undo = undoUntil === null ? "" : ` <a class="button secondary" href="/confirm/${escapeHtml(view.id)}/undo">${escapeHtml(`Undo it until ${undoUntil}`)}</a>`;
+            const undo =
+              undoUntil === null
+                ? ""
+                : ` <a class="button secondary" href="/confirm/${escapeHtml(view.id)}/undo">Undo · <time datetime="${escapeHtml(undoUntil)}">${escapeHtml(leftWords(undoUntil, now))}</time></a>`;
             return `          <li class="receipt">${RECEIPT_MARK}<p>${escapeHtml(text)}</p>${undo}</li>`;
           }),
           "        </ul>",
@@ -284,7 +287,7 @@ export function createInboxRoute(options: PageRouteOptions): PageRoute {
       const list = await read<StandingList>(standingList.id, {});
       const feed = await read<UpdatesPage>(readInboxUpdates.id, { limit: INBOX_PAGE_SIZE });
       const now = new Date().toISOString();
-      const main = ["      <h1>Inbox</h1>", waitingSection(list, csrf, caller.userId, now), feedSection(feed, csrf, now), ...standingSections(list, csrf)];
+      const main = ["      <h1>Inbox</h1>", waitingSection(list, csrf, caller.userId, now), feedSection(feed, csrf, now), ...standingSections(list, csrf, now)];
       return htmlAnswer(htmlPage("Inbox", main.join("\n"), shell));
     },
     async post(form, { write }) {

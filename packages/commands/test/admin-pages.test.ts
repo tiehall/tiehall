@@ -209,7 +209,9 @@ describe("the invites page", () => {
     expect(answer.status).toBe(200);
     expect(answer.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     const html = await answer.text();
-    expect(html).toMatch(/sam-dev, invited as admin, valid until \d{4}-\d{2}-\d{2}T/);
+    expect(html).toMatch(/sam-dev, invited as admin, valid until <time datetime="\d{4}-\d{2}-\d{2}T[\d:.]+Z">[A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC<\/time>\./);
+    // A person reads the time as a date and a time in UTC, never as a raw ISO 8601 date.
+    expect(html.replace(/<[^>]+>/g, " ")).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
     expect(html).toContain(`name="invite" value="${waiting}"`);
     expect(html).toContain("Revoke the invite for sam-dev");
     for (const login of ["tom-dev", "uma-dev", "lee-dev"]) expect(html).not.toContain(login);

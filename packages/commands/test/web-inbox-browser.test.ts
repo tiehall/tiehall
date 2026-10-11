@@ -1,6 +1,7 @@
 import type { Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createInboxRoute, INBOX_PATH } from "../src/index.ts";
+import { utcWords } from "../src/page-parts.ts";
 import { startBrowserHarness, type BrowserHarness } from "./support/browser.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -152,7 +153,7 @@ describe("the standing list", { timeout: 60_000 }, () => {
     expect(text).toContain(request.key);
     expect(text).toContain("A proposal to decline it");
     expect(text).toContain("Made by erin's agent through the API.");
-    expect(text).toContain(`It expires at ${expiresAt}.`);
+    expect(text).toContain(`It expires on ${utcWords(expiresAt)}.`);
     expect(await itemOf(page, request.key).getByRole("link", { name: "Review and confirm" }).getAttribute("href")).toBe(`/confirm/${declined.body.proposal.id}`);
     await page.context().close();
   });

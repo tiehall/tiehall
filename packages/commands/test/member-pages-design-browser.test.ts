@@ -76,7 +76,7 @@ describe("the inbox and the member's pages at 320 CSS pixels", () => {
     await page.goto(`${web.url}/inbox`);
     await expect(page.locator("#waiting li").count()).resolves.toBe(1);
     await expect(page.locator("#waiting li").getByRole("link", { name: "Review and confirm" }).isVisible()).resolves.toBe(true);
-    await expect(page.locator("#receipts li").getByRole("link", { name: /^Undo it until / }).isVisible()).resolves.toBe(true);
+    await expect(page.locator("#receipts li").getByRole("link", { name: /^Undo · \d+ min left$/ }).isVisible()).resolves.toBe(true);
     await expect(page.getByRole("button", { name: "Acknowledge these updates" }).isVisible()).resolves.toBe(true);
     await context.close();
   });

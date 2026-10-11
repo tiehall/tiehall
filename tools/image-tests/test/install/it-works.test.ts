@@ -310,7 +310,7 @@ describe("It works: a fresh install, two people in two teams, and their agents",
 
     const receipt = (await receiptsOf(dana)).filter({ hasText: `${key} was declined, with your confirmation.` });
     await expect(receipt.count()).resolves.toBe(1);
-    await Promise.all([dana.page.waitForURL(`${install.url}/confirm/*/undo`), receipt.getByRole("link", { name: /^Undo it until / }).click()]);
+    await Promise.all([dana.page.waitForURL(`${install.url}/confirm/*/undo`), receipt.getByRole("link", { name: /^Undo · / }).click()]);
     await Promise.all([dana.page.waitForNavigation(), dana.page.getByRole("button", { name: "Confirm" }).click()]);
     expect(await read()).toMatchObject({ state: "in_progress", claimant: { login: "dana" }, dueDate: DUE_DATE });
   });

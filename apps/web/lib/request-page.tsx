@@ -6,6 +6,8 @@ import {
   providerChangeLine,
   relativeTime,
   STATE_WORDS,
+  untilWords,
+  utcWords,
   type ActorClient,
   type EventActor,
   type RequestPageData,
@@ -435,7 +437,7 @@ function PostForm({ request, csrf }: { request: Request; csrf: string }): ReactN
             <option value="">None</option>
             {questions.map((question) => (
               <option key={question.id} value={question.id}>
-                {`${question.provenance.user?.login ?? "Tiehall"}, ${question.postedAt}: ${excerpt(question.untrusted.body)}`}
+                {`${question.provenance.user?.login ?? "Tiehall"}, ${utcWords(question.postedAt)}: ${excerpt(question.untrusted.body)}`}
               </option>
             ))}
           </select>
@@ -530,31 +532,64 @@ function otherSide(rules: readonly string[], team: { key: string } | null): stri
   return rules.map((rule) => words[rule] ?? rule).join(" and ");
 }
 
-function proposalLines(proposal: Proposal): string[] {
-  const lines = [`${COMMITMENTS[proposal.kind] ?? proposal.kind}, ${proposal.state}, proposed by ${person(proposal.proposedBy.user)} at ${proposal.createdAt}.`];
+/**
+ * What a proposal says, line by line, each time in it how long ago or until
+ * it is, in a time element whose date is the time, never a raw ISO 8601 date.
+ */
+function proposalLines(proposal: Proposal, now: string): ReactNode[] {
+  const lines: ReactNode[] = [
+    <>
+      {`${COMMITMENTS[proposal.kind] ?? proposal.kind}, ${proposal.state}, proposed by ${person(proposal.proposedBy.user)} `}
+      <Ago at={proposal.createdAt} now={now} />.
+    </>,
+  ];
   if (proposal.change.dueDate !== undefined) {
     lines.push(proposal.change.dueDate === null ? "It proposes to remove the due date." : `It proposes the due date ${proposal.change.dueDate}.`);
   }
   if (proposal.change.team !== undefined) lines.push(`It proposes team ${proposal.change.team.key}.`);
   if (proposal.kind === "scope") lines.push("It proposes a new revision of the packet.");
   const needed = proposal.confirmations.needed.map((step) => (step.user === null ? otherSide(step.rules, step.team) : person(step.user)));
-  const received = proposal.confirmations.received.map((confirmation) => `${person(confirmation.user)} confirmed at ${confirmation.confirmedAt}`);
-  lines.push(`It needs the confirmation of ${needed.join(", then ")}${received.length === 0 ? ", and has none yet." : `; ${received.join(", ")}.`}`);
+  const { received } = proposal.confirmations;
   lines.push(
-    proposal.state === "pending"
-      ? `It expires at ${proposal.expiresAt}.`
-      : `It ended at ${proposal.endedAt ?? ""}${proposal.cancelReason === null ? "" : `, cancelled: ${proposal.cancelReason.replace(/_/g, " ")}`}.`,
+    received.length === 0 ? (
+      `It needs the confirmation of ${needed.join(", then ")}, and has none yet.`
+    ) : (
+      <>
+        {`It needs the confirmation of ${needed.join(", then ")}`}
+        {received.map((confirmation, index) => (
+          <span key={index}>
+            {`${index === 0 ? "; " : ", "}${person(confirmation.user)} confirmed `}
+            <Ago at={confirmation.confirmedAt} now={now} />
+            {index === received.length - 1 ? "." : ""}
+          </span>
+        ))}
+      </>
+    ),
+  );
+  lines.push(
+    proposal.state === "pending" ? (
+      <>
+        {"It expires "}
+        <time dateTime={proposal.expiresAt}>{untilWords(proposal.expiresAt, now)}</time>.
+      </>
+    ) : (
+      <>
+        {"It ended "}
+        {proposal.endedAt === null ? null : <Ago at={proposal.endedAt} now={now} />}
+        {proposal.cancelReason === null ? "" : `, cancelled: ${proposal.cancelReason.replace(/_/g, " ")}`}.
+      </>
+    ),
   );
   return lines;
 }
 
-function ProposalsSection({ proposals }: { proposals: readonly Proposal[] }): ReactNode {
+function ProposalsSection({ proposals, now }: { proposals: readonly Proposal[]; now: string }): ReactNode {
   return (
     <Section id="proposals" title="Proposals" className="side-panel">
       {proposals.length === 0 ? <p className="hint">No proposal yet.</p> : null}
       {proposals.map((proposal) => (
         <article key={proposal.id} id={`proposal-${proposal.id}`} className={proposal.state === "pending" ? "proposal pending" : "proposal"}>
-          {proposalLines(proposal).map((line, index) => (
+          {proposalLines(proposal, now).map((line, index) => (
             <p key={index}>{line}</p>
           ))}
           {proposal.state === "pending" ? (
@@ -710,7 +745,7 @@ export function RequestPage({ data, csrf, shell }: { data: RequestPageData; csrf
         <div className="request-side">
           <ActionsSection request={request} parts={parts} csrf={csrf} />
           <CommitmentsSection data={data} parts={parts} csrf={csrf} />
-          <ProposalsSection proposals={proposals} />
+          <ProposalsSection proposals={proposals} now={activity.now} />
           <TimelineSection activity={activity} />
         </div>
       </div>

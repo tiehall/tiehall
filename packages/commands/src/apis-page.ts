@@ -3,7 +3,7 @@ import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { adminNav, APIS_PATH, reviewPath } from "./admin-pages.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { fieldHtml, keyTag, panelSections } from "./page-parts.ts";
+import { fieldHtml, keyTag, panelSections, utcHtml } from "./page-parts.ts";
 import type { PageShell } from "./shell.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -81,7 +81,7 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       `          <td>${keyTag(api.provider.key)}</td>`,
       `          <td>${escapeHtml(api.repository)}</td>`,
       `          <td>${escapeHtml(api.jobWorkflowRef ?? "Any workflow of its repository")}</td>`,
-      `          <td>${escapeHtml(`${userName(api.registeredBy)}, ${api.registeredAt}`)}</td>`,
+      `          <td>${escapeHtml(userName(api.registeredBy))}, ${utcHtml(api.registeredAt)}</td>`,
       `          <td>${escapeHtml(api.warnOpensRequests ? "On: they open requests" : "Off: they go to the daily WARN digests")}</td>`,
       '          <td><div class="row-actions">',
       postForm(APIS_PATH, { action: api.warnOpensRequests ? "warn_off" : "warn_on", api: api.id }, csrf, `Turn the WARN switch of ${api.name} ${api.warnOpensRequests ? "off" : "on"}`, "            ", "secondary"),

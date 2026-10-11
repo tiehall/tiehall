@@ -151,6 +151,9 @@ describe("each admin page", () => {
     expect(main).toMatch(/<div class="table-box">\s*<table>\s*<thead><tr><th scope="col">API<\/th><th scope="col">Provider team<\/th>/);
     expect(main).toContain('<td><span class="key">payments-api</span></td>');
     expect(main).toContain('<button type="submit" class="secondary">Unregister payments-api</button>');
+    // Who registered it and when, the time as a date and a time in UTC, never as a raw ISO 8601 date.
+    expect(main).toMatch(/<td>ada, <time datetime="\d{4}-\d\d-\d\dT[\d:.]+Z">[A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC<\/time><\/td>/);
+    expect(main.replace(/<[^>]+>/g, " ")).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
     for (const [id, label] of [["api-name", "Name, such as payments-api"], ["api-team", "Provider team"], ["api-repository", "GitHub repository, as owner/name"], ["api-workflow", "Only this workflow may report"]]) {
       expect(main).toContain(`<label for="${id}">${label}`);
     }

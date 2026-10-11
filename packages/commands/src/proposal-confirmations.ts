@@ -21,6 +21,7 @@ import type { ConfirmationSubjects, ReviewContext, ReviewHandler } from "./confi
 import { defineHandler, type Handlers } from "./execute.ts";
 import { recordHumanAction } from "./loop-limit.ts";
 import { teamsOfMember, userName } from "./members.ts";
+import { utcWords } from "./event-lines.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { cancelProposals, lockPendingProposals, noSuchProposal, proposalView } from "./proposals.ts";
 import { giveReceipts } from "./receipts.ts";
@@ -307,9 +308,10 @@ export const PROPOSAL_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
     for (const needed of view.confirmations.needed) {
       const received = view.confirmations.received.find(({ step }) => step === needed.step);
       const who = needed.step === "accountable_human" ? `${userName(view.accountableHuman)}, its accountable human` : otherSide(needed.rules, needed.team?.key, key);
-      lines.push({ text: `It needs a confirmation from ${who}: ${received === undefined ? "not given yet" : `given by ${userName(received.user)} at ${received.confirmedAt}`}.` });
+      lines.push({ text: `It needs a confirmation from ${who}: ${received === undefined ? "not given yet" : `given by ${userName(received.user)} on ${utcWords(received.confirmedAt)}`}.` });
     }
-    lines.push({ text: view.state === "pending" ? `It expires at ${view.expiresAt}.` : `It is ${view.state}, so it takes no confirmation.` });
+    // Times as a person reads them on the page, a date and a time in UTC (web-ui: Pages are accessible).
+    lines.push({ text: view.state === "pending" ? `It expires on ${utcWords(view.expiresAt)}.` : `It is ${view.state}, so it takes no confirmation.` });
     return { title: `Confirm a proposal for ${key}`, lines };
   },
 };

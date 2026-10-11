@@ -169,3 +169,33 @@ export function relativeTime(at: string, now: string): string {
   if (hours < 48) return `${hours} h`;
   return `${Math.floor(hours / 24)} d`;
 }
+
+/** How long until a moment, from now, in words: "in 6 days", "in 5 hours", "in 12 minutes", or "soon". */
+export function untilWords(at: string, now: string): string {
+  const minutes = Math.floor((Date.parse(at) - Date.parse(now)) / 60_000);
+  if (minutes < 1) return "soon";
+  if (minutes < 60) return minutes === 1 ? "in 1 minute" : `in ${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
+  return `in ${Math.floor(hours / 24)} days`;
+}
+
+/** How long is left until a moment, from now, in a few words: "12 min left", "5 h left", "6 days left", or "under a minute left". */
+export function leftWords(at: string, now: string): string {
+  const minutes = Math.floor((Date.parse(at) - Date.parse(now)) / 60_000);
+  if (minutes < 1) return "under a minute left";
+  if (minutes < 60) return `${minutes} min left`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} h left`;
+  return `${Math.floor(hours / 24)} days left`;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** A moment as people read it, its date and its hour and minute in UTC, such as "Oct 18, 2026, 04:14 UTC"; a text that is no time stays as it is. */
+export function utcWords(at: string): string {
+  const time = new Date(at);
+  if (Number.isNaN(time.getTime())) return at;
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${MONTHS[time.getUTCMonth()] ?? ""} ${time.getUTCDate()}, ${time.getUTCFullYear()}, ${two(time.getUTCHours())}:${two(time.getUTCMinutes())} UTC`;
+}

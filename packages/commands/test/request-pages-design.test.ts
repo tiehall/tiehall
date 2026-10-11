@@ -162,8 +162,24 @@ describe("a request's page", () => {
     for (const button of ["Mark done", "Decline", "Reassign", "Propose the due date", "Propose removing the due date"]) expect(commitments).toContain(`>${button}</button>`);
     expect(commitments).toContain('<label for="team">Team to reassign it to</label>');
     const proposals = element((await open("/FE-2")).html, /<section aria-labelledby="proposals"/, "section");
-    expect(textOf(proposals)).toContain("A decline, pending, proposed by pia");
+    expect(textOf(proposals)).toMatch(/A decline, pending, proposed by pia (\d+ s ago|just now) ?\./);
+    // Every time in the panel is how long ago or how long until, in a time element, never a raw ISO 8601 date.
+    expect(textOf(proposals)).toMatch(/It expires in \d+ days ?\./);
+    expect(proposals).toMatch(/<time dateTime="\d{4}-\d\d-\d\dT[\d:.]+Z">in \d+ days<\/time>/);
+    expect(textOf(proposals)).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
     expect(proposals).toContain(`<a class="button" href="/confirm/${seed.decline}">Review it, then confirm or reject it</a>`);
+  });
+});
+
+describe("a request's page and its times", () => {
+  it("says every time as how long ago or until, or as a date and time in UTC, never as a raw ISO 8601 date", async () => {
+    for (const path of ["/FE-1", "/FE-2"]) {
+      const { html } = await open(path);
+      const main = element(html, /<main\b/, "main");
+      // FE-1's thread holds a question, which the answer's picker names by who asked it and when.
+      if (path === "/FE-1") expect(main).toMatch(/<option value="[0-9a-f-]+">[a-z]+, [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC: /);
+      expect(textOf(main), path).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
+    }
   });
 });
 
