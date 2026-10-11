@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { ASSET_FILES, createAssetRoute } from "../src/assets.ts";
 import { FAVICON_SIDES, ICONS, MARK_CIRCLES, MARK_PATHS, markStroke, markSvg } from "../src/mark.ts";
@@ -9,8 +10,9 @@ import { FAVICON_SIDES, ICONS, MARK_CIRCLES, MARK_PATHS, markStroke, markSvg } f
 // Design: The mark and the icons; D57 (2), (10)). The mark TM1 is two paths
 // and two circles in a 32 by 32 view box, drawn with round caps and joins; its
 // stroke depends on the size it is drawn at, so the ring and the jack stay
-// open, and its geometry never changes. The icon is the mark in white on an
-// ink rounded square, the mark at 64 percent of the side. `pnpm
+// open, and its geometry never changes. The icon is the mark in gold on a
+// navy rounded square, the mark at 64 percent of the side (D59 (3)), which
+// the PNG icons' pixels show too. `pnpm
 // icons:generate` renders the PNG icons and the favicon's images in the
 // installed Chrome, each with the stroke of the size its mark is drawn at,
 // and packs the favicon's three sizes into an ICO file.
@@ -24,6 +26,69 @@ function pngSize(bytes: Uint8Array): { width: number; height: number } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   expect(new TextDecoder().decode(bytes.subarray(12, 16))).toBe("IHDR");
   return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+/** The icon's navy tile and the mark's gold stroke (D59 (3)). */
+const NAVY = [0x0a, 0x14, 0x28] as const;
+const GOLD = [0xe3, 0xb3, 0x41] as const;
+
+/** A PNG's pixels as RGBA, decoded from its 8-bit, non-interlaced RGB or RGBA image data, as Chrome writes them. */
+function pngPixels(bytes: Uint8Array): { width: number; height: number; at: (x: number, y: number) => [number, number, number, number] } {
+  const { width, height } = pngSize(bytes);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const [depth, colorType, interlace] = [bytes[24], bytes[25], bytes[28]];
+  expect([depth, interlace]).toEqual([8, 0]);
+  expect([2, 6]).toContain(colorType);
+  const channels = colorType === 6 ? 4 : 3;
+  const chunks: Uint8Array[] = [];
+  for (let offset = 8; offset < bytes.byteLength; ) {
+    const length = view.getUint32(offset);
+    const type = new TextDecoder().decode(bytes.subarray(offset + 4, offset + 8));
+    if (type === "IDAT") chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
+    offset += 12 + length;
+  }
+  const data = inflateSync(Buffer.concat(chunks));
+  const stride = width * channels;
+  const pixels = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y += 1) {
+    const filter = data[y * (stride + 1)];
+    for (let x = 0; x < stride; x += 1) {
+      const raw = data[y * (stride + 1) + 1 + x] ?? 0;
+      const left = x >= channels ? (pixels[y * stride + x - channels] ?? 0) : 0;
+      const up = y > 0 ? (pixels[(y - 1) * stride + x] ?? 0) : 0;
+      const upLeft = x >= channels && y > 0 ? (pixels[(y - 1) * stride + x - channels] ?? 0) : 0;
+      const paeth = () => {
+        const p = left + up - upLeft;
+        const [pa, pb, pc] = [Math.abs(p - left), Math.abs(p - up), Math.abs(p - upLeft)];
+        return pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+      };
+      const predicted = [0, left, up, (left + up) >> 1, paeth()][filter ?? 0] ?? 0;
+      pixels[y * stride + x] = (raw + predicted) & 255;
+    }
+  }
+  return {
+    width,
+    height,
+    at: (x, y) => {
+      const start = y * stride + x * channels;
+      return [pixels[start] ?? 0, pixels[start + 1] ?? 0, pixels[start + 2] ?? 0, channels === 4 ? (pixels[start + 3] ?? 0) : 255];
+    },
+  };
+}
+
+/** Whether a pixel is this color, opaque, within a step or two of rounding. */
+const isColor = ([r, g, b, a]: readonly number[], color: readonly number[]) => a === 255 && [r, g, b].every((channel, index) => Math.abs((channel ?? 0) - (color[index] ?? 0)) <= 2);
+
+/** The icon's colors, read from its pixels: the tile above the mark, and the mark's brightest pixel. */
+function iconColors(bytes: Uint8Array): { tile: [number, number, number, number]; brightest: [number, number, number, number] } {
+  const { width, height, at } = pngPixels(bytes);
+  let brightest: [number, number, number, number] = [0, 0, 0, 0];
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const pixel = at(x, y);
+    if (pixel[3] === 255 && pixel[0] + pixel[1] + pixel[2] > brightest[0] + brightest[1] + brightest[2]) brightest = pixel;
+  }
+  // The middle of the side, a tenth of the way down: on the tile, above the mark, which starts at 32 percent.
+  return { tile: at(Math.floor(width / 2), Math.floor(height / 10)), brightest };
 }
 
 /** The attributes of the first element of this name in an SVG's text. */
@@ -79,18 +144,18 @@ describe("the mark", () => {
 });
 
 describe("the icons", () => {
-  it("draw the mark in white on an ink rounded square, a quarter of its side round, the mark at 64 percent of it", () => {
+  it("draw the mark in gold on a navy rounded square, a quarter of its side round, the mark at 64 percent of it", () => {
     const svg = read("icon.svg").toString("utf8");
     const root = attributesOf(svg, "svg");
     const side = Number(root["width"]);
     expect(root["viewBox"]).toBe(`0 0 ${side} ${side}`);
-    expect(attributesOf(svg, "rect")).toEqual({ width: String(side), height: String(side), rx: String(side / 4), fill: "#14161B" });
+    expect(attributesOf(svg, "rect")).toEqual({ width: String(side), height: String(side), rx: String(side / 4), fill: "#0A1428" });
     const group = attributesOf(svg, "g");
     const [, x = "", y = "", scale = "1"] = /^translate\(([\d.]+) ([\d.]+)\)(?: scale\(([\d.]+)\))?$/.exec(group["transform"] ?? "") ?? [];
     expect((32 * Number(scale)) / side).toBeCloseTo(0.64, 10);
     expect(Number(x)).toBeCloseTo((side - 32 * Number(scale)) / 2, 10);
     expect(Number(y)).toBeCloseTo((side - 32 * Number(scale)) / 2, 10);
-    expect(group).toMatchObject({ fill: "none", stroke: "#FFFFFF", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" });
+    expect(group).toMatchObject({ fill: "none", stroke: "#E3B341", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" });
     expect([...svg.matchAll(/<path d="([^"]+)"\/>/g)].map(([, d]) => d)).toEqual([...MARK_PATHS]);
     expect([...svg.matchAll(/<circle ([^>]+)\/>/g)].map((_, index) => attributesOf(svg, "circle", index))).toEqual(
       MARK_CIRCLES.map(({ cx, cy, r }) => ({ cx: String(cx), cy: String(cy), r: String(r) })),
@@ -115,8 +180,11 @@ describe("the icons", () => {
     ["icon-180.png", 180],
     ["icon-192.png", 192],
     ["icon-512.png", 512],
-  ])("%s is %s pixels square", (file, side) => {
+  ])("%s is %s pixels square, the mark gold on a navy tile", (file, side) => {
     expect(pngSize(read(file))).toEqual({ width: side, height: side });
+    const { tile, brightest } = iconColors(new Uint8Array(read(file)));
+    expect(isColor(tile, NAVY), `tile ${tile.join(",")}`).toBe(true);
+    expect(isColor(brightest, GOLD), `mark ${brightest.join(",")}`).toBe(true);
   });
 
   it("put the favicon's PNG images of 16, 32 and 48 pixels in its ICO directory", () => {
@@ -137,6 +205,13 @@ describe("the icons", () => {
     for (const { width, planes, bits, png } of images) {
       expect([planes, bits]).toEqual([1, 32]);
       expect(pngSize(png)).toEqual({ width, height: width });
+      // A navy tile; the mark's stroke, a pixel or two wide at these sizes, blends into it, so its brightest pixel is a
+      // warm gold: red over green over blue, and at the larger sizes the gold itself.
+      const { tile, brightest } = iconColors(png);
+      expect(isColor(tile, NAVY), `${width}: tile ${tile.join(",")}`).toBe(true);
+      const [r = 0, g = 0, b = 0] = brightest;
+      expect(r > g && g > b && r - b > 100, `${width}: mark ${brightest.join(",")}`).toBe(true);
+      if (width >= 48) expect(isColor(brightest, GOLD), `${width}: mark ${brightest.join(",")}`).toBe(true);
     }
   });
 
@@ -147,8 +222,8 @@ describe("the icons", () => {
       start_url: "/",
       scope: "/",
       display: "browser",
-      background_color: "#F6F7F9",
-      theme_color: "#14161B",
+      background_color: "#F6F7FA",
+      theme_color: "#0A1428",
       icons: [
         { src: "/assets/icon-192.png", sizes: "192x192", type: "image/png" },
         { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png" },

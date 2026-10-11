@@ -1,11 +1,11 @@
 // Writes the install's icons to packages/commands/assets/ (web-ui: The mark,
 // the favicon and the app icon; design.md, Design: The mark and the icons;
-// D57 (2), (10)): icon.svg, the mark in white on an ink rounded square; the
-// PNG icons, rendered in the installed Chrome, which playwright-core already
-// drives for the browser tests, each with the stroke of the size its mark is
-// drawn at; and favicon.ico, which holds the PNG images of 16, 32 and 48
-// pixels, packed by the small writer below: an ICO file is a header and a
-// directory of images. The files are committed; `pnpm icons:generate` runs this
+// D57 (2), (10); D59 (3)): icon.svg, the mark in gold on a navy rounded
+// square; the PNG icons, rendered in the installed Chrome, which
+// playwright-core already drives for the browser tests, each with the stroke
+// of the size its mark is drawn at; and favicon.ico, which holds the PNG
+// images of 16, 32 and 48 pixels, packed by the small writer below: an ICO
+// file is a header and a directory of images. The files are committed; `pnpm icons:generate` runs this
 // and then writes the assets' digests again. TIEHALL_TEST_CHROME names another
 // Chromium-based browser, as for the browser tests.
 // Usage: node packages/commands/src/write-icons.ts

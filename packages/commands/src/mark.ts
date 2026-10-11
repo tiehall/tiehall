@@ -1,12 +1,12 @@
 // Tiehall's mark, TM1 (web-ui: The mark, the favicon and the app icon;
-// design.md, Design: The mark and the icons; D57 (2), (10)): in a 32 by 32
-// view box, a sharp M whose middle vertex is a round junction ring, from which
-// a T stem drops to a jack, a tie line between two switchboards. From afar it
-// reads as a T, up close as an M. Its geometry never changes; its stroke
-// depends on the size it is drawn at, so the ring and the jack stay open. The
-// pages draw it inline, in the color of its context, beside the name Tiehall,
-// hidden from assistive technology; the icons draw it in white on an ink
-// rounded square, at 64 percent of the square's side.
+// design.md, Design: The mark and the icons; D57 (2), (10); D59 (3)): in a
+// 32 by 32 view box, a sharp M whose middle vertex is a round junction ring,
+// from which a T stem drops to a jack, a tie line between two switchboards.
+// From afar it reads as a T, up close as an M. Its geometry never changes;
+// its stroke depends on the size it is drawn at, so the ring and the jack
+// stay open. The pages draw it inline, in the color of its context, beside
+// the name Tiehall, hidden from assistive technology; the icons draw it in
+// gold on a navy rounded square, at 64 percent of the square's side.
 
 /** The mark's two paths: the M with its middle vertex at the ring, and the T stem down to the jack. */
 export const MARK_PATHS = ["M6.5 16 V7 L16 15.5 L25.5 7 V16", "M16 17.9 V24"] as const;
@@ -34,11 +34,15 @@ export function markSvg(size: number): string {
   return `<svg viewBox="0 0 32 32" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${markStroke(size)}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${markElements()}</svg>`;
 }
 
+/** The icon's navy tile and the mark's gold, D59's broken warm gold. */
+export const ICON_TILE = "#0A1428";
+export const ICON_MARK = "#E3B341";
+
 /** The share of the icon's side the mark takes. */
 const MARK_SHARE = 0.64;
 
 /**
- * The icon at this side in pixels: the mark in white on an ink square, with
+ * The icon at this side in pixels: the mark in gold on a navy square, with
  * corners a quarter of its side round unless the square is full, as the touch
  * icon is, which the phone rounds itself; the mark at 64 percent of the side,
  * centered, with the stroke of the size it is drawn at, or the one given.
@@ -51,8 +55,8 @@ export function iconSvg(side: number, options: { rounded?: boolean; stroke?: num
   const rx = options.rounded === false ? "" : ` rx="${side / 4}"`;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" width="${side}" height="${side}">`,
-    `<rect width="${side}" height="${side}"${rx} fill="#14161B"/>`,
-    `<g transform="${transform}" fill="none" stroke="#FFFFFF" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round">`,
+    `<rect width="${side}" height="${side}"${rx} fill="${ICON_TILE}"/>`,
+    `<g transform="${transform}" fill="none" stroke="${ICON_MARK}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round">`,
     markElements(),
     "</g></svg>",
   ].join("");
