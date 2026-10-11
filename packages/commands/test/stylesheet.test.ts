@@ -267,7 +267,9 @@ describe("contrast", () => {
   });
 
   it("edges a refused field in the danger ink of the message beside it, at least 3:1 on every background", () => {
-    expect(declarationsOf('[aria-invalid="true"]')).toContainEqual(expect.objectContaining({ property: "border-color", value: "var(--danger-ink)" }));
+    for (const selector of ['input[aria-invalid="true"]:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"])', 'select[aria-invalid="true"]', 'textarea[aria-invalid="true"]']) {
+      expect(declarationsOf(selector), selector).toContainEqual(expect.objectContaining({ property: "border-color", value: "var(--danger-ink)" }));
+    }
     for (const name of THEME_NAMES) for (const background of BACKGROUNDS) expect(contrast(color(THEMES[name], "--danger-ink"), color(THEMES[name], background)), `${name}: ${background}`).toBeGreaterThanOrEqual(3);
   });
 

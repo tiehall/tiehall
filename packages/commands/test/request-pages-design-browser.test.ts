@@ -18,8 +18,9 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // at least 24 by 24 CSS pixels, apart from links inside a sentence or a block
 // of text; the keyboard reaches the form's every field and button in the
 // order the page reads, each with a focus ring at least 2 CSS pixels wide; a
-// lamp of the timeline takes its state's lamp color; and no animation still
-// runs 5.5 seconds after the page of a request loads whose agent is at work.
+// lamp of the timeline takes its state's lamp color; a refused field's edge
+// takes the danger ink; and no animation still runs 5.5 seconds after the page
+// of a request loads whose agent is at work.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -152,6 +153,29 @@ describe("the form that opens a request, with the keyboard", () => {
     }
     expect(reached).toEqual(order);
     await context.close();
+  });
+});
+
+describe("a refused field of the form that opens a request", () => {
+  it("takes the danger ink as its edge, an input, a select and a text area alike, in the light and the dark theme", { timeout: 120_000 }, async () => {
+    for (const [colorScheme, ink] of [
+      ["light", "rgb(155, 30, 34)"],
+      ["dark", "rgb(251, 183, 177)"],
+    ] as const) {
+      const context = await signedIn(1280, colorScheme);
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      await page.goto(`${web.url}/requests/new?team=FE`);
+      // The server marks each field it refuses aria-invalid (the page tests show it); here the browser draws such fields,
+      // once the edge's transition has run.
+      await page.evaluate(`(() => { for (const id of ["title", "targetTeam", "need"]) document.getElementById(id)?.setAttribute("aria-invalid", "true"); })()`);
+      const edges = (await page.evaluate(`(() => {
+        for (const animation of document.getAnimations()) animation.finish();
+        return ["title", "targetTeam", "need"].map((id) => getComputedStyle(document.getElementById(id)).borderTopColor);
+      })()`)) as string[];
+      expect(edges, colorScheme).toEqual([ink, ink, ink]);
+      await context.close();
+    }
   });
 });
 

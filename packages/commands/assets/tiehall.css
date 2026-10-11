@@ -1512,8 +1512,11 @@ form:not(.stack) > .hint {
   font-weight: 600;
 }
 
-/* A refused field's edge takes the danger ink of the message beside it; gold is kept for what waits on a person. */
-[aria-invalid="true"] {
+/* A refused field's edge takes the danger ink of the message beside it; gold is kept for what waits on a person. The
+   selectors repeat the field rule's with the attribute added, so this rule outweighs it for an input too. */
+input[aria-invalid="true"]:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
   border-color: var(--danger-ink);
 }
 
