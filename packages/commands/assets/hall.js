@@ -171,6 +171,15 @@ export function pressingState(counts) {
   return "open";
 }
 
+/**
+ * Whether a team has a question waiting: one of the live requests addressed to it needs info. Its node and its row
+ * then carry the class asking, which gives them a gold border and glow (D59 (2)).
+ * @param {Counts} counts
+ */
+export function asking(counts) {
+  return counts.needs_info > 0;
+}
+
 /** @param {string} state */
 export function stateClass(state) {
   return state.replace(/_/g, "-");
@@ -732,7 +741,7 @@ function start() {
   /** @param {Team} each */
   function teamRow(each) {
     const live = liveTotal(each.counts) > 0;
-    return element("li", `team-row${live ? "" : " dimmed"}`, [
+    return element("li", `team-row${live ? "" : " dimmed"}${asking(each.counts) ? " asking" : ""}`, [
       element("p", "team-head", [element("bdi", "team-name", each.untrusted.name), " ", element("span", "team-key", each.key)]),
       element("p", "team-counts", [...lamps(each.counts, each.doneLastDay), element("span", undefined, countsWords(each.counts, each.doneLastDay))]),
     ]);
@@ -851,7 +860,14 @@ function start() {
       const place = placeOf.get(node.id) ?? middle;
       const holder = svg("foreignObject", { x: round(place.x - size.width / 2), y: round(place.y - size.height / 2), width: size.width, height: size.height });
       const live = liveTotal(node.counts) > 0;
-      const classes = ["node", ...(compact ? ["compact"] : []), ...(node.others > 0 ? ["others"] : []), ...(live ? [] : ["dimmed"]), ...(activeTeams.has(node.id) && !paused ? ["active"] : [])];
+      const classes = [
+        "node",
+        ...(compact ? ["compact"] : []),
+        ...(node.others > 0 ? ["others"] : []),
+        ...(live ? [] : ["dimmed"]),
+        ...(asking(node.counts) ? ["asking"] : []),
+        ...(activeTeams.has(node.id) && !paused ? ["active"] : []),
+      ];
       const counts = compact
         ? [...LIVE_STATES.filter((each) => node.counts[each] > 0).flatMap((each) => [lamp(each), element("span", "node-count", String(node.counts[each]))]), ...(live ? [] : [element("span", undefined, "–")])]
         : [...lamps(node.counts, node.doneLastDay), element("span", undefined, countsWords(node.counts, node.doneLastDay))];

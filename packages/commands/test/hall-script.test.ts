@@ -13,9 +13,10 @@ import { initialsOf as serverInitialsOf } from "../src/shell.ts";
 // at a viewport of 1,280 by 800 CSS pixels for every team count from 1 to 20,
 // and above 20 shows the 19 most active teams, ties by key, and one node for
 // the others; the curve of a line, two lines between the same teams curving
-// apart; the merge of a wait's answer into the state by id; relative times
-// from the answer's time; the delays of its retries; and the words it shows,
-// which are the server's. It runs on a page only when the page loads it, so
+// apart; a team with a question waiting, whose node and row the stylesheet
+// lights in gold (D59 (2)); the merge of a wait's answer into the state by
+// id; relative times from the answer's time; the delays of its retries; and
+// the words it shows, which are the server's. It runs on a page only when the page loads it, so
 // importing it here runs nothing.
 
 const HALL_JS = fileURLToPath(new URL("../assets/hall.js", import.meta.url));
@@ -88,6 +89,7 @@ interface HallScript {
   cordWidth(counts: Counts): number;
   placeChip(chip: Size, node: { center: Point; size: Size }, middle: Point, box: Size, taken: (Point & Size)[]): (Point & Size) | undefined;
   pressingState(counts: Counts): string;
+  asking(counts: Counts): boolean;
   mergeChange(state: HallState, change: Omit<HallState, "feed"> & { reload: boolean; events: HallEvent[] }): { state: HallState; reread: boolean; added: HallEvent[] };
   relativeTime(at: string, now: number): string;
   retryDelay(failures: number, random?: () => number): number;
@@ -217,6 +219,15 @@ describe("a line between two teams", () => {
     expect(hall.pressingState({ open: 2, claimed: 1, in_progress: 1, needs_info: 0 })).toBe("in_progress");
     expect(hall.pressingState({ ...NONE, open: 1, claimed: 1 })).toBe("claimed");
     expect(hall.pressingState({ ...NONE, open: 1 })).toBe("open");
+  });
+});
+
+describe("a team with a question waiting", () => {
+  it("is asking while one of the live requests addressed to it needs info, and only then", () => {
+    expect(hall.asking({ ...NONE, needs_info: 1 })).toBe(true);
+    expect(hall.asking({ open: 2, claimed: 1, in_progress: 1, needs_info: 3 })).toBe(true);
+    expect(hall.asking({ open: 2, claimed: 1, in_progress: 1, needs_info: 0 })).toBe(false);
+    expect(hall.asking(NONE)).toBe(false);
   });
 });
 

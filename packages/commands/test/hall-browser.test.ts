@@ -249,6 +249,8 @@ describe("the live hall's script", () => {
     const committed = Date.now();
     await page.locator("#feed .feed-row", { hasText: "A blocking question was posted" }).first().waitFor();
     await page.locator("#team-list .team-row", { hasText: "Payments" }).filter({ hasText: "1 needs info" }).waitFor();
+    // A team with a question waiting is asking: its node and its row take a gold border and glow (D59 (2)).
+    await expect(page.locator("#team-list .team-row.asking").textContent()).resolves.toContain("Payments");
     // The time bound is what this test measures: within 2 seconds of the commit.
     expect(Date.now() - committed).toBeLessThan(2_000);
     await expect(newestRow(page).textContent()).resolves.toContain("PAY-1");
@@ -265,6 +267,7 @@ describe("the live hall's script", () => {
     await expect(map.getAttribute("aria-hidden")).resolves.toBe("true");
     await expect(map.locator(".node").count()).resolves.toBe(4);
     await expect(map.locator(".node", { hasText: "Payments" }).textContent()).resolves.toContain("PAY");
+    await expect(map.locator(".node.asking").textContent()).resolves.toContain("Payments");
     await expect(map.locator("path.cord").count()).resolves.toBe(3);
     await expect(map.locator("path.cord.flow").count()).resolves.toBe(1);
     // Twelve at most, each where it covers no node and no other chip.

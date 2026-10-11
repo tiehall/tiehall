@@ -172,14 +172,14 @@ describe("the live hall's page", () => {
     expect(feed).not.toMatch(/class="lamp/);
   });
 
-  it("lists every team with a lamp per live state and the counts in words, a team with nothing live dimmed", async () => {
+  it("lists every team with a lamp per live state and the counts in words, a team with nothing live dimmed, and one with a question waiting asking", async () => {
     const teams = section((await open()).html, "teams-heading");
     const rows = [...teams.matchAll(/<li class="(team-row[^"]*)">([\s\S]*?)<\/li>/g)].map(([, classes, row = ""]) => [classes, textOf(row), [...row.matchAll(/class="lamp ([a-z-]+)"/g)].map(([, lamp]) => lamp)]);
     expect(rows).toEqual([
       ["team-row dimmed", "Backend BE Nothing live", []],
       ["team-row", "Frontend FE 1 open · 1 in progress", ["open", "in-progress"]],
       ["team-row dimmed", "Operations OPS Nothing live", []],
-      ["team-row", "Payments &#38; &#60;Billing&#62; PAY 1 needs info", ["needs-info"]],
+      ["team-row asking", "Payments &#38; &#60;Billing&#62; PAY 1 needs info", ["needs-info"]],
     ]);
   });
 

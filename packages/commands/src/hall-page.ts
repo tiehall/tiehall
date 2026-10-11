@@ -114,11 +114,15 @@ function feedRowHtml(event: HallState["feed"][number], now: string): string {
   ].join("\n");
 }
 
-/** A team: its name and key, a lamp per live state and the counts in words; dimmed by its border when nothing of it is live. */
+/**
+ * A team: its name and key, a lamp per live state and the counts in words; dimmed by its border when nothing of it is
+ * live, and asking, in a gold border and glow, while a question waits on it (D59 (2)).
+ */
 function teamRowHtml(team: HallState["teams"][number]): string {
   const live = LIVE_STATES.some((state) => team.counts[state] > 0);
+  const asking = team.counts.needs_info > 0;
   return [
-    `          <li class="team-row${live ? "" : " dimmed"}">`,
+    `          <li class="team-row${live ? "" : " dimmed"}${asking ? " asking" : ""}">`,
     `            <p class="team-head"><bdi class="team-name">${escapeHtml(team.untrusted.name)}</bdi> <span class="team-key">${escapeHtml(team.key)}</span></p>`,
     `            <p class="team-counts">${lampsHtml(team.counts, team.doneLastDay)}<span>${escapeHtml(countsWords(team.counts, team.doneLastDay))}</span></p>`,
     "          </li>",
