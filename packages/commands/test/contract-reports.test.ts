@@ -272,6 +272,13 @@ describe("a contract report", () => {
     ["a change at a level the engine does not give", reportOf([{ id: "response-property-removed", level: "ERROR", operation: "GET /payments/{id}" }])],
     ["a change without its operation", reportOf([{ id: "response-property-removed", level: "ERR" }])],
     ["a change with a field it does not know", reportOf([{ ...CHANGES[0], text: "removed the property 'amount'" }])],
+    // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (59): no level of the input takes a
+    // field it does not define, and the provider PR is named by its number alone, the repository being the API's.
+    ["a pull request with a field it does not know", { ...reportOf(), pullRequest: { number: 310, repository: "acme/web" } }],
+    ["a ref with a field it does not know", { ...reportOf(), base: { ref: "main", sha: "a".repeat(40), date: "2026-10-12" } }],
+    ["an engine with a field it does not know", { ...reportOf(), engine: { name: "oasdiff", version: "1.32.1", flags: "--fail-on ERR" } }],
+    ["an API's name with an upper-case letter", reportOf(CHANGES, "Payments-api")],
+    ["an API's name of 101 characters", reportOf(CHANGES, "a".repeat(101))],
     ["a commit SHA that is not one", { ...reportOf(), head: { ref: "new-payment-fields", sha: "HEAD" } }],
     ["no engine version", { ...reportOf(), engine: { name: "oasdiff" } }],
   ])("with %s is refused with 400 and stores nothing", async (_case, body) => {
@@ -301,6 +308,18 @@ describe("a contract report", () => {
     });
     expect(await stored()).toEqual([]);
   }, 60_000);
+
+  // A report takes at most 1,000 changes (D55 (59)).
+  it("with 1,001 changes is refused with 400 that names the list, while 1,000 are taken", async () => {
+    const changes = (count: number) => Array.from({ length: count }, (_, index) => ({ id: "endpoint-added", level: "INFO", operation: `GET /refunds/${index}` }));
+    const over = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf(changes(1001)));
+    expect(over.status).toBe(400);
+    expect(over.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}invalid-input`, errors: [{ path: ["changes"] }] });
+    expect(await stored()).toEqual([]);
+    const most = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf(changes(1000)));
+    expect(most.status).toBe(200);
+    expect(await stored()).toEqual([expect.objectContaining({ changes: changes(1000) })]);
+  });
 
   it("with as many changes as a report holds, each failing the schema, is refused with 400 that names at most 100 places", async () => {
     const answer = await callApi(install, paymentsCaller(), "POST", "/api/v1/contract-reports", reportOf(Array.from({ length: 1000 }, () => ({}))));

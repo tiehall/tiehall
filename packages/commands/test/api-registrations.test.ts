@@ -193,12 +193,22 @@ describe("registering an API", () => {
 
   it.each([
     ["a name in capitals", { name: "Payments", repository: "acme/payments" }],
+    // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (59): 1 to 100 lower-case letters,
+    // digits, dots, hyphens and underscores, the form in which contract reports name APIs.
+    ["a name with one upper-case letter", { name: "payments-Api", repository: "acme/payments" }],
+    ["a name of 101 characters", { name: "a".repeat(101), repository: "acme/payments" }],
     ["a repository that is not owner/name", { name: "payments-api", repository: "payments" }],
     ["a workflow that is not a job_workflow_ref", { name: "payments-api", repository: "acme/payments", jobWorkflowRef: "contract.yml" }],
   ])("is refused with 400 for %s", async (_case, input) => {
     const answer = await reviewPage(ada, { team: pay, ...input });
     expect(answer.status).toBe(400);
     expect(await stored()).toEqual([]);
+  });
+
+  it("takes a name of 100 characters", async () => {
+    const name = `p${"a".repeat(98)}i`;
+    expect((await install.confirm(ada, REGISTER, { name, team: pay, repository: "acme/payments" })).status).toBe(200);
+    expect(await stored()).toEqual([expect.objectContaining({ name, repository: "acme/payments" })]);
   });
 
   it("is refused with 403 without a valid confirmation, and registers nothing", async () => {
