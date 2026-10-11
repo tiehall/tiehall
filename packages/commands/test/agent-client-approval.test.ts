@@ -209,6 +209,49 @@ describe("a confirmed approval", () => {
   });
 });
 
+// activity-log: Writes the sign-in service owns are still recorded (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (10)): the approval writes the grant and its security event in one transaction,
+// so an approval whose grant cannot be written leaves no event, whether the write fails as the grant is stored or only
+// as the transaction commits, after the event was appended in it. The test makes the database refuse the grant.
+describe("an approval whose grant cannot be written", () => {
+  /** Makes the database refuse this client's grant, as the row is written or as the transaction commits. */
+  async function refuseGrantOf(clientId: string, when: "insert" | "commit"): Promise<void> {
+    await harness.install.owner.query(`
+      CREATE OR REPLACE FUNCTION probe_refuse_grant() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.client_id = '${clientId}' THEN RAISE EXCEPTION 'probe: the grant could not be written'; END IF;
+        RETURN NEW;
+      END $$;
+      DROP TRIGGER IF EXISTS probe_refuse_grant ON oauth_consents;
+      ${
+        when === "insert"
+          ? "CREATE TRIGGER probe_refuse_grant AFTER INSERT OR UPDATE ON oauth_consents FOR EACH ROW EXECUTE FUNCTION probe_refuse_grant();"
+          : "CREATE CONSTRAINT TRIGGER probe_refuse_grant AFTER INSERT OR UPDATE ON oauth_consents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION probe_refuse_grant();"
+      }`);
+  }
+
+  it.each(["insert", "commit"] as const)("leaves no security event and no grant when the write fails at the %s, and issues no code", async (when) => {
+    const client = await harness.registerClient();
+    const pkce = pkcePair();
+    const form = await consentFor(ana, client, pkce);
+    const before = Number((await harness.install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+    await refuseGrantOf(client.clientId, when);
+    let failed: Response;
+    try {
+      failed = await post(ana, form);
+    } finally {
+      await harness.install.owner.query("DROP TRIGGER probe_refuse_grant ON oauth_consents; DROP FUNCTION probe_refuse_grant()");
+    }
+    expect(failed.status).toBe(500);
+    const { rows } = await harness.install.owner.query("SELECT type FROM events WHERE number > $1", [before]);
+    expect(rows).toEqual([]);
+    expect((await grantsOf(ana.userId)).filter(({ client_id }) => client_id === client.clientId)).toEqual([]);
+    const location = await authorizationNow(ana, client, pkce);
+    expect(location.pathname).toBe("/consent");
+    expect(location.searchParams.get("code")).toBeNull();
+  });
+});
+
 // The approval judges the authorization request itself, not only its review page: a confirmation of an approval whose
 // request asks for a scope Tiehall does not offer is refused with 400, as the review page is, even with a nonce that is
 // valid for that exact input, and stores no grant.

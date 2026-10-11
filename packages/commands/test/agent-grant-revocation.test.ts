@@ -175,3 +175,48 @@ describe("a grant revoked on the page", () => {
     expect(await tokensPage(ana)).toContain("You have approved no agent client.");
   });
 });
+
+// activity-log: Writes the sign-in service owns are still recorded (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (10)): a revocation removes the grant and appends its security event in one
+// transaction, so a revocation whose write fails leaves no event, and the grant and its refresh token stand, whether
+// the write fails as the grant is removed or only as the transaction commits, after the event was appended in it.
+// The test makes the database refuse the removal.
+describe("a revocation whose write fails", () => {
+  /** Makes the database refuse the removal of this client's grants, as the row is removed or as the transaction commits. */
+  async function refuseRemovalOf(clientId: string, when: "delete" | "commit"): Promise<void> {
+    await harness.install.owner.query(`
+      CREATE OR REPLACE FUNCTION probe_refuse_revocation() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF OLD.client_id = '${clientId}' THEN RAISE EXCEPTION 'probe: the revocation could not be written'; END IF;
+        RETURN OLD;
+      END $$;
+      DROP TRIGGER IF EXISTS probe_refuse_revocation ON oauth_consents;
+      ${
+        when === "delete"
+          ? "CREATE TRIGGER probe_refuse_revocation AFTER DELETE ON oauth_consents FOR EACH ROW EXECUTE FUNCTION probe_refuse_revocation();"
+          : "CREATE CONSTRAINT TRIGGER probe_refuse_revocation AFTER DELETE ON oauth_consents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION probe_refuse_revocation();"
+      }`);
+  }
+
+  it.each(["delete", "commit"] as const)("leaves no security event, and the grant and its refresh token stand, when it fails at the %s", async (when) => {
+    const ana = await harness.member(`ana-failed-${when}`);
+    const { client, refreshToken } = await harness.tokens(ana, ["requests:read"]);
+    const before = Number((await harness.install.owner.query("SELECT coalesce(max(number), 0) AS n FROM events")).rows[0].n);
+    await refuseRemovalOf(client.clientId, when);
+    let failed: Response;
+    try {
+      failed = await revokeOnThePage(ana, client.clientId);
+    } finally {
+      await harness.install.owner.query("DROP TRIGGER probe_refuse_revocation ON oauth_consents; DROP FUNCTION probe_refuse_revocation()");
+    }
+    expect(failed.status).toBe(500);
+    const { rows } = await harness.install.owner.query("SELECT type FROM events WHERE number > $1", [before]);
+    expect(rows).toEqual([]);
+    const { rows: grants } = await harness.install.owner.query("SELECT id FROM oauth_consents WHERE user_id = $1 AND client_id = $2", [ana.userId, client.clientId]);
+    expect(grants).toHaveLength(1);
+    expect(await liveRefreshTokens(ana, client.clientId)).toBe(1);
+    const refreshed = await harness.refresh(client, refreshToken ?? "");
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body["access_token"]).toEqual(expect.any(String));
+  });
+});
