@@ -1491,6 +1491,16 @@ textarea[aria-invalid="true"] {
   list-style: none;
 }
 
+/* A packet's link: one alone in its list item, given with no title, is a control of its own, so it takes at least 24 CSS
+   pixels of height at every width, not only once its URL wraps on a phone (web-ui: Pages are accessible; design.md,
+   Design: Phone width; D57 (8)). */
+.packet-links a {
+  display: inline-block;
+  min-height: 24px;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
 .code-refs code {
   display: block;
   padding: 10px 12px;

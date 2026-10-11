@@ -254,3 +254,23 @@ describe("the room between a heading or a hint and what follows it", () => {
     await context.close();
   });
 });
+
+describe("a request's page on a wide screen", () => {
+  // A link of the packet given with no title stands alone in its list item, so it is no link inside a sentence: it is
+  // a control, at least 24 by 24 CSS pixels at every width, as it is once its URL wraps on a phone.
+  it("holds every control at 24 by 24 CSS pixels or more at 1,280, the packet's link with no title among them", { timeout: 120_000 }, async () => {
+    const { key } = await openRequest<{ key: string }>(install, tokenOf(seed.alice), {
+      targetTeam: "PAY",
+      title: "Refund in two steps",
+      packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "Refund in two steps.", links: [{ url: "https://design.example.com/refunds" }] } },
+    });
+    const context = await signedIn(1280);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/${key}`);
+    await page.getByRole("heading", { level: 1 }).waitFor();
+    await expect(page.locator(".packet-links a").textContent()).resolves.toBe("https://design.example.com/refunds");
+    expect(await phoneWidthProblems(page)).toEqual([]);
+    await context.close();
+  });
+});
