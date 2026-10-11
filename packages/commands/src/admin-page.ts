@@ -84,18 +84,21 @@ function versionSection(version: RunningVersion | undefined): string[] {
 }
 
 /**
- * The banners, first on the page, each with the page that says more, and its
- * button, such as Retry for a failed mirror job: a form that posts the
- * button's fields to its path on the install, with the session's CSRF token
- * and the page to lead back to.
+ * The banners, first on the page, each in the notice colors with the page
+ * that says more, and its button, such as Retry for a failed mirror job: a
+ * form that posts the button's fields to its path on the install, with the
+ * session's CSRF token and the page to lead back to (web-ui: Pages are
+ * accessible; design.md, Design: The page families; D57 (1)).
  */
 export function bannersSection(banners: readonly Banner[], form: { csrf: string; back: string }): string[] {
   if (banners.length === 0) return [];
   return [
-    '      <section aria-label="Alerts">',
+    '      <section class="banners" aria-label="Alerts">',
     ...banners.flatMap((banner) => [
-      `        <p><strong>${escapeHtml(banner.text)}</strong> ${link(banner.link.href, banner.link.text)}</p>`,
+      '        <div class="notice banner">',
+      `          <p><strong>${escapeHtml(banner.text)}</strong> ${link(banner.link.href, banner.link.text)}</p>`,
       ...(banner.button === undefined ? [] : bannerForm(banner.button, form)),
+      "        </div>",
     ]),
     "      </section>",
   ];

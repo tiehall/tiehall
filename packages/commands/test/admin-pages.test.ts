@@ -122,7 +122,10 @@ describe("the members page", () => {
     expect(answer.status).toBe(200);
     expect(answer.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     const html = await answer.text();
-    const rows = [...html.matchAll(/<tr>\s*<td>([^<]*)<\/td>\s*<td>([^<]*)<\/td>\s*<td>([^<]*)<\/td>/g)].map(([, login, role, teams]) => ({ login, role, teams }));
+    // Each member's login, marked when a bot, their role as a tag and their teams as keys (web-ui: The page shell and its navigation).
+    const rows = [
+      ...html.matchAll(/<tr>\s*<td class="cell-member">[\s\S]*?<span class="member-login">([^<]*)<\/span><\/td>\s*<td data-label="Role"><span class="chip tag[^"]*">([^<]*)<\/span><\/td>\s*<td data-label="Teams">([\s\S]*?)<\/td>/g),
+    ].map(([, login, role, teams = ""]) => ({ login, role, teams: [...teams.matchAll(/<a class="key" href="\/[A-Z0-9]+">([A-Z0-9]+)<\/a>/g)].map(([, key]) => key).join(", ") }));
     expect(rows).toEqual([
       { login: "acme-ci-bot (a bot user)", role: "member", teams: "OPS" },
       { login: "ada", role: "admin", teams: "" },

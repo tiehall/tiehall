@@ -248,7 +248,7 @@ describe("the email settings page", () => {
     const { route } = settingsPage("kim");
     const html = await (await route(new Request(`${URL_OF_INSTALL}${EMAIL_SETTINGS_PATH}`, { headers: { accept: "text/html" } }))).text();
     expect(html).toContain("Emails to your teams as requesters");
-    expect(html).toContain("PAY: off.");
+    expect(html).toContain("Emails to PAY as a requester are off.");
     expect(html).toContain("Turn on PAY&#39;s emails");
   });
 

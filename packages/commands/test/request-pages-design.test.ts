@@ -174,7 +174,7 @@ describe("the request lists", () => {
     expect(one).toContain('<td class="cell-state" data-label="State"><span class="chip in-progress">In progress</span></td>');
     expect(two).toContain('<td class="cell-state" data-label="State"><span class="chip open">Open</span> <span class="chip waits">Waits for a person</span></td>');
     for (const label of ["Title", "From", "To", "Claimed by", "Opened"]) expect(one).toContain(`data-label="${label}"`);
-    expect(html).toContain('<table class="requests">');
+    expect(html).toContain('<table class="requests stacked">');
     expect(html).toMatch(/<th scope="col">State<\/th>/);
   });
 });

@@ -152,7 +152,7 @@ function listsPage(query: ListQuery, listed: readonly RequestView[], older: bool
       ...(listed.length === 0
         ? [`      <p class="empty">${escapeHtml(query.state === undefined && query.page === 1 ? empty : "No request here.")}</p>`]
         : [
-            '      <table class="requests">',
+            '      <table class="requests stacked">',
             '        <thead><tr><th scope="col">Key</th><th scope="col">Title</th><th scope="col">State</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Claimed by</th><th scope="col">Opened</th></tr></thead>',
             "        <tbody>",
             ...listed.map((request) => row(request, now)),

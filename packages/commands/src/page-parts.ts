@@ -42,3 +42,23 @@ export function agoHtml(at: string, now: string): string {
   const ago = relativeTime(at, now);
   return `<time datetime="${escapeHtml(at)}">${escapeHtml(ago === "now" ? "just now" : `${ago} ago`)}</time>`;
 }
+
+/** A section of a page drawn as a panel and named by its heading, which the page's outline and assistive technology find as a region. */
+export function panelHtml(id: string, title: string, body: readonly string[], className?: string): string {
+  return [
+    `      <section class="panel${className === undefined ? "" : ` ${className}`}" aria-labelledby="${escapeHtml(id)}">`,
+    `        <h2 id="${escapeHtml(id)}">${escapeHtml(title)}</h2>`,
+    ...body,
+    "      </section>",
+  ].join("\n");
+}
+
+/** How long until a moment, from now, in words: "in 6 days", "in 5 hours", "in 12 minutes", or "soon". */
+export function untilWords(at: string, now: string): string {
+  const minutes = Math.floor((Date.parse(at) - Date.parse(now)) / 60_000);
+  if (minutes < 1) return "soon";
+  if (minutes < 60) return minutes === 1 ? "in 1 minute" : `in ${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
+  return `in ${Math.floor(hours / 24)} days`;
+}

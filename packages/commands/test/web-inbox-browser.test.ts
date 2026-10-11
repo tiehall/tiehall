@@ -148,7 +148,10 @@ describe("the standing list", { timeout: 60_000 }, () => {
     const expiresAt: string = declined.body.proposal.expiresAt;
     const page = await inbox(erin);
     const text = await itemOf(page, request.key).textContent();
-    expect(text).toContain(`${request.key}: a proposal to decline it, made by erin's agent through the API`);
+    // Each waiting proposal is a card: its key, what it proposes, who proposed it and when it expires (web-ui: The page shell and its navigation).
+    expect(text).toContain(request.key);
+    expect(text).toContain("A proposal to decline it");
+    expect(text).toContain("Made by erin's agent through the API.");
     expect(text).toContain(`It expires at ${expiresAt}.`);
     expect(await itemOf(page, request.key).getByRole("link", { name: "Review and confirm" }).getAttribute("href")).toBe(`/confirm/${declined.body.proposal.id}`);
     await page.context().close();

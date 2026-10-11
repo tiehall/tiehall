@@ -31,6 +31,7 @@ import type { Reviews } from "./confirmation-step.ts";
 import { SCOPE_TEXTS } from "./consent.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { panelHtml } from "./page-parts.ts";
 import type { PageShell } from "./shell.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 import { lockMembership, withOrg, type OrgContext } from "./with-org.ts";
@@ -461,40 +462,40 @@ function scopeList(scopes: readonly string[]): string[] {
   return scopes.map((scope) => `          <li>${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</li>`);
 }
 
-/** One grant: who the client says it is, what it may do, and the form that revokes it. */
+/** One grant, as a card: who the client says it is, whether that is verified, what it may do, and the form that revokes it. */
 function grantItem(grant: ListedGrant, csrf: string): string {
   const who = grant.client.cli
-    ? ["        <p>The tiehall CLI, signed in with tiehall login.</p>"]
+    ? ['        <p class="card-title">The tiehall CLI, signed in with tiehall login.</p>']
     : [
         grant.client.name === null
-          ? "        <p>An agent client that gives no name.</p>"
+          ? '        <p class="card-title">An agent client that gives no name.</p>'
           : `        <p>An agent client that calls itself:</p>\n        <blockquote class="untrusted" data-origin="external"><p>${escapeHtml(quotePreamble("external"))}</p><pre>${escapeHtml(grant.client.name)}</pre></blockquote>`,
         grant.client.verifiedHost === null
-          ? "        <p>Unverified client: it registered itself with this install.</p>"
-          : `        <p>${escapeHtml(`Verified: it is identified by its metadata document on ${grant.client.verifiedHost}.`)}</p>`,
+          ? '        <p><span class="chip tag warn">Unverified</span> Unverified client: it registered itself with this install.</p>'
+          : `        <p><span class="chip tag good">Verified</span> ${escapeHtml(`Verified: it is identified by its metadata document on ${grant.client.verifiedHost}.`)}</p>`,
       ];
   return [
-    "      <li>",
+    '      <li class="card">',
     ...who,
-    `        <p>${escapeHtml(`Approved on ${pageDay(grant.approvedAt)}. It may:`)}</p>`,
-    "        <ul>",
+    `        <p class="hint">${escapeHtml(`Approved on ${pageDay(grant.approvedAt)}. It may:`)}</p>`,
+    '        <ul class="scope-list">',
     ...scopeList(grant.scopes),
     "        </ul>",
-    postForm(TOKENS_PATH, { action: "revoke_grant", grant: grant.id }, csrf, "Revoke this grant", "        "),
+    postForm(TOKENS_PATH, { action: "revoke_grant", grant: grant.id }, csrf, "Revoke this grant", "        ", "secondary"),
     "      </li>",
   ].join("\n");
 }
 
-/** One personal access token: its label, what it may do, its expiry, and the form that revokes it. */
+/** One personal access token, as a card: its label, what it may do, its expiry, and the form that revokes it. */
 function tokenItem(token: ListedToken, csrf: string): string {
   return [
-    "      <li>",
-    `        <p>${escapeHtml(token.name)}</p>`,
-    `        <p>${escapeHtml(`Created on ${pageDay(token.createdAt)}; ${token.expired ? "expired" : "expires"} on ${pageDay(token.expiresAt)}. It may:`)}</p>`,
-    "        <ul>",
+    '      <li class="card">',
+    `        <p class="card-title">${escapeHtml(token.name)}${token.expired ? ' <span class="chip tag warn">Expired</span>' : ""}</p>`,
+    `        <p class="hint">${escapeHtml(`Created on ${pageDay(token.createdAt)}; ${token.expired ? "expired" : "expires"} on ${pageDay(token.expiresAt)}. It may:`)}</p>`,
+    '        <ul class="scope-list">',
     ...scopeList(token.scopes),
     "        </ul>",
-    postForm(TOKENS_PATH, { action: "revoke_token", token: token.id }, csrf, "Revoke this token", "        "),
+    postForm(TOKENS_PATH, { action: "revoke_token", token: token.id }, csrf, "Revoke this token", "        ", "secondary"),
     "      </li>",
   ].join("\n");
 }
@@ -512,31 +513,38 @@ function tokensPage(
     "Connected agents and tokens",
     [
       "      <h1>Connected agents and tokens</h1>",
-      "      <h2>Agent clients you approved</h2>",
-      "      <p>Each acts as you, within your role and what it may do. Revoking a grant stops its refresh token at once; access tokens it already holds stop working within 10 minutes.</p>",
-      ...(grants.length === 0 ? ["      <p>You have approved no agent client.</p>"] : ["      <ul>", ...grants.map((grant) => grantItem(grant, csrf)), "      </ul>"]),
-      "      <h2>Personal access tokens</h2>",
-      "      <p>Revoking a personal access token stops it working at once.</p>",
-      ...(on ? [] : ["      <p>An admin has switched personal access tokens off in this install: calls with them are refused until an admin switches them on again.</p>"]),
-      ...(tokens.length === 0 ? ["      <p>You have no personal access token.</p>"] : ["      <ul>", ...tokens.map((token) => tokenItem(token, csrf)), "      </ul>"]),
-      "      <h2>Create a personal access token</h2>",
-      "      <p>A personal access token lets a script, or a host that can only send a header, call Tiehall's API as you, within your role and the scopes you choose. Creating one needs a confirmation.</p>",
-      `      <form method="post" action="${TOKENS_PATH}">`,
-      '        <input type="hidden" name="action" value="create">',
-      `        <p><label for="token-name">Label</label></p>`,
-      `        <p><input type="text" id="token-name" name="name" maxlength="100" required></p>`,
-      "        <fieldset>",
-      "          <legend>Scopes</legend>",
-      ...SCOPES.map(
-        (scope) =>
-          `          <p><input type="checkbox" id="scope-${escapeHtml(scope.replace(":", "-"))}" name="scope" value="${escapeHtml(scope)}"> <label for="scope-${escapeHtml(scope.replace(":", "-"))}">${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</label></p>`,
-      ),
-      "        </fieldset>",
-      `        <p><label for="token-days">${escapeHtml(`Days until it expires, at most ${maxLifetimeDays}`)}</label></p>`,
-      `        <p><input type="number" id="token-days" name="expiresInDays" min="1" max="${maxLifetimeDays}" value="${defaultDays}" required></p>`,
-      `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-      '        <button type="submit">Review the token</button>',
-      "      </form>",
+      panelHtml("grants", "Agent clients you approved", [
+        '        <p class="hint">Each acts as you, within your role and what it may do. Revoking a grant stops its refresh token at once; access tokens it already holds stop working within 10 minutes.</p>',
+        ...(grants.length === 0 ? ['        <p class="empty">You have approved no agent client.</p>'] : ['      <ul class="cards">', ...grants.map((grant) => grantItem(grant, csrf)), "      </ul>"]),
+      ]),
+      panelHtml("tokens", "Personal access tokens", [
+        '        <p class="hint">Revoking a personal access token stops it working at once.</p>',
+        ...(on ? [] : ['        <p class="notice">An admin has switched personal access tokens off in this install: calls with them are refused until an admin switches them on again.</p>']),
+        ...(tokens.length === 0 ? ['        <p class="empty">You have no personal access token.</p>'] : ['      <ul class="cards">', ...tokens.map((token) => tokenItem(token, csrf)), "      </ul>"]),
+      ]),
+      panelHtml("create-token", "Create a personal access token", [
+        '        <p class="hint">A personal access token lets a script, or a host that can only send a header, call Tiehall\'s API as you, within your role and the scopes you choose. Creating one needs a confirmation.</p>',
+        `        <form method="post" action="${TOKENS_PATH}">`,
+        '          <input type="hidden" name="action" value="create">',
+        '          <div class="field">',
+        '            <label for="token-name">Label</label>',
+        '            <input type="text" id="token-name" name="name" maxlength="100" required>',
+        "          </div>",
+        '          <fieldset class="choices">',
+        "            <legend>Scopes</legend>",
+        ...SCOPES.map(
+          (scope) =>
+            `            <p class="check"><input type="checkbox" id="scope-${escapeHtml(scope.replace(":", "-"))}" name="scope" value="${escapeHtml(scope)}"> <label for="scope-${escapeHtml(scope.replace(":", "-"))}">${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</label></p>`,
+        ),
+        "          </fieldset>",
+        '          <div class="field">',
+        `            <label for="token-days">${escapeHtml(`Days until it expires, at most ${maxLifetimeDays}`)}</label>`,
+        `            <input type="number" id="token-days" name="expiresInDays" min="1" max="${maxLifetimeDays}" value="${defaultDays}" required>`,
+        "          </div>",
+        `          <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+        '          <button type="submit">Review the token</button>',
+        "        </form>",
+      ]),
     ].join("\n"),
     shell,
   );

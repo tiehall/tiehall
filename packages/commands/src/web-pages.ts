@@ -151,13 +151,13 @@ function originOf(request: Request): NonNullable<ExecuteOptions["origin"]> {
   return { ...(ipAddress === undefined ? {} : { ipAddress }), ...(userAgent === undefined ? {} : { userAgent }) };
 }
 
-/** A form that posts to a page: its fields, the session's CSRF token and its one button. */
-export function postForm(action: string, fields: Readonly<Record<string, string>>, csrf: string, button: string, indent = "      "): string {
+/** A form that posts to a page: its fields, the session's CSRF token and its one button, a primary one unless it is given the class of another. */
+export function postForm(action: string, fields: Readonly<Record<string, string>>, csrf: string, button: string, indent = "      ", buttonClass?: string): string {
   return [
     `${indent}<form method="post" action="${escapeHtml(action)}">`,
     ...Object.entries(fields).map(([name, value]) => `${indent}  <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`),
     `${indent}  <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `${indent}  <button type="submit">${escapeHtml(button)}</button>`,
+    `${indent}  <button type="submit"${buttonClass === undefined ? "" : ` class="${escapeHtml(buttonClass)}"`}>${escapeHtml(button)}</button>`,
     `${indent}</form>`,
   ].join("\n");
 }

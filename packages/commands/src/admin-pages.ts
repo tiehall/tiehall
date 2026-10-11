@@ -36,7 +36,8 @@ import { ACTIVITY_LOG_PATH } from "./activity-log-route.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import type { PageShell } from "./shell.ts";
+import { keyTag } from "./page-parts.ts";
+import { initialsOf, type PageShell } from "./shell.ts";
 import { INVITE_LIFETIME_DAYS } from "./invites.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -110,9 +111,8 @@ type TrackerMapping = z.output<typeof trackerMapping>;
 type Mappings = { mappings: TrackerMapping[]; repositories: string[]; publicRepositories: string[] };
 type Invite = z.output<typeof invite>;
 
-/** The links between the admin pages, shown to admins. */
-/** The admin UI's navigation, which every admin page shows. */
-export function adminNav(): string {
+/** The admin UI's navigation, which every admin page shows to admins, the page shown marked as the current one. */
+export function adminNav(current?: string): string {
   const pages: [string, string][] = [
     [ADMIN_PATH, "Admin"],
     [MEMBERS_PATH, "Members"],
@@ -124,7 +124,8 @@ export function adminNav(): string {
     [APIS_PATH, "APIs"],
     [ACTIVITY_LOG_PATH, "Activity log"],
   ];
-  return `      <nav>${pages.map(([href, text]) => link(href, text)).join(" · ")}</nav>`;
+  const items = pages.map(([href, text]) => `<li><a href="${escapeHtml(href)}"${href === current ? ' aria-current="page"' : ""}>${escapeHtml(text)}</a></li>`);
+  return `      <nav class="tabs" aria-label="Admin"><ul>${items.join("")}</ul></nav>`;
 }
 
 /** The review page of an action that needs the confirmation step, for its exact input. */
@@ -163,28 +164,36 @@ function memberControls(member: ListedMember, csrf: string): string {
   // A control names the member as every other place does, marked when they are a bot (teams-and-roles: Bot users).
   const name = userName(member);
   return [
-    `          <td>`,
-    `            <p>${link(reviewPath(changeMemberRole.id, { userId: member.id, role: other }), `Make ${name} ${other === "admin" ? "an admin" : "a member"}`)}</p>`,
-    `            <p>${link(reviewPath(removeMember.id, { userId: member.id }), `Remove ${name} from the install`)}</p>`,
+    '          <td class="cell-actions" data-label="Actions">',
+    '            <div class="row-actions">',
+    `              <a class="button secondary" href="${escapeHtml(reviewPath(changeMemberRole.id, { userId: member.id, role: other }))}">${escapeHtml(`Make ${name} ${other === "admin" ? "an admin" : "a member"}`)}</a>`,
+    `              <a class="button secondary" href="${escapeHtml(reviewPath(removeMember.id, { userId: member.id }))}">${escapeHtml(`Remove ${name} from the install`)}</a>`,
     postForm(
       MEMBERS_PATH,
       { action: "set_bot_flag", userId: member.id, bot: member.bot ? "false" : "true" },
       csrf,
       member.bot ? `Clear the bot mark of ${name}` : `Mark ${name} as a bot`,
-      "            ",
+      "              ",
+      "secondary",
     ),
-    `          </td>`,
+    "            </div>",
+    "          </td>",
   ].join("\n");
 }
 
-/** The members list; with the CSRF token, an admin's, with their controls. */
+/**
+ * The members list, a table on a wide screen and a card per member on a
+ * narrow one: each member's initials and login, marked when they are a bot,
+ * their role and their teams' keys; with the CSRF token, an admin's, with
+ * their controls.
+ */
 function membersPage(members: readonly ListedMember[], adminCsrf: string | undefined, shell: PageShell): string {
   const rows = members.map((member) =>
     [
       "        <tr>",
-      `          <td>${escapeHtml(userName(member))}</td>`,
-      `          <td>${escapeHtml(member.role)}</td>`,
-      `          <td>${escapeHtml(member.teams.join(", "))}</td>`,
+      `          <td class="cell-member"><span class="initials" aria-hidden="true">${escapeHtml(initialsOf(member.login))}</span><span class="member-login">${escapeHtml(userName(member))}</span></td>`,
+      `          <td data-label="Role"><span class="chip tag${member.role === "admin" ? " good" : ""}">${escapeHtml(member.role)}</span></td>`,
+      `          <td data-label="Teams">${member.teams.length === 0 ? '<span class="muted">no team</span>' : member.teams.map((key) => keyTag(key, `/${key}`)).join(" ")}</td>`,
       ...(adminCsrf === undefined ? [] : [memberControls(member, adminCsrf)]),
       "        </tr>",
     ].join("\n"),
@@ -192,16 +201,17 @@ function membersPage(members: readonly ListedMember[], adminCsrf: string | undef
   return htmlPage(
     "Members",
     [
-      "      <h1>Members</h1>",
-      ...(adminCsrf === undefined ? [] : [adminNav()]),
-      "      <p>Every member of the install, by GitHub login, with their role and the keys of the teams they belong to.</p>",
+      '      <div class="page-head">',
+      "        <h1>Members</h1>",
+      ...(adminCsrf === undefined ? [] : [`        <a class="button" href="${INVITES_PATH}">Invite a person</a>`]),
+      "      </div>",
+      ...(adminCsrf === undefined ? [] : [adminNav(MEMBERS_PATH)]),
+      '      <p class="lead">Every member of the install, by GitHub login, with their role and the keys of the teams they belong to.</p>',
       ...(adminCsrf === undefined
         ? []
-        : [
-            `      <p>${link(INVITES_PATH, "Invite a person")} by their GitHub username. Changing a role and removing a member each need a confirmation; marking a bot does not.</p>`,
-          ]),
-      "      <table>",
-      `        <thead><tr><th>Member</th><th>Role</th><th>Teams</th>${adminCsrf === undefined ? "" : "<th>Actions</th>"}</tr></thead>`,
+        : ['      <p class="hint">An invite names a person by their GitHub username. Changing a role and removing a member each need a confirmation; marking a bot does not.</p>']),
+      '      <table class="members stacked">',
+      `        <thead><tr><th scope="col">Member</th><th scope="col">Role</th><th scope="col">Teams</th>${adminCsrf === undefined ? "" : '<th scope="col">Actions</th>'}</tr></thead>`,
       "        <tbody>",
       ...rows,
       "        </tbody>",

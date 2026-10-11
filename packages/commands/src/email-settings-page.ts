@@ -1,6 +1,7 @@
 import { readEmailSettings, setEmailSettings, setRequesterEmails } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { keyTag, panelHtml } from "./page-parts.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // A member's email settings, at /settings/email (requester-loop: Email for
@@ -35,32 +36,42 @@ export function createEmailSettingsRoute(options: PageRouteOptions, { emailSetUp
         readEmailSettings.id,
         {},
       );
+      const status = (on: boolean) => `<span class="chip tag${on ? " good" : ""}">${on ? "On" : "Off"}</span>`;
       const lines = [
         "      <h1>Email settings</h1>",
+        '      <div class="lead">',
         emailSetUp
-          ? "      <p>This install sends email through its SMTP server.</p>"
-          : "      <p>This install has no SMTP settings, so Tiehall sends no email: every notice waits in your web inbox.</p>",
+          ? "        <p>This install sends email through its SMTP server.</p>"
+          : "        <p>This install has no SMTP settings, so Tiehall sends no email: every notice waits in your web inbox.</p>",
         address === null
-          ? "      <p>Tiehall has no address for you: your GitHub account showed no primary verified email address when you last signed in.</p>"
-          : `      <p>Tiehall emails you at ${escapeHtml(address)}, the primary verified address of your GitHub account.</p>`,
-        "      <h2>Daily digest</h2>",
-        `      <p>${digest ? "The daily digest is on." : "The daily digest is off."} It gathers your updates of each UTC day that were not emailed as they came, once the day has ended, and turning it off also stops your teams' WARN digest emails.</p>`,
-        postForm(EMAIL_SETTINGS_PATH, { digest: digest ? "off" : "on" }, csrf, digest ? "Turn the daily digest off" : "Turn the daily digest on"),
-        "      <h2>Emails to your teams as requesters</h2>",
-        "      <p>When one of your teams alone is the requester of a request, such as a contract-change request whose provider pull request's author is not a member of this install, the questions asked of the team and the proposals that wait for its side go to your web inbox, and by email only when you turn that team's emails on.</p>",
-        ...(teams.length === 0
-          ? ["      <p>You belong to no team.</p>"]
-          : teams.flatMap(({ team, requesterEmails }) => [
-              `      <p>${escapeHtml(team.key)}: ${requesterEmails ? "on" : "off"}.</p>`,
-              postForm(
-                EMAIL_SETTINGS_PATH,
-                { team: team.id, requesterEmails: requesterEmails ? "off" : "on" },
-                csrf,
-                `Turn ${requesterEmails ? "off" : "on"} ${team.key}'s emails`,
-              ),
-            ])),
-        "      <h2>Always emailed</h2>",
-        "      <p>Proposal notices, receipts and the questions asked of you are always emailed; no setting turns them off.</p>",
+          ? "        <p>Tiehall has no address for you: your GitHub account showed no primary verified email address when you last signed in.</p>"
+          : `        <p>Tiehall emails you at ${escapeHtml(address)}, the primary verified address of your GitHub account.</p>`,
+        "      </div>",
+        panelHtml("digest", "Daily digest", [
+          '        <div class="setting">',
+          `          <p class="setting-text">${status(digest)} ${digest ? "The daily digest is on." : "The daily digest is off."} It gathers your updates of each UTC day that were not emailed as they came, once the day has ended, and turning it off also stops your teams' WARN digest emails.</p>`,
+          postForm(EMAIL_SETTINGS_PATH, { digest: digest ? "off" : "on" }, csrf, digest ? "Turn the daily digest off" : "Turn the daily digest on", "          ", "secondary"),
+          "        </div>",
+        ]),
+        panelHtml("requester-emails", "Emails to your teams as requesters", [
+          '        <p class="hint">When one of your teams alone is the requester of a request, such as a contract-change request whose provider pull request\'s author is not a member of this install, the questions asked of the team and the proposals that wait for its side go to your web inbox, and by email only when you turn that team\'s emails on.</p>',
+          ...(teams.length === 0
+            ? ['        <p class="empty">You belong to no team.</p>']
+            : teams.flatMap(({ team, requesterEmails }) => [
+                '        <div class="setting">',
+                `          <p class="setting-text">${status(requesterEmails)} ${keyTag(team.key)} <span>${escapeHtml(`Emails to ${team.key} as a requester are ${requesterEmails ? "on" : "off"}.`)}</span></p>`,
+                postForm(
+                  EMAIL_SETTINGS_PATH,
+                  { team: team.id, requesterEmails: requesterEmails ? "off" : "on" },
+                  csrf,
+                  `Turn ${requesterEmails ? "off" : "on"} ${team.key}'s emails`,
+                  "          ",
+                  "secondary",
+                ),
+                "        </div>",
+              ])),
+        ]),
+        panelHtml("always", "Always emailed", ["        <p>Proposal notices, receipts and the questions asked of you are always emailed; no setting turns them off.</p>"]),
       ];
       return htmlAnswer(htmlPage("Email settings", lines.join("\n"), shell));
     },

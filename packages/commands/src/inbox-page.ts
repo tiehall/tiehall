@@ -1,17 +1,23 @@
 import { readInboxUpdates, reconfirmConsumer, rejectProposal, standingList, type proposal } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
-import { updateDescription } from "@tiehall/packet/tool-text";
 import type { z } from "zod";
 import { commitmentPhrase } from "./email.ts";
+import { eventLine } from "./event-lines.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { agoHtml, keyTag, panelHtml, untilWords } from "./page-parts.ts";
 import type { RequestView } from "./request-views.ts";
 import type { UpdatesPage } from "./updates.ts";
-import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The web inbox, at /inbox (requester-loop: The web inbox; requester-loop: The
 // pull readers; requester-loop: What whats_new covers; design.md, Decisions
 // this change rests on: D28 #62; D29 (5); design.md, Design rules: Requester
-// loop). A member's web inbox holds the update feed: their updates after the
+// loop; web-ui: The page shell and its navigation; web-ui: Motion, and
+// reduced motion; design.md, Design: The page families; D57 (4), (6)). What
+// waits for the member comes first, under the signal lamp, which blinks three
+// times, each proposal as a card; then the updates, which slide in once; then
+// the receipts, and the WARN digests and re-confirmation requests. A member's
+// web inbox holds the update feed: their updates after the
 // web inbox's own cursor, oldest first, from whats_new's scope plus the events
 // on the requests their teams requested, a page at a time. Each update is
 // said in Tiehall's own words, with a link to its request's page and the
@@ -49,36 +55,39 @@ export const INBOX_PATH = "/inbox";
 /** How many updates the feed shows at a time. */
 export const INBOX_PAGE_SIZE = 50;
 
-/** The row of one update: its number, its request, its team, when, what it says, and the request's title. */
-function updateRow(update: UpdatesPage["events"][number], byId: ReadonlyMap<string, RequestView>): string {
+/** The row of one update: its request's key, linked to its page, what happened in Tiehall's words, the request's title, its team and when; it slides in once. */
+function updateRow(update: UpdatesPage["events"][number], byId: ReadonlyMap<string, RequestView>, now: string): string {
   const title = byId.get(update.request.id)?.untrusted.title ?? "";
-  const said = updateDescription(update, { ids: false }) ?? update.type;
-  const cells = [
-    escapeHtml(String(update.number)),
-    link(`/${update.request.key}`, update.request.key),
-    escapeHtml(update.request.targetTeam.key),
-    escapeHtml(update.occurredAt),
-    escapeHtml(said),
-    escapeHtml(title),
-  ];
-  return `        <tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+  const said = eventLine(update.type, update.data);
+  return [
+    '        <li class="update slide-in">',
+    `          ${keyTag(update.request.key, `/${update.request.key}`)}`,
+    `          <p class="update-what">${escapeHtml(said)}<span class="update-title">${escapeHtml(title)}</span></p>`,
+    `          <p class="update-meta">${escapeHtml(`Update ${update.number} · team ${update.request.targetTeam.key} · `)}${agoHtml(update.occurredAt, now)}</p>`,
+    "        </li>",
+  ].join("\n");
 }
 
-/** The update feed's section: the updates, and the form that acknowledges them. */
-function feedSection(feed: UpdatesPage, csrf: string): string {
+/** The update feed's panel: how many updates follow the cursor, each as a row, and the form that acknowledges them. */
+function feedSection(feed: UpdatesPage, csrf: string, now: string): string {
   const last = feed.events.at(-1)?.number;
-  if (last === undefined) return ["      <h2>Updates</h2>", "      <p>No new updates.</p>"].join("\n");
+  if (last === undefined) return panelHtml("updates", "Updates", ['        <p class="empty">No new updates.</p>'], "updates");
   const byId = new Map(feed["requests"].map((request) => [request.id, request]));
   const count = feed.events.length === 1 ? "1 update" : `${feed.events.length} updates`;
-  return [
-    "      <h2>Updates</h2>",
-    `      <p>${escapeHtml(`${count} since you last acknowledged, oldest first.${feed.more ? " More follow once you acknowledge these." : ""}`)}</p>`,
-    "      <table>",
-    "        <tr><th>Update</th><th>Request</th><th>Team</th><th>When</th><th>What happened</th><th>Title</th></tr>",
-    ...feed.events.map((update) => updateRow(update, byId)),
-    "      </table>",
-    postForm(INBOX_PATH, { action: "acknowledge", upTo: String(last) }, csrf, "Acknowledge these updates"),
-  ].join("\n");
+  return panelHtml(
+    "updates",
+    "Updates",
+    [
+      '        <div class="panel-bar">',
+      `          <p class="hint">${escapeHtml(`${count} since you last acknowledged, oldest first.${feed.more ? " More follow once you acknowledge these." : ""}`)}</p>`,
+      postForm(INBOX_PATH, { action: "acknowledge", upTo: String(last) }, csrf, "Acknowledge these updates", "          ", "secondary"),
+      "        </div>",
+      '        <ol class="update-list">',
+      ...feed.events.map((update) => updateRow(update, byId, now)),
+      "        </ol>",
+    ],
+    "updates",
+  );
 }
 
 type ProposalView = z.input<typeof proposal>;
@@ -112,8 +121,8 @@ function person(user: { login: string; bot: boolean }): string {
   return user.bot ? `${user.login} (a bot user)` : user.login;
 }
 
-/** What a waiting proposal proposes and who made it, in Tiehall's words. */
-function proposalSentence(view: ProposalView): string {
+/** What a waiting proposal proposes, in Tiehall's words, such as "a proposal to decline it". */
+function proposalWhat(view: ProposalView): string {
   const what =
     view.kind === "due_date" && view.change.dueDate !== undefined
       ? view.change.dueDate === null
@@ -122,6 +131,11 @@ function proposalSentence(view: ProposalView): string {
       : view.kind === "reassign" && view.change.team !== undefined
         ? `reassign it to team ${view.change.team.key}`
         : commitmentPhrase(view.kind);
+  return `a proposal to ${what}`;
+}
+
+/** Who made a waiting proposal, and who confirmed it already, in Tiehall's words. */
+function proposalBy(view: ProposalView): string {
   const { proposedBy } = view;
   const through = proposedBy.surface === null ? "" : ` ${THROUGH[proposedBy.surface] ?? ""}`;
   const by =
@@ -131,93 +145,147 @@ function proposalSentence(view: ProposalView): string {
         ? `${person(proposedBy.user)}${through}`
         : `${person(proposedBy.user)} in the web UI`;
   const confirmed = view.confirmations.received.map(({ user }) => person(user));
-  const has = confirmed.length === 0 ? "" : ` ${confirmed.join(" and ")} confirmed it already.`;
-  return `${view.request.key}: a proposal to ${what}, made by ${by}.${has} It expires at ${view.expiresAt}.`;
+  return `Made by ${by}.${confirmed.length === 0 ? "" : ` ${confirmed.join(" and ")} confirmed it already.`}`;
 }
 
-/** The standing list's sections: what waits for the member, their receipts and their reminders. */
-function standingSection(list: StandingList, csrf: string): string {
-  const waiting =
-    list.waiting.length === 0
-      ? ["      <p>Nothing waits for your confirmation.</p>"]
-      : [
-          '      <ul id="waiting">',
-          ...list.waiting.map((view) =>
-            [
-              "        <li>",
-              `          ${link(`/${view.request.key}`, view.request.key)}${escapeHtml(proposalSentence(view).slice(view.request.key.length))}`,
-              `          ${link(`/confirm/${view.id}`, "Review and confirm")}`,
-              postForm(INBOX_PATH, { action: "reject", proposal: view.id }, csrf, "Reject", "          "),
-              "        </li>",
-            ].join("\n"),
-          ),
-          "      </ul>",
-        ];
-  const receipts =
+/** Who may give the other side's confirmation, in Tiehall's words. */
+function otherSide(rules: readonly string[], team: { key: string } | null): string {
+  const words: Readonly<Record<string, string>> = {
+    target_team: `a member of team ${team?.key ?? ""}`,
+    requester_side: `the requesting user or a member of team ${team?.key ?? ""}`,
+    claimant: "the claimant",
+  };
+  return rules.map((rule) => words[rule] ?? rule).join(" and ");
+}
+
+/** The confirmations a waiting proposal still needs, in order, the reader's as theirs. */
+function proposalNeeds(view: ProposalView, readerId: string): string {
+  const { needed, received } = view.confirmations;
+  const names = needed
+    .filter(({ step }) => !received.some((confirmation) => confirmation.step === step))
+    .map(({ user, rules, team }) => (user === null ? otherSide(rules, team) : user.id === readerId ? "you" : person(user)));
+  return names.length === 0 ? "It needs no other confirmation." : `It still needs the confirmation of ${names.join(", then ")}.`;
+}
+
+/**
+ * One proposal that waits for the member, as a card: its request's key,
+ * linked to the request's page, when it expires, what it proposes, who
+ * proposed it, what it still needs, the link to its review page and the form
+ * that rejects it.
+ */
+function waitingCard(view: ProposalView, csrf: string, readerId: string, now: string): string {
+  const what = proposalWhat(view);
+  return [
+    '        <li class="card waiting-card">',
+    `          <p class="card-top">${keyTag(view.request.key, `/${view.request.key}`)}<span class="muted">Expires <time datetime="${escapeHtml(view.expiresAt)}">${escapeHtml(untilWords(view.expiresAt, now))}</time></span></p>`,
+    `          <h3>${escapeHtml(`${what.charAt(0).toUpperCase()}${what.slice(1)}`)}</h3>`,
+    `          <p>${escapeHtml(proposalBy(view))}</p>`,
+    `          <p class="hint">${escapeHtml(`${proposalNeeds(view, readerId)} It expires at ${view.expiresAt}.`)}</p>`,
+    '          <div class="card-actions">',
+    `            <a class="button" href="/confirm/${escapeHtml(view.id)}">Review and confirm</a>`,
+    postForm(INBOX_PATH, { action: "reject", proposal: view.id }, csrf, "Reject", "            ", "secondary"),
+    "          </div>",
+    "        </li>",
+  ].join("\n");
+}
+
+/** The check mark beside a receipt, which only illustrates it. */
+const RECEIPT_MARK =
+  '<svg class="receipt-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M5 12l4 4 10-10"/></svg>';
+
+/** What waits for the member, first on the page: a panel with the signal lamp and the number in words, and a card for each proposal. */
+function waitingSection(list: StandingList, csrf: string, readerId: string, now: string): string {
+  const count = list.waiting.length;
+  return [
+    '      <section class="waiting" aria-labelledby="waiting-heading">',
+    '        <div class="section-head">',
+    ...(count === 0 ? [] : ['          <span class="lamp needs-info blink" aria-hidden="true"></span>']),
+    '          <h2 id="waiting-heading">Waiting for you</h2>',
+    `          <span class="muted">${escapeHtml(count === 0 ? "nothing waits" : `${count} waiting`)}</span>`,
+    "        </div>",
+    ...(count === 0
+      ? ['        <p class="empty">Nothing waits for your confirmation.</p>']
+      : ['        <ul class="cards waiting-cards" id="waiting">', ...list.waiting.map((view) => waitingCard(view, csrf, readerId, now)), "        </ul>"]),
+    "      </section>",
+  ].join("\n");
+}
+
+/** The standing list's other panels: the member's receipts, their reminders, their teams' WARN digests and the declarations to re-confirm. */
+function standingSections(list: StandingList, csrf: string): string[] {
+  const receipts = panelHtml(
+    "receipts-heading",
+    "Receipts",
     list.receipts.length === 0
-      ? ["      <p>No receipts yet.</p>"]
+      ? ['        <p class="empty">No receipts yet.</p>']
       : [
-          '      <ul id="receipts">',
+          '        <ul class="receipts" id="receipts">',
           ...list.receipts.map(({ text, undoUntil, proposal: view }) => {
-            const undo = undoUntil === null ? "" : ` ${link(`/confirm/${view.id}/undo`, `Undo it until ${undoUntil}`)}`;
-            return `        <li>${escapeHtml(text)}${undo}</li>`;
+            const undo = undoUntil === null ? "" : ` <a class="button secondary" href="/confirm/${escapeHtml(view.id)}/undo">${escapeHtml(`Undo it until ${undoUntil}`)}</a>`;
+            return `          <li class="receipt">${RECEIPT_MARK}<p>${escapeHtml(text)}</p>${undo}</li>`;
           }),
-          "      </ul>",
-        ];
+          "        </ul>",
+        ],
+  );
   const reminders =
-    list.reminders.length === 0 ? [] : ["      <h2>Reminders</h2>", '      <ul id="reminders">', ...list.reminders.map(({ text }) => `        <li>${escapeHtml(text)}</li>`), "      </ul>"];
-  const reconfirmations =
-    list.reconfirmations.length === 0
+    list.reminders.length === 0
       ? []
-      : [
-          "      <h2>Declarations to re-confirm</h2>",
-          '      <ul id="reconfirmations">',
-          ...list.reconfirmations.map(({ api, team, text }) =>
-            [
-              "        <li>",
-              `          ${escapeHtml(text)} ${link(`/${team.key}`, `The page of ${team.key}`)}`,
-              postForm(INBOX_PATH, { action: "reconfirm", api: api.id, team: team.id }, csrf, `Re-confirm that ${team.key} consumes ${api.name}`, "          "),
-              "        </li>",
-            ].join("\n"),
-          ),
-          "      </ul>",
-        ];
+      : [panelHtml("reminders-heading", "Reminders", ['        <ul class="plain-list" id="reminders">', ...list.reminders.map(({ text }) => `          <li>${escapeHtml(text)}</li>`), "        </ul>"])];
   // The changes come from the diff engine in the provider's CI: text, escaped, as everything people and other systems wrote.
   const warnDigests =
     list.warnDigests.length === 0
       ? []
       : [
-          "      <h2>WARN digests</h2>",
-          '      <ul id="warn-digests">',
-          ...list.warnDigests.map(({ text, changeSets }) =>
-            [
-              "        <li>",
-              `          <p>${escapeHtml(text)}</p>`,
-              "          <ul>",
-              ...changeSets.map(({ api, pullRequest, untrusted }) =>
-                [
-                  `            <li>${escapeHtml(`${api} in ${pullRequest.repository}#${pullRequest.number}`)} (<a href="${escapeHtml(pullRequest.url)}" rel="noreferrer">the provider pull request</a>):`,
-                  `              <ul>${untrusted.changes.map(({ id, operation }) => `<li>${escapeHtml(`${id}: ${operation}`)}</li>`).join("")}</ul>`,
-                  "            </li>",
-                ].join("\n"),
-              ),
-              "          </ul>",
-              "        </li>",
-            ].join("\n"),
-          ),
-          "      </ul>",
+          panelHtml("warn-digests-heading", "WARN digests", [
+            '        <ul class="plain-list" id="warn-digests">',
+            ...list.warnDigests.map(({ text, changeSets }) =>
+              [
+                "          <li>",
+                `            <p>${escapeHtml(text)}</p>`,
+                "            <ul>",
+                ...changeSets.map(({ api, pullRequest, untrusted }) =>
+                  [
+                    `              <li>${escapeHtml(`${api} in ${pullRequest.repository}#${pullRequest.number}`)} (<a href="${escapeHtml(pullRequest.url)}" rel="noreferrer">the provider pull request</a>):`,
+                    `                <ul>${untrusted.changes.map(({ id, operation }) => `<li>${escapeHtml(`${id}: ${operation}`)}</li>`).join("")}</ul>`,
+                    "              </li>",
+                  ].join("\n"),
+                ),
+                "            </ul>",
+                "          </li>",
+              ].join("\n"),
+            ),
+            "        </ul>",
+          ]),
         ];
-  return ["      <h2>Waiting for your confirmation</h2>", ...waiting, "      <h2>Receipts</h2>", ...receipts, ...reminders, ...warnDigests, ...reconfirmations].join("\n");
+  const reconfirmations =
+    list.reconfirmations.length === 0
+      ? []
+      : [
+          panelHtml("reconfirmations-heading", "Declarations to re-confirm", [
+            '        <ul class="plain-list" id="reconfirmations">',
+            ...list.reconfirmations.map(({ api, team, text }) =>
+              [
+                "          <li>",
+                `            <p>${escapeHtml(text)} ${keyTag(team.key, `/${team.key}`)}</p>`,
+                postForm(INBOX_PATH, { action: "reconfirm", api: api.id, team: team.id }, csrf, `Re-confirm that ${team.key} consumes ${api.name}`, "            ", "secondary"),
+                "          </li>",
+              ].join("\n"),
+            ),
+            "        </ul>",
+          ]),
+        ];
+  return [receipts, ...reminders, ...warnDigests, ...reconfirmations];
 }
 
 export function createInboxRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: INBOX_PATH,
     name: "inbox",
-    async get(_query, { read, csrf, shell }) {
+    async get(_query, { read, csrf, shell, caller }) {
       const list = await read<StandingList>(standingList.id, {});
       const feed = await read<UpdatesPage>(readInboxUpdates.id, { limit: INBOX_PAGE_SIZE });
-      return htmlAnswer(htmlPage("Inbox", ["      <h1>Inbox</h1>", standingSection(list, csrf), feedSection(feed, csrf)].join("\n"), shell));
+      const now = new Date().toISOString();
+      const main = ["      <h1>Inbox</h1>", waitingSection(list, csrf, caller.userId, now), feedSection(feed, csrf, now), ...standingSections(list, csrf)];
+      return htmlAnswer(htmlPage("Inbox", main.join("\n"), shell));
     },
     async post(form, { write }) {
       const action = form.get("action");

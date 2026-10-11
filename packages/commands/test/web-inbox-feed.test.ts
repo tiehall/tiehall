@@ -138,8 +138,8 @@ describe("the web inbox page", () => {
     expect(status).toBe(200);
     expect(headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(html).toContain("<h1>Inbox</h1>");
-    expect(html).toContain(`<a href="/${request.key}">${request.key}</a>`);
-    expect(html).toContain("a question");
+    expect(html).toContain(`<a class="key" href="/${request.key}">${request.key}</a>`);
+    expect(html).toContain("A question was posted");
     expect(html).toContain("Rotate the &#60;b&#62;staging&#60;/b&#62; keys");
     expect(html).not.toContain("<b>staging</b>");
     const fields = acknowledgeForm(html);
