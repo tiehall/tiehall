@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_CLIENT_ID, storedDeviceCode } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { hiddenField, MCP_RESOURCE, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
 // The device approval page cannot be prefilled (agent-access: The device
 // approval page cannot be prefilled; agent-access: The CLI signs in through a
@@ -167,6 +167,17 @@ describe("the device approval page", () => {
     expect(field(await answer.text(), "input")).toBe(JSON.stringify({ userCode }));
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (22): the code the CLI printed is
+  // taken however it is typed, without a dash as with one.
+  it("finds a code typed in lower case without its dash", async () => {
+    const { userCode } = await login();
+    const typed = userCode.replace(/-/g, "").toLowerCase();
+    expect(typed).not.toContain("-");
+    const answer = await typeCode(ana, typed);
+    expect(answer.status).toBe(200);
+    expect(field(await answer.text(), "input")).toBe(JSON.stringify({ userCode: userCode.replace(/-/g, "").toUpperCase() }));
+  });
+
   it("stores nothing before the approval: the code stays pending and unbound, no grant exists, and the CLI gets no token", async () => {
     const { deviceCode, userCode } = await login();
     const grants = await cliGrants();
@@ -255,5 +266,50 @@ describe("approving a code", () => {
     expect((await confirm(ana, first)).status).toBe(200);
     expect((await confirm(ana, second)).status).toBe(409);
     expect(await stored(deviceCode)).toEqual({ status: "approved", user_id: ana.userId });
+  });
+});
+
+// Each member has one grant for the CLI (agent-access: The CLI signs in through a restricted device flow, its scenario
+// "One CLI grant for every machine"; decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (21)): every tiehall login the member approves, on any machine, updates that one grant, so revoking it on the
+// Connected agents and tokens page signs the CLI out on every machine: each machine's refresh token gets invalid_grant.
+describe("two approved logins of one member", () => {
+  it("update one CLI grant, and revoking it refuses both machines' refresh tokens with invalid_grant", async () => {
+    const dee = await harness.member("dee-k");
+    const machines: string[] = [];
+    for (const address of ["198.51.100.81", "198.51.100.82"]) {
+      const { deviceCode, userCode } = await login(address);
+      const review = await (await typeCode(dee, userCode)).text();
+      expect((await confirm(dee, review)).status).toBe(200);
+      const polled = await poll(deviceCode);
+      expect(polled.status).toBe(200);
+      machines.push(String(polled.body["refresh_token"]));
+    }
+    const { rows: grants } = await harness.install.owner.query("SELECT id FROM oauth_consents WHERE user_id = $1 AND client_id = $2", [dee.userId, CLI_CLIENT_ID]);
+    expect(grants).toHaveLength(1);
+    // Each machine's CLI refreshes its token, and keeps the refresh token that rotation gives it.
+    const cli = { clientId: CLI_CLIENT_ID, redirectUri: "" };
+    for (const [index, refreshToken] of machines.entries()) {
+      const refreshed = await harness.refresh(cli, refreshToken);
+      expect(refreshed.status, `machine ${index + 1}`).toBe(200);
+      machines[index] = String(refreshed.body["refresh_token"]);
+    }
+
+    const tokensPage = await (await harness.handle(new Request(`${URL_OF_INSTALL}/tokens`, { headers: { cookie: dee.cookie, accept: "text/html" } }))).text();
+    const revoked = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/tokens`, {
+        method: "POST",
+        headers: { cookie: dee.cookie, accept: "application/json", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+        body: new URLSearchParams({ action: "revoke_grant", grant: String(grants[0]?.id), csrf: hiddenField(tokensPage, "csrf") }).toString(),
+      }),
+    );
+    expect(revoked.status).toBe(303);
+
+    for (const [index, refreshToken] of machines.entries()) {
+      const refused = await harness.refresh(cli, refreshToken);
+      expect(refused.status, `machine ${index + 1}`).toBe(400);
+      expect(refused.body["error"], `machine ${index + 1}`).toBe("invalid_grant");
+      expect(refused.body["access_token"]).toBeUndefined();
+    }
   });
 });

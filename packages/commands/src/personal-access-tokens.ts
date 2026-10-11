@@ -464,8 +464,13 @@ function scopeList(scopes: readonly string[]): string[] {
 
 /** One grant, as a card: who the client says it is, whether that is verified, what it may do, and the form that revokes it. */
 function grantItem(grant: ListedGrant, csrf: string): string {
+  // The member holds one grant for the CLI, which every tiehall login they approve updates, on any machine
+  // (agent-access: The CLI signs in through a restricted device flow), so the page says what revoking it does.
   const who = grant.client.cli
-    ? ['        <p class="card-title">The tiehall CLI, signed in with tiehall login.</p>']
+    ? [
+        '        <p class="card-title">The tiehall CLI, signed in with tiehall login.</p>',
+        '        <p class="hint">Revoking this grant signs the tiehall CLI out on every machine where you ran tiehall login.</p>',
+      ]
     : [
         grant.client.name === null
           ? '        <p class="card-title">An agent client that gives no name.</p>'

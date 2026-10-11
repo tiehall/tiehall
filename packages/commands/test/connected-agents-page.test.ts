@@ -108,6 +108,20 @@ describe("the Connected agents and tokens page", () => {
     expect(html).not.toContain(`value="${bobsGrant}"`);
   });
 
+  // agent-access: The CLI signs in through a restricted device flow, its scenario "One CLI grant for every machine"
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (21)): the member holds one grant for
+  // the CLI, which every approved tiehall login updates, so the page says, beside that grant alone, that revoking it
+  // signs the CLI out on every machine.
+  it("says beside the tiehall CLI's grant, and no other, that revoking it signs the CLI out on every machine", async () => {
+    const html = await page(ana);
+    const cards = html.split('<li class="card">').slice(1);
+    const cliCard = cards.find((card) => card.includes("The tiehall CLI"));
+    const otherCard = cards.find((card) => card.includes("Test agent"));
+    expect(cliCard).toContain("Revoking this grant signs the tiehall CLI out on every machine where you ran tiehall login.");
+    expect(otherCard).toBeDefined();
+    expect(otherCard).not.toContain("every machine");
+  });
+
   it("revokes nothing of another member's: their grant and their token get 404 and keep working", async () => {
     const bobsToken = await tokenOf(bob, "Bob's own script");
     const { rows } = await harness.install.owner.query("SELECT id FROM oauth_consents WHERE user_id = $1", [bob.userId]);
