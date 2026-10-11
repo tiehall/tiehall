@@ -117,7 +117,7 @@ Agents sign in to an install as OAuth clients, and the MCP clients differ in wha
 4. For each cell, record the sign-in path that worked, or the failure, and the number of tools the client shows against the server's count, the tools in `mcp/tools.json`.
 5. In the same sessions, record which clients open a URL-mode elicitation for a commitment and retry the tool call afterwards, and whether Claude Code's Stop hook with `asyncRewake` wakes the session when news arrives.
 
-Commit the record of the run with a result in every cell. Triage each failing cell: a failure on Tiehall's side becomes a task with a reproducing test first; a failure only the client can fix gets its fallback documented for that client, which is Dynamic Client Registration, a personal access token, or the web inbox in place of URL-mode elicitation.
+Commit the record of the run with a result in every cell, as a dated entry in the client-matrix log, [`docs/client-matrix/log.md`](docs/client-matrix/log.md), in the form its opening describes; the plan's checks against one real client, such as the Claude Code plugin's and its hooks', are recorded there too. Triage each failing cell: a failure on Tiehall's side becomes a task with a reproducing test first; a failure only the client can fix gets its fallback documented for that client, which is Dynamic Client Registration, a personal access token, or the web inbox in place of URL-mode elicitation.
 
 ## Making a release
 
