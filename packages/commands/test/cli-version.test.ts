@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compareVersions, MINIMUM_CLI_VERSION } from "@tiehall/core";
 import { CLI_VERSION } from "tiehall";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
-import { realSleep, signedInCli, type CliMachine } from "./support/cli.ts";
+import { cliMachine, realSleep, signedInCli, type CliMachine } from "./support/cli.ts";
+import { URL_OF_INSTALL } from "./support/install.ts";
 import { mcpPerson, PROBLEM, type McpPerson } from "./support/mcp.ts";
 import { openRequestInTheWebUi } from "./support/requests.ts";
 
@@ -98,6 +99,44 @@ describe("a call from a CLI older than the minimum", () => {
       expect(run.stderr).toContain("Upgrade required: This tiehall CLI is version");
       expect(run.stderr).toContain("npm install --global tiehall@latest");
       expect(await stored(request.key)).toEqual({ state: "open", claimant: null });
+    } finally {
+      machine.close();
+    }
+  });
+});
+
+// public-api: The CLI sends its version and the server keeps a minimum (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (35)): the minimum is checked on /api/v1 alone. tiehall login goes through the
+// authorization server's device flow, whose errors are OAuth's and which does not check the version, so a CLI older
+// than the minimum signs in, here through the install's own device flow, and is told to upgrade at its first command.
+describe("tiehall login from a CLI older than the minimum", () => {
+  it("completes the device flow, and the CLI's first command gets upgrade-required", async () => {
+    const machine = cliMachine(harness);
+    try {
+      const version = older(MINIMUM_CLI_VERSION);
+      machine.pretendVersion(version);
+      let approved = false;
+      const login = await machine.run(["login", URL_OF_INSTALL], {
+        sleep: async () => {
+          if (approved) return;
+          const code = /type this code: (\S+)/.exec(machine.printed())?.[1];
+          if (code === undefined) throw new Error(`the CLI printed no code: ${machine.printed()}`);
+          await harness.approveDevice(dana, code);
+          approved = true;
+        },
+      });
+      expect(login.code).toBe(0);
+      expect(Object.keys(machine.logins())).toEqual([URL_OF_INSTALL]);
+      const signIn = machine.calls.filter(({ url }) => url.startsWith(`${URL_OF_INSTALL}/api/auth/`));
+      expect(signIn.length).toBeGreaterThan(1);
+      expect(signIn.every(({ cliVersion }) => cliVersion === version)).toBe(true);
+
+      const from = machine.calls.length;
+      const first = await machine.run(["inbox"]);
+      expect(first.code).toBe(1);
+      expect(first.stderr).toContain("Upgrade required: This tiehall CLI is version");
+      expect(first.stderr).toContain("npm install --global tiehall@latest");
+      expect(machine.calls.slice(from).map(({ url }) => new URL(url).pathname)).toEqual(["/api/v1/inbox"]);
     } finally {
       machine.close();
     }

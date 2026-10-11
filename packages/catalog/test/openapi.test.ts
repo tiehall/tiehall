@@ -498,6 +498,38 @@ describe("the commitments of the real catalog", () => {
   });
 });
 
+// agent-surfaces: CLI request commands; public-api: Each operation carries a stability level
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (34)): every CLI command calls a public
+// /api/v1 operation, so the operations built for the CLI and its pages are in the document at beta, while the web UI's
+// lists of the requests a user opened and of a request's proposals stay internal commands, in no document.
+describe("the operations the CLI calls, in the real catalog's document", () => {
+  const CLI_OPERATIONS = ["requests.inbox", "requests.read", "proposals.propose", "users.whoami", "teams.get"];
+  const WEB_ONLY = ["requests.list_opened", "proposals.list"];
+
+  /** The stability level of each operation a document lists, by its operationId. */
+  function levels(served: { paths: Record<string, Record<string, unknown>> }): Map<string, unknown> {
+    const found = new Map<string, unknown>();
+    for (const operations of Object.values(served.paths)) {
+      for (const each of Object.values(operations)) {
+        if (typeof each !== "object" || each === null) continue;
+        const { operationId, "x-stability-level": level } = each as Json;
+        if (typeof operationId === "string") found.set(operationId, level);
+      }
+    }
+    return found;
+  }
+
+  it.each([
+    ["the document the catalog generates", () => openApiDocument(CATALOG)],
+    ["the committed document an install serves", () => JSON.parse(OPENAPI_JSON) as unknown],
+  ])("holds each at beta, and neither of the web UI's two list reads, in %s", (_name, read) => {
+    const found = levels(read() as { paths: Record<string, Record<string, unknown>> });
+    for (const id of CLI_OPERATIONS) expect(found.get(id), id).toBe("beta");
+    for (const id of WEB_ONLY) expect(found.has(id), id).toBe(false);
+    for (const id of WEB_ONLY) expect(CATALOG.commands.find((command) => command.id === id)?.surfaces, id).toEqual([]);
+  });
+});
+
 describe("the committed form", () => {
   it("sorts every object's keys and ends with a newline, so a change shows as a small diff", () => {
     const text = serializeDocument(document);
