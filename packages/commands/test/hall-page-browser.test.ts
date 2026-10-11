@@ -13,12 +13,12 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // reduced motion; web-ui: Pages work at phone width; design.md, Design: The
 // live hall; design.md, Design: Motion and reduced motion; D57 (5), (6), (7),
 // (11)). With scripts off, /hall shows the people and agents at work, the
-// feed, the teams and the lines between them as they stood when it was
-// served, says that it updates only with scripts on, shows no Pause motion
-// button, and runs no animation 5.5 seconds after it loads; its background is
-// the dark ground whether the browser prefers dark or light; and at 320 CSS
-// pixels it scrolls no page sideways. The web app runs as the image runs it,
-// and Pia signs in with GitHub through the stub.
+// feed, the teams and the lines between them as they stood when it was served,
+// says that it updates only with scripts on, shows no Pause motion button and
+// keeps no place for a map, and runs no animation 5.5 seconds after it loads;
+// its background is the dark ground whether the browser prefers dark or light;
+// and at 320 CSS pixels it scrolls no page sideways. The web app runs as the
+// image runs it, and Pia signs in with GitHub through the stub.
 
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 
@@ -100,6 +100,10 @@ describe("the live hall without scripts", () => {
     await expect(page.locator("#hall-lines").getByText("1 in progress").isVisible()).resolves.toBe(true);
     await expect(page.getByRole("button", { name: "Pause motion" }).isVisible()).resolves.toBe(false);
     await expect(page.locator("#hall-map").isVisible()).resolves.toBe(false);
+    // No place is kept for a map that no script will draw: the feed fills the width the map would share.
+    const [stage, feed] = await Promise.all([page.locator(".hall-stage").boundingBox(), page.locator(".hall-feed").boundingBox()]);
+    expect(feed?.width).toBeGreaterThan(0);
+    expect(feed?.width).toBe(stage?.width);
     await context.close();
   });
 

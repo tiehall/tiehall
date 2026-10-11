@@ -22,9 +22,12 @@ import { createPageRoute, type PageRoute, type PageRouteOptions } from "./web-pa
 // Pause motion, hidden until the script shows it, so a page without scripts
 // shows no button that does nothing; and the link that opens a request. Then,
 // from hall.state, read as every page reads: the people and agents at work;
-// the map's place, which the script fills on a wide screen; the feed "On the
-// line"; every team with a lamp per live state and the counts in words; and
-// the lines between teams with the requests on them. It loads the hall's one
+// the map's place, which the stylesheet lays out from the page's first frame
+// on a wide screen in a browser that runs scripts, and hides without them and
+// on a phone, and which the script fills, so drawing the map moves nothing on
+// the page (tiehall.css); the feed "On the line"; every team with a lamp per
+// live state and the counts in words; and the lines between teams with the
+// requests on them. It loads the hall's one
 // script, a module from the install, which makes the page live (hall.js).
 // Every title, team name, login and client name is escaped text, and every
 // title, team name and client name sits in a bdi, so that no character of it
@@ -198,7 +201,7 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     `        <p class="empty" id="at-work-empty"${state.atWork.length === 0 ? "" : " hidden"}>${escapeHtml(empty.atWork)}</p>`,
     "      </section>",
     '      <div class="hall-stage">',
-    '        <div class="hall-map" id="hall-map" aria-hidden="true" hidden></div>',
+    '        <div class="hall-map" id="hall-map" aria-hidden="true"></div>',
     '        <section class="hall-feed" aria-labelledby="feed-heading">',
     '          <h2 id="feed-heading" class="label">On the line</h2>',
     '          <ol class="feed" id="feed">',

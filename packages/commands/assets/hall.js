@@ -638,7 +638,6 @@ function start() {
   const requestRows = /** @type {HTMLElement} */ (document.getElementById("hall-requests"));
   const news = /** @type {HTMLElement} */ (document.getElementById("hall-news"));
   const map = /** @type {HTMLElement} */ (document.getElementById("hall-map"));
-  const stage = /** @type {HTMLElement} */ (map.parentElement);
   const query = new URLSearchParams(location.search);
   const narrowing = new URLSearchParams();
   const team = query.get("team");
@@ -813,18 +812,19 @@ function start() {
 
   // ---- The map ----
 
-  /** Draws the map, on a screen at least 768 CSS pixels wide. */
+  /**
+   * Draws the map, on a screen at least 768 CSS pixels wide, in the place the stylesheet lays out for it from the
+   * page's first frame in a browser that runs scripts, so drawing it moves nothing on the page.
+   */
   function renderMap() {
     if (state === undefined) return;
     if (!wide.matches) {
       map.hidden = true;
-      stage.classList.remove("mapped");
       map.replaceChildren();
       cords = new Map();
       return;
     }
     map.hidden = false;
-    stage.classList.add("mapped");
     let canvas = map.querySelector("svg");
     if (canvas === null) {
       canvas = /** @type {SVGSVGElement} */ (svg("svg", { class: "map", focusable: "false" }));

@@ -17,21 +17,22 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // many teams and on a phone; web-ui: Motion, and reduced motion; web-ui: What
 // the live hall shows of the people and agents at work; agent-safety: The web
 // UI renders no raw HTML and no remote images; requester-loop: No push paths
-// other than the hooks; design.md, Design: The live hall; D57 (6), (11),
-// (12), (13)), against the web app as the image runs it and an install whose
-// people and agents act meanwhile. The script makes the page live, shows
-// Pause motion and holds a wait, so an agent's blocking question reaches the
-// feed and the team's count within 2 seconds; the map draws a node per team,
-// a line per pair, at most 12 people and agents at work and at most 8 dots,
-// each an SVG circle moved through its cx and cy; Pause motion stops every
-// animation and starts them again, and reduced motion starts with it pressed;
-// a hidden page holds no wait and catches up once shown; a restart shows
-// Reconnecting and then Live; an ended session shows Signed out; 60 events
-// while the page is held back make it read its state again; 20 teams keep
-// apart, and above 20 the others share a node; a phone gets lists and no map;
-// names and titles stay text; and a minute of updates breaks no policy and
-// leaves no style attribute. Pages are hidden by telling them so, as a
-// browser does when its tab goes to the back.
+// other than the hooks; design.md, Design: The live hall; D57 (6), (11), (12),
+// (13)), against the web app as the image runs it and an install whose people
+// and agents act meanwhile. The script makes the page live, shows Pause motion
+// and holds a wait, so an agent's blocking question reaches the feed and the
+// team's count within 2 seconds; the map's place is laid out from the first
+// frame the page paints, before the script runs, so drawing the map moves
+// nothing; the map draws a node per team, a line per pair, at most 12 people
+// and agents at work and at most 8 dots, each an SVG circle moved through its
+// cx and cy; Pause motion stops every animation and starts them again, and
+// reduced motion starts with it pressed; a hidden page holds no wait and
+// catches up once shown; a restart shows Reconnecting and then Live; an ended
+// session shows Signed out; 60 events while the page is held back make it read
+// its state again; 20 teams keep apart, and above 20 the others share a node;
+// a phone gets lists and no map; names and titles stay text; and a minute of
+// updates breaks no policy and leaves no style attribute. Pages are hidden by
+// telling them so, as a browser does when its tab goes to the back.
 
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 const MARKUP_CLIENT = randomUUID();
@@ -390,6 +391,81 @@ describe("the live hall's script", () => {
     await page.locator("#live-words", { hasText: "Signed out" }).waitFor();
     await expect(page.locator("#live-state a").getAttribute("href")).resolves.toBe("/sign-in?return=%2Fhall");
     await expect.poll(() => hall.reads.open).toBe(0);
+    await context.close();
+  });
+});
+
+/**
+ * The layout of the live hall's stage as the browser lays it out: the box of the map's place, as x, y, width and
+ * height, the box of the feed beside or below it, and the stage's columns. Plain JavaScript, as a string.
+ */
+const STAGE_LAYOUT = `() => {
+  const box = (element) => {
+    if (element === null) return null;
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return [x, y, width, height].map(Math.round);
+  };
+  const map = document.getElementById("hall-map");
+  const stage = map.parentElement;
+  return { map: box(map), feed: box(stage.querySelector(".hall-feed")), columns: getComputedStyle(stage).gridTemplateColumns };
+}`;
+
+/**
+ * Records, in the page, the layout of the first frame the browser paints of the live hall: at the first animation
+ * frame in which the map's place is in the page, the stage's layout, the page's background, and whether the hall's
+ * script had run by then. A browser runs a page's animation frames only once its stylesheet has loaded, each right
+ * before it paints, so that frame is the first look of the hall the page shows. Plain JavaScript, as a string.
+ */
+const FIRST_FRAME = `(() => {
+  if (location.pathname !== "/hall") return;
+  const frame = () => {
+    if (document.getElementById("hall-map") === null) {
+      requestAnimationFrame(frame);
+      return;
+    }
+    window.tiehallFirstFrame = {
+      live: document.body.classList.contains("live"),
+      background: getComputedStyle(document.body).backgroundColor,
+      layout: (${STAGE_LAYOUT})(),
+    };
+  };
+  requestAnimationFrame(frame);
+})()`;
+
+describe("the live hall's first frame", () => {
+  it.each([
+    [1280, 800],
+    [1024, 768],
+  ])("lays out the map's place from the first frame the page paints at %i by %i, before its script runs, so drawing the map moves nothing", { timeout: 120_000 }, async (width, height) => {
+    const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
+    await context.addCookies([{ name: "tiehall.session_token", value: cookie, url: web.url }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    await page.addInitScript({ content: FIRST_FRAME });
+    // The hall's script is held until the page has painted, as a slow network or a slow first read of the state would
+    // hold it, so the frames painted before it runs are the ones this test reads.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(/\/assets\/hall\.js(\?|$)/, async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.goto(`${web.url}/hall`, { waitUntil: "commit" });
+    await expect.poll(() => page.evaluate("window.tiehallFirstFrame !== undefined"), { timeout: 10_000 }).toBe(true);
+    const first = (await page.evaluate("window.tiehallFirstFrame")) as { live: boolean; background: string; layout: { map: number[]; feed: number[] | null; columns: string } };
+    release();
+    await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
+    await page.locator("#hall-map .node").first().waitFor();
+    const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
+    expect(first.live).toBe(false);
+    expect(first.background).toBe("rgb(7, 16, 38)");
+    expect(drawn.map[2]).toBeGreaterThan(0);
+    expect(drawn.map[3]).toBeGreaterThan(0);
+    expect(first.layout.map).toEqual(drawn.map);
+    expect(first.layout.columns).toBe(drawn.columns);
+    if (first.layout.feed !== null) expect(first.layout.feed.slice(0, 3)).toEqual(drawn.feed.slice(0, 3));
     await context.close();
   });
 });

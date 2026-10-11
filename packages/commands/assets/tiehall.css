@@ -3060,7 +3060,10 @@ textarea[aria-invalid="true"] {
   margin: 0 0 12px;
 }
 
-/* The map beside the feed: one column until the script runs on a wide screen. */
+/* The map's place above or beside the feed, which the stylesheet lays out from the page's first frame on a screen at
+   least 768 CSS pixels wide in a browser that runs scripts, before the hall's script has run or read the hall's state,
+   so the script draws the map in a place already there and nothing on the page moves when it does. Without scripts,
+   and on a phone, there is no map: the lists are the page, the feed in columns across its width. */
 .hall-stage {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3069,7 +3072,7 @@ textarea[aria-invalid="true"] {
 
 .hall-map {
   height: clamp(600px, calc(100vh - 200px), 820px);
-  display: flex;
+  display: none;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -3077,6 +3080,12 @@ textarea[aria-invalid="true"] {
   background-color: var(--ground);
   background-image: radial-gradient(var(--surface-2) 1px, transparent 1px);
   background-size: 22px 22px;
+}
+
+@media (scripting: enabled) and (min-width: 768px) {
+  .hall-map {
+    display: flex;
+  }
 }
 
 /* The map (web-ui: The live hall with many teams and on a phone; design.md, Design: The live hall, Many teams): the
@@ -3952,25 +3961,22 @@ textarea[aria-invalid="true"] {
     flex: 0 0 min(280px, 85%);
     scroll-snap-align: start;
   }
-
-  .hall-map {
-    display: none;
-  }
 }
 
-/* The live hall on a wide screen once its script runs: the map beside the feed, which scrolls in its own box. */
-@media (min-width: 1200px) {
-  .hall.live .hall-stage.mapped {
+/* The live hall on a wide screen in a browser that runs scripts, from the page's first frame: the map beside the feed,
+   which scrolls in its own box. */
+@media (scripting: enabled) and (min-width: 1200px) {
+  .hall-stage {
     grid-template-columns: minmax(0, 1fr) 360px;
     align-items: start;
   }
 
-  .hall.live .hall-stage.mapped > .hall-feed {
+  .hall-stage > .hall-feed {
     max-height: clamp(600px, calc(100vh - 200px), 820px);
     overflow-y: auto;
   }
 
-  .hall.live .hall-stage.mapped .feed {
+  .hall-stage .feed {
     display: flex;
   }
 }
