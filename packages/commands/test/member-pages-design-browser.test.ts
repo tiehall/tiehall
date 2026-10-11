@@ -69,6 +69,23 @@ describe("the inbox and the member's pages at 320 CSS pixels", () => {
     }
   });
 
+  it("starts every update's words at the same place on a wide screen, whatever the length of its key", { timeout: 120_000 }, async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/inbox`);
+    // A longer key on one row, as a team with a longer key or a request with a higher number has.
+    const lefts = await page.locator(".update-list > li").evaluateAll((rows) => {
+      const key = rows[0]?.querySelector(".key");
+      if (key) key.textContent = "PAY-128";
+      return rows.map((row) => Math.round(row.querySelector(".update-what")?.getBoundingClientRect().left ?? 0));
+    });
+    expect(lefts.length).toBeGreaterThan(1);
+    expect(new Set(lefts).size).toBe(1);
+    await context.close();
+  });
+
   it("shows the inbox's waiting proposal, its receipt with the undo link, and the updates", { timeout: 120_000 }, async () => {
     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
     await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);

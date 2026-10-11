@@ -2142,10 +2142,11 @@ a.key:hover {
   margin: 0;
 }
 
+/* Each row's key in a column wide enough for a key such as PAY-1280, so the words of every row start at one place. */
 .update {
   padding: 12px 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(10ch, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px 14px;
   border-top: 1px solid var(--border);
