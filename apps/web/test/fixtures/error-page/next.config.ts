@@ -5,10 +5,14 @@ import type { NextConfig } from "next";
 // which gives the page the policy of the pages Next.js renders
 // (packages/commands/test/page-policies-browser.test.ts; web-ui: The content
 // security policy of each kind of page). It compiles the workspace packages
-// the way the web app does.
+// the way the web app does, and serves the install's assets, with /favicon.ico
+// rewritten to the icon, as the web app does (app/assets/[...path]/route.ts).
 const nextConfig: NextConfig = {
   transpilePackages: ["@tiehall/catalog", "@tiehall/commands", "@tiehall/core", "@tiehall/db"],
   poweredByHeader: false,
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/assets/favicon.ico" }];
+  },
 };
 
 export default nextConfig;
