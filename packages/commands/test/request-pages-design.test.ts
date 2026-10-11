@@ -172,7 +172,12 @@ describe("a request's page", () => {
     expect(textOf(proposals)).toMatch(/It expires in \d+ days ?\./);
     expect(proposals).toMatch(/<time dateTime="\d{4}-\d\d-\d\dT[\d:.]+Z">in \d+ days<\/time>/);
     expect(textOf(proposals)).not.toMatch(/\d{4}-\d\d-\d\dT\d\d:\d\d/);
-    expect(proposals).toContain(`<a class="button" href="/confirm/${seed.decline}">Review it, then confirm or reject it</a>`);
+    // The link to review a pending proposal is an outline: posting stays the page's one gold main action (D59 (2)).
+    expect(proposals).toContain(`<a class="button secondary" href="/confirm/${seed.decline}">Review it, then confirm or reject it</a>`);
+    // In the page's main part, the one control in gold, a link styled as a button or a plain submit button, is Post.
+    const two = (await open("/FE-2")).html;
+    const main = two.slice(two.indexOf("<main"));
+    expect(main.match(/<a\b[^>]*class="button"[^>]*>|<button type="submit">[^<]*/g)).toEqual(['<button type="submit">Post']);
   });
 });
 

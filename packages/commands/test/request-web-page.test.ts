@@ -148,7 +148,7 @@ describe("the web UI's page of a request", () => {
     expect(text).toContain("Proposals");
     expect(text).toContain("A decline, pending, proposed by bob");
     expect(text).toContain("It needs the confirmation of bob, and has none yet.");
-    expect(html).toContain(`<a class="button" href="/confirm/${decline}">Review it, then confirm or reject it</a>`);
+    expect(html).toContain(`<a class="button secondary" href="/confirm/${decline}">Review it, then confirm or reject it</a>`);
   });
 
   it("shows no notice on a request that does not wait for a person", async () => {

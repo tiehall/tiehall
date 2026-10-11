@@ -597,7 +597,8 @@ function ProposalsSection({ proposals, now }: { proposals: readonly Proposal[]; 
           ))}
           {proposal.state === "pending" ? (
             <p>
-              <a className="button" href={`/confirm/${proposal.id}`}>
+              {/* An outline: posting to the thread stays the page's one gold main action (D59 (2)). */}
+              <a className="button secondary" href={`/confirm/${proposal.id}`}>
                 Review it, then confirm or reject it
               </a>
             </p>
