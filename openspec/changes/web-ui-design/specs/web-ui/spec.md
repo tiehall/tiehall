@@ -43,11 +43,12 @@ Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; des
 ### Requirement: One stylesheet with named design tokens
 
 Every page of the web UI SHALL take its look from the install's stylesheet, which it SHALL link from the install, and SHALL be served with markup that holds no `style` element and no `style` attribute. The stylesheet SHALL define every color it uses as a named design token, with these values for the main tokens:
-- in the light theme: ink `#14161B` for text, secondary text `#4A5060`, line blue `#2B4ACB` for links, primary buttons and the focus ring, signal amber `#F2B33D` as the brand's accent, `#B26B00` for lamps that call for attention, ground `#F6F7F9` behind the page, surface `#FFFFFF` for panels and the top bar, and border `#E3E6EB`;
-- in the dark theme: ink `#E8EAF0`, secondary text `#8A93A6`, line blue `#9DB2FF` for links and the focus ring and `#4C69E6` for primary buttons, signal amber `#F2B33D`, also for lamps that call for attention, ground `#0E1117`, surface `#151A23`, and border `#2A3040`.
-Signal amber `#F2B33D` SHALL NOT be used for text, nor for a lamp, on the light theme's ground or surface.
+- in the light theme: navy ink `#0B1B3A` for text, secondary text `#4A5672`, navy blue `#1F45A3` for links and the focus ring, gold `#E3B341` with ink `#0B1B3A` for a page's main action, navy `#14306E` with white text for a strong secondary action, `#A98000` for lamps that call for attention, ground `#F6F7FA` behind the page, surface `#FFFFFF` for panels and the top bar, and border `#DFE3EC`;
+- in the dark theme: ink `#E9EDF5`, secondary text `#A9B3C8`, `#9DB6EE` for links, gold `#F0CB6A` for the focus ring, gold `#E3B341` with ink `#0A1428` for a page's main action, `#2A4A9E` with white text for a strong secondary action, gold `#E3B341` for lamps that call for attention, ground `#0A1428`, surface `#111E38`, and border `#24345A`;
+- on the live hall: the dark theme's, on the ground `#071026`, with panels `#0E1A33` and borders `#22325A`.
+Gold `#E3B341` SHALL NOT be used for text, nor for a lamp, on the light theme's ground or surface.
 
-Source: D57 (1); design.md, Decisions this change rests on; design.md, Design: The design tokens
+Source: D57 (1); D59; design.md, Decisions this change rests on; design.md, Design: The design tokens
 
 #### Scenario: A page takes its look from the stylesheet
 
@@ -58,8 +59,8 @@ Source: D57 (1); design.md, Decisions this change rests on; design.md, Design: T
 #### Scenario: The light theme's ground and ink
 
 - **WHEN** a browser that prefers the light color scheme shows `/inbox`
-- **THEN** the page's background is `#F6F7F9`
-- **AND** its body text is `#14161B`
+- **THEN** the page's background is `#F6F7FA`
+- **AND** its body text is `#0B1B3A`
 
 #### Scenario: The request's page takes the same look
 
@@ -73,28 +74,30 @@ Every page that shows a request's state SHALL show it as a chip that names the s
 
 | State | Words | Light chip: background / text | Dark chip: background / text | Lamp, light theme | Lamp, dark theme and the live hall |
 | --- | --- | --- | --- | --- | --- |
-| `open` | Open | `#EEF0F4` / `#3B4252` | `#232938` / `#C9CFDB` | `#7A8294` | `#8A93A6` |
-| `claimed` | Claimed | `#E6EBFB` / `#1E3596` | `#1A2340` / `#B7C6FF` | `#4C69E6` | `#9DB2FF` |
-| `in_progress` | In progress | `#2B4ACB` / `#FFFFFF` | `#4C69E6` / `#FFFFFF` | `#2B4ACB` | `#4C69E6` |
-| `needs_info` | Needs info | `#FCEFD2` / `#7A4A00` | `#3A2C10` / `#F2C66D` | `#B26B00` | `#F2B33D` |
-| `done` | Done | `#DDF1E6` / `#145A37` | `#12301F` / `#7EE2A3` | `#1E8A4C` | `#4ADE80` |
-| `declined` | Declined | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none | none |
-| `withdrawn` | Withdrawn | `#F1F2F4` / `#5B6170` | `#202530` / `#A3ABBD` | none | none |
+| `open` | Open | `#FFFFFF` / `#3E4A63` | `#182748` / `#C4CBD8` | `#6A748D` | `#7A849D` |
+| `claimed` | Claimed | `#E6EBF7` / `#1F3F8F` | `#1B2D5D` / `#C1D4FE` | `#364EA0` | `#93A9DD` |
+| `in_progress` | In progress | `#14306E` / `#FFFFFF` | `#2A4A9E` / `#FFFFFF` | `#14306E` | `#6E95F0` |
+| `needs_info` | Needs info | `#F2CA5B` / `#0B1B3A` | `#E3B341` / `#0A1428` | `#A98000` | `#E3B341` |
+| `done` | Done | `#D7F1E3` / `#145A37` | `#0F3A27` / `#86E0B2` | `#0B724B` | `#8FE9BB` |
+| `declined` | Declined | `#FBE3E1` / `#9B1E22` | `#451E1C` / `#FBB7B1` | none | none |
+| `withdrawn` | Withdrawn | `#EEF0F4` / `#555B66` | `#191F2E` / `#9FA5B2` | none | none |
+
+The lamps of a theme SHALL differ in lightness as well as in hue, so that a reader who cannot tell their hues apart can still tell them apart: every two lamps of a theme at least 6 apart in CIE lightness (L*), and the needs-info and done lamps at least 10.
 
 A request flagged `needs_human`, as the agent-safety capability defines, SHALL also show a second chip that says in words that it waits for a person.
 
-Source: D57 (1), (8); design.md, Decisions this change rests on; design.md, Design: Request states
+Source: D57 (1), (8); D59 (5); design.md, Decisions this change rests on; design.md, Design: Request states
 
 #### Scenario: A state in the request lists
 
 - **WHEN** FE-142 is `needs_info`, and a member whose browser prefers the light color scheme opens `/requests?list=all`
 - **THEN** FE-142's row shows a chip with the words "Needs info"
-- **AND** the chip's background is `#FCEFD2` and its text `#7A4A00`
+- **AND** the chip's background is `#F2CA5B` and its text `#0B1B3A`
 
 #### Scenario: The same state in the dark theme
 
 - **WHEN** a member whose browser prefers the dark color scheme opens FE-142's page while FE-142 is `in_progress`
-- **THEN** its state chip says "In progress" in `#FFFFFF` on `#4C69E6`
+- **THEN** its state chip says "In progress" in `#FFFFFF` on `#2A4A9E`
 
 #### Scenario: A flagged request
 
@@ -104,19 +107,24 @@ Source: D57 (1), (8); design.md, Decisions this change rests on; design.md, Desi
 #### Scenario: A lamp in the light theme
 
 - **WHEN** an agent's blocking question moved FE-142 to `needs_info`, and a member whose browser prefers the light color scheme opens FE-142's page
-- **THEN** the timeline's entry for that move has a lamp in `#B26B00`, beside words that say FE-142 needs info
+- **THEN** the timeline's entry for that move has a lamp in `#A98000`, beside words that say FE-142 needs info
+
+#### Scenario: Lamps apart in lightness
+
+- **WHEN** the live hall shows a team with a request that needs info and a request done within the last 24 hours
+- **THEN** the needs-info lamp `#E3B341` and the done lamp `#8FE9BB` differ by at least 10 in CIE lightness, beside words that name each state
 
 ### Requirement: The mark, the favicon and the app icon
 
-The install's mark SHALL be TM1: in a 32 by 32 view box, drawn with round caps and round joins at a stroke width of 2.5, which MAY grow to at most 3.5 at sizes under 32 pixels, the paths `M6.5 16 V7 L16 15.5 L25.5 7 V16` and `M16 17.9 V24` and two circles of radius 2.4 centered at (16, 15.5) and (16, 26.6). Every page's top bar SHALL show the mark beside the name Tiehall, with the mark hidden from assistive technology. The install's icon SHALL be the mark in white on an ink (`#14161B`) rounded square, and every page SHALL name it in its head: `/assets/icon.svg` as an SVG icon, `/favicon.ico`, which SHALL hold images of 16, 32 and 48 pixels, `/assets/icon-180.png` as the touch icon, and the manifest `/assets/manifest.webmanifest`, which SHALL give the name Tiehall, the start URL `/`, the display mode `browser`, and the icons `/assets/icon-192.png` and `/assets/icon-512.png` with those sizes. The API reference page at `/docs/api` SHALL name the same three icons in its head, and not the manifest.
+The install's mark SHALL be TM1: in a 32 by 32 view box, drawn with round caps and round joins at a stroke width of 2.5, which MAY grow to at most 3.5 at sizes under 32 pixels, the paths `M6.5 16 V7 L16 15.5 L25.5 7 V16` and `M16 17.9 V24` and two circles of radius 2.4 centered at (16, 15.5) and (16, 26.6). Every page's top bar SHALL show the mark beside the name Tiehall, with the mark hidden from assistive technology. The install's icon SHALL be the mark in gold (`#E3B341`) on a navy (`#0A1428`) rounded square, and every page SHALL name it in its head: `/assets/icon.svg` as an SVG icon, `/favicon.ico`, which SHALL hold images of 16, 32 and 48 pixels, `/assets/icon-180.png` as the touch icon, and the manifest `/assets/manifest.webmanifest`, which SHALL give the name Tiehall, the start URL `/`, the display mode `browser`, and the icons `/assets/icon-192.png` and `/assets/icon-512.png` with those sizes. The API reference page at `/docs/api` SHALL name the same three icons in its head, and not the manifest.
 
-Source: D57 (2), (10); design.md, Decisions this change rests on; design.md, Design: The mark and the icons
+Source: D57 (2), (10); D59 (3); design.md, Decisions this change rests on; design.md, Design: The mark and the icons
 
 #### Scenario: The mark's drawing
 
 - **WHEN** `/assets/icon.svg` is read
 - **THEN** it draws the paths `M6.5 16 V7 L16 15.5 L25.5 7 V16` and `M16 17.9 V24` and the circles of radius 2.4 at (16, 15.5) and (16, 26.6), with round caps and joins
-- **AND** it draws them in white on an ink rounded square
+- **AND** it draws them in gold on a navy rounded square
 
 #### Scenario: The favicon
 
@@ -213,19 +221,19 @@ Source: D57 (4), (7), (8); design.md, Decisions this change rests on; design.md,
 
 ### Requirement: Light and dark themes follow the system
 
-Every page SHALL follow the color scheme the browser reports the system prefers: the light theme's tokens when it prefers light or states no preference, and the dark theme's tokens when it prefers dark, as the requirement on the design tokens defines. The live hall SHALL use the dark theme's tokens whatever the preference. Each page SHALL declare the color schemes it uses, so the browser draws form controls and scroll bars in the same scheme. The web UI SHALL offer no theme setting of its own.
+Every page SHALL follow the color scheme the browser reports the system prefers: the light theme's tokens when it prefers light or states no preference, and the dark theme's tokens when it prefers dark, as the requirement on the design tokens defines. The live hall SHALL use the dark theme's tokens whatever the preference, on its own darker ground `#071026` and panels `#0E1A33`. Each page SHALL declare the color schemes it uses, so the browser draws form controls and scroll bars in the same scheme. The web UI SHALL offer no theme setting of its own.
 
-Source: D57 (5); design.md, Decisions this change rests on; design.md, Design: Light and dark themes
+Source: D57 (5); D59 (1); design.md, Decisions this change rests on; design.md, Design: Light and dark themes
 
 #### Scenario: A system that prefers dark
 
 - **WHEN** a browser that prefers the dark color scheme opens `/inbox`
-- **THEN** the page's background is `#0E1117` and its body text `#E8EAF0`
+- **THEN** the page's background is `#0A1428` and its body text `#E9EDF5`
 
 #### Scenario: The live hall is dark in a light system
 
 - **WHEN** a browser that prefers the light color scheme opens `/hall`
-- **THEN** the page's background is `#0E1117`
+- **THEN** the page's background is `#071026`
 
 #### Scenario: Form controls follow the theme
 

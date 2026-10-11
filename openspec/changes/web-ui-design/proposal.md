@@ -2,11 +2,11 @@
 
 ## Why
 
-The web UI works but has no look: the web role's pages are plain HTML under a policy that loads no stylesheet, and nothing links them together. The maintainer opened an install in a browser, found nothing that reads as a product, and decided D57 on 2026-10-11, approving a design canvas and the recommended defaults: the web UI gets a real visual design, with motion, and a live hall where people watch requests flow between teams and see agents at work. [design.md](design.md#decisions-this-change-rests-on) restates D57 as public rules, so the canvas is not needed to build it.
+The web UI works but has no look: the web role's pages are plain HTML under a policy that loads no stylesheet, and nothing links them together. The maintainer opened an install in a browser, found nothing that reads as a product, and decided D57 on 2026-10-11, approving a design canvas and the recommended defaults: the web UI gets a real visual design, with motion, and a live hall where people watch requests flow between teams and see agents at work. D59 then chose its Navy & Gold palette. [design.md](design.md#decisions-this-change-rests-on) restates both as public rules.
 
 ## What Changes
 
-- **One look** (D57 (1) to (3), (10)): one stylesheet the install serves, built on named design tokens with dark counterparts; request states look the same everywhere; the mark TM1 is the favicon and the app icon; IBM Plex Sans and Mono, IBM's own files under the SIL Open Font License, served by the install.
+- **One look** (D57 (1) to (3), (10); D59): one stylesheet the install serves, built on named design tokens, navy and gold, light and dark; request states look the same everywhere; the mark TM1 is the favicon and the app icon; IBM Plex Sans and Mono, IBM's own files under the SIL Open Font License, served by the install.
 - **A shell** (D57 (4)): navigation to the live hall, the inbox with what waits for the member, requests, members and, for admins, admin; a focused shell without navigation where a person makes one decision or has no session.
 - **Themes, motion, phone width, accessibility** (D57 (5) to (8)): themes follow the system and the live hall is dark; motion means something, stops within 5 seconds outside the live hall, pauses on it, and stops under reduced motion; pages work 320 CSS pixels wide; contrast 4.5:1, real buttons, labels and focus rings.
 - **A policy per kind of page** (D57 (9)): styles, fonts and images from the install only; only the live hall runs a script from the install; the framework's pages keep their nonce-bound scripts; review, confirm, consent, device, setup, sign-in and refusal pages stay script-free.
