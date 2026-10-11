@@ -26,6 +26,7 @@ export const APP = fileURLToPath(new URL("../../../../apps/web/app/", import.met
 export const PAGES: Readonly<Record<string, readonly string[]>> = {
   "route.ts": ["/"],
   "inbox/route.ts": ["/inbox"],
+  "hall/route.ts": ["/hall", "/hall?team=FE", "/hall?agents=1"],
   "settings/email/route.ts": ["/settings/email"],
   "members/route.ts": ["/members"],
   "requests/route.ts": ["/requests", "/requests?list=opened", "/requests?list=all"],

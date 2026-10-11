@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createHallStateRoute, createHallWaitRoute, sessionCookiesOf } from "../src/index.ts";
+import { createHallRoute, createHallStateRoute, createHallWaitRoute, sessionCookiesOf } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { addTeam, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -28,6 +28,7 @@ const shutdown = new AbortController();
 let carol: SignedIn;
 let state: (request: Request) => Promise<Response>;
 let wait: (request: Request) => Promise<Response>;
+let page: (request: Request) => Promise<Response>;
 
 beforeAll(async () => {
   harness = await startAgentAccess({ wait: { hallHoldMs: HOLD_MS, shutdown: shutdown.signal } });
@@ -47,6 +48,7 @@ beforeAll(async () => {
   };
   state = createHallStateRoute(options);
   wait = createHallWaitRoute(options);
+  page = createHallRoute(options);
 }, 120_000);
 
 afterAll(async () => {
@@ -205,7 +207,13 @@ describe("the session the hall's reads read", () => {
     expect(await expiryOf(cookie)).toBe(expiresAt);
   });
 
-  it.todo("is extended by opening /hall, as by opening any page");
+  it("is extended by opening /hall, as by opening any page, whose answer renews the browser's cookie", async () => {
+    const { cookie, expiresAt } = await staleSession();
+    const opened = await get(page, "/hall", { cookie, accept: "text/html" });
+    expect(opened.status).toBe(200);
+    expect(sessionCookiesOf(opened.headers).map(({ maxAge }) => maxAge)).toEqual([604_800]);
+    expect(await expiryOf(cookie)).toBeGreaterThan(expiresAt + 24 * 60 * 60_000);
+  });
 });
 
 // While the app shuts down (self-host-install: A restart stops the app gracefully). This runs last: once the install

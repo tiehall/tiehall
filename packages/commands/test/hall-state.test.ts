@@ -68,7 +68,7 @@ interface Hall {
   teams: { id: string; key: string; counts: Record<string, number>; doneLastDay: number; untrusted: { name: string } }[];
   lines: { from: Ref; to: Ref; counts: Record<string, number> }[];
   requestLines: (RequestRef & { claimant: { login: string } | null; changedAt: string })[];
-  atWork: { actor: Actor; at: string; type: string; line: string; team: Ref | null; request: RequestRef; onMap: boolean }[];
+  atWork: { actor: Actor; at: string; type: string; line: string; team: Ref | null; request: RequestRef; waiting: boolean; onMap: boolean }[];
   feed: { seq: number; at: string; type: string; line: string; actor: Actor; team: Ref | null; request: RequestRef }[];
 }
 
@@ -270,6 +270,8 @@ describe("hall.state", () => {
     expect(atWork[1]?.request).toMatchObject({ state: "needs_info", from: { key: "FE" }, to: { key: "PAY" }, untrusted: { title: "Send a refund webhook" } });
     expect(atWork.map(({ team }) => team?.key)).toEqual(["FE", "PAY", "FE"]);
     expect(atWork.every(({ onMap }) => onMap)).toBe(true);
+    // Ayşe's agent asked the blocking question that PAY-1 still waits on.
+    expect(atWork.map(({ waiting }) => waiting)).toEqual([false, true, false]);
   });
 
   it("drops a person or an agent 10 minutes after their latest event", async () => {

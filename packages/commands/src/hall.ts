@@ -304,8 +304,13 @@ export async function readHall(context: OrgContext, now: Date, narrowed: HallNar
 /** The people and agents at work now, the most recent first, the first 12 marked for the map. */
 export async function hallAtWork(context: Pick<OrgContext, "tx" | "orgId">, now: Date, narrowed: HallNarrowing, teams: ReadonlyMap<string, TeamRef>) {
   const rows = (await rowsOf<EventRow>(context, hallQueries(context.orgId, now, narrowed).atWork)).sort((a, b) => Number(b.number) - Number(a.number));
+  const data = new Map(rows.map((row) => [Number(row.number), row.data]));
   const named = await hallEvents(context, rows, teams);
-  return named.map(({ actor, at, type, line, team, request }, index) => ({ actor, at, type, line, team, request, onMap: index < ON_THE_MAP }));
+  return named.map(({ seq, actor, at, type, line, team, request }, index) => {
+    const asked = data.get(seq);
+    const waiting = type === "request.message_posted" && asked?.["kind"] === "question" && asked["blocking"] === true && request.state === "needs_info";
+    return { actor, at, type, line, team, request, waiting, onMap: index < ON_THE_MAP };
+  });
 }
 
 // The live hall's long-poll (web-ui: The live hall's reads and its

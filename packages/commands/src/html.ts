@@ -40,6 +40,16 @@ export function webPagePolicy(formAction: readonly string[] = []): string {
   return ["default-src 'none'", ...LOADS_FROM_THE_INSTALL, "base-uri 'none'", ["form-action 'self'", ...formAction].join(" "), "frame-ancestors 'none'"].join("; ");
 }
 
+/**
+ * The live hall's policy: a page of the web role's, which also runs its one
+ * script from the install and reads from the install alone, and under which
+ * Trusted Types with no policy make every write of markup into the page throw,
+ * so its script can only build elements and set their text.
+ */
+export function hallPagePolicy(): string {
+  return [webPagePolicy(), "script-src 'self'", "connect-src 'self'", "require-trusted-types-for 'script'", "trusted-types 'none'"].join("; ");
+}
+
 /** The policy of a JSON answer of the live hall, which loads nothing and cannot be framed. */
 export function hallJsonPolicy(): string {
   return "default-src 'none'; frame-ancestors 'none'";
@@ -129,20 +139,39 @@ export function footerHtml(version: Footer | undefined = footer): string {
 // narrow screen the stylesheet shows the folded menu in place of the
 // navigation, New request and the member's menu.
 
+/**
+ * How a page differs from the others: the live hall is dark whatever the
+ * system prefers, so its body carries the class hall and its head names the
+ * dark scheme and theme color alone; and it loads its script, a module from
+ * the install.
+ */
+export interface PageLook {
+  dark?: boolean;
+  /** The class of the page's body, such as hall. */
+  bodyClass?: string;
+  /** The module scripts the page loads, by their URLs on the install. */
+  scripts?: readonly string[];
+}
+
 /** The head every page of the web UI carries: its title, the color schemes it uses and its theme colors, the stylesheet, the icons and the manifest. */
-export function headHtml(title: string): string {
+export function headHtml(title: string, look: PageLook = {}): string {
   return [
     '    <meta charset="utf-8">',
     '    <meta name="viewport" content="width=device-width, initial-scale=1">',
-    '    <meta name="color-scheme" content="light dark">',
-    '    <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
-    '    <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
+    ...(look.dark === true
+      ? ['    <meta name="color-scheme" content="dark">', '    <meta name="theme-color" content="#0E1117">']
+      : [
+          '    <meta name="color-scheme" content="light dark">',
+          '    <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
+          '    <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
+        ]),
     `    <title>${escapeHtml(title)}</title>`,
     `    <link rel="stylesheet" href="${assetUrl(STYLESHEET_PATH)}">`,
     `    <link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">`,
     `    <link rel="icon" href="${assetUrl("/favicon.ico")}" sizes="16x16 32x32 48x48">`,
     `    <link rel="apple-touch-icon" href="${assetUrl("/assets/icon-180.png")}">`,
     `    <link rel="manifest" href="${assetUrl("/assets/manifest.webmanifest")}">`,
+    ...(look.scripts ?? []).map((src) => `    <script type="module" src="${escapeHtml(src)}"></script>`),
   ].join("\n");
 }
 
@@ -250,13 +279,13 @@ ${main}
  * the head, the shell around the main content, and the footer. A page takes
  * the focused shell unless it is given a member's app shell.
  */
-export function htmlPage(title: string, main: string, shell: PageShell = FOCUSED_SHELL): string {
+export function htmlPage(title: string, main: string, shell: PageShell = FOCUSED_SHELL, look: PageLook = {}): string {
   return `<!doctype html>
 <html lang="en">
   <head>
-${headHtml(title)}
+${headHtml(title, look)}
   </head>
-  <body>
+  <body${look.bodyClass === undefined ? "" : ` class="${escapeHtml(look.bodyClass)}"`}>
 ${shellHtml(shell, main)}${footerHtml()}  </body>
 </html>
 `;

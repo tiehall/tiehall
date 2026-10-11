@@ -546,6 +546,12 @@ samp {
   outline-offset: 2px;
 }
 
+/* The hidden attribute hides an element whatever display a rule gives it, such as the live hall's Pause motion until its
+   script shows it. */
+[hidden] {
+  display: none !important;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -2865,8 +2871,368 @@ a.key:hover {
   color: var(--button-ink);
 }
 
-/* The live hall (web-ui: The live hall; design.md, Design: The live hall; D57 (11)). Its repeating motion runs only
-   once its script has put the class live on its body; Pause motion puts the class paused there. */
+/* The live hall (web-ui: The live hall; web-ui: The live hall with many teams and on a phone; design.md, Design: The
+   live hall; D57 (11)): the toolbar, the people and agents at work, then the map beside the feed once the script runs
+   on a wide screen, or the feed alone, then the teams and the lines between them. It is dark whatever the system
+   prefers. Its repeating motion runs only once its script has put the class live on its body; Pause motion puts the
+   class paused there. */
+.hall main {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.hall-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+
+.hall-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+:where(main) .hall-title > h1 {
+  margin: 0;
+}
+
+/* The live lamp and its words: Live, Reconnecting, Signed out, or Not live before the script runs. */
+.live-state {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.live-state.live {
+  border-color: transparent;
+  background: var(--chip-done);
+  color: var(--chip-done-ink);
+}
+
+.live-state a {
+  color: var(--line);
+}
+
+.hall .live-lamp {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--lamp-open);
+}
+
+.hall .live-state.live .live-lamp {
+  background: var(--live);
+}
+
+.hall .live-state.reconnecting .live-lamp {
+  background: var(--lamp-needs-info);
+}
+
+.hall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.hall-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+:where(main) .hall-filter {
+  margin: 0;
+}
+
+.hall-filter select {
+  min-height: 40px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 14px;
+}
+
+:where(main) .hall-filter .check {
+  margin: 0 4px 0 6px;
+}
+
+.hall-filter .check label {
+  font-size: 14px;
+}
+
+:where(main) .hall-section > h2 {
+  margin: 0 0 12px;
+}
+
+/* The map beside the feed: one column until the script runs on a wide screen. */
+.hall-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.hall-map {
+  position: relative;
+  height: clamp(560px, calc(100vh - 200px), 820px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background-color: var(--ground);
+  background-image: radial-gradient(var(--surface-2) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* The feed, On the line: the latest events, newest first; one about a request that waits on a question or a person
+   in the notice colors, with no lamp. */
+.hall-feed {
+  padding: 18px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+:where(main) .hall-feed > h2 {
+  margin: 0 8px 12px;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+
+:where(main) .feed {
+  margin: 0;
+  padding: 0;
+}
+
+:where(main) .feed > li + li {
+  margin-top: 0;
+}
+
+.feed-row {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--radius-card);
+}
+
+:where(main) .feed-row p {
+  margin: 0;
+}
+
+.feed-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.feed-meta .key {
+  font-size: 13px;
+}
+
+.feed-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.feed-meta > time {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.feed-line {
+  font-size: 14px;
+}
+
+.feed-who {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* Without the map beside it, the feed fills the page's width in columns. */
+.hall-stage:not(.mapped) .feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+}
+
+.feed-row.waits {
+  background: var(--notice);
+  color: var(--notice-ink);
+}
+
+.feed-row.waits .feed-meta,
+.feed-row.waits .feed-who {
+  color: var(--notice-ink);
+}
+
+:where(main) .hall-feed > .empty {
+  margin: 0;
+}
+
+/* The people and agents at work: the login's initials, white on line blue for an agent and ink on signal amber for an
+   agent waiting on a question, who they are with their client, the request and what they did last. */
+.at-work {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+:where(main) .at-work {
+  margin: 0;
+  padding: 0;
+}
+
+:where(main) .at-work > li + li {
+  margin-top: 0;
+}
+
+.worker {
+  padding: 10px 14px 10px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.worker .initials {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.hall .worker.agent .initials {
+  background: var(--button);
+  color: var(--button-ink);
+}
+
+.hall .worker.waiting .initials {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.worker-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 13px;
+}
+
+:where(main) .worker-text p {
+  margin: 0;
+}
+
+.worker-who {
+  font-weight: 600;
+}
+
+.worker-did {
+  color: var(--line);
+}
+
+.worker.waiting .worker-did {
+  color: var(--notice-ink);
+}
+
+:where(main) .at-work-section > .empty {
+  margin: 0;
+}
+
+/* The teams, each as the map's node draws it: its name and key, a lamp per live state and the counts in words. */
+.team-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
+  list-style: none;
+}
+
+:where(main) .team-list {
+  margin: 0;
+  padding: 0;
+}
+
+:where(main) .team-list > li + li {
+  margin-top: 0;
+}
+
+.team-row {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-node);
+  background: var(--surface);
+}
+
+:where(main) .team-row p {
+  margin: 0;
+}
+
+.team-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.team-name {
+  font-weight: 600;
+}
+
+.team-key {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.team-counts,
+.line-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.team-counts > span:last-child,
+.line-counts > span:last-child {
+  margin-left: 4px;
+}
+
+/* A team with nothing live: only its border dims, its text and lamps keep their contrast. */
+.hall .team-row.dimmed {
+  border-color: var(--surface-2);
+}
+
 .hall .node {
   padding: 14px 16px;
   border: 1px solid var(--border);
@@ -2874,18 +3240,20 @@ a.key:hover {
   background: var(--surface);
 }
 
-/* A team with nothing live: only its border dims, its text and lamps keep their contrast. */
 .hall .node.dimmed {
   border-color: var(--surface-2);
 }
 
-.hall .live-lamp {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--live);
+:where(main) .hall-lines td {
+  vertical-align: middle;
+}
+
+:where(main) .lines-section > h3 {
+  margin: 20px 0 12px;
+}
+
+:where(main) .lines-section > .empty {
+  margin: 0 0 16px;
 }
 
 .hall .lamp.needs-info,
@@ -2897,7 +3265,7 @@ a.key:hover {
   animation: slidein 0.6s var(--ease) both;
 }
 
-.hall.live .live-lamp {
+.hall.live .live-state.live .live-lamp {
   animation: livepulse 1.8s ease-out infinite;
 }
 
@@ -3253,6 +3621,71 @@ a.key:hover {
 
   .panel {
     padding: 20px 16px;
+  }
+
+  /* The live hall on a phone: no map; the people and agents at work as a horizontal list of chips. */
+  .hall main {
+    gap: 24px;
+  }
+
+  .hall-actions,
+  .hall-filter {
+    width: 100%;
+  }
+
+  .hall-filter select {
+    flex: 1 1 140px;
+    width: auto;
+  }
+
+  .hall-actions > .button,
+  .hall-actions > button {
+    flex: 1 1 auto;
+  }
+
+  :where(main) .at-work {
+    padding-bottom: 6px;
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+
+  .worker {
+    flex: 0 0 min(280px, 85%);
+    scroll-snap-align: start;
+  }
+
+  .hall-map {
+    display: none;
+  }
+}
+
+/* The live hall on a wide screen once its script runs: the map beside the feed, which scrolls in its own box. */
+@media (min-width: 1100px) {
+  .hall.live .hall-stage.mapped {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+  }
+
+  .hall.live .hall-stage.mapped > .hall-feed {
+    max-height: clamp(560px, calc(100vh - 200px), 820px);
+    overflow-y: auto;
+  }
+}
+
+/* The live hall on a screen at least as wide as a tablet: the feed first, beside the map, then the people at work,
+   the teams and the lines, while a phone reads the people at work first. */
+@media (min-width: 768px) {
+  .hall .at-work-section {
+    order: 1;
+  }
+
+  .hall .teams-section {
+    order: 2;
+  }
+
+  .hall .lines-section {
+    order: 3;
   }
 }
 

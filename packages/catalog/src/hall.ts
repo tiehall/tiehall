@@ -85,6 +85,8 @@ export const hallAtWork = z.object({
   /** The team they acted for. */
   team: teamRef.nullable(),
   request: hallRequestRef,
+  /** Whether what they did last was to ask a blocking question that is still open: the request needs info, and they wait on an answer. */
+  waiting: z.boolean(),
   /** Whether the map shows them: the 12 most recent. */
   onMap: z.boolean(),
 });

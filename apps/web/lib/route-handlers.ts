@@ -31,6 +31,7 @@ export const ROUTE_HANDLERS = [
   "/docs/api/reference.js",
   "/docs/api/scalar.js",
   "/favicon.ico",
+  "/hall",
   "/hall/state",
   "/hall/wait",
   "/healthz",

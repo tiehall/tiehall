@@ -25,6 +25,8 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 const WEB_PAGE = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 /** The same, whose forms may also lead to these sources. */
 const formActionAlso = (...sources: string[]) => WEB_PAGE.replace("form-action 'self'", ["form-action 'self'", ...sources].join(" "));
+/** The live hall's: the web role's, with its one script from the install, reads from the install alone and Trusted Types with no policy. */
+const HALL = `${WEB_PAGE}; script-src 'self'; connect-src 'self'; require-trusted-types-for 'script'; trusted-types 'none'`;
 /** The API changelog page's: the web role's, posting nowhere. */
 const CHANGELOG = WEB_PAGE.replace("form-action 'self'", "form-action 'none'");
 /** The pages Next.js renders: scripts only by the nonce of the answer, and 'strict-dynamic'. */
@@ -36,12 +38,13 @@ const REFERENCE =
 /** GitHub's web origin, where the sign-in page's and the setup screen's forms lead on. */
 const GITHUB = "https://github.com";
 
-type Kind = "web" | "framework" | "changelog" | "reference";
+type Kind = "web" | "hall" | "framework" | "changelog" | "reference";
 
 /** The kind of every page route of the inventory. */
 const KINDS: Readonly<Record<string, Kind>> = {
   "route.ts": "web",
   "inbox/route.ts": "web",
+  "hall/route.ts": "hall",
   "settings/email/route.ts": "web",
   "members/route.ts": "web",
   "requests/route.ts": "web",
@@ -146,6 +149,9 @@ function expectPolicy(kind: Kind, path: string, { policy, html }: { policy: stri
   if (kind === "web") {
     expect(policy, path).toBe(WEB_PAGE);
     expect(html, path).not.toMatch(/<script\b/i);
+  } else if (kind === "hall") {
+    expect(policy, path).toBe(HALL);
+    expect(policy, path).not.toMatch(/'unsafe-|https?:|nonce-/);
   } else if (kind === "changelog") {
     expect(policy, path).toBe(CHANGELOG);
     expect(html, path).not.toMatch(/<script\b/i);

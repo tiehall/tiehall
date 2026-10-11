@@ -44,8 +44,8 @@ function problem({ status, headers, body }: HttpProblem): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...headers, ...HALL_JSON_HEADERS } });
 }
 
-/** The page's narrowing in its address: a team's key, and agents=1 for what agents did. */
-function narrowingOf(query: URLSearchParams): { team?: string; agents?: boolean } {
+/** The page's narrowing in its address: a team's key, and agents=1 for what agents did; the page and its reads share it. */
+export function hallNarrowingOf(query: URLSearchParams): { team?: string; agents?: boolean } {
   const team = query.get("team");
   return { ...(team === null || team === "" ? {} : { team }), ...(query.get("agents") === "1" ? { agents: true } : {}) };
 }
@@ -70,10 +70,10 @@ function hallRead(options: HallReadOptions, name: string, commandId: string, inp
 
 /** GET /hall/state: what the live hall shows now, narrowed as the page's address says. */
 export function createHallStateRoute(options: HallReadOptions): (request: Request) => Promise<Response> {
-  return hallRead(options, "the live hall's state", readHallState.id, narrowingOf);
+  return hallRead(options, "the live hall's state", readHallState.id, hallNarrowingOf);
 }
 
 /** GET /hall/wait?after=<cursor>: the live hall's long-poll from the cursor, narrowed as the page's address says. */
 export function createHallWaitRoute(options: HallReadOptions): (request: Request) => Promise<Response> {
-  return hallRead(options, "the live hall's wait", waitForHall.id, (query) => ({ after: query.get("after") ?? undefined, ...narrowingOf(query) }));
+  return hallRead(options, "the live hall's wait", waitForHall.id, (query) => ({ after: query.get("after") ?? undefined, ...hallNarrowingOf(query) }));
 }

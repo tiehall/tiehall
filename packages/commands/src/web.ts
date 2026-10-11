@@ -26,6 +26,7 @@ import { createHomeRoute, type HomeRoute } from "./home-route.ts";
 import { createEmailSettingsRoute } from "./email-settings-page.ts";
 import { createInboxRoute } from "./inbox-page.ts";
 import { createHallStateRoute, createHallWaitRoute } from "./hall-routes.ts";
+import { createHallRoute } from "./hall-page.ts";
 import { HANDLERS } from "./handlers.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import { lazyJobSender, openJobQueue } from "./job-queue.ts";
@@ -362,6 +363,11 @@ export function requestListsRoute(env: Environment): PageRoute {
 /** The web inbox at /inbox, which every member may open, for the signed-in user's web session. */
 export function inboxRoute(env: Environment): PageRoute {
   return pageOf("inbox", env, createInboxRoute);
+}
+
+/** The live hall at /hall, which every member may open, for the signed-in user's web session, which opening it renews (web-ui: The live hall). */
+export function hallRoute(env: Environment): PageRoute {
+  return pageOf("live hall", env, createHallRoute);
 }
 
 /**
