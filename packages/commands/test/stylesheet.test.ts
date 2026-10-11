@@ -13,8 +13,9 @@ import { contrast, lightness, parseCss, selectorsOf, type CssRule } from "./supp
 // (3), (5), (6), (8); D59). Every color is a named token of the Navy & Gold
 // palette, with its value in the light theme, the dark theme and the live
 // hall; every pair of text and background contrasts at least 4.5:1, and every
-// lamp, control edge, focus ring and the mark at least 3:1 on each background
-// it may sit on, computed here from the tokens; the lamps of a theme differ in
+// lamp, edge of a field or outline button, checked checkbox's fill, focus ring
+// and the mark at least 3:1 on each background it may sit on, computed here
+// from the tokens; the lamps of a theme differ in
 // lightness as well as hue; gold marks only what asks for attention; motion
 // outside the live hall ends within 5 seconds, the hall's loops run only once
 // its script runs, and reduced motion stops everything; IBM's fonts are
