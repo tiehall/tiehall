@@ -110,11 +110,14 @@ describe("the web UI's page of a request", () => {
   it("shows the request's key and title, its state, its teams and its claimant", async () => {
     const { status, html } = await open("FE-1");
     expect(status).toBe(200);
-    expect(html).toMatch(/<h1>FE-1: Add a dark mode to the settings page<\/h1>/);
+    // The key in its tag, the state as a chip in words, the title as the heading (web-ui: A request's state looks the same everywhere).
+    expect(html).toContain('<span class="request-key">FE-1</span>');
+    expect(html).toContain('<span class="chip claimed">Claimed</span>');
+    expect(html).toMatch(/<h1>Add a dark mode to the settings page<\/h1>/);
     const text = textOf(html);
-    expect(text).toContain("FE-1 is claimed, addressed to team FE.");
-    expect(text).toContain("Requested by alice for team BE");
-    expect(text).toContain("Claimed by bob.");
+    expect(text).toContain("From team BE to team FE:");
+    expect(text).toContain("Opened by alice for team BE");
+    expect(text).toContain("claimed by bob");
   });
 
   it("shows the packet: its revision, due date, need, acceptance criteria, code refs and links", async () => {
@@ -135,8 +138,8 @@ describe("the web UI's page of a request", () => {
     const answer = text.indexOf("The last two versions of each.");
     expect(question).toBeGreaterThan(-1);
     expect(answer).toBeGreaterThan(question);
-    expect(text).toContain("A blocking question, answered, from bob for team FE");
-    expect(text).toContain("An answer, from alice for team BE");
+    expect(text).toMatch(/bob's agent · team FE · agent · personal access token · (just now|\d+ s ago) Blocking question · answered/);
+    expect(text).toMatch(/alice's agent · team BE · agent · personal access token · (just now|\d+ s ago) Answer/);
   });
 
   it("shows the proposals, each pending one with a link to its confirm page", async () => {
@@ -145,7 +148,7 @@ describe("the web UI's page of a request", () => {
     expect(text).toContain("Proposals");
     expect(text).toContain("A decline, pending, proposed by bob");
     expect(text).toContain("It needs the confirmation of bob, and has none yet.");
-    expect(html).toContain(`<a href="/confirm/${decline}">Review it, then confirm or reject it</a>`);
+    expect(html).toContain(`<a class="button" href="/confirm/${decline}">Review it, then confirm or reject it</a>`);
   });
 
   it("shows no notice on a request that does not wait for a person", async () => {

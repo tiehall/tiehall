@@ -1,10 +1,12 @@
 import { listInbox, listOpenedRequests, listRequests } from "@tiehall/catalog";
 import { REQUEST_STATES, Refusal, type RequestState } from "@tiehall/core";
+import { STATE_WORDS } from "./event-lines.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { agoHtml, keyTag, stateChip, WAITS_CHIP } from "./page-parts.ts";
 import type { PageShell } from "./shell.ts";
 import { NEW_REQUEST_PATH } from "./new-request.ts";
 import type { RequestView } from "./request-views.ts";
-import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The web UI's request lists, at /requests (requests: Every member sees every
 // request; agent-surfaces: The MCP tools; design.md, Decisions this change
@@ -18,9 +20,12 @@ import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOption
 // Each list is newest first, may be narrowed to the requests in one state, and
 // comes a page at a time, with links to the newer and the older requests. Each
 // row links to the request's page at its URL, and says its title, as text its
-// requester wrote, escaped, its state, the team it is addressed to, who opened
-// it and from which team, who holds its claim, and, in Tiehall's words,
-// whether it waits for a person because agents made so many writes on it. The
+// requester wrote, escaped, its state as a chip in words, the team it is
+// addressed to, who opened it and from which team, who holds its claim, when it
+// was opened, and, with a second chip, whether it waits for a person because
+// agents made so many writes on it (web-ui: A request's state looks the same
+// everywhere). A wide screen shows the list as a table, a narrow one each row
+// as a card (web-ui: Pages work at phone width). The
 // page reads the lists through execute(), as the member's web session, in
 // read-only transactions (web-pages.ts), and links to the form that opens a
 // request. A list, a state or a page the page does not know gets 400.
@@ -79,68 +84,82 @@ function person(user: { login: string; bot: boolean }): string {
   return user.bot ? `${user.login} (a bot user)` : user.login;
 }
 
-/** A request's row. */
-function row(request: RequestView): string {
+/**
+ * A request's row: its key, linked to its page, its title, its state as a
+ * chip and, when it waits for a person, a second chip that says so, who opened
+ * it from which team, the team it is addressed to, who holds its claim and
+ * when it was opened. Each cell names its column too, so a narrow screen shows
+ * the row as a card.
+ */
+function row(request: RequestView, now: string): string {
   const requester = request.requester.user === null ? `team ${request.requester.team.key}` : `${person(request.requester.user)} for ${request.requester.team.key}`;
-  const cells = [
-    `<a href="/${escapeHtml(request.key)}">${escapeHtml(request.key)}</a>`,
-    escapeHtml(request.untrusted.title),
-    escapeHtml(request.state),
-    escapeHtml(request.targetTeam.key),
-    escapeHtml(requester),
-    escapeHtml(request.claimant === null ? "nobody" : person(request.claimant)),
-    escapeHtml(request.createdAt),
-    request.needsHuman ? "It waits for a person: agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI." : "",
-  ];
-  return `        <tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+  return [
+    "        <tr>",
+    `          <td class="cell-key">${keyTag(request.key, `/${request.key}`)}</td>`,
+    `          <td class="cell-title" data-label="Title">${escapeHtml(request.untrusted.title)}</td>`,
+    `          <td class="cell-state" data-label="State">${stateChip(request.state)}${request.needsHuman ? ` ${WAITS_CHIP}` : ""}</td>`,
+    `          <td data-label="From">${escapeHtml(requester)}</td>`,
+    `          <td data-label="To">${keyTag(request.targetTeam.key)}</td>`,
+    `          <td data-label="Claimed by">${escapeHtml(request.claimant === null ? "nobody" : person(request.claimant))}</td>`,
+    `          <td data-label="Opened">${agoHtml(request.createdAt, now)}</td>`,
+    "        </tr>",
+  ].join("\n");
 }
 
-/** The links to the three lists, the one shown marked. */
+/** The links to the three lists, the one shown marked as the current one. */
 function listsNav(shown: ListName): string {
-  const links = (Object.keys(LISTS) as ListName[]).map((list) =>
-    list === shown ? `<strong>${escapeHtml(LISTS[list].title)}</strong>` : link(listPath({ list, state: undefined, page: 1 }), LISTS[list].title),
+  const links = (Object.keys(LISTS) as ListName[]).map(
+    (list) =>
+      `<li><a href="${escapeHtml(listPath({ list, state: undefined, page: 1 }))}"${list === shown ? ' aria-current="page"' : ""}>${escapeHtml(LISTS[list].title)}</a></li>`,
   );
-  return `      <nav>${links.join(" · ")}</nav>`;
+  return `      <nav class="tabs" aria-label="Lists"><ul>${links.join("")}</ul></nav>`;
 }
 
 /** The form that narrows the list to one state, which a GET submits: it changes nothing. */
 function stateForm({ list, state }: ListQuery): string {
   const options = [
     `<option value=""${state === undefined ? " selected" : ""}>Any state</option>`,
-    ...REQUEST_STATES.map((each) => `<option value="${each}"${each === state ? " selected" : ""}>${each}</option>`),
+    ...REQUEST_STATES.map((each) => `<option value="${each}"${each === state ? " selected" : ""}>${escapeHtml(STATE_WORDS[each])}</option>`),
   ].join("");
   return [
-    `      <form method="get" action="${REQUEST_LISTS_PATH}">`,
+    `      <form class="filter" method="get" action="${REQUEST_LISTS_PATH}">`,
     ...(list === "mine" ? [] : [`        <input type="hidden" name="list" value="${escapeHtml(list)}">`]),
-    `        <label for="state">State</label> <select id="state" name="state">${options}</select>`,
-    '        <button type="submit">Show</button>',
+    `        <div class="field"><label for="state">State</label><select id="state" name="state">${options}</select></div>`,
+    '        <button type="submit" class="secondary">Show</button>',
     "      </form>",
   ].join("\n");
 }
 
 function listsPage(query: ListQuery, listed: readonly RequestView[], older: boolean, shell: PageShell): string {
   const { title, empty } = LISTS[query.list];
+  const now = new Date().toISOString();
   const pages = [
-    ...(query.page > 1 ? [link(listPath({ ...query, page: query.page - 1 }), "Newer requests")] : []),
-    ...(older ? [link(listPath({ ...query, page: query.page + 1 }), "Older requests")] : []),
+    ...(query.page > 1 ? [`<a class="button secondary" href="${escapeHtml(listPath({ ...query, page: query.page - 1 }))}">Newer requests</a>`] : []),
+    ...(older ? [`<a class="button secondary" href="${escapeHtml(listPath({ ...query, page: query.page + 1 }))}">Older requests</a>`] : []),
   ];
   return htmlPage(
     `Requests: ${title}`,
     [
-      "      <h1>Requests</h1>",
+      '      <div class="page-head">',
+      "        <h1>Requests</h1>",
+      `        <a class="button" href="${NEW_REQUEST_PATH}">Open a request</a>`,
+      "      </div>",
       listsNav(query.list),
-      `      <p>${link(NEW_REQUEST_PATH, "Open a request")}</p>`,
-      `      <h2>${escapeHtml(title)}</h2>`,
+      '      <div class="list-head">',
+      `        <h2>${escapeHtml(title)}</h2>`,
       stateForm(query),
+      "      </div>",
       ...(listed.length === 0
-        ? [`      <p>${escapeHtml(query.state === undefined && query.page === 1 ? empty : "No request here.")}</p>`]
+        ? [`      <p class="empty">${escapeHtml(query.state === undefined && query.page === 1 ? empty : "No request here.")}</p>`]
         : [
-            "      <table>",
-            "        <tr><th>Key</th><th>Title</th><th>State</th><th>To</th><th>Opened by</th><th>Claimed by</th><th>Opened at</th><th></th></tr>",
-            ...listed.map(row),
+            '      <table class="requests">',
+            '        <thead><tr><th scope="col">Key</th><th scope="col">Title</th><th scope="col">State</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Claimed by</th><th scope="col">Opened</th></tr></thead>',
+            "        <tbody>",
+            ...listed.map((request) => row(request, now)),
+            "        </tbody>",
             "      </table>",
           ]),
-      ...(pages.length === 0 ? [] : [`      <p>${pages.join(" · ")}</p>`]),
+      ...(pages.length === 0 ? [] : [`      <nav class="pages" aria-label="Pages">${pages.join(" ")}</nav>`]),
     ].join("\n"),
     shell,
   );

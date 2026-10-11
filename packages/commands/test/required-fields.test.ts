@@ -94,7 +94,7 @@ describe("tiehall open", () => {
 });
 
 describe("the web form that opens a request", () => {
-  it("refuses a request to FE without the fields FE requires with 400, lists them, and opens nothing", async () => {
+  it("refuses a request to FE without the fields FE requires with 400, names each beside its field, and opens nothing", async () => {
     const before = await requestCount();
     const route = createNewRequestRoute({ execute: harness.install.execute, session: async () => sam.session, url: URL_OF_INSTALL, secret: () => harness.install.authSecret, logger: harness.install.logger });
     const answer = await route(
@@ -106,9 +106,10 @@ describe("the web form that opens a request", () => {
     );
     expect(answer.status).toBe(400);
     const html = await answer.text();
-    expect(html).toContain("<li>packet.untrusted.acceptance_criteria: Team FE requires the acceptance criteria.</li>");
-    expect(html).toContain("<li>packet.due_date: Team FE requires a due date.</li>");
-    expect(html).toContain(`<a href="${NEW_REQUEST_PATH}">`);
+    // The form comes back, with each refused field's error beside it (web-ui: Pages are accessible).
+    expect(html).toContain('<p class="field-error" id="acceptanceCriteria-error">Team FE requires the acceptance criteria.</p>');
+    expect(html).toContain('<p class="field-error" id="dueDate-error">Team FE requires a due date.</p>');
+    expect(html).toContain(`<form class="panel form-panel" method="post" action="${NEW_REQUEST_PATH}">`);
     expect(await requestCount()).toBe(before);
   });
 });

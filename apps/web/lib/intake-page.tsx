@@ -10,7 +10,9 @@ import { AppShell } from "./shell.tsx";
 // filed, which an admin wrote, as text, and the fields it requires of the
 // requests opened to it, in Tiehall's words, with a link to the web form that
 // opens a request to it. React writes every text escaped, so nothing in the
-// notes runs or loads anything.
+// notes runs or loads anything. Each part is a panel of the app shell, as on
+// every page of the web UI (web-ui: The page shell and its navigation;
+// design.md, Design: The page families; D57 (1), (4)).
 //
 // The page also lists the registered APIs, each with its provider team and
 // whether the team declared that it consumes it, with who declared it, when,
@@ -52,7 +54,9 @@ function TeamForm({ teamKey, team, api, action, csrf, button }: { teamKey: strin
       <input type="hidden" name="team" value={team} />
       <input type="hidden" name="api" value={api} />
       <input type="hidden" name="action" value={action} />
-      <button type="submit">{button}</button>
+      <button type="submit" className="secondary">
+        {button}
+      </button>
     </form>
   );
 }
@@ -61,18 +65,23 @@ function TeamForm({ teamKey, team, api, action, csrf, button }: { teamKey: strin
 function ConsumedApis({ teamKey, apis, csrf }: { teamKey: string; apis: TeamApisView; csrf: string | undefined }): ReactNode {
   const forms = apis.member && csrf !== undefined;
   return (
-    <section aria-labelledby="apis">
+    <section aria-labelledby="apis" className="panel">
       <h2 id="apis">{`APIs ${teamKey} consumes`}</h2>
-      <p>{`When a provider's pull request makes breaking changes to an API that ${teamKey} declares it consumes, Tiehall opens a request to ${teamKey}. Any member of ${teamKey} declares or removes its declarations.`}</p>
+      <p className="hint">{`When a provider's pull request makes breaking changes to an API that ${teamKey} declares it consumes, Tiehall opens a request to ${teamKey}. Any member of ${teamKey} declares or removes its declarations.`}</p>
       {apis.apis.length === 0 ? (
-        <p>No API is registered.</p>
+        <p className="muted">No API is registered.</p>
       ) : (
-        <ul>
+        <ul className="api-list">
           {apis.apis.map((api) => {
             const { declaration } = api;
             const declarer = declaration === null ? "" : declaration.declaredBy.bot ? `${declaration.declaredBy.login} (a bot user)` : declaration.declaredBy.login;
             return (
-              <li key={api.id}>
+              <li key={api.id} className={declaration === null ? "api-card" : "api-card declared"}>
+                <p className="api-name">
+                  <span className="key">{api.untrusted.name}</span>
+                  {declaration === null ? <span className="chip tag">Not declared</span> : <span className="chip tag good">Consumed</span>}
+                  {declaration?.stale === true ? <span className="chip tag warn">Stale</span> : null}
+                </p>
                 <p>
                   {`${api.untrusted.name}, provided by ${api.provider.key}: `}
                   {declaration === null
@@ -91,7 +100,7 @@ function ConsumedApis({ teamKey, apis, csrf }: { teamKey: string; apis: TeamApis
                   />
                 ) : null}
                 {api.provides ? (
-                  <p>
+                  <p className="hint">
                     {api.warnOpensRequests
                       ? `Its WARN switch is on: its potentially breaking (WARN-level) changes open requests to the teams that consume it, as its breaking changes do.`
                       : `Its WARN switch is off: its potentially breaking (WARN-level) changes go to the daily WARN digests of the teams that consume it.`}
@@ -132,23 +141,25 @@ export function IntakePage({ team, apis, csrf, shell }: { team: TeamIntakeView; 
   return (
     <AppShell member={shell.member} path={shell.path} csrf={csrf} className="intake-page">
       <title>{`${team.key}: ${team.untrusted.name} · Tiehall`}</title>
-      <h1>{`${team.key}: ${team.untrusted.name}`}</h1>
-      <p>{`This is how team ${team.key} wants requests filed, and what it requires of them.`}</p>
-      <section aria-labelledby="notes">
-        <h2 id="notes">{`How ${team.key} wants requests filed`}</h2>
-        {notes === "" ? <p>{`Team ${team.key} gives no notes on how it wants requests filed.`}</p> : <pre>{notes}</pre>}
-      </section>
-      <section aria-labelledby="required">
-        <h2 id="required">Required fields</h2>
-        <p>
-          {required.length === 0
-            ? `Team ${team.key} requires no field beyond the need, which every packet has.`
-            : `Team ${team.key} requires ${listed(required)} of the requests opened to it.`}
-        </p>
-      </section>
-      <p>
-        <a href={`/requests/new?team=${encodeURIComponent(team.key)}`}>{`Open a request to ${team.key}`}</a>
-      </p>
+      <div className="page-head">
+        <h1>{`${team.key}: ${team.untrusted.name}`}</h1>
+        <a className="button" href={`/requests/new?team=${encodeURIComponent(team.key)}`}>{`Open a request to ${team.key}`}</a>
+      </div>
+      <p className="lead">{`This is how team ${team.key} wants requests filed, and what it requires of them.`}</p>
+      <div className="panel-grid">
+        <section aria-labelledby="notes" className="panel">
+          <h2 id="notes">{`How ${team.key} wants requests filed`}</h2>
+          {notes === "" ? <p className="muted">{`Team ${team.key} gives no notes on how it wants requests filed.`}</p> : <p className="notes">{notes}</p>}
+        </section>
+        <section aria-labelledby="required" className="panel">
+          <h2 id="required">Required fields</h2>
+          <p>
+            {required.length === 0
+              ? `Team ${team.key} requires no field beyond the need, which every packet has.`
+              : `Team ${team.key} requires ${listed(required)} of the requests opened to it.`}
+          </p>
+        </section>
+      </div>
       {apis === undefined ? null : <ConsumedApis teamKey={team.key} apis={apis} csrf={csrf} />}
     </AppShell>
   );

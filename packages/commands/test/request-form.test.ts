@@ -107,13 +107,14 @@ describe("the web form that opens a request", () => {
     expect(read.body).toMatchObject({ requester: { team: { key: "QA" } } });
   });
 
-  it("refuses a form without a title with 400, as a page that lists the field and leads back to the form, and opens nothing", async () => {
+  it("refuses a form without a title with 400, as the form again with the title's error beside it, and opens nothing", async () => {
     const before = await install.owner.query("SELECT count(*)::int AS n FROM requests");
     const answer = await post(dana, { targetTeam: "FE", requestingTeam: "BE", title: "", need: "Something." });
     expect(answer.status).toBe(400);
     const html = await answer.text();
-    expect(html).toContain("title");
-    expect(html).toContain(`<a href="${NEW_REQUEST_PATH}">`);
+    expect(html).toContain('<div role="alert">');
+    expect(html).toMatch(/<p class="field-error" id="title-error">[^<]+<\/p>/);
+    expect(html).toContain(`action="${NEW_REQUEST_PATH}"`);
     expect((await install.owner.query("SELECT count(*)::int AS n FROM requests")).rows).toEqual(before.rows);
   });
 

@@ -67,7 +67,12 @@ async function open(session: WebSessionCaller | undefined, query = "", pageSize?
 
 /** The keys of the requests the page lists, in the order it lists them. */
 function keysOf(html: string): string[] {
-  return [...html.matchAll(/<tr><td><a href="\/([A-Z][A-Z0-9]*-[0-9]+)">/g)].map(([, key]) => key ?? "");
+  return [...html.matchAll(/<td class="cell-key"><a class="key" href="\/([A-Z][A-Z0-9]*-[0-9]+)">/g)].map(([, key]) => key ?? "");
+}
+
+/** The row of a request, by its key. */
+function rowOf(html: string, key: string): string {
+  return new RegExp(`<tr>\\s*<td class="cell-key"><a class="key" href="/${key}">${key}</a></td>.*?</tr>`, "s").exec(html)?.[0] ?? "";
 }
 
 describe("the web UI's request lists", () => {
@@ -106,24 +111,22 @@ describe("the web UI's request lists", () => {
   it("links each request to its page and says its title, state, teams, requester and claimant, with its title escaped", async () => {
     expect((await callApi(install, tokenOf(bob.userId), "POST", "/api/v1/requests/FE-1/claim")).status).toBe(200);
     const { html } = await open(dave, "?list=all");
-    const row = /<tr><td><a href="\/FE-1">FE-1<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0] ?? "";
+    const row = rowOf(html, "FE-1");
     expect(row).toContain("Add a &#60;b&#62;dark&#60;/b&#62; mode");
     expect(row).not.toContain("<b>");
-    expect(row).toContain("<td>claimed</td>");
-    expect(row).toContain("<td>FE</td>");
-    expect(row).toContain("<td>alice for BE</td>");
-    expect(row).toContain("<td>bob</td>");
-    expect(/<tr><td><a href="\/FE-2">FE-2<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).toContain("<td>nobody</td>");
+    expect(row).toContain('<span class="chip claimed">Claimed</span>');
+    expect(row).toContain('<td data-label="To"><span class="key">FE</span></td>');
+    expect(row).toContain('<td data-label="From">alice for BE</td>');
+    expect(row).toContain('<td data-label="Claimed by">bob</td>');
+    expect(rowOf(html, "FE-2")).toContain('<td data-label="Claimed by">nobody</td>');
   });
 
   it("marks a request that waits for a person", async () => {
     await install.owner.query("UPDATE requests SET needs_human = true WHERE title = 'Expose the settings API'");
     try {
       const { html } = await open(dave, "?list=all");
-      expect(/<tr><td><a href="\/BE-1">BE-1<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).toContain(
-        "It waits for a person: agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI.",
-      );
-      expect(/<tr><td><a href="\/FE-2">FE-2<\/a><\/td>.*?<\/tr>/s.exec(html)?.[0]).not.toContain("waits for a person");
+      expect(rowOf(html, "BE-1")).toContain('<span class="chip waits">Waits for a person</span>');
+      expect(rowOf(html, "FE-2")).not.toContain("Waits for a person");
     } finally {
       await install.owner.query("UPDATE requests SET needs_human = false WHERE title = 'Expose the settings API'");
     }
@@ -138,11 +141,11 @@ describe("the web UI's request lists", () => {
   it("shows a page at a time, with links to the older and the newer requests", async () => {
     const first = await open(dave, "?list=all", 2);
     expect(keysOf(first.html)).toEqual(["FE-2", "BE-1"]);
-    expect(first.html).toContain('<a href="/requests?list=all&#38;page=2">Older requests</a>');
+    expect(first.html).toContain('<a class="button secondary" href="/requests?list=all&#38;page=2">Older requests</a>');
     expect(first.html).not.toContain("Newer requests");
     const second = await open(dave, "?list=all&page=2", 2);
     expect(keysOf(second.html)).toEqual(["FE-1"]);
-    expect(second.html).toContain('<a href="/requests?list=all">Newer requests</a>');
+    expect(second.html).toContain('<a class="button secondary" href="/requests?list=all">Newer requests</a>');
     expect(second.html).not.toContain("Older requests");
     expect((await open(dave, "?list=all&state=claimed&page=1", 2)).html).not.toContain("Older requests");
   });
@@ -151,8 +154,8 @@ describe("the web UI's request lists", () => {
     const { html } = await open(dave, "?list=all");
     expect(html).toContain('<a href="/requests">Addressed to your teams</a>');
     expect(html).toContain('<a href="/requests?list=opened">Opened by you</a>');
-    expect(html).toContain('<a href="/requests/new">Open a request</a>');
-    expect(html).toContain("<strong>All requests</strong>");
+    expect(html).toContain('<a class="button" href="/requests/new">Open a request</a>');
+    expect(html).toContain('<a href="/requests?list=all" aria-current="page">All requests</a>');
   });
 
   it("refuses a list, a state or a page it does not know with 400", async () => {

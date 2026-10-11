@@ -79,15 +79,15 @@ describe("the web UI's create-then-view flow", () => {
     await Promise.all([page.waitForURL(`${web.url}/FE-1`), page.getByRole("button", { name: "Open the request" }).click()]);
 
     // The request's page, at its URL: its packet and its thread.
-    const heading = await textOf(page.getByRole("heading", { level: 1 }));
-    expect(heading).toContain("FE-1");
-    expect(heading).toContain(TITLE);
+    // The key sits in its tag above the title, which is the page's heading (web-ui: A request's state looks the same everywhere).
+    expect(await textOf(page.locator(".request-key"))).toBe("FE-1");
+    expect(await textOf(page.getByRole("heading", { level: 1 }))).toContain(TITLE);
     expect(await textOf(page.getByRole("region", { name: "Packet" }))).toContain(NEED);
     await page.getByRole("region", { name: "Thread" }).waitFor();
 
     // Claiming needs no proposal.
     await page.getByRole("button", { name: "Claim" }).click();
-    await page.getByText("Claimed by dana").waitFor();
+    await page.getByText("claimed by dana").waitFor();
 
     // A question on the thread.
     await page.getByLabel("Kind").selectOption("question");
@@ -102,7 +102,7 @@ describe("the web UI's create-then-view flow", () => {
     expect(await textOf(proposals)).toContain("decline");
     const confirm = proposals.getByRole("link", { name: /confirm/i });
     expect(await confirm.getAttribute("href")).toMatch(/^\/confirm\/[0-9a-f-]{36}$/);
-    await page.getByText("Claimed by dana").waitFor();
+    await page.getByText("claimed by dana").waitFor();
     await page.context().close();
   });
 });

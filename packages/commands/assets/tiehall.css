@@ -1009,8 +1009,9 @@ textarea {
 
 input[type="checkbox"],
 input[type="radio"] {
-  width: 20px;
-  height: 20px;
+  flex: none;
+  width: 24px;
+  height: 24px;
   margin: 0 8px 0 0;
   vertical-align: middle;
   accent-color: var(--button);
@@ -1195,6 +1196,17 @@ button.secondary:hover,
   white-space: nowrap;
 }
 
+a.key {
+  color: var(--line);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease);
+}
+
+a.key:hover {
+  border-color: var(--line);
+  color: var(--line-hover);
+}
+
 .mono {
   font-family: var(--font-mono);
 }
@@ -1341,6 +1353,648 @@ button.secondary:hover,
 
 .slide-in {
   animation: slidein 0.5s var(--ease) both;
+}
+
+/* Tags that are no request's state, such as whether a team declared that it consumes an API. */
+.chip.tag {
+  background: var(--chip-open);
+  color: var(--chip-open-ink);
+}
+
+.chip.tag.good,
+.chip.answered {
+  background: var(--chip-done);
+  color: var(--chip-done-ink);
+}
+
+.chip.tag.warn {
+  background: var(--notice);
+  color: var(--notice-ink);
+}
+
+/* A request's due date, and what a message of its thread is. */
+.chip.due,
+.chip.kind {
+  background: var(--chip-open);
+  color: var(--chip-open-ink);
+}
+
+/* A lamp for a state that has none, such as declined: an empty ring. */
+.lamp.none {
+  border-color: var(--control-border);
+  background: transparent;
+}
+
+/* Forms (web-ui: Pages are accessible; design.md, Design: Accessibility): a field is its label, its control and its
+   hint, stacked; a label says whether its field is required, and by which team, or optional; a refused field names
+   its error beside it. */
+.field {
+  margin: 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.field > select,
+.field > input[type="date"],
+.field > input[type="number"] {
+  align-self: flex-start;
+}
+
+.need {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.field-error {
+  margin: 0;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: var(--radius-tag);
+  background: var(--notice);
+  color: var(--notice-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+[aria-invalid="true"] {
+  border-color: var(--notice-ink);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 16px;
+}
+
+.check label {
+  font-weight: 400;
+}
+
+.stack {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stack > button,
+.stack .field > select,
+.stack .field > input {
+  align-self: stretch;
+  width: 100%;
+}
+
+.form-panel {
+  padding: 28px;
+}
+
+.form-end {
+  margin-top: 8px;
+  padding-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* A link that stands alone as an action, such as Cancel beside a form's button. */
+.link-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+/* A page's head: its heading, and the page's main action beside it. */
+.page-head {
+  margin: 0 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.page-head > h1 {
+  margin: 0;
+}
+
+.page-intro {
+  margin: 0 0 24px;
+}
+
+.page-intro > h1 {
+  margin: 0 0 8px;
+}
+
+.lead {
+  margin: 0 0 24px;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.page-intro .lead {
+  margin: 0;
+}
+
+.narrow {
+  max-width: 760px;
+}
+
+.panel-grid {
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+:where(main) .panel > h2,
+:where(main) .thread > section > h2 {
+  margin: 0 0 16px;
+}
+
+:where(main) .panel + .panel {
+  margin-top: 0;
+}
+
+/* Text people wrote, its line breaks kept. */
+.notes {
+  white-space: pre-wrap;
+}
+
+/* A request's page (web-ui: A request's state looks the same everywhere; web-ui: The request page shows who works on
+   it and what happened; design.md, Design: The page families; D57 (1), (15)): its header with the key, the chips,
+   the title and its two teams joined by their line; the banner of who wrote on it last; then two columns, which
+   become one on a narrow screen. */
+.request-head {
+  margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.request-head > * {
+  margin: 0;
+}
+
+.request-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.request-key {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+
+.request-teams {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.team-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.team-line {
+  flex: none;
+  color: var(--line);
+}
+
+.team-line path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.from-to-line path {
+  stroke-width: 2.5;
+}
+
+.activity {
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-size: 14px;
+}
+
+.activity > p {
+  margin: 0;
+}
+
+.activity-what {
+  flex: 1 1 240px;
+}
+
+.activity-when {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.activity.at-work {
+  border-color: transparent;
+  background: var(--chip-claimed);
+  color: var(--chip-claimed-ink);
+}
+
+.activity.at-work .activity-when {
+  color: var(--chip-claimed-ink);
+}
+
+.initials.agent {
+  background: var(--button);
+  color: var(--button-ink);
+}
+
+.request-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  align-items: start;
+  gap: 24px;
+}
+
+.request-main,
+.request-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.request-side {
+  gap: 16px;
+}
+
+.side-panel {
+  padding: 20px;
+}
+
+:where(main) .side-panel > h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.panel > .hint {
+  margin: 0 0 12px;
+}
+
+.side-panel > form + form {
+  margin-top: 10px;
+}
+
+.packet h3 {
+  margin: 18px 0 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.packet-meta {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.prose {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.code-refs,
+.packet-links {
+  padding-left: 0;
+  list-style: none;
+}
+
+.code-refs code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--ground);
+}
+
+.message {
+  margin: 0 0 18px;
+  display: flex;
+  gap: 12px;
+}
+
+.message-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-meta {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.message-meta strong {
+  color: var(--ink);
+}
+
+.message-meta .chip {
+  vertical-align: 1px;
+}
+
+.bubble {
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.bubble > p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.message.blocking .bubble {
+  background: var(--notice);
+}
+
+.post {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+:where(main) .post > h3 {
+  margin: 0 0 12px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.post-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.post-options select {
+  width: 100%;
+}
+
+.proposal {
+  margin: 0 0 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font-size: 13px;
+}
+
+.proposal.pending {
+  border-color: var(--control-border);
+}
+
+.proposal p {
+  margin: 0 0 6px;
+}
+
+.proposal .button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.timeline {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  list-style: none;
+}
+
+:where(main) .timeline > li {
+  margin: 0;
+  display: flex;
+  gap: 10px;
+}
+
+.timeline .lamp {
+  margin-top: 5px;
+}
+
+.timeline p {
+  margin: 0;
+}
+
+.event-who {
+  color: var(--ink-2);
+}
+
+.event-state {
+  font-weight: 600;
+}
+
+/* The request lists: a filter row, then a table on a wide screen and cards on a narrow one. */
+.tabs ul {
+  margin: 0 0 20px;
+  padding: 4px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  list-style: none;
+}
+
+:where(main) .tabs li {
+  margin: 0;
+}
+
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.tabs a[aria-current="page"] {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.list-head {
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+:where(main) .list-head > h2 {
+  margin: 0;
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+
+:where(main) .filter {
+  margin: 0;
+}
+
+.filter .field {
+  margin: 0;
+}
+
+:where(main) .requests td {
+  vertical-align: middle;
+}
+
+.requests .cell-key {
+  white-space: nowrap;
+}
+
+.requests .cell-title {
+  font-weight: 500;
+}
+
+.requests .cell-state .chip + .chip {
+  margin-left: 4px;
+}
+
+.empty {
+  padding: 24px;
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-card);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.pages {
+  margin: 16px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The form that opens a request: From and To joined by their line, the team's notes on how it wants requests filed. */
+.from-to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0 16px;
+}
+
+.from-to .field {
+  flex: 1 1 180px;
+}
+
+.from-to .field > select {
+  align-self: stretch;
+}
+
+.from-to-line {
+  margin-bottom: 18px;
+}
+
+.intake-notice {
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-size: 14px;
+}
+
+:where(main) .intake-notice h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.intake-notice p {
+  margin: 0 0 6px;
+}
+
+.intake-notice > :last-child {
+  margin-bottom: 0;
+}
+
+/* A team's intake page: its APIs as cards. */
+.api-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  list-style: none;
+}
+
+:where(main) .api-list > li {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.api-list p {
+  margin: 0 0 8px;
+}
+
+.api-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-list form {
+  margin: 8px 0 0;
 }
 
 /* The live hall (web-ui: The live hall; design.md, Design: The live hall; D57 (11)). Its repeating motion runs only
@@ -1567,6 +2221,99 @@ button.secondary:hover,
 
   .cards {
     grid-template-columns: 1fr;
+  }
+
+  .request-columns,
+  .field-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-panel {
+    padding: 20px 16px;
+  }
+
+  .from-to-line {
+    display: none;
+  }
+
+  .field > select,
+  .field > input[type="date"],
+  .field > input[type="number"] {
+    align-self: stretch;
+  }
+
+  .tabs ul {
+    display: flex;
+  }
+
+  .tabs li {
+    flex: 1 1 auto;
+  }
+
+  .tabs a {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .filter {
+    width: 100%;
+  }
+
+  .filter .field {
+    flex: 1 1 160px;
+  }
+
+  /* The request lists as cards: each row a card, each cell with its column's name. */
+  :where(main) table.requests {
+    display: block;
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+
+  .requests thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .requests tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .requests tr {
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+  }
+
+  :where(main) .requests td {
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .requests td[data-label]::before {
+    content: attr(data-label) " ";
+    margin-right: 6px;
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .requests .cell-title::before {
+    display: none;
   }
 }
 

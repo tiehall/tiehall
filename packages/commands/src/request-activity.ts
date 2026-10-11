@@ -1,7 +1,7 @@
 import { requestActivity } from "@tiehall/catalog";
 import type { RequestState } from "@tiehall/core";
-import { events, oauthClients, requests, users, type Database } from "@tiehall/db";
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { events, messages, oauthClients, requests, users, type Database } from "@tiehall/db";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { cutName, eventLine, stateAfter, STATE_EVENT_TYPES, type ActorClient, type EventActor, type EventUser } from "./event-lines.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -18,7 +18,8 @@ import type { OrgContext } from "./with-org.ts";
 // and that write is an agent's under 10 minutes old; and the 20 latest, newest
 // first, each in Tiehall's words (event-lines.ts) with who caused it and the
 // state it left the request in, which the latest event that moved the request
-// before them starts from. Events carry ids and never text, so the read holds
+// before them starts from; and who posted each message of its thread, named
+// the same way. Events carry ids and never text, so the read holds
 // no message's or packet's text; a removed member's call is refused before it
 // runs, as every call is.
 
@@ -157,7 +158,13 @@ export const REQUEST_ACTIVITY_HANDLERS: Handlers = {
       before = stateAfter(row.type, row.data as Record<string, unknown>, before);
       states.set(row.number, before);
     }
-    const actorOf = await actorsOf(context, lastWrite === undefined ? latest : [...latest, lastWrite]);
+    // Who posted each message of the thread, which the page names beside each message.
+    const posted = await context.tx
+      .select({ id: messages.id, actorKind: messages.actorKind, actorUserId: messages.actorUserId, client: messages.client, surface: messages.surface })
+      .from(messages)
+      .where(and(eq(messages.orgId, context.orgId), eq(messages.requestId, requestId)))
+      .orderBy(asc(messages.number));
+    const actorOf = await actorsOf(context, [...latest, ...(lastWrite === undefined ? [] : [lastWrite]), ...posted]);
     const now = context.now();
     return {
       now: now.toISOString(),
@@ -172,6 +179,7 @@ export const REQUEST_ACTIVITY_HANDLERS: Handlers = {
         line: eventLine(row.type, row.data as Record<string, unknown>),
         actor: actorOf(row),
       })),
+      authors: posted.map((row) => ({ messageId: row.id, actor: actorOf(row) })),
     };
   }),
 };

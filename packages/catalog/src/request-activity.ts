@@ -12,7 +12,8 @@ import { user } from "./schemas.ts";
 // on it now, which it is while the request is in_progress and that write is an
 // agent's under 10 minutes old; and its 20 latest domain events, newest first,
 // each in Tiehall's words with who caused it, when, and the state it left the
-// request in. Events carry ids, never text, so the read holds no message's or
+// request in; and who posted each message of its thread, named the same way,
+// with the client, for the thread's messages on the page. Events carry ids, never text, so the read holds no message's or
 // packet's text; a client's name is the client's own claim and sits under
 // untrusted. It is internal: no agent surface offers it, and every member may
 // run it, as members.list.
@@ -77,6 +78,8 @@ export const requestActivity = defineCommand({
     agentAtWork: z.boolean(),
     /** The request's 20 latest domain events, newest first. */
     events: z.array(requestActivityEvent),
+    /** Who posted each message of the request's thread, in the thread's order, named as the events name their actors. */
+    authors: z.array(z.object({ messageId: z.uuid(), actor: eventActor })),
   }),
   scopes: [],
   commitment: false,

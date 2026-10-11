@@ -16,6 +16,10 @@ export interface ActionFormProps {
   action: RequestPageAction;
   csrf: string;
   button: string;
+  /** The form's class, such as the stacked form of a side panel. */
+  className?: string;
+  /** The button's class: none for a primary button, secondary for the others. */
+  buttonClass?: string;
   children?: ReactNode;
 }
 
@@ -36,15 +40,15 @@ function Refused({ state }: { state: Extract<RequestPageActionState, { ok: false
   );
 }
 
-export function ActionForm({ requestKey, action, csrf, button, children }: ActionFormProps): ReactNode {
+export function ActionForm({ requestKey, action, csrf, button, className, buttonClass, children }: ActionFormProps): ReactNode {
   const [state, formAction, pending] = useActionState(requestPageAction, null);
   return (
-    <form action={formAction}>
+    <form action={formAction} className={className}>
       <input type="hidden" name="csrf" value={csrf} />
       <input type="hidden" name="key" value={requestKey} />
       <input type="hidden" name="action" value={action} />
       {children}
-      <button type="submit" disabled={pending}>
+      <button type="submit" disabled={pending} className={buttonClass}>
         {button}
       </button>
       {state === null || state.ok ? null : <Refused state={state} />}

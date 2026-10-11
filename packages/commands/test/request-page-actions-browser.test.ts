@@ -102,12 +102,12 @@ describe("the direct actions on a request's page", () => {
     const page = await pageOf("bob", "FE-1");
 
     await page.getByRole("button", { name: "Claim" }).click();
-    await page.getByText("Claimed by bob.").waitFor();
+    await page.getByText("claimed by bob").waitFor();
     expect((await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-2/claim")).status).toBe(200);
     expect(await shapeOf("FE-1")).toEqual(await shapeOf("FE-2"));
 
     await page.getByRole("button", { name: "Start work" }).click();
-    await page.getByText("FE-1 is in_progress").waitFor();
+    await page.locator(".request-tags").getByText("In progress", { exact: true }).waitFor();
     expect((await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-2/status", { state: "in_progress" })).status).toBe(200);
     expect(await shapeOf("FE-1")).toEqual(await shapeOf("FE-2"));
 
@@ -115,13 +115,13 @@ describe("the direct actions on a request's page", () => {
     await page.getByLabel("Blocking").check();
     await page.getByLabel("Message").fill("Which browsers must it support?");
     await page.getByRole("button", { name: "Post" }).click();
-    await page.getByText("FE-1 is needs_info").waitFor();
+    await page.locator(".request-tags").getByText("Needs info", { exact: true }).waitFor();
     await page.getByRole("region", { name: "Thread" }).getByText("Which browsers must it support?").waitFor();
     expect((await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-2/messages", { kind: "question", blocking: true, body: "Which browsers must it support?" })).status).toBe(200);
     expect(await shapeOf("FE-1")).toEqual(await shapeOf("FE-2"));
 
     await page.getByRole("button", { name: "Release the claim" }).click();
-    await page.getByText("Nobody has claimed it.").waitFor();
+    await page.getByText("nobody has claimed it").waitFor();
     expect((await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-2/status", { state: "open" })).status).toBe(200);
     expect(await shapeOf("FE-1")).toEqual(await shapeOf("FE-2"));
 
@@ -139,12 +139,12 @@ describe("the direct actions on a request's page", () => {
     const asked = await callApi(install, tokenOf(bob), "POST", "/api/v1/requests/FE-5/messages", { kind: "question", blocking: true, body: "Is the footer in scope?" });
     expect(asked.status).toBe(200);
     const page = await pageOf("alice", "FE-5");
-    await page.getByText("FE-5 is needs_info").waitFor();
+    await page.locator(".request-tags").getByText("Needs info", { exact: true }).waitFor();
     await page.getByLabel("Kind").selectOption("answer");
     await page.getByLabel("Question it answers").selectOption(asked.body.message.id);
     await page.getByLabel("Message").fill("No, only the settings page.");
     await page.getByRole("button", { name: "Post" }).click();
-    await page.getByText("FE-5 is open").waitFor();
+    await page.locator(".request-tags").getByText("Open", { exact: true }).waitFor();
     const { body } = await callApi(install, tokenOf(alice), "GET", "/api/v1/requests/FE-5");
     expect(body.messages.map((message: any) => [message.kind, message.questionId, message.answered])).toEqual([
       ["question", null, true],
@@ -209,7 +209,7 @@ describe("the direct actions on a request's page", () => {
 
     const scripted = await pageOf("bob", key);
     const [claimed] = await Promise.all([postTo(scripted), scripted.getByRole("button", { name: "Claim" }).click()]);
-    await scripted.getByText("Claimed by bob.").waitFor();
+    await scripted.getByText("claimed by bob").waitFor();
     hasUrlHeaders(await claimed.allHeaders());
     await scripted.context().close();
 
@@ -217,7 +217,7 @@ describe("the direct actions on a request's page", () => {
     const [released] = await Promise.all([postTo(plain), plain.getByRole("button", { name: "Release the claim" }).click()]);
     expect(released.status()).toBe(200);
     hasUrlHeaders(await released.allHeaders());
-    await plain.getByText("Nobody has claimed it.").waitFor();
+    await plain.getByText("nobody has claimed it").waitFor();
     await plain.context().close();
   });
 });

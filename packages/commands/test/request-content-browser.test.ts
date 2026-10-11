@@ -120,7 +120,7 @@ describe("request content in the web UI", () => {
     const watched = await watchedPageOf("alice");
     await visit(watched, "/FE-1");
     const { page } = watched;
-    expect(await page.getByRole("heading", { level: 1 }).innerText()).toBe(`FE-1: Fix ${HTML}`);
+    expect(await page.getByRole("heading", { level: 1 }).innerText()).toBe(`Fix ${HTML}`);
     expect(await page.getByRole("region", { name: "Packet" }).innerText()).toContain(HTML);
     const thread = await page.getByRole("region", { name: "Thread" }).innerText();
     expect(thread).toContain(HTML);

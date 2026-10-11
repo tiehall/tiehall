@@ -51,6 +51,7 @@ interface Activity {
   lastWrite: { at: string; actor: Actor } | null;
   agentAtWork: boolean;
   events: { number: number; type: string; at: string; state: string; line: string; actor: Actor }[];
+  authors: { messageId: string; actor: Actor }[];
 }
 
 /** Gives every event appended since the last call this time, as the owner, past the append-only trigger. */
@@ -200,6 +201,21 @@ describe("requests.activity", () => {
     expect(started.request.state).toBe("in_progress");
     expect(started.lastWrite).toEqual({ at: new Date(T0 + 20 * MINUTE).toISOString(), actor: { kind: "web", user: { id: deniz, login: "deniz", kind: "human", bot: false }, client: null } });
     expect(started.agentAtWork).toBe(false);
+  });
+
+  it("names who posted each message of the thread, as the timeline names them", async () => {
+    clock = new Date(T0 + 4 * MINUTE + 40_000);
+    const read = await activity("FE-1");
+    const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM messages WHERE request_id = $1 ORDER BY number", [read.request.id]);
+    expect(read.authors.map(({ messageId }) => messageId)).toEqual(rows.map(({ id }) => id));
+    expect(read.authors.map(({ actor }) => actor)).toEqual([
+      {
+        kind: "agent",
+        user: { id: mert, login: "mert", kind: "human", bot: false },
+        client: { kind: "metadata_document", host: "client.example.com", version: null, unverified: false, untrusted: { name: "Example Agent" } },
+      },
+      { kind: "web", user: { id: selin, login: "selin", kind: "human", bot: false }, client: null },
+    ]);
   });
 
   it("names each kind of client as the live hall does, cutting a name to 40 characters", async () => {
