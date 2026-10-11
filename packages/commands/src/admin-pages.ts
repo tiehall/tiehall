@@ -36,6 +36,7 @@ import { ACTIVITY_LOG_PATH } from "./activity-log-route.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { INVITE_LIFETIME_DAYS } from "./invites.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -142,10 +143,10 @@ export function createMembersRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: MEMBERS_PATH,
     name: "members",
-    async get(_query, { read, caller, csrf }) {
+    async get(_query, { read, caller, csrf, shell }) {
       const { members } = await read<{ members: ListedMember[] }>(listMembers.id, {});
       const admin = members.find(({ id }) => id === caller.userId)?.role === "admin";
-      return htmlAnswer(membersPage(members, admin ? csrf : undefined));
+      return htmlAnswer(membersPage(members, admin ? csrf : undefined, shell));
     },
     async post(form, { write }) {
       if (form.get("action") !== "set_bot_flag") throw new Refusal("route-not-found", "The members page offers no such action.");
@@ -177,7 +178,7 @@ function memberControls(member: ListedMember, csrf: string): string {
 }
 
 /** The members list; with the CSRF token, an admin's, with their controls. */
-function membersPage(members: readonly ListedMember[], adminCsrf: string | undefined): string {
+function membersPage(members: readonly ListedMember[], adminCsrf: string | undefined, shell: PageShell): string {
   const rows = members.map((member) =>
     [
       "        <tr>",
@@ -206,6 +207,7 @@ function membersPage(members: readonly ListedMember[], adminCsrf: string | undef
       "        </tbody>",
       "      </table>",
     ].join("\n"),
+    shell,
   );
 }
 
@@ -215,7 +217,7 @@ export function createInvitesRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: INVITES_PATH,
     name: "invites",
-    async get(query, { read, csrf }) {
+    async get(query, { read, csrf, shell }) {
       // An admin's page: the read refuses a member with 403 before anything else.
       const { invites } = await read<{ invites: Invite[] }>(listInvites.id, {});
       // The invite form looks the username up at once, and leads to the review page of an invite for the account it
@@ -225,7 +227,7 @@ export function createInvitesRoute(options: PageRouteOptions): PageRoute {
         const { account } = await read<{ account: { id: number } }>(findInviteAccount.id, { login });
         return seeOther(reviewPath(createInvite.id, { accountId: account.id, role: query.get("role") ?? "member" }));
       }
-      return htmlAnswer(invitesPage(invites, csrf));
+      return htmlAnswer(invitesPage(invites, csrf, shell));
     },
     async post(form, { write }) {
       if (form.get("action") !== "revoke") throw new Refusal("route-not-found", "The invites page offers no such action.");
@@ -235,7 +237,7 @@ export function createInvitesRoute(options: PageRouteOptions): PageRoute {
   });
 }
 
-function invitesPage(invites: readonly Invite[], csrf: string): string {
+function invitesPage(invites: readonly Invite[], csrf: string, shell: PageShell): string {
   const waiting = invites.map((invite) =>
     [
       "        <li>",
@@ -260,6 +262,7 @@ function invitesPage(invites: readonly Invite[], csrf: string): string {
       "      <p>Revoking an invite needs no confirmation: a revoked invite admits no one.</p>",
       waiting.length === 0 ? "      <p>No invite is waiting to be accepted.</p>" : `      <ul>\n${waiting.join("\n")}\n      </ul>`,
     ].join("\n"),
+    shell,
   );
 }
 
@@ -379,12 +382,12 @@ export function createTeamsRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: TEAMS_PATH,
     name: "teams",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       // An admin's page: the teams' read refuses a member with 403 before anything else.
       const { teams } = await read<{ teams: ListedTeam[] }>(listTeams.id, {});
       const { members } = await read<{ members: ListedMember[] }>(listMembers.id, {});
       const mappings = await read<Mappings>(listTrackerMappings.id, {});
-      return htmlAnswer(teamsPage(teams, members, mappings, csrf));
+      return htmlAnswer(teamsPage(teams, members, mappings, csrf, shell));
     },
     async post(form, { write }) {
       const action = Object.hasOwn(TEAM_ACTIONS, form.get("action") ?? "") ? TEAM_ACTIONS[form.get("action") ?? ""] : undefined;
@@ -454,7 +457,7 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], mapping
   ].join("\n");
 }
 
-function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[], mappings: Mappings, csrf: string): string {
+function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[], mappings: Mappings, csrf: string, shell: PageShell): string {
   return htmlPage(
     "Teams",
     [
@@ -471,6 +474,7 @@ function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[
       "      </form>",
       ...(teams.length === 0 ? ["      <p>The install has no team yet.</p>"] : teams.map((team) => teamSection(team, members, mappings, csrf))),
     ].join("\n"),
+    shell,
   );
 }
 
@@ -487,7 +491,7 @@ export function createSignInPolicyRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: SIGN_IN_POLICY_PATH,
     name: "sign-in policy",
-    async get(_query, { read }) {
+    async get(_query, { read, shell }) {
       const { policy } = await read<{ policy: SignInPolicy }>(getSignInPolicy.id, {});
       const others = SIGN_IN_POLICIES.filter((other) => other !== policy);
       return htmlAnswer(
@@ -502,6 +506,7 @@ export function createSignInPolicyRoute(options: PageRouteOptions): PageRoute {
               (other) => `      <p>${link(reviewPath(setSignInPolicy.id, { policy: other }), `Change the policy to ${signInPolicyText(other)}`)}, with a confirmation. No member is removed.</p>`,
             ),
           ].join("\n"),
+          shell,
         ),
       );
     },
@@ -520,7 +525,7 @@ export function createPersonalAccessTokenSettingsRoute(options: PageRouteOptions
   return createPageRoute(options, {
     path: PERSONAL_ACCESS_TOKEN_SETTINGS_PATH,
     name: "personal access tokens",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       const { on, maxLifetimeDays } = await read<{ on: boolean; maxLifetimeDays: number }>(getPersonalAccessTokenAdminSettings.id, {});
       return htmlAnswer(
         htmlPage(
@@ -540,6 +545,7 @@ export function createPersonalAccessTokenSettingsRoute(options: PageRouteOptions
             '        <button type="submit">Review the change</button>',
             "      </form>",
           ].join("\n"),
+          shell,
         ),
       );
     },

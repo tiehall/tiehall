@@ -30,7 +30,7 @@ export function createEmailSettingsRoute(options: PageRouteOptions, { emailSetUp
   return createPageRoute(options, {
     path: EMAIL_SETTINGS_PATH,
     name: "email settings",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       const { address, digest, teams } = await read<{ address: string | null; digest: boolean; teams: { team: { id: string; key: string }; requesterEmails: boolean }[] }>(
         readEmailSettings.id,
         {},
@@ -62,7 +62,7 @@ export function createEmailSettingsRoute(options: PageRouteOptions, { emailSetUp
         "      <h2>Always emailed</h2>",
         "      <p>Proposal notices, receipts and the questions asked of you are always emailed; no setting turns them off.</p>",
       ];
-      return htmlAnswer(htmlPage("Email settings", lines.join("\n")));
+      return htmlAnswer(htmlPage("Email settings", lines.join("\n"), shell));
     },
     async post(form, { write }) {
       const team = form.get("team");

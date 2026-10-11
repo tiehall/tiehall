@@ -864,7 +864,7 @@ body > footer > * {
 }
 
 body > footer p {
-  margin: 0;
+  margin: 0 auto;
 }
 
 body > footer a {
@@ -1546,7 +1546,7 @@ button.secondary:hover,
     max-width: none;
   }
 
-  :where(main) form button,
+  :where(main) > form button,
   :where(main) .card .button {
     width: 100%;
   }
@@ -1558,7 +1558,11 @@ button.secondary:hover,
   }
 
   :where(main) td {
-    min-width: 120px;
+    white-space: nowrap;
+  }
+
+  :where(main) td p {
+    margin: 0 0 4px;
   }
 
   .cards {

@@ -6,6 +6,7 @@ import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/in
 import { invite } from "./support/invites.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type CookieJar, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // Sign-ins that race an admin's change (sign-in: Who may sign in; sign-in:
 // Signing out and ending sessions; teams-and-roles: Removing a member;
@@ -131,7 +132,7 @@ async function liveSessionsOf(userId: string): Promise<number> {
 }
 
 function home(jar: CookieJar): Promise<Response> {
-  const route = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger });
+  const route = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) });
   return route(new Request(`${URL_OF_INSTALL}/`, { headers: { cookie: jar.header() } }));
 }
 

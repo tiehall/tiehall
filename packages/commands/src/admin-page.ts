@@ -202,7 +202,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: ADMIN_PATH,
     name: "admin",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       // The integrations are an admin's: a member's read of them is refused with 403, and the page shows nothing.
       const integration = await read<Integration>(getGitHubIntegration.id, {});
       const { installations } = await read<{ installations: Installation[] }>(listGitHubInstallations.id, {});
@@ -224,6 +224,7 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
             ...writeBudgetSection(dailyWriteBudget, csrf),
             ...docsSection(options.docs),
           ].join("\n"),
+          shell,
         ),
       );
     },

@@ -287,7 +287,8 @@ describe("the email settings page", () => {
     expect(html).toContain("The daily digest is on.");
     expect(html).toContain("Proposal notices, receipts and the questions asked of you are always emailed; no setting turns them off.");
     // The digest's form, and one for the emails to Sam's team, BE, as a requester (task 23.10), which no setting of transactional email is.
-    expect([...html.matchAll(/<form /g)]).toHaveLength(2);
+    // In the page's own content: the shell holds the sign-out form (web-ui: The page shell and its navigation).
+    expect([...(/<main[\s\S]*<\/main>/.exec(html)?.[0] ?? "").matchAll(/<form /g)]).toHaveLength(2);
     expect(html).toContain("BE: off.");
     expect(form(html)).toMatchObject({ digest: "off" });
     expect(html).not.toMatch(/<input type="checkbox"/);

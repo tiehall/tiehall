@@ -1,4 +1,4 @@
-import { CATALOG, getBanners, OPENAPI_DOCUMENTS, OPENAPI_JSON } from "@tiehall/catalog";
+import { CATALOG, getBanners, OPENAPI_DOCUMENTS, OPENAPI_JSON, webShell } from "@tiehall/catalog";
 import type { Banner } from "./admin-alerts.ts";
 import { emailStatus } from "./email.ts";
 import { createActivityLogRoute, type ActivityLogRoute } from "./activity-log-route.ts";
@@ -44,6 +44,7 @@ import { createSignInService, type SignInService } from "./sign-in.ts";
 import { createWebCommands, type WebCommands } from "./web-commands.ts";
 import type { PageRoute, PageRouteOptions } from "./web-pages.ts";
 import type { WebSessionCaller } from "./caller.ts";
+import type { ShellMember } from "./shell.ts";
 
 export type { WebResult } from "./web-commands.ts";
 export { runningVersion, type RunningVersion } from "./running-version.ts";
@@ -506,6 +507,7 @@ export function homeRoute(env: Environment): HomeRoute {
     session: (request, renewal) => webSession(env, request.headers, renewal),
     secret: () => readAuthSecret(env),
     banners: async (caller) => ((await execute(getBanners.id, caller, {}, { readOnly: true })) as { banners: Banner[] }).banners,
+    shell: async (caller) => (await execute(webShell.id, caller, {}, { readOnly: true })) as ShellMember,
     logger,
   });
   return homePage;

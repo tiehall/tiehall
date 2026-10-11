@@ -9,6 +9,7 @@ import { createHomeRoute } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // Signing in with GitHub and signing out, in a real browser (sign-in: GitHub
 // is the only way to sign in; sign-in: Signing out and ending sessions). The
@@ -34,7 +35,7 @@ beforeAll(async () => {
   stub.addUser({ login: "kim-outside" });
   await addUser(install.owner, { login: "ana-k", githubAccountId: ana.id });
   harness = await startSignIn(install, stub);
-  const home = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger });
+  const home = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) });
 
   const route = (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -108,7 +109,9 @@ describe("signing in with GitHub in a browser", { timeout: 90_000 }, () => {
     const [session] = (await context.cookies(URL_OF_INSTALL)).filter(({ name }) => name === "__Secure-tiehall.session_token");
     expect(session).toMatchObject({ secure: true, httpOnly: true, sameSite: "Lax", path: "/" });
 
-    // Signing out ends the session: the browser is sent to sign in again.
+    // Signing out ends the session: the browser is sent to sign in again. The sign-out form is in the member's menu
+    // (web-ui: The page shell and its navigation).
+    await page.locator("header details.menu").first().locator("summary").click();
     await Promise.all([page.waitForURL(`${URL_OF_INSTALL}/sign-in`), page.getByRole("button", { name: "Sign out" }).click()]);
     expect((await context.cookies(URL_OF_INSTALL)).map(({ name }) => name)).not.toContain("__Secure-tiehall.session_token");
     await page.goto(`${URL_OF_INSTALL}/`);

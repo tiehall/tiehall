@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { HttpProblem, RefusalReason } from "@tiehall/core";
+import { assetUrl, STYLESHEET_PATH } from "./assets.ts";
+import { markSvg } from "./mark.ts";
 import type { RunningVersion } from "./running-version.ts";
+import { FOCUSED_SHELL, initialsOf, memberMenu, navigation, NEW_REQUEST_LINK, SIGN_OUT_ACTION, type NavLink, type PageShell, type ShellLink } from "./shell.ts";
 
 // The web role's own HTML pages, such as the setup screen and the review pages
 // of the confirmation step, render no raw HTML from anyone (design.md, Design
@@ -110,17 +113,135 @@ export function footerHtml(version: Footer | undefined = footer): string {
 `;
 }
 
-/** A page of the web role, with its title and the HTML of its main content, and the footer. */
-export function htmlPage(title: string, main: string): string {
+// The shell of every page the web role renders (web-ui: The page shell and
+// its navigation; web-ui: The mark, the favicon and the app icon; web-ui:
+// Light and dark themes follow the system; design.md, Design: The page shell
+// and navigation; D57 (4), (5), (10)), drawn from shell.ts's model: the head
+// names the install's stylesheet, icons and manifest by their digests and the
+// color schemes the page uses; the body starts with the link that skips to the
+// main content, then the top bar, the main content and the footer. The app
+// shell's menus are details elements, so they open without script; on a
+// narrow screen the stylesheet shows the folded menu in place of the
+// navigation, New request and the member's menu.
+
+/** The head every page of the web UI carries: its title, the color schemes it uses and its theme colors, the stylesheet, the icons and the manifest. */
+export function headHtml(title: string): string {
+  return [
+    '    <meta charset="utf-8">',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1">',
+    '    <meta name="color-scheme" content="light dark">',
+    '    <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
+    '    <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
+    `    <title>${escapeHtml(title)}</title>`,
+    `    <link rel="stylesheet" href="${assetUrl(STYLESHEET_PATH)}">`,
+    `    <link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">`,
+    `    <link rel="icon" href="${assetUrl("/favicon.ico")}" sizes="16x16 32x32 48x48">`,
+    `    <link rel="apple-touch-icon" href="${assetUrl("/assets/icon-180.png")}">`,
+    `    <link rel="manifest" href="${assetUrl("/assets/manifest.webmanifest")}">`,
+  ].join("\n");
+}
+
+/** The mark on its tile beside the name, as the top bar draws it. */
+const BRAND_MARK = `<span class="mark">${markSvg(18)}</span>Tiehall`;
+
+/** A link of the shell, marked as the page shown when it is. */
+function shellLink({ href, text, current }: ShellLink, extra = ""): string {
+  return `<a href="${escapeHtml(href)}"${current ? ' aria-current="page"' : ""}>${escapeHtml(text)}${extra}</a>`;
+}
+
+/** The navigation's links, the inbox's with the number of proposals that wait for the member, in figures and in words. */
+function navigationItems(links: readonly NavLink[], indent: string): string {
+  return links
+    .map((link) => {
+      const badge =
+        link.waiting === undefined
+          ? ""
+          : ` <span class="badge"><span aria-hidden="true">${link.waiting.count}</span><span class="visually-hidden">${escapeHtml(link.waiting.words)}</span></span>`;
+      return `${indent}<li>${shellLink(link, badge)}</li>`;
+    })
+    .join("\n");
+}
+
+/** The member's menu's links and their sign-out form, with the session's CSRF token. */
+function memberItems(path: string, csrf: string, indent: string): string {
+  return [
+    ...memberMenu(path).map((link) => `${indent}${shellLink(link)}`),
+    `${indent}<form method="post" action="${SIGN_OUT_ACTION}">`,
+    `${indent}  <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    `${indent}  <button type="submit">Sign out</button>`,
+    `${indent}</form>`,
+  ].join("\n");
+}
+
+/** The top bar of a page: the app shell's, with the navigation and the menus, or the focused shell's, the mark and the name alone. */
+export function topBarHtml(shell: PageShell): string {
+  if (shell.form === "focused") {
+    return [
+      '    <header class="topbar">',
+      '      <div class="topbar-inner">',
+      `        <span class="brand">${BRAND_MARK}</span>`,
+      "      </div>",
+      "    </header>",
+    ].join("\n");
+  }
+  const { member, path, csrf } = shell;
+  const links = navigation(member, path);
+  const who = member.bot ? `${member.login} (bot)` : member.login;
+  return [
+    '    <header class="topbar">',
+    '      <div class="topbar-inner">',
+    `        <a class="brand" href="/">${BRAND_MARK}</a>`,
+    '        <div class="topbar-wide">',
+    '          <nav class="nav" aria-label="Main">',
+    "            <ul>",
+    navigationItems(links, "              "),
+    "            </ul>",
+    "          </nav>",
+    '          <div class="topbar-end">',
+    `            <a class="button" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
+    '            <details class="menu">',
+    `              <summary><span class="initials" aria-hidden="true">${escapeHtml(initialsOf(member.login))}</span><span class="login">${escapeHtml(who)}</span></summary>`,
+    '              <div class="menu-panel">',
+    memberItems(path, csrf, "                "),
+    "              </div>",
+    "            </details>",
+    "          </div>",
+    "        </div>",
+    '        <details class="menu menu-all">',
+    "          <summary>Menu</summary>",
+    '          <div class="menu-panel">',
+    '            <nav aria-label="Main">',
+    "              <ul>",
+    navigationItems(links, "                "),
+    "              </ul>",
+    "            </nav>",
+    `            <a class="button" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
+    `            <p class="menu-who">Signed in as ${escapeHtml(who)}</p>`,
+    memberItems(path, csrf, "            "),
+    "          </div>",
+    "        </details>",
+    "      </div>",
+    "    </header>",
+  ].join("\n");
+}
+
+/**
+ * A page of the web role, with its title and the HTML of its main content:
+ * the head, the link that skips to the main content, the top bar of its shell,
+ * one main landmark, which holds the page's one first-level heading, and the
+ * footer. A page takes the focused shell unless it is given a member's app
+ * shell.
+ */
+export function htmlPage(title: string, main: string, shell: PageShell = FOCUSED_SHELL): string {
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(title)}</title>
+${headHtml(title)}
   </head>
   <body>
-    <main>
+    <a class="skip" href="#content">Skip to content</a>
+${topBarHtml(shell)}
+    <main id="content"${shell.form === "focused" ? ' class="focused"' : ""}>
 ${main}
     </main>
 ${footerHtml()}  </body>

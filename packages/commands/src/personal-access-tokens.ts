@@ -31,6 +31,7 @@ import type { Reviews } from "./confirmation-step.ts";
 import { SCOPE_TEXTS } from "./consent.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 import { lockMembership, withOrg, type OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
@@ -427,11 +428,11 @@ export function createTokensRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: TOKENS_PATH,
     name: "Connected agents and tokens",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       const settings = await read<{ on: boolean; maxLifetimeDays: number }>(getPersonalAccessTokenSettings.id, {});
       const { grants } = await read<{ grants: ListedGrant[] }>(listAgentGrants.id, {});
       const { tokens } = await read<{ tokens: ListedToken[] }>(listPersonalAccessTokens.id, {});
-      return htmlAnswer(tokensPage(settings, grants, tokens, csrf));
+      return htmlAnswer(tokensPage(settings, grants, tokens, csrf, shell));
     },
     async post(form, { write }) {
       switch (form.get("action")) {
@@ -504,6 +505,7 @@ function tokensPage(
   grants: readonly ListedGrant[],
   tokens: readonly ListedToken[],
   csrf: string,
+  shell: PageShell,
 ): string {
   const defaultDays = Math.min(30, maxLifetimeDays);
   return htmlPage(
@@ -536,5 +538,6 @@ function tokensPage(
       '        <button type="submit">Review the token</button>',
       "      </form>",
     ].join("\n"),
+    shell,
   );
 }

@@ -28,6 +28,7 @@ import {
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // Refusals to browsers are pages (public-api: One error model for Tiehall's
 // own refusals; sign-in: Who may sign in; github-layer-hardening: design.md,
@@ -180,7 +181,7 @@ const CASES: Case[] = [
   },
   {
     name: "a form posted to the home page",
-    route: () => createHomeRoute({ session: async () => ada, secret: () => install.authSecret, logger: install.logger }),
+    route: () => createHomeRoute({ session: async () => ada, secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) }),
     request: () => ({ path: "/", method: "POST" }),
     status: 404,
     wayOn: () => "/",
@@ -251,7 +252,11 @@ async function expectRefusalPage(answer: Response, problem: { type: string; titl
   expect(policy).toContain("frame-ancestors 'none'");
   const html = await answer.text();
   expect(html.startsWith("<!doctype html>")).toBe(true);
-  expect(html).not.toMatch(/<script|<link|<img|<iframe|<style/i);
+  // It runs no script and loads only the install's own stylesheet, icons and manifest, in the focused shell (web-ui: The
+  // page shell and its navigation; web-ui: The content security policy of each kind of page).
+  expect(html).not.toMatch(/<script|<img|<iframe|<style|\sstyle=/i);
+  for (const [, href] of html.matchAll(/<link [^>]*href="([^"]+)"/g)) expect(href).toMatch(/^\/(assets\/(tiehall\.css|icon\.svg|icon-180\.png|manifest\.webmanifest)|favicon\.ico)\?v=[A-Za-z0-9_-]+$/);
+  expect(html).toContain('<main id="content" class="focused">');
   expect(html).toContain(`<h1>${escaped(problem.title)}</h1>`);
   expect(html).toContain(escaped(problem.detail));
   expect(html).toContain(escaped(problem.type));

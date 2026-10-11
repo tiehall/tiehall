@@ -1,6 +1,7 @@
 import { listInbox, listOpenedRequests, listRequests } from "@tiehall/catalog";
 import { REQUEST_STATES, Refusal, type RequestState } from "@tiehall/core";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { NEW_REQUEST_PATH } from "./new-request.ts";
 import type { RequestView } from "./request-views.ts";
 import { createPageRoute, htmlAnswer, link, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -117,7 +118,7 @@ function stateForm({ list, state }: ListQuery): string {
   ].join("\n");
 }
 
-function listsPage(query: ListQuery, listed: readonly RequestView[], older: boolean): string {
+function listsPage(query: ListQuery, listed: readonly RequestView[], older: boolean, shell: PageShell): string {
   const { title, empty } = LISTS[query.list];
   const pages = [
     ...(query.page > 1 ? [link(listPath({ ...query, page: query.page - 1 }), "Newer requests")] : []),
@@ -141,6 +142,7 @@ function listsPage(query: ListQuery, listed: readonly RequestView[], older: bool
           ]),
       ...(pages.length === 0 ? [] : [`      <p>${pages.join(" · ")}</p>`]),
     ].join("\n"),
+    shell,
   );
 }
 
@@ -148,12 +150,12 @@ export function createRequestListsRoute(options: PageRouteOptions, { pageSize = 
   return createPageRoute(options, {
     path: REQUEST_LISTS_PATH,
     name: "request lists",
-    async get(search, { read }) {
+    async get(search, { read, shell }) {
       const query = listQueryOf(search);
       // One request more than a page shows, which says whether older ones follow.
       const input = { ...(query.state === undefined ? {} : { state: query.state }), limit: pageSize + 1, offset: (query.page - 1) * pageSize };
       const { "requests": found } = await read<{ "requests": RequestView[] }>(LISTS[query.list].commandId, input);
-      return htmlAnswer(listsPage(query, found.slice(0, pageSize), found.length > pageSize));
+      return htmlAnswer(listsPage(query, found.slice(0, pageSize), found.length > pageSize, shell));
     },
   });
 }

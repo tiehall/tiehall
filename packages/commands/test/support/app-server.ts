@@ -52,6 +52,7 @@ import {
   type JobSender,
   type SignInService,
 } from "../../src/index.ts";
+import { shellReader } from "./shell.ts";
 
 // The install as a browser reaches it, before setup, for the end-to-end flows
 // of the setup screen (self-host-install: Setup names the company and makes
@@ -161,7 +162,8 @@ export async function startAppServer(stub: GitHubStub, options: { trial?: boolea
   const setup = createSetupRoute({ database: db, url, secrets: () => box, github, signIn: signIn.setup, logger });
   const webhooks = createGitHubWebhookRoute({ database: db, secrets: () => box, jobs, logger });
   // Each route reads the session as the web role's does: it may renew it, and the route's answer carries the cookie.
-  const home = createHomeRoute({ session: (request, renewal) => signIn.session(request.headers, renewal), secret: () => authSecret, logger });
+  // The shell's read runs through the execute() built below, once the page is asked for.
+  const home = createHomeRoute({ session: (request, renewal) => signIn.session(request.headers, renewal), secret: () => authSecret, logger, shell: (caller) => shellReader(execute)(caller) });
   const confirmations = createConfirmationNonces({ secret: authSecret });
   const store = { database: db, jobs };
   // The operations that ask GitHub, such as creating an invite, reach the stub as the install's stored App.

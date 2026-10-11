@@ -3,6 +3,7 @@ import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { adminNav, APIS_PATH, reviewPath } from "./admin-pages.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
@@ -37,14 +38,14 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: APIS_PATH,
     name: "APIs",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       // An admin's page: the APIs' read refuses a member with 403 before anything else.
       const { apis } = await read<{ apis: RegisteredApi[] }>(listApis.id, {});
       const { teams } = await read<{ teams: ListedTeam[] }>(listTeams.id, {});
       const { installations } = await read<{ installations: GitHubInstallation[] }>(listGitHubInstallations.id, {});
       // The repositories a connected installation that is neither suspended nor deleted covers.
       const covered = installations.filter(({ connected, suspended, deleted }) => connected && !suspended && !deleted).flatMap(({ repositories }) => repositories);
-      return htmlAnswer(apisPage(apis, teams, [...new Set(covered)].sort(), csrf));
+      return htmlAnswer(apisPage(apis, teams, [...new Set(covered)].sort(), csrf, shell));
     },
     async post(form, { read, write }) {
       if (form.get("action") === "unregister") {
@@ -70,7 +71,7 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
   });
 }
 
-function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], covered: readonly string[], csrf: string): string {
+function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], covered: readonly string[], csrf: string, shell: PageShell): string {
   // Unregistering needs no confirmation step: it only stops an API's reports.
   const registered = apis.map((api) =>
     [
@@ -126,5 +127,6 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
             .filter((line) => line !== "")
             .join("\n"),
     ].join("\n"),
+    shell,
   );
 }

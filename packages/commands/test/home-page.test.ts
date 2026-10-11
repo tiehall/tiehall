@@ -5,6 +5,7 @@ import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/in
 import { addUser } from "./support/members.ts";
 import { sessionOf } from "./support/requests.ts";
 import { CookieJar, startSignIn, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // The home page (sign-in: GitHub is the only way to sign in; sign-in: Signing
 // out and ending sessions). A person who is not signed in is sent to the
@@ -36,7 +37,7 @@ afterAll(async () => {
 });
 
 function home(jar: CookieJar): Promise<Response> {
-  const route = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger });
+  const route = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) });
   return route(new Request(`${URL_OF_INSTALL}/`, { headers: { cookie: jar.header() } }));
 }
 
@@ -63,7 +64,7 @@ describe("the home page", () => {
     expect(html).toContain('<a href="/inbox">Inbox</a>');
     expect(html).toContain('<a href="/settings/email">Email settings</a>');
     expect(html).toContain('<a href="/requests">Requests</a>');
-    expect(html).toContain('<a href="/requests/new">Open a request</a>');
+    expect(html).toContain('<a class="button secondary" href="/requests/new">Open a request</a>');
   });
 
   it("answers a browser whose session a removal ended with 403 and no data", async () => {

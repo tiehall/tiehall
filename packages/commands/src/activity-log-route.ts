@@ -2,6 +2,7 @@ import { exportActivityLog, listActivityLog, type activityEvent } from "@tiehall
 import type { z } from "zod";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
@@ -62,13 +63,13 @@ export function createActivityLogRoute(options: ActivityLogRouteOptions): Activi
       const before = query.get("before")?.trim();
       if (before !== undefined && before !== "") input["before"] = /^\d+$/.test(before) ? Number(before) : before;
       const output = await calls.read<{ events: ActivityEvent[] }>(listActivityLog.id, input);
-      return htmlAnswer(page(query, output.events));
+      return htmlAnswer(page(query, output.events, calls.shell));
     },
   });
 }
 
 /** The page: the filters as a form, the events as a table, and a link to the older ones. */
-function page(query: URLSearchParams, events: ActivityEvent[]): string {
+function page(query: URLSearchParams, events: ActivityEvent[], shell: PageShell): string {
   const field = (name: string, label: string, placeholder: string) =>
     `        <label>${escapeHtml(label)} <input name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}" placeholder="${escapeHtml(placeholder)}"></label>`;
   const rows = events.map(
@@ -112,6 +113,7 @@ function page(query: URLSearchParams, events: ActivityEvent[]): string {
     ]
       .filter((line) => line !== "")
       .join("\n"),
+    shell,
   );
 }
 

@@ -484,6 +484,25 @@ describe.each(["web", "all"])("the %s role", (role) => {
     expect(footer).toMatch(new RegExp(`href="https://github\\.com/[^/"]+/[^/"]+/tree/${ref}"`));
   });
 
+  // web-ui: The page shell and its navigation; web-ui: One stylesheet with named design tokens. The web role's request
+  // guard renders its refusals of a page route before any route sees the call, in apps/server's bundle, which names the
+  // install's stylesheet by the committed digest of its current content.
+  it("renders the request guard's refusal of a page route with the shell, linking the stylesheet by its current digest", async () => {
+    const digest = /"\/assets\/tiehall\.css": "([A-Za-z0-9_-]+)"/.exec(readFileSync(fileURLToPath(new URL("../../../packages/commands/src/asset-digests.ts", import.meta.url)), "utf8"))?.[1];
+    expect(digest).toBeDefined();
+    const refused = await fetch(`http://127.0.0.1:${port}/inbox`, {
+      method: "POST",
+      headers: { accept: "text/html", "content-type": "application/x-www-form-urlencoded", origin: "http://localhost:3000" },
+      body: `x=${"a".repeat(3 * 1024 * 1024)}`,
+    });
+    expect(refused.status).toBe(413);
+    const html = await refused.text();
+    expect(html).toContain(`<link rel="stylesheet" href="/assets/tiehall.css?v=${digest}">`);
+    expect(html).toContain('<a class="skip" href="#content">Skip to content</a>');
+    expect(html).toMatch(/<main id="content" class="focused">/);
+    expect((await fetch(`http://127.0.0.1:${port}/assets/tiehall.css?v=${digest}`)).headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
   it("tags its pages with the commit as the deployment id", async () => {
     // A page Next.js renders itself, such as the one for a path no route serves.
     const html = await (await fetch(`http://127.0.0.1:${port}/no-such-page`)).text();

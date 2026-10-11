@@ -129,8 +129,11 @@ describe("the members page", () => {
       { login: "dana", role: "member", teams: "OPS" },
       { login: "lee-dev", role: "member", teams: "" },
     ]);
+    // The page's own content: the shell holds the member's sign-out form (web-ui: The page shell and its navigation).
+    const main = /<main[\s\S]*<\/main>/.exec(html)?.[0] ?? "";
+    expect(main).not.toContain("/confirm/");
+    expect(main).not.toContain("<form");
     expect(html).not.toContain("/confirm/");
-    expect(html).not.toContain("<form");
   });
 
   it("gives an admin the review pages that change a role or remove a member, and the forms for the bot flag", async () => {

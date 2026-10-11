@@ -6,6 +6,7 @@ import {
   setGitHubMode,
   storeGitHubWebhookSecret,
   uploadGitHubPrivateKey,
+  webShell,
   type githubInstallation,
 } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
@@ -17,6 +18,7 @@ import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor } from "./h
 import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
+import type { PageShell, ShellMember } from "./shell.ts";
 import { isTrialUrl } from "./settings.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
@@ -90,9 +92,12 @@ export function createGitHubAdminRoute(options: GitHubAdminRouteOptions): GitHub
           headers: { location: `${SIGN_IN_PATH}?return=${encodeURIComponent(GITHUB_ADMIN_PATH)}`, "cache-control": "no-store", ...frameless() },
         });
       }
+      // The shell's read comes first, as on every page in the app shell (web-ui: The page shell and its navigation).
+      const member = (await options.execute(webShell.id, caller, {}, { readOnly: true })) as ShellMember;
       const integration = (await options.execute(getGitHubIntegration.id, caller, {}, { readOnly: true })) as Integration;
       const output = (await options.execute(listGitHubInstallations.id, caller, {}, { readOnly: true })) as { installations: Installation[] };
-      return new Response(page(integration, output.installations, csrfTokenFor(options.secret(), caller.sessionId), options.url), { headers: PAGE_HEADERS });
+      const csrf = csrfTokenFor(options.secret(), caller.sessionId);
+      return new Response(page(integration, output.installations, csrf, options.url, { form: "app", member, path: GITHUB_ADMIN_PATH, csrf }), { headers: PAGE_HEADERS });
     } catch (error) {
       if (error instanceof Refusal) {
         return answerRefusal(request, httpProblem(error), wayOnFor(error.reason, { href: GITHUB_ADMIN_PATH, text: "Back to the GitHub page" }));
@@ -219,7 +224,7 @@ function modeSection(integration: Integration, csrf: string, url: string): strin
   ];
 }
 
-function page(integration: Integration, installations: readonly Installation[], csrf: string, url: string): string {
+function page(integration: Integration, installations: readonly Installation[], csrf: string, url: string, shell: PageShell): string {
   const connected = installations.filter(({ connected: isConnected }) => isConnected);
   const others = installations.filter(({ connected: isConnected, deleted }) => !isConnected && !deleted);
   const connectedRows = connected.map(
@@ -254,5 +259,6 @@ function page(integration: Integration, installations: readonly Installation[], 
       "      <p>Tiehall ignores these until an admin connects them: their repositories do not count as covered, and membership of their GitHub organizations lets nobody sign in. Leave one here to ignore it.</p>",
       otherRows.length === 0 ? "      <p>Every installation of the App is connected.</p>" : `      <ul>\n${otherRows.join("\n")}\n      </ul>`,
     ].join("\n"),
+    shell,
   );
 }

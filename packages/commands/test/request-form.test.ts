@@ -120,7 +120,8 @@ describe("the web form that opens a request", () => {
   it("tells a member of no team that they cannot open a request, and refuses their form with 403", async () => {
     const html = await (await get(nola)).text();
     expect(html).toContain("You belong to no team");
-    expect(html).not.toContain("<form");
+    // No form of the page's own: the shell holds the sign-out form (web-ui: The page shell and its navigation).
+    expect(/<main[\s\S]*<\/main>/.exec(html)?.[0] ?? "").not.toContain("<form");
     expect((await post(nola, { targetTeam: "FE", title: "Hello", need: "Something." })).status).toBe(403);
   });
 

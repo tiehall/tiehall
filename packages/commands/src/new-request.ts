@@ -2,6 +2,7 @@ import { createRequest, PACKET_SCHEMA_VERSION, readDirectory, whoami, type Intak
 import { Refusal, type RefusalIssue } from "@tiehall/core";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
 import { escapeHtml, htmlPage } from "./html.ts";
+import type { PageShell } from "./shell.ts";
 import { createPageRoute, htmlAnswer, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The web form that opens a request, at /requests/new (requests: A request is
@@ -149,7 +150,7 @@ function packetField(field: IntakeField, team: DirectoryTeam | undefined): strin
   ].join("\n");
 }
 
-function newRequestPage(teams: readonly DirectoryTeam[], mine: readonly string[], chosen: string | undefined, csrf: string): string {
+function newRequestPage(teams: readonly DirectoryTeam[], mine: readonly string[], chosen: string | undefined, csrf: string, shell: PageShell): string {
   if (mine.length === 0) {
     return htmlPage(
       "Open a request",
@@ -157,6 +158,7 @@ function newRequestPage(teams: readonly DirectoryTeam[], mine: readonly string[]
         "      <h1>Open a request</h1>",
         "      <p>You belong to no team, so you cannot open a request: a request comes from one of your teams. An admin adds you to a team on the teams page.</p>",
       ].join("\n"),
+      shell,
     );
   }
   const team = teams.find(({ key }) => key === chosen);
@@ -190,6 +192,7 @@ function newRequestPage(teams: readonly DirectoryTeam[], mine: readonly string[]
       '        <button type="submit">Open the request</button>',
       "      </form>",
     ].join("\n"),
+    shell,
   );
 }
 
@@ -197,11 +200,11 @@ export function createNewRequestRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: NEW_REQUEST_PATH,
     name: "new request",
-    async get(query, { read, csrf }) {
+    async get(query, { read, csrf, shell }) {
       const { teams } = await read<{ teams: DirectoryTeam[] }>(readDirectory.id, {});
       const { teams: mine } = await read<{ teams: { key: string }[] }>(whoami.id, {});
       const chosen = query.get("team") ?? undefined;
-      return htmlAnswer(newRequestPage(teams, mine.map(({ key }) => key), chosen, csrf));
+      return htmlAnswer(newRequestPage(teams, mine.map(({ key }) => key), chosen, csrf, shell));
     },
     async post(form, { write }) {
       const opened = (await write(createRequest.id, inputOf(form))) as { key: string };

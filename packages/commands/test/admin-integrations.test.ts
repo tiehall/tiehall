@@ -21,6 +21,7 @@ import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/in
 import { addUser } from "./support/members.ts";
 import { sessionOf, tokenOf } from "./support/requests.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // The integrations' state on the admin page, and the admin banners
 // (tracker-mirrors: GitHub and Jira each run in webhook mode or polling mode;
@@ -93,6 +94,7 @@ async function homePage(session: WebSessionCaller): Promise<string> {
     secret: () => install.authSecret,
     logger: install.logger,
     banners: async (caller) => ((await install.execute("install.get_banners", caller, {}, { readOnly: true })) as { banners: Banner[] }).banners,
+    shell: shellReader(install.execute),
   });
   const answer = await route(new Request(`${URL_OF_INSTALL}/`, { headers: { accept: "text/html" } }));
   expect(answer.status).toBe(200);

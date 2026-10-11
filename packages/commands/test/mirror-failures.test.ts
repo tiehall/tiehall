@@ -15,6 +15,7 @@ import { providerOnStub, type StubProvider } from "./support/contract.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams, openRequestInTheWebUi, sessionOf, tokenOf } from "./support/requests.ts";
+import { shellReader } from "./support/shell.ts";
 
 // Failed mirror jobs (tracker-mirrors: Failed mirror jobs are shown with a
 // Retry button; design.md, Decisions this change rests on: D28 #41, #83). A
@@ -100,6 +101,7 @@ async function homePage(session: WebSessionCaller): Promise<string> {
     secret: () => install.authSecret,
     logger: install.logger,
     banners: (caller) => bannersOf(caller),
+    shell: shellReader(install.execute),
   });
   const answer = await route(new Request(`${URL_OF_INSTALL}/`, { headers: { accept: "text/html" } }));
   expect(answer.status).toBe(200);

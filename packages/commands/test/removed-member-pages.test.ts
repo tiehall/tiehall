@@ -5,6 +5,7 @@ import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/in
 import { addUser } from "./support/members.ts";
 import { sessionOf } from "./support/requests.ts";
 import { CookieJar, startSignIn, type SignInHarness } from "./support/sign-in.ts";
+import { shellReader } from "./support/shell.ts";
 
 // A removed member's browser, on the web UI's pages (public-api: One error
 // model for Tiehall's own refusals; design.md, Design rules: Teams and
@@ -47,7 +48,7 @@ const session = (request: Request, renewal?: Headers) => harness.service.session
 const pageOptions = () => ({ execute: install.execute, session, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
 
 const PAGES: [string, () => (request: Request) => Promise<Response>, string][] = [
-  ["the home page", () => createHomeRoute({ session, secret: () => install.authSecret, logger: install.logger }), "/"],
+  ["the home page", () => createHomeRoute({ session, secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) }), "/"],
   ["the members page", () => createMembersRoute(pageOptions()), "/members"],
   ["the GitHub admin page", () => createGitHubAdminRoute(pageOptions()), "/admin/github"],
   ["a review page", () => install.confirmRouteFor(session), `/confirm/members.change_role?input=${encodeURIComponent(JSON.stringify({ userId: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", role: "admin" }))}`],

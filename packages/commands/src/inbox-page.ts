@@ -214,10 +214,10 @@ export function createInboxRoute(options: PageRouteOptions): PageRoute {
   return createPageRoute(options, {
     path: INBOX_PATH,
     name: "inbox",
-    async get(_query, { read, csrf }) {
+    async get(_query, { read, csrf, shell }) {
       const list = await read<StandingList>(standingList.id, {});
       const feed = await read<UpdatesPage>(readInboxUpdates.id, { limit: INBOX_PAGE_SIZE });
-      return htmlAnswer(htmlPage("Inbox", ["      <h1>Inbox</h1>", standingSection(list, csrf), feedSection(feed, csrf)].join("\n")));
+      return htmlAnswer(htmlPage("Inbox", ["      <h1>Inbox</h1>", standingSection(list, csrf), feedSection(feed, csrf)].join("\n"), shell));
     },
     async post(form, { write }) {
       const action = form.get("action");

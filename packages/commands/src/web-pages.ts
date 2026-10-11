@@ -1,9 +1,11 @@
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { Execute, ExecuteOptions } from "./execute.ts";
+import { webShell } from "@tiehall/catalog";
 import { answerRefusal, escapeHtml, PAGE_HEADERS, wayOnFor, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
+import { FOCUSED_SHELL, type PageShell, type ShellMember } from "./shell.ts";
 import { SIGN_IN_PATH } from "./sign-in.ts";
 import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 
@@ -54,6 +56,12 @@ export interface PageCalls {
   read<Output>(commandId: string, input: unknown): Promise<Output>;
   /** Runs a write, for a form that passed the web UI's write checks. */
   write(commandId: string, input: unknown): Promise<unknown>;
+  /**
+   * The page's shell: for a GET, the app shell of the signed-in member at the
+   * page's path, from web.shell, which the route runs as the page's first
+   * read; the focused shell for a form's POST, whose answer leads on to a page.
+   */
+  shell: PageShell;
 }
 
 export interface PageHandlers {
@@ -83,13 +91,16 @@ export function createPageRoute(options: PageRouteOptions, handlers: PageHandler
         throw new Refusal("unauthenticated", "Sign in to Tiehall to do this.");
       }
       const origin = originOf(request);
-      const calls: PageCalls = {
-        caller,
-        csrf: csrfTokenFor(options.secret(), caller.sessionId),
-        read: async (commandId, input) => (await options.execute(commandId, caller, input, { readOnly: true })) as never,
-        write: (commandId, input) => options.execute(commandId, caller, input, { origin }),
-      };
-      if (isGet) return await handlers.get(new URL(request.url).searchParams, calls);
+      const csrf = csrfTokenFor(options.secret(), caller.sessionId);
+      const read = async <Output>(commandId: string, input: unknown): Promise<Output> => (await options.execute(commandId, caller, input, { readOnly: true })) as Output;
+      const write = (commandId: string, input: unknown) => options.execute(commandId, caller, input, { origin });
+      if (isGet) {
+        // The shell's read comes first, in a read-only call of its own (web-ui: The page shell and its navigation).
+        const url = new URL(request.url);
+        const member = await read<ShellMember>(webShell.id, {});
+        return await handlers.get(url.searchParams, { caller, csrf, read, write, shell: { form: "app", member, path: url.pathname, csrf } });
+      }
+      const calls: PageCalls = { caller, csrf, read, write, shell: FOCUSED_SHELL };
       const form = new URLSearchParams(await request.text());
       assertWebWrite(
         { origin: request.headers.get("origin"), fetchSite: request.headers.get("sec-fetch-site"), csrfToken: form.get("csrf") },
