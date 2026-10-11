@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assetUrl } from "../src/asset-urls.ts";
 import { createHallRoute, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { element, mainOf } from "./support/markup.ts";
@@ -109,6 +110,12 @@ describe("the live hall's page", () => {
     expect(html).toMatch(/<a class="skip" href="#content">Skip to content<\/a>/);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).not.toMatch(/<style\b|\sstyle=/i);
+  });
+
+  it("loads its one script, a module from the install, named by its digest, and no other", async () => {
+    const { html } = await open();
+    expect(html.match(/<script\b[^>]*>/g)).toEqual([`<script type="module" src="${assetUrl("/assets/hall.js")}">`]);
+    expect(html).toContain(`<script type="module" src="${assetUrl("/assets/hall.js")}"></script>`);
   });
 
   it("is dark whatever the system prefers: its body carries the class hall, and its head names the dark scheme and theme color alone", async () => {

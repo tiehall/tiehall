@@ -2990,14 +2990,194 @@ a.key:hover {
 }
 
 .hall-map {
-  position: relative;
-  height: clamp(560px, calc(100vh - 200px), 820px);
+  height: clamp(600px, calc(100vh - 200px), 820px);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background-color: var(--ground);
   background-image: radial-gradient(var(--surface-2) 1px, transparent 1px);
   background-size: 22px 22px;
+}
+
+/* The map (web-ui: The live hall with many teams and on a phone; design.md, Design: The live hall, Many teams): the
+   lines between teams, the dots that travel them, the team nodes on their ring and the people and agents at work,
+   drawn by the hall's script in one SVG, the nodes and the chips as HTML inside it; then the legend. */
+.hall-map > svg {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: block;
+}
+
+.hall-map foreignObject {
+  overflow: visible;
+}
+
+.cord {
+  fill: none;
+  stroke: var(--lamp-open);
+  stroke-linecap: round;
+}
+
+.cord.claimed {
+  stroke: var(--lamp-claimed);
+}
+
+.cord.in-progress {
+  stroke: var(--lamp-in-progress);
+}
+
+.cord.needs-info {
+  stroke: var(--lamp-needs-info);
+}
+
+.cord.flow {
+  stroke-dasharray: 8 8;
+}
+
+.dot {
+  fill: var(--line);
+}
+
+.dot.needs-info {
+  fill: var(--lamp-needs-info);
+}
+
+.dot.done {
+  fill: var(--lamp-done);
+}
+
+.hall .node {
+  width: 100%;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-node);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.hall .node.compact {
+  padding: 6px 10px;
+  gap: 4px;
+  border-radius: var(--radius-card);
+}
+
+.node p {
+  margin: 0;
+}
+
+.node-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.node.compact .team-key {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.node-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.node-counts > .lamp {
+  width: 9px;
+  height: 9px;
+}
+
+.node-count {
+  margin-right: 2px;
+}
+
+.map-chip {
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 12px 6px 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--chip-claimed);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.map-chip .initials {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.hall .map-chip.agent .initials {
+  background: var(--button);
+  color: var(--button-ink);
+}
+
+.map-chip.waiting {
+  background: var(--notice);
+}
+
+.hall .map-chip.waiting .initials {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.chip-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chip-did {
+  color: var(--line);
+  font-size: 12px;
+}
+
+.map-chip.waiting .chip-did {
+  color: var(--notice-ink);
+}
+
+/* The legend, which names each lamp color. */
+.legend {
+  flex: none;
+  padding: 8px 16px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+:where(main) .legend {
+  margin: 0;
+}
+
+:where(main) .legend > li + li {
+  margin-top: 0;
+}
+
+.legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* The feed, On the line: the latest events, newest first; one about a request that waits on a question or a person
@@ -3073,8 +3253,8 @@ a.key:hover {
   font-size: 13px;
 }
 
-/* Without the map beside it, the feed fills the page's width in columns. */
-.hall-stage:not(.mapped) .feed {
+/* The feed fills the page's width in columns, but for the one column beside the map on a wide screen. */
+.hall-stage .feed {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
@@ -3233,13 +3413,6 @@ a.key:hover {
   border-color: var(--surface-2);
 }
 
-.hall .node {
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-node);
-  background: var(--surface);
-}
-
 .hall .node.dimmed {
   border-color: var(--surface-2);
 }
@@ -3278,7 +3451,8 @@ a.key:hover {
   animation: glow 2.4s ease-in-out infinite;
 }
 
-.hall.live .line-flow {
+.hall.live .line-flow,
+.hall.live .cord.flow {
   animation: cordflow 1.4s linear infinite;
 }
 
@@ -3294,10 +3468,11 @@ a.key:hover {
   animation: typing 1.2s ease-in-out 0.3s infinite;
 }
 
+/* Pause motion pauses every animation, whichever rule runs it. */
 .hall.paused *,
 .hall.paused *::before,
 .hall.paused *::after {
-  animation-play-state: paused;
+  animation-play-state: paused !important;
 }
 
 /* Motion (web-ui: Motion, and reduced motion; design.md, Design: Motion and reduced motion; D57 (6)): only what shows
@@ -3661,15 +3836,19 @@ a.key:hover {
 }
 
 /* The live hall on a wide screen once its script runs: the map beside the feed, which scrolls in its own box. */
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .hall.live .hall-stage.mapped {
     grid-template-columns: minmax(0, 1fr) 360px;
     align-items: start;
   }
 
   .hall.live .hall-stage.mapped > .hall-feed {
-    max-height: clamp(560px, calc(100vh - 200px), 820px);
+    max-height: clamp(600px, calc(100vh - 200px), 820px);
     overflow-y: auto;
+  }
+
+  .hall.live .hall-stage.mapped .feed {
+    display: flex;
   }
 }
 

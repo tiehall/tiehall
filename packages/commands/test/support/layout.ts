@@ -51,6 +51,16 @@ export async function phoneWidthProblems(page: Page, options: { tablesScroll?: b
   return (await page.evaluate(`(${PHONE_WIDTH_CHECK})(${JSON.stringify(options.tablesScroll === true)})`)) as string[];
 }
 
+/**
+ * Waits until the page shown has settled: until the network is idle, or, on
+ * the live hall, whose long-poll always holds a read open, until its script
+ * says the page is live (web-ui: The live hall's reads and its long-poll).
+ */
+export async function settled(page: Page): Promise<void> {
+  if (new URL(page.url()).pathname === "/hall") await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
+  else await page.waitForLoadState("networkidle");
+}
+
 /** The names of the animations running on the page now. */
 export async function runningAnimations(page: Page): Promise<string[]> {
   return (await page.evaluate('document.getAnimations().filter((animation) => animation.playState === "running").map((animation) => animation.animationName ?? "a transition")')) as string[];

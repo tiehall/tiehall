@@ -4,6 +4,7 @@ import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { CLI_CLIENT_ID, startSetup } from "../src/index.ts";
 import { CLIENT_REDIRECT_URI, pkcePair } from "./support/agent-access.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { settled } from "./support/layout.ts";
 import { namedRoutes, PAGES, routeFiles, seedInventory, SIGNED_OUT_PAGES } from "./support/page-inventory.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
@@ -82,7 +83,7 @@ async function cookieOf(login: string): Promise<{ name: string; value: string }>
 async function visit(page: Page, app: WebApp, path: string): Promise<void> {
   const answer = await page.goto(`${app.url}${path}`);
   expect(answer?.status() ?? 0, path).toBeLessThan(500);
-  await page.waitForLoadState("networkidle");
+  await settled(page);
 }
 
 /** The requests made to a host other than the app's, by the URL they asked for. */

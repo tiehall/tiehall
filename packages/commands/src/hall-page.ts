@@ -3,6 +3,7 @@ import type { RequestState } from "@tiehall/core";
 import type { z } from "zod";
 import { actorWords, clientWords, relativeTime, STATE_WORDS, type EventActor } from "./event-lines.ts";
 import { hallNarrowingOf } from "./hall-routes.ts";
+import { assetUrl } from "./asset-urls.ts";
 import { escapeHtml, hallPagePolicy, htmlPage, PAGE_HEADERS, type PageLook } from "./html.ts";
 import { keyTag, lampHtml, stateChip, WAITS_CHIP } from "./page-parts.ts";
 import { HALL_PATH, initialsOf, NEW_REQUEST_LINK, type PageShell } from "./shell.ts";
@@ -23,8 +24,9 @@ import { createPageRoute, type PageRoute, type PageRouteOptions } from "./web-pa
 // from hall.state, read as every page reads: the people and agents at work;
 // the map's place, which the script fills on a wide screen; the feed "On the
 // line"; every team with a lamp per live state and the counts in words; and
-// the lines between teams with the requests on them. Every title, team name,
-// login and client name is escaped text. A row of the feed about a request
+// the lines between teams with the requests on them. It loads the hall's one
+// script, a module from the install, which makes the page live (hall.js).
+// Every title, team name, login and client name is escaped text. A row of the feed about a request
 // that waits on a question or a person has the notice colors and no lamp. The
 // page carries the live hall's policy; a browser without a session is sent to
 // sign in and back, and opening the page renews the session, as opening any
@@ -208,7 +210,7 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     "        </table>",
     "      </section>",
   ].join("\n");
-  return htmlPage("Live hall", main, shell, { dark: true, bodyClass: "hall", ...look });
+  return htmlPage("Live hall", main, shell, { dark: true, bodyClass: "hall", scripts: [assetUrl("/assets/hall.js")], ...look });
 }
 
 /** The live hall's page at /hall, which every member may open, for the signed-in user's web session. */

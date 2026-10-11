@@ -105,6 +105,12 @@ export interface WebApp {
   fetch(path: string, init?: RequestInit): Promise<Response>;
   /** What the server printed. */
   output(): string;
+  /**
+   * Restarts the server as the operator's restart of the install does: gives
+   * it the shutdown signal, so held waits answer 503 with Retry-After: 0,
+   * waits until it has stopped, and starts it again on the same port.
+   */
+  restart(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -118,53 +124,70 @@ export async function startWebApp(install: TestInstall, options: { env?: Readonl
   const port = await freePort();
   const url = `http://localhost:${port}`;
   const origin = `http://127.0.0.1:${port}`;
-  const child: ChildProcess = spawn(process.execPath, [LAUNCHER, server], {
-    env: {
-      PATH: process.env["PATH"] ?? "",
-      ...QUIET,
-      PORT: String(port),
-      HOSTNAME: "127.0.0.1",
-      TIEHALL_URL: url,
-      TIEHALL_DATABASE_APP_URL: install.appDatabase.url,
-      TIEHALL_DATABASE_APP_PASSWORD: install.appDatabase.password,
-      TIEHALL_SECRET_KEY: install.secretKey,
-      TIEHALL_AUTH_SECRET: install.authSecret,
-      ...options.env,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
   let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
 
-  const deadline = Date.now() + 60_000;
-  for (;;) {
-    if (child.exitCode !== null) throw new Error(`the web app exited with ${child.exitCode}:\n${output}`);
-    try {
-      if ((await fetch(`${origin}/healthz`)).status === 200) break;
-    } catch {
-      // Not listening yet.
+  /** Starts the server's process and waits until it answers /healthz; resolves with it and its exit. */
+  async function launch(): Promise<{ child: ChildProcess; exited: Promise<void> }> {
+    const child: ChildProcess = spawn(process.execPath, [LAUNCHER, server], {
+      env: {
+        PATH: process.env["PATH"] ?? "",
+        ...QUIET,
+        PORT: String(port),
+        HOSTNAME: "127.0.0.1",
+        TIEHALL_URL: url,
+        TIEHALL_DATABASE_APP_URL: install.appDatabase.url,
+        TIEHALL_DATABASE_APP_PASSWORD: install.appDatabase.password,
+        TIEHALL_SECRET_KEY: install.secretKey,
+        TIEHALL_AUTH_SECRET: install.authSecret,
+        ...options.env,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      if (child.exitCode !== null) throw new Error(`the web app exited with ${child.exitCode}:\n${output}`);
+      try {
+        if ((await fetch(`${origin}/healthz`)).status === 200) break;
+      } catch {
+        // Not listening yet.
+      }
+      if (Date.now() > deadline) {
+        child.kill("SIGKILL");
+        throw new Error(`the web app did not answer /healthz within 60 seconds:\n${output}`);
+      }
+      await sleep(100);
     }
-    if (Date.now() > deadline) {
-      child.kill("SIGKILL");
-      throw new Error(`the web app did not answer /healthz within 60 seconds:\n${output}`);
-    }
-    await sleep(100);
+    return { child, exited };
   }
 
+  /** Stops the server's process with SIGTERM, as a restart does, and kills it if it has not stopped within 10 seconds. */
+  async function stop({ child, exited }: { child: ChildProcess; exited: Promise<void> }): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGTERM");
+    await Promise.race([exited, sleep(10_000)]);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await exited;
+    }
+  }
+
+  let running = await launch();
   return {
     url,
     origin,
     browserArgs: [`--host-resolver-rules=MAP localhost 127.0.0.1`],
     fetch: (path, init = {}) => fetch(`${origin}${path}`, { redirect: "manual", ...init }),
     output: () => output,
+    async restart() {
+      await stop(running);
+      running = await launch();
+    },
     async close() {
-      if (child.exitCode === null) {
-        child.kill("SIGTERM");
-        await Promise.race([exited, sleep(10_000)]);
-        if (child.exitCode === null) child.kill("SIGKILL");
-      }
+      await stop(running);
     },
   };
 }

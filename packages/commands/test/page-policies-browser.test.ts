@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startErrorPageApp, type ErrorPageApp } from "./support/error-page-app.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { settled } from "./support/layout.ts";
 import { NO_SUCH_PAGE, PAGES, seedInventory, SIGNED_OUT_PAGES } from "./support/page-inventory.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
@@ -77,7 +78,7 @@ document.addEventListener("securitypolicyviolation", (event) => window.tiehallVi
 async function violationsOn({ page }: Watched, app: { url: string }, path: string): Promise<string[]> {
   const answer = await page.goto(`${app.url}${path}`);
   expect(answer?.status() ?? 0, path).toBeLessThan(500);
-  await page.waitForLoadState("networkidle");
+  await settled(page);
   return page.evaluate("window.tiehallViolations");
 }
 

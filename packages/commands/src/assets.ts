@@ -47,6 +47,7 @@ export const FONT_FILES: readonly string[] = [
 export const ASSET_FILES: Readonly<Record<string, string>> = Object.fromEntries(
   [
     "tiehall.css",
+    "hall.js",
     "icon.svg",
     "icon-180.png",
     "icon-192.png",
