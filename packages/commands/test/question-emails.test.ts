@@ -39,6 +39,10 @@ beforeAll(async () => {
     await joinTeams(install.owner, person[login] ?? "", team);
     await install.owner.query("UPDATE users SET email = $2 WHERE id = $1", [person[login], `${login}@example.com`]);
   }
+  // Kay belongs to both teams.
+  person["kay"] = await addUser(install.owner, { login: "kay" });
+  await joinTeams(install.owner, person["kay"], be, fe);
+  await install.owner.query("UPDATE users SET email = 'kay@example.com' WHERE id = $1", [person["kay"]]);
 });
 
 beforeEach(async () => {
@@ -178,6 +182,35 @@ describe("with SMTP set", () => {
     install.sentJobs.push(...jobs);
     await runQuestionJobs();
     expect(sent().map(({ to }) => to)).toEqual(["sam@example.com"]);
+  });
+
+  // requester-loop: Email for people, only when SMTP is set (decisions-from-groups-15-28: design.md, Decisions this
+  // change rests on: D55 (49)): nobody needs an email about their own question.
+  it("never emails a question to the person who posted it", async () => {
+    // Kay opens a request from BE to FE and claims it for FE, so the question Kay asks from the requester side is asked
+    // of the claimant, who is Kay.
+    const request = await openRequest(install, tokenOf(id("kay")), { targetTeam: "FE", requestingTeam: "BE" });
+    expect((await callApi(install, tokenOf(id("kay")), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    await post("kay", request.key, { kind: "question", body: "Which browsers?" });
+    await runQuestionJobs();
+    expect(sent()).toEqual([]);
+  });
+
+  // The question email is transactional, like a proposal notice (D55 (49)).
+  it("emails a question while the digest of the person it is asked of is off", async () => {
+    const session = sessionOf(id("sam"));
+    const setDigest = (digest: boolean) => install.web(session).write("users.set_email_settings", { digest }, install.fromThePage(session));
+    expect((await setDigest(false)).ok).toBe(true);
+    try {
+      const { rows } = await install.owner.query<{ digest_enabled: boolean }>("SELECT digest_enabled FROM users WHERE id = $1", [id("sam")]);
+      expect(rows[0]?.digest_enabled).toBe(false);
+      const request = await openRequest(install, tokenOf(id("sam")), { targetTeam: "FE" });
+      await post("bob", request.key, { kind: "question", body: "Which browsers?" });
+      await runQuestionJobs();
+      expect(sent().map(({ to, subject }) => ({ to, subject }))).toEqual([{ to: "sam@example.com", subject: `Tiehall: ${request.key} request.message_posted (team FE)` }]);
+    } finally {
+      expect((await setDigest(true)).ok).toBe(true);
+    }
   });
 
   it("emails nobody when the person it is asked of has no address", async () => {

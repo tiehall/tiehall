@@ -205,6 +205,31 @@ describe("whats_new (task 19.2)", () => {
     expect(on(await whatsNew("erin"), request.id)).toEqual(["request.opened"]);
   });
 
+  // A request to the user's team reaches them through the team only by its opening and a reassignment into it
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (46)).
+  it("holds no comment on an unclaimed request to the user's team, though a member of that team posts it", async () => {
+    const request = await open("sam", "FE");
+    await post("bob", request.key, { kind: "comment", body: "Looking into it." });
+    await post("sam", request.key, { kind: "comment", body: "Thanks." });
+    expect(on(await whatsNew("erin"), request.id)).toEqual(["request.opened"]);
+  });
+
+  // A user who has acted on a request is accountable for it, much as GitHub's "participating" works
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (45)).
+  it("holds for good the events on a request the user commented on, though they neither opened nor claimed it", async () => {
+    const request = await open("lee", "OPS");
+    // Kim, of the requesting team BE, has no part in the request until they comment on it.
+    await post("kim", request.key, { kind: "comment", body: "BE needs this for the billing job too." });
+    await claim("oli", request.key);
+    const question = await post("oli", request.key, { kind: "question", body: "Which region?" });
+    await post("lee", request.key, { kind: "answer", body: "eu-west-1.", questionId: question.id });
+    expect(on(await whatsNew("kim"), request.id)).toEqual(
+      expect.arrayContaining(["request.claimed", "request.message_posted:question", "request.message_posted:answer"]),
+    );
+    // Sam, of the same team, never acted on it, so none of it is in Sam's.
+    expect(on(await whatsNew("sam"), request.id)).toEqual([]);
+  });
+
   it("holds a request of another team that was reassigned to one of the user's teams", async () => {
     const request = await open("sam", "OPS");
     const answer = await callApi(install, tokenOf(id("oli")), "POST", `/api/v1/requests/${request.key}/proposals`, { kind: "reassign", team: "FE" });
