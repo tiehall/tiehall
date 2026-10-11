@@ -48,6 +48,23 @@ afterAll(async () => {
   await install?.close();
 }, 300_000);
 
+describe("the admin overview's cards", () => {
+  it.each([
+    ["light", "rgb(122, 74, 0)"],
+    ["dark", "rgb(242, 198, 109)"],
+  ] as const)("draw a notice inside a card in the notice colors, not the card's secondary text, in the %s scheme", { timeout: 120_000 }, async (colorScheme, noticeInk) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme });
+    await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/admin`);
+    // No backup has finished on a test install, so the Backups card warns.
+    const notice = page.locator(".card .notice", { hasText: "No backup has finished yet." });
+    await expect(notice.evaluate((element) => element.ownerDocument.defaultView?.getComputedStyle(element).color)).resolves.toBe(noticeInk);
+    await context.close();
+  });
+});
+
 describe("the admin pages at 320 CSS pixels", () => {
   it.each(ADMIN_PAGES)("%s scrolls no page sideways but inside a table's box, and every control is at least 24 by 24 CSS pixels", { timeout: 120_000 }, async (path) => {
     for (const colorScheme of ["light", "dark"] as const) {

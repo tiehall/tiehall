@@ -1303,6 +1303,12 @@ a.key:hover {
   color: var(--notice-ink);
 }
 
+/* A notice inside a card keeps the notice ink, which the card's secondary text would otherwise take over. */
+.card .notice,
+.card [role="alert"] {
+  color: var(--notice-ink);
+}
+
 .notice > :last-child,
 [role="alert"] > :last-child {
   margin-bottom: 0;
