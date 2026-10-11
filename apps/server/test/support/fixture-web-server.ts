@@ -10,7 +10,7 @@
 // For the tests of request bodies, three paths answer as the app's routes do, and print what they did with the
 // body: /api/v1/… answers as the setup gate does before setup is complete, 503 setup-required, without reading
 // the body; /mcp reads the body and answers 200, as an MCP server answers a JSON-RPC call; a form posted to
-// /setup is read and answered 200; and a delivery posted to /webhooks/github is read and answered 202. With LOG_CONNECTIONS=on it also prints how many bytes each connection read
+// /setup or /admin/invites is read and answered 200; and a delivery posted to /webhooks/github is read and answered 202. With LOG_CONNECTIONS=on it also prints how many bytes each connection read
 // from its socket when it closes. With LOG_HEADS=on it prints each call's method and path as soon as the server
 // has its head, from a listener of its own that the request guard does not wrap, so a test knows the server
 // holds a call whose body is still arriving. A request URL, /FE-142 with or without .md or .json, and
@@ -77,7 +77,7 @@ const server = http.createServer((request, response) => {
     readThenAnswer(request, response, "text/plain", (bytes) => `delivery of ${bytes} bytes`);
     return;
   }
-  if (request.url === "/setup" && request.method === "POST") {
+  if ((request.url === "/setup" || request.url === "/admin/invites") && request.method === "POST") {
     readThenAnswer(request, response, "text/plain", (bytes) => `form of ${bytes} bytes`);
     return;
   }

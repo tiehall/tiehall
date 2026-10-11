@@ -614,6 +614,29 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
     }
   });
 
+  // public-api: Request bodies have a size limit, its scenario "A web form over the limit"
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (2)): the same form of the web UI,
+  // sent over the limit by a client whose Accept header asks for JSON, gets the problem and not the page, and
+  // changes nothing: the page's route, which reads a form within the limit, never sees it.
+  it("answers the same form sent with Accept: application/json with the problem payload-too-large, and its route never sees it", async () => {
+    const web = await startWebRole();
+    const post = (bytes: number) =>
+      fetch(`http://127.0.0.1:${web.port}/admin/invites`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+        body: `action=create&login=${"A".repeat(bytes - "action=create&login=".length)}`,
+      });
+
+    const within = await post(LIMIT);
+    expect(within.status).toBe(200);
+    expect(await within.text()).toBe(`form of ${LIMIT} bytes`);
+
+    const over = await post(LIMIT + 1);
+    expectPayloadTooLarge({ status: over.status, headers: Object.fromEntries(over.headers), body: await over.text() });
+    expect(web.output()).toContain(`fixture: /admin/invites read ${LIMIT} bytes`);
+    expect(web.output()).not.toContain(`fixture: /admin/invites read ${LIMIT + 1} bytes`);
+  });
+
   // A review page's form posts to /confirm/<command> without the review page's query, which holds its input, so the
   // page leads back to the page the browser posted the form from, as its Referer names it on the install: on
   // TIEHALL_URL's origin, whatever Host header a proxy in front of the install sends the app. A Referer on any other
