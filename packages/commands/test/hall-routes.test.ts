@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createHallRoute, createHallStateRoute, createHallWaitRoute, sessionCookiesOf } from "../src/index.ts";
+import { createHallRoute, createHallStateRoute, createHallWaitRoute, createLogger, sessionCookiesOf } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { addTeam, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -26,6 +26,7 @@ const JSON_POLICY = "default-src 'none'; frame-ancestors 'none'";
 let harness: AgentAccessHarness;
 const shutdown = new AbortController();
 let carol: SignedIn;
+let options: Parameters<typeof createHallRoute>[0];
 let state: (request: Request) => Promise<Response>;
 let wait: (request: Request) => Promise<Response>;
 let page: (request: Request) => Promise<Response>;
@@ -39,7 +40,7 @@ beforeAll(async () => {
   await joinTeams(install.owner, carol.userId, be);
   await joinTeams(install.owner, (await harness.member("dana")).userId, fe);
   await openRequest(install, tokenOf(carol.userId), { targetTeam: "FE", title: "Add a dark mode" });
-  const options = {
+  options = {
     execute: install.execute,
     session: (request: Request, renewal?: Headers) => signIn.service.session(request.headers, renewal),
     url: URL_OF_INSTALL,
@@ -213,6 +214,22 @@ describe("the session the hall's reads read", () => {
     expect(opened.status).toBe(200);
     expect(sessionCookiesOf(opened.headers).map(({ maxAge }) => maxAge)).toEqual([604_800]);
     expect(await expiryOf(cookie)).toBeGreaterThan(expiresAt + 24 * 60 * 60_000);
+  });
+});
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe("a browser that hangs up", () => {
+  it("ends its held wait at once and quietly: no error is logged", async () => {
+    const lines: string[] = [];
+    const quiet = createHallWaitRoute({ ...options, logger: createLogger({ write: (line) => lines.push(line) }) });
+    const leaving = new AbortController();
+    const ended = quiet(new Request(`${URL_OF_INSTALL}/hall/wait?after=${await cursor()}`, { headers: { cookie: carol.cookie }, signal: leaving.signal })).then(() => Date.now());
+    await pause(200);
+    const left = Date.now();
+    leaving.abort();
+    expect((await ended) - left).toBeLessThan(500);
+    expect(lines).toEqual([]);
   });
 });
 

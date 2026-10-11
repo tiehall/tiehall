@@ -136,6 +136,8 @@ export interface PrepareContext {
   readonly url: string | undefined;
   /** How the long-poll waits hold, for a step that waits; undefined where the process sets none. */
   readonly waits: WaitSettings | undefined;
+  /** Aborts when the caller hangs up, so a step that waits stops holding; none where the surface cannot tell. */
+  readonly hangUp?: AbortSignal | undefined;
 }
 
 /**
@@ -334,6 +336,12 @@ export interface ExecuteOptions {
    * moved the operation to /api/v2; the operation's current shape unless given.
    */
   major?: number;
+  /**
+   * The caller's own end of the call, such as a browser that leaves the live
+   * hall's long-poll: once it aborts, a step that waits stops holding and the
+   * call ends without its handler, since nobody reads its answer.
+   */
+  signal?: AbortSignal;
 }
 
 export type Execute = (commandId: string, caller: Caller, input: unknown, options?: ExecuteOptions) => Promise<unknown>;
@@ -347,6 +355,18 @@ export class OutputSchemaError extends Error {
   override name = "OutputSchemaError";
   constructor(commandId: string) {
     super(`The output of ${commandId} fails its schema, so it was not returned and the call was rolled back.`);
+  }
+}
+
+/**
+ * What a call ends with once its caller hung up (ExecuteOptions.signal), such
+ * as a browser that left the live hall's long-poll (hall.ts): nobody reads its
+ * answer, so the call runs nothing more. It is not a refusal: no caller gets it.
+ */
+export class CallerLeft extends Error {
+  constructor() {
+    super("The caller hung up on the call.");
+    this.name = "CallerLeft";
   }
 }
 
@@ -368,6 +388,9 @@ export function createExecute(services: ExecuteServices): Execute {
     const definition = catalog.get(commandId);
     const handler = handlers[commandId];
     if (definition === undefined || handler === undefined) throw notOffered();
+    // A call whose caller hung up before it ran runs nothing.
+    const hungUp = () => options.signal?.aborted === true;
+    if (hungUp()) throw new CallerLeft();
     // The earlier shape the call was made in, if any.
     const earlier = options.major === undefined ? undefined : definition.earlier?.find(({ major }) => major === options.major);
     if (options.major !== undefined && earlier === undefined) throw notOffered();
@@ -481,7 +504,10 @@ export function createExecute(services: ExecuteServices): Execute {
         read: (read) => withOrg(store.database, read, { readOnly: true }),
         url: services.url,
         waits: services.waits,
+        hangUp: options.signal,
       });
+      // A caller that hung up while the step held, such as a wait, gets no answer, so the handler does not run.
+      if (hungUp()) throw new CallerLeft();
     }
 
     return withOrg(

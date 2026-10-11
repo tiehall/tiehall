@@ -5,6 +5,8 @@ import { Refusal, requestProviderChangeShipped, requestStateChanged } from "@tie
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appendEvent } from "../src/append-event.ts";
 import { actorWords } from "../src/event-lines.ts";
+import { RECHECK_MS } from "../src/events-wait.ts";
+import { CallerLeft } from "../src/execute.ts";
 import { HALL_HANDLERS, HALL_HOLD_MS } from "../src/hall.ts";
 import { withOrg, type Caller, type EventWakeups, type PrepareContext, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
@@ -315,6 +317,70 @@ describe("a wait whose wake-up is lost", () => {
     expect(prepared).toEqual({ found: true });
     expect(at - committed).toBeGreaterThan(2_000);
     expect(at - committed).toBeLessThanOrEqual(5_000);
+  });
+});
+
+// A browser that hangs up on a held wait, as a page that closes or goes hidden does: the wait stops holding at once and
+// reads nothing more, so a wait nobody listens to costs nothing for the rest of its hold.
+describe("a wait whose browser hangs up", () => {
+  /** The wait's own step, with wake-ups that never come, a hold of 20 seconds, and its reads counted. */
+  async function holdingStep(hangUp: AbortSignal) {
+    const step = HALL_HANDLERS[waitForHall.id]?.prepare;
+    if (step === undefined) throw new Error("The hall's wait has no step that holds.");
+    const never: EventWakeups = {
+      ready: async () => {},
+      next: () => ({ woken: new Promise<void>(() => {}), cancel: () => {} }),
+      close: async () => {},
+    };
+    const counted = { reads: 0 };
+    const context = {
+      caller: sessionOf(id("oli")) as Caller,
+      member: undefined,
+      github: undefined,
+      secrets: undefined,
+      sealed: {},
+      read: (read) => {
+        counted.reads += 1;
+        return withOrg(install.db, read, { readOnly: true });
+      },
+      url: URL_OF_INSTALL,
+      waits: { wakeups: never, hallHoldMs: 20_000 },
+      hangUp,
+    } satisfies PrepareContext;
+    const ended = step({ after: await lastNumber() }, context).then(
+      (prepared) => ({ prepared, error: undefined, at: Date.now() }),
+      (error: unknown) => ({ prepared: undefined, error, at: Date.now() }),
+    );
+    return { ended, counted };
+  }
+
+  it("stops holding at once, and reads nothing more", { timeout: 30_000 }, async () => {
+    const leaving = new AbortController();
+    const { ended, counted } = await holdingStep(leaving.signal);
+    await pause(300);
+    const reads = counted.reads;
+    const left = Date.now();
+    leaving.abort();
+    const { prepared, error, at } = await ended;
+    expect(prepared).toBeUndefined();
+    expect(error).toBeInstanceOf(CallerLeft);
+    expect(at - left).toBeLessThan(200);
+    // Past the time the wait would have read again on its own.
+    await pause(RECHECK_MS + 1_000);
+    expect(counted.reads).toBe(reads);
+  });
+
+  it("runs nothing for a browser that hung up before the call began", async () => {
+    const started = Date.now();
+    await expect(install.execute("hall.wait", sessionOf(id("oli")), { after: await lastNumber() }, { readOnly: true, signal: AbortSignal.abort() })).rejects.toBeInstanceOf(CallerLeft);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("holds nothing and reads nothing for a browser that hung up before it began", async () => {
+    const { ended, counted } = await holdingStep(AbortSignal.abort());
+    const { error } = await ended;
+    expect(error).toBeInstanceOf(CallerLeft);
+    expect(counted.reads).toBe(0);
   });
 });
 

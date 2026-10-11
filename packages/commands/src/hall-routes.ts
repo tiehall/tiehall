@@ -1,7 +1,7 @@
 import { readHallState, waitForHall } from "@tiehall/catalog";
 import { httpProblem, internalErrorProblem, Refusal, type HttpProblem } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
-import type { Execute } from "./execute.ts";
+import { CallerLeft, type Execute } from "./execute.ts";
 import { hallJsonPolicy } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 
@@ -20,7 +20,9 @@ import { createLogger, type Logger } from "./log.ts";
 // screen, would otherwise keep its session alive to its 30-day cap. A
 // refusal is the error model's problem, the wait's 503 with Retry-After: 0
 // while the app shuts down among them, and any other failure a 500 that says
-// nothing about it.
+// nothing about it. The read ends with its browser: a wait whose browser hung
+// up stops holding (hall.ts), and its answer, which nobody reads, logs
+// nothing.
 
 export const HALL_STATE_PATH = "/hall/state";
 export const HALL_WAIT_PATH = "/hall/wait";
@@ -56,11 +58,15 @@ function hallRead(options: HallReadOptions, name: string, commandId: string, inp
   return async (request) => {
     try {
       if (request.method !== "GET" && request.method !== "HEAD") throw new Refusal("route-not-found", "There is no such page here.");
+      // A browser that hung up while the call waited its turn gets nothing read for it.
+      if (request.signal.aborted) throw new CallerLeft();
       const caller = await options.session(request);
       if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to watch the live hall.");
-      const answer = await options.execute(commandId, caller, inputOf(new URL(request.url).searchParams), { readOnly: true });
+      const answer = await options.execute(commandId, caller, inputOf(new URL(request.url).searchParams), { readOnly: true, signal: request.signal });
       return new Response(JSON.stringify(answer), { headers: { "content-type": "application/json", ...HALL_JSON_HEADERS } });
     } catch (error) {
+      // Nobody reads the answer of a browser that hung up: 499, as proxies name a request whose client closed it.
+      if (error instanceof CallerLeft) return new Response(null, { status: 499, headers: HALL_JSON_HEADERS });
       if (error instanceof Refusal) return problem(httpProblem(error));
       logger.error(`${name}: the read failed`, { error });
       return problem(internalErrorProblem());

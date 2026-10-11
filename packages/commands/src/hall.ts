@@ -4,7 +4,7 @@ import { users } from "@tiehall/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { eventLine, shownText } from "./event-lines.ts";
 import { held, RECHECK_MS, shuttingDown } from "./events-wait.ts";
-import { defineHandler, definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
+import { CallerLeft, defineHandler, definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
 import { actorsOf, AT_WORK_MS } from "./request-activity.ts";
 import { teamOfKey } from "./request-keys.ts";
 import { shutdownSignal } from "./shutdown.ts";
@@ -333,7 +333,10 @@ export async function hallAtWork(context: Pick<OrgContext, "tx" | "orgId">, now:
 // after a reassignment, which gives it a new key while its id stays; every
 // team, the narrowed lines and the people and agents at work, as hall.state
 // reads them; and the cursor, the newest new event, or the one given. While
-// the app shuts down it ends at once with 503 and Retry-After: 0.
+// the app shuts down it ends at once with 503 and Retry-After: 0. Once the
+// browser hangs up, as a page that closes or goes hidden does, it stops
+// holding at once and reads nothing more (CallerLeft), so a wait nobody
+// listens to costs nothing for the rest of its hold.
 
 /** How long the live hall's wait holds when no event comes: 25 seconds, under the idle time after which common proxies end an answer. */
 export const HALL_HOLD_MS = 25_000;
@@ -353,23 +356,32 @@ async function eventAfter(context: Pick<OrgContext, "tx" | "orgId">, after: numb
 /** Waits, outside any transaction, until a domain event about a request comes after the cursor, the hold ends or the app shuts down. */
 async function hallWaitStep({ after, team }: { after: number; team?: string | undefined }, context: PrepareContext): Promise<{ found: boolean }> {
   const shutdown = context.waits?.shutdown ?? shutdownSignal();
-  if (shutdown.aborted) throw shuttingDown();
+  const hangUp = context.hangUp;
+  // The wait ends at the shutdown, with its refusal, or once the browser hangs up, with nothing more read.
+  const ended = (): Error | undefined => (shutdown.aborted ? shuttingDown() : hangUp?.aborted === true ? new CallerLeft() : undefined);
+  const ending = hangUp === undefined ? shutdown : AbortSignal.any([shutdown, hangUp]);
+  const endedNow = ended();
+  if (endedNow !== undefined) throw endedNow;
   // A team that does not exist is refused before the wait holds, not once it ends.
   if (team !== undefined) await context.read((read) => narrowingOf(read, { team }));
   const deadline = Date.now() + (context.waits?.hallHoldMs ?? HALL_HOLD_MS);
   const wakeups = context.waits?.wakeups;
   await wakeups?.ready();
   for (;;) {
+    const before = ended();
+    if (before !== undefined) throw before;
     const wake = wakeups?.next();
     try {
       if (await context.read((read) => eventAfter(read, after))) return { found: true };
-      // A shutdown that began while the wait read, between its holds, ends it as one that comes while it holds does.
-      if (shutdown.aborted) throw shuttingDown();
+      // A shutdown or a hang-up that came while the wait read, between its holds, ends it as one that comes while it holds does.
+      const meanwhile = ended();
+      if (meanwhile !== undefined) throw meanwhile;
       const remaining = deadline - Date.now();
       if (remaining <= 0) return { found: false };
-      const outcome = await held(wake?.woken, Math.min(remaining, RECHECK_MS), shutdown);
-      if (outcome === "shutdown") throw shuttingDown();
-      if (outcome === "woken" && (await held(undefined, GATHER_MS, shutdown)) === "shutdown") throw shuttingDown();
+      const outcome = await held(wake?.woken, Math.min(remaining, RECHECK_MS), ending);
+      if (outcome === "woken" && (await held(undefined, GATHER_MS, ending)) !== "shutdown") continue;
+      const holding = ended();
+      if (holding !== undefined) throw holding;
     } finally {
       wake?.cancel();
     }
