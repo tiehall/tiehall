@@ -1842,7 +1842,8 @@ form:not(.stack) > .hint {
   line-height: 1.55;
 }
 
-.message.blocking .bubble {
+/* A blocking question waiting for its answer takes the notice fill; an answered one no longer asks for a person. */
+.message.blocking:not(.answered) .bubble {
   background: var(--notice);
 }
 

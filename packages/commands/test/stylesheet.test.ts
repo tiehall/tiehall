@@ -319,6 +319,15 @@ describe("the lamps", () => {
     );
   });
 
+  it("fill a blocking question in the notice colors only while it waits for its answer", () => {
+    expect(declarationsOf(".message.blocking:not(.answered) .bubble")).toContainEqual(expect.objectContaining({ property: "background", value: "var(--notice)" }));
+    const filledAnswered = css.rules
+      .filter((rule) => rule.declarations.some(({ property, value }) => /^background(-color)?$/.test(property) && value.includes("var(--notice)")))
+      .flatMap(selectorsOf)
+      .filter((selector) => selector.includes(".blocking") && !selector.includes(":not(.answered)"));
+    expect(filledAnswered).toEqual([]);
+  });
+
   it("put no lamp on the notice fill", () => {
     // The classes of each element a rule fills with the notice color: its selector's last compound, not its ancestors'.
     const filled = new Set(

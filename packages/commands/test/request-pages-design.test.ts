@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { seedRequestPages, type RequestPagesSeed } from "./support/request-pages.ts";
+import { EXAMPLE_AGENT, seedRequestPages, type RequestPagesSeed } from "./support/request-pages.ts";
+import { callApi, oauthTokenOf, openRequest, tokenOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
@@ -149,7 +150,7 @@ describe("a request's page", () => {
     ]);
     expect(thread).toContain('agent · <bdi class="client-name">Example Agent</bdi> <span class="client-mark">(client.example.com)</span>');
     expect(thread).toContain('<span class="chip kind answered">Blocking question · answered</span>');
-    expect(thread).toMatch(/<article id="message-[0-9a-f-]+" class="message blocking"><span class="initials agent" aria-hidden="true">ME<\/span>/);
+    expect(thread).toMatch(/<article id="message-[0-9a-f-]+" class="message blocking answered"><span class="initials agent" aria-hidden="true">ME<\/span>/);
     expect(thread).toContain("Should the link text be English or Turkish?");
     expect(element((await open("/FE-1")).html, /<section aria-labelledby="post"/, "section")).toMatch(/<label for="body">Message<\/label>/);
   });
@@ -262,5 +263,25 @@ describe("a team's intake page", () => {
     expect(apis).toMatch(/<li class="api-card declared"><p class="api-name"><span class="key">payments-api<\/span><span class="chip tag good">Consumed<\/span><\/p>/);
     expect(textOf(apis)).toMatch(/payments-api, provided by PAY: FE consumes it, as pia declared on \d{4}-\d\d-\d\d; last confirmed on \d{4}-\d\d-\d\d\./);
     expect(apis).toContain(">Re-confirm that FE consumes payments-api</button>");
+  });
+});
+
+// Last in this file, because it opens FE-3, which the lists above do not count.
+describe("a blocking question in the thread", () => {
+  it("is marked waiting, which the stylesheet fills in the notice colors, until it is answered, and answered after", async () => {
+    // FE-1's blocking question was answered: it keeps its kind, and gives up the fill that asks for a person.
+    expect(element((await open("/FE-1")).html, /<section aria-labelledby="thread"/, "section")).toMatch(/<article id="message-[0-9a-f-]+" class="message blocking answered">/);
+    // FE-3: Mert's agent claims it and asks a blocking question that nobody has answered yet.
+    await openRequest(install, tokenOf(seed.alice), {
+      targetTeam: "FE",
+      title: "Fix the footer",
+      packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "Fix the footer's links.", acceptance_criteria: ["Every footer link opens its page"] } },
+    });
+    const agent = oauthTokenOf(seed.mert, EXAMPLE_AGENT, "mcp");
+    expect((await callApi(install, agent, "POST", "/api/v1/requests/FE-3/claim")).status).toBe(200);
+    expect((await callApi(install, agent, "POST", "/api/v1/requests/FE-3/messages", { kind: "question", body: "Which footer, the site's or the app's?", blocking: true })).status).toBe(200);
+    const thread = element((await open("/FE-3")).html, /<section aria-labelledby="thread"/, "section");
+    expect(thread).toMatch(/<article id="message-[0-9a-f-]+" class="message blocking"><span class="initials agent" aria-hidden="true">ME<\/span>/);
+    expect(thread).toContain('<span class="chip kind">Blocking question · not answered yet</span>');
   });
 });

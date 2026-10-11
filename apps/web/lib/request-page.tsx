@@ -374,8 +374,11 @@ function MessageItem({ message, activity }: { message: Message; activity: Activi
   const author = authorOf(message, activity);
   const team = message.provenance.team;
   const answered = message.kind === "question" && message.answered === true;
+  // A blocking question takes the notice fill while it waits for its answer; once answered, it no longer asks for a
+  // person, so it keeps its kind and gives the fill up (D59 (2)).
+  const classes = message.kind === "question" && message.blocking ? (answered ? "message blocking answered" : "message blocking") : "message";
   return (
-    <article id={`message-${message.id}`} className={message.kind === "question" && message.blocking ? "message blocking" : "message"}>
+    <article id={`message-${message.id}`} className={classes}>
       <span className={author.kind === "agent" ? "initials agent" : "initials"} aria-hidden="true">
         {initialsFor(author)}
       </span>
