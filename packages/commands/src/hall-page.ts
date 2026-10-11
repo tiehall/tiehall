@@ -177,7 +177,7 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     "      </div>",
     '      <section class="hall-section at-work-section" aria-labelledby="at-work-heading">',
     '        <h2 id="at-work-heading">At work</h2>',
-    '        <ul class="at-work" id="at-work">',
+    '        <ul class="at-work-list" id="at-work">',
     ...state.atWork.map((entry) => workerHtml(entry, state.now)),
     "        </ul>",
     `        <p class="empty" id="at-work-empty"${state.atWork.length === 0 ? "" : " hidden"}>${escapeHtml(empty.atWork)}</p>`,

@@ -3279,20 +3279,21 @@ a.key:hover {
 }
 
 /* The people and agents at work: the login's initials, white on line blue for an agent and ink on signal amber for an
-   agent waiting on a question, who they are with their client, the request and what they did last. */
-.at-work {
+   agent waiting on a question, who they are with their client, the request and what they did last. The list's class
+   is its own, so its rules never reach the request page's banner of an agent at work, .activity.at-work. */
+.at-work-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 10px;
   list-style: none;
 }
 
-:where(main) .at-work {
+:where(main) .at-work-list {
   margin: 0;
   padding: 0;
 }
 
-:where(main) .at-work > li + li {
+:where(main) .at-work-list > li + li {
   margin-top: 0;
 }
 
@@ -3823,7 +3824,7 @@ a.key:hover {
     flex: 1 1 auto;
   }
 
-  :where(main) .at-work {
+  :where(main) .at-work-list {
     padding-bottom: 6px;
     display: flex;
     overflow-x: auto;

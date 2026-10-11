@@ -126,6 +126,28 @@ describe("a request's page in a browser", () => {
     await context.close();
   });
 
+  it.each([1280, 390])("keeps the banner of an agent at work a padded box apart from the panels below it, at %i CSS pixels", { timeout: 120_000 }, async (width) => {
+    const context = await signedIn(width);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/FE-1`);
+    const banner = page.locator(".activity.at-work");
+    await banner.waitFor();
+    // The live hall's list of the people and agents at work has rules of its own, which must not reach this banner.
+    await expect(
+      banner.evaluate((element) => {
+        const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+        return { display: style?.display, padding: style?.padding, marginBottom: style?.marginBottom, textAlign: style?.textAlign };
+      }),
+    ).resolves.toEqual({ display: "flex", padding: "14px 16px", marginBottom: "24px", textAlign: "start" });
+    const gap = await banner.evaluate((element) => {
+      const next = element.nextElementSibling;
+      return next === null ? null : next.getBoundingClientRect().top - element.getBoundingClientRect().bottom;
+    });
+    expect(gap).toBeGreaterThanOrEqual(24);
+    await context.close();
+  });
+
   it("runs no animation 5.5 seconds after it loads while its agent is at work, and still says the agent is working", { timeout: 120_000 }, async () => {
     const context = await signedIn(1280);
     const page = await context.newPage();
