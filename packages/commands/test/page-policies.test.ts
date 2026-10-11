@@ -8,11 +8,12 @@ import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
 // The content security policy of each kind of page (web-ui: The content
-// security policy of each kind of page; agent-safety: The review page of the
-// confirmation step; design.md, Design: The content security policy of each
-// kind of page; D57 (9)), in the web app as the image runs it. Every page
-// loads its styles, fonts, images and manifest from the install alone and
-// cannot be framed: the pages the web role renders run no script, their
+// security policy of each kind of page; web-ui: Text in the system's fonts;
+// agent-safety: The review page of the confirmation step; design.md, Design:
+// The content security policy of each kind of page; D57 (9); D61 (1)), in the
+// web app as the image runs it. Every page loads its styles, images and
+// manifest from the install alone, and no font at all, which no policy names,
+// and cannot be framed: the pages the web role renders run no script, their
 // form-action extended only where a form leads on to GitHub or to an agent
 // client; the API changelog page posts nowhere; the pages Next.js renders, the
 // page for a path no route serves among them, run only the scripts that carry
@@ -22,7 +23,7 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // policy here once it is added.
 
 /** The policy of a page the web role renders, other than the live hall, as design.md's table gives it. */
-const WEB_PAGE = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const WEB_PAGE = "default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 /** The same, whose forms may also lead to these sources. */
 const formActionAlso = (...sources: string[]) => WEB_PAGE.replace("form-action 'self'", ["form-action 'self'", ...sources].join(" "));
 /** The live hall's: the web role's, with its one script from the install, reads from the install alone and Trusted Types with no policy. */
@@ -31,7 +32,7 @@ const HALL = `${WEB_PAGE}; script-src 'self'; connect-src 'self'; require-truste
 const CHANGELOG = WEB_PAGE.replace("form-action 'self'", "form-action 'none'");
 /** The pages Next.js renders: scripts only by the nonce of the answer, and 'strict-dynamic'. */
 const FRAMEWORK =
-  /^default-src 'none'; script-src 'nonce-([A-Za-z0-9+/]{22,}={0,2})' 'strict-dynamic'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'$/;
+  /^default-src 'none'; script-src 'nonce-([A-Za-z0-9+/]{22,}={0,2})' 'strict-dynamic'; style-src 'self'; img-src 'self'; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'$/;
 /** The API reference page's, unchanged (public-api: The API reference page at `/docs/api`). */
 const REFERENCE =
   /^default-src 'none'; script-src 'nonce-[A-Za-z0-9+/]+=*'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'$/;

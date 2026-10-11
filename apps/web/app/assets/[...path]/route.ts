@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { ASSETS_PATH, createAssetRoute, type AssetRoute } from "@tiehall/commands/assets";
 
 // The install's own assets: the stylesheet, the live hall's script, the
-// icons, the manifest, the fonts and their license (web-ui: The install serves
-// its own assets; design.md, Design: The install's assets; D57 (14)), served
+// icons and the manifest (web-ui: The install serves its own assets;
+// design.md, Design: The install's assets; D57 (14)), served
 // to anyone, before setup too, with no session read and no cookie set; the
 // setup gate lets every path under /assets/ and /favicon.ico through, and
 // next.config.ts rewrites /favicon.ico here. The files are read from

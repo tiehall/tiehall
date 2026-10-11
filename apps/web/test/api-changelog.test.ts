@@ -80,7 +80,7 @@ describe("the changelog page", () => {
     expect(html).not.toMatch(/<script|<img|<iframe|<form|<style|\sstyle=/i);
     expect([...html.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag)).toContain(`<link rel="stylesheet" href="${assetUrl("/assets/tiehall.css")}">`);
     expect(response.headers.get("content-security-policy")).toBe(
-      "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     );
   });
 });

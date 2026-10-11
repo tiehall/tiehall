@@ -22,7 +22,7 @@
     "@statsig": "Statsig feature flags and analytics"
   },
   "packages": {
-    "@ibm/telemetry-js": "IBM's telemetry tool, which IBM's npm packages, its Plex font packages among them, run when they are installed",
+    "@ibm/telemetry-js": "IBM's telemetry tool, which IBM's npm packages run when they are installed",
     "@oclif/plugin-warn-if-update-available": "an update check",
     "@vercel/analytics": "Vercel Web Analytics",
     "@vercel/speed-insights": "Vercel Speed Insights",

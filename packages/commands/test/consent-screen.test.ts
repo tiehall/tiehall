@@ -140,7 +140,7 @@ describe("the consent screen's content", () => {
     ] as const) {
       const policy = consentPolicy(uri);
       expect(policy, uri).toBe(
-        `default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self' ${scheme}; frame-ancestors 'none'`,
+        `default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self' ${scheme}; frame-ancestors 'none'`,
       );
     }
   });

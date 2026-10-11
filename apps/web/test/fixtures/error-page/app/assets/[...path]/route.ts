@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { ASSETS_PATH, createAssetRoute, type AssetRoute } from "@tiehall/commands/assets";
 
 // The install's own assets, as the web app serves them (app/assets/[...path]/route.ts),
-// so the page for a failed render is drawn with its stylesheet, fonts and icons here too.
+// so the page for a failed render is drawn with its stylesheet and icons here too.
 // `next start` runs in this fixture's folder, five folders under the repository's root.
 export const dynamic = "force-dynamic";
 

@@ -3,8 +3,7 @@
 // not a workspace package or does not say Apache-2.0 in its package.json, or
 // when the root or any other workspace package does not say AGPL-3.0; and when
 // the root's LICENSE file does not hold the AGPL-3.0 text, or a client piece's
-// folder holds no LICENSE file with the Apache-2.0 text, or a third-party
-// folder does not hold its license file with its license's text.
+// folder holds no LICENSE file with the Apache-2.0 text.
 // Usage: node tools/repo-checks/src/check-licenses.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";
@@ -25,13 +24,6 @@ if (violations.length === 0) {
     `The ${map.serverLicense} text in the root's LICENSE file, ` +
       `and the ${map.clientLicense} text in the LICENSE file of each of the ${clientPieces} client pieces.`,
   );
-  const thirdParty = Object.entries(map.thirdParty);
-  if (thirdParty.length > 0) {
-    console.log(
-      `The license file of each of the ${thirdParty.length} third-party folders: ` +
-        `${thirdParty.map(([folder, { license, licenseFile }]) => `${folder}/${licenseFile} with the ${license} text`).join(", ")}.`,
-    );
-  }
 } else {
   for (const { file, detail } of violations) console.error(`${file}: ${detail}`);
   console.error(

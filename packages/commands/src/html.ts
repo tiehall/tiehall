@@ -18,16 +18,19 @@ export function escapeHtml(text: string): string {
 // security policy of each kind of page; agent-safety: The review page of the
 // confirmation step; design.md, Design: The content security policy of each
 // kind of page; D57 (9)), in one place, which every route takes its policy
-// from. Every page loads its styles, fonts, images and manifest from the
-// install alone, and no other site can frame it; no policy allows
-// 'unsafe-inline' or 'unsafe-eval', or names another host but in form-action.
+// from. Every page loads its styles, images and manifest from the install
+// alone, and no other site can frame it; no policy allows 'unsafe-inline' or
+// 'unsafe-eval', or names another host but in form-action. No page loads a
+// font: text is set in the system's own fonts, so no policy names font-src and
+// default-src 'none' refuses every font (web-ui: Text in the system's fonts;
+// design.md, Design: Type; D61 (1)).
 // The pages the web role renders run no script: every decision is made on
 // them, and an agent that drives a browser would want a script to help it.
 // The pages Next.js renders run only the framework's scripts, which carry the
 // nonce made for the answer, and the scripts they load ('strict-dynamic').
 
-/** The directives every page of the web UI shares: nothing by default, and styles, fonts, images and the manifest from the install. */
-const LOADS_FROM_THE_INSTALL = ["style-src 'self'", "font-src 'self'", "img-src 'self'", "manifest-src 'self'"] as const;
+/** The directives every page of the web UI shares: nothing by default, and styles, images and the manifest from the install. */
+const LOADS_FROM_THE_INSTALL = ["style-src 'self'", "img-src 'self'", "manifest-src 'self'"] as const;
 
 /**
  * The policy of a page the web role renders, other than the live hall: it
@@ -84,7 +87,7 @@ export function frameworkPagePolicy(nonce: string = randomBytes(18).toString("ba
 
 /**
  * The headers of a page the web role renders: it runs no script, loads only
- * the install's stylesheet, fonts, images and manifest, posts its forms only
+ * the install's stylesheet, images and manifest, posts its forms only
  * to the install and cannot be framed. Its referrer policy keeps its URL from
  * every other site but still lets the browser name the page's origin in the
  * Origin header of the forms it posts to the install, which the web UI's

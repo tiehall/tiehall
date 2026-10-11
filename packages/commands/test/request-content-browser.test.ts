@@ -13,8 +13,8 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // text on every page that shows it: markup in it shows as the characters it
 // is made of and runs nothing, and a markdown image in it loads nothing. The
 // request's page also sends a content security policy that lets it load
-// scripts only with a nonce made for that answer, and images, styles, fonts
-// and connections only from the install, so no text a page shows could make
+// scripts only with a nonce made for that answer, images, styles and
+// connections only from the install, and no font, so no text a page shows could make
 // the browser run a script or fetch a remote image. The pages run in the
 // installed Chrome against the web app as the image runs it (web-app.ts),
 // which logs every request the browser makes and every dialog a script
@@ -161,12 +161,12 @@ describe("request content in the web UI", () => {
     expect(first.status).toBe(200);
     const policy = first.headers.get("content-security-policy") ?? "";
     const directives = new Map(policy.split(";").map((directive) => directive.trim().split(/\s+/)).map(([name = "", ...values]) => [name, values]));
-    // Styles, fonts and images from the install only, and no inline style (web-ui: The content security policy of each
-    // kind of page; D57 (9)).
+    // Styles and images from the install only, no inline style, and no font, which default-src refuses (web-ui: The
+    // content security policy of each kind of page; web-ui: Text in the system's fonts; D57 (9); D61 (1)).
     expect(directives.get("default-src")).toEqual(["'none'"]);
     expect(directives.get("img-src")).toEqual(["'self'"]);
     expect(directives.get("style-src")).toEqual(["'self'"]);
-    expect(directives.get("font-src")).toEqual(["'self'"]);
+    expect(directives.has("font-src")).toBe(false);
     expect(directives.get("object-src")).toEqual(["'none'"]);
     expect(directives.get("base-uri")).toEqual(["'none'"]);
     expect(directives.get("frame-ancestors")).toEqual(["'none'"]);

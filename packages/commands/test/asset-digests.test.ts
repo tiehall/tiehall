@@ -9,9 +9,8 @@ import { ASSET_DIGESTS } from "../src/asset-digests.ts";
 // can find the files at run time: the request guard's refusal pages are
 // rendered in apps/server's bundle, and Next.js's bundle names a chunk by
 // import.meta.url. So the digests are a table in the code, which `pnpm
-// assets:digests` writes from the files, the stylesheet's after its url()s
-// name each font's digest; this test recomputes it and fails on any
-// difference.
+// assets:digests` writes from the files; this test recomputes it and fails on
+// any difference.
 
 const ASSETS = fileURLToPath(new URL("../assets/", import.meta.url));
 

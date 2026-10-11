@@ -25,7 +25,7 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, toke
 
 /** The live hall's policy, as design.md's table gives it: a page of the web role's, which runs its one script from the install. */
 const HALL_POLICY =
-  "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self'; require-trusted-types-for 'script'; trusted-types 'none'";
+  "default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self'; require-trusted-types-for 'script'; trusted-types 'none'";
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 /** The characters that hide or reverse text, as the agent view strips them: a name holding U+202E would reverse the mark beside it. */
 const HIDDEN_OR_REVERSING = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;

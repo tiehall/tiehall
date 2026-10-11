@@ -143,10 +143,10 @@ describe.each([
     expect(await ask(createSetupGate({ database: db, url: ORIGIN }), "/setup/github/app")).toBe("served");
   });
 
-  // The web UI's assets hold nothing of the install's data, and the setup screen needs its stylesheet, fonts and
-  // icons while nobody is signed in (web-ui: The install serves its own assets; design.md, Design: The install's
-  // assets; D57 (14)).
-  it.each(["/favicon.ico", "/favicon.ico?v=abc", "/assets/tiehall.css", "/assets/fonts/IBMPlexSans-Regular-Latin1.woff2", "/assets/fonts/OFL.txt", "/assets/nothing.css"])(
+  // The web UI's assets hold nothing of the install's data, and the setup screen needs its stylesheet and icons while
+  // nobody is signed in (web-ui: The install serves its own assets; design.md, Design: The install's assets; D57 (14)).
+  // A path under /assets/ that names no asset passes too, and the asset route answers it 404.
+  it.each(["/favicon.ico", "/favicon.ico?v=abc", "/assets/tiehall.css", "/assets/icon.svg", "/assets/manifest.webmanifest", "/assets/nothing.css"])(
     "serves the web UI's asset path %s",
     async (path) => {
       await arrange();
@@ -156,7 +156,7 @@ describe.each([
     },
   );
 
-  it.each(["/assets", "/assetsx/tiehall.css", "/favicon.icon", "/favicon.ico/x", "/fonts/OFL.txt"])("still redirects the page %s to /setup", async (path) => {
+  it.each(["/assets", "/assetsx/tiehall.css", "/favicon.icon", "/favicon.ico/x", "/icon.svg"])("still redirects the page %s to /setup", async (path) => {
     await arrange();
     expect(await ask(createSetupGate({ database: db, url: ORIGIN }), path)).toEqual(toSetup(307));
   });

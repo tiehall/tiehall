@@ -8,13 +8,13 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 
 // The setup screen before setup completes, in a browser (self-host-install:
 // The setup code guards the setup screen; web-ui: The install serves its own
-// assets; web-ui: Pages work at phone
+// assets; web-ui: Text in the system's fonts; web-ui: Pages work at phone
 // width; design.md, Design: The install's assets; design.md, Design: The page
-// families; D57 (7), (14)): on a test install whose setup is not complete, a
-// browser with no setup session opens /setup and gets the install's
-// stylesheet, a font and the icons, each answered 200, so the screen has its
-// look; it fits a phone's width; and the operator enters the setup code and
-// reaches the next step.
+// families; D57 (7), (14); D61 (1)): on a test install whose setup is not
+// complete, a browser with no setup session opens /setup and gets the
+// install's stylesheet and the icons, each answered 200, and no font, so the
+// screen has its look in the system's own fonts; it fits a phone's width; and
+// the operator enters the setup code and reaches the next step.
 
 let stub: GitHubStub;
 let install: TestInstall;
@@ -42,19 +42,24 @@ afterAll(async () => {
 }, 300_000);
 
 describe("the setup screen before setup", () => {
-  it("loads the stylesheet, a font and the icons with no setup session, and takes the setup code", { timeout: 120_000 }, async () => {
+  it("loads the stylesheet and the icons with no setup session, and no font, and takes the setup code", { timeout: 120_000 }, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     const answered = new Map<string, number>();
+    const fonts: string[] = [];
     page.on("response", (response) => answered.set(new URL(response.url()).pathname, response.status()));
+    page.on("request", (request) => {
+      if (request.resourceType() === "font") fonts.push(request.url());
+    });
     await page.goto(`${web.url}/setup`);
     await page.getByLabel("Setup code").waitFor();
-    // Fonts load once text needs them, and the icons once the browser asks for them.
+    // The page's text is in the system's own fonts: it declares no font face and asks for no font.
     await page.evaluate("document.fonts.ready");
-    await expect.poll(() => [...answered.keys()].some((path) => path.startsWith("/assets/fonts/")), { timeout: 15_000 }).toBe(true);
+    await expect(page.evaluate("document.fonts.size")).resolves.toBe(0);
+    expect(fonts).toEqual([]);
     expect(answered.get("/assets/tiehall.css")).toBe(200);
-    for (const [path, status] of answered) if (path.startsWith("/assets/fonts/")) expect(status, path).toBe(200);
+    // The icons load once the browser asks for them.
     for (const icon of ["/assets/icon.svg", "/favicon.ico", "/assets/icon-180.png", "/assets/manifest.webmanifest"]) {
       const response = await context.request.get(`${web.url}${icon}`);
       expect(response.status(), icon).toBe(200);

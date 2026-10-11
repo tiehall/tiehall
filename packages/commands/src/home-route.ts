@@ -24,7 +24,7 @@ import { csrfTokenFor } from "./web-writes.ts";
 // read, web.shell, comes first. A browser whose session a removal ended, or
 // whose user is not a member, gets 403 removed-member and no data, as a page
 // for a browser and a problem for every other client (html.ts). The page is
-// plain HTML: no script, styles, fonts and images from the install only, no
+// plain HTML: no script, styles and images from the install only, no
 // framing, and forms that post only to the install. Every answer carries the
 // cookie that renews the session it read, when the read renewed it (sign-in:
 // Signing out and ending sessions; session-renewal.ts). It shows the banners

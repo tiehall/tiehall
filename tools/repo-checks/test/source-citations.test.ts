@@ -89,15 +89,15 @@ describe("the files the check reads", () => {
     }
   });
 
-  // The install's fonts and icons are files of the repository (web-ui: The install serves its own assets; design.md,
-  // Design: The install's assets; D57 (14)), and the bytes of a font or an image can spell a decision number. Every
-  // WOFF2, PNG and ICO file holds a NUL byte, which no text file of the repository does.
-  it("leave out a file that holds a NUL byte, such as a font or an image, and one that cannot be read", () => {
+  // The install's icons are files of the repository (web-ui: The install serves its own assets; design.md, Design: The
+  // install's assets; D57 (14)), and the bytes of an image can spell a decision number. Every PNG and ICO file holds a
+  // NUL byte, which no text file of the repository does.
+  it("leave out a file that holds a NUL byte, such as an image, and one that cannot be read", () => {
     const scratch = mkdtempSync(join(tmpdir(), "tiehall-citations-"));
     try {
-      writeFileSync(join(scratch, "font.woff2"), Buffer.from("wOF2\u0000 the bytes spell D99"));
+      writeFileSync(join(scratch, "icon.png"), Buffer.from("\u0089PNG\r\n\u001a\n\u0000 the bytes spell D99"));
       writeFileSync(join(scratch, "notes.ts"), "// D99\n");
-      expect(readCitedText(scratch, "font.woff2")).toBeUndefined();
+      expect(readCitedText(scratch, "icon.png")).toBeUndefined();
       expect(readCitedText(scratch, "notes.ts")).toBe("// D99\n");
       expect(readCitedText(scratch, "missing.ts")).toBeUndefined();
     } finally {

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { denylistReason, findLockfilePackages, findModelSdkDependencies, lockfilePackages, loadDenylist, loadTelemetryDenylist, type Denylist } from "../src/model-sdks.ts";
+import { findLockfilePackages, findModelSdkDependencies, lockfilePackages, loadDenylist, loadTelemetryDenylist, type Denylist } from "../src/model-sdks.ts";
 
 // The CI check for self-host-install: No model calls, extended to
 // self-host-install: No telemetry and a documented list of outbound
@@ -133,15 +133,6 @@ describe("the model SDK check", () => {
     expect(Object.keys(denylist.packages).length).toBeGreaterThan(0);
     for (const scope of Object.keys(denylist.scopes)) expect(scope).toMatch(/^@[a-z0-9][a-z0-9._-]*$/);
     for (const name of Object.keys(denylist.packages)) expect(name).toMatch(/^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/);
-  });
-
-  // IBM's font packages, @ibm/plex-sans and @ibm/plex-mono, run IBM's telemetry tool when they are installed, so the
-  // repository keeps their font files instead (design.md, Design: Type and the self-hosted
-  // fonts; D57 (3)); the denylist names the tool, so no later change brings it into the lockfile unnoticed.
-  it("names IBM's telemetry tool, which IBM's font packages install, and the lockfile resolves no package of IBM's", () => {
-    expect(denylistReason(loadTelemetryDenylist(), "@ibm/telemetry-js")).toMatch(/telemetry/i);
-    const text = readFileSync(`${repoRoot}pnpm-lock.yaml`, "utf8");
-    expect(lockfilePackages(text).filter(({ name }) => name.startsWith("@ibm/"))).toEqual([]);
   });
 
   it("leaves the MCP SDK and OpenTelemetry's API off the lists, since neither calls anyone by itself", () => {

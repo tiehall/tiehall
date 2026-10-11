@@ -6,11 +6,11 @@ import { contrast, lightness, parseCss, selectorsOf, type CssRule } from "./supp
 // The install's one stylesheet (web-ui: One stylesheet with named design
 // tokens; web-ui: A request's state looks the same everywhere; web-ui: Light
 // and dark themes follow the system; web-ui: Motion, and reduced motion;
-// web-ui: Pages are accessible;
+// web-ui: Text in the system's fonts; web-ui: Pages are accessible;
 // design.md, Design: The design tokens; design.md, Design: Request states;
 // design.md, Design: Light and dark themes; design.md, Design: Motion and
-// reduced motion; design.md, Design: Type and the self-hosted fonts; D57 (1),
-// (3), (5), (6), (8); D59). Every color is a named token of the Navy & Gold
+// reduced motion; design.md, Design: Type; D57 (1), (5), (6), (8); D59; D61
+// (1)). Every color is a named token of the Navy & Gold
 // palette, with its value in the light theme, the dark theme and the live
 // hall; every pair of text and background contrasts at least 4.5:1, and every
 // lamp, edge of a field or outline button, checked checkbox's fill, focus ring
@@ -18,11 +18,11 @@ import { contrast, lightness, parseCss, selectorsOf, type CssRule } from "./supp
 // from the tokens; the lamps of a theme differ in
 // lightness as well as hue; gold marks only what asks for attention; motion
 // outside the live hall ends within 5 seconds, the hall's loops run only once
-// its script runs, and reduced motion stops everything; IBM's fonts are
-// declared as IBM declares them, with no local() source.
+// its script runs, and reduced motion stops everything; text is set in the
+// system's own fonts, so the stylesheet declares no font face and loads
+// nothing.
 
 const STYLESHEET = fileURLToPath(new URL("../assets/tiehall.css", import.meta.url));
-const SOURCES = fileURLToPath(new URL("../assets/fonts/SOURCES.json", import.meta.url));
 const css = parseCss(readFileSync(STYLESHEET, "utf8"));
 
 /** The brand's gold, D59's broken warm gold. */
@@ -153,9 +153,20 @@ describe("the design tokens", () => {
     for (const [token, value] of Object.entries(art)) expect(value.toUpperCase(), token).toBe(hall[token]?.toUpperCase());
   });
 
-  it("set the type families with the system's fonts as fallbacks", () => {
-    expect(light["--font-sans"]).toBe('"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif');
-    expect(light["--font-mono"]).toBe('"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace');
+  it("set text in the system's own fonts, each stack ending in its generic family", () => {
+    expect(light["--font-sans"]).toBe('system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif');
+    expect(light["--font-mono"]).toBe('ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace');
+    // The dark theme and the live hall keep the same type.
+    for (const theme of [dark, hall]) expect([theme["--font-sans"], theme["--font-mono"]]).toEqual([undefined, undefined]);
+  });
+
+  it("set the body in the sans-serif stack, and keys, ids and code in the monospace stack", () => {
+    expect(declarationsOf("body")).toContainEqual(expect.objectContaining({ property: "font-family", value: "var(--font-sans)" }));
+    const mono = css.rules.filter((rule) => rule.declarations.some(({ property, value }) => property === "font-family" && value === "var(--font-mono)")).flatMap(selectorsOf);
+    for (const selector of ["code", ".key"]) expect(mono, selector).toContain(selector);
+    // Every family the stylesheet names is one of the two stacks, or inherited.
+    const families = css.rules.flatMap((rule) => rule.declarations.filter(({ property }) => property === "font-family").map(({ value }) => value));
+    expect(families.filter((value) => !["var(--font-sans)", "var(--font-mono)", "inherit"].includes(value))).toEqual([]);
   });
 
   it("set every size in pixels on design.md's type scale: 12, 14, 16, 18, 22, 30 and 40", () => {
@@ -501,56 +512,12 @@ describe("motion", () => {
   });
 });
 
-interface FontSource {
-  path: string;
-  sha256: string;
-  unicodeRange?: string;
-}
-
-describe("the fonts", () => {
-  const sources = (JSON.parse(readFileSync(SOURCES, "utf8")) as { packages: { files: FontSource[] }[] }).packages.flatMap(({ files }) => files).filter(({ path }) => path.endsWith(".woff2"));
-  const faces = css.rules.filter((rule) => rule.selector === "@font-face");
-  const property = (rule: CssRule, name: string) => rule.declarations.find((declaration) => declaration.property === name)?.value;
-  const WEIGHTS: Readonly<Record<string, string>> = { Regular: "400", Medium: "500", SemiBold: "600", Bold: "700" };
-
-  it("are declared once each: the 34 files of SOURCES.json, 4 weights by 6 subsets of Plex Sans and 2 by 5 of Plex Mono", () => {
-    const files = faces.map((face) => /^url\("fonts\/([^"]+)"\) format\("woff2"\)$/.exec(property(face, "src") ?? "")?.[1]);
-    expect(files.sort()).toEqual(sources.map(({ path }) => path).sort());
-    expect(faces).toHaveLength(34);
-    expect(faces.filter((face) => property(face, "font-family") === '"IBM Plex Sans"')).toHaveLength(24);
-    expect(faces.filter((face) => property(face, "font-family") === '"IBM Plex Mono"')).toHaveLength(10);
-  });
-
-  it("each with IBM's unicode-range, its weight, font-display: swap and no local() source", () => {
-    for (const face of faces) {
-      const file = /fonts\/([^"]+)"/.exec(property(face, "src") ?? "")?.[1] ?? "";
-      const [, family, weight] = /^IBMPlex(Sans|Mono)-([A-Za-z]+)-/.exec(file) ?? [];
-      expect(property(face, "font-family"), file).toBe(`"IBM Plex ${family}"`);
-      expect(property(face, "font-weight"), file).toBe(WEIGHTS[weight ?? ""]);
-      expect(property(face, "font-style"), file).toBe("normal");
-      expect(property(face, "font-display"), file).toBe("swap");
-      expect(property(face, "unicode-range"), file).toBe(sources.find(({ path }) => path === file)?.unicodeRange);
-      expect(property(face, "src"), file).not.toContain("local(");
-    }
-  });
-
-  it("set Turkish in the Latin1 and Latin2 subsets: ı in Latin1, and ğ, ş and İ in Latin2", () => {
-    const covers = (file: string, codePoint: number) =>
-      (sources.find(({ path }) => path === file)?.unicodeRange ?? "").split(",").some((range) => {
-        const [start = "", end = start] = range.trim().replace(/^U\+/, "").split("-");
-        return codePoint >= Number.parseInt(start, 16) && codePoint <= Number.parseInt(end, 16);
-      });
-    expect(covers("IBMPlexSans-Regular-Latin1.woff2", "ı".codePointAt(0) ?? 0)).toBe(true);
-    for (const character of ["ğ", "ş", "İ", "Ş", "Ğ"]) expect(covers("IBMPlexSans-Regular-Latin2.woff2", character.codePointAt(0) ?? 0), character).toBe(true);
-  });
-});
-
 describe("what the stylesheet loads", () => {
-  it("imports nothing and names no other host: every url() is a font of the install, by its path in the assets folder", () => {
+  it("is nothing: it imports nothing, declares no font face and names no url(), from the install or another host", () => {
     expect(css.statements.filter((statement) => statement.startsWith("@import"))).toEqual([]);
-    const urls = css.rules.flatMap((rule) => rule.declarations.flatMap(({ value }) => [...value.matchAll(/url\(([^)]*)\)/g)].map((match) => match[1] ?? "")));
-    expect(urls.length).toBe(34);
-    for (const url of urls) expect(url).toMatch(/^"fonts\/IBMPlex(Sans|Mono)-[A-Za-z]+-[A-Za-z0-9]+\.woff2"$/);
-    expect(readFileSync(STYLESHEET, "utf8")).not.toMatch(/https?:|\/\//);
+    expect(css.rules.filter((rule) => rule.selector === "@font-face")).toEqual([]);
+    const text = readFileSync(STYLESHEET, "utf8");
+    expect(text).not.toMatch(/@font-face|url\(|@import/);
+    expect(text).not.toMatch(/https?:|\/\//);
   });
 });

@@ -17,7 +17,7 @@ import type { RequestUrlAnswer } from "@tiehall/commands";
 const NEGOTIATED_KEY = "x-tiehall-negotiated-key";
 /** The policy of the pages Next.js renders, with the nonce of one answer. */
 const FRAMEWORK =
-  /^default-src 'none'; script-src 'nonce-[A-Za-z0-9+/]{22,}={0,2}' 'strict-dynamic'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'$/;
+  /^default-src 'none'; script-src 'nonce-[A-Za-z0-9+/]{22,}={0,2}' 'strict-dynamic'; style-src 'self'; img-src 'self'; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'$/;
 
 /** What the stubbed negotiation answers the next call with. */
 let negotiated: RequestUrlAnswer | undefined;

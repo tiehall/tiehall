@@ -230,12 +230,12 @@ describe("a review page", () => {
     expect(page.headers.get("cache-control")).toBe("no-store");
   });
 
-  // The page loads only the install's stylesheet, fonts, images and manifest (agent-safety: The review page of the
-  // confirmation step; web-ui: The content security policy of each kind of page; D57 (9)).
-  it("runs no script, loads only the install's own stylesheet, fonts, images and manifest, and posts its form only to the install", async () => {
+  // The page loads only the install's stylesheet, images and manifest, and no font (agent-safety: The review page of
+  // the confirmation step; web-ui: The content security policy of each kind of page; D57 (9); D61 (1)).
+  it("runs no script, loads only the install's own stylesheet, images and manifest, and no font, and posts its form only to the install", async () => {
     const page = await review("probes.create_token", { scope: "requests:read", expiresOn: "2026-12-01" });
     expect(page.headers.get("content-security-policy")).toBe(
-      "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     );
     expect(await page.text()).not.toMatch(/<script\b/i);
   });
