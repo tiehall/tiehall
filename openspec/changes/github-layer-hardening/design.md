@@ -202,7 +202,7 @@ Applied by this change's task 1.23, once the maintainer approves this change; ea
 
 #### T5. One renderer for refusals on page routes
 
-- **Choice.** `packages/commands/src/html.ts` gains one function that answers a refusal for a request: a page when the request negotiates HTML, the problem otherwise. The page carries the page headers (no script, nothing loaded, no framing), the refusal's status, its title and detail escaped, the problem type in its markup, and the link on. `web-pages.ts`, `admin-pages.ts`, `github-admin-route.ts`, `confirm-route.ts`, `setup-route.ts`, `activity-log-route.ts`, `home-route.ts` and the sign-in service's answers in `sign-in.ts` use it; the consent, device approval, request URL and intake pages use it when they are built.
+- **Choice.** `packages/commands/src/html.ts` gains one function that answers a refusal for a request: a page when the request negotiates HTML, the problem otherwise. The page carries the page headers (no script, nothing loaded from another host, no framing; the install's stylesheet and icons, `web-ui-design`, D57 (9)), the refusal's status, its title and detail escaped, the problem type in its markup, and the link on. `web-pages.ts`, `admin-pages.ts`, `github-admin-route.ts`, `confirm-route.ts`, `setup-route.ts`, `activity-log-route.ts`, `home-route.ts` and the sign-in service's answers in `sign-in.ts` use it; the consent, device approval, request URL and intake pages use it when they are built.
 - **Why.** One place decides the negotiation and escapes the text, as one place renders every page today.
 - **Alternatives.** A page per route, which drifts.
 
