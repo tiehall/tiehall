@@ -202,4 +202,22 @@ describe("the operator commands before setup completes", () => {
       await owner.query("UPDATE orgs SET setup_completed_at = now()");
     }
   });
+
+  // The activity log takes no event before setup completes (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (53)); every run after setup is a security event, as before.
+  it("record nothing in the activity log", async () => {
+    const log = async () => (await owner.query("SELECT number, type FROM events ORDER BY number")).rows;
+    const roles = async () => (await owner.query("SELECT user_id, role FROM members ORDER BY user_id")).rows;
+    const [eventsBefore, rolesBefore] = [await log(), await roles()];
+    await owner.query("UPDATE orgs SET setup_completed_at = NULL");
+    try {
+      expect((await runAdmin(["grant", "dana-gh"], appSettings)).code).toBe(1);
+      expect((await runAdmin(["grant", "ana_acme"], appSettings)).code).toBe(1);
+      expect((await runAdmin(["setup", "reopen"], appSettings)).code).toBe(1);
+      expect(await log()).toEqual(eventsBefore);
+      expect(await roles()).toEqual(rolesBefore);
+    } finally {
+      await owner.query("UPDATE orgs SET setup_completed_at = now()");
+    }
+  });
 });

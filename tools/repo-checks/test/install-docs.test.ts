@@ -218,6 +218,21 @@ describe("the install docs", () => {
     expect(section("Rollback").replace(/\s+/g, " ")).toContain("After a contract step has run, the previous image refuses to start");
   });
 
+  // self-host-install: No telemetry and a documented list of outbound connections (decisions-from-groups-15-28:
+  // design.md, Decisions this change rests on: D55 (57)). Operators write egress rules by host, so the list names the
+  // host the install reads GitHub Actions' keys from, the one the CI caller's check calls, and says what for.
+  it("list GitHub Actions' OIDC host, which the CI caller's check reads its keys from", () => {
+    const outbound = readFileSync(join(root, "packages/commands/src/outbound.ts"), "utf8");
+    const origin = /export const GITHUB_ACTIONS_OIDC_ORIGIN = "([^"]+)";/.exec(outbound)?.[1] ?? "";
+    const host = new URL(origin).host;
+    expect(host).toBe("token.actions.githubusercontent.com");
+    const line = section("What an install connects to")
+      .split("\n")
+      .find((text) => text.includes(`\`${host}\``));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/keys that check the tokens of the contract Action's runs/);
+  });
+
   it("list the outbound hosts, which name no model vendor", () => {
     const outbound = section("What an install connects to");
     for (const host of [
