@@ -192,6 +192,19 @@ describe("a team's intake page", () => {
     }
   });
 
+  // A team's page names what works for a team, the MCP tool directory, and not get_request, which reads requests
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (40)).
+  it("tells an agent without credentials to read the install's teams with the MCP tool directory", async () => {
+    for (const answer of [await call("/FE.md"), await call("/FE.json"), await call("/FE", { accept: "text/markdown" }), await call("/FE", { accept: "application/json" })]) {
+      expect(answer.status).toBe(401);
+      expect(mediaType(answer)).toBe("application/problem+json");
+      expect(answer.body).toContain("https://tiehall.com/problems/unauthenticated");
+      expect(answer.body).toContain("the MCP tool directory");
+      expect(answer.body).not.toContain("get_request");
+      holdsNothingOfFe(answer);
+    }
+  });
+
   it("takes a token only from the Authorization header, never from the query string", async () => {
     const answer = await call(`/FE.json?access_token=${token["bob"] ?? ""}`);
     expect(answer.status).toBe(401);

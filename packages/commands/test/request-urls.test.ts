@@ -384,6 +384,12 @@ describe("a request URL written with percent-encoded characters", () => {
     isMarkdownOfFe1(await call("/%46E-1", { ...credentials("token:bob"), accept: "text/markdown" }));
   });
 
+  it("answers /FE%2D1.md as /FE-1.md", async () => {
+    const answer = await call("/FE%2D1.md", credentials("token:bob"));
+    isMarkdownOfFe1(answer);
+    hasUrlHeaders(answer);
+  });
+
   it("leads an old key to the canonical URL", async () => {
     const answer = await call("/%4FPS-1", { ...credentials("session:bob"), accept: BROWSER });
     leadsTo("/SRE-1")(answer);
@@ -467,6 +473,30 @@ describe("the methods a request URL takes", () => {
     isPageOfFe1(answer);
     hasUrlHeaders(answer);
     hasPagePolicy(answer);
+  });
+
+  // A post's answer is the page as that post leaves it, so its ETag is of that answer alone
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (42)).
+  it("gives a post's answer an ETag of its own, which no later read of the page matches", async () => {
+    const post = async (): Promise<string> => {
+      const answer = await call("/FE-1", { ...credentials("session:bob"), accept: BROWSER, "content-length": "0" }, "POST");
+      expect(answer.status).toBe(200);
+      return String(answer.headers["etag"]);
+    };
+    const read = async (): Promise<string> => {
+      const answer = await call("/FE-1", { ...credentials("session:bob"), accept: BROWSER });
+      expect(answer.status).toBe(200);
+      return String(answer.headers["etag"]);
+    };
+    const first = await post();
+    const reads = [await read(), await read()];
+    const second = await post();
+    const later = await read();
+    for (const etag of [...reads, later]) {
+      expect(etag).not.toBe(first);
+      expect(etag).not.toBe(second);
+    }
+    expect(second).not.toBe(first);
   });
 });
 
