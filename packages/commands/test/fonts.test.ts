@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FONT_FILES } from "../src/assets.ts";
 
-// The fonts the install serves (web-ui: Fonts served by the install; design.md,
+// The fonts the install serves (design.md,
 // Design: Type and the self-hosted fonts; D57 (3), (14)). The repository keeps
 // IBM's own files of Plex, unmodified, from the npm packages @ibm/plex-sans
 // 1.1.0 and @ibm/plex-mono 2.5.0, without installing them: both packages run

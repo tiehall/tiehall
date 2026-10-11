@@ -8,7 +8,7 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 
 // The setup screen before setup completes, in a browser (self-host-install:
 // The setup code guards the setup screen; web-ui: The install serves its own
-// assets; web-ui: Fonts served by the install; web-ui: Pages work at phone
+// assets; web-ui: Pages work at phone
 // width; design.md, Design: The install's assets; design.md, Design: The page
 // families; D57 (7), (14)): on a test install whose setup is not complete, a
 // browser with no setup session opens /setup and gets the install's

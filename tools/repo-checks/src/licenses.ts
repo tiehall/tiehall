@@ -11,8 +11,7 @@ import { parse } from "yaml";
 // text (task 28.1); a text is known by the digest the map gives it. A
 // third-party folder holds files Tiehall keeps as their authors publish them,
 // under their own license, such as IBM's Plex fonts under the SIL Open Font
-// License (web-ui: Fonts served by the install; design.md, Design: Type and
-// the self-hosted fonts; D57 (3)): it holds the license file the map names,
+// License (design.md, Design: Type and the self-hosted fonts; D57 (3)): it holds the license file the map names,
 // with that license's text.
 
 export interface LicenseMap {

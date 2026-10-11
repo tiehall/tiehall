@@ -16,7 +16,7 @@
     "packages/packet": "@tiehall/packet"
   },
   "thirdParty": {
-    "$comment": "Third-party files kept in a folder of the repository, by folder: the license they are published under and the file in the folder that holds its text. IBM Plex Sans and IBM Plex Mono, IBM's own font files, which the web UI serves (web-ui: Fonts served by the install; design.md, Design: Type and the self-hosted fonts; D57 (3)).",
+    "$comment": "Third-party files kept in a folder of the repository, by folder: the license they are published under and the file in the folder that holds its text. IBM Plex Sans and IBM Plex Mono, IBM's own font files, which the web UI serves (design.md, Design: Type and the self-hosted fonts; D57 (3)).",
     "packages/commands/assets/fonts": { "license": "OFL-1.1", "licenseFile": "OFL.txt" }
   }
 }

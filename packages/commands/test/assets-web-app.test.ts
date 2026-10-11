@@ -4,8 +4,7 @@ import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
 // The install's assets in the web app as the image runs it (web-ui: The
-// install serves its own assets; web-ui: Fonts served by the install;
-// self-host-install: The setup code guards the setup screen; design.md,
+// install serves its own assets; self-host-install: The setup code guards the setup screen; design.md,
 // Design: The install's assets; D57 (14)). The asset route reads the files
 // from packages/commands/assets/, which next.config.ts carries into the
 // standalone output beside apps/web, two folders up from the folder the

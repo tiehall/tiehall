@@ -711,7 +711,7 @@ describe("/healthz", () => {
     expect(ownerQuery(database, "SELECT count(*) FROM orgs WHERE setup_completed_at IS NOT NULL")).toBe("0");
   });
 
-  // web-ui: The install serves its own assets; web-ui: Fonts served by the install; self-host-install: The setup code
+  // web-ui: The install serves its own assets; self-host-install: The setup code
   // guards the setup screen. The setup screen has its look before anyone is signed in: the image carries the fonts and
   // their license beside the web app, and serves them before setup to a browser without a session.
   it("before setup, serves the stylesheet, the favicon, the fonts and their license from the image to a browser without a session", async () => {

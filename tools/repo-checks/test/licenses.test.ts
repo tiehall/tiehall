@@ -16,9 +16,9 @@ import { checkLicenseFiles, checkLicenses, licenseTextDigest, loadLicenseMap, wo
 // files and its license files, with one license file taken out or changed, so
 // that no fixture keeps a second copy of the license texts in the repository.
 // Third-party files kept in a folder of the repository, such as IBM's Plex
-// fonts under the SIL Open Font License (web-ui: Fonts served by the install;
-// design.md, Design: Type and the self-hosted fonts; D57 (3)), are licensed by
-// their own license file, which the map names with its text.
+// fonts under the SIL Open Font License (design.md, Design: Type and the
+// self-hosted fonts; D57 (3)), are licensed by their own license file, which
+// the map names with its text.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const script = fileURLToPath(new URL("../src/check-licenses.ts", import.meta.url));

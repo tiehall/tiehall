@@ -6,7 +6,7 @@ import { contrast, lightness, parseCss, selectorsOf, type CssRule } from "./supp
 // The install's one stylesheet (web-ui: One stylesheet with named design
 // tokens; web-ui: A request's state looks the same everywhere; web-ui: Light
 // and dark themes follow the system; web-ui: Motion, and reduced motion;
-// web-ui: Fonts served by the install; web-ui: Pages are accessible;
+// web-ui: Pages are accessible;
 // design.md, Design: The design tokens; design.md, Design: Request states;
 // design.md, Design: Light and dark themes; design.md, Design: Motion and
 // reduced motion; design.md, Design: Type and the self-hosted fonts; D57 (1),

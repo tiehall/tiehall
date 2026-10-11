@@ -136,8 +136,8 @@ describe("the model SDK check", () => {
   });
 
   // IBM's font packages, @ibm/plex-sans and @ibm/plex-mono, run IBM's telemetry tool when they are installed, so the
-  // repository keeps their font files instead (web-ui: Fonts served by the install; design.md, Design: Type and the
-  // self-hosted fonts; D57 (3)); the denylist names the tool, so no later change brings it into the lockfile unnoticed.
+  // repository keeps their font files instead (design.md, Design: Type and the self-hosted
+  // fonts; D57 (3)); the denylist names the tool, so no later change brings it into the lockfile unnoticed.
   it("names IBM's telemetry tool, which IBM's font packages install, and the lockfile resolves no package of IBM's", () => {
     expect(denylistReason(loadTelemetryDenylist(), "@ibm/telemetry-js")).toMatch(/telemetry/i);
     const text = readFileSync(`${repoRoot}pnpm-lock.yaml`, "utf8");

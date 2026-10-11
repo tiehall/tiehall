@@ -2,15 +2,15 @@
 
 ## Purpose
 
-Defines how an install's web UI looks and behaves for the people who use it: the assets the install serves itself, one stylesheet with named design tokens, how a request's state looks, the mark and the icons, the fonts, the page shell and its navigation, the light and dark themes, motion and reduced motion, phone width, accessibility, the content security policy of each kind of page, the request page's recent activity, and the live hall, where members watch requests move between teams and the people and agents at work on them.
+Defines how an install's web UI looks and behaves for the people who use it: the assets the install serves itself, one stylesheet with named design tokens, how a request's state looks, the mark and the icons, the type, the page shell and its navigation, the light and dark themes, motion and reduced motion, phone width, accessibility, the content security policy of each kind of page, the request page's recent activity, and the live hall, where members watch requests move between teams and the people and agents at work on them.
 
 ## ADDED Requirements
 
 ### Requirement: The install serves its own assets
 
-In this capability, a page of the web UI is every HTML page the install serves other than the API reference page at `/docs/api`, which keeps the look and the policy the public-api capability defines and names only the icons in its head. The web role SHALL serve every asset the web UI's pages use itself: the stylesheet at `/assets/tiehall.css`, the live hall's script at `/assets/hall.js`, the icons `/assets/icon.svg`, `/assets/icon-180.png`, `/assets/icon-192.png`, `/assets/icon-512.png` and `/favicon.ico`, the web app manifest at `/assets/manifest.webmanifest`, the fonts under `/assets/fonts/`, and the fonts' license at `/assets/fonts/OFL.txt`. The assets hold nothing of the install's data: they SHALL be served to anyone, without a session, and before setup completes, as the self-host-install capability defines for the setup gate; an asset's answer SHALL read no session and SHALL set no cookie. Each answer SHALL carry the asset's exact media type, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin`, the Content-Security-Policy `default-src 'none'; frame-ancestors 'none'; sandbox`, and a strong `ETag` of its content, and SHALL answer 304 with no body to an `If-None-Match` that names that `ETag`. Pages SHALL name each asset by a URL whose `v` query parameter is a digest of the asset's current content. An answer to a URL whose `v` is that digest SHALL carry `Cache-Control: public, max-age=31536000, immutable`; an answer to any other URL of the asset SHALL carry the current content with `Cache-Control: no-cache`. A path under `/assets/` that names no asset, and any method but GET and HEAD, SHALL get 404, as the public-api capability's error model defines for a route the surface does not offer.
+In this capability, a page of the web UI is every HTML page the install serves other than the API reference page at `/docs/api`, which keeps the look and the policy the public-api capability defines and names only the icons in its head. The web role SHALL serve every asset the web UI's pages use itself: the stylesheet at `/assets/tiehall.css`, the live hall's script at `/assets/hall.js`, the icons `/assets/icon.svg`, `/assets/icon-180.png`, `/assets/icon-192.png`, `/assets/icon-512.png` and `/favicon.ico`, and the web app manifest at `/assets/manifest.webmanifest`. The assets hold nothing of the install's data: they SHALL be served to anyone, without a session, and before setup completes, as the self-host-install capability defines for the setup gate; an asset's answer SHALL read no session and SHALL set no cookie. Each answer SHALL carry the asset's exact media type, `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin`, the Content-Security-Policy `default-src 'none'; frame-ancestors 'none'; sandbox`, and a strong `ETag` of its content, and SHALL answer 304 with no body to an `If-None-Match` that names that `ETag`. Pages SHALL name each asset by a URL whose `v` query parameter is a digest of the asset's current content. An answer to a URL whose `v` is that digest SHALL carry `Cache-Control: public, max-age=31536000, immutable`; an answer to any other URL of the asset SHALL carry the current content with `Cache-Control: no-cache`. A path under `/assets/` that names no asset, and any method but GET and HEAD, SHALL get 404, as the public-api capability's error model defines for a route the surface does not offer.
 
-Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; design.md, Design: The install's assets
+Source: D57 (1), (10), (14); design.md, Decisions this change rests on; design.md, Design: The install's assets
 
 #### Scenario: The stylesheet without a session
 
@@ -20,7 +20,7 @@ Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; des
 
 #### Scenario: Assets before setup
 
-- **WHEN** setup is not complete and a browser requests `/assets/tiehall.css`, `/favicon.ico` and a font file the stylesheet names
+- **WHEN** setup is not complete and a browser requests `/assets/tiehall.css`, `/favicon.ico` and `/assets/icon.svg`
 - **THEN** each is answered 200 with the asset
 - **AND** none of them leads to `/setup`
 
@@ -30,14 +30,14 @@ Source: D57 (1), (3), (10), (14); design.md, Decisions this change rests on; des
 - **THEN** the answer carries `Cache-Control: public, max-age=31536000, immutable`
 - **AND** a request for `/assets/tiehall.css` with no `v`, or with a `v` that is not the current digest, gets the current stylesheet with `Cache-Control: no-cache`
 
-#### Scenario: A browser revalidates a font
+#### Scenario: A browser revalidates an icon
 
-- **WHEN** a browser requests a font file again with an `If-None-Match` header that names the `ETag` of its first answer
+- **WHEN** a browser requests `/assets/icon-192.png` again with an `If-None-Match` header that names the `ETag` of its first answer
 - **THEN** the answer is 304 with no body
 
 #### Scenario: A path that names no asset
 
-- **WHEN** a browser requests `/assets/nothing.css`, or sends a POST to `/assets/tiehall.css`
+- **WHEN** a browser requests `/assets/nothing.css` or `/assets/fonts/OFL.txt`, or sends a POST to `/assets/tiehall.css`
 - **THEN** the answer is 404
 
 ### Requirement: One stylesheet with named design tokens
@@ -149,36 +149,36 @@ Source: D57 (2), (10); D59 (3); design.md, Decisions this change rests on; desig
 - **THEN** the page's head names `/assets/icon.svg`, `/favicon.ico` and `/assets/icon-180.png`, and names no manifest
 - **AND** the browser reports no violation of the page's Content-Security-Policy
 
-### Requirement: Fonts served by the install
+### Requirement: Text in the system's fonts
 
-The web UI SHALL set its text in IBM Plex Sans, at the weights 400, 500, 600 and 700, and request keys, team keys, ids and code in IBM Plex Mono, at the weights 400 and 500, with the system's sans-serif and monospace fonts as the fallbacks. The install SHALL serve the font files itself, as IBM publishes them under the SIL Open Font License 1.1 and unmodified, split into subsets that the browser loads only for the characters a page uses, which SHALL cover at least the Basic Latin, Latin-1 Supplement and Latin Extended-A blocks, so Turkish among other languages; and it SHALL serve the license's text, with IBM's copyright notice, at `/assets/fonts/OFL.txt`. No page SHALL load a font from another host.
+The web UI SHALL set its text in the system's own sans-serif font, at the weights 400, 500, 600 and 700, and request keys, team keys, ids and code in the system's own monospace font, each named by a stack of the fonts that the common systems ship, which ends in the generic `sans-serif` or `monospace` family: `system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif` and `ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace`. Text in any language the system's fonts cover, Turkish among them, SHALL render in them. The install SHALL serve no font file, and no page SHALL load a font, from the install or from another host. Each system's font has widths of its own, so no page's layout SHALL rely on a font's widths: what holds in one system's font SHALL hold in another's.
 
-Source: D57 (3), (14); design.md, Decisions this change rests on; design.md, Design: Type and the self-hosted fonts
+Source: D57 (14); D61 (1); design.md, Decisions this change rests on; design.md, Design: Type
 
-#### Scenario: Turkish text in IBM Plex Sans
+#### Scenario: Turkish text in the system's font
 
 - **WHEN** a request's title is `Şifremi unuttum bağlantısı: İptal ve ğ` and a member opens its page
-- **THEN** the browser renders the title in IBM Plex Sans, loaded from the install's `/assets/fonts/`
-- **AND** the browser requests no font from any other host
+- **THEN** the browser renders the title in the first font of the sans-serif stack that the system has
+- **AND** the browser requests no font file
 
-#### Scenario: Keys in IBM Plex Mono
+#### Scenario: Keys in the system's monospace font
 
 - **WHEN** a member opens `/requests?list=all`
-- **THEN** every request key on the page is set in IBM Plex Mono
+- **THEN** every request key on the page is set in the monospace stack
 
-#### Scenario: The license beside the fonts
+#### Scenario: No page loads a font
 
-- **WHEN** `/assets/fonts/OFL.txt` is read
-- **THEN** it holds the SIL Open Font License 1.1 with IBM's copyright notice for Plex
+- **WHEN** a browser opens every page of the web UI, as a signed-in admin, as a signed-in member and as a browser with no session
+- **THEN** it requests no font file from the install or from any other host
 
 ### Requirement: The page shell and its navigation
 
 Every page of the web UI SHALL share one shell: a link that skips to the page's main content, the first element the keyboard reaches; a top bar with the mark; the page's content in one main landmark with one first-level heading; and the footer with the running version and its source link, as the self-host-install capability defines. The shell SHALL take one of two forms:
-- the app shell, on the pages a signed-in member uses other than those below: its top bar SHALL hold the mark and the name Tiehall as a link to `/`; the navigation, with the links Live hall (`/hall`), Inbox (`/inbox`), Requests (`/requests`), Members (`/members`) and, for an admin only, Admin (`/admin`), the current page marked as current; beside the Inbox link, while proposals wait for the member's own confirmation, as the requester-loop capability defines the web inbox's standing list, their number with words a screen reader reads; a New request link to `/requests/new`; and a menu named by the member's GitHub login with Email settings (`/settings/email`), Connected agents and tokens (`/tokens`) and the sign-out form, as the sign-in capability defines;
+- the app shell, on the pages a signed-in member uses other than those below: its top bar SHALL hold the mark and the name Tiehall as a link to `/`; the navigation, with the links Live hall (`/hall`), Inbox (`/inbox`), Requests (`/requests`), Members (`/members`) and, for an admin only, Admin (`/admin`), the current page marked as current; beside the Inbox link, while proposals wait for the member's own confirmation, as the requester-loop capability defines the web inbox's standing list, their number with words a screen reader reads; a New request link to `/requests/new`, drawn as a page's main action, in gold `#E3B341` with navy ink, in the light and in the dark theme; and a menu named by the member's GitHub login with Email settings (`/settings/email`), Connected agents and tokens (`/tokens`) and the sign-out form, as the sign-in capability defines;
 - the focused shell, on the sign-in page, the setup screen, every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, every refusal page, the page for a path no route serves, the page shown when a page fails to render, and the API changelog page: its top bar SHALL hold the mark and the name and nothing else.
 The navigation and the member's menu SHALL open and close without script. In a viewport narrower than 768 CSS pixels, the navigation, the New request link and the member's menu SHALL fold into one menu that opens without script.
 
-Source: D57 (4), (7), (8); design.md, Decisions this change rests on; design.md, Design: The page shell and navigation
+Source: D57 (4), (7), (8); D61 (2); design.md, Decisions this change rests on; design.md, Design: The page shell and navigation; design.md, Design: The design tokens
 
 #### Scenario: A member's navigation
 
@@ -195,6 +195,12 @@ Source: D57 (4), (7), (8); design.md, Decisions this change rests on; design.md,
 
 - **WHEN** two proposals wait for Bob's confirmation and Bob opens `/requests`
 - **THEN** the top bar shows 2 beside the Inbox link, with words that a screen reader reads as 2 waiting
+
+#### Scenario: New request in gold
+
+- **WHEN** Bob opens `/requests` in a browser that prefers the light color scheme, and then in one that prefers the dark color scheme
+- **THEN** the top bar's New request link is filled with gold `#E3B341`, with its words in `#0B1B3A` in the light theme and in `#0A1428` in the dark one
+- **AND** its words contrast with the gold by at least 4.5:1 in both
 
 #### Scenario: A review page shows one decision
 
@@ -330,17 +336,17 @@ Source: D57 (8); design.md, Decisions this change rests on; design.md, Design: A
 
 ### Requirement: The content security policy of each kind of page
 
-Every page of the web UI SHALL send a Content-Security-Policy that lets it load styles, fonts, images and its manifest from the install alone, and that no other site can frame: `default-src 'none'`, `style-src 'self'`, `font-src 'self'`, `img-src 'self'`, `manifest-src 'self'`, `base-uri 'none'`, `frame-ancestors 'none'`, and `form-action 'self'`, which the setup screen extends with GitHub's web origin; the sign-in page with GitHub's web origin and, while an agent client's authorization waits on sign-in, that client's registered redirect URI as the consent screen gives it; the consent screen with the client's redirect URI as its source (its origin, or its scheme for an app's own scheme); and which the API changelog page narrows to `'none'`. No policy of the web UI SHALL allow `'unsafe-inline'` or `'unsafe-eval'`, or name another host in any directive but `form-action`. Scripts SHALL run on two kinds of page only:
+Every page of the web UI SHALL send a Content-Security-Policy that lets it load styles, images and its manifest from the install alone, and that no other site can frame: `default-src 'none'`, `style-src 'self'`, `img-src 'self'`, `manifest-src 'self'`, `base-uri 'none'`, `frame-ancestors 'none'`, and `form-action 'self'`, which the setup screen extends with GitHub's web origin; the sign-in page with GitHub's web origin and, while an agent client's authorization waits on sign-in, that client's registered redirect URI as the consent screen gives it; the consent screen with the client's redirect URI as its source (its origin, or its scheme for an app's own scheme); and which the API changelog page narrows to `'none'`. No page loads a font, as the requirement on text in the system's fonts defines, so no policy of the web UI SHALL name `font-src`: `default-src 'none'` refuses every font. No policy of the web UI SHALL allow `'unsafe-inline'` or `'unsafe-eval'`, or name another host in any directive but `form-action`. Scripts SHALL run on two kinds of page only:
 - the live hall at `/hall` SHALL add `script-src 'self'` and `connect-src 'self'`, so it runs only its script from the install and reads only from the install, and `require-trusted-types-for 'script'` with `trusted-types 'none'`, so its script cannot write markup into the page;
 - the pages the web UI renders through its framework, which are a request's page, a team's intake page, the page for a path no route serves and the page shown when one of them fails to render, SHALL add `script-src` with a nonce made for each answer and `'strict-dynamic'`, `connect-src 'self'` and `object-src 'none'`, so only the framework's scripts that carry the nonce run.
 Every other page SHALL allow no script, and so in any case SHALL every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, the setup screen, the sign-in page and every refusal page. A JSON answer of the live hall SHALL send `default-src 'none'; frame-ancestors 'none'`. No page SHALL break its own policy: a browser that shows any page of the web UI SHALL report no violation of it.
 
-Source: D57 (9), (14); design.md, Decisions this change rests on; design.md, Design: The content security policy of each kind of page
+Source: D57 (9), (14); D61 (1); design.md, Decisions this change rests on; design.md, Design: The content security policy of each kind of page
 
 #### Scenario: A review page runs no script
 
 - **WHEN** Bob opens the review page of a decline proposal on FE-142
-- **THEN** its Content-Security-Policy is `default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+- **THEN** its Content-Security-Policy is `default-src 'none'; style-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
 - **AND** the page holds no script element
 
 #### Scenario: The live hall's policy
@@ -354,7 +360,7 @@ Source: D57 (9), (14); design.md, Decisions this change rests on; design.md, Des
 - **WHEN** a member opens FE-142's page twice
 - **THEN** each answer's `script-src` names a nonce and `'strict-dynamic'` and nothing else
 - **AND** the two answers name different nonces
-- **AND** neither policy allows `'unsafe-inline'` or `data:` for any kind of resource
+- **AND** neither policy allows `'unsafe-inline'` or `data:` for any kind of resource, or names `font-src`
 
 #### Scenario: The setup screen's form reaches GitHub without a script
 

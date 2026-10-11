@@ -8,9 +8,9 @@
  */
 
 /* IBM Plex Sans and IBM Plex Mono, IBM's own files under the SIL Open Font License 1.1 (fonts/OFL.txt), each subset
-   with the unicode-range IBM gives it, so a browser loads only the subsets a page's characters need (web-ui: Fonts
-   served by the install; design.md, Design: Type and the self-hosted fonts; D57 (3)). No local() source: a font
-   installed on the person's machine can be another version. */
+   with the unicode-range IBM gives it, so a browser loads only the subsets a page's characters need (design.md,
+   Design: Type and the self-hosted fonts; D57 (3)). No local() source: a font installed on the person's machine can
+   be another version. */
 
 @font-face {
   font-family: "IBM Plex Sans";

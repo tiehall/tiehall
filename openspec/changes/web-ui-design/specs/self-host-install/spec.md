@@ -93,5 +93,5 @@ Source: D45 (5), (7); D50 (4), (8); D57 (14); design.md, Decisions this change r
 #### Scenario: The setup screen has its look before setup
 
 - **WHEN** setup is not complete and Omar opens `https://tiehall.example.com/setup`
-- **THEN** the browser loads the stylesheet, the fonts and the icons the page names from the install, each answered 200
+- **THEN** the browser loads the stylesheet and the icons the page names from the install, each answered 200
 - **AND** none of those calls leads to `/setup`, and none opens or needs a setup session
