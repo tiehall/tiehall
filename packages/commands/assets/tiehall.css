@@ -1452,6 +1452,11 @@ a.key:hover {
   line-height: 1.5;
 }
 
+/* A form's own hint, above its fields, keeps room from the first field; a stacked form's gap already gives it. */
+form:not(.stack) > .hint {
+  margin-bottom: 12px;
+}
+
 .field-error {
   margin: 0;
   align-self: flex-start;

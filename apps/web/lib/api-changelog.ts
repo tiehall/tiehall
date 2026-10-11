@@ -41,8 +41,10 @@ export function changelogPage(changelog: Changelog): Response {
   for (const release of changelog.releases) sections.push(releaseSection(release));
   if (changelog.releases.length === 0 && changelog.unreleased.length === 0) sections.push("<p>No release has changed the API yet.</p>");
   const main = `<div class="changelog">
+<div class="page-intro">
 <h1>API changelog</h1>
 <p class="lead">The changes to the REST API under <code>/api/v1</code>, release by release, newest first. A breaking change to a beta operation is announced by deprecating it with a sunset date at least 14 days ahead, and to a stable one at least 180 days ahead, before it is removed; only an urgent security fix skips that notice, and it is listed here. The reference is at <a href="/docs/api">/docs/api</a>, and the OpenAPI document at <a href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p>
+</div>
 ${sections.join("\n")}
 </div>`;
   // The focused shell, the head and the footer every page of the web UI carries (web-ui: The page shell and its navigation).

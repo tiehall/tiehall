@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { phoneHeightProblems, phoneWidthProblems, runningAnimations, wrappedCells } from "./support/layout.ts";
-import { seedRequestPages } from "./support/request-pages.ts";
+import { seedRequestPages, type RequestPagesSeed } from "./support/request-pages.ts";
+import { openRequest, tokenOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
@@ -25,12 +26,13 @@ let stub: GitHubStub;
 let web: WebApp;
 let browser: Browser;
 let session = "";
+let seed: RequestPagesSeed;
 
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
-  await seedRequestPages(install, stub);
+  seed = await seedRequestPages(install, stub);
   web = await startWebApp(install);
   const pair = (await (await startSignIn(install, stub, { url: web.url })).signIn("pia")).jar.header().split("; ").find((each) => each.startsWith("tiehall.session_token=")) ?? "";
   session = pair.slice("tiehall.session_token=".length);
@@ -180,6 +182,34 @@ describe("a request's page in a browser", () => {
     await page.waitForTimeout(5_500);
     expect(await runningAnimations(page)).toEqual([]);
     await expect(page.getByText("mert's agent is working on FE-1").isVisible()).resolves.toBe(true);
+    await context.close();
+  });
+});
+
+describe("the room between a heading or a hint and what follows it", () => {
+  /** The space, in CSS pixels, between the bottom of the first element the selector names and the top of the next one. */
+  const gapAfter = (selector: string) =>
+    `(() => { const element = document.querySelector(${JSON.stringify(selector)}); const next = element && element.nextElementSibling; return next ? next.getBoundingClientRect().top - element.getBoundingClientRect().bottom : null; })()`;
+
+  it("leaves room under the API changelog's heading", { timeout: 120_000 }, async () => {
+    const context = await signedIn(1280);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/docs/api/changelog`);
+    await page.getByRole("heading", { level: 1, name: "API changelog" }).waitFor();
+    expect(await page.evaluate(gapAfter("main h1"))).toBeGreaterThanOrEqual(8);
+    await context.close();
+  });
+
+  it("leaves room under the hint of the form that changes a packet, above its first field", { timeout: 120_000 }, async () => {
+    // A request Pia's team opened, so Pia is on the side that may change its packet.
+    const { key } = await openRequest<{ key: string }>(install, tokenOf(seed.pia), { targetTeam: "BE", title: "Index the audit table" });
+    const context = await signedIn(1280);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/${key}`);
+    await page.locator("form.packet-form").waitFor();
+    expect(await page.evaluate(gapAfter("form.packet-form > .hint"))).toBeGreaterThanOrEqual(12);
     await context.close();
   });
 });
