@@ -624,11 +624,11 @@ This change is archived after `add-tiehall-oss-v1`, whose requirements it modifi
 - **Settings for the numbers named here** (D55 (5), (48), (55)). Whether an operator may change the cap on bodies in flight, the digest's 7 days or the Compose limits in `.env`; the Compose limits are edited in `compose.yaml`, and no `.env` key is added.
 - **Restoring a removed webhook from Tiehall** (D55 (6)). Whether Tiehall could add the webhook back through GitHub's API, which `github-app-reachability`'s Open Question on setting the webhook leaves open.
 - **The security policy's fallback contact** (D55 (84)). Which address it names, once the project has its own organization.
-- **Who else gets a receipt of a trust change** (D55 (81)). Whether every admin, not only the one who confirmed, should get the receipt of a role change or a removal.
+- **Who else gets a receipt of a trust change** (D55 (81)). Answered at the approval below: the receipt of a role change or a member's removal goes only to the person who confirmed it, as every other receipt does, and no other admin gets one.
 
 ## Decisions to approve
 
-Answer "all as recommended", or name a number to change.
+**Approved by the maintainer on 2026-10-12:** every item below, with its recommended option, as written here; item 14 as worded here, with the CLI's polls under a limit of their own, 60 from one address in any minute, and every limit counting the past window's calls. The open question on item 81 is answered: the receipts of a role change and of a member's removal go to the person who confirmed them only. Item 43 is narrowed by item (4) of `findings-from-claude-code-run`, approved the same day: `whats_new`, `tiehall updates`, the wait endpoint and the hooks leave out what the user's agents did and keep what the user did in the web UI, while the web inbox's update feed and the daily digest leave out every event of the user; where both are built, that item governs, and task 1.35 is built with that change's task 1.3.
 
 1. On the page routes other than request URLs and intake pages, an `Accept` header asks for HTML only when it names `text/html` with a quality above 0.
 2. The public-api scenario "A web form over the limit" says that a browser gets the 413 as a page and any other caller gets the problem.
