@@ -384,20 +384,52 @@ describe("another client", () => {
     expect(await deviceCodes()).toBe(before);
   });
 
-  // The endpoint reads a body as JSON when its content type names JSON first, even where it names a form too; the
-  // guard reads it as the endpoint does, so the CLI's id in the JSON's text is no way round it.
-  it("gets unauthorized_client for another client's id in a JSON body whose content type names a form too, and no device code is issued", async () => {
-    const before = await deviceCodes();
-    const answer = await harness.handle(
-      new Request(`${URL_OF_INSTALL}/api/auth/device/code`, {
-        method: "POST",
-        headers: { "content-type": "application/json/application/x-www-form-urlencoded", "x-forwarded-for": "198.51.100.7" },
-        body: JSON.stringify({ client_id: "an-unknown-client", resource: MCP_RESOURCE, scope: "requests:read", x: `&client_id=${CLI_CLIENT_ID}&` }),
-      }),
-    );
-    expect(answer.status).toBe(400);
-    expect(((await answer.json()) as { error?: string }).error).toBe("unauthorized_client");
-    expect(await deviceCodes()).toBe(before);
+  // The endpoint reads a body as JSON when its content type names JSON first, or ends in +json, even where it holds a
+  // form's too; but it takes the client id, the user and the scope from the body's text, read as a form, whenever the
+  // content type holds a form's. The guard reads them as the endpoint does, so the CLI's id in the JSON is no way
+  // round it: what counts is the text's.
+  describe.each([
+    "application/json; x=application/x-www-form-urlencoded",
+    "application/json/application/x-www-form-urlencoded",
+    "application/x-www-form-urlencoded+json",
+  ])("in a JSON body that names the CLI, with the content type %s", (contentType) => {
+    /** A device authorization request whose JSON names the CLI, and whose text, read as a form, holds these fields. */
+    async function smuggled(fields: string): Promise<Answer> {
+      const answer = await harness.handle(
+        new Request(`${URL_OF_INSTALL}/api/auth/device/code`, {
+          method: "POST",
+          headers: { "content-type": contentType, "x-forwarded-for": "198.51.100.7" },
+          body: JSON.stringify({ client_id: CLI_CLIENT_ID, resource: MCP_RESOURCE, scope: "requests:read", [`&${fields}&`]: "" }),
+        }),
+      );
+      return { status: answer.status, body: (await answer.json()) as Record<string, unknown> };
+    }
+
+    it("gets unauthorized_client for a client registered through DCR with the device grant, which the text names, and no device code is issued", async () => {
+      const client = await harness.registerClient({ grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"], response_types: [] });
+      const before = await deviceCodes();
+      const answer = await smuggled(`client_id=${encodeURIComponent(client.clientId)}`);
+      expect(answer.status).toBe(400);
+      expect(answer.body["error"]).toBe("unauthorized_client");
+      expect(await deviceCodes()).toBe(before);
+    });
+
+    it("gets unauthorized_client for a metadata-document client id the text names, and nothing is fetched or issued", async () => {
+      const before = await deviceCodes();
+      const answer = await smuggled(`client_id=${encodeURIComponent("https://agent.example/client.json")}`);
+      expect(answer.status).toBe(400);
+      // Not the library's invalid_client for a document it failed to fetch: the guard refused before any fetch.
+      expect(answer.body["error"]).toBe("unauthorized_client");
+      expect(await deviceCodes()).toBe(before);
+    });
+
+    it("cannot bind its code to a user the text names", async () => {
+      const before = await deviceCodes();
+      const answer = await smuggled(`client_id=${CLI_CLIENT_ID}&user_id=${encodeURIComponent(ana.userId)}&scope=offline_access`);
+      expect(answer.status).toBe(400);
+      expect(answer.body["error"]).toBe("invalid_request");
+      expect(await deviceCodes()).toBe(before);
+    });
   });
 
   it("cannot redeem the CLI's approved code under its own id", async () => {

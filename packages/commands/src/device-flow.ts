@@ -25,11 +25,13 @@ import type { WorkerJob } from "./worker.ts";
 //   the grant; instead a guard before the endpoint refuses every client id but
 //   the CLI's with unauthorized_client, before anything is stored. It reads
 //   the request as the endpoint does, so a client id sent twice is no way
-//   round it: a body is a form only when its media type is a form's exactly,
-//   since the endpoint reads one that names JSON first, or ends in +json, as
-//   JSON, whatever form its text holds. It refuses a request that would bind
-//   the code to a user in advance, since a code is bound only to the member
-//   who approves it, and a scope that is not one of the three Tiehall
+//   round it, and neither is a JSON body that names the CLI: whenever a
+//   body's content type holds a form's, the endpoint takes the client id, the
+//   user and the scope from its text, read as a form, even where it reads the
+//   body as JSON, as it does for a content type that names JSON first, or
+//   ends in +json, and so does the guard. It refuses a request that would
+//   bind the code to a user in advance, since a code is bound only to the
+//   member who approves it, and a scope that is not one of the three Tiehall
 //   offers, openid and offline_access included, with invalid_scope;
 // - a request that names no resource is for the install's MCP resource, so the
 //   CLI's access token always has that resource, TIEHALL_URL/mcp, as its only
@@ -109,8 +111,8 @@ const POLL_WINDOW_MS = 60_000;
 const FORM_MEDIA_TYPE = "application/x-www-form-urlencoded";
 
 /**
- * Whether a request's body is a form as the sign-in service reads it: its
- * media type, parameters aside, is a form's exactly. The service takes a
+ * Whether a token call's body is a form as the token endpoint reads its grant:
+ * its media type, parameters aside, is a form's exactly. The endpoint takes a
  * media type that merely contains a form's, and reads one that names JSON
  * first, or ends in +json, as JSON, whatever form its text holds.
  */
@@ -191,11 +193,17 @@ function clientAddressOf(headers: Headers | undefined): string | undefined {
 }
 
 /**
- * The fields of a device authorization request as the endpoint reads them: a
- * form's own fields, whatever the parsed body says, or a JSON body's.
+ * The fields of a device authorization request as the endpoint reads them:
+ * the body's text, read as a form, whenever its content type holds a form's,
+ * whatever the parsed body says, and a JSON body's otherwise. The endpoint
+ * takes the client id, the user and the scope from that text even where it
+ * reads the body as JSON, as for a content type that names JSON first, or
+ * ends in +json, and the resource too where the text names one; so does the
+ * authorization server's own check of the client.
  */
 async function requestFields(request: Request | undefined, body: unknown): Promise<URLSearchParams> {
-  if (request !== undefined && isForm(request)) return new URLSearchParams(await request.clone().text());
+  const contentType = request?.headers.get("content-type")?.toLowerCase() ?? "";
+  if (request !== undefined && contentType.includes(FORM_MEDIA_TYPE)) return new URLSearchParams(await request.clone().text());
   const fields = new URLSearchParams();
   for (const [name, value] of Object.entries((body ?? {}) as Record<string, unknown>)) {
     for (const each of Array.isArray(value) ? value : [value]) if (typeof each === "string") fields.append(name, each);
