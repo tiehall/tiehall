@@ -2340,9 +2340,11 @@ a.key:hover {
   padding-left: 18px;
 }
 
+/* A link at the top of its line, so a link that wraps keeps the bullet on its first line. */
 .link-list a {
   display: inline-block;
   padding: 2px 0;
+  vertical-align: top;
 }
 
 :where(main) .link-list > li + li {

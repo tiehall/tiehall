@@ -65,6 +65,32 @@ describe("the admin overview's cards", () => {
   });
 });
 
+describe("the admin overview's list of documentation", () => {
+  it("puts each bullet on the first line of its link, however many lines the link takes", { timeout: 120_000 }, async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/admin`);
+    // A list item's bullet sits on the baseline of its first line, where a character put before the link sits too.
+    const placed = await page.locator(".link-list > li").evaluateAll((items) =>
+      items.map((item) => {
+        const link = item.querySelector("a");
+        const probe = item.ownerDocument.createElement("span");
+        probe.textContent = "\u200b";
+        item.prepend(probe);
+        const lines = Math.round((link?.getBoundingClientRect().height ?? 0) / 20);
+        const offset = Math.round(probe.getBoundingClientRect().top - (link?.getBoundingClientRect().top ?? 0));
+        probe.remove();
+        return { lines, offset };
+      }),
+    );
+    expect(placed.some(({ lines }) => lines > 1)).toBe(true);
+    for (const { offset } of placed) expect(Math.abs(offset)).toBeLessThan(8);
+    await context.close();
+  });
+});
+
 describe("the activity log's table at 1,280 CSS pixels", () => {
   it("keeps each event's number, time, class, type and request on one line, so no column shrinks until its words break", { timeout: 120_000 }, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
