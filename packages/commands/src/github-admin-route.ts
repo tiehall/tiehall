@@ -14,7 +14,9 @@ import type { z } from "zod";
 import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import type { Execute } from "./execute.ts";
+import { adminNav } from "./admin-pages.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, wayOnFor } from "./html.ts";
+import { panelSections } from "./page-parts.ts";
 import { WEBHOOK_PATH } from "./github-manifest.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
@@ -184,7 +186,7 @@ function switchForm(target: "webhook" | "polling", csrf: string): string[] {
     '        <input type="hidden" name="action" value="set_mode">',
     `        <input type="hidden" name="mode" value="${target}">`,
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `        <button type="submit">Switch to ${target} mode</button>`,
+    `        <button type="submit" class="secondary">Switch to ${target} mode</button>`,
     "      </form>",
   ];
 }
@@ -228,36 +230,39 @@ function page(integration: Integration, installations: readonly Installation[], 
   const connected = installations.filter(({ connected: isConnected }) => isConnected);
   const others = installations.filter(({ connected: isConnected, deleted }) => !isConnected && !deleted);
   const connectedRows = connected.map(
-    (installation) => `        <li>
+    (installation) => `        <li class="item">
           <p>${escapeHtml(`${installation.account}: the App's installation on ${accountText(installation)}. ${stateText(installation)}`)}</p>
           <p>${escapeHtml(installation.repositories.length === 0 ? "No repository counts as covered." : `Covered: ${installation.repositories.join(", ")}.`)}</p>
           <form method="post" action="${GITHUB_ADMIN_PATH}">
             <input type="hidden" name="action" value="disconnect">
             <input type="hidden" name="installation" value="${escapeHtml(installation.id)}">
             <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-            <button type="submit">${escapeHtml(`Disconnect ${installation.account}`)}</button>
+            <button type="submit" class="secondary">${escapeHtml(`Disconnect ${installation.account}`)}</button>
           </form>
         </li>`,
   );
   const otherRows = others.map((installation) => {
     const review = `${CONFIRM_PATH}${connectGitHubInstallation.id}?input=${encodeURIComponent(JSON.stringify({ installation: installation.id }))}`;
-    return `        <li>
+    return `        <li class="item">
           <p>${escapeHtml(`${installation.account}: the App's installation on ${accountText(installation)}. ${stateText(installation)}`)}</p>
-          <p><a href="${escapeHtml(review)}">${escapeHtml(`Connect ${installation.account}`)}</a>, with a confirmation.</p>
+          <p><a class="button secondary" href="${escapeHtml(review)}">${escapeHtml(`Connect ${installation.account}`)}</a> <span class="hint">With a confirmation.</span></p>
         </li>`;
   });
   return htmlPage(
     "GitHub",
     [
       "      <h1>GitHub</h1>",
-      ...appSection(integration),
-      ...modeSection(integration, csrf, url),
-      "      <h2>Connected installations</h2>",
-      "      <p>Tiehall acts on these installations of the install's GitHub App: the repositories they cover count as covered. Disconnecting one needs no confirmation and removes no member.</p>",
-      connectedRows.length === 0 ? "      <p>No installation is connected.</p>" : `      <ul>\n${connectedRows.join("\n")}\n      </ul>`,
-      "      <h2>Installations not connected</h2>",
-      "      <p>Tiehall ignores these until an admin connects them: their repositories do not count as covered, and membership of their GitHub organizations lets nobody sign in. Leave one here to ignore it.</p>",
-      otherRows.length === 0 ? "      <p>Every installation of the App is connected.</p>" : `      <ul>\n${otherRows.join("\n")}\n      </ul>`,
+      adminNav(GITHUB_ADMIN_PATH),
+      ...panelSections([
+        ...appSection(integration),
+        ...modeSection(integration, csrf, url),
+        "      <h2>Connected installations</h2>",
+        '      <p class="hint">Tiehall acts on these installations of the install\'s GitHub App: the repositories they cover count as covered. Disconnecting one needs no confirmation and removes no member.</p>',
+        connectedRows.length === 0 ? '      <p class="empty">No installation is connected.</p>' : `      <ul class="items">\n${connectedRows.join("\n")}\n      </ul>`,
+        "      <h2>Installations not connected</h2>",
+        '      <p class="hint">Tiehall ignores these until an admin connects them: their repositories do not count as covered, and membership of their GitHub organizations lets nobody sign in. Leave one here to ignore it.</p>',
+        otherRows.length === 0 ? '      <p class="empty">Every installation of the App is connected.</p>' : `      <ul class="items">\n${otherRows.join("\n")}\n      </ul>`,
+      ]),
     ].join("\n"),
     shell,
   );

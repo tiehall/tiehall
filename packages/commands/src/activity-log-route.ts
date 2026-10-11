@@ -1,7 +1,9 @@
 import { exportActivityLog, listActivityLog, type activityEvent } from "@tiehall/catalog";
 import type { z } from "zod";
 import { CONFIRM_PATH } from "./confirm-route.ts";
+import { adminNav } from "./admin-pages.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { fieldHtml } from "./page-parts.ts";
 import type { PageShell } from "./shell.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -71,12 +73,12 @@ export function createActivityLogRoute(options: ActivityLogRouteOptions): Activi
 /** The page: the filters as a form, the events as a table, and a link to the older ones. */
 function page(query: URLSearchParams, events: ActivityEvent[], shell: PageShell): string {
   const field = (name: string, label: string, placeholder: string) =>
-    `        <label>${escapeHtml(label)} <input name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}" placeholder="${escapeHtml(placeholder)}"></label>`;
+    fieldHtml(`filter-${name}`, label, `<input id="filter-${name}" name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}" placeholder="${escapeHtml(placeholder)}">`);
   const rows = events.map(
     (event) => `        <tr>
           <td>${event.number}</td>
           <td><time datetime="${escapeHtml(event.occurredAt)}">${escapeHtml(event.occurredAt)}</time></td>
-          <td>${escapeHtml(event.class)}</td>
+          <td><span class="chip tag${event.class === "security" ? " warn" : ""}">${escapeHtml(event.class)}</span></td>
           <td>${escapeHtml(event.type)}</td>
           <td>${escapeHtml(event.request?.key ?? "")}</td>
           <td>${escapeHtml(actorText(event))}</td>
@@ -87,28 +89,37 @@ function page(query: URLSearchParams, events: ActivityEvent[], shell: PageShell)
   const last = events.at(-1);
   const older =
     events.length === PAGE_SIZE && last !== undefined
-      ? `      <p><a href="${escapeHtml(olderLink(query, last.number))}">Older events</a></p>`
+      ? `      <p class="pages"><a class="button secondary" href="${escapeHtml(olderLink(query, last.number))}">Older events</a></p>`
       : "";
   return htmlPage(
     "Activity log",
     [
-      "      <h1>Activity log</h1>",
-      "      <p>Every change to a request, and every security-relevant action, newest first. Security events show their IP address and user agent for 90 days.</p>",
-      `      <p><a href="${escapeHtml(`${CONFIRM_PATH}${exportActivityLog.id}?input=${encodeURIComponent("{}")}`)}">Export the whole log as JSONL</a>, with a confirmation.</p>`,
+      '      <div class="page-head">',
+      "        <h1>Activity log</h1>",
+      `        <a class="button secondary" href="${escapeHtml(`${CONFIRM_PATH}${exportActivityLog.id}?input=${encodeURIComponent("{}")}`)}">Export the whole log as JSONL</a>`,
+      "      </div>",
+      adminNav(ACTIVITY_LOG_PATH),
+      '      <p class="lead">Every change to a request, and every security-relevant action, newest first. Security events show their IP address and user agent for 90 days. The export needs a confirmation.</p>',
+      '      <div class="panel filters">',
       `      <form method="get" action="${ACTIVITY_LOG_PATH}">`,
+      '        <div class="field-row">',
       field("from", "From", "2026-10-01T00:00:00Z"),
       field("to", "To", "2026-10-01T23:59:59Z"),
       field("actor", "Actor (user id)", ""),
       field("request", "Request", "FE-142"),
       field("type", "Event type", "member.role_changed"),
-      "        <button type=\"submit\">Filter</button>",
+      "        </div>",
+      "        <button type=\"submit\" class=\"secondary\">Filter</button>",
       "      </form>",
-      "      <table>",
-      "        <thead><tr><th>#</th><th>Time</th><th>Class</th><th>Type</th><th>Request</th><th>Actor</th><th>Data</th><th>Origin</th></tr></thead>",
+      "      </div>",
+      '      <div class="table-box">',
+      '      <table class="log">',
+      '        <thead><tr><th scope="col">#</th><th scope="col">Time</th><th scope="col">Class</th><th scope="col">Type</th><th scope="col">Request</th><th scope="col">Actor</th><th scope="col">Data</th><th scope="col">Origin</th></tr></thead>',
       "        <tbody>",
       ...(rows.length === 0 ? ["        <tr><td colspan=\"8\">No events match.</td></tr>"] : rows),
       "        </tbody>",
       "      </table>",
+      "      </div>",
       older,
     ]
       .filter((line) => line !== "")

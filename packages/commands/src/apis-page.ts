@@ -3,6 +3,7 @@ import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { adminNav, APIS_PATH, reviewPath } from "./admin-pages.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
+import { fieldHtml, keyTag, panelSections } from "./page-parts.ts";
 import type { PageShell } from "./shell.ts";
 import { userName } from "./members.ts";
 import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
@@ -76,16 +77,16 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
   const registered = apis.map((api) =>
     [
       "        <tr>",
-      `          <td>${escapeHtml(api.name)}</td>`,
-      `          <td>${escapeHtml(api.provider.key)}</td>`,
+      `          <td>${keyTag(api.name)}</td>`,
+      `          <td>${keyTag(api.provider.key)}</td>`,
       `          <td>${escapeHtml(api.repository)}</td>`,
       `          <td>${escapeHtml(api.jobWorkflowRef ?? "Any workflow of its repository")}</td>`,
       `          <td>${escapeHtml(`${userName(api.registeredBy)}, ${api.registeredAt}`)}</td>`,
       `          <td>${escapeHtml(api.warnOpensRequests ? "On: they open requests" : "Off: they go to the daily WARN digests")}</td>`,
-      "          <td>",
-      postForm(APIS_PATH, { action: api.warnOpensRequests ? "warn_off" : "warn_on", api: api.id }, csrf, `Turn the WARN switch of ${api.name} ${api.warnOpensRequests ? "off" : "on"}`, "            "),
-      postForm(APIS_PATH, { action: "unregister", api: api.id }, csrf, `Unregister ${api.name}`, "            "),
-      "          </td>",
+      '          <td><div class="row-actions">',
+      postForm(APIS_PATH, { action: api.warnOpensRequests ? "warn_off" : "warn_on", api: api.id }, csrf, `Turn the WARN switch of ${api.name} ${api.warnOpensRequests ? "off" : "on"}`, "            ", "secondary"),
+      postForm(APIS_PATH, { action: "unregister", api: api.id }, csrf, `Unregister ${api.name}`, "            ", "secondary"),
+      "          </div></td>",
       "        </tr>",
     ].join("\n"),
   );
@@ -94,19 +95,23 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
     "APIs",
     [
       "      <h1>APIs</h1>",
-      adminNav(),
-      "      <p>An API registered here can receive contract reports: the contract Action in its repository's CI reports the breaking changes of its pull requests, and Tiehall opens requests to the teams that declare they consume it. Each API has one provider team and is bound to one GitHub repository that a connected installation covers; only CI runs in that repository, and of its workflow when one is named, may report for it.</p>",
+      adminNav(APIS_PATH),
+      ...panelSections([
+      "      <h2>Registered APIs</h2>",
+      `      <p class="hint">An API registered here can receive contract reports: the contract Action in its repository's CI reports the breaking changes of its pull requests, and Tiehall opens requests to the teams that declare they consume it. Each API has one provider team and is bound to one GitHub repository that a connected installation covers; only CI runs in that repository, and of its workflow when one is named, may report for it.</p>`,
       apis.length === 0
-        ? "      <p>No API is registered.</p>"
+        ? '      <p class="empty">No API is registered.</p>'
         : [
-            "      <p>Unregistering an API needs no confirmation: it then takes no more reports, the teams' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew.</p>",
-            "      <p>Each API's WARN switch says where its potentially breaking (WARN-level) changes go: off, the default, to the daily WARN digests of the teams that consume it; on, they open requests as breaking changes do. An admin or a member of the provider team flips it.</p>",
+            '      <p class="hint">Unregistering an API needs no confirmation: it then takes no more reports, the teams\' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew.</p>',
+            '      <p class="hint">Each API\'s WARN switch says where its potentially breaking (WARN-level) changes go: off, the default, to the daily WARN digests of the teams that consume it; on, they open requests as breaking changes do. An admin or a member of the provider team flips it.</p>',
+            '      <div class="table-box">',
             "      <table>",
-            "        <thead><tr><th>API</th><th>Provider team</th><th>Repository</th><th>Workflow</th><th>Registered by</th><th>WARN-level changes</th><th>Actions</th></tr></thead>",
+            '        <thead><tr><th scope="col">API</th><th scope="col">Provider team</th><th scope="col">Repository</th><th scope="col">Workflow</th><th scope="col">Registered by</th><th scope="col">WARN-level changes</th><th scope="col">Actions</th></tr></thead>',
             "        <tbody>",
             ...registered,
             "        </tbody>",
             "      </table>",
+            "      </div>",
           ].join("\n"),
       "      <h2>Register an API</h2>",
       teams.length === 0
@@ -115,17 +120,18 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
             `      <form method="post" action="${APIS_PATH}">`,
             '        <input type="hidden" name="action" value="register">',
             `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-            '        <p><label for="api-name">Name, such as payments-api: lower-case letters, digits, dots, hyphens and underscores</label> <input type="text" id="api-name" name="name" required></p>',
-            `        <p><label for="api-team">Provider team</label> <select id="api-team" name="team">${teamOptions}</select></p>`,
-            '        <p><label for="api-repository">GitHub repository, as owner/name</label> <input type="text" id="api-repository" name="repository" list="covered-repositories" required></p>',
+            fieldHtml("api-name", "Name, such as payments-api: lower-case letters, digits, dots, hyphens and underscores", '<input type="text" id="api-name" name="name" required>'),
+            fieldHtml("api-team", "Provider team", `<select id="api-team" name="team">${teamOptions}</select>`),
+            fieldHtml("api-repository", "GitHub repository, as owner/name", '<input type="text" id="api-repository" name="repository" list="covered-repositories" required>'),
             `        <datalist id="covered-repositories">${covered.map((name) => `<option value="${escapeHtml(name)}">`).join("")}</datalist>`,
-            '        <p><label for="api-workflow">Only this workflow may report, by its job_workflow_ref, such as acme/payments/.github/workflows/contract.yml@refs/heads/main (optional)</label> <input type="text" id="api-workflow" name="jobWorkflowRef"></p>',
+            fieldHtml("api-workflow", "Only this workflow may report, by its job_workflow_ref, such as acme/payments/.github/workflows/contract.yml@refs/heads/main (optional)", '<input type="text" id="api-workflow" name="jobWorkflowRef">'),
             '        <button type="submit">Review the registration</button>',
             "      </form>",
-            covered.length === 0 ? "      <p>No connected installation covers a repository yet: connect one on the GitHub page first.</p>" : "",
+            covered.length === 0 ? '      <p class="notice">No connected installation covers a repository yet: connect one on the GitHub page first.</p>' : "",
           ]
             .filter((line) => line !== "")
             .join("\n"),
+      ]),
     ].join("\n"),
     shell,
   );

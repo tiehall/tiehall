@@ -1240,7 +1240,7 @@ a.key:hover {
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -1522,7 +1522,7 @@ a.key:hover {
 .panel-grid {
   margin: 0 0 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -1769,7 +1769,7 @@ a.key:hover {
 
 .post-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
   gap: 0 16px;
 }
 
@@ -2023,7 +2023,7 @@ a.key:hover {
 }
 
 .waiting-cards {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
 
 .card-top {
@@ -2267,6 +2267,177 @@ a.key:hover {
 
 :where(main) .banner form {
   margin: 0;
+}
+
+/* The admin pages (web-ui: The page shell and its navigation; design.md, Design: The page families; D57 (4)): an
+   overview of a card per area, and each area's page of panels, tables in boxes of their own and labelled forms. */
+.admin-cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+
+:where(main) .admin-cards > .card > h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.admin-cards .card p {
+  font-size: 14px;
+}
+
+.admin-cards .card ul {
+  margin: 0;
+  font-size: 14px;
+}
+
+.admin-cards .card form {
+  margin: 4px 0 0;
+}
+
+.admin-cards .card .card-actions {
+  padding-top: 4px;
+}
+
+.link-list {
+  padding-left: 18px;
+}
+
+.link-list a {
+  display: inline-block;
+  padding: 2px 0;
+}
+
+:where(main) .link-list > li + li {
+  margin-top: 4px;
+}
+
+.items {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+:where(main) .items > li {
+  margin: 0;
+  padding: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  border-top: 1px solid var(--border);
+}
+
+:where(main) .items > li:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.items > li > p {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+:where(main) .items form {
+  margin: 0;
+}
+
+.items .initials {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 0 16px;
+}
+
+.field-row .field > select,
+.field-row .field > input {
+  align-self: stretch;
+  width: 100%;
+  max-width: none;
+}
+
+.inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 8px;
+}
+
+.inline-field > label {
+  flex: 1 0 100%;
+}
+
+.inline-field > input,
+.inline-field > select {
+  flex: 1 1 180px;
+  width: auto;
+  max-width: none;
+}
+
+.inline-field > button {
+  flex: none;
+}
+
+.team-panel h3 {
+  margin: 0 0 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 0 32px;
+}
+
+.team-part {
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+.team-part > :last-child {
+  margin-bottom: 0;
+}
+
+.choices.inline label {
+  margin: 0 18px 10px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 400;
+}
+
+.table-box {
+  margin: 0 0 16px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+:where(main) .table-box > table {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+:where(main) table.log td {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.log td:nth-child(2),
+.log td:nth-child(4) {
+  font-family: var(--font-mono);
+}
+
+.filters .field-row {
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
 }
 
 /* The live hall (web-ui: The live hall; design.md, Design: The live hall; D57 (11)). Its repeating motion runs only
@@ -2592,6 +2763,14 @@ a.key:hover {
 
   .stacked .row-actions {
     padding-top: 6px;
+  }
+
+  :where(main) .table-box > table {
+    display: table;
+  }
+
+  :where(main) table.log td {
+    min-width: 120px;
   }
 
   .row-actions > *,

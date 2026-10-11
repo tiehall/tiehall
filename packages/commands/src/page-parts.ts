@@ -62,3 +62,35 @@ export function untilWords(at: string, now: string): string {
   if (hours < 48) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
   return `in ${Math.floor(hours / 24)} days`;
 }
+
+/**
+ * A page's lines with each part, from its second-level heading to the next,
+ * drawn as a panel; what comes before the first heading stays as it is. The
+ * admin pages are written as headings and what follows each, and take their
+ * panels this way (design.md, Design: The page families).
+ */
+export function panelSections(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  let open = false;
+  for (const line of lines) {
+    if (/^\s*<h2[\s>]/.test(line)) {
+      if (open) out.push("      </section>");
+      out.push('      <section class="panel">');
+      open = true;
+    }
+    out.push(line);
+  }
+  if (open) out.push("      </section>");
+  return out;
+}
+
+/** A field of a form: its label and its control, stacked; hints follow the control. */
+export function fieldHtml(id: string, label: string, control: string, hint?: string): string {
+  return [
+    '        <div class="field">',
+    `          <label for="${escapeHtml(id)}">${escapeHtml(label)}</label>`,
+    `          ${control}`,
+    ...(hint === undefined ? [] : [`          <p class="hint">${escapeHtml(hint)}</p>`]),
+    "        </div>",
+  ].join("\n");
+}

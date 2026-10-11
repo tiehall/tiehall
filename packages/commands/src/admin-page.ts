@@ -5,7 +5,9 @@ import type { DocsLink } from "./docs-pages.ts";
 import type { EmailStatus } from "./email.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { ADMIN_PATH, adminNav, reviewPath } from "./admin-pages.ts";
+import { ACTIVITY_LOG_PATH } from "./activity-log-route.ts";
+import { ADMIN_PATH, adminNav, APIS_PATH, INVITES_PATH, MEMBERS_PATH, PERSONAL_ACCESS_TOKEN_SETTINGS_PATH, reviewPath, SIGN_IN_POLICY_PATH, TEAMS_PATH } from "./admin-pages.ts";
+import { fieldHtml } from "./page-parts.ts";
 import type { RunningVersion } from "./running-version.ts";
 import { createPageRoute, htmlAnswer, link, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
@@ -28,7 +30,10 @@ import { createPageRoute, htmlAnswer, link, seeOther, type PageRoute, type PageR
 // the budget it names, where the change takes the confirmation step
 // (agent-safety: Agent writes are limited per token and budgeted per
 // install). Last, it links each page of the user and admin docs, at the
-// running version's docs (task 28.6; docs-pages.ts). The integrations are an
+// running version's docs (task 28.6; docs-pages.ts). Each area is a card of a
+// grid, which links the area's page or holds its state and its form
+// (web-ui: The page shell and its navigation; design.md, Design: The page
+// families; D57 (4)). The integrations are an
 // admin's to read, so the page is an admin's: a member gets 403 and no state,
 // and their form changes nothing.
 
@@ -63,12 +68,12 @@ function daysAgoText(days: number): string {
 function backupsSection({ lastBackup, backupWarning }: InstallStatus): string[] {
   const lines = ["      <h2>Backups</h2>"];
   if (lastBackup === null) {
-    lines.push(`      <p><strong>${escapeHtml("No backup has finished yet.")}</strong> ${escapeHtml(BACKUP_ADVICE)}</p>`);
+    lines.push(`      <p class="notice"><strong>${escapeHtml("No backup has finished yet.")}</strong> ${escapeHtml(BACKUP_ADVICE)}</p>`);
     return lines;
   }
   lines.push(`      <p>${escapeHtml(`The last backup finished at ${utcTime(lastBackup.finishedAt)}, ${daysAgoText(lastBackup.daysAgo)}: ${lastBackup.file}.`)}</p>`);
   if (backupWarning === "stale") {
-    lines.push(`      <p><strong>${escapeHtml("No backup has finished in the last 7 days.")}</strong> ${escapeHtml(BACKUP_ADVICE)}</p>`);
+    lines.push(`      <p class="notice"><strong>${escapeHtml("No backup has finished in the last 7 days.")}</strong> ${escapeHtml(BACKUP_ADVICE)}</p>`);
   }
   return lines;
 }
@@ -116,6 +121,27 @@ function bannerForm(button: NonNullable<Banner["button"]>, form: { csrf: string;
   ];
 }
 
+/** A card of an area whose page holds its settings: what it is, and the links to its pages. */
+function areaCard(title: string, text: string, links: readonly [href: string, text: string][]): string[] {
+  return [
+    `      <h2>${escapeHtml(title)}</h2>`,
+    `      <p>${escapeHtml(text)}</p>`,
+    `      <p class="card-actions">${links.map(([href, label]) => `<a class="button secondary" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`).join(" ")}</p>`,
+  ];
+}
+
+/**
+ * Each part of the overview as a card in a grid, from its heading to the next
+ * (design.md, Design: The page families; D57 (1), (4)).
+ */
+function asCards(parts: readonly (readonly string[])[]): string[] {
+  return [
+    '      <ul class="cards admin-cards">',
+    ...parts.filter((part) => part.length > 0).flatMap((part) => ['      <li class="card">', ...part, "      </li>"]),
+    "      </ul>",
+  ];
+}
+
 /** Where an installation is installed, in a few words. */
 function accountText({ account, accountType }: Installation): string {
   return `${account}, ${accountType === "Organization" ? "the organization" : "the personal account"}`;
@@ -132,7 +158,8 @@ function coversText(installation: Installation): string {
 /** The GitHub section: the mode, the connected installations, and the page that changes them. */
 function githubSection(integration: Integration, installations: readonly Installation[]): string[] {
   const lines = ["      <h2>GitHub</h2>"];
-  if (integration.app === null) return [...lines, "      <p>The install has no GitHub App yet.</p>"];
+  const open = `      <p class="card-actions"><a class="button secondary" href="${GITHUB_ADMIN_PATH}">Open the GitHub page</a></p>`;
+  if (integration.app === null) return [...lines, "      <p>The install has no GitHub App yet.</p>", open];
   lines.push(
     `      <p>${escapeHtml(
       integration.app.mode === "webhook"
@@ -148,6 +175,7 @@ function githubSection(integration: Integration, installations: readonly Install
     lines.push(`      <p>${escapeHtml(`${waiting.length === 1 ? "1 installation" : `${waiting.length} installations`} of the App ${waiting.length === 1 ? "is" : "are"} not connected; Tiehall ignores ${waiting.length === 1 ? "it" : "them"} until an admin connects ${waiting.length === 1 ? "it" : "them"}.`)}</p>`);
   }
   lines.push(`      <p>${link(GITHUB_ADMIN_PATH, "The GitHub page")} connects and disconnects installations, switches the mode and stores the webhook secret.</p>`);
+  lines.push(open);
   return lines;
 }
 
@@ -175,10 +203,9 @@ function writeBudgetSection(dailyWriteBudget: number, csrf: string): string[] {
     "      <h2>Agent writes</h2>",
     `      <p>${escapeHtml(`The install's agents may make ${dailyWriteBudget.toLocaleString("en-US")} writes per UTC day, together. A write beyond the budget is refused until the next UTC day begins.`)}</p>`,
     `      <form method="post" action="${ADMIN_PATH}">`,
-    '        <p><label for="daily-write-budget">The daily budget of agent writes, from 1 to 1,000,000</label></p>',
-    `        <p><input type="number" id="daily-write-budget" name="dailyWriteBudget" min="1" max="1000000" value="${dailyWriteBudget}" required></p>`,
+    fieldHtml("daily-write-budget", "The daily budget of agent writes, from 1 to 1,000,000", `<input type="number" id="daily-write-budget" name="dailyWriteBudget" min="1" max="1000000" value="${dailyWriteBudget}" required>`),
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    '        <button type="submit">Review the change</button>',
+    '        <button type="submit" class="secondary">Review the change</button>',
     "      </form>",
   ];
 }
@@ -195,7 +222,7 @@ function docsSection(docs: readonly DocsLink[] | undefined): string[] {
   return [
     "      <h2>Documentation</h2>",
     `      <p>${escapeHtml("The docs of the running version: how people and their agents use Tiehall, and how admins run it.")}</p>`,
-    "      <ul>",
+    '      <ul class="link-list">',
     ...docs.map(({ title, url }) => `        <li>${link(url, title)}</li>`),
     "      </ul>",
   ];
@@ -217,15 +244,26 @@ export function createAdminRoute(options: AdminRouteOptions): PageRoute {
           "Admin",
           [
             "      <h1>Admin</h1>",
-            adminNav(),
+            adminNav(ADMIN_PATH),
             ...bannersSection(banners, { csrf, back: ADMIN_PATH }),
-            ...versionSection(options.version),
-            ...backupsSection(status),
-            ...githubSection(integration, installations),
-            ...jiraSection(),
-            ...emailSection(options.email),
-            ...writeBudgetSection(dailyWriteBudget, csrf),
-            ...docsSection(options.docs),
+            ...asCards([
+              areaCard("People and invites", "Who belongs to the install, with their roles, and the invites that wait to be accepted.", [
+                [MEMBERS_PATH, "Members"],
+                [INVITES_PATH, "Invites"],
+              ]),
+              areaCard("Teams", "The teams requests are addressed to, their people, how each wants requests filed, and where their requests are mirrored.", [[TEAMS_PATH, "Teams"]]),
+              areaCard("Sign-in policy", "Who may sign in and join: members of the connected GitHub organizations and invited people, or invited people only.", [[SIGN_IN_POLICY_PATH, "Sign-in policy"]]),
+              githubSection(integration, installations),
+              jiraSection(),
+              areaCard("Personal access tokens", "Whether personal access tokens work in this install, and how long a new one lives at most.", [[PERSONAL_ACCESS_TOKEN_SETTINGS_PATH, "Personal access tokens"]]),
+              writeBudgetSection(dailyWriteBudget, csrf),
+              areaCard("APIs", "The APIs that receive contract reports, their provider teams and their WARN switches.", [[APIS_PATH, "APIs"]]),
+              areaCard("Activity log", "Every change to a request and every security-relevant action, newest first, with the export.", [[ACTIVITY_LOG_PATH, "Activity log"]]),
+              backupsSection(status),
+              versionSection(options.version),
+              emailSection(options.email),
+              docsSection(options.docs),
+            ]),
           ].join("\n"),
           shell,
         ),

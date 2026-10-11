@@ -36,11 +36,11 @@ import { ACTIVITY_LOG_PATH } from "./activity-log-route.ts";
 import { CONFIRM_PATH } from "./confirm-route.ts";
 import { GITHUB_ADMIN_PATH } from "./github-admin-route.ts";
 import { escapeHtml, htmlPage } from "./html.ts";
-import { keyTag } from "./page-parts.ts";
+import { fieldHtml, keyTag, panelSections } from "./page-parts.ts";
 import { initialsOf, type PageShell } from "./shell.ts";
 import { INVITE_LIFETIME_DAYS } from "./invites.ts";
 import { userName } from "./members.ts";
-import { createPageRoute, htmlAnswer, link, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { createPageRoute, htmlAnswer, postForm, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
 
 // The pages of the web UI for members, invites, teams and the sign-in policy
 // (teams-and-roles: What admins and members may do; teams-and-roles: Invites
@@ -250,9 +250,9 @@ export function createInvitesRoute(options: PageRouteOptions): PageRoute {
 function invitesPage(invites: readonly Invite[], csrf: string, shell: PageShell): string {
   const waiting = invites.map((invite) =>
     [
-      "        <li>",
+      '        <li class="item">',
       `          <p>${escapeHtml(`${invite.githubLogin}, invited as ${invite.role}, valid until ${invite.expiresAt}.`)}</p>`,
-      postForm(INVITES_PATH, { action: "revoke", invite: invite.id }, csrf, `Revoke the invite for ${invite.githubLogin}`, "          "),
+      postForm(INVITES_PATH, { action: "revoke", invite: invite.id }, csrf, `Revoke the invite for ${invite.githubLogin}`, "          ", "secondary"),
       "        </li>",
     ].join("\n"),
   );
@@ -260,17 +260,21 @@ function invitesPage(invites: readonly Invite[], csrf: string, shell: PageShell)
     "Invites",
     [
       "      <h1>Invites</h1>",
-      adminNav(),
-      "      <h2>Invite a person</h2>",
-      `      <p>An invite names a GitHub username and a role. Tiehall looks the username up on GitHub first, and the review page names the account it found; when you confirm, the invite is bound to that GitHub account, whatever its login becomes. The person joins by signing in with that account within ${INVITE_LIFETIME_DAYS} days; no email is sent.</p>`,
-      `      <form method="get" action="${INVITES_PATH}">`,
-      '        <p><label for="invite-login">GitHub username</label> <input type="text" id="invite-login" name="login" required></p>',
-      '        <p><label for="invite-role">Role</label> <select id="invite-role" name="role"><option value="member" selected>member</option><option value="admin">admin</option></select></p>',
-      '        <button type="submit">Review the invite</button>',
-      "      </form>",
-      "      <h2>Invites waiting to be accepted</h2>",
-      "      <p>Revoking an invite needs no confirmation: a revoked invite admits no one.</p>",
-      waiting.length === 0 ? "      <p>No invite is waiting to be accepted.</p>" : `      <ul>\n${waiting.join("\n")}\n      </ul>`,
+      adminNav(INVITES_PATH),
+      ...panelSections([
+        "      <h2>Invite a person</h2>",
+        `      <p class="hint">An invite names a GitHub username and a role. Tiehall looks the username up on GitHub first, and the review page names the account it found; when you confirm, the invite is bound to that GitHub account, whatever its login becomes. The person joins by signing in with that account within ${INVITE_LIFETIME_DAYS} days; no email is sent.</p>`,
+        `      <form method="get" action="${INVITES_PATH}">`,
+        '        <div class="field-row">',
+        fieldHtml("invite-login", "GitHub username", '<input type="text" id="invite-login" name="login" required>'),
+        fieldHtml("invite-role", "Role", '<select id="invite-role" name="role"><option value="member" selected>member</option><option value="admin">admin</option></select>'),
+        "        </div>",
+        '        <button type="submit">Review the invite</button>',
+        "      </form>",
+        "      <h2>Invites waiting to be accepted</h2>",
+        '      <p class="hint">Revoking an invite needs no confirmation: a revoked invite admits no one.</p>',
+        waiting.length === 0 ? '      <p class="empty">No invite is waiting to be accepted.</p>' : `      <ul class="items">\n${waiting.join("\n")}\n      </ul>`,
+      ]),
     ].join("\n"),
     shell,
   );
@@ -305,34 +309,29 @@ const TRACKER_NAMES: Readonly<Record<TrackerMapping["tracker"], string>> = { git
 function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): string {
   const mapping = mappings.mappings.find(({ teamId }) => teamId === team.id);
   const heading = `      <h3>${escapeHtml(`Where ${team.key}'s requests are mirrored`)}</h3>`;
+  const secondary = (fields: Readonly<Record<string, string>>, button: string) => postForm(TEAMS_PATH, fields, csrf, button, "      ", "secondary");
   if (mapping !== undefined) {
     const when = mapping.mirrorOnOpen ? "when a request is opened" : "when a request is claimed";
     return [
       heading,
       `      <p>${escapeHtml(`${team.key}'s requests are mirrored into ${TRACKER_NAMES[mapping.tracker]}, as issues in ${mapping.place}, each created ${when}.`)}</p>`,
       ...(mapping.tracker === "github" && mappings.publicRepositories.includes(mapping.place)
-        ? [`      <p><strong>${escapeHtml(`${mapping.place} is public on GitHub: anyone can read the titles of ${team.key}'s requests, which its mirror issues copy there.`)}</strong></p>`]
+        ? [`      <p class="notice"><strong>${escapeHtml(`${mapping.place} is public on GitHub: anyone can read the titles of ${team.key}'s requests, which its mirror issues copy there.`)}</strong></p>`]
         : []),
-      postForm(
-        TEAMS_PATH,
+      secondary(
         { action: "set_mirror_on_open", teamId: team.id, on: mapping.mirrorOnOpen ? "false" : "true" },
-        csrf,
         mapping.mirrorOnOpen ? `Create ${team.key}'s mirror issues when a request is claimed` : `Create ${team.key}'s mirror issues when a request is opened`,
-        "      ",
       ),
       `      <p>${escapeHtml(
         mapping.doneProposals
           ? `A close of a mirror issue by a member of ${team.key} becomes a done proposal for them, which they confirm in Tiehall; it never closes the request by itself.`
           : `A close of a mirror issue only adds a notice to its request's thread; it never closes the request.`,
       )}</p>`,
-      postForm(
-        TEAMS_PATH,
+      secondary(
         { action: "set_done_proposals", teamId: team.id, on: mapping.doneProposals ? "false" : "true" },
-        csrf,
         mapping.doneProposals ? `Make a close of ${team.key}'s mirror issues only add a notice` : `Make a close of ${team.key}'s mirror issues by its members propose done`,
-        "      ",
       ),
-      postForm(TEAMS_PATH, { action: "remove_mapping", teamId: team.id }, csrf, `Stop mirroring ${team.key}'s requests`, "      "),
+      secondary({ action: "remove_mapping", teamId: team.id }, `Stop mirroring ${team.key}'s requests`),
       `      <p>${escapeHtml(`Removing the mapping leaves the issues made so far in ${mapping.place}; Tiehall writes to them no more. A team mirrors into one tracker only, so remove this mapping before mapping another.`)}</p>`,
     ].join("\n");
   }
@@ -352,9 +351,9 @@ function mirrorSection(team: ListedTeam, mappings: Mappings, csrf: string): stri
     '        <input type="hidden" name="action" value="map_repository">',
     `        <input type="hidden" name="teamId" value="${escapeHtml(team.id)}">`,
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `        <p><label for="repository-${escapeHtml(team.id)}">${escapeHtml(`Intake repository of ${team.key}`)}</label> <select id="repository-${escapeHtml(team.id)}" name="repository">${options}</select></p>`,
-    `        <p><label><input type="checkbox" name="mirrorOnOpen" value="true"> ${escapeHtml("Create a request's mirror issue when it is opened, not when it is claimed")}</label></p>`,
-    `        <button type="submit">${escapeHtml(`Mirror ${team.key}'s requests into this repository`)}</button>`,
+    fieldHtml(`repository-${team.id}`, `Intake repository of ${team.key}`, `<select id="repository-${escapeHtml(team.id)}" name="repository">${options}</select>`),
+    `        <p class="check"><label><input type="checkbox" name="mirrorOnOpen" value="true"> ${escapeHtml("Create a request's mirror issue when it is opened, not when it is claimed")}</label></p>`,
+    `        <button type="submit" class="secondary">${escapeHtml(`Mirror ${team.key}'s requests into this repository`)}</button>`,
     "      </form>",
   ].join("\n");
 }
@@ -375,15 +374,18 @@ function intakeForm(team: ListedTeam, csrf: string): string {
     '        <input type="hidden" name="action" value="intake">',
     `        <input type="hidden" name="teamId" value="${escapeHtml(team.id)}">`,
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `        <p><label for="notes-${escapeHtml(team.id)}">${escapeHtml(`How ${team.key} wants requests filed, which agents read as data`)}</label></p>`,
-    `        <p><textarea id="notes-${escapeHtml(team.id)}" name="notes">${escapeHtml(team.intake.untrusted.notes)}</textarea></p>`,
-    `        <fieldset><legend>${escapeHtml(`The fields ${team.key} requires, besides the need`)}</legend>`,
+    fieldHtml(
+      `notes-${team.id}`,
+      `How ${team.key} wants requests filed, which agents read as data`,
+      `<textarea id="notes-${escapeHtml(team.id)}" name="notes">${escapeHtml(team.intake.untrusted.notes)}</textarea>`,
+    ),
+    `        <fieldset class="choices inline"><legend>${escapeHtml(`The fields ${team.key} requires, besides the need`)}</legend>`,
     ...INTAKE_FIELDS.map(
       (name) =>
         `          <label><input type="checkbox" name="requiredField" value="${name}"${required.has(name) ? " checked" : ""}> ${escapeHtml(INTAKE_FIELD_LABELS[name])}</label>`,
     ),
     "        </fieldset>",
-    `        <button type="submit">${escapeHtml(`Save the intake settings of ${team.key}`)}</button>`,
+    `        <button type="submit" class="secondary">${escapeHtml(`Save the intake settings of ${team.key}`)}</button>`,
     "      </form>",
   ].join("\n");
 }
@@ -414,7 +416,7 @@ function labelledForm(fields: Readonly<Record<string, string>>, csrf: string, id
     `      <form method="post" action="${TEAMS_PATH}">`,
     ...Object.entries(fields).map(([name, value]) => `        <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`),
     `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-    `        <p><label for="${escapeHtml(id)}">${escapeHtml(label)}</label> ${control} <button type="submit">${escapeHtml(button)}</button></p>`,
+    `        <p class="inline-field"><label for="${escapeHtml(id)}">${escapeHtml(label)}</label> ${control} <button type="submit" class="secondary">${escapeHtml(button)}</button></p>`,
     "      </form>",
   ].join("\n");
 }
@@ -425,17 +427,21 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], mapping
   const candidates = members.filter(({ id }) => !inTeam.has(id));
   const people = team.members.map((member) =>
     [
-      "        <li>",
-      `          <p>${escapeHtml(userName(member))}</p>`,
-      postForm(TEAMS_PATH, { action: "remove_member", teamId: team.id, userId: member.id }, csrf, `Remove ${userName(member)} from ${team.key}`, "          "),
+      '        <li class="item">',
+      `          <p><span class="initials" aria-hidden="true">${escapeHtml(initialsOf(member.login))}</span>${escapeHtml(userName(member))}</p>`,
+      postForm(TEAMS_PATH, { action: "remove_member", teamId: team.id, userId: member.id }, csrf, `Remove ${userName(member)} from ${team.key}`, "          ", "secondary"),
       "        </li>",
     ].join("\n"),
   );
   const options = candidates.map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(userName(member))}</option>`).join("");
   return [
+    '      <section class="panel team-panel">',
     `      <h2>${escapeHtml(`${team.key}: ${team.name}`)}</h2>`,
-    ...(team.aliases.length === 0 ? [] : [`      <p>${escapeHtml(`Its earlier keys, which still lead to it: ${team.aliases.join(", ")}.`)}</p>`]),
-    people.length === 0 ? `      <p>${escapeHtml(`Nobody belongs to ${team.key}.`)}</p>` : `      <ul>\n${people.join("\n")}\n      </ul>`,
+    ...(team.aliases.length === 0 ? [] : [`      <p class="hint">${escapeHtml(`Its earlier keys, which still lead to it: ${team.aliases.join(", ")}.`)}</p>`]),
+    '      <div class="team-grid">',
+    '      <div class="team-part">',
+    "      <h3>People</h3>",
+    people.length === 0 ? `      <p class="empty">${escapeHtml(`Nobody belongs to ${team.key}.`)}</p>` : `      <ul class="items">\n${people.join("\n")}\n      </ul>`,
     candidates.length === 0
       ? `      <p>${escapeHtml(`Every member of the install belongs to ${team.key}.`)}</p>`
       : labelledForm(
@@ -446,6 +452,9 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], mapping
           `<select id="add-${escapeHtml(team.id)}" name="userId">${options}</select>`,
           `Add to ${team.key}`,
         ),
+    "      </div>",
+    '      <div class="team-part">',
+    "      <h3>Name and key</h3>",
     labelledForm(
       { action: "rename", teamId: team.id },
       csrf,
@@ -462,8 +471,16 @@ function teamSection(team: ListedTeam, members: readonly ListedMember[], mapping
       `<input type="text" id="key-${escapeHtml(team.id)}" name="key" required>`,
       `Change the key of ${team.key}`,
     ),
+    "      </div>",
+    "      </div>",
+    '      <div class="team-part">',
+    `      <h3>${escapeHtml(`How ${team.key} wants requests filed`)}</h3>`,
     intakeForm(team, csrf),
+    "      </div>",
+    '      <div class="team-part">',
     mirrorSection(team, mappings, csrf),
+    "      </div>",
+    "      </section>",
   ].join("\n");
 }
 
@@ -472,17 +489,21 @@ function teamsPage(teams: readonly ListedTeam[], members: readonly ListedMember[
     "Teams",
     [
       "      <h1>Teams</h1>",
-      adminNav(),
-      "      <p>Requests are addressed to teams. A person can belong to several teams, and a team may have nobody in it. A key has 2 to 10 uppercase letters and digits and starts with a letter; a team keeps its earlier keys, so no other team can take them.</p>",
-      "      <h2>Create a team</h2>",
-      `      <form method="post" action="${TEAMS_PATH}">`,
-      '        <input type="hidden" name="action" value="create">',
-      `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-      '        <p><label for="team-key">Key</label> <input type="text" id="team-key" name="key" required></p>',
-      '        <p><label for="team-name">Name</label> <input type="text" id="team-name" name="name" required></p>',
-      '        <button type="submit">Create the team</button>',
-      "      </form>",
-      ...(teams.length === 0 ? ["      <p>The install has no team yet.</p>"] : teams.map((team) => teamSection(team, members, mappings, csrf))),
+      adminNav(TEAMS_PATH),
+      '      <p class="lead">Requests are addressed to teams. A person can belong to several teams, and a team may have nobody in it. A key has 2 to 10 uppercase letters and digits and starts with a letter; a team keeps its earlier keys, so no other team can take them.</p>',
+      ...panelSections([
+        "      <h2>Create a team</h2>",
+        `      <form method="post" action="${TEAMS_PATH}">`,
+        '        <input type="hidden" name="action" value="create">',
+        `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+        '        <div class="field-row">',
+        fieldHtml("team-key", "Key", '<input type="text" id="team-key" name="key" required>'),
+        fieldHtml("team-name", "Name", '<input type="text" id="team-name" name="name" required>'),
+        "        </div>",
+        '        <button type="submit">Create the team</button>',
+        "      </form>",
+      ]),
+      ...(teams.length === 0 ? ['      <p class="empty">The install has no team yet.</p>'] : teams.map((team) => teamSection(team, members, mappings, csrf))),
     ].join("\n"),
     shell,
   );
@@ -509,12 +530,15 @@ export function createSignInPolicyRoute(options: PageRouteOptions): PageRoute {
           "Sign-in policy",
           [
             "      <h1>Sign-in policy</h1>",
-            adminNav(),
-            `      <p>${escapeHtml(`The install's sign-in policy is ${signInPolicyText(policy)}.`)}</p>`,
+            adminNav(SIGN_IN_POLICY_PATH),
+            '      <section class="panel">',
+            `      <p class="setting-text"><span class="chip tag good">In force</span> ${escapeHtml(`The install's sign-in policy is ${signInPolicyText(policy)}.`)}</p>`,
             `      <p>${escapeHtml(policyMeaning(policy))}</p>`,
             ...others.map(
-              (other) => `      <p>${link(reviewPath(setSignInPolicy.id, { policy: other }), `Change the policy to ${signInPolicyText(other)}`)}, with a confirmation. No member is removed.</p>`,
+              (other) =>
+                `      <p class="card-actions"><a class="button secondary" href="${escapeHtml(reviewPath(setSignInPolicy.id, { policy: other }))}">${escapeHtml(`Change the policy to ${signInPolicyText(other)}`)}</a> <span class="hint">With a confirmation. No member is removed.</span></p>`,
             ),
+            "      </section>",
           ].join("\n"),
           shell,
         ),
@@ -542,18 +566,21 @@ export function createPersonalAccessTokenSettingsRoute(options: PageRouteOptions
           "Personal access tokens",
           [
             "      <h1>Personal access tokens</h1>",
-            adminNav(),
-            on
-              ? "      <p>Personal access tokens are switched on.</p>"
-              : "      <p>Personal access tokens are switched off: every call with one is refused. Switching them on again lets the ones that have not expired and were not revoked work again.</p>",
-            `      <p>${link(reviewPath(setPersonalAccessTokens.id, { on: !on }), on ? "Switch personal access tokens off" : "Switch personal access tokens on")}, with a confirmation.${on ? " No token is revoked: switching them on again lets them work again." : ""}</p>`,
-            `      <p>${escapeHtml(`A new personal access token lives at most ${maxLifetimeDays} days.`)} Tokens that exist keep their expiry when this changes.</p>`,
-            `      <form method="post" action="${PERSONAL_ACCESS_TOKEN_SETTINGS_PATH}">`,
-            '        <p><label for="max-lifetime">The longest lifetime of a new personal access token, in days, from 1 to 90</label></p>',
-            `        <p><input type="number" id="max-lifetime" name="maxLifetimeDays" min="1" max="90" value="${maxLifetimeDays}" required></p>`,
-            `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-            '        <button type="submit">Review the change</button>',
-            "      </form>",
+            adminNav(PERSONAL_ACCESS_TOKEN_SETTINGS_PATH),
+            ...panelSections([
+              "      <h2>The switch</h2>",
+              on
+                ? '      <p class="setting-text"><span class="chip tag good">On</span> Personal access tokens are switched on.</p>'
+                : '      <p class="setting-text"><span class="chip tag warn">Off</span> Personal access tokens are switched off: every call with one is refused. Switching them on again lets the ones that have not expired and were not revoked work again.</p>',
+              `      <p class="card-actions"><a class="button secondary" href="${escapeHtml(reviewPath(setPersonalAccessTokens.id, { on: !on }))}">${on ? "Switch personal access tokens off" : "Switch personal access tokens on"}</a> <span class="hint">With a confirmation.${on ? " No token is revoked: switching them on again lets them work again." : ""}</span></p>`,
+              "      <h2>The longest lifetime</h2>",
+              `      <p>${escapeHtml(`A new personal access token lives at most ${maxLifetimeDays} days.`)} Tokens that exist keep their expiry when this changes.</p>`,
+              `      <form method="post" action="${PERSONAL_ACCESS_TOKEN_SETTINGS_PATH}">`,
+              fieldHtml("max-lifetime", "The longest lifetime of a new personal access token, in days, from 1 to 90", `<input type="number" id="max-lifetime" name="maxLifetimeDays" min="1" max="90" value="${maxLifetimeDays}" required>`),
+              `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+              '        <button type="submit">Review the change</button>',
+              "      </form>",
+            ]),
           ].join("\n"),
           shell,
         ),
