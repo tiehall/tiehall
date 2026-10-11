@@ -3180,6 +3180,11 @@ a.key:hover {
   gap: 6px;
 }
 
+/* The legend names a color; its lamps show nothing that happens, so they never blink. */
+.hall.live .legend .lamp.needs-info {
+  animation: none;
+}
+
 /* The feed, On the line: the latest events, newest first; one about a request that waits on a question or a person
    in the notice colors, with no lamp. */
 .hall-feed {

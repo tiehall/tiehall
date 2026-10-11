@@ -273,6 +273,8 @@ describe("the live hall's script", () => {
     expect(chips).toBeLessThanOrEqual(12);
     await expect(page.locator("#at-work .worker").count()).resolves.toBeGreaterThan(12);
     await expect(map.locator(".legend").textContent()).resolves.toContain("needs info");
+    // The legend's lamps name colors and never blink.
+    await expect(map.locator(".legend .lamp.needs-info").evaluate((lamp) => lamp.getAnimations().length)).resolves.toBe(0);
     await holding(hall);
     await page.evaluate(WATCH_DOTS);
     // Twelve events on FE-1's line at once.
