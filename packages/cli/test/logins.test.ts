@@ -325,6 +325,32 @@ describe("an expired access token", () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(`The saved login for ${COM} no longer works: run tiehall login ${COM} again.`);
   });
+
+  // The install's limit on the token calls from one address refuses a refresh with 429 and changes nothing: the
+  // refresh token still refreshes once the limit allows, so the CLI says to try again, not to sign in again.
+  it("whose refresh the install refuses for its limit, says to try again, and keeps the saved login", async () => {
+    const com = install(COM);
+    await tiehall(["login", COM], { [COM]: com.handle });
+    const limited = async (request: Request) =>
+      new URL(request.url).pathname === "/api/auth/oauth2/token"
+        ? new Response(
+            JSON.stringify({
+              type: "https://tiehall.com/problems/rate-limited",
+              title: "Limit exceeded",
+              status: 429,
+              detail: "Too many sign-in calls came from this address. Wait, then sign in again.",
+            }),
+            { status: 429, headers: { "content-type": "application/problem+json", "retry-after": "30" } },
+          )
+        : com.handle(request);
+    const result = await tiehall(["inbox"], { [COM]: limited }, () => new Date(Date.now() + 3_600_000));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      `${COM} could not refresh the saved login for now (HTTP 429): too many calls came from this address. The saved login still works: try again in a minute.`,
+    );
+    expect(result.stderr).not.toContain("no longer works");
+    expect(saved()[COM]).toMatchObject({ accessToken: "access-1", refreshToken: "refresh-1" });
+  });
 });
 
 // agent-surfaces: CLI request commands. The CLI sends its tokens and its

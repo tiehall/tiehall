@@ -20,7 +20,9 @@ import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 // its title and detail, rather than as a refusal. An access token lives 10
 // minutes, so a command whose saved access token has expired, or is refused
 // as invalid, first exchanges the refresh token for new tokens, which replace
-// the saved ones: a refresh token is good for one refresh.
+// the saved ones: a refresh token is good for one refresh. A refresh that the
+// install refuses for its limit on the calls from one address changes
+// nothing, so the CLI says to try again, not to sign in again.
 
 /** The CLI's fixed client id, which each install registers. */
 export const CLI_CLIENT_ID = "tiehall-cli";
@@ -193,6 +195,13 @@ export async function refreshLogin(environment: CliEnvironment, configDir: strin
     );
     // An install that cannot answer for now, such as one that restarts, may take the refresh token once it is back.
     if (refreshed.status >= 500) throw new UnreachableError(`${login.url} could not refresh the saved login for now (HTTP ${refreshed.status}): try again once it is back.`);
+    // The install's limit on the token calls from one address, which counts a minute's, refused the refresh and changed
+    // nothing: the refresh token still refreshes once the limit allows.
+    if (refreshed.status === 429) {
+      throw new UnreachableError(
+        `${login.url} could not refresh the saved login for now (HTTP 429): too many calls came from this address. The saved login still works: try again in a minute.`,
+      );
+    }
     if (refreshed.status !== 200) throw new CliError(`The saved login for ${login.url} no longer works: run tiehall login ${login.url} again.`);
     // The refreshed tokens are the same user's.
     const next = { ...loginOf(environment, login.url, refreshed.body), ...(current.userId === undefined ? {} : { userId: current.userId }) };
