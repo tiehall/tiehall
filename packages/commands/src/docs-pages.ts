@@ -27,6 +27,7 @@ export const DOCS_PAGES: readonly DocsPage[] = [
   { path: "docs/agents.md", title: "Agents: the four ways in, personal access tokens and bot users" },
   { path: "docs/claude-code-plugin.md", title: "The Claude Code plugin, its skill and its hooks" },
   { path: "docs/requester-loop.md", title: "The requester loop, commitments and email" },
+  { path: "docs/web-ui.md", title: "The web UI: its pages, themes, phone width, the live hall and what each page may run" },
   { path: "docs/people-and-teams.md", title: "People and teams: roles, invites, teams and the sign-in policy" },
   { path: "docs/github-and-jira.md", title: "GitHub and Jira: installations, webhook and polling modes, and mirrors" },
   { path: "docs/contract-changes.md", title: "Contract changes: APIs, the consumer map and the contract Action" },

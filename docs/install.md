@@ -71,8 +71,11 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 70s;
 }
 ```
+
+Let the proxy wait at least 70 seconds for an answer before it gives up on it: the API's wait endpoint holds a call for up to 60 seconds while nothing happens, and the web UI's live hall holds its read for up to 25, and a proxy that ends a quiet answer sooner, as many do after 30 or 60 seconds by default, makes those calls fail. nginx's `proxy_read_timeout`, above, is 60 seconds unless set. The `caddy` profile's Caddy waits as long as the app takes.
 
 The app trusts forwarded headers only from the proxies that `TIEHALL_TRUSTED_PROXIES` names: IP addresses, CIDR ranges or host names, separated by commas. Name the address the app sees your proxy's connections come from. For a proxy on the host that reaches the published port, that is usually the gateway of the install's Compose network, which `docker network inspect tiehall_default` shows. Headers from any other address are ignored.
 
@@ -91,7 +94,7 @@ The owner owns the database; the `migrate` step connects as the owner, applies t
 
 ## The setup screen
 
-Until setup is complete, every page leads to `/setup`, and the app prints a one-time setup code to its log each time it starts. Read it on the host:
+Until setup is complete, every page leads to `/setup`, apart from the stylesheet and the icons the setup screen loads, which the install serves to anyone, and the app prints a one-time setup code to its log each time it starts. Read it on the host:
 
 ```sh docs-test=install-setup-code
 docker compose logs app

@@ -58,6 +58,7 @@ Then create teams, invite people or let your organization's members sign in, con
 - [Agents and Tiehall](docs/agents.md): the four ways in, the MCP server, the `tiehall` CLI, the Claude Code plugin and request URLs, how agents sign in, and personal access tokens and bot users.
 - [The Claude Code plugin](docs/claude-code-plugin.md): installing it, its skill and its hooks.
 - [The requester loop](docs/requester-loop.md): how news reaches people and agents, the web inbox, commitments and the confirmation step, and email.
+- [The web UI](docs/web-ui.md): its pages and navigation, themes and motion, phone width, the live hall and how it updates, the type, and what each kind of page may load and run.
 - [People and teams](docs/people-and-teams.md), for admins: roles, who may sign in and the sign-in policy, invites, removals and teams.
 - [GitHub and Jira](docs/github-and-jira.md), for admins: the GitHub App's installations, webhook and polling modes, pull requests and the mirrors.
 - [Contract changes](docs/contract-changes.md): registering APIs, the consumer map, the contract Action and what the consuming teams get.

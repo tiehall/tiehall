@@ -28,6 +28,12 @@ The activity log is not tamper-evident: whoever holds the database owner role or
 
 A tamper-evident log, with a hash chain anchored outside the install, is planned as a later addition.
 
+## The web UI's pages
+
+The pages where a decision is made run no script: every review page and confirmation under `/confirm/…`, the consent screen, the device approval page, the setup screen, the sign-in page and every refusal page. An agent that drives a browser finds no script there to help it click, and text that reached a page as markup can neither run nor restyle it, since no page allows inline scripts or styles. Every page loads its stylesheet, its icons and its manifest from the install alone, loads no font, and cannot be framed by another site.
+
+The live hall, at `/hall`, which every member sees, shows the requests between teams and who is at work on them: request titles, team names, logins and agent clients' names, as text, and who caused each event about a request, with the actor kind and the client. It never shows a security event, to anyone, admins included, nor a message's or the packet's text, an email address, an IP address, a user agent or a token. Its reads take only a web session, so no agent's token can read it, and they do not keep a session alive. [The web UI](web-ui.md) says more.
+
 ## No telemetry, and what an install connects to
 
 An install sends nothing to the Tiehall project or to any service it runs: no usage statistics, no update check, no error reports and no license check. Framework telemetry is off, at build and at run time, for the web framework and the sign-in library alike. Tiehall calls no language model and sends no data to a model vendor: every summary, digest and notice it writes comes from a template.
