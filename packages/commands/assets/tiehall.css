@@ -743,7 +743,7 @@ a.brand:hover {
   justify-content: center;
   background: var(--chip-claimed);
   color: var(--chip-claimed-ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -818,7 +818,7 @@ a.brand:hover {
 .menu-panel .menu-who {
   padding: 8px 12px 4px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .menu-panel .button {
@@ -1338,7 +1338,7 @@ a.key:hover {
   margin: 0 0 8px;
   color: var(--ink-2);
   font-family: var(--font-mono);
-  font-size: 56px;
+  font-size: 40px;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -1448,7 +1448,7 @@ a.key:hover {
 .hint {
   margin: 0;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -1464,7 +1464,7 @@ form:not(.stack) > .hint {
   border-radius: var(--radius-tag);
   background: var(--notice);
   color: var(--notice-ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1613,7 +1613,7 @@ form:not(.stack) > .hint {
 .request-key {
   color: var(--ink-2);
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .request-teams {
@@ -1671,7 +1671,7 @@ form:not(.stack) > .hint {
 
 .activity-when {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .activity.at-work {
@@ -1728,7 +1728,7 @@ form:not(.stack) > .hint {
 .packet h3 {
   margin: 18px 0 6px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1772,7 +1772,7 @@ form:not(.stack) > .hint {
 .message-meta {
   margin: 0;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .message-meta strong {
@@ -1825,7 +1825,7 @@ form:not(.stack) > .hint {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .proposal.pending {
@@ -1847,7 +1847,7 @@ form:not(.stack) > .hint {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  font-size: 13px;
+  font-size: 14px;
   list-style: none;
 }
 
@@ -2076,7 +2076,7 @@ form:not(.stack) > .hint {
   align-items: center;
   justify-content: space-between;
   gap: 6px 12px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .card h3 {
@@ -2166,18 +2166,18 @@ form:not(.stack) > .hint {
 }
 
 .update-what {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .update-title {
   display: block;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .update-meta {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   text-align: right;
 }
 
@@ -2275,7 +2275,7 @@ form:not(.stack) > .hint {
 .row-actions .button,
 .row-actions button {
   min-height: 36px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .cell-member {
@@ -2322,7 +2322,7 @@ form:not(.stack) > .hint {
 
 :where(main) .admin-cards > .card > h2 {
   margin: 0 0 4px;
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .admin-cards .card p {
@@ -2430,7 +2430,7 @@ form:not(.stack) > .hint {
 .team-panel h3 {
   margin: 0 0 10px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2474,7 +2474,7 @@ form:not(.stack) > .hint {
 }
 
 :where(main) table.log td {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* The log's number, time, class, type and request stay on one line, and its table scrolls in its box when they need
@@ -2843,7 +2843,7 @@ form:not(.stack) > .hint {
   align-items: center;
   gap: 8px 10px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   list-style: none;
 }
 
@@ -3147,7 +3147,7 @@ form:not(.stack) > .hint {
   border-radius: 999px;
   background: var(--chip-claimed);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
@@ -3267,7 +3267,7 @@ form:not(.stack) > .hint {
 }
 
 .feed-meta .key {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .feed-title {
@@ -3287,7 +3287,7 @@ form:not(.stack) > .hint {
 
 .feed-who {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* The feed fills the page's width in columns, but for the one column beside the map on a wide screen. */
@@ -3360,7 +3360,7 @@ form:not(.stack) > .hint {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 :where(main) .worker-text p {
@@ -3428,7 +3428,7 @@ form:not(.stack) > .hint {
 .team-key {
   color: var(--ink-2);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .team-counts,

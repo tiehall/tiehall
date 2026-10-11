@@ -114,6 +114,13 @@ describe("the design tokens", () => {
     expect(light["--font-mono"]).toBe('"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace');
   });
 
+  it("set every size in pixels on design.md's type scale: 12, 14, 16, 18, 22, 30 and 40", () => {
+    const sizes = css.rules.flatMap((rule) => rule.declarations.filter(({ property }) => property === "font-size").map(({ value }) => /^(\d+(?:\.\d+)?)px$/.exec(value)?.[1]));
+    const pixels = sizes.filter((size): size is string => size !== undefined).map(Number);
+    expect(pixels.length).toBeGreaterThan(0);
+    expect(pixels.filter((size) => ![12, 14, 16, 18, 22, 30, 40].includes(size))).toEqual([]);
+  });
+
   it("set no text smaller than 12 pixels", () => {
     const sizes = css.rules.flatMap((rule) => rule.declarations.filter(({ property }) => property === "font-size").map(({ value }) => value));
     for (const size of sizes) {
