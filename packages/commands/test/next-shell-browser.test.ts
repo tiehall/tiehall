@@ -109,7 +109,7 @@ describe("the pages Next.js renders", () => {
     await tab.getByRole("heading", { level: 1, name: "Tiehall could not show this page" }).waitFor();
     // The fixture app serves the install's assets as the web app does, so the page is drawn with its stylesheet.
     await expect.poll(() => answered.get("/assets/tiehall.css")).toBe(200);
-    await expect.poll(() => tab.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).backgroundColor)).toBe("rgb(246, 247, 249)");
+    await expect.poll(() => tab.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).backgroundColor)).toBe("rgb(246, 247, 250)");
     for (const selector of [
       `link[rel="stylesheet"][href="${assetUrl("/assets/tiehall.css")}"]`,
       `link[rel="icon"][href="${assetUrl("/assets/icon.svg")}"]`,

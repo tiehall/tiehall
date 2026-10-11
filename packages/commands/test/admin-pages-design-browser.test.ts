@@ -50,8 +50,8 @@ afterAll(async () => {
 
 describe("the admin overview's cards", () => {
   it.each([
-    ["light", "rgb(122, 74, 0)"],
-    ["dark", "rgb(242, 198, 109)"],
+    ["light", "rgb(110, 75, 7)"],
+    ["dark", "rgb(240, 203, 106)"],
   ] as const)("draw a notice inside a card in the notice colors, not the card's secondary text, in the %s scheme", { timeout: 120_000 }, async (colorScheme, noticeInk) => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme });
     await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);

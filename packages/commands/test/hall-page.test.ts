@@ -125,7 +125,7 @@ describe("the live hall's page", () => {
     const { html } = await open();
     expect(html).toContain('<body class="hall">');
     expect(html).toContain('<meta name="color-scheme" content="dark">');
-    expect(html.match(/<meta name="theme-color"[^>]*>/g)).toEqual(['<meta name="theme-color" content="#0E1117">']);
+    expect(html.match(/<meta name="theme-color"[^>]*>/g)).toEqual(['<meta name="theme-color" content="#071026">']);
     expect(html).not.toContain('content="light dark"');
   });
 

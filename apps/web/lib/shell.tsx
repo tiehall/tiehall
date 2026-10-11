@@ -188,8 +188,8 @@ export function PageHead(): ReactNode {
   return (
     <>
       <meta name="color-scheme" content="light dark" />
-      <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)" />
-      <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)" />
+      <meta name="theme-color" content="#F6F7FA" media="(prefers-color-scheme: light)" />
+      <meta name="theme-color" content="#0A1428" media="(prefers-color-scheme: dark)" />
       <link rel="stylesheet" href={assetUrl(STYLESHEET_PATH)} />
       <link rel="icon" href={assetUrl("/assets/icon.svg")} type="image/svg+xml" />
       <link rel="icon" href={assetUrl("/favicon.ico")} sizes="16x16 32x32 48x48" />

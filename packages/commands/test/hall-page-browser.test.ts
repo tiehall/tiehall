@@ -118,14 +118,14 @@ describe("the live hall without scripts", () => {
 });
 
 describe("the live hall's theme", () => {
-  it.each(["dark", "light"] as const)("is dark in a browser that prefers %s: its background is #0E1117", { timeout: 120_000 }, async (colorScheme) => {
+  it.each(["dark", "light"] as const)("is dark in a browser that prefers %s: its background is #071026", { timeout: 120_000 }, async (colorScheme) => {
     const context = await signedIn({ colorScheme });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     await page.goto(`${web.url}/hall`);
     await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
-    await expect(page.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).backgroundColor)).resolves.toBe("rgb(14, 17, 23)");
-    await expect(page.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).color)).resolves.toBe("rgb(232, 234, 240)");
+    await expect(page.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).backgroundColor)).resolves.toBe("rgb(7, 16, 38)");
+    await expect(page.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).color)).resolves.toBe("rgb(233, 237, 245)");
     await context.close();
   });
 });

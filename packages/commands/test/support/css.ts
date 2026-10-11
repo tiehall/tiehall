@@ -154,3 +154,14 @@ export function contrast(a: string, b: string): number {
   const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
 }
+
+/**
+ * The lightness of a color in #RRGGBB as people see it, CIE L* from 0 for
+ * black to 100 for white, computed from its relative luminance as CIE 1976
+ * defines it for a white of luminance 1: what tells two lamps apart for a
+ * reader who cannot tell their hues apart (D59 (5)).
+ */
+export function lightness(hex: string): number {
+  const y = luminance(hex);
+  return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (y * 24389) / 27;
+}

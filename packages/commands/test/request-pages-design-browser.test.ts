@@ -162,7 +162,7 @@ describe("a request's page in a browser", () => {
     page.setDefaultTimeout(15_000);
     await page.goto(`${web.url}/FE-1`);
     const lamp = page.locator(".timeline li", { hasText: "It moved from claimed to needs info" }).locator(".lamp");
-    await expect(lamp.evaluate((element) => element.ownerDocument.defaultView?.getComputedStyle(element).backgroundColor)).resolves.toBe("rgb(178, 107, 0)");
+    await expect(lamp.evaluate((element) => element.ownerDocument.defaultView?.getComputedStyle(element).backgroundColor)).resolves.toBe("rgb(169, 128, 0)");
     await context.close();
   });
 

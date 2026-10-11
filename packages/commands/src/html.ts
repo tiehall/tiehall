@@ -164,11 +164,11 @@ export function headHtml(title: string, look: PageLook = {}): string {
     '    <meta charset="utf-8">',
     '    <meta name="viewport" content="width=device-width, initial-scale=1">',
     ...(look.dark === true
-      ? ['    <meta name="color-scheme" content="dark">', '    <meta name="theme-color" content="#0E1117">']
+      ? ['    <meta name="color-scheme" content="dark">', '    <meta name="theme-color" content="#071026">']
       : [
           '    <meta name="color-scheme" content="light dark">',
-          '    <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
-          '    <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
+          '    <meta name="theme-color" content="#F6F7FA" media="(prefers-color-scheme: light)">',
+          '    <meta name="theme-color" content="#0A1428" media="(prefers-color-scheme: dark)">',
         ]),
     `    <title>${escapeHtml(pageTitle(title))}</title>`,
     `    <link rel="stylesheet" href="${assetUrl(STYLESHEET_PATH)}">`,

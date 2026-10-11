@@ -318,54 +318,61 @@
   unicode-range: U+03C0, U+0E3F, U+2000-200D, U+2010-2012, U+2015, U+2028-2029, U+202F, U+2032-2033, U+203E, U+205F, U+2070, U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+2219-221A, U+221E, U+222B, U+2236, U+2248, U+2260, U+2264-2265, U+2400-2421, U+2500-259F, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+3000, U+FEFF, U+FFFD;
 }
 
-/* The design tokens (web-ui: One stylesheet with named design tokens; design.md, Design: The design tokens; D57 (1)):
-   every color of the web UI is one of these, in the light theme here, the dark theme under prefers-color-scheme:
-   dark, and the live hall, which is dark whatever the preference. */
+/* The design tokens (web-ui: One stylesheet with named design tokens; design.md, Design: The design tokens; D57 (1);
+   D59): every color of the web UI is one of these, in the light theme here, the dark theme under prefers-color-scheme:
+   dark, and the live hall, which is dark whatever the preference. The palette is Navy & Gold: navy grounds and ink,
+   and gold, a broken warm gold, only where attention is needed: the needs-info lamps and chips, a page's main action,
+   the mark and the glow of a live hall panel whose team has a question waiting (D59 (2)). */
 :root {
   color-scheme: light dark;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --ink: #14161B;
-  --ink-2: #4A5060;
-  --line: #2B4ACB;
-  --line-hover: #1E3596;
-  --button: #2B4ACB;
-  --button-hover: #1E3596;
-  --button-ink: #FFFFFF;
-  --signal: #F2B33D;
-  --on-signal: #14161B;
-  --lamp-open: #7A8294;
-  --lamp-claimed: #4C69E6;
-  --lamp-in-progress: #2B4ACB;
-  --lamp-needs-info: #B26B00;
-  --lamp-done: #1E8A4C;
-  --ground: #F6F7F9;
+  --ink: #0B1B3A;
+  --ink-2: #4A5672;
+  --line: #1F45A3;
+  --line-hover: #14306E;
+  --focus: #1F45A3;
+  --button: #E3B341;
+  --button-hover: #D9AA38;
+  --button-ink: #0B1B3A;
+  --strong: #14306E;
+  --strong-hover: #102A61;
+  --strong-ink: #FFFFFF;
+  --signal: #E3B341;
+  --on-signal: #0B1B3A;
+  --lamp-open: #6A748D;
+  --lamp-claimed: #364EA0;
+  --lamp-in-progress: #14306E;
+  --lamp-needs-info: #A98000;
+  --lamp-done: #0B724B;
+  --ground: #F6F7FA;
   --surface: #FFFFFF;
-  --surface-2: #EEF0F4;
-  --border: #E3E6EB;
-  --control-border: #7A8294;
-  --notice: #FCEFD2;
-  --notice-ink: #7A4A00;
-  --chip-open: #EEF0F4;
-  --chip-open-ink: #3B4252;
-  --chip-claimed: #E6EBFB;
-  --chip-claimed-ink: #1E3596;
-  --chip-in-progress: #2B4ACB;
+  --surface-2: #EEF1F6;
+  --border: #DFE3EC;
+  --control-border: #7D869C;
+  --notice: #FBF1D6;
+  --notice-ink: #6E4B07;
+  --success-ink: #145A37;
+  --danger: #FBE3E1;
+  --danger-ink: #9B1E22;
+  --chip-open: #FFFFFF;
+  --chip-open-ink: #3E4A63;
+  --chip-claimed: #E6EBF7;
+  --chip-claimed-ink: #1F3F8F;
+  --chip-in-progress: #14306E;
   --chip-in-progress-ink: #FFFFFF;
-  --chip-needs-info: #FCEFD2;
-  --chip-needs-info-ink: #7A4A00;
-  --chip-done: #DDF1E6;
+  --chip-needs-info: #F2CA5B;
+  --chip-needs-info-ink: #0B1B3A;
+  --chip-done: #D7F1E3;
   --chip-done-ink: #145A37;
-  --chip-declined: #F1F2F4;
-  --chip-declined-ink: #5B6170;
-  --chip-withdrawn: #F1F2F4;
-  --chip-withdrawn-ink: #5B6170;
-  --mark-tile: #14161B;
-  --mark-ink: #FFFFFF;
-  --shadow-menu: 0 8px 24px #14161B1F, 0 1px 2px #14161B14;
-  --glow: #2B4ACB59;
-  --glow-strong: #4C69E68C;
+  --chip-declined: #FBE3E1;
+  --chip-declined-ink: #9B1E22;
+  --chip-withdrawn: #EEF0F4;
+  --chip-withdrawn-ink: #555B66;
+  --mark-tile: #0A1428;
+  --mark-ink: #E3B341;
+  --shadow-menu: 0 8px 24px #0B1B3A1F, 0 1px 2px #0B1B3A14;
 
   --duration-fast: 150ms;
   --duration: 250ms;
@@ -381,99 +388,116 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #E8EAF0;
-    --ink-2: #8A93A6;
-    --line: #9DB2FF;
-    --line-hover: #C9D4FF;
-    --button: #4C69E6;
-    --button-hover: #3B57D9;
-    --button-ink: #FFFFFF;
-    --signal: #F2B33D;
-    --on-signal: #14161B;
-    --lamp-open: #8A93A6;
-    --lamp-claimed: #9DB2FF;
-    --lamp-in-progress: #4C69E6;
-    --lamp-needs-info: #F2B33D;
-    --lamp-done: #4ADE80;
-    --ground: #0E1117;
-    --surface: #151A23;
-    --surface-2: #1C2230;
-    --border: #2A3040;
-    --control-border: #6B7385;
-    --notice: #3A2C10;
-    --notice-ink: #F2C66D;
-    --live: #4ADE80;
-    --chip-open: #232938;
-    --chip-open-ink: #C9CFDB;
-    --chip-claimed: #1A2340;
-    --chip-claimed-ink: #B7C6FF;
-    --chip-in-progress: #4C69E6;
+    --ink: #E9EDF5;
+    --ink-2: #A9B3C8;
+    --line: #9DB6EE;
+    --line-hover: #C4D3F6;
+    --focus: #F0CB6A;
+    --button: #E3B341;
+    --button-hover: #F0CB6A;
+    --button-ink: #0A1428;
+    --strong: #2A4A9E;
+    --strong-hover: #3557B5;
+    --strong-ink: #FFFFFF;
+    --signal: #E3B341;
+    --on-signal: #0A1428;
+    --lamp-open: #7A849D;
+    --lamp-claimed: #93A9DD;
+    --lamp-in-progress: #6E95F0;
+    --lamp-needs-info: #E3B341;
+    --lamp-done: #8FE9BB;
+    --ground: #0A1428;
+    --surface: #111E38;
+    --surface-2: #182748;
+    --border: #24345A;
+    --control-border: #65749C;
+    --notice: #2A2208;
+    --notice-ink: #F0CB6A;
+    --success-ink: #86E0B2;
+    --danger: #451E1C;
+    --danger-ink: #FBB7B1;
+    --chip-open: #182748;
+    --chip-open-ink: #C4CBD8;
+    --chip-claimed: #1B2D5D;
+    --chip-claimed-ink: #C1D4FE;
+    --chip-in-progress: #2A4A9E;
     --chip-in-progress-ink: #FFFFFF;
-    --chip-needs-info: #3A2C10;
-    --chip-needs-info-ink: #F2C66D;
-    --chip-done: #12301F;
-    --chip-done-ink: #7EE2A3;
-    --chip-declined: #202530;
-    --chip-declined-ink: #A3ABBD;
-    --chip-withdrawn: #202530;
-    --chip-withdrawn-ink: #A3ABBD;
-    --mark-tile: #2B4ACB;
-    --mark-ink: #FFFFFF;
+    --chip-needs-info: #E3B341;
+    --chip-needs-info-ink: #0A1428;
+    --chip-done: #0F3A27;
+    --chip-done-ink: #86E0B2;
+    --chip-declined: #451E1C;
+    --chip-declined-ink: #FBB7B1;
+    --chip-withdrawn: #191F2E;
+    --chip-withdrawn-ink: #9FA5B2;
+    --mark-tile: #E3B341;
+    --mark-ink: #0A1428;
     --shadow-menu: 0 8px 24px #00000066, 0 1px 2px #00000040;
-    --glow: #2B4ACB59;
-    --glow-strong: #4C69E68C;
   }
 }
 
 /* The live hall is dark in both themes (web-ui: Light and dark themes follow the system; design.md, Design: Light and
-   dark themes; D57 (5)): its body carries the class hall. */
+   dark themes; D57 (5); D59 (1)): its body carries the class hall. It takes the dark theme's colors on a darker ground
+   and panels of its own, and adds its own: the Live pill, the chips of the people and agents at work, the edge of one
+   waiting on a question, and the glows of a team at work and of a team with a question waiting. */
 .hall {
   color-scheme: dark;
-  --ink: #E8EAF0;
-  --ink-2: #8A93A6;
-  --line: #9DB2FF;
-  --line-hover: #C9D4FF;
-  --button: #4C69E6;
-  --button-hover: #3B57D9;
-  --button-ink: #FFFFFF;
-  --signal: #F2B33D;
-  --on-signal: #14161B;
-  --lamp-open: #8A93A6;
-  --lamp-claimed: #9DB2FF;
-  --lamp-in-progress: #4C69E6;
-  --lamp-needs-info: #F2B33D;
-  --lamp-done: #4ADE80;
-  --ground: #0E1117;
-  --surface: #151A23;
-  --surface-2: #1C2230;
-  --border: #2A3040;
-  --control-border: #6B7385;
-  --notice: #3A2C10;
-  --notice-ink: #F2C66D;
-  --live: #4ADE80;
-  --chip-open: #232938;
-  --chip-open-ink: #C9CFDB;
-  --chip-claimed: #1A2340;
-  --chip-claimed-ink: #B7C6FF;
-  --chip-in-progress: #4C69E6;
+  --ink: #E9EDF5;
+  --ink-2: #A9B3C8;
+  --line: #9DB6EE;
+  --line-hover: #C4D3F6;
+  --focus: #F0CB6A;
+  --button: #E3B341;
+  --button-hover: #F0CB6A;
+  --button-ink: #0A1428;
+  --strong: #2A4A9E;
+  --strong-hover: #3557B5;
+  --strong-ink: #FFFFFF;
+  --signal: #E3B341;
+  --on-signal: #0A1428;
+  --lamp-open: #7A849D;
+  --lamp-claimed: #93A9DD;
+  --lamp-in-progress: #6E95F0;
+  --lamp-needs-info: #E3B341;
+  --lamp-done: #8FE9BB;
+  --ground: #071026;
+  --surface: #0E1A33;
+  --surface-2: #16264A;
+  --border: #22325A;
+  --control-border: #65749C;
+  --notice: #241D0B;
+  --notice-ink: #F0CB6A;
+  --success-ink: #86E0B2;
+  --danger: #451E1C;
+  --danger-ink: #FBB7B1;
+  --chip-open: #182748;
+  --chip-open-ink: #C4CBD8;
+  --chip-claimed: #1B2D5D;
+  --chip-claimed-ink: #C1D4FE;
+  --chip-in-progress: #2A4A9E;
   --chip-in-progress-ink: #FFFFFF;
-  --chip-needs-info: #3A2C10;
-  --chip-needs-info-ink: #F2C66D;
-  --chip-done: #12301F;
-  --chip-done-ink: #7EE2A3;
-  --chip-declined: #202530;
-  --chip-declined-ink: #A3ABBD;
-  --chip-withdrawn: #202530;
-  --chip-withdrawn-ink: #A3ABBD;
-  --mark-tile: #2B4ACB;
-  --mark-ink: #FFFFFF;
+  --chip-needs-info: #E3B341;
+  --chip-needs-info-ink: #0A1428;
+  --chip-done: #0F3A27;
+  --chip-done-ink: #86E0B2;
+  --chip-declined: #451E1C;
+  --chip-declined-ink: #FBB7B1;
+  --chip-withdrawn: #191F2E;
+  --chip-withdrawn-ink: #9FA5B2;
+  --mark-tile: #E3B341;
+  --mark-ink: #0A1428;
   --shadow-menu: 0 8px 24px #00000066, 0 1px 2px #00000040;
-  --glow: #2B4ACB59;
-  --glow-strong: #4C69E68C;
-  --live-glow: #4ADE8099;
-  --live-glow-end: #4ADE8000;
-  --signal-glow: #F2B33DB3;
-  --signal-glow-end: #F2B33D00;
+  --live: #86E0B2;
+  --live-pill: #10301F;
+  --agent-chip: #111E38;
+  --agent-chip-border: #2A3C66;
+  --ask-border: #5E4A17;
+  --attention-glow: #E3B34140;
+  --attention-glow-strong: #E3B34173;
+  --glow: #6E95F059;
+  --glow-strong: #6E95F08C;
+  --live-glow: #86E0B299;
+  --live-glow-end: #86E0B200;
 }
 
 /* The page. */
@@ -539,10 +563,11 @@ samp {
   font-size: 14px;
 }
 
-/* The focus is always visible (web-ui: Pages are accessible; design.md, Design: Accessibility; D57 (8)): a 2-pixel
-   ring in line blue, at least 3:1 against both grounds, on every element the keyboard reaches. */
+/* The focus is always visible (web-ui: Pages are accessible; design.md, Design: Accessibility; D57 (8); D59): a 2-pixel
+   ring, navy blue in the light theme and gold in the dark theme and on the live hall, at least 3:1 against the ground,
+   the surface and --surface-2, on every element the keyboard reaches. */
 :focus-visible {
-  outline: 2px solid var(--line);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -572,8 +597,8 @@ samp {
   z-index: 30;
   padding: 10px 14px;
   border-radius: var(--radius);
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
   font-weight: 600;
   text-decoration: none;
   transform: translateY(-200%);
@@ -581,7 +606,7 @@ samp {
 
 .skip:focus {
   transform: none;
-  color: var(--button-ink);
+  color: var(--strong-ink);
 }
 
 /* The shell (web-ui: The page shell and its navigation; design.md, Design: The page shell and navigation; D57 (4)):
@@ -821,17 +846,18 @@ a.brand:hover {
   font-size: 12px;
 }
 
+/* New request in the folded menu: a strong secondary button, navy, as in the top bar. */
 .menu-panel .button {
   justify-content: center;
   margin: 4px 0;
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
   font-weight: 600;
 }
 
 .menu-panel .button:hover {
-  background: var(--button-hover);
-  color: var(--button-ink);
+  background: var(--strong-hover);
+  color: var(--strong-ink);
 }
 
 /* The folded menu of a narrow screen, which holds the navigation, New request and the member's menu. */
@@ -1034,7 +1060,7 @@ input[type="radio"] {
   height: 24px;
   margin: 0 8px 0 0;
   vertical-align: middle;
-  accent-color: var(--button);
+  accent-color: var(--strong);
 }
 
 input[type="file"] {
@@ -1049,7 +1075,8 @@ input[type="file"] {
 }
 
 /* Buttons: an action is a button, a move to another page a link; a link styled as a button carries the class
-   button. */
+   button. A page's main action is gold with navy ink; a strong secondary action, such as the top bar's New request,
+   which is on every page, is navy with the class strong; any other is an outline with the class secondary (D59 (2)). */
 button,
 .button {
   min-height: 40px;
@@ -1077,6 +1104,20 @@ button:hover,
   border-color: var(--button-hover);
   background: var(--button-hover);
   color: var(--button-ink);
+}
+
+button.strong,
+.button.strong {
+  border-color: var(--strong);
+  background: var(--strong);
+  color: var(--strong-ink);
+}
+
+button.strong:hover,
+.button.strong:hover {
+  border-color: var(--strong-hover);
+  background: var(--strong-hover);
+  color: var(--strong-ink);
 }
 
 button.secondary,
@@ -1110,6 +1151,7 @@ button.secondary:hover,
 }
 
 .chip.open {
+  border-color: var(--border);
   background: var(--chip-open);
   color: var(--chip-open-ink);
 }
@@ -1351,8 +1393,8 @@ a.key:hover {
 .field-errors {
   padding: 12px 16px 12px 34px;
   border-radius: var(--radius-card);
-  background: var(--notice);
-  color: var(--notice-ink);
+  background: var(--danger);
+  color: var(--danger-ink);
 }
 
 .refusal .problem-type {
@@ -1462,8 +1504,8 @@ form:not(.stack) > .hint {
   align-self: flex-start;
   padding: 4px 10px;
   border-radius: var(--radius-tag);
-  background: var(--notice);
-  color: var(--notice-ink);
+  background: var(--danger);
+  color: var(--danger-ink);
   font-size: 14px;
   font-weight: 600;
 }
@@ -1688,8 +1730,8 @@ form:not(.stack) > .hint {
 }
 
 .initials.agent {
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
 }
 
 .request-columns {
@@ -2200,7 +2242,7 @@ form:not(.stack) > .hint {
 
 .receipt-mark {
   flex: none;
-  color: var(--lamp-done);
+  color: var(--success-ink);
 }
 
 .receipt-mark path {
@@ -2634,14 +2676,7 @@ form:not(.stack) > .hint {
 .sign-in button {
   width: 100%;
   min-height: 48px;
-  border-color: var(--mark-tile);
-  background: var(--mark-tile);
   font-size: 16px;
-}
-
-.sign-in button:hover {
-  border-color: var(--button-hover);
-  background: var(--button-hover);
 }
 
 .mark.large {
@@ -2663,20 +2698,21 @@ form:not(.stack) > .hint {
   margin-bottom: 4px;
 }
 
-/* The setup screen's art: the dark ground whatever the system's preference, as the live hall's. */
+/* The setup screen's art: the live hall's dark colors whatever the system's preference, the mark navy on gold. */
 .setup-art {
-  --ink: #E8EAF0;
-  --ink-2: #8A93A6;
-  --line: #9DB2FF;
-  --ground: #0E1117;
-  --surface: #151A23;
-  --surface-2: #1C2230;
-  --border: #2A3040;
-  --lamp-in-progress: #4C69E6;
-  --lamp-needs-info: #F2B33D;
-  --lamp-done: #4ADE80;
-  --mark-tile: #2B4ACB;
-  --mark-ink: #FFFFFF;
+  --ink: #E9EDF5;
+  --ink-2: #A9B3C8;
+  --line: #9DB6EE;
+  --focus: #F0CB6A;
+  --ground: #071026;
+  --surface: #0E1A33;
+  --surface-2: #16264A;
+  --border: #22325A;
+  --lamp-in-progress: #6E95F0;
+  --lamp-needs-info: #E3B341;
+  --lamp-done: #8FE9BB;
+  --mark-tile: #E3B341;
+  --mark-ink: #0A1428;
 }
 
 .setup {
@@ -2889,8 +2925,8 @@ form:not(.stack) > .hint {
 }
 
 .steps > li.done .step-mark {
-  background: var(--lamp-done);
-  color: var(--button-ink);
+  background: var(--chip-done);
+  color: var(--chip-done-ink);
 }
 
 .step-mark svg path {
@@ -2902,8 +2938,8 @@ form:not(.stack) > .hint {
 }
 
 .steps > li[aria-current="step"] .step-mark {
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
 }
 
 /* The live hall (web-ui: The live hall; web-ui: The live hall with many teams and on a phone; design.md, Design: The
@@ -2952,10 +2988,10 @@ form:not(.stack) > .hint {
   line-height: 1.5;
 }
 
-.live-state.live {
+.hall .live-state.live {
   border-color: transparent;
-  background: var(--chip-done);
-  color: var(--chip-done-ink);
+  background: var(--live-pill);
+  color: var(--live);
 }
 
 .live-state a {
@@ -3085,6 +3121,9 @@ form:not(.stack) > .hint {
 }
 
 .hall .node {
+  --node-edge: var(--lamp-in-progress);
+  --node-glow: var(--glow);
+  --node-glow-strong: var(--glow-strong);
   width: 100%;
   padding: 12px 16px;
   display: flex;
@@ -3096,6 +3135,16 @@ form:not(.stack) > .hint {
   color: var(--ink);
   font-size: 14px;
   line-height: 1.4;
+}
+
+/* A team with a request waiting on a question: a gold border and a soft gold glow on its node and its row, and its
+   node glows in gold while its people or agents are at work (D59 (2)). */
+.hall .node.asking {
+  --node-edge: var(--lamp-needs-info);
+  --node-glow: var(--attention-glow);
+  --node-glow-strong: var(--attention-glow-strong);
+  border-color: var(--lamp-needs-info);
+  box-shadow: 0 0 22px var(--attention-glow);
 }
 
 .hall .node.compact {
@@ -3146,12 +3195,18 @@ form:not(.stack) > .hint {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--chip-claimed);
   color: var(--ink);
   font-size: 12px;
   line-height: 1.35;
+}
+
+/* A person or an agent at work on the map, on a navy chip; one waiting on its own question on the notice fill with a
+   dark gold edge (D59 (2)). */
+.hall .map-chip {
+  border-color: var(--agent-chip-border);
+  background: var(--agent-chip);
 }
 
 .map-chip .initials {
@@ -3161,11 +3216,12 @@ form:not(.stack) > .hint {
 }
 
 .hall .map-chip.agent .initials {
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
 }
 
-.map-chip.waiting {
+.hall .map-chip.waiting {
+  border-color: var(--ask-border);
   background: var(--notice);
 }
 
@@ -3313,8 +3369,8 @@ form:not(.stack) > .hint {
   margin: 0;
 }
 
-/* The people and agents at work: the login's initials, white on line blue for an agent and ink on signal amber for an
-   agent waiting on a question, who they are with their client, the request and what they did last. The list's class
+/* The people and agents at work: the login's initials, white on navy for an agent and navy on gold for an agent
+   waiting on a question, whose row takes the notice fill with a dark gold edge, who they are with their client, the request and what they did last. The list's class
    is its own, so its rules never reach the request page's banner of an agent at work, .activity.at-work. */
 .at-work-list {
   display: grid;
@@ -3349,8 +3405,13 @@ form:not(.stack) > .hint {
 }
 
 .hall .worker.agent .initials {
-  background: var(--button);
-  color: var(--button-ink);
+  background: var(--strong);
+  color: var(--strong-ink);
+}
+
+.hall .worker.waiting {
+  border-color: var(--ask-border);
+  background: var(--notice);
 }
 
 .hall .worker.waiting .initials {
@@ -3456,6 +3517,11 @@ form:not(.stack) > .hint {
 
 .hall .node.dimmed {
   border-color: var(--surface-2);
+}
+
+.hall .team-row.asking {
+  border-color: var(--lamp-needs-info);
+  box-shadow: 0 0 22px var(--attention-glow);
 }
 
 :where(main) .hall-lines td {
@@ -3578,11 +3644,11 @@ form:not(.stack) > .hint {
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 0 1px var(--lamp-in-progress), 0 0 24px var(--glow);
+    box-shadow: 0 0 0 1px var(--node-edge), 0 0 24px var(--node-glow);
   }
 
   50% {
-    box-shadow: 0 0 0 1px var(--button), 0 0 36px var(--glow-strong);
+    box-shadow: 0 0 0 1px var(--node-edge), 0 0 36px var(--node-glow-strong);
   }
 }
 

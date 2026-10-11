@@ -188,11 +188,11 @@ function expectShell(path: string, html: string): void {
     `<link rel="manifest" href="${assetUrl("/assets/manifest.webmanifest")}">`,
     // The live hall is dark whatever the system prefers, and names the dark scheme and theme color alone.
     ...(/^\/hall(\?|$)/.test(path)
-      ? ['<meta name="color-scheme" content="dark">', '<meta name="theme-color" content="#0E1117">']
+      ? ['<meta name="color-scheme" content="dark">', '<meta name="theme-color" content="#071026">']
       : [
           '<meta name="color-scheme" content="light dark">',
-          '<meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
-          '<meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
+          '<meta name="theme-color" content="#F6F7FA" media="(prefers-color-scheme: light)">',
+          '<meta name="theme-color" content="#0A1428" media="(prefers-color-scheme: dark)">',
         ]),
   ]) {
     expect(html, `${path}: ${link}`).toContain(link);
