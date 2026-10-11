@@ -107,6 +107,23 @@ describe("the request lists at 1,280 CSS pixels", () => {
   });
 });
 
+describe("the form that opens a request on a wide screen", () => {
+  it("sits in a column in the middle of the page, as the design draws it", { timeout: 120_000 }, async () => {
+    const context = await signedIn(1280);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/requests/new?team=FE`);
+    const sides = await page.locator("main .narrow").first().evaluate((column) => {
+      const box = column.getBoundingClientRect();
+      const main = column.closest("main")?.getBoundingClientRect();
+      return { left: Math.round(box.left - (main?.left ?? 0)), right: Math.round((main?.right ?? 0) - box.right) };
+    });
+    expect(sides.left).toBeGreaterThan(100);
+    expect(Math.abs(sides.left - sides.right)).toBeLessThanOrEqual(2);
+    await context.close();
+  });
+});
+
 describe("the form that opens a request, with the keyboard", () => {
   it("takes the focus to every field and button in the order the page reads, each with a focus ring at least 2 CSS pixels wide", { timeout: 120_000 }, async () => {
     const context = await signedIn(320);

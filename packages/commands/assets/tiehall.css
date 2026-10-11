@@ -1558,8 +1558,11 @@ form:not(.stack) > .hint {
   margin: 0;
 }
 
+/* A page of one form, such as the one that opens a request: a column in the middle of the page. */
 .narrow {
   max-width: 760px;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .panel-grid {
