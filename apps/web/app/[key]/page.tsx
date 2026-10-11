@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import type { ShellMember } from "@tiehall/commands/shell";
 import { NEGOTIATED_KEY_HEADER, readRequestPageAs, webCommands, type TeamApisView, type TeamIntakeView } from "@tiehall/commands/web";
 import { IntakePage } from "../../lib/intake-page.tsx";
 import { RequestPage } from "../../lib/request-page.tsx";
@@ -47,6 +48,10 @@ export default async function Page({ params }: { params: Promise<{ key: string }
   // Only a call the proxy negotiated as this key's page.
   if ((await headers()).get(NEGOTIATED_KEY_HEADER) !== key) notFound();
   const web = webCommands(process.env, async () => new Headers(await headers()));
+  if (!TEAM_KEY.test(key) && !REQUEST_KEY.test(key)) notFound();
+  // The app shell's read comes first, as on every page in the app shell (web-ui: The page shell and its navigation).
+  const member = await web.read<ShellMember>("web.shell", {});
+  if (!member.ok) return refusal(member.problem, key);
   if (TEAM_KEY.test(key)) {
     // A team's intake page, which the proxy lets through only for a signed-in member and the team's current key.
     const team = await web.read<TeamIntakeView>("teams.get", { key });
@@ -54,15 +59,15 @@ export default async function Page({ params }: { params: Promise<{ key: string }
     // The registered APIs with the team's declarations, and the CSRF token its members' forms carry.
     const apis = await web.read<TeamApisView>("apis.list_for_team", { team: key });
     const csrf = await web.csrfToken();
-    return <IntakePage team={team.output} apis={apis.ok ? apis.output : undefined} csrf={csrf} />;
+    if (csrf === undefined) redirect(`/sign-in?return=${encodeURIComponent(`/${key}`)}`);
+    return <IntakePage team={team.output} apis={apis.ok ? apis.output : undefined} csrf={csrf} shell={{ member: member.output, path: `/${key}` }} />;
   }
-  if (!REQUEST_KEY.test(key)) notFound();
   const read = await readRequestPageAs(web, key);
   if (!read.ok) return refusal(read.problem, key);
   // The CSRF token the page's forms carry, which each of their writes must send (web-writes.ts).
   const csrf = await web.csrfToken();
   if (csrf === undefined) redirect(`/sign-in?return=${encodeURIComponent(`/${key}`)}`);
-  return <RequestPage data={read.output} csrf={csrf} />;
+  return <RequestPage data={read.output} csrf={csrf} shell={{ member: member.output, path: `/${key}` }} />;
 }
 
 /**

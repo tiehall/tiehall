@@ -102,7 +102,7 @@ describe("every page's policy", () => {
 
   it("is broken on no page shown when a page fails while it renders", { timeout: 120_000 }, async () => {
     const seen = await watched(errorPage, "pia");
-    const answer = await seen.page.goto(`${errorPage.url}/fails`);
+    const answer = await seen.page.goto(`${errorPage.url}/fails/now`);
     expect(answer?.status()).toBe(500);
     expect(answer?.headers()["content-security-policy"]).toMatch(/^default-src 'none'; script-src 'nonce-[^']+' 'strict-dynamic'; style-src 'self';/);
     await seen.page.waitForLoadState("networkidle");

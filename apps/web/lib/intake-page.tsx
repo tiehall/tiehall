@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import type { ShellMember } from "@tiehall/commands/shell";
 import { TEAM_APIS_PATH, type TeamApisView, type TeamIntakeView, type TeamPageAction } from "@tiehall/commands/web";
+import { AppShell } from "./shell.tsx";
 
 // The web UI's intake page of a team, at /<TEAM> (agent-surfaces: Team intake
 // pages; agent-surfaces: Admins set a team's intake notes and required
@@ -124,11 +126,12 @@ function ConsumedApis({ teamKey, apis, csrf }: { teamKey: string; apis: TeamApis
   );
 }
 
-export function IntakePage({ team, apis, csrf }: { team: TeamIntakeView; apis?: TeamApisView | undefined; csrf?: string | undefined }): ReactNode {
+export function IntakePage({ team, apis, csrf, shell }: { team: TeamIntakeView; apis?: TeamApisView | undefined; csrf: string; shell: { member: ShellMember; path: string } }): ReactNode {
   const notes = team.untrusted.intakeNotes;
   const required = team.requiredFields.map((field) => FIELD_WORDS[field] ?? field);
   return (
-    <main>
+    <AppShell member={shell.member} path={shell.path} csrf={csrf} className="intake-page">
+      <title>{`${team.key}: ${team.untrusted.name} · Tiehall`}</title>
       <h1>{`${team.key}: ${team.untrusted.name}`}</h1>
       <p>{`This is how team ${team.key} wants requests filed, and what it requires of them.`}</p>
       <section aria-labelledby="notes">
@@ -147,6 +150,6 @@ export function IntakePage({ team, apis, csrf }: { team: TeamIntakeView; apis?: 
         <a href={`/requests/new?team=${encodeURIComponent(team.key)}`}>{`Open a request to ${team.key}`}</a>
       </p>
       {apis === undefined ? null : <ConsumedApis teamKey={team.key} apis={apis} csrf={csrf} />}
-    </main>
+    </AppShell>
   );
 }

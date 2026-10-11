@@ -44,6 +44,8 @@ vi.mock("@tiehall/commands/web", async (original) => {
     webCommands: () => ({
       read: async (commandId: string) => {
         reads.push(commandId);
+        // The shell's read, which every page in the app shell runs first (web-ui: The page shell and its navigation).
+        if (commandId === "web.shell") return { ok: true, output: { login: "ada", kind: "human", bot: false, admin: false, waiting: 0 } };
         return refused;
       },
       csrfToken: async () => "csrf",
@@ -92,17 +94,29 @@ describe("the proxy", () => {
   // have a policy, and a route handler's answer keeps its own, which Next.js would otherwise drop for the proxy's.
   it("puts the framework pages' policy, with a fresh nonce, on every call it passes on, and on the answer of a call that accepts HTML", async () => {
     const policyOf = (response: Response) => overridden(response)?.get("content-security-policy") ?? "";
-    const first = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "text/html,application/xhtml+xml" } }));
-    const second = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "text/html" } }));
+    const first = await proxy(new Request("http://localhost/no-such-page/at-all", { headers: { accept: "text/html,application/xhtml+xml" } }));
+    const second = await proxy(new Request("http://localhost/no-such-page/at-all", { headers: { accept: "text/html" } }));
     expect(first.headers.get("x-middleware-next")).toBe("1");
     expect(policyOf(first)).toMatch(FRAMEWORK);
     expect(first.headers.get("content-security-policy")).toBe(policyOf(first));
     expect(policyOf(second)).toMatch(FRAMEWORK);
     expect(policyOf(second)).not.toBe(policyOf(first));
     expect(overridden(first)?.get("accept")).toBe("text/html,application/xhtml+xml");
-    const json = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "application/json" } }));
+    const json = await proxy(new Request("http://localhost/no-such-page/at-all", { headers: { accept: "application/json" } }));
     expect(policyOf(json)).toMatch(FRAMEWORK);
     expect(json.headers.get("content-security-policy")).toBeNull();
+  });
+
+  // A path of one segment that names no key and no route would reach the page of a key, whose notFound() Next.js
+  // renders only in the browser; led on to a path no route serves, the web app's page for such a path is rendered on
+  // the server (web-ui: The page shell and its navigation).
+  it("leads a path of one segment that names no key and no route on to a path no route serves, with the policy", async () => {
+    const response = await proxy(new Request("http://localhost/no-such-page?x=1", { headers: { accept: "text/html" } }));
+    expect(response.headers.get("x-middleware-rewrite")).toBe("http://localhost/no-such-page/no-route?x=1");
+    expect(response.headers.get("content-security-policy")).toMatch(FRAMEWORK);
+    for (const path of ["/inbox", "/members", "/", "/no-such-page/at-all"]) {
+      expect((await proxy(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }))).headers.get("x-middleware-rewrite"), path).toBeNull();
+    }
   });
 
   it("leaves the answer of a path a route handler serves to the policy the route gives it", async () => {
@@ -152,7 +166,7 @@ describe("the web UI's page at /<KEY>", () => {
     await render("FE-1").catch(() => undefined);
     callHeaders = new Headers({ [NEGOTIATED_KEY]: "FE" });
     await render("FE").catch(() => undefined);
-    expect(reads).toEqual(["requests.get", "teams.get"]);
+    expect(reads).toEqual(["web.shell", "requests.get", "web.shell", "teams.get"]);
   });
 
   // public-api: One error model for Tiehall's own refusals. A server component cannot set its answer's status, so a

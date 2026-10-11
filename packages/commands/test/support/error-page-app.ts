@@ -13,7 +13,7 @@ import type { TestInstall } from "./install.ts";
 // The fixture app of a page that fails while it renders
 // (apps/web/test/fixtures/error-page/; web-ui: The content security policy of
 // each kind of page; design.md, Design: Testing; D57 (9)): its one page, at
-// /fails, throws, so Next.js shows the web app's own page for a failed render in its
+// /fails/now, throws, so Next.js shows the web app's own page for a failed render in its
 // place, under the policy the web app's proxy gives it. It is built with `next
 // build` once per run of this project between the test files that start it,
 // and started with `next start` with a test install's settings, which the

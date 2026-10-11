@@ -11,7 +11,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./assets": "./src/assets.ts",
+    "./asset-urls": "./src/asset-urls.ts",
+    "./docs-pages": "./src/docs-pages.ts",
     "./html": "./src/html.ts",
+    "./mark": "./src/mark.ts",
+    "./running-version": "./src/running-version.ts",
+    "./shell": "./src/shell.ts",
     "./health": "./src/health.ts",
     "./settings": "./src/settings.ts",
     "./setup": "./src/setup.ts",

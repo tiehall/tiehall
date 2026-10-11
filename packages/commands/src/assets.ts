@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { httpProblem, Refusal } from "@tiehall/core";
 import { ASSET_DIGESTS } from "./asset-digests.ts";
+import { ASSETS_PATH } from "./asset-urls.ts";
+
+export { ASSETS_PATH, assetUrl, FAVICON_PATH, STYLESHEET_PATH } from "./asset-urls.ts";
 
 // The install's own assets (web-ui: The install serves its own assets; web-ui:
 // Fonts served by the install; design.md, Design: The install's assets; D57
@@ -39,10 +42,6 @@ export const FONT_FILES: readonly string[] = [
   ...MONO_WEIGHTS.flatMap((weight) => MONO_SUBSETS.map((subset) => `IBMPlexMono-${weight}-${subset}.woff2`)),
 ];
 
-/** Where the assets are served: every path under it, and /favicon.ico, which Next.js rewrites to /assets/favicon.ico. */
-export const ASSETS_PATH = "/assets";
-/** The favicon's own path, which browsers ask for by themselves. */
-export const FAVICON_PATH = "/favicon.ico";
 
 /** The assets, by the path the install serves each at, to its file in the assets folder. */
 export const ASSET_FILES: Readonly<Record<string, string>> = Object.fromEntries(
@@ -59,8 +58,7 @@ export const ASSET_FILES: Readonly<Record<string, string>> = Object.fromEntries(
   ].map((file) => [`${ASSETS_PATH}/${file}`, file]),
 );
 
-/** The stylesheet every page of the web UI links (web-ui: One stylesheet with named design tokens). */
-export const STYLESHEET_PATH = `${ASSETS_PATH}/tiehall.css`;
+
 
 /** The media type of each kind of asset, by its file's extension. */
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
@@ -94,13 +92,6 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 /** The digest of an asset's content, which its ETag and the v of its URL carry. */
 export function assetDigest(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("base64url").slice(0, 22);
-}
-
-/** The URL a page names an asset by: its path with the digest of its current content, from the committed table. */
-export function assetUrl(path: string): string {
-  const digest = ASSET_DIGESTS[path] ?? ASSET_DIGESTS[`${ASSETS_PATH}${path}`];
-  if (digest === undefined) throw new Error(`${path} is no asset of the install.`);
-  return `${path}?v=${digest}`;
 }
 
 /**

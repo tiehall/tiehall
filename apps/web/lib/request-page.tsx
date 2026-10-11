@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { packetLinesOf, providerChangeLine, type RequestPageData } from "@tiehall/commands/web";
+import type { ShellMember } from "@tiehall/commands/shell";
 import { ActionForm } from "./action-form.tsx";
+import { AppShell } from "./shell.tsx";
 
 // The web UI's page of a request, as a server component renders it
 // (agent-surfaces: Negotiated request URLs; agent-safety: The needs_human flag
@@ -467,11 +469,12 @@ function CommitmentsSection({ data, parts, csrf }: { data: RequestPageData; part
 }
 
 /** The page of a request, whose forms carry the reader's CSRF token. */
-export function RequestPage({ data, csrf }: { data: RequestPageData; csrf: string }): ReactNode {
+export function RequestPage({ data, csrf, shell }: { data: RequestPageData; csrf: string; shell: { member: ShellMember; path: string } }): ReactNode {
   const { request, packet, proposals } = data;
   const parts = partsOf(data);
   return (
-    <main>
+    <AppShell member={shell.member} path={shell.path} csrf={csrf} className="request-page">
+      <title>{`${request.key}: ${request.untrusted.title} · Tiehall`}</title>
       <h1>{`${request.key}: ${request.untrusted.title}`}</h1>
       {request.needsHuman ? <WaitsForAPerson request={request} /> : null}
       <Summary request={request} />
@@ -481,6 +484,6 @@ export function RequestPage({ data, csrf }: { data: RequestPageData; csrf: strin
       <ThreadSection messages={request.messages} />
       <PostSection request={request} parts={parts} csrf={csrf} />
       <ProposalsSection proposals={proposals} />
-    </main>
+    </AppShell>
   );
 }

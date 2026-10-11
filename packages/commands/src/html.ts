@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { HttpProblem, RefusalReason } from "@tiehall/core";
-import { assetUrl, STYLESHEET_PATH } from "./assets.ts";
+import { assetUrl, STYLESHEET_PATH } from "./asset-urls.ts";
 import { markSvg } from "./mark.ts";
 import type { RunningVersion } from "./running-version.ts";
 import { FOCUSED_SHELL, initialsOf, memberMenu, navigation, NEW_REQUEST_LINK, SIGN_OUT_ACTION, type NavLink, type PageShell, type ShellLink } from "./shell.ts";
@@ -226,11 +226,24 @@ export function topBarHtml(shell: PageShell): string {
 }
 
 /**
+ * The shell around a page's main content: the link that skips to it, the top
+ * bar of the page's shell, and one main landmark, which holds the page's one
+ * first-level heading. apps/web/lib/shell.tsx draws the same for the pages
+ * Next.js renders.
+ */
+export function shellHtml(shell: PageShell, main: string): string {
+  return `    <a class="skip" href="#content">Skip to content</a>
+${topBarHtml(shell)}
+    <main id="content"${shell.form === "focused" ? ' class="focused"' : ""}>
+${main}
+    </main>
+`;
+}
+
+/**
  * A page of the web role, with its title and the HTML of its main content:
- * the head, the link that skips to the main content, the top bar of its shell,
- * one main landmark, which holds the page's one first-level heading, and the
- * footer. A page takes the focused shell unless it is given a member's app
- * shell.
+ * the head, the shell around the main content, and the footer. A page takes
+ * the focused shell unless it is given a member's app shell.
  */
 export function htmlPage(title: string, main: string, shell: PageShell = FOCUSED_SHELL): string {
   return `<!doctype html>
@@ -239,12 +252,7 @@ export function htmlPage(title: string, main: string, shell: PageShell = FOCUSED
 ${headHtml(title)}
   </head>
   <body>
-    <a class="skip" href="#content">Skip to content</a>
-${topBarHtml(shell)}
-    <main id="content"${shell.form === "focused" ? ' class="focused"' : ""}>
-${main}
-    </main>
-${footerHtml()}  </body>
+${shellHtml(shell, main)}${footerHtml()}  </body>
 </html>
 `;
 }

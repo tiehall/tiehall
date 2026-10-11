@@ -49,10 +49,20 @@ function passOn(request: Request): NextResponse {
   const headers = new Headers(request.headers);
   headers.delete(NEGOTIATED_KEY_HEADER);
   headers.set("content-security-policy", policy);
-  const next = NextResponse.next({ request: { headers } });
-  if (namesHtml(request.headers.get("accept")) && !servedByRouteHandler(new URL(request.url).pathname)) next.headers.set("content-security-policy", policy);
+  const url = new URL(request.url);
+  const routed = servedByRouteHandler(url.pathname);
+  // A path of one segment that names no key and no route would reach the page of a key, /[key], whose notFound()
+  // Next.js renders only in the browser; led on to a path no route serves, it gets the web app's page for such a path,
+  // rendered on the server, in the address the browser asked for.
+  const next = !routed && ONE_SEGMENT.test(url.pathname) ? NextResponse.rewrite(new URL(`${url.pathname}${NO_ROUTE}${url.search}`, url), { request: { headers } }) : NextResponse.next({ request: { headers } });
+  if (namesHtml(request.headers.get("accept")) && !routed) next.headers.set("content-security-policy", policy);
   return next;
 }
+
+/** A path of one segment, such as /no-such-page. */
+const ONE_SEGMENT = /^\/[^/]+$/;
+/** What a path of one segment that names no key and no route is led on with, to a path no route serves. */
+const NO_ROUTE = "/no-route";
 
 /** Lets a negotiated call go on to the page of this key, with the page's content security policy, which Next.js reads its script nonce from. */
 function toPage(request: Request, key: string, policy: string): NextResponse {
