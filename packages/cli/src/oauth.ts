@@ -1,5 +1,6 @@
 import { abortable, CliError, nowOf, sleepOf, UnreachableError, type CliEnvironment } from "./environment.ts";
 import { chooseLogin, saveLogin, withLoginsLock, type SavedLogin } from "./logins.ts";
+import { isProblem } from "./output.ts";
 import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 
 // How the CLI signs in, and keeps its login working (agent-access: The CLI
@@ -14,10 +15,12 @@ import { CLI_VERSION, CLI_VERSION_HEADER } from "./version.ts";
 // type there, never a link that carries the code, since the page ignores
 // one; and polls the token endpoint at the interval the install gives until
 // someone approves the code, it expires, or the approval is refused. An
-// access token lives 10 minutes, so a command whose saved access token has
-// expired, or is refused as invalid, first exchanges the refresh token for new
-// tokens, which replace the saved ones: a refresh token is good for one
-// refresh.
+// answer that is no OAuth answer, such as the error model's problem or a page
+// a proxy wrote, ends the sign-in with its HTTP status and, for a problem,
+// its title and detail, rather than as a refusal. An access token lives 10
+// minutes, so a command whose saved access token has expired, or is refused
+// as invalid, first exchanges the refresh token for new tokens, which replace
+// the saved ones: a refresh token is good for one refresh.
 
 /** The CLI's fixed client id, which each install registers. */
 export const CLI_CLIENT_ID = "tiehall-cli";
@@ -104,12 +107,32 @@ function errorOf(body: Record<string, unknown>): string {
   return typeof body["error"] === "string" ? body["error"] : "";
 }
 
+/** A text of the install's, on one line and at most 300 characters long. */
+function oneLine(text: unknown): string {
+  const line = String(text).replace(/\s+/g, " ").trim();
+  return line.length > 300 ? `${line.slice(0, 297)}...` : line;
+}
+
+/**
+ * What the CLI says of an answer of the sign-in service that is not 200 and
+ * carries no OAuth error, such as the error model's problem or a page a proxy
+ * wrote: its HTTP status and, for a problem, its title and detail. Such an
+ * answer is no refusal of the sign-in.
+ */
+function unexpectedAnswer(url: string, answer: { status: number; body: Record<string, unknown> }): CliError {
+  if (isProblem(answer.body)) {
+    return new CliError(`${url} answered the CLI's sign-in with HTTP ${answer.status} (${oneLine(answer.body["title"])}): ${oneLine(answer.body["detail"])}`);
+  }
+  return new CliError(`${url} answered the CLI's sign-in with HTTP ${answer.status} and no OAuth error: check that it is your install's URL, then run tiehall login again.`);
+}
+
 /** `tiehall login <url>`: signs in to the install through the device flow, and saves the login. */
 export async function logIn(environment: CliEnvironment, configDir: string, url: string): Promise<SavedLogin> {
   const started = await post(environment, url, "/api/auth/device/code", { client_id: CLI_CLIENT_ID, resource: `${url}/mcp`, scope: SCOPES });
   const deviceCode = started.body["device_code"];
   const userCode = started.body["user_code"];
   if (started.status !== 200 || typeof deviceCode !== "string" || typeof userCode !== "string" || !/^[A-Z0-9-]{4,20}$/.test(userCode)) {
+    if (started.status !== 200 && errorOf(started.body) === "") throw unexpectedAnswer(url, started);
     throw new CliError(`${url} did not start the CLI's sign-in${errorOf(started.body) === "" ? "" : ` (${errorOf(started.body)})`}: check that it is your install's URL.`);
   }
   // The approval page on the install itself; the code is typed there, never carried in a link.
@@ -134,7 +157,8 @@ export async function logIn(environment: CliEnvironment, configDir: string, url:
     else if (error === "expired_token" || (error === "authorization_pending" && now(environment).getTime() > until)) {
       throw new CliError("The code expired before it was approved: run tiehall login again.");
     } else if (error === "access_denied") throw new CliError("The sign-in was refused on the approval page.");
-    else if (error !== "authorization_pending") throw new CliError(`${url} refused the CLI's sign-in${error === "" ? "" : ` (${error})`}: run tiehall login again.`);
+    else if (error === "") throw unexpectedAnswer(url, polled);
+    else if (error !== "authorization_pending") throw new CliError(`${url} refused the CLI's sign-in (${error}): run tiehall login again.`);
   }
 }
 

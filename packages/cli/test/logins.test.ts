@@ -169,6 +169,53 @@ describe("tiehall login", () => {
     expect(existsSync(file())).toBe(false);
   });
 
+  // An answer to a poll that carries no OAuth error, such as the error model's problem or a page a proxy wrote, is
+  // no refusal of the sign-in, so the CLI says what it was: its HTTP status and, for a problem, its title and detail.
+  it("says what the install answered a poll with when the answer carries no OAuth error: its status, and a problem's title and detail", async () => {
+    const answers: Record<string, () => Response> = {
+      problem: () =>
+        new Response(
+          JSON.stringify({
+            type: "https://tiehall.com/problems/rate-limited",
+            title: "Limit exceeded",
+            status: 429,
+            detail: "Too many sign-in calls came from this address. Wait, then sign in again.",
+          }),
+          { status: 429, headers: { "content-type": "application/problem+json", "retry-after": "30" } },
+        ),
+      page: () => new Response("<!doctype html><title>Not found</title>", { status: 404, headers: { "content-type": "text/html" } }),
+    };
+    const said: Record<string, string> = {
+      problem: `${COM} answered the CLI's sign-in with HTTP 429 (Limit exceeded): Too many sign-in calls came from this address. Wait, then sign in again.`,
+      page: `${COM} answered the CLI's sign-in with HTTP 404 and no OAuth error: check that it is your install's URL, then run tiehall login again.`,
+    };
+    for (const [kind, answer] of Object.entries(answers)) {
+      const handle = async (request: Request) => {
+        if (new URL(request.url).pathname === "/api/auth/device/code") {
+          return Response.json({ device_code: "d", user_code: "ABCD-EFGH", verification_uri: `${COM}/device`, expires_in: 600, interval: 5 });
+        }
+        return answer();
+      };
+      const result = await tiehall(["login", COM], { [COM]: handle });
+      expect(result.code, kind).toBe(1);
+      expect(result.stderr, kind).toContain(said[kind]);
+      expect(result.stderr, kind).not.toContain("refused");
+      expect(existsSync(file()), kind).toBe(false);
+    }
+  });
+
+  it("says what the install answered when it did not start the sign-in with an OAuth error: its status, and a problem's title and detail", async () => {
+    const handle = async () =>
+      new Response(JSON.stringify({ type: "https://tiehall.com/problems/setup-required", title: "Setup required", status: 503, detail: "Setup is not complete." }), {
+        status: 503,
+        headers: { "content-type": "application/problem+json" },
+      });
+    const result = await tiehall(["login", COM], { [COM]: handle });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`${COM} answered the CLI's sign-in with HTTP 503 (Setup required): Setup is not complete.`);
+    expect(result.stdout).not.toContain("type this code");
+  });
+
   it("refuses a URL that is not an install's: neither https nor http://localhost", async () => {
     for (const url of ["http://tiehall.example.com", "ftp://tiehall.example.com", "tiehall.example.com", "https://tiehall.example.com/FE-142"]) {
       const result = await tiehall(["login", url], {});

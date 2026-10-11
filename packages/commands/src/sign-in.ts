@@ -42,7 +42,7 @@ import {
   servedMetadata,
   type AgentClientOptions,
 } from "./authorization-server.ts";
-import { cliDeviceFlow, seedCliClient } from "./device-flow.ts";
+import { cliDeviceFlow, seedCliClient, TOKEN_ENDPOINT_PATH, tokenEndpointRateLimit } from "./device-flow.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -484,8 +484,15 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       // The service's rate limit, on in every environment, not only in production, as the library would have it:
       // keyed on the client address above, kept in this process's memory (one web process per install), with the
       // library's own window and limits. Over HTTP it serves only GitHub's return to the callback, 100 calls per 10
-      // seconds from one address; the next gets the error model's 429 (refusalOfRateLimit).
-      rateLimit: { enabled: true, storage: "memory", window: RATE_LIMIT_WINDOW_SECONDS, max: RATE_LIMIT_MAX },
+      // seconds from one address; the next gets the error model's 429 (refusalOfRateLimit). The token endpoint keeps
+      // the authorization server's own limit, which does not count the CLI's polls with its device code (device-flow.ts).
+      rateLimit: {
+        enabled: true,
+        storage: "memory",
+        window: RATE_LIMIT_WINDOW_SECONDS,
+        max: RATE_LIMIT_MAX,
+        customRules: { [TOKEN_ENDPOINT_PATH]: tokenEndpointRateLimit },
+      },
       onAPIError: { errorURL: `${options.url}${setup ? SETUP_PATH : SIGN_IN_PATH}` },
       emailAndPassword: { enabled: false },
       user: {

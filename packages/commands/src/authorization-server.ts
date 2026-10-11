@@ -187,7 +187,8 @@ export function authorizationServerPlugins({ url, orgId, clients = {}, membershi
       return membership === undefined ? {} : { [MEMBERSHIP_CLAIM]: membership };
     },
     // Registrations are limited per client address and hour, as agent-access says (15.8), not by the plugin's
-    // five a minute; its limits on the token, authorization and revocation endpoints stay.
+    // five a minute; its limits on the token, authorization and revocation endpoints stay, though the token
+    // endpoint's does not count the CLI's polls with its device code (device-flow.ts).
     rateLimit: { register: false },
     schema: {
       oauthClient: { modelName: MODEL_NAMES.oauthClient },

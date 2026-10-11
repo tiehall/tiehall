@@ -2,7 +2,7 @@ import type { Client } from "@modelcontextprotocol/client";
 import { scannedOutputs } from "@tiehall/testing/confirm-url-scan";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-import { buildCli, type BuiltCli, type CliMachine } from "../../src/cli.ts";
+import { buildCli, type BuiltCli, type CliMachine, type CliProcess, type CliRun } from "../../src/cli.ts";
 import { waitFor } from "../../src/docker.ts";
 import { stubGitHubFor, type StubbedGitHub } from "../../src/github.ts";
 import { Install } from "../../src/install.ts";
@@ -17,8 +17,10 @@ import { callTool, connectAgent } from "../../src/mcp.ts";
 // GitHub, each in a browser of their own: Omar, the first admin, in the team
 // BE, and Dana, a member, in FE. Each has the tiehall command on a machine of
 // their own, built from the repository (cli.ts), which signs in through the
-// device flow; Omar's agent is the official MCP SDK client, which signs in
-// with OAuth through the consent screen (mcp.ts). Then the loop runs, every
+// device flow, Dana's after waiting for its code for over 100 seconds, past
+// the token endpoint's limit on the calls from one address; Omar's agent is
+// the official MCP SDK client, which signs in with OAuth through the consent
+// screen (mcp.ts). Then the loop runs, every
 // step through the surface a person or an agent uses:
 // - Omar's agent opens a request to FE over MCP;
 // - Dana's CLI claims it, starts work and asks a blocking question;
@@ -103,6 +105,31 @@ async function read(): Promise<{ state: string; claimant: { login: string } | nu
     revision: page.packet.revision,
     dueDate: page.packet.dueDate,
   };
+}
+
+/**
+ * How long a CLI waits for its code's approval in the test, polling every 5 seconds: past its 21st poll, which the
+ * token endpoint's limit on the calls from one address, 20 in a row, would refuse with 429.
+ */
+const PAST_THE_TOKEN_LIMIT_SECONDS = 110;
+
+/** Waits until `tiehall login` has polled for its code this many seconds after asking for it, failing at once if it ended meanwhile. */
+async function keepsPolling(login: CliProcess, seconds: number): Promise<void> {
+  let ended: CliRun | undefined;
+  login.ended.then(
+    (run) => void (ended = run),
+    () => undefined,
+  );
+  const outcome = await waitFor(
+    `tiehall login to poll for ${seconds} seconds`,
+    () => {
+      if (ended !== undefined) return "ended";
+      const polled = install.sql("SELECT coalesce(extract(epoch FROM last_polled_at - requested_at), 0) FROM oauth_device_codes ORDER BY requested_at DESC LIMIT 1");
+      return Number(polled) >= seconds ? "polling" : undefined;
+    },
+    seconds + 60,
+  );
+  expect(outcome, `${ended?.stdout ?? ""}\n${ended?.stderr ?? ""}`).toBe("polling");
 }
 
 /** The standing list's item of the request in the person's web inbox. */
@@ -193,6 +220,10 @@ describe("It works: a fresh install, two people in two teams, and their agents",
       const login = person.cli.start(["login", install.url]);
       const code = await waitFor("the code tiehall login prints", () => /type this code: (\S+)/.exec(login.printed())?.[1]);
       expect(login.printed()).toContain(`${install.url}/device`);
+      // Dana takes their time: their CLI polls at the install's interval for longer than the token endpoint lets
+      // other calls from one address go on, from the address every client on this machine reaches the trial URL
+      // from, Omar's CLI's included, and it is still waiting when Dana approves the code.
+      if (person === dana) await keepsPolling(login, PAST_THE_TOKEN_LIMIT_SECONDS);
       await person.page.goto(`${install.url}/device`);
       await person.page.getByLabel("The code tiehall login printed").fill(code);
       await Promise.all([person.page.waitForURL(`${install.url}/device`), person.page.getByRole("button", { name: "Continue" }).click()]);

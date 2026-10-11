@@ -48,7 +48,19 @@ import type { WorkerJob } from "./worker.ts";
 //   web session's token, is not served (sign-in-routes.ts), and neither are
 //   its verification, approval and denial routes, which would store a user on
 //   a code before the person approved it. No device-flow endpoint returns a
-//   web session or a session token.
+//   web session or a session token;
+// - the token endpoint's limit on the calls from one client address does not
+//   count the CLI's polls. The library lets 20 calls in a row from one
+//   address through, and the run ends only once a minute passes without one,
+//   while the CLI polls every 5 seconds for as long as its code waits, up to
+//   its 10 minutes: its 21st poll, about 100 seconds in, would be refused
+//   with 429, and so would every token call from that address until a minute
+//   passed without one, the next `tiehall login`'s first poll included. On an
+//   install on one machine, as a trial URL's is, every client there reaches
+//   it from one address. The device flow holds each code to the interval
+//   itself, answering a poll that comes sooner with slow_down, and a device
+//   code cannot be guessed. A call is a poll when its body names the device
+//   code grant, once; every other token call keeps the limit.
 // An expired code is removed by a job that runs every hour, with the address
 // it kept.
 
@@ -66,6 +78,41 @@ export const DEVICE_APPROVAL_PATH = "/device";
 
 /** The device authorization endpoint, under the sign-in service's routes at /api/auth. */
 export const DEVICE_AUTHORIZATION_PATH = "/device/code";
+
+/** The OAuth token endpoint, under the sign-in service's routes at /api/auth, which the CLI polls with its device code. */
+export const TOKEN_ENDPOINT_PATH = "/oauth2/token";
+
+/** A rule of the sign-in service's rate limit: at most `max` calls in a row from one client address, in a run that ends once `window` seconds pass without one. */
+export interface RateLimitRule {
+  window: number;
+  max: number;
+}
+
+/**
+ * The rate limit of a call to the token endpoint: none for the CLI's poll
+ * with its device code, whose body names the device code grant once, and
+ * the rule it has otherwise for every other call.
+ */
+export async function tokenEndpointRateLimit(request: Request, rule: RateLimitRule): Promise<RateLimitRule | false> {
+  const grantTypes = await grantTypesOf(request);
+  return grantTypes.length === 1 && grantTypes[0] === DEVICE_CODE_GRANT_TYPE ? false : rule;
+}
+
+/** The grant types a token request's body names, as the endpoint reads a form or a JSON body; none for any other body. */
+async function grantTypesOf(request: Request): Promise<string[]> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  try {
+    if (contentType.includes("application/x-www-form-urlencoded")) return new URLSearchParams(await request.clone().text()).getAll("grant_type");
+    if (contentType.includes("application/json")) {
+      const body = JSON.parse(await request.clone().text()) as unknown;
+      const grantType = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["grant_type"] : undefined;
+      return typeof grantType === "string" ? [grantType] : [];
+    }
+  } catch {
+    // A body that cannot be read names no grant type, and the endpoint refuses it.
+  }
+  return [];
+}
 
 /** The name the CLI is shown by. */
 const CLI_NAME = "The tiehall CLI";

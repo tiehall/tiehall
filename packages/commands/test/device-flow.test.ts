@@ -58,16 +58,34 @@ async function deviceCode(form: Record<string, string>): Promise<Answer> {
   return { status: answer.status, body: (await answer.json()) as Record<string, unknown> };
 }
 
-/** The CLI's poll of the OAuth token endpoint with its device code. */
-async function deviceToken(code: string, clientId = CLI_CLIENT_ID): Promise<Answer> {
+/** The CLI's poll of the OAuth token endpoint with its device code, from this client address when one is given. */
+async function deviceToken(code: string, clientId = CLI_CLIENT_ID, address?: string): Promise<Answer> {
   const answer = await harness.handle(
     new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: { "content-type": "application/x-www-form-urlencoded", ...(address === undefined ? {} : { "x-forwarded-for": address }) },
       body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: code, client_id: clientId }).toString(),
     }),
   );
   return { status: answer.status, body: (await answer.json()) as Record<string, unknown> };
+}
+
+/** A token call with this form body from this client address, as any client sends one. */
+function tokenCall(body: string, address: string): Promise<Response> {
+  return harness.handle(
+    new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": address },
+      body,
+    }),
+  );
+}
+
+/** The install's interval passes for a device code, as its clock reads the code's last poll. */
+async function intervalPasses(code: string): Promise<void> {
+  await harness.install.owner.query("UPDATE oauth_device_codes SET last_polled_at = last_polled_at - interval '5 seconds' WHERE device_code = $1", [
+    storedDeviceCode(code),
+  ]);
 }
 
 /** The CLI's own request, as `tiehall login` sends it: its client id, the MCP resource and the scopes it works with. */
@@ -143,6 +161,32 @@ describe("the CLI", () => {
     expect(polled.body["error"]).toBe("authorization_pending");
   });
 
+  // The CLI polls at the install's interval, every 5 seconds, for as long as its code waits, up to its 10 minutes;
+  // and on an install on one machine, as a trial URL's is, every client there reaches the install from one address.
+  // The token endpoint's limit on the calls from one address, 20 in a row, would refuse the 21st poll, about 100
+  // seconds in, with 429, and every token call from that address until a minute passed without one, the next
+  // `tiehall login`'s first poll included. The device flow holds each code to the interval itself.
+  it("keeps getting authorization_pending at the install's interval for as long as its code waits, past the token endpoint's limit on one address", async () => {
+    const answer = await deviceCode(CLI_REQUEST);
+    const code = String(answer.body["device_code"]);
+    for (let poll = 1; poll <= 30; poll += 1) {
+      const polled = await deviceToken(code, CLI_CLIENT_ID, "198.51.100.41");
+      expect(polled.status, `poll ${poll}`).toBe(400);
+      expect(polled.body["error"], `poll ${poll}`).toBe("authorization_pending");
+      await intervalPasses(code);
+    }
+    // The next sign-in from the same address is answered as the first was.
+    const next = await deviceCode(CLI_REQUEST);
+    expect((await deviceToken(String(next.body["device_code"]), CLI_CLIENT_ID, "198.51.100.41")).body["error"]).toBe("authorization_pending");
+  });
+
+  it("gets slow_down for a poll that comes before the install's interval has passed since its last one", async () => {
+    const answer = await deviceCode(CLI_REQUEST);
+    const code = String(answer.body["device_code"]);
+    expect((await deviceToken(code, CLI_CLIENT_ID, "198.51.100.42")).body["error"]).toBe("authorization_pending");
+    expect((await deviceToken(code, CLI_CLIENT_ID, "198.51.100.42")).body["error"]).toBe("slow_down");
+  });
+
   it("gets an access token whose only audience is the MCP resource, and a refresh token, once a member approved its code; /api/v1 accepts it", async () => {
     const answer = await deviceCode(CLI_REQUEST);
     await approve(String(answer.body["user_code"]), ana.userId);
@@ -205,6 +249,32 @@ describe("the CLI", () => {
     expect(answer.status).toBe(400);
     expect(answer.body["error"]).toBe("invalid_request");
     expect(await deviceCodes()).toBe(before);
+  });
+});
+
+describe("the token endpoint's limit on the calls from one address", () => {
+  // Every token call but a device-code poll keeps the limit: 20 in a row from one address, and the next gets the
+  // error model's 429, whatever the CLI's polls from that address did before.
+  it("refuses the 21st other token call in a row from an address, which the CLI's polls from it did not use up", async () => {
+    const address = "198.51.100.43";
+    const answer = await deviceCode(CLI_REQUEST);
+    const code = String(answer.body["device_code"]);
+    for (let poll = 1; poll <= 25; poll += 1) {
+      expect((await deviceToken(code, CLI_CLIENT_ID, address)).body["error"], `poll ${poll}`).toBe("authorization_pending");
+      await intervalPasses(code);
+    }
+    const refresh = new URLSearchParams({ grant_type: "refresh_token", refresh_token: "not-a-refresh-token", client_id: CLI_CLIENT_ID }).toString();
+    for (let call = 1; call <= 20; call += 1) expect((await tokenCall(refresh, address)).status, `call ${call}`).not.toBe(429);
+    const limited = await tokenCall(refresh, address);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("content-type")).toBe("application/problem+json");
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  it("counts a token call that names its grant type twice, the device code grant among them", async () => {
+    const twice = `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:device_code")}&grant_type=refresh_token&device_code=not-a-code&client_id=${CLI_CLIENT_ID}`;
+    for (let call = 1; call <= 20; call += 1) expect((await tokenCall(twice, "198.51.100.44")).status, `call ${call}`).not.toBe(429);
+    expect((await tokenCall(twice, "198.51.100.44")).status).toBe(429);
   });
 });
 
