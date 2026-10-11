@@ -81,7 +81,7 @@ The maintainers' record of each run of Tiehall against a real agent client, made
 
 ### Not exercised
 
-- A question from another person: the install has one person, so the maintainer's own question stood in. The waiter as built wakes for every update in its user's updates, whoever made it, so it treats the two alike. D55 (43) of the OpenSpec change `decisions-from-groups-15-28`, not built yet, would leave a user's own events out of their updates; under it, a run like this one needs a second person.
+- A question from another person: the install has one person, so the maintainer's own question stood in. The waiter as built wakes for every update in its user's updates, whoever made it, so it treats the two alike. D55 (43) of the OpenSpec change `decisions-from-groups-15-28`, not built yet, would leave a user's own events out of their updates; under it, a run like this one needs a second person. Task 19.19 asks for another user's question, so it stays open until the maintainer accepts this stand-in, item (8) of the OpenSpec change `findings-from-claude-code-run`, or a run with a second person checks it.
 - `/hooks` was not opened, so the list of the plugin's SessionStart, Stop and SessionEnd hooks is not recorded; the SessionStart and Stop hooks are seen running above, and the SessionEnd hook is not seen.
 - The waiter's cap, with `TIEHALL_HOOK_WAIT_CAP_SECONDS=180`, and a late wake, 12 minutes or more after a turn ends, which checks that Claude Code keeps the Stop hook's 1900-second timeout.
 - Two terminal sessions at once; the desktop app's session took part only as finding F1 describes.

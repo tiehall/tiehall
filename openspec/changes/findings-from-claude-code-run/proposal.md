@@ -2,13 +2,13 @@
 
 ## Why
 
-On 2026-10-11 the maintainer ran the Claude Code plugin and its hooks against a local install, for tasks 17.7 and 19.19 of `add-tiehall-oss-v1`; the [client-matrix log](../../../docs/client-matrix/log.md) holds the record. The plugin connected and the waiter woke Claude, so the Stop-hook waiter ships (19.20). The run also found four problems, F1 to F4. [design.md](design.md#findings-and-recommended-rules) states each with the run's evidence, the options and a recommended rule, items (1) to (9), and ends with the list for the maintainer to approve.
+On 2026-10-11 the maintainer ran the Claude Code plugin and its hooks against a local install, for tasks 17.7 and 19.19 of `add-tiehall-oss-v1`; the [client-matrix log](../../../docs/client-matrix/log.md) holds the record. The plugin connected and the waiter woke Claude, so the Stop-hook waiter ships (19.20). The run also found four problems, F1 to F4. [design.md](design.md#findings-and-recommended-rules) states each with the run's evidence, the options and a recommended rule, items (1) to (9), for the maintainer to approve.
 
 - **F1, items (1) to (3).** The mark of the news announced is one per user and install, and a plugin installed for the user runs its hooks in every Claude Code session, the desktop app's included. The first waiter to see an update takes it: BE-1's opening woke a desktop app session, and the terminal session that opened BE-1 was never told.
 - **F2, item (4).** An agent's own writes are its user's updates, so a waiter can wake Claude for what Claude just did. `decisions-from-groups-15-28`'s D55 (43) would leave out every event of the user, which also drops the web confirmations that "Proposal outcomes reach the proposing agent" requires.
 - **F3, items (5) and (6).** The plugin reads the install's URL from `TIEHALL_URL` in the environment Claude Code starts in. The desktop app does not read the user's shell, so its MCP connection failed while its hooks fell back to the CLI's saved login.
 - **F4, item (7).** A person who opened a request and then claimed it still has their messages recorded for the requesting side.
-- **Items (8) and (9)** settle the run's own records: 19.19 is checked off with its limits named, and the client-matrix log lives in `docs/client-matrix/`.
+- **Items (8) and (9)** settle the run's own records: 19.19, open until approved, is checked off with its limits named, and the client-matrix log lives in `docs/client-matrix/`.
 
 ## What Changes
 
