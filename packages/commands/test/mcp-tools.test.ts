@@ -107,6 +107,16 @@ describe.each(PROTOCOL_VERSIONS)("the tool list, on protocol version %s", (versi
     }
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (29): a client may run a read-only
+  // tool without asking, and whats_new acknowledges updates when asked, which moves a read cursor and changes what
+  // every later read returns, so it carries no read-only hint.
+  it("gives whats_new, which can move a read cursor, no read-only hint", async () => {
+    const whatsNew = (await listed(dana, version)).find(({ name }) => name === "whats_new");
+    expect(whatsNew).toBeDefined();
+    expect(whatsNew?.annotations).toBeTypeOf("object");
+    expect(whatsNew?.annotations?.readOnlyHint).not.toBe(true);
+  });
+
   it("states each tool's stability level in its _meta, equal to its operation's", async () => {
     const tools = await listed(dana, version);
     expect(tools.length).toBeGreaterThan(0);

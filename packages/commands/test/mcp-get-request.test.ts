@@ -160,6 +160,30 @@ describe.each(PROTOCOL_VERSIONS)("get_request, on protocol version %s", (version
     expect(values).toContain(SECOND);
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (27): the 32,000 characters count the
+  // page's fenced markdown and its structured content together, since clients' limits on tool output count the whole
+  // result, so each form holds about half of a full page.
+  it("holds at most 32,000 characters of markdown and structured content together on each page of a 100,000-character request", async () => {
+    let args: Record<string, unknown> = { request: large.key };
+    const pages: { markdown: number; structured: number }[] = [];
+    for (let count = 0; count < 20; count += 1) {
+      const result = await getRequest(dana, version, args);
+      expect(result.isError).not.toBe(true);
+      const markdown = textOf(result).length;
+      const structured = JSON.stringify(result.structuredContent).length;
+      expect(markdown + structured, `page ${count + 1}`).toBeLessThanOrEqual(PAGE_CHARACTERS);
+      pages.push({ markdown, structured });
+      const page = result.structuredContent as Page;
+      if (page.next === null) break;
+      args = { request: large.key, section: page.next.section, page: page.next.page };
+    }
+    expect(pages.length).toBeGreaterThan(3);
+    // A full page shares the cap between its two forms: each holds more than a quarter of it.
+    const [first] = pages;
+    expect(first?.markdown).toBeGreaterThan(PAGE_CHARACTERS / 4);
+    expect(first?.structured).toBeGreaterThan(PAGE_CHARACTERS / 4);
+  });
+
   it("reads one section, the thread or the packet, in pages of its own", async () => {
     const thread = (await getRequest(dana, version, { request: large.key, section: "thread" })).structuredContent as Page;
     expect(thread.section).toBe("thread");

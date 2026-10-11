@@ -532,6 +532,25 @@ describe("the retry of a call whose proposal came as an elicitation", () => {
     expect(elsewhere.status).toBe(403);
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (31): a state is bound to the tool and
+  // the arguments of the call that created its proposal, so the same tool's retry with that state and other
+  // arguments, another due date or another request, is refused like a foreign state, and nothing changes.
+  it("refuses with HTTP 403 request-state-refused a retry with the call's own tool and state but other arguments, and changes nothing", async () => {
+    const { request, call } = await dueDate();
+    const another = await openToFe();
+    const before = await newestProposal(another.id).catch(() => undefined);
+    for (const args of [
+      { ...call.args, dueDate: "2026-11-30" },
+      { ...call.args, key: another.key },
+    ]) {
+      const refused = await refusedRetry(sam, { name: call.name, args }, call.state);
+      expect(refused, JSON.stringify(args)).toEqual({ status: 403, problem: expect.objectContaining({ type: `${PROBLEM}request-state-refused`, status: 403 }) });
+    }
+    expect(await storedProposal(call.proposal)).toEqual({ state: "pending", confirmations: 0 });
+    expect(await newestProposal(another.id).catch(() => undefined)).toEqual(before);
+    expect((await newestProposal(request.id)).id).toBe(call.proposal);
+  });
+
   it("keeps a state valid 8 days, and refuses with HTTP 403 one issued 9 days earlier", async () => {
     expect(REQUEST_STATE_TTL_SECONDS).toBe(8 * 24 * 60 * 60);
     const { call } = await dueDate();
