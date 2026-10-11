@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Makes the Claude Code hooks tell the sessions that worked on a request: a session's project folder follows the requests its agent works on, and news on a followed request is announced once in each folder that follows it and in no other session. Leaves out of the agents' readers only what the user's agents did, so that an agent still hears what its person did in the web UI, and leaves every event of the user out of the readers people read. The rest of the capability is unchanged.
+Makes the Claude Code hooks tell the sessions that worked on a request: a session's project folder follows the requests its agent works on, and news on a followed request is announced once in each folder that follows it and in no other session. Leaves out of the agents' readers only what the user's agents did, so that an agent still hears what its person did in the web UI, and leaves every event of the user out of the readers people read; a proposal's endings follow the same rule. The rest of the capability is unchanged.
 
 ## ADDED Requirements
 
@@ -171,3 +171,47 @@ Source: D14; D28 #58, #60, #62, #75; D29 (5); D55 (43), (45), (46); design.md, F
 - **WHEN** Dana has claimed `FE-142` and posts a question on it with `tiehall ask`, which Tiehall records with the actor kind `agent` and the surface `cli`
 - **THEN** Dana's next `tiehall updates` does not list the question
 - **AND** the next `whats_new` call by Sam's agent includes it
+
+### Requirement: Proposal outcomes reach the proposing agent
+
+When the accountable human confirms a proposal that an agent made, the confirmation SHALL appear in `whats_new` for the user that agent acts for. For a commitment that needs a confirmation from each side, as the requests capability defines, the other side's confirmation, which makes the commitment take effect, SHALL appear there too. When a proposal ends without taking effect, whether it is rejected, withdrawn, expired or cancelled, as the requests capability defines, the event that names how it ended SHALL appear in `whats_new` for its accountable human, including when the accountable human has confirmed it and it was waiting for the other side, unless one of the accountable human's agents ended it, such as a withdrawal through their agent, which the requirement on what `whats_new` covers leaves out of the agents' readers. No email SHALL be sent for an ending right away. An ending that another person or the system made, such as the other side's rejection or an expiry, reaches the accountable human's web inbox's update feed and, when SMTP is set, their daily digest; one that the accountable human made, in the web UI or through an agent, reaches neither, since they leave out every event of the user, as the requirement on what `whats_new` covers defines.
+
+Source: design.md, Findings: F2 (4); design.md, Technical decisions: T3; design.md, Rules carried from earlier changes
+
+#### Scenario: A confirmed decline
+
+- **WHEN** Dana's agent proposes declining `FE-142` and Dana confirms it in the web UI
+- **THEN** the next `whats_new` call by Dana's agent includes the confirmation
+
+#### Scenario: A due date confirmed by both sides
+
+- **WHEN** Dana, a member of team FE, confirms their agent's due-date proposal on `FE-142`, and Sam, the requester of `FE-142`, then confirms it too
+- **THEN** the `whats_new` calls by Dana's agent include Dana's confirmation and then Sam's confirmation, with which the due date took effect
+
+#### Scenario: The other side's rejection reaches the proposing agent
+
+- **WHEN** Dana, a member of team FE, confirms their agent's due-date proposal on `FE-142`, and Sam, the requester of `FE-142`, then rejects it
+- **THEN** the next `whats_new` call by Dana's agent includes the rejection
+
+#### Scenario: A half-confirmed due date expires
+
+- **WHEN** the install has SMTP set, Alice's agent created a due-date proposal on `FE-142` at 2026-10-01 09:00 UTC, Alice, the requester of `FE-142`, confirmed it on 2026-10-02, and no member of team FE confirmed it by 2026-10-08 09:00 UTC
+- **THEN** the next `whats_new` call by Alice's agent includes an event that the proposal expired
+- **AND** Alice gets no immediate email about the expiry
+
+#### Scenario: A withdrawal through the agent is not news to it
+
+- **WHEN** Dana's agent proposes a due date on `FE-142` and then withdraws that proposal
+- **THEN** the next `whats_new` call by Dana's agent does not include the withdrawal
+- **AND** Dana's web inbox's update feed does not list it
+
+#### Scenario: The accountable human's own rejection reaches their agent only
+
+- **WHEN** Dana's agent proposes declining `FE-142` and Dana rejects the proposal in the web UI
+- **THEN** the next `whats_new` call by Dana's agent includes the rejection
+- **AND** Dana's web inbox's update feed does not list it
+
+#### Scenario: The other side's rejection reaches the web inbox
+
+- **WHEN** Dana, a member of team FE, confirms their agent's due-date proposal on `FE-142`, and Sam, the requester of `FE-142`, then rejects it
+- **THEN** Dana's web inbox's update feed lists the rejection

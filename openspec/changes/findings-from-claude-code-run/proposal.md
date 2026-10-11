@@ -26,7 +26,7 @@ None.
 
 ### Modified Capabilities
 
-- `requester-loop`: adds "A project folder follows the requests its sessions work on"; modifies "News is announced once" and "What whats_new covers".
+- `requester-loop`: adds "A project folder follows the requests its sessions work on"; modifies "News is announced once", "What whats_new covers" and "Proposal outcomes reach the proposing agent".
 - `agent-surfaces`: modifies "The Claude Code plugin".
 - `requests`: adds "The side a message is posted for".
 
