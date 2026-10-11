@@ -72,8 +72,8 @@ export function createActivityLogRoute(options: ActivityLogRouteOptions): Activi
 
 /** The page: the filters as a form, the events as a table, and a link to the older ones. */
 function page(query: URLSearchParams, events: ActivityEvent[], shell: PageShell): string {
-  const field = (name: string, label: string, placeholder: string) =>
-    fieldHtml(`filter-${name}`, label, `<input id="filter-${name}" name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}" placeholder="${escapeHtml(placeholder)}">`);
+  // An example sits in the label, never in a placeholder, which an empty field would show as if it were a value.
+  const field = (name: string, label: string) => fieldHtml(`filter-${name}`, label, `<input id="filter-${name}" name="${name}" type="text" value="${escapeHtml(query.get(name) ?? "")}">`);
   const rows = events.map(
     (event) => `        <tr>
           <td>${event.number}</td>
@@ -103,11 +103,11 @@ function page(query: URLSearchParams, events: ActivityEvent[], shell: PageShell)
       '      <div class="panel filters">',
       `      <form method="get" action="${ACTIVITY_LOG_PATH}">`,
       '        <div class="field-row">',
-      field("from", "From", "2026-10-01T00:00:00Z"),
-      field("to", "To", "2026-10-01T23:59:59Z"),
-      field("actor", "Actor (user id)", ""),
-      field("request", "Request", "FE-142"),
-      field("type", "Event type", "member.role_changed"),
+      field("from", "From, a time such as 2026-10-01T00:00:00Z"),
+      field("to", "To, a time such as 2026-10-01T23:59:59Z"),
+      field("actor", "Actor, by user id"),
+      field("request", "Request, such as FE-142"),
+      field("type", "Event type, such as member.role_changed"),
       "        </div>",
       "        <button type=\"submit\" class=\"secondary\">Filter</button>",
       "      </form>",

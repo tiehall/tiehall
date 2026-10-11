@@ -135,10 +135,18 @@ describe("each admin page", () => {
     const main = await open(createActivityLogRoute(options()), "/admin/activity-log");
     expect(main).toContain('<a href="/admin/activity-log" aria-current="page">Activity log</a>');
     const filters = element(main, /<div class="panel filters">/, "div");
-    for (const [name, label] of [["from", "From"], ["to", "To"], ["actor", "Actor (user id)"], ["request", "Request"], ["type", "Event type"]]) {
+    for (const [name, label] of [
+      ["from", "From, a time such as 2026-10-01T00:00:00Z"],
+      ["to", "To, a time such as 2026-10-01T23:59:59Z"],
+      ["actor", "Actor, by user id"],
+      ["request", "Request, such as FE-142"],
+      ["type", "Event type, such as member.role_changed"],
+    ]) {
       expect(filters).toContain(`<label for="filter-${name}">${label}</label>`);
       expect(filters).toContain(`<input id="filter-${name}" name="${name}" type="text"`);
     }
+    // An example sits in the label, never in a placeholder, which an empty field would show as if it were a value.
+    expect(filters).not.toContain("placeholder=");
     expect(main).toMatch(/<div class="table-box">\s*<table class="log">\s*<thead><tr><th scope="col">#<\/th><th scope="col">Time<\/th>/);
     expect(main).toContain('<td><span class="chip tag">domain</span></td>');
     expect(main).toMatch(/<a class="button secondary" href="\/confirm\/activity_log\.export\?input=[^"]+">Export the whole log as JSONL<\/a>/);
