@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./assets": "./src/assets.ts",
+    "./html": "./src/html.ts",
     "./health": "./src/health.ts",
     "./settings": "./src/settings.ts",
     "./setup": "./src/setup.ts",

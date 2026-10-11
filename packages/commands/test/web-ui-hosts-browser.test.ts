@@ -1,14 +1,10 @@
-import { readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { CLI_CLIENT_ID, startSetup } from "../src/index.ts";
 import { CLIENT_REDIRECT_URI, pkcePair } from "./support/agent-access.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { namedRoutes, PAGES, routeFiles, seedInventory, SIGNED_OUT_PAGES } from "./support/page-inventory.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
@@ -19,83 +15,13 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // as the image runs it (web-app.ts), with a log of every request the pages
 // make, and the test fails on any request to a host other than the install's:
 // no script, style sheet, font, image, frame or connection from anywhere
-// else. Every route of the web app is named below, as a page with the paths
-// that show it or as no page, with why; a route that is neither fails the
-// test, so a new page is visited once it is added. The pages are seen as
+// else. Every route of the web app is named in the inventory, as a page with
+// the paths that show it or as no page, with why; a route that is neither
+// fails the test, so a new page is visited once it is added. The pages are seen as
 // people see them: an admin signed in with a real web session, a browser that
 // is signed in as nobody, and, on a second install whose setup is not
-// complete, the operator on the setup screen.
-
-/** The web app's routes, apps/web/app. */
-const APP = fileURLToPath(new URL("../../../apps/web/app/", import.meta.url));
-
-/** The pages of the web UI, by their route file under apps/web/app, and the paths a signed-in admin opens to see them. */
-const PAGES: Readonly<Record<string, readonly string[]>> = {
-  "route.ts": ["/"],
-  "inbox/route.ts": ["/inbox"],
-  "settings/email/route.ts": ["/settings/email"],
-  "members/route.ts": ["/members"],
-  "requests/route.ts": ["/requests", "/requests?list=opened", "/requests?list=all"],
-  "requests/new/route.ts": ["/requests/new", "/requests/new?team=FE"],
-  "[key]/page.tsx": ["/FE-1", "/FE", "/QA"],
-  "tokens/route.ts": ["/tokens"],
-  "admin/route.ts": ["/admin"],
-  "admin/invites/route.ts": ["/admin/invites"],
-  "admin/teams/route.ts": ["/admin/teams"],
-  "admin/sign-in-policy/route.ts": ["/admin/sign-in-policy"],
-  "admin/personal-access-tokens/route.ts": ["/admin/personal-access-tokens"],
-  "admin/github/route.ts": ["/admin/github"],
-  "admin/apis/route.ts": ["/admin/apis"],
-  "admin/activity-log/route.ts": ["/admin/activity-log"],
-  // A proposal's confirm page and an admin action's review page; the paths are filled in once they exist.
-  "confirm/[...command]/route.ts": [],
-  // Reached from an agent client's authorization request, which the admin's browser starts once the client has
-  // registered; without one, it answers with a page that says so.
-  "consent/route.ts": ["/consent"],
-  // Where a member types the code `tiehall login` printed; the test also types a code and opens its review.
-  "device/route.ts": ["/device"],
-  "docs/api/route.ts": ["/docs/api"],
-  "docs/api/changelog/route.ts": ["/docs/api/changelog"],
-};
-
-/** The pages a browser signed in as nobody opens. */
-const SIGNED_OUT_PAGES: Readonly<Record<string, readonly string[]>> = {
-  "sign-in/route.ts": ["/sign-in"],
-};
-
-/** The setup screen, which only an install whose setup is not complete serves; its steps are visited in order. */
-const SETUP = "setup/[[...step]]/route.ts";
-
-/** The routes that are no page of the web UI, and why. */
-const NOT_PAGES: Readonly<Record<string, string>> = {
-  ".well-known/[...path]/route.ts": "discovery documents for agent clients",
-  "api/auth/[...all]/route.ts": "the sign-in service's routes, which GitHub's pages lead back to",
-  "api/v1/[...path]/route.ts": "the REST API",
-  "mcp/route.ts": "the MCP endpoint",
-  "webhooks/github/route.ts": "GitHub's webhook deliveries",
-  "schemas/packet/v1-beta.json/route.ts": "the packet schema, a JSON document",
-  "healthz/route.ts": "the health check",
-  "sign-out/route.ts": "the sign-out form's target, which only answers its post",
-  "teams/apis/route.ts": "the target of the forms of a team's page, which only answers their posts",
-  "mirrors/retry/route.ts": "the target of a failed mirror job's Retry button, which only answers its post",
-  "docs/api/reference.js/route.ts": "a script of the API reference page, which that page loads",
-  "docs/api/scalar.js/route.ts": "a script of the API reference page, which that page loads",
-  "assets/[...path]/route.ts": "the install's own assets, such as its stylesheet, fonts and icons, which the pages load",
-};
-
-/** Every route file of the web app: its route handlers and its pages. */
-function routeFiles(): string[] {
-  const found: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.name === "route.ts" || entry.name === "page.tsx") found.push(relative(APP, path).split(sep).join("/"));
-    }
-  };
-  walk(APP);
-  return found.sort();
-}
+// complete, the operator on the setup screen. The inventory is
+// support/page-inventory.ts, which the table test of each page's policy shares.
 
 let stub: GitHubStub;
 let browser: Browser;
@@ -111,30 +37,7 @@ beforeAll(async () => {
   stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
   install = await startTestInstall();
-  const be = await addTeam(install.owner, "BE");
-  const fe = await addTeam(install.owner, "FE");
-  await addTeam(install.owner, "QA");
-  await install.owner.query("UPDATE teams SET intake_notes = 'One request per screen.', required_fields = ARRAY['acceptance_criteria'] WHERE key = 'FE'");
-  const pia = await addUser(install.owner, { login: "pia", role: "admin", githubAccountId: stub.addUser({ login: "pia" }).id });
-  const alice = await addUser(install.owner, { login: "alice", githubAccountId: stub.addUser({ login: "alice" }).id });
-  await joinTeams(install.owner, pia, fe);
-  await joinTeams(install.owner, alice, be);
-  await openRequest(install, tokenOf(alice), {
-    targetTeam: "FE",
-    title: "Add a dark mode",
-    packet: {
-      schema_version: "1-beta",
-      kind: "request",
-      untrusted: { need: "![x](https://tracker.example/pixel.png)", acceptance_criteria: ["It follows the system setting."], links: [{ url: "https://design.example.com/dark" }] },
-    },
-  });
-  expect((await callApi(install, tokenOf(alice), "POST", "/api/v1/requests/FE-1/messages", { kind: "comment", body: "<img src=https://tracker.example/pixel.png>" })).status).toBe(200);
-  const declined = await callApi(install, tokenOf(pia), "POST", "/api/v1/requests/FE-1/status", { state: "declined" });
-  expect(declined.status).toBe(202);
-  confirmPaths.push(`/confirm/${declined.body.proposal.id}`);
-  confirmPaths.push(`/confirm/members.change_role?input=${encodeURIComponent(JSON.stringify({ userId: alice, role: "admin" }))}`);
-  // A personal access token, which the tokens page lists.
-  expect((await install.confirm(sessionOf(pia), "personal_access_tokens.create", { name: "Agent", scopes: ["requests:read"], expiresInDays: 30 })).status).toBe(200);
+  confirmPaths.push(...(await seedInventory(install, stub)).confirmPaths);
   web = await startWebApp(install);
   signIn = await startSignIn(install, stub, { url: web.url });
 
@@ -221,8 +124,7 @@ async function startDeviceFlow(app: WebApp): Promise<string> {
 
 describe("the web UI's pages and the hosts they load from", () => {
   it("names every route of the web app as a page it visits or as no page, with why", () => {
-    const named = [...Object.keys(PAGES), ...Object.keys(SIGNED_OUT_PAGES), SETUP, ...Object.keys(NOT_PAGES)].sort();
-    expect(routeFiles()).toEqual(named);
+    expect(routeFiles()).toEqual(namedRoutes());
   });
 
   it("logs a request to another host, so a page that made one would fail the test", { timeout: 60_000 }, async () => {

@@ -5,7 +5,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGitHubApp } from "./github-app.ts";
 import { convertManifestCode, GITHUB_API_URL, GitHubUnavailableError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
-import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, type WayOn } from "./html.ts";
+import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, webPagePolicy, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession, openSetupSession } from "./setup-code.ts";
@@ -198,7 +198,7 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
     });
     const query = new URL(request.url).searchParams;
     // Both steps' buttons lead to GitHub: the manifest's form posts there, and the sign-in's answer redirects there.
-    const toGitHub = { "content-security-policy": pagePolicy(`'self' ${new URL(webUrl).origin}`) };
+    const toGitHub = { "content-security-policy": webPagePolicy([new URL(webUrl).origin]) };
     if (reopened) {
       const signIn = options.signIn !== undefined;
       // A new App: one the setup screen stored since the step opened.
@@ -438,11 +438,6 @@ function refuse(request: Request, refusal: HttpProblem): Response {
 
 function page(html: string, headers: Record<string, string> = {}, status = 200): Response {
   return new Response(html, { status, headers: { ...PAGE_HEADERS, ...headers } });
-}
-
-/** The pages' content security policy, with the places their forms may post to. */
-function pagePolicy(formAction: string): string {
-  return PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", `form-action ${formAction}`);
 }
 
 function layout(body: string): string {

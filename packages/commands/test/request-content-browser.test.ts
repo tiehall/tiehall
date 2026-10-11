@@ -161,13 +161,18 @@ describe("request content in the web UI", () => {
     expect(first.status).toBe(200);
     const policy = first.headers.get("content-security-policy") ?? "";
     const directives = new Map(policy.split(";").map((directive) => directive.trim().split(/\s+/)).map(([name = "", ...values]) => [name, values]));
-    expect(directives.get("default-src")).toEqual(["'self'"]);
-    expect(directives.get("img-src")).toEqual(["'self'", "data:"]);
+    // Styles, fonts and images from the install only, and no inline style (web-ui: The content security policy of each
+    // kind of page; D57 (9)).
+    expect(directives.get("default-src")).toEqual(["'none'"]);
+    expect(directives.get("img-src")).toEqual(["'self'"]);
+    expect(directives.get("style-src")).toEqual(["'self'"]);
+    expect(directives.get("font-src")).toEqual(["'self'"]);
     expect(directives.get("object-src")).toEqual(["'none'"]);
     expect(directives.get("base-uri")).toEqual(["'none'"]);
     expect(directives.get("frame-ancestors")).toEqual(["'none'"]);
     const scripts = directives.get("script-src") ?? [];
     expect(scripts).not.toContain("'unsafe-inline'");
+    expect(scripts.filter((source) => !source.startsWith("'nonce-"))).toEqual(["'strict-dynamic'"]);
     const nonce = scripts.find((source) => source.startsWith("'nonce-"));
     expect(nonce).toMatch(/^'nonce-[A-Za-z0-9+/_-]{22,}={0,2}'$/);
     // Every script the page carries has that nonce, so the browser runs Tiehall's scripts and nothing else.

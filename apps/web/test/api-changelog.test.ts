@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { API_CHANGELOG } from "@tiehall/catalog/api-changelog";
+import { assetUrl } from "@tiehall/commands/assets";
 import { parseChangelog } from "@tiehall/catalog/changelog";
 import { GET } from "../app/docs/api/changelog/route.ts";
 import { changelogPage } from "../lib/api-changelog.ts";
@@ -72,15 +73,15 @@ describe("the changelog page", () => {
     expect(text).toContain("No release has changed the API yet.");
   });
 
-  it("runs no script and loads nothing, under a strict Content-Security-Policy", async () => {
+  // It takes its look from the install's stylesheet, and carries no style element or attribute (web-ui: The content
+  // security policy of each kind of page; web-ui: One stylesheet with named design tokens; D57 (9)).
+  it("runs no script and loads only the install's stylesheet, under a strict Content-Security-Policy", async () => {
     const { response, html } = await page();
-    expect(html).not.toMatch(/<script|<link|<img|<iframe|<form/i);
-    const policy = response.headers.get("content-security-policy") ?? "";
-    expect(policy).toMatch(/^default-src 'none'; style-src 'sha256-[A-Za-z0-9+/]+=*'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'$/);
-    // The hash is the page's one style element.
-    const style = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
-    const { createHash } = await import("node:crypto");
-    expect(policy).toContain(`'sha256-${createHash("sha256").update(style).digest("base64")}'`);
+    expect(html).not.toMatch(/<script|<img|<iframe|<form|<style|\sstyle=/i);
+    expect([...html.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag)).toContain(`<link rel="stylesheet" href="${assetUrl("/assets/tiehall.css")}">`);
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
   });
 });
 

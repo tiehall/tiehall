@@ -5,7 +5,7 @@ import { AUTHORIZATION_ENDPOINT_PATH, CONSENT_PATH, REFRESH_SCOPE } from "./auth
 import type { WebSessionCaller } from "./caller.ts";
 import { CONFIRM_PATH, renderReviewPage } from "./confirm-route.ts";
 import type { ConfirmationStep } from "./confirmation-step.ts";
-import { answerRefusal, PAGE_HEADERS, wayOnFor } from "./html.ts";
+import { answerRefusal, PAGE_HEADERS, wayOnFor, webPagePolicy } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { renewingSession } from "./session-renewal.ts";
 import { csrfTokenFor } from "./web-writes.ts";
@@ -223,7 +223,7 @@ export function redirectSourceOf(redirectUri: string): string {
 
 /** The pages' own Content-Security-Policy, whose form may also lead to these sources. */
 export function policyWithFormAction(sources: readonly string[]): string {
-  return PAGE_HEADERS["content-security-policy"].replace("form-action 'self'", ["form-action 'self'", ...sources].join(" "));
+  return webPagePolicy(sources);
 }
 
 /**

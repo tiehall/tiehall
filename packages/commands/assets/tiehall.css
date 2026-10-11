@@ -1129,6 +1129,23 @@ button.secondary:hover,
   color: var(--notice-ink);
 }
 
+/* The kinds of an API change on the API changelog page. */
+.chip.breaking {
+  background: var(--notice);
+  color: var(--notice-ink);
+}
+
+.chip.warning {
+  background: var(--chip-needs-info);
+  color: var(--chip-needs-info-ink);
+}
+
+.chip.note,
+.chip.graduation {
+  background: var(--chip-open);
+  color: var(--chip-open-ink);
+}
+
 .lamp {
   flex: none;
   display: inline-block;

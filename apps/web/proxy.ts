@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { setupGate } from "@tiehall/commands/setup";
+import { namesHtml } from "@tiehall/commands/html";
 import { NEGOTIATED_KEY_HEADER, negotiatedUrlOf, pageContentSecurityPolicy, requestUrlRoute } from "@tiehall/commands/web";
+import { servedByRouteHandler } from "./lib/route-handlers.ts";
 
 // Runs before every route (self-host-install: The setup code guards the setup
 // screen; design.md, Self-hosting decisions: S3). Until setup is complete, the
@@ -30,12 +32,26 @@ import { NEGOTIATED_KEY_HEADER, negotiatedUrlOf, pageContentSecurityPolicy, requ
 // otherwise, such as its Vary and, for a server action's answer, its
 // Cache-Control, and which it sends to nobody (negotiatedUrlHeaders).
 
-/** Lets a call that is not negotiated here go on to its route, without the header the proxy names a negotiated key in. */
+/**
+ * Lets a call that is not negotiated here go on to its route, without the
+ * header the proxy names a negotiated key in, and with the policy of the pages
+ * Next.js renders, with a nonce made for it, from which Next.js takes the
+ * nonce for its scripts (web-ui: The content security policy of each kind of
+ * page; design.md, Design: The content security policy of each kind of page;
+ * D57 (9)). When the call accepts HTML and no route handler serves its path,
+ * the answer carries the policy too, so the page for a path no route serves,
+ * and the page shown when rendering one fails, have it. A route handler's
+ * answer keeps the policy it gives itself: Next.js would keep the proxy's
+ * header over it (lib/route-handlers.ts).
+ */
 function passOn(request: Request): NextResponse {
-  if (!request.headers.has(NEGOTIATED_KEY_HEADER)) return NextResponse.next();
+  const policy = pageContentSecurityPolicy();
   const headers = new Headers(request.headers);
   headers.delete(NEGOTIATED_KEY_HEADER);
-  return NextResponse.next({ request: { headers } });
+  headers.set("content-security-policy", policy);
+  const next = NextResponse.next({ request: { headers } });
+  if (namesHtml(request.headers.get("accept")) && !servedByRouteHandler(new URL(request.url).pathname)) next.headers.set("content-security-policy", policy);
+  return next;
 }
 
 /** Lets a negotiated call go on to the page of this key, with the page's content security policy, which Next.js reads its script nonce from. */

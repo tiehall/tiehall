@@ -15,6 +15,9 @@ import type { RequestUrlAnswer } from "@tiehall/commands";
 // negotiation stubbed.
 
 const NEGOTIATED_KEY = "x-tiehall-negotiated-key";
+/** The policy of the pages Next.js renders, with the nonce of one answer. */
+const FRAMEWORK =
+  /^default-src 'none'; script-src 'nonce-[A-Za-z0-9+/]{22,}={0,2}' 'strict-dynamic'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'$/;
 
 /** What the stubbed negotiation answers the next call with. */
 let negotiated: RequestUrlAnswer | undefined;
@@ -82,10 +85,32 @@ describe("the proxy", () => {
     expect(headers?.get("accept")).toBe("text/html");
   });
 
-  it("leaves any other call's headers as they came", async () => {
-    const response = await proxy(new Request("http://localhost/members", { headers: { accept: "text/html" } }));
-    expect(response.headers.get("x-middleware-next")).toBe("1");
-    expect(overridden(response)).toBeUndefined();
+  // web-ui: The content security policy of each kind of page (design.md, Design: The content security policy of each
+  // kind of page; D57 (9)). Every call the proxy passes on carries the policy of the pages Next.js renders, with a nonce
+  // made for it, from which Next.js takes the nonce for its scripts; the answer carries it when the call accepts HTML and
+  // no route handler serves its path, so the page for a path no route serves, and the page shown when rendering fails,
+  // have a policy, and a route handler's answer keeps its own, which Next.js would otherwise drop for the proxy's.
+  it("puts the framework pages' policy, with a fresh nonce, on every call it passes on, and on the answer of a call that accepts HTML", async () => {
+    const policyOf = (response: Response) => overridden(response)?.get("content-security-policy") ?? "";
+    const first = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "text/html,application/xhtml+xml" } }));
+    const second = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "text/html" } }));
+    expect(first.headers.get("x-middleware-next")).toBe("1");
+    expect(policyOf(first)).toMatch(FRAMEWORK);
+    expect(first.headers.get("content-security-policy")).toBe(policyOf(first));
+    expect(policyOf(second)).toMatch(FRAMEWORK);
+    expect(policyOf(second)).not.toBe(policyOf(first));
+    expect(overridden(first)?.get("accept")).toBe("text/html,application/xhtml+xml");
+    const json = await proxy(new Request("http://localhost/no-such-page", { headers: { accept: "application/json" } }));
+    expect(policyOf(json)).toMatch(FRAMEWORK);
+    expect(json.headers.get("content-security-policy")).toBeNull();
+  });
+
+  it("leaves the answer of a path a route handler serves to the policy the route gives it", async () => {
+    for (const path of ["/members", "/confirm/members.change_role", "/setup/company", "/docs/api", "/assets/tiehall.css", "/favicon.ico", "/"]) {
+      const response = await proxy(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }));
+      expect(overridden(response)?.get("content-security-policy"), path).toMatch(FRAMEWORK);
+      expect(response.headers.get("content-security-policy"), path).toBeNull();
+    }
   });
 
   it("names the key it read to the page of a call it negotiated as HTML, whatever the call named, and marks the answer for the web role", async () => {

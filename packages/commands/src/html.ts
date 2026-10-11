@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { HttpProblem, RefusalReason } from "@tiehall/core";
 import type { RunningVersion } from "./running-version.ts";
 
@@ -10,11 +11,65 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
+// The content security policy of each kind of page (web-ui: The content
+// security policy of each kind of page; agent-safety: The review page of the
+// confirmation step; design.md, Design: The content security policy of each
+// kind of page; D57 (9)), in one place, which every route takes its policy
+// from. Every page loads its styles, fonts, images and manifest from the
+// install alone, and no other site can frame it; no policy allows
+// 'unsafe-inline' or 'unsafe-eval', or names another host but in form-action.
+// The pages the web role renders run no script: every decision is made on
+// them, and an agent that drives a browser would want a script to help it.
+// The pages Next.js renders run only the framework's scripts, which carry the
+// nonce made for the answer, and the scripts they load ('strict-dynamic').
+
+/** The directives every page of the web UI shares: nothing by default, and styles, fonts, images and the manifest from the install. */
+const LOADS_FROM_THE_INSTALL = ["style-src 'self'", "font-src 'self'", "img-src 'self'", "manifest-src 'self'"] as const;
+
 /**
- * The headers of a page that runs no script, loads nothing, posts its forms
- * only to the install and cannot be framed. Its referrer policy keeps its URL
- * from every other site but still lets the browser name the page's origin in
- * the Origin header of the forms it posts to the install, which the web UI's
+ * The policy of a page the web role renders, other than the live hall: it
+ * runs no script, loads only from the install, posts its forms to the install
+ * and to these further sources, such as GitHub's web origin on the setup
+ * screen and the sign-in page or an agent client's redirect URI on the
+ * consent screen, and cannot be framed.
+ */
+export function webPagePolicy(formAction: readonly string[] = []): string {
+  return ["default-src 'none'", ...LOADS_FROM_THE_INSTALL, "base-uri 'none'", ["form-action 'self'", ...formAction].join(" "), "frame-ancestors 'none'"].join("; ");
+}
+
+/** The API changelog page's policy: the web role's, with no form to post anywhere. */
+export function changelogPagePolicy(): string {
+  return webPagePolicy().replace("form-action 'self'", "form-action 'none'");
+}
+
+/**
+ * The policy of a page Next.js renders, a request's page, a team's intake
+ * page, the page for a path no route serves and the page shown when one of
+ * them fails: scripts run only when they carry the nonce made for this answer,
+ * which Next.js puts on its own scripts once the proxy hands it the policy
+ * with the call, and the scripts they load; everything else as on every page,
+ * with connections to the install only and no plugin. 'self' is not among its
+ * script sources, where 'strict-dynamic' makes browsers ignore it.
+ */
+export function frameworkPagePolicy(nonce: string = randomBytes(18).toString("base64")): string {
+  return [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}' 'strict-dynamic'`,
+    ...LOADS_FROM_THE_INSTALL,
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+/**
+ * The headers of a page the web role renders: it runs no script, loads only
+ * the install's stylesheet, fonts, images and manifest, posts its forms only
+ * to the install and cannot be framed. Its referrer policy keeps its URL from
+ * every other site but still lets the browser name the page's origin in the
+ * Origin header of the forms it posts to the install, which the web UI's
  * write checks require; with no-referrer, Chrome sends `Origin: null`.
  */
 export const PAGE_HEADERS = {
@@ -22,7 +77,7 @@ export const PAGE_HEADERS = {
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
   "referrer-policy": "same-origin",
-  "content-security-policy": "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  "content-security-policy": webPagePolicy(),
 } as const;
 
 // The footer of every page (self-host-install: The running version links to

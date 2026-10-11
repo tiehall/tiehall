@@ -4,7 +4,7 @@ import { agentJson, createAgentView } from "@tiehall/packet/render";
 import { requestWithThreadText, teamIntakeText, type RequestWithThreadJson, type TeamIntakeJson } from "@tiehall/packet/tool-text";
 import type { Caller, WebSessionCaller } from "./caller.ts";
 import type { Execute } from "./execute.ts";
-import { refusalAnswerAs, wayOnFor, type WayOn } from "./html.ts";
+import { frameworkPagePolicy, refusalAnswerAs, wayOnFor, type WayOn } from "./html.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { MEDIA_TYPES, NEGOTIATED_CACHE_CONTROL, NEGOTIATED_VARY, negotiate, negotiatedUrlOf, plainPathOf, type Representation, type RequestUrlPath } from "./negotiation.ts";
 import { readRequestPage, requestPageFacts, type RequestWithThreadView } from "./request-page-data.ts";
@@ -121,29 +121,12 @@ const URL_HEADERS = {
 /**
  * The content security policy of a page of the web UI that the Next.js app
  * renders, such as a request's page (agent-safety: The web UI renders no raw
- * HTML and no remote images; self-host-install: No telemetry and a
- * documented list of outbound connections): scripts run only when they carry
- * the nonce made for this answer, which Next.js puts on its own scripts once
- * the proxy hands it the policy with the call, and the scripts they load;
- * images, styles, fonts and connections come only from the install; the page
- * embeds no object, sets no base URL, posts its forms only to the install, and
- * no other site frames it. So no text the page shows, whoever wrote it, can
- * make the browser run a script or fetch anything from another host.
+ * HTML and no remote images; web-ui: The content security policy of each kind
+ * of page): html.ts gives it, with a nonce made for each answer, so no text
+ * the page shows, whoever wrote it, can make the browser run a script or fetch
+ * anything from another host.
  */
-export function pageContentSecurityPolicy(nonce: string = randomBytes(18).toString("base64")): string {
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'none'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join("; ");
-}
+export const pageContentSecurityPolicy = frameworkPagePolicy;
 
 /**
  * The headers the web UI's page of a request gets besides, as every page of

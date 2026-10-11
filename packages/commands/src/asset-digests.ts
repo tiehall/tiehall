@@ -42,5 +42,5 @@ export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
   "/assets/icon-512.png": "Cwu5m8r1MQkVbAaaJUJmXG",
   "/assets/icon.svg": "mFVSqgqCrkaGjglgsln9oW",
   "/assets/manifest.webmanifest": "GwKfBFvRuZweYkd6tYwq_b",
-  "/assets/tiehall.css": "ZQGyqL4211nhquEE49utnS",
+  "/assets/tiehall.css": "CHHmnjMT0F-WGvWggoal2l",
 };

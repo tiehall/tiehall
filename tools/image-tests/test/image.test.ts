@@ -597,7 +597,9 @@ describe.each(["web", "all"])("the %s role", (role) => {
     const response = await fetch(`http://127.0.0.1:${port}/docs/api/changelog`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(response.headers.get("content-security-policy")).toMatch(/^default-src 'none'; style-src 'sha256-/);
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
     const html = await response.text();
     expect(html).toContain("<h1>API changelog</h1>");
     expect(html).not.toContain("<script");

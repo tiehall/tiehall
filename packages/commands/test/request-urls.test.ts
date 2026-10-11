@@ -365,7 +365,8 @@ function hasUrlHeaders(answer: Answer): void {
 
 /** The web UI's page, with a content security policy whose script nonce is made for this answer. */
 function hasPagePolicy(answer: Answer): void {
-  expect(String(answer.headers["content-security-policy"] ?? "")).toMatch(/script-src 'self' 'nonce-[^']+'/);
+  // Only the scripts with the answer's nonce, and those they load (web-ui: The content security policy of each kind of page).
+  expect(String(answer.headers["content-security-policy"] ?? "")).toMatch(/script-src 'nonce-[^']+' 'strict-dynamic'/);
 }
 
 describe("a request URL written with percent-encoded characters", () => {
