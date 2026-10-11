@@ -106,6 +106,15 @@ export const events = pgTable(
     // The requests a user is accountable for anything on, which the pull readers and the long-poll waits read on
     // every call and every wake-up (requester-loop: What whats_new covers).
     index("events_actor_user_id").on(table.orgId, table.actorUserId),
+    // A request's latest domain events, which its page's activity and the live hall read, newest first (web-ui: The
+    // request page shows who works on it and what happened; design.md, Design: The request page's activity; D57
+    // (15)), and the domain events within a time, such as the people and agents at work in the last 10 minutes.
+    // Both are built concurrently, in a migration of their own outside a transaction.
+    index("events_request_number")
+      .on(table.orgId, sql`(${table.data} ->> 'requestId')`, table.number.desc())
+      .where(sql`class = 'domain'`)
+      .concurrently(),
+    index("events_domain_occurred_at").on(table.orgId, table.occurredAt).where(sql`class = 'domain'`).concurrently(),
     check("events_number_positive", sql`${table.number} > 0`),
     check("events_class_known", sql`${table.class} IN ('domain', 'security')`),
     check("events_data_is_object", sql`jsonb_typeof(${table.data}) = 'object'`),

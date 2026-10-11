@@ -42,6 +42,7 @@ import { TRACKER_MAPPING_HANDLERS } from "./tracker-mappings.ts";
 import { UPDATE_HANDLERS } from "./updates.ts";
 import { USER_HANDLERS } from "./users.ts";
 import { WEB_SHELL_HANDLERS } from "./web-shell.ts";
+import { REQUEST_ACTIVITY_HANDLERS } from "./request-activity.ts";
 import { WRITE_LIMIT_HANDLERS } from "./write-limits.ts";
 
 // One handler per operation of the catalog, by the operation's id (design.md,
@@ -93,4 +94,5 @@ export const HANDLERS: Handlers = {
   ...TRACKER_CHANGE_HANDLERS,
   ...MIRROR_FAILURE_HANDLERS,
   ...WEB_SHELL_HANDLERS,
+  ...REQUEST_ACTIVITY_HANDLERS,
 };

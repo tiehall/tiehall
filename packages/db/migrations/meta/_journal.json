@@ -652,6 +652,13 @@
       "when": 1791068409575,
       "tag": "0092_keep_who_wrote_intake_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1791680067626,
+      "tag": "0093_index_the_domain_events_for_the_web_ui",
+      "breakpoints": true
     }
   ]
 }
