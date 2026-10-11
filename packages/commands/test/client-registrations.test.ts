@@ -75,6 +75,27 @@ describe("registrations from one address", () => {
     at("2026-10-01T10:00:01Z");
     expect((await harness.register({}, { "x-forwarded-for": "203.0.113.5" })).status).toBe(201);
   });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (16): every registration that reaches
+  // the endpoint counts toward the address's 10, one refused for its metadata included, so a prober cannot try
+  // metadata without limit.
+  it("count a registration refused for its redirect URI: after 9, one of them refused, the 10th is taken and the 11th gets 429", async () => {
+    at("2026-10-01T11:00:00Z");
+    const address = { "x-forwarded-for": "203.0.113.9" };
+    for (let index = 1; index <= 9; index += 1) {
+      if (index === 4) {
+        const refused = await harness.register({ application_type: "web", redirect_uris: ["http://agent.vendor.example/callback"] }, address);
+        expect(refused.status, `registration ${index}`).toBe(400);
+        expect(((await refused.json()) as { client_id?: string }).client_id).toBeUndefined();
+        continue;
+      }
+      expect((await harness.register({}, address)).status, `registration ${index}`).toBe(201);
+    }
+    expect((await harness.register({}, address)).status).toBe(201);
+    const limited = await harness.register({}, address);
+    expect(limited.status).toBe(429);
+    expect(((await limited.json()) as { type?: string }).type).toBe("https://tiehall.com/problems/rate-limited");
+  });
 });
 
 describe("a registered client never used", () => {
@@ -112,6 +133,14 @@ describe("a registration", () => {
     const answer = await harness.register({ application_type: undefined, redirect_uris: ["http://localhost:33418/callback", "http://127.0.0.1:33418/callback"] });
     expect(answer.status).toBe(201);
     expect(await answer.json()).toMatchObject({ application_type: "native" });
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15): a native app's private scheme,
+  // one that holds a dot (RFC 8252), shows a native client as a loopback address does.
+  it("of a client whose one redirect URI has a native app's private scheme is a native client's, though it does not say so", async () => {
+    const answer = await harness.register({ application_type: undefined, redirect_uris: ["com.example.app:/callback"] });
+    expect(answer.status).toBe(201);
+    expect(await answer.json()).toMatchObject({ application_type: "native", redirect_uris: ["com.example.app:/callback"] });
   });
 
   it("with a NUL character in any of its texts, which no text Tiehall stores may hold, gets 400 invalid_client_metadata and stores no client", async () => {
