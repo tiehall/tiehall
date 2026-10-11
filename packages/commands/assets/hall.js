@@ -180,6 +180,23 @@ export function asking(counts) {
   return counts.needs_info > 0;
 }
 
+/**
+ * The rows of the feed shown in the notice colors: of each request that waits on a question or a person, its newest
+ * row only, so the request stands out once and the feed does not turn gold row after row (D59 (2)).
+ * @param {Pick<HallEvent, "seq" | "request">[]} feed The feed, newest first.
+ * @returns {Set<number>} The rows' event numbers.
+ */
+export function waitingRows(feed) {
+  const seen = new Set();
+  const rows = new Set();
+  for (const { seq, request } of feed) {
+    if (seen.has(request.id)) continue;
+    seen.add(request.id);
+    if (request.state === "needs_info" || request.needsHuman) rows.add(seq);
+  }
+  return rows;
+}
+
 /** @param {string} state */
 export function stateClass(state) {
   return state.replace(/_/g, "-");
@@ -605,11 +622,6 @@ function typingDots() {
   return made;
 }
 
-/** @param {RequestRef} request */
-function waits(request) {
-  return request.state === "needs_info" || request.needsHuman;
-}
-
 /** Runs the hall on its page. */
 function start() {
   const body = document.body;
@@ -724,9 +736,9 @@ function start() {
     ]);
   }
 
-  /** @param {HallEvent} event @param {boolean} fresh */
-  function feedRow(event, fresh) {
-    return element("li", `feed-row${waits(event.request) ? " waits" : ""}${fresh && !paused ? " new" : ""}`, [
+  /** @param {HallEvent} event @param {boolean} fresh @param {boolean} waits Whether it is the newest row of a request that waits. */
+  function feedRow(event, fresh, waits) {
+    return element("li", `feed-row${waits ? " waits" : ""}${fresh && !paused ? " new" : ""}`, [
       element("p", "feed-meta", [keyTag(event.request.key, `/${event.request.key}`), " ", element("bdi", "feed-title", event.request.untrusted.title), " ", timeOf(event.at, now())]),
       element("p", "feed-line", event.line),
       element("p", "feed-who", whoNodes(event.actor)),
@@ -782,7 +794,8 @@ function start() {
     if (state === undefined) return;
     atWorkList.replaceChildren(...state.atWork.map(worker));
     atWorkEmpty.hidden = state.atWork.length > 0;
-    feedList.replaceChildren(...state.feed.map((event) => feedRow(event, fresh.has(event.seq))));
+    const waiting = waitingRows(state.feed);
+    feedList.replaceChildren(...state.feed.map((event) => feedRow(event, fresh.has(event.seq), waiting.has(event.seq))));
     feedEmpty.hidden = state.feed.length > 0;
     teamList.replaceChildren(...state.teams.map(teamRow));
     lineRows.replaceChildren(...state.lines.map(lineRow));

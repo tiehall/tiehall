@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { actorWords as serverActorWords, clientParts as serverClientParts, relativeTime as serverRelativeTime, type EventActor } from "../src/event-lines.ts";
-import { countsWords as serverCountsWords } from "../src/hall-page.ts";
+import { countsWords as serverCountsWords, waitingRows as serverWaitingRows } from "../src/hall-page.ts";
 import { initialsOf as serverInitialsOf } from "../src/shell.ts";
 
 // The live hall's script, its pure parts (web-ui: The live hall; web-ui: The
@@ -97,6 +97,7 @@ interface HallScript {
   clientParts(client: NonNullable<EventActor["client"]>): { name: string; mark: string | null };
   initialsOf(login: string): string;
   countsWords(counts: Counts, doneLastDay?: number): string;
+  waitingRows(feed: Pick<HallEvent, "seq" | "request">[]): Set<number>;
 }
 
 let hall: HallScript;
@@ -262,6 +263,25 @@ describe("where a person or an agent at work sits on the map", () => {
     // No chip lies further from its node than two chips in.
     for (const spot of taken.slice(1)) expect(spot.x - (nodeRect.x + nodeRect.width)).toBeLessThan(3 * (chip.width + 12));
     expect(hall.placeChip(chip, node, middle, { width: 240, height: 100 }, [{ x: 0, y: 0, width: 240, height: 100 }])).toBeUndefined();
+  });
+});
+
+describe("the feed's rows in the notice colors", () => {
+  const row = (seq: number, id: string, state: string, needsHuman = false): Pick<HallEvent, "seq" | "request"> => ({
+    seq,
+    request: { id, key: id.toUpperCase(), state, from: { id: "id-BE", key: "BE" }, to: { id: "id-FE", key: "FE" }, needsHuman, untrusted: { title: `Request ${id}` } },
+  });
+  // Newest first, as the feed is: FE-1 needs info, with three rows; FE-2 waits for a person, with two; FE-3 waits on nobody.
+  const feed = [row(9, "fe-1", "needs_info"), row(8, "fe-3", "in_progress"), row(7, "fe-2", "open", true), row(6, "fe-1", "needs_info"), row(5, "fe-2", "open", true), row(4, "fe-1", "needs_info"), row(3, "fe-3", "in_progress")];
+
+  it("are only the newest row of each request that waits on a question or a person, so the feed does not turn gold", () => {
+    expect([...hall.waitingRows(feed)].sort((a, b) => b - a)).toEqual([9, 7]);
+    expect(hall.waitingRows([])).toEqual(new Set());
+    expect(hall.waitingRows(feed.filter(({ request }) => request.id === "fe-3"))).toEqual(new Set());
+  });
+
+  it("are the rows the server fills on the page it serves", () => {
+    for (const each of [feed, feed.slice(1), feed.slice(3), []]) expect(hall.waitingRows(each)).toEqual(serverWaitingRows(each));
   });
 });
 

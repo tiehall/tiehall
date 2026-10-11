@@ -160,13 +160,19 @@ describe("the live hall's page", () => {
     expect(atWork).toMatch(/<span class="initials" aria-hidden="true">AY<\/span>/);
   });
 
-  it("lists the feed, On the line: the latest events, newest first, with the key, how long ago, what happened, who and the title, a request that waits in the notice colors", async () => {
+  it("lists the feed, On the line: the latest events, newest first, with the key, how long ago, what happened, who and the title, the newest row of a request that waits in the notice colors", async () => {
     const feed = section((await open()).html, "feed-heading");
     expect(feed).toContain('<h2 id="feed-heading" class="label">On the line</h2>');
     expect(feed).toContain('<ol class="feed" id="feed">');
     const rows = [...feed.matchAll(/<li class="feed-row( waits)?">([\s\S]*?)<\/li>/g)].map(([, waits, row = ""]) => [waits === undefined ? "" : "waits", textOf(row)]);
     expect(rows[0]).toEqual(["waits", expect.stringMatching(/^FE-2 &#60;script&#62;alert\(2\)&#60;\/script&#62; (now|\d+ s) It was opened selin's agent · personal access token$/)]);
-    expect(rows.find(([, row]) => row?.includes("A blocking question was posted"))).toEqual(["waits", expect.stringContaining("PAY-1")]);
+    // Only the newest row of a request that waits is in the notice colors, so the feed does not turn gold: FE-2's one
+    // row, and of PAY-1's rows the newest, about its blocking question, not the ones before it.
+    expect(rows.filter(([waits]) => waits === "waits").map(([, row]) => row?.split(" ")[0])).toEqual(["FE-2", "PAY-1"]);
+    const pay = rows.filter(([, row]) => row?.startsWith("PAY-1 "));
+    expect(pay.length).toBeGreaterThan(1);
+    expect(pay[0]).toEqual(["waits", expect.stringMatching(/A blocking question was posted|needs info/i)]);
+    for (const [waits] of pay.slice(1)) expect(waits).toBe("");
     expect(rows.at(-1)).toEqual(["", expect.stringMatching(/^FE-1 Add a forgot password link (now|\d+ s) It was opened selin's agent · personal access token$/)]);
     expect(feed).toMatch(/<a class="key" href="\/FE-2">FE-2<\/a> <bdi class="feed-title">&#60;script&#62;alert\(2\)&#60;\/script&#62;<\/bdi> <time datetime="[0-9T:.Z-]+">/);
     expect(feed).not.toMatch(/class="lamp/);

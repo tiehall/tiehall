@@ -37,11 +37,11 @@ export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
   "/assets/fonts/IBMPlexSans-SemiBold-Latin3.woff2": "tMJAUkdt9SjabEDIQdK9sM",
   "/assets/fonts/IBMPlexSans-SemiBold-Pi.woff2": "doQhQz2FDTowEY3d8FlyYl",
   "/assets/fonts/OFL.txt": "kcJcNQ08rDnaJzbXT3ujfv",
-  "/assets/hall.js": "zLkFYYWJdA68cuGKnVLWqN",
+  "/assets/hall.js": "bFhYPyZtyaCgEMx0Ocv-AA",
   "/assets/icon-180.png": "RJgibTcIJDpRWnBSoNo6Sd",
   "/assets/icon-192.png": "Pbznh-jeveq1m6zDoFOLGU",
   "/assets/icon-512.png": "AzEtTxs-h85KmNEI7AClcb",
   "/assets/icon.svg": "t_wo019r4xIV98HdE-cn5-",
   "/assets/manifest.webmanifest": "-4JYJDx6sJzbnGGW6daehm",
-  "/assets/tiehall.css": "7jYMuojmoXSCVIGgGMAhHb",
+  "/assets/tiehall.css": "ywt-wHiyTs39RSbyL11H-d",
 };

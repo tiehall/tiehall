@@ -3280,8 +3280,8 @@ form:not(.stack) > .hint {
   animation: none;
 }
 
-/* The feed, On the line: the latest events, newest first; one about a request that waits on a question or a person
-   in the notice colors, with no lamp. */
+/* The feed, On the line: the latest events, newest first; the newest one about a request that waits on a question or
+   a person in the notice colors, with no lamp, and the ones before it in the panel's, so the feed does not turn gold. */
 .hall-feed {
   padding: 18px 12px 12px;
   border: 1px solid var(--border);

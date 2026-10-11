@@ -30,14 +30,13 @@ import { createPageRoute, type PageRoute, type PageRouteOptions } from "./web-pa
 // title, team name and client name sits in a bdi, so that no character of it
 // can reorder the words around it; a client's mark, its verified host or
 // "(unverified)", stays outside the name's bdi. A row of the feed about a request
-// that waits on a question or a person has the notice colors and no lamp. The
+// that waits on a question or a person, its newest only, has the notice colors and no lamp. The
 // page carries the live hall's policy; a browser without a session is sent to
 // sign in and back, and opening the page renews the session, as opening any
 // page does.
 
 type HallState = z.output<typeof readHallState.output>;
 type Counts = HallState["teams"][number]["counts"];
-type RequestRef = HallState["feed"][number]["request"];
 
 /** The states that are not terminal, in the order a request goes through them, which the lamps and the counts follow. */
 const LIVE_STATES = ["open", "claimed", "in_progress", "needs_info"] as const satisfies readonly RequestState[];
@@ -72,9 +71,20 @@ function agoHtml(at: string, now: string): string {
   return `<time datetime="${escapeHtml(at)}">${escapeHtml(relativeTime(at, now))}</time>`;
 }
 
-/** Whether a request waits on a question or a person, which its feed rows show in the notice colors. */
-function waits(request: Pick<RequestRef, "state" | "needsHuman">): boolean {
-  return request.state === "needs_info" || request.needsHuman;
+/**
+ * The rows of the feed shown in the notice colors: of each request that waits on a question or a person, its newest
+ * row only, so the request stands out once and the feed does not turn gold row after row (D59 (2)). The feed is
+ * newest first; the answer is the rows' event numbers, as the hall's script computes them.
+ */
+export function waitingRows(feed: readonly { seq: number; request: { id: string; state: string; needsHuman: boolean } }[]): Set<number> {
+  const seen = new Set<string>();
+  const rows = new Set<number>();
+  for (const { seq, request } of feed) {
+    if (seen.has(request.id)) continue;
+    seen.add(request.id);
+    if (request.state === "needs_info" || request.needsHuman) rows.add(seq);
+  }
+  return rows;
 }
 
 /** What a narrowed hall's empty lists say: about these requests, or about all of them. */
@@ -103,10 +113,10 @@ function workerHtml(entry: HallState["atWork"][number], now: string): string {
   ].join("\n");
 }
 
-/** A row of the feed: the request's key and title and how long ago, what happened, and who did it. */
-function feedRowHtml(event: HallState["feed"][number], now: string): string {
+/** A row of the feed: the request's key and title and how long ago, what happened, and who did it; waits when it is the newest row of a request that waits. */
+function feedRowHtml(event: HallState["feed"][number], now: string, waits: boolean): string {
   return [
-    `          <li class="feed-row${waits(event.request) ? " waits" : ""}">`,
+    `          <li class="feed-row${waits ? " waits" : ""}">`,
     `            <p class="feed-meta">${keyTag(event.request.key, `/${event.request.key}`)} <bdi class="feed-title">${escapeHtml(event.request.untrusted.title)}</bdi> ${agoHtml(event.at, now)}</p>`,
     `            <p class="feed-line">${escapeHtml(event.line)}</p>`,
     `            <p class="feed-who">${whoHtml(event.actor)}</p>`,
@@ -163,6 +173,7 @@ function filterHtml(state: HallState, narrowing: { team?: string; agents?: boole
 /** The live hall's page, from hall.state, narrowed as its address says. */
 export function hallPageHtml(state: HallState, narrowing: { team?: string; agents?: boolean }, shell: PageShell, look: PageLook = {}): string {
   const empty = emptyWords(narrowing.team !== undefined || narrowing.agents === true);
+  const waiting = waitingRows(state.feed);
   const lines = state.lines.map(
     ({ from, to, counts }) =>
       `            <tr><td>${keyTag(from.key)}</td><td>${keyTag(to.key)}</td><td><span class="line-counts">${lampsHtml(counts)}<span>${escapeHtml(countsWords(counts))}</span></span></td></tr>`,
@@ -191,7 +202,7 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     '        <section class="hall-feed" aria-labelledby="feed-heading">',
     '          <h2 id="feed-heading" class="label">On the line</h2>',
     '          <ol class="feed" id="feed">',
-    ...state.feed.map((event) => feedRowHtml(event, state.now)),
+    ...state.feed.map((event) => feedRowHtml(event, state.now, waiting.has(event.seq))),
     "          </ol>",
     `          <p class="empty" id="feed-empty"${state.feed.length === 0 ? "" : " hidden"}>${escapeHtml(empty.feed)}</p>`,
     "        </section>",
