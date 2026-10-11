@@ -126,7 +126,7 @@ export function AppShell({ member, path, csrf, className, children }: { member: 
               <NavigationList links={links} />
             </nav>
             <div className="topbar-end">
-              <a className="button" href={NEW_REQUEST_LINK.href}>
+              <a className="button strong" href={NEW_REQUEST_LINK.href}>
                 {NEW_REQUEST_LINK.text}
               </a>
               <details className="menu">
@@ -148,7 +148,7 @@ export function AppShell({ member, path, csrf, className, children }: { member: 
               <nav aria-label="Main">
                 <NavigationList links={links} />
               </nav>
-              <a className="button" href={NEW_REQUEST_LINK.href}>
+              <a className="button strong" href={NEW_REQUEST_LINK.href}>
                 {NEW_REQUEST_LINK.text}
               </a>
               <p className="menu-who">{`Signed in as ${who}`}</p>
