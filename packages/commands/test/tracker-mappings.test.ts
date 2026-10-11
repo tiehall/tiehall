@@ -64,6 +64,13 @@ async function mappingsOf(teamId: string): Promise<{ tracker: string; target: st
 
 const mirrorJobsOf = (requestId: string) => install.sentJobs.filter(({ queue, data }) => queue === mirrorRequest.queue && data["requestId"] === requestId);
 
+/** Runs the mirror jobs the writes sent, in order, as the worker does, and takes them from the sent jobs. */
+async function runSentMirrorJobs(): Promise<void> {
+  const jobs = install.sentJobs.filter(({ queue }) => queue === mirrorRequest.queue);
+  install.sentJobs.splice(0);
+  for (const { data } of jobs) await sync(String(data["requestId"]));
+}
+
 describe("mapping a team to an intake repository", () => {
   it("sends FE's mirror issues to its intake repository, by GitHub's id of it", async () => {
     const mapping = await install.execute("mirrors.map_repository", ada, { teamId: teams["FE"], repository: "acme/fe-intake" });
@@ -145,6 +152,79 @@ describe("mirroring on open", () => {
     await install.execute("mirrors.set_mirror_on_open", ada, { teamId: teams["FE"], on: false });
     const waiting = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
     expect(mirrorJobsOf(waiting.id)).toEqual([]);
+  });
+});
+
+// A mirror is a projection kept from a point on: removing a team's mapping stops every write to the issues it made, and
+// a new mapping opens issues only for the requests that reach the team's point after it, never for one claimed or ended
+// before it (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (75)).
+describe("a mapping removed, and one made later", () => {
+  beforeAll(async () => {
+    for (const key of ["WEB", "APP"]) {
+      teams[key] = await addTeam(install.owner, key);
+      await joinTeams(install.owner, ayse.userId, teams[key]!);
+    }
+  });
+
+  it("stops every write to the mirror issues the removed mapping made", async () => {
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["WEB"], repository: "acme/mobile-intake" });
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "WEB" });
+    await install.execute("requests.claim", ayse, { key: request.key });
+    await sync(request.id);
+    expect(tracker.issues).toHaveLength(1);
+    const before = { writes: [...tracker.writes], issue: structuredClone(tracker.issues[0]) };
+
+    await install.execute("mirrors.remove_mapping", ada, { teamId: teams["WEB"] });
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
+    await install.execute("messages.post", ayse, { key: request.key, kind: "question", body: "Which screens?" });
+    await sync(request.id);
+
+    expect(tracker.writes).toEqual(before.writes);
+    expect(tracker.issues).toEqual([before.issue]);
+  });
+
+  it("makes no issue for a request claimed before it, and one for a request claimed after it", async () => {
+    const before = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "APP" });
+    await install.execute("requests.claim", ayse, { key: before.key });
+    install.sentJobs.splice(0);
+
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["APP"], repository: "acme/mobile-intake" });
+    const after = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "APP" });
+    await install.execute("requests.claim", ayse, { key: after.key });
+    await runSentMirrorJobs();
+
+    expect(tracker.issues.map(({ title }) => title)).toEqual([expect.stringMatching(new RegExp(`^${after.key}: `))]);
+  });
+
+  // An expected failure: the mirror job that a later write of a request claimed before the mapping sends makes its
+  // issue, since the job counts any claim since the request's last reassignment, whenever it was made. D55 (75) reads
+  // this as a rule the code keeps already, so no task of decisions-from-groups-15-28 changes it; the maintainer decides
+  // how it is built.
+  it.fails("makes no issue for a request claimed before it when a later write wakes the request's mirror job", async () => {
+    await install.execute("mirrors.remove_mapping", ada, { teamId: teams["APP"] });
+    const before = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "APP" });
+    await install.execute("requests.claim", ayse, { key: before.key });
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["APP"], repository: "acme/mobile-intake" });
+    install.sentJobs.splice(0);
+
+    await install.execute("requests.set_status", ayse, { key: before.key, state: "in_progress" });
+    await runSentMirrorJobs();
+
+    expect(tracker.issues).toEqual([]);
+  });
+
+  it("makes no issue for a request that ended before it, even on a team that mirrors on open", async () => {
+    await install.execute("mirrors.remove_mapping", ada, { teamId: teams["APP"] });
+    const ended = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "APP" });
+    await install.execute("requests.claim", ayse, { key: ended.key });
+    const done = (await install.execute("requests.set_status", ayse, { key: ended.key, state: "done" })) as { proposal: { id: string } };
+    expect((await install.confirm(ayse, "proposals.confirm", { proposal: done.proposal.id })).status).toBe(200);
+
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["APP"], repository: "acme/mobile-intake" });
+    await install.execute("mirrors.set_mirror_on_open", ada, { teamId: teams["APP"], on: true });
+    await sync(ended.id);
+
+    expect(tracker.issues).toEqual([]);
   });
 });
 

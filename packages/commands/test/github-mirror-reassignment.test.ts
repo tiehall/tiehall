@@ -305,6 +305,24 @@ describe("undoing the reassignment", () => {
     expect(commentsOf(request.issue).slice(before)).toEqual([]);
     expect(await issuesOf(request.id, "acme/mobile-intake")).toEqual([]);
   });
+
+  // Level-triggered jobs see states, not the steps between them (decisions-from-groups-15-28: design.md, Decisions this
+  // change rests on: D55 (78)).
+  it("writes nothing to GitHub when the reassignment and its undo both land before the job runs, though the new team mirrors on open", async () => {
+    await install.execute("mirrors.set_mirror_on_open", ada, { teamId: mobile, on: true });
+    const request = await mirroredRequest();
+    const proposal = await reassignToMobile(request.key);
+    expect((await install.confirm(sessionOf(ayse), "proposals.undo", { proposal })).status).toBe(200);
+    const from = stub.received.length;
+
+    await sync(request.id);
+
+    // Reads, and the App's installation token, are no writes to an issue.
+    const writes = stub.received.slice(from).filter(({ host, method, path }) => host === "api" && method !== "GET" && !path.endsWith("/access_tokens"));
+    expect(writes.map(({ method, path }) => `${method} ${path}`)).toEqual([]);
+    expect(await issuesOf(request.id, "acme/mobile-intake")).toEqual([]);
+    expect(await keyOf(request.id)).toBe(request.key);
+  });
 });
 
 describe("a later reassignment back to the old team", () => {

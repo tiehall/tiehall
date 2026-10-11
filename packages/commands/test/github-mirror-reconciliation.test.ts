@@ -156,6 +156,34 @@ describe("the reconciliation of the mirror issues", () => {
     expect(rows).toEqual([{ state: "in_progress" }]);
   });
 
+  // A change read by reconciliation acts for the Tiehall user of the account GitHub names as having made it, the
+  // closed_by of a closed issue, while that user is a member, and for no user otherwise
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (77)).
+  it("records a close it finds for no user when the account GitHub names as its closer is no member's", async () => {
+    const request = await mirroredRequest();
+    // Omar has a GitHub account and no Tiehall user.
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "omar", reason: "completed" }, { delivery: "drop" });
+    await stub.settled();
+
+    await reconcile();
+    await processSent();
+
+    expect(await trackerEventsOf(request.id)).toEqual([{ change: "closed", reason: "completed", actor_kind: "integration", surface: "github", actor_user_id: null }]);
+  });
+
+  it("records a close it finds for no user when the member GitHub names as its closer was removed from the install", async () => {
+    const request = await mirroredRequest();
+    const zed = await addUser(install.owner, { login: "zed", githubAccountId: stub.addUser({ login: "zed" }).id });
+    await install.owner.query("DELETE FROM members WHERE user_id = $1", [zed]);
+    await stub.closeIssue("acme/fe-intake", request.number, { by: "zed", reason: "completed" }, { delivery: "drop" });
+    await stub.settled();
+
+    await reconcile();
+    await processSent();
+
+    expect(await trackerEventsOf(request.id)).toEqual([{ change: "closed", reason: "completed", actor_kind: "integration", surface: "github", actor_user_id: null }]);
+  });
+
   it("records a change once, when its delivery is processed first and the next run finds it too", async () => {
     const request = await mirroredRequest();
     const from = stub.deliveries(provider.app).length;
