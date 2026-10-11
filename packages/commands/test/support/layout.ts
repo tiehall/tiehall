@@ -52,6 +52,35 @@ export async function phoneWidthProblems(page: Page, options: { tablesScroll?: b
 }
 
 /**
+ * What the browser runs to find the table cells whose text takes more than one
+ * line: the lines of a cell are the distinct heights at which its text's
+ * pieces sit, a few pixels apart counting as one line, so a chip or a time in
+ * a smaller type sits on the line of the text beside it.
+ */
+const WRAPPED_CELLS_CHECK = `(selector) => {
+  const wrapped = [];
+  for (const cell of document.querySelectorAll(selector)) {
+    const tops = [];
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+      if ((text.textContent || "").trim() === "") continue;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      for (const rect of range.getClientRects()) if (rect.width > 0) tops.push(rect.top);
+    }
+    tops.sort((a, b) => a - b);
+    const lines = tops.filter((top, index) => index === 0 || top - tops[index - 1] > 6).length;
+    if (lines > 1) wrapped.push((cell.textContent || "").trim().replace(/\\s+/g, " "));
+  }
+  return wrapped;
+}`;
+
+/** The text of each table cell the selector names whose text takes more than one line; none when every one takes one. */
+export async function wrappedCells(page: Page, selector: string): Promise<string[]> {
+  return (await page.evaluate(`(${WRAPPED_CELLS_CHECK})(${JSON.stringify(selector)})`)) as string[];
+}
+
+/**
  * Waits until the page shown has settled: until the network is idle, or, on
  * the live hall, whose long-poll always holds a read open, until its script
  * says the page is live (web-ui: The live hall's reads and its long-poll).

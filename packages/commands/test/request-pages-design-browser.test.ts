@@ -2,7 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems, runningAnimations } from "./support/layout.ts";
+import { phoneWidthProblems, runningAnimations, wrappedCells } from "./support/layout.ts";
 import { seedRequestPages } from "./support/request-pages.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
@@ -81,6 +81,26 @@ describe("the request pages at 320 CSS pixels", () => {
     }
     await expect(page.locator("table.requests thead").evaluate((head) => head.getBoundingClientRect().height)).resolves.toBeLessThanOrEqual(1);
     await context.close();
+  });
+});
+
+describe("the request lists at 1,280 CSS pixels", () => {
+  it("keep each row's key, teams, claimant and time on one line, so no column shrinks until its words break", { timeout: 120_000 }, async () => {
+    // A title long enough to want the whole width, which the other columns must not give up their words to.
+    const where = "FROM teams WHERE teams.id = requests.target_team_id AND teams.key = 'FE' AND requests.number = 2";
+    const { rows } = await install.owner.query<{ title: string }>(`SELECT requests.title FROM requests JOIN teams ON teams.id = requests.target_team_id WHERE teams.key = 'FE' AND requests.number = 2`);
+    await install.owner.query(`UPDATE requests SET title = $1 ${where}`, [Array.from({ length: 9 }, () => "a title that runs on").join(" ")]);
+    try {
+      const context = await signedIn(1280);
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      await page.goto(`${web.url}/requests?list=all`);
+      await expect(page.locator("table.requests tbody tr").count()).resolves.toBe(2);
+      expect(await wrappedCells(page, "table.requests tbody td:not(.cell-title):not(.cell-state)")).toEqual([]);
+      await context.close();
+    } finally {
+      await install.owner.query(`UPDATE requests SET title = $1 ${where}`, [rows[0]?.title ?? ""]);
+    }
   });
 });
 

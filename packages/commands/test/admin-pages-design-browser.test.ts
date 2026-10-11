@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems } from "./support/layout.ts";
+import { phoneWidthProblems, wrappedCells } from "./support/layout.ts";
 import { seedInventory } from "./support/page-inventory.ts";
 import { sessionOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
@@ -61,6 +61,19 @@ describe("the admin overview's cards", () => {
     // No backup has finished on a test install, so the Backups card warns.
     const notice = page.locator(".card .notice", { hasText: "No backup has finished yet." });
     await expect(notice.evaluate((element) => element.ownerDocument.defaultView?.getComputedStyle(element).color)).resolves.toBe(noticeInk);
+    await context.close();
+  });
+});
+
+describe("the activity log's table at 1,280 CSS pixels", () => {
+  it("keeps each event's number, time, class, type and request on one line, so no column shrinks until its words break", { timeout: 120_000 }, async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${web.url}/admin/activity-log`);
+    await expect(page.locator("table.log tbody tr").count()).resolves.toBeGreaterThan(3);
+    expect(await wrappedCells(page, "table.log tbody td:nth-child(-n+5)")).toEqual([]);
     await context.close();
   });
 });

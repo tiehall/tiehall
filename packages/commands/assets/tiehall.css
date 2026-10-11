@@ -963,6 +963,10 @@ body > footer a:hover {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  /* A cell breaks a word only when the word alone is wider than the cell, so a table's columns are never narrower than
+     their longest word and numbers, times, keys and logins never break inside; a title, which may be one long word,
+     still breaks anywhere. */
+  overflow-wrap: break-word;
 }
 
 :where(main) tr:last-child > td {
@@ -1937,6 +1941,7 @@ a.key:hover {
 
 .requests .cell-title {
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .requests .cell-state .chip + .chip {
@@ -2458,6 +2463,15 @@ a.key:hover {
 
 :where(main) table.log td {
   font-size: 13px;
+}
+
+/* The log's number, time, class, type and request stay on one line, and its table scrolls in its box when they need
+   more than the width; the actor, the data and the origin wrap, anywhere in a long value. */
+:where(main) table.log td:nth-child(-n + 5) {
+  white-space: nowrap;
+}
+
+:where(main) table.log td:nth-child(n + 6) {
   overflow-wrap: anywhere;
 }
 
@@ -3861,6 +3875,20 @@ a.key:hover {
 
   .hall.live .hall-stage.mapped .feed {
     display: flex;
+  }
+}
+
+/* A request list's time on one line from the width of a tablet, and its key, teams and claimant too from a wide screen,
+   where a long title gives up its width before they give up their words. */
+@media (min-width: 768px) {
+  :where(main) .requests td:last-child {
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1024px) {
+  :where(main) .requests td:not(.cell-title):not(.cell-state) {
+    white-space: nowrap;
   }
 }
 
