@@ -6,7 +6,7 @@ import { CATALOG, catalogProblems, defineCatalog, defineCommand } from "@tiehall
 import { OPENAPI_JSON } from "@tiehall/catalog";
 import { openApiDocument } from "@tiehall/catalog/openapi";
 import { Refusal } from "@tiehall/core";
-import { createLogger, createRestHandler, type Caller, type Execute, type LogEntry } from "../src/index.ts";
+import { createLogger, createRestHandler, resourceMetadataUrlOf, type Caller, type Execute, type LogEntry } from "../src/index.ts";
 
 // The REST catch-all route under /api/v1 (public-api: Operations not offered on
 // REST answer 404; public-api: Errors are RFC 9457 problem details; public-api:
@@ -211,6 +211,25 @@ describe("the REST route", () => {
     const response = await handler(null)(call("GET", "/api/v1/probes/FE-142"));
     await expectProblem(response, 401);
     expect(response.headers.get("www-authenticate")).toMatch(/^Bearer/);
+    expect(calls).toEqual([]);
+  });
+
+  // agent-access: Missing and insufficient tokens get standard challenges (decisions-from-groups-15-28: design.md,
+  // Decisions this change rests on: D55 (17)): the install has one protected resource, TIEHALL_URL/mcp, which /api/v1
+  // shares, so a 401 from /api/v1 points to that resource's metadata, as /mcp's does (mcp-route.test.ts), with the
+  // REST route built as the web role builds it.
+  it("answers GET /api/v1/inbox without an Authorization header with 401 naming the /mcp resource's metadata", async () => {
+    const route = createRestHandler({
+      catalog: CATALOG,
+      document: OPENAPI_JSON,
+      execute,
+      authenticate: async () => undefined,
+      resourceMetadata: resourceMetadataUrlOf(INSTALL),
+      logger: createLogger({ write: (line) => logged.push(JSON.parse(line) as LogEntry) }),
+    });
+    const response = await route(call("GET", "/api/v1/inbox"));
+    await expectProblem(response, 401);
+    expect(response.headers.get("www-authenticate")).toBe(`Bearer resource_metadata="${INSTALL}/.well-known/oauth-protected-resource/mcp", scope="requests:read"`);
     expect(calls).toEqual([]);
   });
 
