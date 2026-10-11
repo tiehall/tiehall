@@ -112,11 +112,11 @@ The stylesheet declares every value below as a custom property on `:root`, redef
 | --- | --- | --- | --- | --- |
 | `--ink` | `#0B1B3A` (15.0:1) | `#E9EDF5` (12.5:1) | as dark (12.6:1) | text |
 | `--ink-2` | `#4A5672` (6.4:1) | `#A9B3C8` (7.0:1) | as dark (7.0:1) | secondary text |
-| `--line` | `#1F45A3` (7.6:1) | `#9DB6EE` (7.2:1) | as dark (7.3:1) | links and selected navigation |
+| `--line` | `#1F45A3` (7.6:1) | `#9DB6EE` (7.2:1) | as dark (7.3:1) | links, selected navigation, and the fill of a checked checkbox or radio button (`accent-color`), which shows its state and so contrasts at least 3:1 with every background |
 | `--line-hover` | `#14306E` | `#C4D3F6` | as dark | links under the pointer |
 | `--focus` | `#1F45A3` (7.6:1) | gold `#F0CB6A` (9.4:1) | as dark (9.5:1) | the focus ring |
 | `--button`, `--button-hover`, `--button-ink` | gold `#E3B341`, under the pointer `#D9AA38`, text `#0B1B3A` (8.7:1, 7.9:1) | `#E3B341`, `#F0CB6A`, text `#0A1428` (9.4:1, 11.7:1) | as dark | a page's main action and the inbox's waiting count |
-| `--strong`, `--strong-hover`, `--strong-ink` | navy `#14306E`, `#102A61`, text `#FFFFFF` (12.5:1, 13.7:1) | `#2A4A9E`, `#3557B5`, text `#FFFFFF` (8.1:1, 6.6:1) | as dark | a strong secondary action (the top bar's New request and a request's moves of state), the skip link, checkboxes, the current setup step and the circle of an agent at work |
+| `--strong`, `--strong-hover`, `--strong-ink` | navy `#14306E`, `#102A61`, text `#FFFFFF` (12.5:1, 13.7:1) | `#2A4A9E`, `#3557B5`, text `#FFFFFF` (8.1:1, 6.6:1) | as dark | a strong secondary action (the top bar's New request and a request's moves of state), the skip link, the current setup step and the circle of an agent at work |
 | `--signal`, `--on-signal` | gold `#E3B341`, ink `#0B1B3A` | `#E3B341`, `#0A1428` (9.4:1) | as dark | the brand's gold: the circle of an agent waiting on a question; never text, and never a lamp on the light theme's ground or surface (1.8:1 and 1.9:1) |
 | `--lamp-open`, `--lamp-claimed`, `--lamp-in-progress`, `--lamp-needs-info`, `--lamp-done` | the light lamps of Request states | the dark lamps of Request states | as dark | lamps by state; `--lamp-needs-info` is also the signal lamp, such as the inbox's waiting lamp: `#A98000`, a dark gold, in the light theme (3.2:1 on `--surface-2`) |
 | `--ground` | `#F6F7FA` | `#0A1428` | `#071026` | behind the page |

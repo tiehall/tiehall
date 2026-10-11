@@ -252,6 +252,19 @@ describe("contrast", () => {
     expect(checked.length).toBeGreaterThan(100);
   });
 
+  it.each(THEME_NAMES)("is at least 3:1 for a checked checkbox or radio button on every background in the %s tokens", (name) => {
+    // A checked box is filled with its accent color, which shows its state, so it is a shape that carries meaning.
+    const accents = css.rules.flatMap((rule) => rule.declarations.filter(({ property }) => property === "accent-color").map(({ value }) => ({ selector: rule.selector, value })));
+    expect(accents.length).toBeGreaterThan(0);
+    for (const { selector, value } of accents) {
+      const token = /^var\((--[a-z0-9-]+)\)$/.exec(value)?.[1] ?? value;
+      for (const background of BACKGROUNDS) {
+        expect(contrast(color(THEMES[name], token), color(THEMES[name], background)), `${selector} { accent-color: ${value} } on ${background}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+    expect(declarationsOf('input[type="checkbox"]')).toContainEqual(expect.objectContaining({ property: "accent-color", value: "var(--line)" }));
+  });
+
   it("draws the focus ring, the inbox's badge and the live hall's initials in their tokens", () => {
     expect(declarationsOf(":focus-visible")).toContainEqual(expect.objectContaining({ property: "outline", value: "2px solid var(--focus)" }));
     expect(declarationsOf(".badge")).toEqual(

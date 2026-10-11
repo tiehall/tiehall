@@ -1053,6 +1053,8 @@ textarea {
   resize: vertical;
 }
 
+/* A checked box is filled in the link color, which contrasts at least 3:1 with every background in each theme; the
+   dark navy of a strong action would not on the dark grounds (D59 (4)). */
 input[type="checkbox"],
 input[type="radio"] {
   flex: none;
@@ -1060,7 +1062,7 @@ input[type="radio"] {
   height: 24px;
   margin: 0 8px 0 0;
   vertical-align: middle;
-  accent-color: var(--strong);
+  accent-color: var(--line);
 }
 
 input[type="file"] {
