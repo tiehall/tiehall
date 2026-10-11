@@ -140,7 +140,9 @@ export function footerHtml(version: Footer | undefined = footer): string {
 // main content, then the top bar, the main content and the footer. The app
 // shell's menus are details elements, so they open without script; on a
 // narrow screen the stylesheet shows the folded menu in place of the
-// navigation, New request and the member's menu.
+// navigation, New request and the member's menu. New request is a plain
+// button, the style of a page's main action, gold with navy ink, in the top
+// bar and in the folded menu, as the design canvas draws it (D61 (2)).
 
 /**
  * How a page differs from the others: the live hall is dark whatever the
@@ -240,7 +242,7 @@ export function topBarHtml(shell: PageShell): string {
     "            </ul>",
     "          </nav>",
     '          <div class="topbar-end">',
-    `            <a class="button strong" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
+    `            <a class="button" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
     '            <details class="menu">',
     `              <summary><span class="initials" aria-hidden="true">${escapeHtml(initialsOf(member.login))}</span><span class="login">${escapeHtml(who)}</span></summary>`,
     '              <div class="menu-panel">',
@@ -257,7 +259,7 @@ export function topBarHtml(shell: PageShell): string {
     navigationItems(links, "                "),
     "              </ul>",
     "            </nav>",
-    `            <a class="button strong" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
+    `            <a class="button" href="${NEW_REQUEST_LINK.href}">${NEW_REQUEST_LINK.text}</a>`,
     `            <p class="menu-who">Signed in as ${escapeHtml(who)}</p>`,
     memberItems(path, csrf, "            "),
     "          </div>",

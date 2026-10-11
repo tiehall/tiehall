@@ -536,18 +536,19 @@ a.brand:hover {
   font-size: 12px;
 }
 
-/* New request in the folded menu: a strong secondary button, navy, as in the top bar. */
+/* New request in the folded menu: gold with navy ink, the style of a page's main action, as in the top bar
+   (D61 (2)). */
 .menu-panel .button {
   justify-content: center;
   margin: 4px 0;
-  background: var(--strong);
-  color: var(--strong-ink);
+  background: var(--button);
+  color: var(--button-ink);
   font-weight: 600;
 }
 
 .menu-panel .button:hover {
-  background: var(--strong-hover);
-  color: var(--strong-ink);
+  background: var(--button-hover);
+  color: var(--button-ink);
 }
 
 /* The folded menu of a narrow screen, which holds the navigation, New request and the member's menu. */
@@ -767,8 +768,9 @@ input[type="file"] {
 }
 
 /* Buttons: an action is a button, a move to another page a link; a link styled as a button carries the class
-   button. A page's main action is gold with navy ink; a strong secondary action, such as the top bar's New request,
-   which is on every page, is navy with the class strong; any other is an outline with the class secondary (D59 (2)). */
+   button. A page's main action, and the top bar's New request, as the design canvas draws it (D61 (2)), is gold with
+   navy ink; a strong secondary action, such as a move of a request's state, is navy with the class strong; any other
+   is an outline with the class secondary (D59 (2)). */
 button,
 .button {
   min-height: 40px;

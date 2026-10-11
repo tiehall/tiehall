@@ -215,8 +215,9 @@ function expectAppShell(path: string, html: string, admin: boolean): void {
   expect(html, path).toMatch(/<nav class="nav" aria-label="Main">/);
   for (const href of ["/hall", "/inbox", "/requests", "/members"]) expect(html, `${path}: ${href}`).toContain(`href="${href}"`);
   expect(html.includes('href="/admin"'), path).toBe(admin);
-  // New request is on every page, so it is a strong secondary button, navy; gold is kept for what asks for attention (D59 (2)).
-  expect(html.match(/<a class="[^"]*" href="\/requests\/new">New request<\/a>/g), path).toEqual(['<a class="button strong" href="/requests/new">New request</a>', '<a class="button strong" href="/requests/new">New request</a>']);
+  // New request takes the style of a page's main action, gold with navy ink, in the top bar and in the folded menu, as
+  // the design canvas draws it (D61 (2)).
+  expect(html.match(/<a class="[^"]*" href="\/requests\/new">New request<\/a>/g), path).toEqual(['<a class="button" href="/requests/new">New request</a>', '<a class="button" href="/requests/new">New request</a>']);
   expect(html, path).toMatch(/<details class="menu">\s*<summary>/);
   expect(html, path).toMatch(/<details class="menu menu-all">\s*<summary>Menu<\/summary>/);
   for (const href of ["/settings/email", "/tokens"]) expect(html, `${path}: ${href}`).toContain(`href="${href}"`);

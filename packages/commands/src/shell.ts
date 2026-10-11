@@ -46,6 +46,7 @@ export interface NavLink extends ShellLink {
 }
 
 export const HALL_PATH = "/hall";
+/** New request, on every page in the app shell, drawn as a page's main action, gold with navy ink (D61 (2)). */
 export const NEW_REQUEST_LINK = { href: "/requests/new", text: "New request" } as const;
 export const SIGN_OUT_ACTION = "/sign-out";
 

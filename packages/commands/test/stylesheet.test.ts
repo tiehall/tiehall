@@ -393,6 +393,30 @@ describe("gold", () => {
     );
   });
 
+  // The top bar's New request takes the style of a page's main action, gold with navy ink, in the light and the dark
+  // theme, as the design canvas draws it (web-ui: The page shell and its navigation; D61 (2)): in the top bar it is a
+  // plain .button, and the folded menu of a narrow screen, whose links are plain, gives it the same colors.
+  it("fills the top bar's New request, in the folded menu too, as a page's main action: gold with navy ink, at least 4.5:1 in each theme", () => {
+    for (const [selector, fill] of [
+      [".menu-panel .button", "var(--button)"],
+      [".menu-panel .button:hover", "var(--button-hover)"],
+    ] as const) {
+      const declarations = declarationsOf(selector);
+      expect(declarations, selector).toEqual(
+        expect.arrayContaining([expect.objectContaining({ property: "background", value: fill }), expect.objectContaining({ property: "color", value: "var(--button-ink)" })]),
+      );
+      expect(declarations?.some(({ value }) => value.includes("--strong")), selector).toBe(false);
+    }
+    expect(declarationsOf(".topbar-end > .button")?.some(({ property }) => /^(background|color|border-color)$/.test(property))).toBe(false);
+    for (const [name, theme] of [
+      ["light", light],
+      ["dark", { ...light, ...dark }],
+    ] as const) {
+      expect(color(theme, "--button"), name).toBe(GOLD);
+      for (const fill of ["--button", "--button-hover"]) expect(contrast(color(theme, "--button-ink"), color(theme, fill)), `${name}: ${fill}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("draws the mark on its tile: gold on navy in the light theme, navy on gold in the dark theme and the live hall", () => {
     expect(declarationsOf(".mark")).toEqual(
       expect.arrayContaining([expect.objectContaining({ property: "background", value: "var(--mark-tile)" }), expect.objectContaining({ property: "color", value: "var(--mark-ink)" })]),

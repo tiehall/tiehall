@@ -2,6 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { contrast } from "./support/css.ts";
 import { wrappedCells } from "./support/layout.ts";
 import { seedInventory } from "./support/page-inventory.ts";
 import { startSignIn } from "./support/sign-in.ts";
@@ -12,8 +13,10 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // The page shell and navigation; D57 (4), (7), (8)). In a viewport narrower
 // than 768 CSS pixels the navigation, New request and the member's menu fold
 // into one menu, which opens without script and holds every link and the
-// sign-out form; and the first element the keyboard reaches is the link that
-// skips to the page's main content.
+// sign-out form; the first element the keyboard reaches is the link that
+// skips to the page's main content; and New request is drawn as a page's main
+// action, gold with navy ink, in the light and the dark theme, by both of the
+// shell's renderers (D61 (2)).
 
 let stub: GitHubStub;
 let install: TestInstall;
@@ -40,9 +43,9 @@ afterAll(async () => {
   await stub?.close();
 }, 300_000);
 
-/** A signed-in context of Pia, an admin, with this viewport, with scripts on or off. */
-async function signedIn(width: number, javaScriptEnabled: boolean): Promise<BrowserContext> {
-  const context = await browser.newContext({ viewport: { width, height: 780 }, javaScriptEnabled });
+/** A signed-in context of Pia, an admin, with this viewport, with scripts on or off, in the light color scheme or the one given. */
+async function signedIn(width: number, javaScriptEnabled: boolean, colorScheme: "light" | "dark" = "light"): Promise<BrowserContext> {
+  const context = await browser.newContext({ viewport: { width, height: 780 }, javaScriptEnabled, colorScheme });
   await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
   return context;
 }
@@ -118,5 +121,33 @@ describe("the shell", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator("main#content").count()).resolves.toBe(1);
     await context.close();
+  });
+
+  it.each([
+    ["light", "rgb(11, 27, 58)"],
+    ["dark", "rgb(10, 20, 40)"],
+  ] as const)("draws New request in gold with navy ink in the %s theme, in the top bar and in the folded menu, on a page of each renderer", { timeout: 120_000 }, async (scheme, ink) => {
+    /** A computed color, rgb(r, g, b), as #RRGGBB. */
+    const hex = (rgb: string) => `#${(rgb.match(/\d+/g) ?? []).slice(0, 3).map((part) => Number(part).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+    for (const width of [1280, 360]) {
+      const context = await signedIn(width, true, scheme);
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      // The inbox, which the web role renders, and FE-1's page, which Next.js renders.
+      for (const path of ["/inbox", "/FE-1"]) {
+        await page.goto(`${web.url}${path}`);
+        if (width < 768) await page.locator("header details.menu-all > summary").click();
+        const selector = width < 768 ? "header details.menu-all .menu-panel a.button" : "header .topbar-end > a.button";
+        const link = page.locator(selector);
+        await expect(link.textContent(), `${path} at ${width}`).resolves.toBe("New request");
+        await expect(link.isVisible(), `${path} at ${width}`).resolves.toBe(true);
+        const [fill, words] = (await page.evaluate(
+          `(() => { const style = getComputedStyle(document.querySelector(${JSON.stringify(selector)})); return [style.backgroundColor, style.color]; })()`,
+        )) as [string, string];
+        expect([fill, words], `${path} at ${width}`).toEqual(["rgb(227, 179, 65)", ink]);
+        expect(contrast(hex(words), hex(fill)), `${path} at ${width}`).toBeGreaterThanOrEqual(4.5);
+      }
+      await context.close();
+    }
   });
 });

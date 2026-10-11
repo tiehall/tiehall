@@ -51,6 +51,9 @@ describe("the shell of the pages Next.js renders", () => {
     );
     expect(normalized(react)).toBe(normalized(shellHtml({ form: "app", member, path, csrf: "a-csrf-token&x" }, MAIN)));
     expect(react).not.toMatch(/<style\b|\sstyle=/i);
+    // New request in the style of a page's main action, gold with navy ink, in the top bar and in the folded menu
+    // (web-ui: The page shell and its navigation; D61 (2)).
+    expect(react.match(/<a [^>]*href="\/requests\/new"[^>]*>New request<\/a>/g)).toEqual(['<a class="button" href="/requests/new">New request</a>', '<a class="button" href="/requests/new">New request</a>']);
   });
 
   it("draws the focused shell as the web role's pages draw it", () => {
