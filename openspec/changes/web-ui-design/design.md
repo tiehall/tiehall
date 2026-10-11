@@ -126,7 +126,7 @@ The stylesheet declares every value below as a custom property on `:root`, redef
 | `--control-border` | `#7D869C` (3.2:1) | `#65749C` (3.1:1) | as dark (3.2:1) | the edges of fields and secondary buttons |
 | `--notice`, `--notice-ink` | `#FBF1D6`, text `#6E4B07` (6.9:1) | `#2A2208`, text `#F0CB6A` (10.1:1) | `#241D0B`, text `#F0CB6A` (10.7:1) | refusals, banners, the "Waits for a person" chip and, on the live hall, a feed entry or an agent that waits on a question |
 | `--success-ink` | `#145A37` (7.2:1) | `#86E0B2` (9.3:1) | as dark | the check mark of a receipt |
-| `--danger`, `--danger-ink` | `#FBE3E1`, text `#9B1E22` (6.6:1) | `#451E1C`, text `#FBB7B1` (8.5:1) | as dark | a refused field |
+| `--danger`, `--danger-ink` | `#FBE3E1`, text `#9B1E22` (6.6:1) | `#451E1C`, text `#FBB7B1` (8.5:1) | as dark | a refused field: the message beside it, and its edge in `--danger-ink` |
 | `--mark-tile`, `--mark-ink` | navy `#0A1428`, gold `#E3B341` (9.4:1) | gold `#E3B341`, navy `#0A1428` | as dark | the mark's tile and stroke |
 | `--live`, `--live-pill` | none: the live hall is always dark | none | `#86E0B2` on `#10301F` (9.0:1) | the live hall's "Live" pill and its lamp |
 | `--agent-chip`, `--agent-chip-border` | none | none | `#111E38`, edge `#2A3C66` | a person or an agent at work on the map |

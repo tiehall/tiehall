@@ -265,6 +265,11 @@ describe("contrast", () => {
     expect(declarationsOf('input[type="checkbox"]')).toContainEqual(expect.objectContaining({ property: "accent-color", value: "var(--line)" }));
   });
 
+  it("edges a refused field in the danger ink of the message beside it, at least 3:1 on every background", () => {
+    expect(declarationsOf('[aria-invalid="true"]')).toContainEqual(expect.objectContaining({ property: "border-color", value: "var(--danger-ink)" }));
+    for (const name of THEME_NAMES) for (const background of BACKGROUNDS) expect(contrast(color(THEMES[name], "--danger-ink"), color(THEMES[name], background)), `${name}: ${background}`).toBeGreaterThanOrEqual(3);
+  });
+
   it("draws the focus ring, the inbox's badge and the live hall's initials in their tokens", () => {
     expect(declarationsOf(":focus-visible")).toContainEqual(expect.objectContaining({ property: "outline", value: "2px solid var(--focus)" }));
     expect(declarationsOf(".badge")).toEqual(

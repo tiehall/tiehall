@@ -1512,8 +1512,9 @@ form:not(.stack) > .hint {
   font-weight: 600;
 }
 
+/* A refused field's edge takes the danger ink of the message beside it; gold is kept for what waits on a person. */
 [aria-invalid="true"] {
-  border-color: var(--notice-ink);
+  border-color: var(--danger-ink);
 }
 
 .check {
