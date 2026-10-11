@@ -235,3 +235,23 @@ describe("the policy of each kind of page", () => {
     }
   });
 });
+
+// Each page's title names the page and then Tiehall, as the pages Next.js renders already did, so a tab or a history
+// entry says which page of which tool it is (web-ui: The page shell and its navigation; design.md, Design: The page
+// shell and navigation; D57 (4)); the home page is Tiehall alone, and the API reference page keeps its own.
+describe("the title of each page", () => {
+  /** A page's title, as its markup gives it. */
+  const titleOf = (html: string) => /<title>([^<]*)<\/title>/.exec(html)?.[1];
+
+  it("names the page, then Tiehall, on every page a signed-in admin opens, the sign-in page, the setup screen and the page for a path no route serves", { timeout: 120_000 }, async () => {
+    for (const [route, paths] of Object.entries(PAGES)) {
+      if (KINDS[route] === "reference") continue;
+      for (const path of route === "confirm/[...command]/route.ts" ? confirmPaths : paths) {
+        expect(titleOf((await open(web, path, cookie)).html), path).toMatch(path === "/" ? /^Tiehall$/ : /^\S.* · Tiehall$/);
+      }
+    }
+    for (const html of [(await open(web, "/sign-in")).html, (await open(web, NO_SUCH_PAGE, cookie)).html, (await atInstallUrl(fresh.web, "GET", "/setup")).html]) {
+      expect(titleOf(html)).toMatch(/^\S.* · Tiehall$/);
+    }
+  });
+});

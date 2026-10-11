@@ -153,6 +153,11 @@ export interface PageLook {
   scripts?: readonly string[];
 }
 
+/** A page's title as its tab says it: the page's name, then Tiehall, as the pages Next.js renders say theirs; the home page's is Tiehall alone. */
+export function pageTitle(title: string): string {
+  return title === "Tiehall" || title.endsWith(" · Tiehall") ? title : `${title} · Tiehall`;
+}
+
 /** The head every page of the web UI carries: its title, the color schemes it uses and its theme colors, the stylesheet, the icons and the manifest. */
 export function headHtml(title: string, look: PageLook = {}): string {
   return [
@@ -165,7 +170,7 @@ export function headHtml(title: string, look: PageLook = {}): string {
           '    <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">',
           '    <meta name="theme-color" content="#0E1117" media="(prefers-color-scheme: dark)">',
         ]),
-    `    <title>${escapeHtml(title)}</title>`,
+    `    <title>${escapeHtml(pageTitle(title))}</title>`,
     `    <link rel="stylesheet" href="${assetUrl(STYLESHEET_PATH)}">`,
     `    <link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">`,
     `    <link rel="icon" href="${assetUrl("/favicon.ico")}" sizes="16x16 32x32 48x48">`,

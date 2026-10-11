@@ -25,5 +25,7 @@ describe("the web app's own fallback pages", () => {
     expect(html).toContain("<h1>");
     expect(html).not.toMatch(/<style\b|\sstyle=/i);
     expect(html).not.toContain("A page failed.");
+    // Its title names the page, then Tiehall, as every page's does.
+    expect(html).toMatch(/<title>[^<]+ · Tiehall<\/title>/);
   });
 });

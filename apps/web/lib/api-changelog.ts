@@ -49,7 +49,7 @@ ${sections.join("\n")}
   const html = `<!doctype html>
 <html lang="en">
   <head>
-${headHtml("Tiehall API changelog")}
+${headHtml("API changelog")}
   </head>
   <body>
 ${shellHtml(FOCUSED_SHELL, main)}${footerHtml({ ...runningVersion(process.env), docsUrl: docsUrl(process.env) })}  </body>

@@ -20,7 +20,7 @@ export default function GlobalError(_props: { error: Error & { digest?: string }
   return (
     <html lang="en">
       <head>
-        <title>Tiehall could not show this page</title>
+        <title>Could not show this page · Tiehall</title>
         <PageHead />
       </head>
       <body>
