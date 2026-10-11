@@ -139,14 +139,16 @@ export interface PrepareContext {
 }
 
 /**
- * How the long-poll waits hold (requester-loop: The long-poll wait endpoint):
- * what wakes them when an event commits, how long they hold, 60 seconds
- * unless a test shortens it, and the signal that ends them when the app shuts
- * down, the process's own unless a test gives another.
+ * How the long-poll waits hold (requester-loop: The long-poll wait endpoint;
+ * web-ui: The live hall's reads and its long-poll): what wakes them when an
+ * event commits, how long the API's wait holds, 60 seconds, and the live
+ * hall's, 25 seconds, unless a test shortens them, and the signal that ends
+ * them when the app shuts down, the process's own unless a test gives another.
  */
 export interface WaitSettings {
   wakeups?: EventWakeups;
   holdMs?: number;
+  hallHoldMs?: number;
   shutdown?: AbortSignal;
 }
 

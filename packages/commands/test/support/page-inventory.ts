@@ -74,6 +74,8 @@ export const NOT_PAGES: Readonly<Record<string, string>> = {
   "docs/api/reference.js/route.ts": "a script of the API reference page, which that page loads",
   "docs/api/scalar.js/route.ts": "a script of the API reference page, which that page loads",
   "assets/[...path]/route.ts": "the install's own assets, such as its stylesheet, fonts and icons, which the pages load",
+  "hall/state/route.ts": "the live hall's state, JSON its script reads",
+  "hall/wait/route.ts": "the live hall's long-poll, JSON its script holds",
 };
 
 /** A path no route serves, which gets the web app's own page that says so. */

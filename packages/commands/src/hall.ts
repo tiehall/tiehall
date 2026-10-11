@@ -1,11 +1,13 @@
-import { readHallState } from "@tiehall/catalog";
-import { formatRequestKey, Refusal, type RequestState } from "@tiehall/core";
+import { readHallState, waitForHall } from "@tiehall/catalog";
+import { formatRequestKey, isTerminalState, Refusal, type RequestState } from "@tiehall/core";
 import { users } from "@tiehall/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { eventLine } from "./event-lines.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { held, RECHECK_MS, shuttingDown } from "./events-wait.ts";
+import { defineHandler, definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
 import { actorsOf, AT_WORK_MS } from "./request-activity.ts";
 import { teamOfKey } from "./request-keys.ts";
+import { shutdownSignal } from "./shutdown.ts";
 import type { OrgContext } from "./with-org.ts";
 
 // The live hall's reads (web-ui: The live hall; web-ui: What the live hall
@@ -306,6 +308,101 @@ export async function hallAtWork(context: Pick<OrgContext, "tx" | "orgId">, now:
   return named.map(({ actor, at, type, line, team, request }, index) => ({ actor, at, type, line, team, request, onMap: index < ON_THE_MAP }));
 }
 
+// The live hall's long-poll (web-ui: The live hall's reads and its
+// long-poll; requester-loop: No push paths other than the hooks; design.md,
+// Design: The live hall; D57 (12)). hall.wait holds the call in the step
+// execute() runs before the call's transaction, as the API's wait does
+// (events-wait.ts), so no connection or transaction is held while it waits:
+// it takes a wake-up (event-wakeups.ts), reads in a short read-only
+// transaction whether a domain event about a request came after the cursor,
+// and if none came, holds until the wake-up, the hold of 25 seconds, its own
+// setting, or the shutdown, reading again on its own every 5 seconds should a
+// wake-up be lost. Once woken it waits 250 milliseconds more, so a burst of
+// events comes in one answer, and reads again. A security event sends no
+// wake-up, so it never ends the wait. The answer is read in the call's own
+// transaction: the new events, at most 50 or else only that the page must read
+// the state again; the events the narrowed feed shows; every request they
+// name, as it is now, marked terminal once it left the hall, by its state or,
+// in a hall narrowed to a team, by no longer running from or to that team, as
+// after a reassignment, which gives it a new key while its id stays; every
+// team, the narrowed lines and the people and agents at work, as hall.state
+// reads them; and the cursor, the newest new event, or the one given. While
+// the app shuts down it ends at once with 503 and Retry-After: 0.
+
+/** How long the live hall's wait holds when no event comes: 25 seconds, under the idle time after which common proxies end an answer. */
+export const HALL_HOLD_MS = 25_000;
+
+/** How long a woken wait waits before it reads, so a burst of events comes in one answer. */
+export const GATHER_MS = 250;
+
+/** Whether a domain event about a request came after the cursor. */
+async function eventAfter(context: Pick<OrgContext, "tx" | "orgId">, after: number): Promise<boolean> {
+  const rows = await rowsOf<{ found: number }>(
+    context,
+    sql`SELECT 1 AS found FROM events e WHERE e.org_id = ${context.orgId} AND e.number > ${after} AND e.class = 'domain' AND (e.data ->> 'requestId') IS NOT NULL LIMIT 1`,
+  );
+  return rows.length > 0;
+}
+
+/** Waits, outside any transaction, until a domain event about a request comes after the cursor, the hold ends or the app shuts down. */
+async function hallWaitStep({ after, team }: { after: number; team?: string | undefined }, context: PrepareContext): Promise<{ found: boolean }> {
+  const shutdown = context.waits?.shutdown ?? shutdownSignal();
+  if (shutdown.aborted) throw shuttingDown();
+  // A team that does not exist is refused before the wait holds, not once it ends.
+  if (team !== undefined) await context.read((read) => narrowingOf(read, { team }));
+  const deadline = Date.now() + (context.waits?.hallHoldMs ?? HALL_HOLD_MS);
+  const wakeups = context.waits?.wakeups;
+  await wakeups?.ready();
+  for (;;) {
+    const wake = wakeups?.next();
+    try {
+      if (await context.read((read) => eventAfter(read, after))) return { found: true };
+      // A shutdown that began while the wait read, between its holds, ends it as one that comes while it holds does.
+      if (shutdown.aborted) throw shuttingDown();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return { found: false };
+      const outcome = await held(wake?.woken, Math.min(remaining, RECHECK_MS), shutdown);
+      if (outcome === "shutdown") throw shuttingDown();
+      if (outcome === "woken" && (await held(undefined, GATHER_MS, shutdown)) === "shutdown") throw shuttingDown();
+    } finally {
+      wake?.cancel();
+    }
+  }
+}
+
+/** Whether a request runs from or to the team the hall is narrowed to; every request does when it is not narrowed. */
+function onTheNarrowedTeam(request: { from: TeamRef; to: TeamRef }, teamId: string | undefined): boolean {
+  return teamId === undefined || request.from.id === teamId || request.to.id === teamId;
+}
+
+/** What changed after the cursor, read in the call's transaction (waitForHall's output). */
+export async function readHallChange(context: OrgContext, now: Date, after: number, narrowed: HallNarrowing) {
+  const rows = await rowsOf<EventRow>(
+    context,
+    sql`SELECT ${EVENT_COLUMNS} FROM events e
+      WHERE e.org_id = ${context.orgId} AND e.number > ${after} AND e.class = 'domain' AND (e.data ->> 'requestId') IS NOT NULL
+      ORDER BY e.number LIMIT ${HALL_FEED + 1}`,
+  );
+  if (rows.length > HALL_FEED) {
+    const [newest] = await rowsOf<{ number: string | number }>(context, hallQueries(context.orgId, now, narrowed).cursor);
+    return { now: now.toISOString(), cursor: Number(newest?.number ?? after), reload: true, events: [], requestLines: [], teams: [], lines: [], atWork: [] };
+  }
+  const teams = await hallTeams(context, now);
+  const byId = new Map(teams.map(({ id, key, untrusted }) => [id, { id, key, name: untrusted.name }]));
+  const named = await hallEvents(context, rows, byId);
+  const events = named.filter(({ actor, request }) => (!narrowed.agents || actor.kind === "agent") && onTheNarrowedTeam(request, narrowed.teamId));
+  const ids = [...new Set(named.map(({ request }) => request.id))];
+  const changed = ids.length === 0 ? [] : await hallRequests(context, await rowsOf<RequestRow>(context, requestLinesQuery(context.orgId, sql`r.id::text IN ${ids}`)), byId);
+  const requestLines = changed.map((line) => ({ ...line, terminal: isTerminalState(line.state) || !onTheNarrowedTeam(line, narrowed.teamId) }));
+  const lines = await hallLines(context, now, narrowed, byId);
+  const atWork = await hallAtWork(context, now, narrowed, byId);
+  const last = rows.at(-1);
+  return { now: now.toISOString(), cursor: last === undefined ? after : Number(last.number), reload: false, events, requestLines, teams, lines, atWork };
+}
+
 export const HALL_HANDLERS: Handlers = {
   [readHallState.id]: defineHandler(readHallState, async (input, context) => readHall(context, context.now(), await narrowingOf(context, input))),
+  [waitForHall.id]: definePreparedHandler(waitForHall, hallWaitStep, async (input, context) =>
+    readHallChange(context, context.now(), input.after, await narrowingOf(context, input)),
+  ),
 };

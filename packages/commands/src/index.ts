@@ -349,6 +349,8 @@ export { readerOf } from "./event-reads.ts";
 export { createEventWakeups, EVENTS_CHANNEL, type EventWakeups, type WakeUp } from "./event-wakeups.ts";
 export { WAIT_HOLD_MS } from "./events-wait.ts";
 export { createInboxRoute, INBOX_PAGE_SIZE, INBOX_PATH } from "./inbox-page.ts";
+export { createHallStateRoute, createHallWaitRoute, HALL_STATE_PATH, HALL_WAIT_PATH, type HallReadOptions } from "./hall-routes.ts";
+export { GATHER_MS, HALL_FEED, HALL_HANDLERS, HALL_HOLD_MS, HALL_REQUESTS, ON_THE_MAP } from "./hall.ts";
 export { emailQuestion, type QuestionEmailData } from "./question-emails.ts";
 export { emailDigests } from "./digests.ts";
 export { createEmailSettingsRoute, EMAIL_SETTINGS_PATH, type EmailSettingsPageOptions } from "./email-settings-page.ts";

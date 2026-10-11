@@ -119,8 +119,8 @@ export async function startTestInstall(
   options: {
     setUp?: (owner: pg.Client) => Promise<void>;
     now?: () => Date;
-    /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
-    wait?: { holdMs?: number; shutdown?: AbortSignal };
+    /** How the long-poll waits hold: a shorter hold, the API's or the live hall's, or a shutdown signal of the test's own. */
+    wait?: { holdMs?: number; hallHoldMs?: number; shutdown?: AbortSignal };
     /**
      * Sends the jobs of these types to the real job queue, as the app role, so
      * a worker the test starts runs them; the jobs then join no sentJobs.

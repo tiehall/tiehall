@@ -40,6 +40,11 @@ export function webPagePolicy(formAction: readonly string[] = []): string {
   return ["default-src 'none'", ...LOADS_FROM_THE_INSTALL, "base-uri 'none'", ["form-action 'self'", ...formAction].join(" "), "frame-ancestors 'none'"].join("; ");
 }
 
+/** The policy of a JSON answer of the live hall, which loads nothing and cannot be framed. */
+export function hallJsonPolicy(): string {
+  return "default-src 'none'; frame-ancestors 'none'";
+}
+
 /** The API changelog page's policy: the web role's, with no form to post anywhere. */
 export function changelogPagePolicy(): string {
   return webPagePolicy().replace("form-action 'self'", "form-action 'none'");

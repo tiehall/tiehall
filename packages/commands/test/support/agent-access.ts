@@ -156,8 +156,8 @@ function registration(metadata: Record<string, unknown>): Record<string, unknown
 /** How the install takes agent clients, such as the fetcher of their metadata documents, which a test routes to a local server. */
 export interface AgentAccessOptions {
   clientMetadata?: AgentClientOptions;
-  /** How the long-poll waits hold: a shorter hold, or a shutdown signal of the test's own. */
-  wait?: { holdMs?: number; shutdown?: AbortSignal };
+  /** How the long-poll waits hold: a shorter hold, the API's or the live hall's, or a shutdown signal of the test's own. */
+  wait?: { holdMs?: number; hallHoldMs?: number; shutdown?: AbortSignal };
   /** The time the install's execute() tells, such as a test's clock that a contract report's burst runs on; the real time unless given. */
   now?: () => Date;
 }

@@ -25,6 +25,7 @@ import { createGitHubAdminRoute, type GitHubAdminRoute } from "./github-admin-ro
 import { createHomeRoute, type HomeRoute } from "./home-route.ts";
 import { createEmailSettingsRoute } from "./email-settings-page.ts";
 import { createInboxRoute } from "./inbox-page.ts";
+import { createHallStateRoute, createHallWaitRoute } from "./hall-routes.ts";
 import { HANDLERS } from "./handlers.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import { lazyJobSender, openJobQueue } from "./job-queue.ts";
@@ -361,6 +362,20 @@ export function requestListsRoute(env: Environment): PageRoute {
 /** The web inbox at /inbox, which every member may open, for the signed-in user's web session. */
 export function inboxRoute(env: Environment): PageRoute {
   return pageOf("inbox", env, createInboxRoute);
+}
+
+/**
+ * The live hall's state at /hall/state, which its script reads as JSON, for
+ * the signed-in user's web session, which the read does not renew (web-ui:
+ * The live hall's reads and its long-poll).
+ */
+export function hallStateRoute(env: Environment): PageRoute {
+  return pageOf("hall state", env, createHallStateRoute);
+}
+
+/** The live hall's long-poll at /hall/wait, which its script holds, for the signed-in user's web session, which the wait does not renew. */
+export function hallWaitRoute(env: Environment): PageRoute {
+  return pageOf("hall wait", env, createHallWaitRoute);
 }
 
 /** A member's email settings at /settings/email, for the signed-in user's web session; it says whether the install sends email. */

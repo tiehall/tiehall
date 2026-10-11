@@ -35,15 +35,16 @@ import { updatesAfter, updatesPageOf } from "./updates.ts";
 /** How long a wait holds when no update comes: 60 seconds. */
 export const WAIT_HOLD_MS = 60_000;
 
-/** How often a waiting call reads again on its own, should a wake-up be lost with a lost listening connection. */
-const RECHECK_MS = 5_000;
+/** How often a waiting call reads again on its own, should a wake-up be lost with a lost listening connection; the live hall's wait does too (hall.ts). */
+export const RECHECK_MS = 5_000;
 
 /** How many updates one answer lists at most. */
 const WAIT_ENTRIES = 50;
 
 type WaitAnswer = { events: z.input<typeof waitEntry>[]; cursor: number };
 
-function shuttingDown(): Refusal {
+/** The refusal a wait ends with while the app shuts down: 503 with Retry-After: 0. */
+export function shuttingDown(): Refusal {
   return new Refusal("shutting-down", "Tiehall is shutting down. Call the wait again; it is answered once Tiehall is back.");
 }
 
@@ -54,7 +55,7 @@ function userOf(caller: Caller): string {
 }
 
 /** Holds until the wake-up, the time or the shutdown, whichever comes first; says which. A shutdown that began before it holds ends it at once. */
-function held(woken: Promise<void> | undefined, ms: number, shutdown: AbortSignal): Promise<"woken" | "time" | "shutdown"> {
+export function held(woken: Promise<void> | undefined, ms: number, shutdown: AbortSignal): Promise<"woken" | "time" | "shutdown"> {
   if (shutdown.aborted) return Promise.resolve("shutdown");
   return new Promise((resolve) => {
     const done = (outcome: "woken" | "time" | "shutdown") => {

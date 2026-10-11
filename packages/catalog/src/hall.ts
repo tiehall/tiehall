@@ -126,4 +126,58 @@ export const readHallState = defineCommand({
   stability: "beta",
 });
 
-export const HALL_COMMANDS = [readHallState];
+/** A request a wait's events name, as it is now: on its line, or, with terminal, gone from the hall. */
+export const hallRequestChange = hallRequest.extend({
+  /**
+   * Whether the request left the hall: it reached a terminal state, or, in a
+   * hall narrowed to a team, it no longer runs from or to that team, such as
+   * after a reassignment.
+   */
+  terminal: z.boolean(),
+});
+
+/**
+ * The live hall's long-poll (web-ui: The live hall's reads and its long-poll;
+ * requester-loop: No push paths other than the hooks; design.md, Design: The
+ * live hall; D57 (12)): it answers as soon as a domain event about a request
+ * comes after the cursor, with the new events the narrowed feed shows, oldest
+ * first, the requests all the new events name as they are now, every team's
+ * and the narrowed lines' counts, the people and agents at work and the new
+ * cursor; otherwise it holds the call at most 25 seconds and answers with no
+ * events and the cursor it was given. Past 50 new events it answers, with no
+ * events, that the page must read the state again. A security event never
+ * ends it.
+ */
+export const waitForHall = defineCommand({
+  id: "hall.wait",
+  summary:
+    "Wait for the live hall's next events: answers as soon as a domain event about a request comes after the cursor, with what changed, or with no events once 25 seconds pass; past 50 events it asks the page to read the state again.",
+  input: z.object({
+    after: z.coerce.number().int().min(0).meta({ description: "The cursor: the number of the newest domain event about a request the page has." }),
+    ...narrowing,
+  }),
+  output: z.object({
+    now: z.iso.datetime(),
+    /** The number of the newest event this answer brings, or the cursor it was given when it brings none. */
+    cursor: count,
+    /** Whether more than 50 events came after the cursor, so the page must read the state again; the answer then brings nothing else. */
+    reload: z.boolean(),
+    /** The new events the narrowed feed shows, oldest first. */
+    events: z.array(hallEvent),
+    /** Every request the new events name, as it is now. */
+    requestLines: z.array(hallRequestChange),
+    /** Every team, by key, as hall.state lists them. */
+    teams: z.array(hallTeam),
+    /** The lines between teams, narrowed as hall.state narrows them. */
+    lines: z.array(hallLine),
+    /** The people and agents at work now. */
+    atWork: z.array(hallAtWork),
+  }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "beta",
+});
+
+export const HALL_COMMANDS = [readHallState, waitForHall];

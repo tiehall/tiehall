@@ -46,6 +46,8 @@ describe("the paths of the web app's route handlers", () => {
     ["/.well-known/oauth-protected-resource", true],
     ["/docs/api", true],
     ["/docs/api/changelog", true],
+    ["/hall/state", true],
+    ["/hall/wait", true],
     ["/no-such-page", false],
     ["/no-such-page/at-all", false],
     ["/admin/xyz", false],
