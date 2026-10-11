@@ -6,6 +6,7 @@ import { SCOPES } from "@tiehall/catalog";
 import { oauthClientResources, oauthClients, oauthDeviceCodes, type Database } from "@tiehall/db";
 import { storedDeviceCode } from "./device-code-storage.ts";
 import { defineJobType } from "./jobs.ts";
+import { rollingCounts } from "./rolling-limits.ts";
 import { SetupRequiredError, withOrg } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
 
@@ -53,27 +54,24 @@ import type { WorkerJob } from "./worker.ts";
 //   its verification, approval and denial routes, which would store a user on
 //   a code before the person approved it. No device-flow endpoint returns a
 //   web session or a session token;
-// - the token endpoint's limit on the calls from one client address does not
-//   count the CLI's polls, which have a limit of their own. The library lets
-//   20 calls in a row from one address through, and the run ends only once a
-//   minute passes without one, while the CLI polls every 5 seconds for as
-//   long as its code waits, up to its 10 minutes: its 21st poll, about 100
-//   seconds in, would be refused with 429, and so would every token call from
-//   that address until a minute passed without one, the next `tiehall
-//   login`'s first poll included. On an install on one machine, as a trial
-//   URL's is, every client there reaches it from one address. A call is the
-//   CLI's poll when its body is a form, by a media type that is a form's
-//   exactly, that names the device code grant and the CLI's client id, each
-//   once; the endpoint reads a body whose media type names JSON first, or
-//   ends in +json, as JSON, whatever form its text holds, so such a body is
-//   never a poll. Every other token call keeps the token endpoint's limit.
-//   The CLI's polls from one address are counted over the past minute
-//   instead, whatever codes they carry, and the 61st within a minute is
-//   refused with 429 and changes nothing: a poll every 5 seconds makes 12 a
-//   minute, so five sign-ins at once from one address fit, and codes no one
-//   was issued cannot be tried without a limit. The device flow holds each
-//   code it issued to the interval itself, answering a poll that comes
-//   sooner with slow_down.
+// - the token endpoint's limit on the calls from one client address, 20 in
+//   any minute (rolling-limits.ts), does not count the CLI's polls, which
+//   have a limit of their own. The CLI polls every 5 seconds for as long as
+//   its code waits, up to its 10 minutes, 12 polls a minute: two sign-ins at
+//   once from one address would pass the 20, and so would one with more than
+//   8 other token calls from there in that minute, and on an install on one
+//   machine, as a trial URL's is, every client there reaches it from one
+//   address. A call is the CLI's poll when its body is a form, by a media
+//   type that is a form's exactly, that names the device code grant and the
+//   CLI's client id, each once; the endpoint reads a body whose media type
+//   names JSON first, or ends in +json, as JSON, whatever form its text
+//   holds, so such a body is never a poll. Every other token call keeps the
+//   token endpoint's limit. The CLI's polls from one address are counted
+//   over the past minute instead, whatever codes they carry, and the 61st
+//   within a minute is refused with 429 and changes nothing: five sign-ins at
+//   once from one address fit, and codes no one was issued cannot be tried
+//   without a limit. The device flow holds each code it issued to the
+//   interval itself, answering a poll that comes sooner with slow_down.
 // An expired code is removed by a job that runs every hour, with the address
 // it kept.
 
@@ -95,7 +93,7 @@ export const DEVICE_AUTHORIZATION_PATH = "/device/code";
 /** The OAuth token endpoint, under the sign-in service's routes at /api/auth, which the CLI polls with its device code. */
 export const TOKEN_ENDPOINT_PATH = "/oauth2/token";
 
-/** A rule of the sign-in service's rate limit: at most `max` calls in a row from one client address, in a run that ends once `window` seconds pass without one. */
+/** A rule of the sign-in service's rate limit: at most `max` calls from one client address in any `window` seconds (rolling-limits.ts). */
 export interface RateLimitRule {
   window: number;
   max: number;
@@ -104,8 +102,8 @@ export interface RateLimitRule {
 /** How many of the CLI's polls the token endpoint takes from one client address in a minute, at most. */
 export const CLI_POLLS_PER_ADDRESS_PER_MINUTE = 60;
 
-/** How long the CLI's polls from an address are counted for: a minute. */
-const POLL_WINDOW_MS = 60_000;
+/** How long the CLI's polls from an address are counted for, in seconds: a minute. */
+const POLL_WINDOW_SECONDS = 60;
 
 /** A form's media type. */
 const FORM_MEDIA_TYPE = "application/x-www-form-urlencoded";
@@ -155,24 +153,16 @@ export async function tokenEndpointRateLimit(request: Request, rule: RateLimitRu
  * minute.
  */
 function pollsPerAddress(now: () => Date): (address: string | undefined) => void {
-  const byAddress = new Map<string, number[]>();
+  const count = rollingCounts(now);
   return (address) => {
-    const at = now().getTime();
-    // Addresses with no poll in the past minute are forgotten, so the count keeps no more than a minute's addresses.
-    if (byAddress.size > 10_000) for (const [each, times] of byAddress) if (times.every((time) => at - time >= POLL_WINDOW_MS)) byAddress.delete(each);
-    const key = address ?? "";
-    const recent = (byAddress.get(key) ?? []).filter((time) => at - time < POLL_WINDOW_MS);
-    if (recent.length >= CLI_POLLS_PER_ADDRESS_PER_MINUTE) {
-      byAddress.set(key, recent);
-      const retryAfterSeconds = Math.max(1, Math.ceil(((recent[0] ?? at) + POLL_WINDOW_MS - at) / 1000));
+    const answer = count(address ?? "", { window: POLL_WINDOW_SECONDS, max: CLI_POLLS_PER_ADDRESS_PER_MINUTE });
+    if (!answer.allowed) {
       throw new APIError(
         "TOO_MANY_REQUESTS",
         { message: `This address polled for device codes ${CLI_POLLS_PER_ADDRESS_PER_MINUTE} times in the past minute, as many as an address may.` },
-        { "x-retry-after": String(retryAfterSeconds) },
+        { "x-retry-after": String(answer.retryAfter ?? POLL_WINDOW_SECONDS) },
       );
     }
-    recent.push(at);
-    byAddress.set(key, recent);
   };
 }
 

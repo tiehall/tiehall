@@ -173,6 +173,27 @@ describe("the sign-in service's rate limit", () => {
     expect((await callback("198.51.100.78")).status).not.toBe(429);
   });
 
+  // The limit counts the calls of the past 10 seconds. The sign-in library's own count let 100 calls in a row
+  // through, in a run that ended only once 10 seconds passed without one, so an address that never paused for 10
+  // seconds stayed refused however few calls it made within any 10 seconds.
+  it("takes a call from an address again once the first of its 100 calls within 10 seconds is 10 seconds old", async () => {
+    let elapsedMs = 0;
+    const clocked = await startSignIn(install, stub, { sameAppAs: harness, agentClients: { now: () => new Date(Date.now() + elapsedMs) } });
+    const callback = () =>
+      clocked.service.handler(
+        new Request(`${URL_OF_INSTALL}/api/auth/callback/github?code=not-a-code&state=not-a-state`, { headers: { "x-forwarded-for": "198.51.100.82" } }),
+      );
+    for (let call = 1; call <= 100; call += 1) {
+      expect((await callback()).status, `call ${call}`).not.toBe(429);
+      elapsedMs += 50;
+    }
+    // 5 seconds after the first call.
+    expect((await callback()).status).toBe(429);
+    // 10.1 seconds after the first call, which has left the 10 seconds.
+    elapsedMs += 5_100;
+    expect((await callback()).status).not.toBe(429);
+  });
+
   // A refused call creates nothing (sign-in: GitHub is the only way to sign in; github-layer-hardening: D50 (20)):
   // the 101st call is a real return from GitHub of a person an invite admits, which the same call from another
   // address then completes, so the limit alone kept it from signing them in.

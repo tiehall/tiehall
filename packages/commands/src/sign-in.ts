@@ -43,6 +43,7 @@ import {
   type AgentClientOptions,
 } from "./authorization-server.ts";
 import { cliDeviceFlow, seedCliClient, TOKEN_ENDPOINT_PATH, tokenEndpointRateLimit } from "./device-flow.ts";
+import { rollingRateLimits } from "./rolling-limits.ts";
 import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
@@ -237,7 +238,7 @@ export const SESSION_LIFETIME_DAYS = 30;
 
 const DAY_SECONDS = 24 * 60 * 60;
 
-/** The sign-in service's rate limit: at most this many calls to one route from one client address in each window. */
+/** The sign-in service's rate limit: at most this many calls to one route from one client address in any window. */
 export const RATE_LIMIT_MAX = 100;
 /** The window of the sign-in service's rate limit, in seconds. */
 export const RATE_LIMIT_WINDOW_SECONDS = 10;
@@ -339,6 +340,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
   /** The setup session's cookie, which the setup screen sets. */
   const setupCookie = setupCookieName(options.url);
   const built = new Map<Mode, { key: string; auth: Auth }>();
+  /** The calls each limit of the service took, which every instance built from the App's credentials counts. */
+  const rateLimits = rollingRateLimits(options.agentClients?.now ?? (() => new Date()));
   const installGitHub = createInstallGitHub({
     database: options.database,
     secrets: options.secrets,
@@ -482,17 +485,18 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         ipAddress: { ipAddressHeaders: ["x-forwarded-for"], ipv6Subnet: 128 },
       },
       // The service's rate limit, on in every environment, not only in production, as the library would have it:
-      // keyed on the client address above, kept in this process's memory (one web process per install), with the
-      // library's own window and limits. Over HTTP it serves only GitHub's return to the callback, 100 calls per 10
-      // seconds from one address; the next gets the error model's 429 (refusalOfRateLimit). The token endpoint keeps
-      // the authorization server's own limit, which does not count the CLI's polls with its device code: those have a
-      // limit of their own (device-flow.ts).
+      // keyed on the client address above, with the library's own windows and limits, each counted over the past
+      // window, not in the library's runs, and kept in this process's memory (one web process per install), across
+      // the instances built from the App's credentials (rolling-limits.ts). Over HTTP it serves only GitHub's return
+      // to the callback, 100 calls in any 10 seconds from one address; the next gets the error model's 429
+      // (refusalOfRateLimit). The token endpoint keeps the authorization server's own limit, 20 calls in any minute,
+      // which does not count the CLI's polls with its device code: those have a limit of their own (device-flow.ts).
       rateLimit: {
         enabled: true,
-        storage: "memory",
         window: RATE_LIMIT_WINDOW_SECONDS,
         max: RATE_LIMIT_MAX,
         customRules: { [TOKEN_ENDPOINT_PATH]: tokenEndpointRateLimit },
+        customStorage: rateLimits,
       },
       onAPIError: { errorURL: `${options.url}${setup ? SETUP_PATH : SIGN_IN_PATH}` },
       emailAndPassword: { enabled: false },

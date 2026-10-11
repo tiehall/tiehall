@@ -282,6 +282,46 @@ describe("the token endpoint's limit on the calls from one address", () => {
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
+  // The limit counts the calls of the past minute. The sign-in library's own count let 20 calls in a row through, in a
+  // run that ended only once a minute passed without one, so an address whose clients refreshed their tokens once
+  // every 50 seconds, fewer than 2 calls a minute, was refused at its 21st call; on an install on one machine, or
+  // behind an office's NAT, every client's refreshes come from one address.
+  it("takes one call every 50 seconds from an address for as long as it calls", async () => {
+    const refresh = new URLSearchParams({ grant_type: "refresh_token", refresh_token: "not-a-refresh-token", client_id: CLI_CLIENT_ID }).toString();
+    for (let call = 1; call <= 30; call += 1) {
+      expect((await tokenCall(refresh, "198.51.100.50")).status, `call ${call}`).toBe(400);
+      elapsedMs += 50_000;
+    }
+  });
+
+  it("refuses the 21st call within a minute from an address, changing nothing, and takes one again once the first of them is a minute old", async () => {
+    const address = "198.51.100.51";
+    const answer = await deviceCode(CLI_REQUEST);
+    await approve(String(answer.body["user_code"]), ana.userId);
+    const polled = await deviceToken(String(answer.body["device_code"]));
+    const valid = new URLSearchParams({ grant_type: "refresh_token", refresh_token: String(polled.body["refresh_token"]), client_id: CLI_CLIENT_ID }).toString();
+    const invalid = new URLSearchParams({ grant_type: "refresh_token", refresh_token: "not-a-refresh-token", client_id: CLI_CLIENT_ID }).toString();
+    for (let call = 1; call <= 20; call += 1) {
+      expect((await tokenCall(invalid, address)).status, `call ${call}`).toBe(400);
+      elapsedMs += 2_900;
+    }
+    // 58 seconds after the first call, which leaves the minute 2 seconds from now.
+    const limited = await tokenCall(valid, address);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("content-type")).toBe("application/problem+json");
+    expect(((await limited.json()) as Record<string, unknown>)["access_token"]).toBeUndefined();
+    const retryAfter = Number(limited.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(2);
+    // Another address is not refused for this one's calls.
+    expect((await tokenCall(invalid, "198.51.100.52")).status).toBe(400);
+    // The first call is a minute old: the refused call changed nothing, so its refresh token still refreshes.
+    elapsedMs += 2_500;
+    const refreshed = await tokenCall(valid, address);
+    expect(refreshed.status).toBe(200);
+    expect(((await refreshed.json()) as Record<string, unknown>)["access_token"]).toEqual(expect.any(String));
+  });
+
   it("counts a token call that names its grant type twice, the device code grant among them", async () => {
     const twice = `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:device_code")}&grant_type=refresh_token&device_code=not-a-code&client_id=${CLI_CLIENT_ID}`;
     for (let call = 1; call <= 20; call += 1) expect((await tokenCall(twice, "198.51.100.44")).status, `call ${call}`).not.toBe(429);
