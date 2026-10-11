@@ -485,7 +485,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
       // keyed on the client address above, kept in this process's memory (one web process per install), with the
       // library's own window and limits. Over HTTP it serves only GitHub's return to the callback, 100 calls per 10
       // seconds from one address; the next gets the error model's 429 (refusalOfRateLimit). The token endpoint keeps
-      // the authorization server's own limit, which does not count the CLI's polls with its device code (device-flow.ts).
+      // the authorization server's own limit, which does not count the CLI's polls with its device code: those have a
+      // limit of their own (device-flow.ts).
       rateLimit: {
         enabled: true,
         storage: "memory",
@@ -669,7 +670,12 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
                 ...(options.agentClients === undefined ? {} : { clients: options.agentClients }),
               }),
               clientRegistrations({ database: options.database, ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }) }),
-              cliDeviceFlow({ database: options.database, resource: mcpResourceOf(options.url), refreshScope: REFRESH_SCOPE }),
+              cliDeviceFlow({
+                database: options.database,
+                resource: mcpResourceOf(options.url),
+                refreshScope: REFRESH_SCOPE,
+                ...(options.agentClients?.now === undefined ? {} : { now: options.agentClients.now }),
+              }),
               grantChecks({ database: options.database }),
             ]),
       ],

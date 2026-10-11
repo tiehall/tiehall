@@ -139,7 +139,7 @@ export interface AgentClientOptions {
   metadataDocuments?: boolean;
   /** The fetcher of metadata documents: the install's outbound fetcher, following no redirect, unless a test gives one. */
   fetchDocument?: OutboundFetcher;
-  /** The clock registrations are counted by; the system clock unless a test controls it. */
+  /** The clock registrations and the CLI's polls are counted by; the system clock unless a test controls it. */
   now?: () => Date;
 }
 
@@ -188,7 +188,7 @@ export function authorizationServerPlugins({ url, orgId, clients = {}, membershi
     },
     // Registrations are limited per client address and hour, as agent-access says (15.8), not by the plugin's
     // five a minute; its limits on the token, authorization and revocation endpoints stay, though the token
-    // endpoint's does not count the CLI's polls with its device code (device-flow.ts).
+    // endpoint's does not count the CLI's polls with its device code, which have a limit of their own (device-flow.ts).
     rateLimit: { register: false },
     schema: {
       oauthClient: { modelName: MODEL_NAMES.oauthClient },

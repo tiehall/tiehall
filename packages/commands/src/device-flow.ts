@@ -25,10 +25,12 @@ import type { WorkerJob } from "./worker.ts";
 //   the grant; instead a guard before the endpoint refuses every client id but
 //   the CLI's with unauthorized_client, before anything is stored. It reads
 //   the request as the endpoint does, so a client id sent twice is no way
-//   round it. It refuses a request that would bind the code to a user in
-//   advance, since a code is bound only to the member who approves it, and a
-//   scope that is not one of the three Tiehall offers, openid and
-//   offline_access included, with invalid_scope;
+//   round it: a body is a form only when its media type is a form's exactly,
+//   since the endpoint reads one that names JSON first, or ends in +json, as
+//   JSON, whatever form its text holds. It refuses a request that would bind
+//   the code to a user in advance, since a code is bound only to the member
+//   who approves it, and a scope that is not one of the three Tiehall
+//   offers, openid and offline_access included, with invalid_scope;
 // - a request that names no resource is for the install's MCP resource, so the
 //   CLI's access token always has that resource, TIEHALL_URL/mcp, as its only
 //   audience, and never an OpenID Connect one;
@@ -50,17 +52,26 @@ import type { WorkerJob } from "./worker.ts";
 //   a code before the person approved it. No device-flow endpoint returns a
 //   web session or a session token;
 // - the token endpoint's limit on the calls from one client address does not
-//   count the CLI's polls. The library lets 20 calls in a row from one
-//   address through, and the run ends only once a minute passes without one,
-//   while the CLI polls every 5 seconds for as long as its code waits, up to
-//   its 10 minutes: its 21st poll, about 100 seconds in, would be refused
-//   with 429, and so would every token call from that address until a minute
-//   passed without one, the next `tiehall login`'s first poll included. On an
-//   install on one machine, as a trial URL's is, every client there reaches
-//   it from one address. The device flow holds each code to the interval
-//   itself, answering a poll that comes sooner with slow_down, and a device
-//   code cannot be guessed. A call is a poll when its body names the device
-//   code grant, once; every other token call keeps the limit.
+//   count the CLI's polls, which have a limit of their own. The library lets
+//   20 calls in a row from one address through, and the run ends only once a
+//   minute passes without one, while the CLI polls every 5 seconds for as
+//   long as its code waits, up to its 10 minutes: its 21st poll, about 100
+//   seconds in, would be refused with 429, and so would every token call from
+//   that address until a minute passed without one, the next `tiehall
+//   login`'s first poll included. On an install on one machine, as a trial
+//   URL's is, every client there reaches it from one address. A call is the
+//   CLI's poll when its body is a form, by a media type that is a form's
+//   exactly, that names the device code grant and the CLI's client id, each
+//   once; the endpoint reads a body whose media type names JSON first, or
+//   ends in +json, as JSON, whatever form its text holds, so such a body is
+//   never a poll. Every other token call keeps the token endpoint's limit.
+//   The CLI's polls from one address are counted over the past minute
+//   instead, whatever codes they carry, and the 61st within a minute is
+//   refused with 429 and changes nothing: a poll every 5 seconds makes 12 a
+//   minute, so five sign-ins at once from one address fit, and codes no one
+//   was issued cannot be tried without a limit. The device flow holds each
+//   code it issued to the interval itself, answering a poll that comes
+//   sooner with slow_down.
 // An expired code is removed by a job that runs every hour, with the address
 // it kept.
 
@@ -88,30 +99,79 @@ export interface RateLimitRule {
   max: number;
 }
 
+/** How many of the CLI's polls the token endpoint takes from one client address in a minute, at most. */
+export const CLI_POLLS_PER_ADDRESS_PER_MINUTE = 60;
+
+/** How long the CLI's polls from an address are counted for: a minute. */
+const POLL_WINDOW_MS = 60_000;
+
+/** A form's media type. */
+const FORM_MEDIA_TYPE = "application/x-www-form-urlencoded";
+
 /**
- * The rate limit of a call to the token endpoint: none for the CLI's poll
- * with its device code, whose body names the device code grant once, and
- * the rule it has otherwise for every other call.
+ * Whether a request's body is a form as the sign-in service reads it: its
+ * media type, parameters aside, is a form's exactly. The service takes a
+ * media type that merely contains a form's, and reads one that names JSON
+ * first, or ends in +json, as JSON, whatever form its text holds.
  */
-export async function tokenEndpointRateLimit(request: Request, rule: RateLimitRule): Promise<RateLimitRule | false> {
-  const grantTypes = await grantTypesOf(request);
-  return grantTypes.length === 1 && grantTypes[0] === DEVICE_CODE_GRANT_TYPE ? false : rule;
+function isForm(request: Request): boolean {
+  return (request.headers.get("content-type")?.split(";")[0] ?? "").trim().toLowerCase() === FORM_MEDIA_TYPE;
 }
 
-/** The grant types a token request's body names, as the endpoint reads a form or a JSON body; none for any other body. */
-async function grantTypesOf(request: Request): Promise<string[]> {
-  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+/** The value a form's field holds, when it holds exactly one. */
+function onlyValueOf(fields: URLSearchParams, name: string): string | undefined {
+  const values = fields.getAll(name);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+/** Whether a token call is the CLI's poll with its device code: a form that names the device code grant and the CLI's client id, each once. */
+async function isCliPoll(request: Request): Promise<boolean> {
+  if (!isForm(request)) return false;
   try {
-    if (contentType.includes("application/x-www-form-urlencoded")) return new URLSearchParams(await request.clone().text()).getAll("grant_type");
-    if (contentType.includes("application/json")) {
-      const body = JSON.parse(await request.clone().text()) as unknown;
-      const grantType = typeof body === "object" && body !== null ? (body as Record<string, unknown>)["grant_type"] : undefined;
-      return typeof grantType === "string" ? [grantType] : [];
-    }
+    const fields = new URLSearchParams(await request.clone().text());
+    return onlyValueOf(fields, "grant_type") === DEVICE_CODE_GRANT_TYPE && onlyValueOf(fields, "client_id") === CLI_CLIENT_ID;
   } catch {
-    // A body that cannot be read names no grant type, and the endpoint refuses it.
+    // A body that cannot be read is no poll, and the endpoint refuses it.
+    return false;
   }
-  return [];
+}
+
+/**
+ * The rate limit of a call to the token endpoint: none of the library's for
+ * the CLI's poll with its device code, which the device flow counts itself,
+ * and the rule it has otherwise for every other call.
+ */
+export async function tokenEndpointRateLimit(request: Request, rule: RateLimitRule): Promise<RateLimitRule | false> {
+  return (await isCliPoll(request)) ? false : rule;
+}
+
+/**
+ * Counts the CLI's polls from each client address over the past minute, in
+ * this process's memory (one web process per install); refuses a poll beyond
+ * the address's 60 with the answer the sign-in service turns into the error
+ * model's 429, whose Retry-After says when the earliest of them leaves the
+ * minute.
+ */
+function pollsPerAddress(now: () => Date): (address: string | undefined) => void {
+  const byAddress = new Map<string, number[]>();
+  return (address) => {
+    const at = now().getTime();
+    // Addresses with no poll in the past minute are forgotten, so the count keeps no more than a minute's addresses.
+    if (byAddress.size > 10_000) for (const [each, times] of byAddress) if (times.every((time) => at - time >= POLL_WINDOW_MS)) byAddress.delete(each);
+    const key = address ?? "";
+    const recent = (byAddress.get(key) ?? []).filter((time) => at - time < POLL_WINDOW_MS);
+    if (recent.length >= CLI_POLLS_PER_ADDRESS_PER_MINUTE) {
+      byAddress.set(key, recent);
+      const retryAfterSeconds = Math.max(1, Math.ceil(((recent[0] ?? at) + POLL_WINDOW_MS - at) / 1000));
+      throw new APIError(
+        "TOO_MANY_REQUESTS",
+        { message: `This address polled for device codes ${CLI_POLLS_PER_ADDRESS_PER_MINUTE} times in the past minute, as many as an address may.` },
+        { "x-retry-after": String(retryAfterSeconds) },
+      );
+    }
+    recent.push(at);
+    byAddress.set(key, recent);
+  };
 }
 
 /** The name the CLI is shown by. */
@@ -135,8 +195,7 @@ function clientAddressOf(headers: Headers | undefined): string | undefined {
  * form's own fields, whatever the parsed body says, or a JSON body's.
  */
 async function requestFields(request: Request | undefined, body: unknown): Promise<URLSearchParams> {
-  const contentType = request?.headers.get("content-type")?.toLowerCase() ?? "";
-  if (request !== undefined && contentType.includes("application/x-www-form-urlencoded")) return new URLSearchParams(await request.clone().text());
+  if (request !== undefined && isForm(request)) return new URLSearchParams(await request.clone().text());
   const fields = new URLSearchParams();
   for (const [name, value] of Object.entries((body ?? {}) as Record<string, unknown>)) {
     for (const each of Array.isArray(value) ? value : [value]) if (typeof each === "string") fields.append(name, each);
@@ -161,16 +220,31 @@ export interface CliDeviceFlowOptions {
   resource: string;
   /** The scope the authorization server issues refresh tokens with. */
   refreshScope: string;
+  /** The clock the CLI's polls are counted by; the system clock unless a test controls it. */
+  now?: () => Date;
 }
 
-/** The guard before the device authorization endpoint, and the completion of each device code's record after it. */
+/**
+ * The guard before the device authorization endpoint, the completion of each
+ * device code's record after it, and the limit on the CLI's polls of the
+ * token endpoint.
+ */
 export function cliDeviceFlow(options: CliDeviceFlowOptions): BetterAuthPlugin {
   /** The scope each call under way asked for, by its request, which its record then grants. */
   const asked = new WeakMap<object, string | null>();
+  const countPoll = pollsPerAddress(options.now ?? (() => new Date()));
   return {
     id: "tiehall-cli-device-flow",
     hooks: {
       before: [
+        {
+          // The CLI's polls, which the token endpoint's limit does not count, are counted here, before the endpoint
+          // reads the code, so a refused poll changes nothing.
+          matcher: (context) => context.path === TOKEN_ENDPOINT_PATH,
+          handler: createAuthMiddleware(async (context) => {
+            if (context.request !== undefined && (await isCliPoll(context.request))) countPoll(clientAddressOf(context.request.headers));
+          }),
+        },
         {
           matcher: (context) => context.path === DEVICE_AUTHORIZATION_PATH,
           handler: createAuthMiddleware(async (context) => {
