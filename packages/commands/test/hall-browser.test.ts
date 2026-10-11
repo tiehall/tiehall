@@ -410,11 +410,15 @@ const STAGE_LAYOUT = `() => {
   return { map: box(map), feed: box(stage.querySelector(".hall-feed")), columns: getComputedStyle(stage).gridTemplateColumns };
 }`;
 
+/** Whether the page lays out its text in Plex, rather than in the fallback font. Plain JavaScript, as a string. */
+const IN_PLEX = `document.fonts.check('16px "IBM Plex Sans"')`;
+
 /**
  * Records, in the page, the layout of the first frame the browser paints of the live hall: at the first animation
- * frame in which the map's place is in the page, the stage's layout, the page's background, and whether the hall's
- * script had run by then. A browser runs a page's animation frames only once its stylesheet has loaded, each right
- * before it paints, so that frame is the first look of the hall the page shows. Plain JavaScript, as a string.
+ * frame in which the map's place is in the page, the stage's layout, the page's background, whether the hall's script
+ * had run by then, and whether the page's text was in Plex yet. A browser runs a page's animation frames only once its
+ * stylesheet has loaded, each right before it paints, so that frame is the first look of the hall the page shows. Plain
+ * JavaScript, as a string.
  */
 const FIRST_FRAME = `(() => {
   if (location.pathname !== "/hall") return;
@@ -426,40 +430,52 @@ const FIRST_FRAME = `(() => {
     window.tiehallFirstFrame = {
       live: document.body.classList.contains("live"),
       background: getComputedStyle(document.body).backgroundColor,
+      plex: ${IN_PLEX},
       layout: (${STAGE_LAYOUT})(),
     };
   };
   requestAnimationFrame(frame);
 })()`;
 
+// The widths run from a tablet's to a wide screen's: at each, the toolbar above the map keeps the lines it is laid out
+// on whatever its words and whatever font its text is in yet, so the map's place stays where the first frame put it,
+// although the live lamp's words before the script runs, "Not live: updates need JavaScript", are wider than "Live",
+// Pause motion shows only once the script runs, and the fallback font's width depends on the system.
 describe("the live hall's first frame", () => {
   it.each([
     [1280, 800],
+    [1200, 800],
     [1024, 768],
-  ])("lays out the map's place from the first frame the page paints at %i by %i, before its script runs, so drawing the map moves nothing", { timeout: 120_000 }, async (width, height) => {
+    [960, 720],
+    [768, 1024],
+  ])("lays out the map's place from the first frame the page paints at %i by %i, before its script runs and its fonts arrive, so neither drawing the map nor Plex moves it", { timeout: 120_000 }, async (width, height) => {
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
     await context.addCookies([{ name: "tiehall.session_token", value: cookie, url: web.url }]);
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     await page.addInitScript({ content: FIRST_FRAME });
-    // The hall's script is held until the page has painted, as a slow network or a slow first read of the state would
-    // hold it, so the frames painted before it runs are the ones this test reads.
+    // The hall's script and its fonts are held until the page has painted, as a slow network or a slow first read of
+    // the state would hold them, so the frames painted before they arrive, in the fallback font as on a first visit,
+    // are the ones this test reads.
     let release = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await page.route(/\/assets\/hall\.js(\?|$)/, async (route) => {
+    await page.route(/\/assets\/(hall\.js|fonts\/[^/?]+\.woff2)(\?|$)/, async (route) => {
       await held;
       await route.continue();
     });
     await page.goto(`${web.url}/hall`, { waitUntil: "commit" });
     await expect.poll(() => page.evaluate("window.tiehallFirstFrame !== undefined"), { timeout: 10_000 }).toBe(true);
-    const first = (await page.evaluate("window.tiehallFirstFrame")) as { live: boolean; background: string; layout: { map: number[]; feed: number[] | null; columns: string } };
+    const first = (await page.evaluate("window.tiehallFirstFrame")) as { live: boolean; background: string; plex: boolean; layout: { map: number[]; feed: number[] | null; columns: string } };
     release();
     await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
     await page.locator("#hall-map .node").first().waitFor();
+    await page.evaluate("document.fonts.ready");
     const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
     expect(first.live).toBe(false);
+    expect(first.plex).toBe(false);
+    await expect(page.evaluate(IN_PLEX)).resolves.toBe(true);
     expect(first.background).toBe("rgb(7, 16, 38)");
     expect(drawn.map[2]).toBeGreaterThan(0);
     expect(drawn.map[3]).toBeGreaterThan(0);

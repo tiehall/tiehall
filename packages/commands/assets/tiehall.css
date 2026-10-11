@@ -3088,6 +3088,18 @@ textarea[aria-invalid="true"] {
   }
 }
 
+/* The toolbar above the map's place, from a tablet's width to a wide screen's in a browser that runs scripts: the
+   title and the live lamp on one line, the actions on the next, however wide their words and their font are. Before
+   the script runs the lamp says "Not live: updates need JavaScript", wider than "Live", and Pause motion shows only once
+   it runs, and the fallback font a page paints in before Plex arrives is wider on some systems; a toolbar that wrapped
+   by its width would take one line in one of those states and two in another, and move the map below it. From 1,200
+   CSS pixels it takes one line, which holds them all. */
+@media (scripting: enabled) and (min-width: 768px) and (max-width: 1199px) {
+  .hall-title {
+    flex-basis: 100%;
+  }
+}
+
 /* The map (web-ui: The live hall with many teams and on a phone; design.md, Design: The live hall, Many teams): the
    lines between teams, the dots that travel them, the team nodes on their ring and the people and agents at work,
    drawn by the hall's script in one SVG, the nodes and the chips as HTML inside it; then the legend. */
