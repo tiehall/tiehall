@@ -224,8 +224,8 @@ function isRemovedMember(html: boolean) {
     if (html) {
       // A page with a way on, which runs no script and cannot be framed. A removal ends the member's web sessions, so
       // the way on is the sign-in page, never the URL again, which would refuse the browser again.
-      expect(answer.body).toContain('<a href="/sign-in">Go to the sign-in page</a>');
-      expect(answer.body).not.toMatch(/<a href="\/[A-Z]/);
+      expect(answer.body).toContain('<a class="button" href="/sign-in">Go to the sign-in page</a>');
+      expect(answer.body).not.toMatch(/<a [^>]*href="\/[A-Z]/);
       expect(answer.body).not.toContain("<script");
       expect(answer.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     }
@@ -278,7 +278,7 @@ const ROWS: Row[] = [
       expect(answer.status).toBe(404);
       expect(mediaType(answer)).toBe("text/html");
       expect(answer.body).toContain("https://tiehall.com/problems/record-not-found");
-      expect(answer.body).toContain('<a href="/FE-999">');
+      expect(answer.body).toContain('<a class="button" href="/FE-999">');
     },
   },
   {

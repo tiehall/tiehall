@@ -67,6 +67,6 @@ describe("a removed member's browser", () => {
     expect(answer.status).toBe(403);
     const html = await answer.text();
     expect(html).toContain("https://tiehall.com/problems/removed-member");
-    expect(html).toContain('<a href="/sign-in">Go to the sign-in page</a>');
+    expect(html).toContain('<a class="button" href="/sign-in">Go to the sign-in page</a>');
   });
 });

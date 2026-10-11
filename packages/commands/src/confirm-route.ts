@@ -229,7 +229,7 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     if (rejecting) {
       // A rejection ends the proposal without any effect, so it needs no nonce.
       await options.write.execute(rejectProposal.id, caller, { proposal }, { origin });
-      return page(htmlPage("Rejected", "      <h1>Rejected</h1>\n      <p>The proposal you reviewed is rejected; it will not take effect.</p>"));
+      return page(messagePage({ title: "Rejected", text: "The proposal you reviewed is rejected; it will not take effect.", wayOn: { href: "/inbox", text: "Go to the inbox" } }));
     }
     // A proposal's page confirms the proposal its path names, whatever else the form sends.
     const { input, refusal } = proposal === undefined ? parseInput(form.get("input")) : { input: { proposal }, refusal: undefined };
@@ -251,22 +251,25 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
     if (redirect !== undefined) return onTo(redirect(output));
     const message = options.messages?.[commandId];
     if (message !== undefined) return page(messagePage(message(output)));
-    return page(htmlPage("Confirmed", "      <h1>Confirmed</h1>\n      <p>The action you reviewed is applied.</p>"));
+    return page(messagePage({ title: "Confirmed", text: "The action you reviewed is applied.", wayOn: { href: "/", text: "Go to Tiehall's home page" } }));
   }
 }
 
 /** The largest value a file field of a review page takes, such as a PEM key of a few kilobytes. */
 const SEALED_FILE_MAX_BYTES = 64 * 1024;
 
-/** The page of a confirmation in its command's own words. */
+/** The page of a confirmation in its command's own words: what was done, in a panel, with the way on as a button-styled link. */
 function messagePage({ title, text, value, wayOn }: ConfirmMessage): string {
   return htmlPage(
     title,
     [
+      '      <p class="eyebrow">Done</p>',
       `      <h1>${escapeHtml(title)}</h1>`,
+      '      <div class="panel decision">',
       `      <p>${escapeHtml(text)}</p>`,
       ...(value === undefined ? [] : [`      <pre><code>${escapeHtml(value)}</code></pre>`]),
-      ...(wayOn === undefined ? [] : [`      <p><a href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`]),
+      ...(wayOn === undefined ? [] : [`      <p class="decision-end"><a class="button" href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`]),
+      "      </div>",
     ].join("\n"),
   );
 }
@@ -390,7 +393,31 @@ function sealedField(field: SealedField): string[] {
     field.kind === "password"
       ? `<input type="password" id="${id}" name="${escapeHtml(field.name)}" autocomplete="off" required>`
       : `<input type="file" id="${id}" name="${escapeHtml(field.name)}" required>`;
-  return [`        <p><label for="${id}">${escapeHtml(field.label)}</label></p>`, `        <p>${control}</p>`];
+  return ['        <div class="field">', `          <label for="${id}">${escapeHtml(field.label)}</label>`, `          ${control}`, "        </div>"];
+}
+
+/**
+ * What will happen, in Tiehall's own words, as a list, a warning among it in
+ * the notice colors; each quote of text someone else wrote breaks the list
+ * and stands as a fenced panel, whose first line names where the text came
+ * from, as its label.
+ */
+function reviewLines(lines: Review["lines"]): string[] {
+  const out: string[] = [];
+  let open = false;
+  for (const line of lines) {
+    if ("text" in line) {
+      if (!open) out.push('      <ul class="review-lines">');
+      open = true;
+      out.push(`        <li${line.warning === true ? ' class="warning"' : ""}>${escapeHtml(line.text)}</li>`);
+      continue;
+    }
+    if (open) out.push("      </ul>");
+    open = false;
+    out.push(`      <blockquote class="untrusted" data-origin="${escapeHtml(line.origin)}"><p>${escapeHtml(quotePreamble(line.origin))}</p><pre>${escapeHtml(line.quote)}</pre></blockquote>`);
+  }
+  if (open) out.push("      </ul>");
+  return out;
 }
 
 /**
@@ -408,16 +435,14 @@ export function renderReviewPage(
   fields: readonly SealedField[] = [],
 ): string {
   const multipart = fields.some(({ kind }) => kind === "file");
-  const lines = review.lines.map((line) =>
-    "text" in line
-      ? `      <p>${escapeHtml(line.text)}</p>`
-      : `      <blockquote class="untrusted" data-origin="${escapeHtml(line.origin)}"><p>${escapeHtml(quotePreamble(line.origin))}</p><pre>${escapeHtml(line.quote)}</pre></blockquote>`,
-  );
   return htmlPage(
     `Confirm: ${review.title}`,
     [
+      '      <p class="eyebrow">Review, then confirm</p>',
       `      <h1>${escapeHtml(review.title)}</h1>`,
-      ...lines,
+      '      <div class="panel decision">',
+      ...reviewLines(review.lines),
+      '      <div class="decision-end">',
       `      <form method="post" action="${escapeHtml(path)}"${multipart ? ' enctype="multipart/form-data"' : ""}>`,
       `        <input type="hidden" name="input" value="${escapeHtml(input)}">`,
       `        <input type="hidden" name="nonce" value="${escapeHtml(nonce)}">`,
@@ -430,10 +455,13 @@ export function renderReviewPage(
             `      <form method="post" action="${escapeHtml(path)}">`,
             `        <input type="hidden" name="action" value="reject">`,
             `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-            `        <button type="submit">Reject</button>`,
+            `        <button type="submit" class="secondary">Reject</button>`,
             `      </form>`,
           ]
         : []),
+      `      <a class="link-action" href="/">Cancel</a>`,
+      "      </div>",
+      "      </div>",
     ].join("\n"),
   );
 }

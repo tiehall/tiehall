@@ -6,6 +6,7 @@ import { readGitHubApp, readReplacedGitHubApps, recordReplacedGitHubApp, storeGi
 import { convertManifestCode, GITHUB_API_URL, GitHubUnavailableError } from "./github-client.ts";
 import { MANIFEST_REDIRECT_PATH, SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH } from "./github-manifest.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, webPagePolicy, type WayOn } from "./html.ts";
+import { markSvg } from "./mark.ts";
 import { createLogger, type Logger } from "./log.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession, openSetupSession } from "./setup-code.ts";
@@ -203,18 +204,18 @@ export function createSetupRoute(options: SetupRouteOptions): SetupRoute {
       const signIn = options.signIn !== undefined;
       // A new App: one the setup screen stored since the step opened.
       if (app !== undefined && reopenedAt !== null && app.storedAt.getTime() > reopenedAt.getTime()) {
-        return page(layout(installStepBody({ webUrl, app, signIn, error: query.get("error"), replaced, reopened: true })), toGitHub);
+        return page(layout(installStepBody({ webUrl, app, signIn, error: query.get("error"), replaced, reopened: true }), "install", true), toGitHub);
       }
       const settings = appStepSettings(options.url, query, company ?? "");
       const body = reopenedAppStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), signIn, error: query.get("error"), ...(app === undefined ? {} : { app }) });
-      return page(layout(body), toGitHub);
+      return page(layout(body, "app", true), toGitHub);
     }
-    if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? "")));
+    if (company === null || query.get("step") === "company") return page(layout(companyStepBody(company ?? ""), "company"));
     if (app !== undefined) {
-      return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error"), replaced })), toGitHub);
+      return page(layout(installStepBody({ webUrl, app, company, signIn: options.signIn !== undefined, error: query.get("error"), replaced }), "install"), toGitHub);
     }
     const settings = appStepSettings(options.url, query, company);
-    return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), company })), toGitHub);
+    return page(layout(appStepBody({ url: options.url, webUrl, settings, state: manifestState(token, now()), company }), "app"), toGitHub);
   }
 
   /** Whether a request comes from a form of the install, TIEHALL_URL, in a browser that holds a setup session. */
@@ -440,20 +441,98 @@ function page(html: string, headers: Record<string, string> = {}, status = 200):
   return new Response(html, { status, headers: { ...PAGE_HEADERS, ...headers } });
 }
 
-function layout(body: string): string {
-  return htmlPage("Set up Tiehall", `      <h1>Set up Tiehall</h1>\n${body}`);
+/** A step of the setup screen, in the order an operator meets them. */
+type SetupStep = "code" | "company" | "app" | "install";
+
+/** The steps, by name; a step that `setup reopen` opened has the last two only. */
+const SETUP_STEPS: readonly [SetupStep, string][] = [
+  ["code", "Setup code"],
+  ["company", "Company name"],
+  ["app", "GitHub App"],
+  ["install", "Install and sign in"],
+];
+
+const CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="M5 12l4 4 10-10"/></svg>';
+
+/** The list of the steps, those done marked done and the one the operator is at marked as the current step. */
+function stepList(current: SetupStep, reopened: boolean): string {
+  const steps = reopened ? SETUP_STEPS.filter(([step]) => step === "app" || step === "install") : SETUP_STEPS;
+  const at = steps.findIndex(([step]) => step === current);
+  const items = steps.map(([, name], index) =>
+    index < at
+      ? `<li class="done"><span class="step-mark">${CHECK}</span>${escapeHtml(name)}<span class="visually-hidden"> (done)</span></li>`
+      : `<li${index === at ? ' aria-current="step"' : ""}><span class="step-mark" aria-hidden="true">${index + 1}</span>${escapeHtml(name)}</li>`,
+  );
+  return `        <ol class="steps" aria-label="Setup steps">${items.join("")}</ol>`;
+}
+
+/**
+ * The switchboard the setup screen draws beside its steps, on the dark
+ * ground: three teams, the lines between them and their lamps, which only
+ * illustrate, so assistive technology skips it; its lines flow and its lamps
+ * blink a few times, within 5 seconds (web-ui: Motion, and reduced motion).
+ */
+const SWITCHBOARD = [
+  '        <svg class="switchboard" viewBox="0 0 460 300" width="460" height="300" aria-hidden="true" focusable="false">',
+  '          <rect class="sb-node" x="20" y="40" width="120" height="70" rx="14"/>',
+  '          <rect class="sb-node" x="320" y="40" width="120" height="70" rx="14"/>',
+  '          <rect class="sb-node" x="170" y="200" width="120" height="70" rx="14"/>',
+  '          <text class="sb-key" x="40" y="81">BE</text>',
+  '          <text class="sb-key" x="340" y="81">FE</text>',
+  '          <text class="sb-key" x="190" y="241">MOB</text>',
+  '          <path class="sb-line in-progress" d="M140 75 C 220 20, 250 20, 320 75"/>',
+  '          <path class="sb-line needs-info" d="M80 110 C 80 190, 120 235, 170 235"/>',
+  '          <path class="sb-line in-progress" d="M290 235 C 340 235, 380 190, 380 110"/>',
+  '          <circle class="sb-lamp needs-info" cx="118" cy="62" r="5"/>',
+  '          <circle class="sb-lamp in-progress second" cx="418" cy="62" r="5"/>',
+  '          <circle class="sb-lamp done third" cx="268" cy="222" r="5"/>',
+  "        </svg>",
+].join("\n");
+
+/**
+ * The setup screen's page (self-host-install: The setup code guards the setup
+ * screen; web-ui: The page shell and its navigation; design.md, Design: The
+ * page families; D57 (4), (14)): in two columns on a wide screen, the
+ * switchboard on the dark ground at the left, and at the right the list of
+ * steps with the current one marked, the heading, and the step's explanation
+ * and form; in one column on a narrow screen, the drawing above, smaller.
+ */
+function layout(body: string, current: SetupStep, reopened = false): string {
+  return htmlPage(
+    "Set up Tiehall",
+    [
+      '      <div class="setup">',
+      '      <div class="setup-art">',
+      `        <p class="setup-brand" aria-hidden="true"><span class="mark setup-mark">${markSvg(26)}</span>Tiehall</p>`,
+      SWITCHBOARD,
+      '        <p class="setup-tagline">Every team&#39;s line, in one hall.</p>',
+      '        <p class="setup-lead">Your agents open requests to other teams, the other teams&#39; agents read what they need, and questions find their way back. A few steps, and the install is ready.</p>',
+      "      </div>",
+      '      <div class="setup-flow">',
+      stepList(current, reopened),
+      "      <h1>Set up Tiehall</h1>",
+      body,
+      "      </div>",
+      "      </div>",
+    ].join("\n"),
+    { form: "focused", wide: true },
+  );
 }
 
 function codePage(): string {
-  return layout(`      <p>Enter the setup code. The app prints it to its log each time it starts; on the host, run <code>docker compose logs app</code> to read it.</p>
+  return layout(
+    `      <h2>Enter the setup code</h2>
+      <p>Enter the setup code. The app prints it to its log each time it starts; on the host, run <code>docker compose logs app</code> to read it.</p>
       <form method="post" action="${SETUP_PATH}">
         <label for="code">Setup code</label>
         <input id="code" name="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
         <button type="submit">Continue</button>
-      </form>`);
+      </form>`,
+    "code",
+  );
 }
 
 function wrongOriginPage(url: string): string {
   const setupUrl = escapeHtml(`${url}${SETUP_PATH}`);
-  return layout(`      <p>This install's URL is ${escapeHtml(url)}, and setup works only there. Open <a href="${setupUrl}">${setupUrl}</a> to set it up.</p>`);
+  return layout(`      <p class="notice">This install's URL is ${escapeHtml(url)}, and setup works only there. Open <a href="${setupUrl}">${setupUrl}</a> to set it up.</p>`, "code");
 }

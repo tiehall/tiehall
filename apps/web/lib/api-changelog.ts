@@ -1,5 +1,7 @@
-import { assetUrl } from "@tiehall/commands/assets";
-import { changelogPagePolicy } from "@tiehall/commands/html";
+import { docsUrl } from "@tiehall/commands/docs-pages";
+import { changelogPagePolicy, footerHtml, headHtml, shellHtml } from "@tiehall/commands/html";
+import { runningVersion } from "@tiehall/commands/running-version";
+import { FOCUSED_SHELL } from "@tiehall/commands/shell";
 import { releaseItems, type Changelog, type ChangelogItem, type ChangelogRelease } from "@tiehall/catalog/changelog";
 
 // The API changelog page at /docs/api/changelog (public-api: The changelog
@@ -38,21 +40,19 @@ export function changelogPage(changelog: Changelog): Response {
   }
   for (const release of changelog.releases) sections.push(releaseSection(release));
   if (changelog.releases.length === 0 && changelog.unreleased.length === 0) sections.push("<p>No release has changed the API yet.</p>");
+  const main = `<div class="changelog">
+<h1>API changelog</h1>
+<p class="lead">The changes to the REST API under <code>/api/v1</code>, release by release, newest first. A breaking change to a beta operation is announced by deprecating it with a sunset date at least 14 days ahead, and to a stable one at least 180 days ahead, before it is removed; only an urgent security fix skips that notice, and it is listed here. The reference is at <a href="/docs/api">/docs/api</a>, and the OpenAPI document at <a href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p>
+${sections.join("\n")}
+</div>`;
+  // The focused shell, the head and the footer every page of the web UI carries (web-ui: The page shell and its navigation).
   const html = `<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tiehall API changelog</title>
-<link rel="stylesheet" href="${assetUrl("/assets/tiehall.css")}">
-</head>
-<body>
-<main class="focused changelog">
-<h1>API changelog</h1>
-<p>The changes to the REST API under <code>/api/v1</code>, release by release, newest first. A breaking change to a beta operation is announced by deprecating it with a sunset date at least 14 days ahead, and to a stable one at least 180 days ahead, before it is removed; only an urgent security fix skips that notice, and it is listed here. The reference is at <a href="/docs/api">/docs/api</a>, and the OpenAPI document at <a href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p>
-${sections.join("\n")}
-</main>
-</body>
+  <head>
+${headHtml("Tiehall API changelog")}
+  </head>
+  <body>
+${shellHtml(FOCUSED_SHELL, main)}${footerHtml({ ...runningVersion(process.env), docsUrl: docsUrl(process.env) })}  </body>
 </html>
 `;
   return new Response(html, { headers: HEADERS });
@@ -65,7 +65,7 @@ function releaseSection(release: ChangelogRelease): string {
 
 function section(title: string, meta: string, items: ChangelogItem[], id?: string): string {
   const list = items.length === 0 ? "<p>No change to the API.</p>" : `<ul>\n${items.map((item) => `<li>${line(item)}</li>`).join("\n")}\n</ul>`;
-  return `<section${id === undefined ? "" : ` id="${escape(id)}"`}>\n<h2>${escape(title)}</h2>\n<p class="muted">${escape(meta)}</p>\n${list}\n</section>`;
+  return `<section class="panel"${id === undefined ? "" : ` id="${escape(id)}"`}>\n<h2>${escape(title)}</h2>\n<p class="muted">${escape(meta)}</p>\n${list}\n</section>`;
 }
 
 function line(item: ChangelogItem): string {

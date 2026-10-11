@@ -85,6 +85,21 @@ describe("the changelog page", () => {
   });
 });
 
+// It takes the focused shell of every page that reads one message: the mark and the name, no navigation, its releases
+// as panels, and the footer with the running version (web-ui: The page shell and its navigation; D57 (4)).
+describe("the changelog page's shell", () => {
+  it("takes the focused shell, with the skip link, the head every page carries and the footer", async () => {
+    const { html } = await page();
+    expect(html).toMatch(/<body>\s*<a class="skip" href="#content">Skip to content<\/a>\s*<header class="topbar">/);
+    expect(html).toContain('<main id="content" class="focused">');
+    expect(html).not.toMatch(/<nav\b/);
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(html).toContain(`<link rel="icon" href="${assetUrl("/assets/icon.svg")}" type="image/svg+xml">`);
+    expect(html).toMatch(/<section class="panel" id="release-1\.4\.0">\s*<h2>Release 1\.4\.0<\/h2>/);
+    expect(html).toMatch(/<footer>\s*<p>Tiehall [^<]+ · <a href="[^"]+">Source code<\/a>/);
+  });
+});
+
 describe("the /docs/api/changelog route", () => {
   it("answers anyone, without signing in, with the changelog the build carries", async () => {
     const response = GET();

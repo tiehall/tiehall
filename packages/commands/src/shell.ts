@@ -23,8 +23,12 @@ export interface ShellMember {
   waiting: number;
 }
 
-/** The shell of one page: the app shell of a signed-in member's page at a path, with the CSRF token of their sign-out form, or the focused shell. */
-export type PageShell = { form: "focused" } | { form: "app"; member: ShellMember; path: string; csrf: string };
+/**
+ * The shell of one page: the app shell of a signed-in member's page at a path,
+ * with the CSRF token of their sign-out form, or the focused shell, whose main
+ * content is narrow but for the setup screen's two columns.
+ */
+export type PageShell = { form: "focused"; wide?: boolean } | { form: "app"; member: ShellMember; path: string; csrf: string };
 
 /** The focused shell: the mark and the name, and nothing else to click. */
 export const FOCUSED_SHELL: PageShell = { form: "focused" };

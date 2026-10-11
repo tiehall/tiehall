@@ -11,13 +11,16 @@ export default function NotFound() {
   return (
     <FocusedShell>
       <title>No such page · Tiehall</title>
-      <h1>No such page</h1>
-      <p>Tiehall has no page at this address. A request&apos;s page is at its key, such as /FE-142, and a team&apos;s at its key, such as /FE.</p>
-      <p>
-        <a className="button" href="/">
-          Go to Tiehall&apos;s home page
-        </a>
-      </p>
+      <div className="refusal">
+        <p className="status">404</p>
+        <h1>No such page</h1>
+        <p className="lead">Tiehall has no page at this address. A request&apos;s page is at its key, such as /FE-142, and a team&apos;s at its key, such as /FE.</p>
+        <p>
+          <a className="button" href="/">
+            Go to Tiehall&apos;s home page
+          </a>
+        </p>
+      </div>
     </FocusedShell>
   );
 }

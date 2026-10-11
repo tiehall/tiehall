@@ -25,13 +25,16 @@ export default function GlobalError(_props: { error: Error & { digest?: string }
       </head>
       <body>
         <FocusedShell>
-          <h1>Tiehall could not show this page</h1>
-          <p>Something went wrong while the page was put together. Try again in a moment; if it fails again, tell an admin of the install.</p>
-          <p>
-            <a className="button" href="/">
-              Go to Tiehall&apos;s home page
-            </a>
-          </p>
+          <div className="refusal">
+            <p className="status">500</p>
+            <h1>Tiehall could not show this page</h1>
+            <p className="lead">Something went wrong while the page was put together. Try again in a moment; if it fails again, tell an admin of the install.</p>
+            <p>
+              <a className="button" href="/">
+                Go to Tiehall&apos;s home page
+              </a>
+            </p>
+          </div>
         </FocusedShell>
         <PageFooter version={version} sourceUrl={sourceUrl} docsUrl={docsUrl(env)} />
       </body>

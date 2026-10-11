@@ -847,7 +847,13 @@ main {
 }
 
 main.focused {
-  max-width: 760px;
+  max-width: 720px;
+  padding-top: 48px;
+}
+
+main.focused.wide {
+  max-width: var(--content);
+  padding-top: 32px;
 }
 
 body > footer {
@@ -1312,9 +1318,21 @@ a.key:hover {
   margin: 0 0 8px;
   color: var(--ink-2);
   font-family: var(--font-mono);
-  font-size: 40px;
+  font-size: 56px;
   font-weight: 500;
-  line-height: 1.25;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+:where(main) .refusal > h1 {
+  margin-bottom: 12px;
+}
+
+.field-errors {
+  padding: 12px 16px 12px 34px;
+  border-radius: var(--radius-card);
+  background: var(--notice);
+  color: var(--notice-ink);
 }
 
 .refusal .problem-type {
@@ -2440,6 +2458,412 @@ a.key:hover {
   grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
 }
 
+/* The focused pages (web-ui: The page shell and its navigation; design.md, Design: The page families; D57 (4)): one
+   decision, a message or a refusal, in a panel under its heading; other people's text fenced as a panel with a left
+   border and its origin as a label; the setup screen in two columns beside its switchboard. */
+.eyebrow {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(main) .eyebrow {
+  margin: 0 0 8px;
+}
+
+:where(main) .eyebrow + h1 {
+  margin-bottom: 20px;
+}
+
+.decision > :last-child {
+  margin-bottom: 0;
+}
+
+.review-lines {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+:where(main) .review-lines > li {
+  margin: 0;
+  padding: 8px 0 8px 22px;
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+
+:where(main) .review-lines > li:last-child {
+  border-bottom: 0;
+}
+
+.review-lines > li::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--control-border);
+}
+
+:where(main) .review-lines > li.warning {
+  margin: 4px 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--notice);
+  color: var(--notice-ink);
+  font-weight: 500;
+}
+
+.review-lines > li.warning::before {
+  display: none;
+}
+
+:where(main) blockquote.untrusted {
+  margin: 4px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--ground);
+}
+
+:where(main) blockquote.untrusted > p:first-child {
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(main) blockquote.untrusted > pre {
+  margin: 0;
+  padding: 0;
+  background: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.decision-end {
+  margin: 16px 0 0;
+  padding-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.decision-end > form {
+  display: contents;
+}
+
+.decision-end .field {
+  flex: 1 0 100%;
+}
+
+.sign-in {
+  max-width: 480px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.sign-in > .mark {
+  margin: 0 auto 20px;
+}
+
+:where(main) .sign-in > h1 {
+  margin-bottom: 8px;
+}
+
+.sign-in .panel {
+  margin-top: 24px;
+}
+
+.sign-in form {
+  margin: 0;
+}
+
+.sign-in button {
+  width: 100%;
+  min-height: 48px;
+  border-color: var(--mark-tile);
+  background: var(--mark-tile);
+  font-size: 16px;
+}
+
+.sign-in button:hover {
+  border-color: var(--button-hover);
+  background: var(--button-hover);
+}
+
+.mark.large {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+}
+
+.mark.large svg {
+  width: 40px;
+  height: 40px;
+}
+
+.changelog .panel {
+  margin: 0 0 16px;
+}
+
+.changelog .panel > h2 {
+  margin-bottom: 4px;
+}
+
+/* The setup screen's art: the dark ground whatever the system's preference, as the live hall's. */
+.setup-art {
+  --ink: #E8EAF0;
+  --ink-2: #8A93A6;
+  --line: #9DB2FF;
+  --ground: #0E1117;
+  --surface: #151A23;
+  --surface-2: #1C2230;
+  --border: #2A3040;
+  --lamp-in-progress: #4C69E6;
+  --lamp-needs-info: #F2B33D;
+  --lamp-done: #4ADE80;
+  --mark-tile: #2B4ACB;
+  --mark-ink: #FFFFFF;
+}
+
+.setup {
+  display: grid;
+  grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+  align-items: start;
+  gap: 48px;
+}
+
+.setup-art {
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  border-radius: var(--radius-panel);
+  background: var(--ground);
+  color: var(--ink);
+}
+
+.setup-art > p {
+  margin: 0;
+}
+
+.setup-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.setup-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.setup-mark svg {
+  width: 26px;
+  height: 26px;
+}
+
+.switchboard {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sb-node {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.sb-key {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+
+.sb-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 8 8;
+  animation: cordflow 1.6s linear 3;
+}
+
+.sb-line.in-progress {
+  stroke: var(--lamp-in-progress);
+}
+
+.sb-line.needs-info {
+  stroke: var(--lamp-needs-info);
+}
+
+.sb-lamp {
+  animation: lampblink 1.8s ease-in-out 2;
+}
+
+.sb-lamp.second {
+  animation: lampblink 1.8s ease-in-out 0.6s 2;
+}
+
+.sb-lamp.third {
+  animation: lampblink 1.8s ease-in-out 1.2s 2;
+}
+
+.sb-lamp.needs-info {
+  fill: var(--lamp-needs-info);
+}
+
+.sb-lamp.in-progress {
+  fill: var(--lamp-in-progress);
+}
+
+.sb-lamp.done {
+  fill: var(--lamp-done);
+}
+
+.setup-tagline {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.setup-lead {
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.setup-flow {
+  padding-top: 8px;
+}
+
+.setup-flow h2 {
+  font-size: 22px;
+}
+
+:where(main) .setup-flow > h1 {
+  margin: 24px 0 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(main) .setup-flow > h2:first-of-type {
+  margin-top: 8px;
+}
+
+.setup-flow form {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.setup-flow form > p {
+  margin: 0 0 8px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-flow form input:not([type="hidden"]):not([type="checkbox"]) {
+  width: 100%;
+  max-width: none;
+}
+
+.setup-flow form > button {
+  margin-top: 4px;
+  min-height: 48px;
+  padding: 0 20px;
+  font-size: 16px;
+}
+
+.steps {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+  list-style: none;
+}
+
+:where(main) .steps > li {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.steps > li + li::before {
+  content: "";
+  width: 24px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.steps > li.done + li::before {
+  background: var(--lamp-done);
+}
+
+.steps > li[aria-current="step"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.step-mark {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.steps > li.done .step-mark {
+  background: var(--lamp-done);
+  color: var(--button-ink);
+}
+
+.step-mark svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.steps > li[aria-current="step"] .step-mark {
+  background: var(--button);
+  color: var(--button-ink);
+}
+
 /* The live hall (web-ui: The live hall; design.md, Design: The live hall; D57 (11)). Its repeating motion runs only
    once its script has put the class live on its body; Pause motion puts the class paused there. */
 .hall .node {
@@ -2763,6 +3187,37 @@ a.key:hover {
 
   .stacked .row-actions {
     padding-top: 6px;
+  }
+
+  main.focused {
+    padding-top: 24px;
+  }
+
+  .setup {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .setup-art {
+    padding: 24px;
+    gap: 16px;
+  }
+
+  .switchboard {
+    max-height: 180px;
+  }
+
+  .setup-tagline {
+    font-size: 22px;
+  }
+
+  .refusal .status {
+    font-size: 40px;
+  }
+
+  .decision-end .button,
+  .decision-end button {
+    flex: 1 1 auto;
   }
 
   :where(main) .table-box > table {

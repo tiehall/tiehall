@@ -222,7 +222,7 @@ function expectFocusedShell(path: string, html: string): void {
   const header = /<header[\s\S]*?<\/header>/.exec(html)?.[0] ?? "";
   expect(header, path).toMatch(/<span class="brand">/);
   expect(header, path).not.toMatch(/<a\b|<nav\b|<details\b/);
-  expect(html, path).toMatch(/<main id="content" class="focused">/);
+  expect(html, path).toMatch(/<main id="content" class="focused(?: wide)?">/);
 }
 
 describe("the shell of the web role's pages", () => {

@@ -138,7 +138,7 @@ function deviceReview(code: WaitingCode): Review {
           ? `from an IP address the install could not tell, at ${utc(code.requestedAt)}.`
           : `from the IP address ${code.requestedFrom}, at ${utc(code.requestedAt)}.`,
     },
-    { text: "Continue only if you just ran tiehall login." },
+    { text: "Continue only if you just ran tiehall login.", warning: true },
     { text: "It asks to:" },
     ...offeredScopesOf(code.scope).map((scope) => ({ text: SCOPE_TEXTS[scope] ?? scope })),
     {
@@ -256,14 +256,19 @@ function codeForm(csrf: string): string {
   return htmlPage(
     TITLE,
     [
+      '      <p class="eyebrow">The tiehall CLI</p>',
       `      <h1>${escapeHtml(TITLE)}</h1>`,
+      '      <div class="panel decision">',
       "      <p>Type the code that tiehall login printed in your terminal. The next page shows where and when that sign-in started, before you approve it.</p>",
       `      <form method="post" action="${DEVICE_APPROVAL_PATH}">`,
-      `        <p><label for="user_code">${escapeHtml(CODE_LABEL)}</label></p>`,
-      `        <p><input type="text" id="user_code" name="user_code" value="" autocomplete="off" autocapitalize="characters" spellcheck="false" required></p>`,
+      '        <div class="field">',
+      `          <label for="user_code">${escapeHtml(CODE_LABEL)}</label>`,
+      `          <input type="text" id="user_code" name="user_code" value="" autocomplete="off" autocapitalize="characters" spellcheck="false" required>`,
+      "        </div>",
       `        <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
       "        <button type=\"submit\">Continue</button>",
       "      </form>",
+      "      </div>",
     ].join("\n"),
   );
 }

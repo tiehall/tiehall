@@ -178,7 +178,7 @@ describe("an authorization that cannot go back to its client", () => {
     const html = (await page.text()).replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
     expect(html).toContain(words);
     expect(html).toContain(`(${error})`);
-    expect(html).toContain('<a href="/">');
+    expect(html).toContain('<a class="button" href="/">');
     expect(html).not.toContain('action="/sign-in"');
     expect(html).not.toContain("did not complete");
   });

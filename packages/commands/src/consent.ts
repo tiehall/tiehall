@@ -173,12 +173,14 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
   } else {
     lines.push({
       text: "Unverified client: it registered itself with this install, so nothing checks that it is what its name says. Approve it only if you just connected an agent yourself.",
+      warning: true,
     });
   }
   lines.push({ text: `After you approve it, your browser returns to ${returnsTo(redirectUri)}.` });
   if (client.redirectUris.length > 0 && client.redirectUris.every(isLocalhost)) {
     lines.push({
       text: "Every address this client can send you back to is on localhost, the computer it runs on. Continue only if you started this from an agent on your own computer.",
+      warning: true,
     });
   }
   lines.push({ text: "It asks to:" });

@@ -12,8 +12,12 @@
 export const TEXT_ORIGINS = ["same team", "other team", "external"] as const;
 export type TextOrigin = (typeof TEXT_ORIGINS)[number];
 
-/** One line of a review: a sentence in Tiehall's own words, or a quote of text someone else wrote. */
-export type ReviewLine = { text: string } | { quote: string; origin: TextOrigin };
+/**
+ * One line of a review: a sentence in Tiehall's own words, which may be a
+ * warning the page shows in the notice colors (web-ui-design, web-ui: Pages
+ * are accessible), or a quote of text someone else wrote.
+ */
+export type ReviewLine = { text: string; warning?: boolean } | { quote: string; origin: TextOrigin };
 
 /** What an action will do, as its review page shows it. */
 export interface Review {

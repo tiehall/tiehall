@@ -47,6 +47,7 @@ import type { WebSessionCaller } from "./caller.ts";
 import { GITHUB_API_URL, GITHUB_REQUEST_TIMEOUT_MS, readSignedInUser } from "./github-client.ts";
 import { SETUP_SIGN_IN_CALLBACK_PATH, SETUP_SIGN_IN_PATH, SIGN_IN_CALLBACK_PATH } from "./github-manifest.ts";
 import { answerRefusal, escapeHtml, htmlPage, PAGE_HEADERS, TO_SIGN_IN, type WayOn } from "./html.ts";
+import { markSvg } from "./mark.ts";
 import { readSecret } from "./integration-secrets.ts";
 import { createInstallGitHub } from "./install-github.ts";
 import type { JobSender } from "./jobs.ts";
@@ -1217,18 +1218,30 @@ const ERROR_TEXTS: Readonly<Record<string, string>> = {
   please_restart_the_process: "This sign-in did not start in this browser, or it took longer than 10 minutes. Sign in again.",
 };
 
+/**
+ * The sign-in page (web-ui: The page shell and its navigation; design.md,
+ * Design: The page families; D57 (2), (4)): the mark large, the name, one
+ * line on what Tiehall is, why a sign-in did not complete when one did not,
+ * and the one button that signs in with GitHub.
+ */
 function signInPage(back: string, error: string | null): string {
   const notice =
     error === null
       ? ""
-      : `      <p>${escapeHtml(ERROR_TEXTS[error] ?? "The sign-in with GitHub did not complete. Sign in again; if it fails again, tell an admin of the install.")}</p>\n`;
+      : `      <p class="notice">${escapeHtml(ERROR_TEXTS[error] ?? "The sign-in with GitHub did not complete. Sign in again; if it fails again, tell an admin of the install.")}</p>\n`;
   return htmlPage(
     "Sign in to Tiehall",
-    `      <h1>Sign in to Tiehall</h1>
-${notice}      <p>${escapeHtml("You sign in with your GitHub account, through this install's own GitHub App.")}</p>
+    `      <div class="sign-in">
+      <span class="mark large">${markSvg(40)}</span>
+      <h1>Sign in to Tiehall</h1>
+      <p class="lead">${escapeHtml("The line between your teams: requests, questions and commitments, with your agents at work on them.")}</p>
+${notice}      <div class="panel">
+      <p>${escapeHtml("You sign in with your GitHub account, through this install's own GitHub App.")}</p>
       <form method="post" action="${SIGN_IN_PATH}">
         <input type="hidden" name="return" value="${escapeHtml(back)}">
         <button type="submit">Sign in with GitHub</button>
-      </form>`,
+      </form>
+      </div>
+      </div>`,
   );
 }

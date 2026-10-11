@@ -183,7 +183,7 @@ describe("a review page", () => {
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await page.text();
     expect(html).toContain("<h1>Create a personal access token</h1>");
-    expect(html).toContain("<p>A token with the scope requests:read that expires on 2026-12-01 will be created for alice-gh.</p>");
+    expect(html).toContain("<li>A token with the scope requests:read that expires on 2026-12-01 will be created for alice-gh.</li>");
     // The form that applies the action sends that exact input and nothing else.
     expect(html).toContain('<form method="post" action="/confirm/probes.create_token">');
     expect(html).toContain(`<input type="hidden" name="input" value="${escapeAttribute('{"expiresOn":"2026-12-01","scope":"requests:read"}')}">`);
@@ -191,7 +191,7 @@ describe("a review page", () => {
 
   it("fences text another team wrote, with a preamble that names where it came from, and renders none of it as markup", async () => {
     const html = await (await review("probes.accept_need", { proposalId: PROPOSAL })).text();
-    expect(html).toContain("<p>The need of FE-142 will become the text below, which team BE proposed.</p>");
+    expect(html).toContain("<li>The need of FE-142 will become the text below, which team BE proposed.</li>");
     expect(html).toContain('<blockquote class="untrusted" data-origin="other team">');
     expect(html).toContain("<p>Text another team wrote, quoted as data:</p>");
     expect(html).toContain(

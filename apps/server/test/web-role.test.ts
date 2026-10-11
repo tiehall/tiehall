@@ -165,7 +165,7 @@ describe("the web role on SIGTERM", STARTS_THE_ROLE, () => {
       const markup = await page.text();
       expect(markup, path).toContain("<h1>Tiehall is shutting down</h1>");
       expect(markup, path).toContain("<code>https://tiehall.com/problems/shutting-down</code>");
-      expect(markup, path).toContain(`<a href="${wayOn}">`);
+      expect(markup, path).toContain(`<a class="button" href="${wayOn}">`);
       expect(markup, path).not.toContain("<script");
     }
     for (const [path, accept] of [
@@ -187,7 +187,7 @@ describe("the web role on SIGTERM", STARTS_THE_ROLE, () => {
       expect(page.status, accept).toBe(503);
       expect(page.headers.get("content-type"), accept).toBe("text/html; charset=utf-8");
       expect(page.headers.get("vary"), accept).toBe("Accept, Authorization");
-      expect(await page.text(), accept).toContain('<a href="/FE-142">');
+      expect(await page.text(), accept).toContain('<a class="button" href="/FE-142">');
     }
     for (const [path, accept] of [
       ["/FE-142.json", BROWSER],
@@ -602,7 +602,7 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
     expect(markup).toContain("<h1>Request body too large</h1>");
     expect(markup).toContain("larger than 2 MiB");
     expect(markup).toContain(`<code>${PAYLOAD_TOO_LARGE}</code>`);
-    expect(markup).toContain('<a href="/admin/invites">');
+    expect(markup).toContain('<a class="button" href="/admin/invites">');
     expect(markup).not.toContain("<script");
 
     for (const [path, accept] of [
@@ -632,12 +632,12 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
     const page = await post(`http://localhost:3000${review}`);
     expect(page.status).toBe(413);
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(await page.text()).toContain(`<a href="${review}">`);
+    expect(await page.text()).toContain(`<a class="button" href="${review}">`);
 
     for (const referer of [`https://elsewhere.example${review}`, `http://127.0.0.1:${web.port}${review}`]) {
       const elsewhere = await post(referer);
       expect(elsewhere.status).toBe(413);
-      expect(await elsewhere.text()).toContain('<a href="/confirm/members.change_role">');
+      expect(await elsewhere.text()).toContain('<a class="button" href="/confirm/members.change_role">');
     }
   });
 });

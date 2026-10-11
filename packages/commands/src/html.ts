@@ -234,7 +234,7 @@ export function topBarHtml(shell: PageShell): string {
 export function shellHtml(shell: PageShell, main: string): string {
   return `    <a class="skip" href="#content">Skip to content</a>
 ${topBarHtml(shell)}
-    <main id="content"${shell.form === "focused" ? ' class="focused"' : ""}>
+    <main id="content"${shell.form === "focused" ? (shell.wide === true ? ' class="focused wide"' : ' class="focused"') : ""}>
 ${main}
     </main>
 `;
@@ -301,23 +301,31 @@ export function namesHtml(accept: string | null | undefined): boolean {
   return (accept ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
 }
 
-/** The page of a refusal: its title, its detail, where the input fails its schema, the way on and the problem type. */
+/**
+ * The page of a refusal (web-ui: The page shell and its navigation; design.md,
+ * Design: The page families; D57 (4)): the status as a large mono number, its
+ * title, its detail, where the input fails its schema, the way on as a
+ * button-styled link and the problem type in mono.
+ */
 function refusalPage({ body }: HttpProblem, wayOn: WayOn): string {
   const issues = body.errors ?? [];
   return htmlPage(
     body.title,
     [
+      '      <div class="refusal">',
+      `      <p class="status">${escapeHtml(String(body.status))}</p>`,
       `      <h1>${escapeHtml(body.title)}</h1>`,
-      `      <p>${escapeHtml(body.detail)}</p>`,
+      `      <p class="lead">${escapeHtml(body.detail)}</p>`,
       ...(issues.length === 0
         ? []
         : [
-            "      <ul>",
+            '      <ul class="field-errors">',
             ...issues.map(({ path, message }) => `        <li>${escapeHtml(path.length === 0 ? message : `${path.join(".")}: ${message}`)}</li>`),
             "      </ul>",
           ]),
-      `      <p><a href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`,
-      `      <p>Problem type: <code>${escapeHtml(body.type)}</code></p>`,
+      `      <p><a class="button" href="${escapeHtml(wayOn.href)}">${escapeHtml(wayOn.text)}</a></p>`,
+      `      <p class="problem-type">Problem type: <code>${escapeHtml(body.type)}</code></p>`,
+      "      </div>",
     ].join("\n"),
   );
 }
