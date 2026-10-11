@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { hiddenField, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { addTeam, joinTeams, openRequestInTheWebUi } from "./support/requests.ts";
 
 // OAuth scopes are coarse, and missing and insufficient tokens get standard
@@ -81,6 +81,42 @@ describe("the scopes the install offers", () => {
     const claims = JSON.parse(Buffer.from(String(exchanged.body["access_token"]).split(".")[1] ?? "", "base64url").toString("utf8")) as { scope: string };
     expect(claims.scope.split(" ").filter((scope) => scope.includes(":")).sort()).toEqual(["requests:read", "requests:write"]);
     expect(exchanged.body["refresh_token"]).toBeTypeOf("string");
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (13): the default is shown to the
+  // person before they approve it, and never holds contracts:report, which a client must name to get.
+  it("shows requests:read and requests:write on the consent screen to a request that names no scope, and its token has no contracts:report", async () => {
+    const client = await harness.registerClient();
+    const pkce = pkcePair();
+    const consent = locationOf(await harness.authorize(ana.cookie, client, pkce, { scope: undefined }));
+    expect(consent.pathname).toBe("/consent");
+    const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("requests:read: read the install");
+    expect(html).toContain("requests:write: open requests");
+    expect(html).not.toContain("contracts:report");
+    const action = /<form method="post" action="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(action).toBe("/confirm/agent_clients.approve");
+    const confirmed = await harness.handle(
+      new Request(`${URL_OF_INSTALL}${action}`, {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", accept: "text/html" },
+        body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+      }),
+    );
+    expect(confirmed.status).toBe(303);
+    const answer = await harness.handle(new Request(locationOf(confirmed), { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    const code = locationOf(answer).searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    const exchanged = await harness.exchange(client, code, pkce);
+    expect(exchanged.status).toBe(200);
+    const claims = JSON.parse(Buffer.from(String(exchanged.body["access_token"]).split(".")[1] ?? "", "base64url").toString("utf8")) as { scope: string };
+    const scopes = claims.scope.split(" ");
+    expect(scopes).toEqual(expect.arrayContaining(["requests:read", "requests:write"]));
+    expect(scopes).not.toContain("contracts:report");
+    const { rows } = await harness.install.owner.query("SELECT scopes FROM oauth_consents WHERE user_id = $1 AND client_id = $2", [ana.userId, client.clientId]);
+    expect(rows[0]?.scopes).not.toContain("contracts:report");
   });
 
   it("gives a refresh token to a client that asks only for the scopes it needs", async () => {
