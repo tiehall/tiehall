@@ -60,6 +60,33 @@ describe("CI's typecheck and test", () => {
   });
 });
 
+// The screenshot tests (web-ui: Pages work at phone width; web-ui: Pages are accessible; design.md, Design: Testing;
+// D57 (7), (8)) save one screenshot per page, size and scheme under test-results/screens/, which git ignores, and no
+// test compares pixels with a stored image, so CI keeps them for review: each shard uploads the folder as an artifact of
+// its own, through an action pinned by its commit SHA, with no more permissions than the job's own, and a shard whose
+// slice of the test files holds no screenshot test uploads nothing and does not fail.
+describe("CI's screenshots", () => {
+  it("are uploaded by each shard as screens-<shard>, whatever its tests did, with an action pinned by its commit SHA", () => {
+    const [[, shards]] = jobs.filter(([, job]) => /\bpnpm test\b/.test(runs(job))) as [[string, Job]];
+    const uploads = (shards.steps ?? []).filter((step) => typeof step["uses"] === "string" && step["uses"].startsWith("actions/upload-artifact@"));
+    expect(uploads).toHaveLength(1);
+    const [upload] = uploads as [Mapping];
+    expect(upload["uses"]).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
+    expect(upload["if"]).toBe("always()");
+    expect(upload["with"]).toEqual({ name: "screens-${{ matrix.shard }}", path: "test-results/screens/", "if-no-files-found": "ignore" });
+    // After the tests, so it holds what they saved.
+    const steps = shards.steps ?? [];
+    expect(steps.indexOf(upload)).toBeGreaterThan(steps.findIndex((step) => typeof step["run"] === "string" && /\bpnpm test\b/.test(step["run"])));
+    // Uploading an artifact needs no permission of the job's token: the job reads the repository's contents and nothing more.
+    expect((shards as Job & { permissions?: unknown }).permissions).toEqual({ contents: "read" });
+  });
+
+  it("are saved where git ignores them, so the source-citation check never reads them", () => {
+    const ignored = readFileSync(join(root, ".gitignore"), "utf8").split("\n").map((line) => line.trim());
+    expect(ignored).toContain("test-results/");
+  });
+});
+
 // The coverage checks read a mirrored list as the newest change that modifies it words it, by when commits added the
 // changes (plan.ts), and refuse a shallow clone once two changes in progress modify one list, since a checkout at depth
 // 1 holds one commit, which seems to add every change at once. The checks run in jobs of their own and, on the real

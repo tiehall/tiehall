@@ -18,6 +18,8 @@ build/
 .next/
 coverage/
 *.log
+# The screenshot tests' screenshots, which CI keeps as artifacts (packages/commands/test/screens-browser.test.ts)
+test-results/
 
 # Python
 __pycache__/
