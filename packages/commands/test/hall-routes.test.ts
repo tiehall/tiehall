@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HALL_WAITS_PER_SESSION } from "../src/hall-routes.ts";
 import { createHallRoute, createHallStateRoute, createHallWaitRoute, createLogger, sessionCookiesOf } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
@@ -26,6 +27,7 @@ const JSON_POLICY = "default-src 'none'; frame-ancestors 'none'";
 let harness: AgentAccessHarness;
 const shutdown = new AbortController();
 let carol: SignedIn;
+let dana: SignedIn;
 let options: Parameters<typeof createHallRoute>[0];
 let state: (request: Request) => Promise<Response>;
 let wait: (request: Request) => Promise<Response>;
@@ -38,7 +40,8 @@ beforeAll(async () => {
   const be = await addTeam(install.owner, "BE");
   carol = await harness.member("carol");
   await joinTeams(install.owner, carol.userId, be);
-  await joinTeams(install.owner, (await harness.member("dana")).userId, fe);
+  dana = await harness.member("dana");
+  await joinTeams(install.owner, dana.userId, fe);
   await openRequest(install, tokenOf(carol.userId), { targetTeam: "FE", title: "Add a dark mode" });
   options = {
     execute: install.execute,
@@ -218,6 +221,25 @@ describe("the session the hall's reads read", () => {
 });
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe("a session's waits", () => {
+  it("are at most a few at once: one more is refused at once with 429 and Retry-After, another session's are not, and one is taken again once one ends", async () => {
+    const after = await cursor();
+    const held = Array.from({ length: HALL_WAITS_PER_SESSION }, () => get(wait, `/hall/wait?after=${after}`, { cookie: carol.cookie }));
+    await pause(300);
+    const started = Date.now();
+    const refused = await get(wait, `/hall/wait?after=${after}`, { cookie: carol.cookie });
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("retry-after")).toMatch(/^[1-9]\d*$/);
+    expect(refused.headers.get("content-type")).toBe("application/problem+json");
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    expect(await refused.json()).toMatchObject({ type: "https://tiehall.com/problems/rate-limited", status: 429 });
+    const others = get(wait, `/hall/wait?after=${after}`, { cookie: dana.cookie });
+    for (const answer of [...(await Promise.all(held)), await others]) expect(answer.status).toBe(200);
+    expect((await get(wait, `/hall/wait?after=${after}`, { cookie: carol.cookie })).status).toBe(200);
+  });
+});
 
 describe("a browser that hangs up", () => {
   it("ends its held wait at once and quietly: no error is logged", async () => {

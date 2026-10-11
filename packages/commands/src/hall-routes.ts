@@ -20,9 +20,18 @@ import { createLogger, type Logger } from "./log.ts";
 // screen, would otherwise keep its session alive to its 30-day cap. A
 // refusal is the error model's problem, the wait's 503 with Retry-After: 0
 // while the app shuts down among them, and any other failure a 500 that says
-// nothing about it. The read ends with its browser: a wait whose browser hung
+// nothing about it. One web session holds at most a few waits at once, one
+// per open page of the hall with room for a few tabs; one more is refused at
+// once with 429 and a Retry-After, which the page's script waits out as it
+// waits out any failed wait. The read ends with its browser: a wait whose browser hung
 // up stops holding (hall.ts), and its answer, which nobody reads, logs
 // nothing.
+
+/** How many of the live hall's waits one web session holds at once at most: one per open page of the hall, with room for a few tabs. */
+export const HALL_WAITS_PER_SESSION = 8;
+
+/** How long a session that holds as many waits as it may is told to wait before it tries again, in seconds. */
+export const HALL_WAITS_RETRY_SECONDS = 10;
 
 export const HALL_STATE_PATH = "/hall/state";
 export const HALL_WAIT_PATH = "/hall/wait";
@@ -52,8 +61,18 @@ export function hallNarrowingOf(query: URLSearchParams): { team?: string; agents
   return { ...(team === null || team === "" ? {} : { team }), ...(query.get("agents") === "1" ? { agents: true } : {}) };
 }
 
-/** A read of the hall at its path, which runs the command as the session's user with the input the address gives. */
-function hallRead(options: HallReadOptions, name: string, commandId: string, inputOf: (query: URLSearchParams) => unknown): (request: Request) => Promise<Response> {
+/**
+ * A read of the hall at its path, which runs the command as the session's
+ * user with the input the address gives; given `held`, the number of these
+ * reads each session holds now, it refuses a session one more than it may hold.
+ */
+function hallRead(
+  options: HallReadOptions,
+  name: string,
+  commandId: string,
+  inputOf: (query: URLSearchParams) => unknown,
+  held?: Map<string, number>,
+): (request: Request) => Promise<Response> {
   const logger = options.logger ?? createLogger();
   return async (request) => {
     try {
@@ -62,8 +81,21 @@ function hallRead(options: HallReadOptions, name: string, commandId: string, inp
       if (request.signal.aborted) throw new CallerLeft();
       const caller = await options.session(request);
       if (caller === undefined) throw new Refusal("unauthenticated", "Sign in to Tiehall to watch the live hall.");
-      const answer = await options.execute(commandId, caller, inputOf(new URL(request.url).searchParams), { readOnly: true, signal: request.signal });
-      return new Response(JSON.stringify(answer), { headers: { "content-type": "application/json", ...HALL_JSON_HEADERS } });
+      const holding = held?.get(caller.sessionId) ?? 0;
+      if (holding >= HALL_WAITS_PER_SESSION) {
+        throw new Refusal("rate-limited", "This browser already waits on the live hall as often at once as its open pages need. Close a page of the live hall, then try again.", {
+          retryAfterSeconds: HALL_WAITS_RETRY_SECONDS,
+        });
+      }
+      held?.set(caller.sessionId, holding + 1);
+      try {
+        const answer = await options.execute(commandId, caller, inputOf(new URL(request.url).searchParams), { readOnly: true, signal: request.signal });
+        return new Response(JSON.stringify(answer), { headers: { "content-type": "application/json", ...HALL_JSON_HEADERS } });
+      } finally {
+        const left = (held?.get(caller.sessionId) ?? 1) - 1;
+        if (left > 0) held?.set(caller.sessionId, left);
+        else held?.delete(caller.sessionId);
+      }
     } catch (error) {
       // Nobody reads the answer of a browser that hung up: 499, as proxies name a request whose client closed it.
       if (error instanceof CallerLeft) return new Response(null, { status: 499, headers: HALL_JSON_HEADERS });
@@ -81,5 +113,5 @@ export function createHallStateRoute(options: HallReadOptions): (request: Reques
 
 /** GET /hall/wait?after=<cursor>: the live hall's long-poll from the cursor, narrowed as the page's address says. */
 export function createHallWaitRoute(options: HallReadOptions): (request: Request) => Promise<Response> {
-  return hallRead(options, "the live hall's wait", waitForHall.id, (query) => ({ after: query.get("after") ?? undefined, ...hallNarrowingOf(query) }));
+  return hallRead(options, "the live hall's wait", waitForHall.id, (query) => ({ after: query.get("after") ?? undefined, ...hallNarrowingOf(query) }), new Map());
 }
