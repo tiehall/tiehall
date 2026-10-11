@@ -2,6 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { wrappedCells } from "./support/layout.ts";
 import { seedInventory } from "./support/page-inventory.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
@@ -81,6 +82,28 @@ describe("the shell", () => {
     await expect(menu.getByRole("button", { name: "Sign out" }).isVisible()).resolves.toBe(true);
     await context.close();
   });
+
+  it.each([768, 790, 900, 1024])(
+    "keeps an admin's top bar on one line at %i CSS pixels: New request's words together, nothing past the viewport, and the member's menu named by the login",
+    { timeout: 120_000 },
+    async (width) => {
+      const context = await signedIn(width, false);
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      await page.goto(`${web.url}/inbox`);
+      const bar = page.locator("header .topbar-inner");
+      await expect(bar.getByRole("link", { name: "New request" }).isVisible()).resolves.toBe(true);
+      expect(await wrappedCells(page, "header .topbar-wide a.button, header .topbar-wide nav a")).toEqual([]);
+      const past = await bar.evaluate((inner) => {
+        const viewport = inner.ownerDocument.documentElement.clientWidth;
+        return [...inner.querySelectorAll("*")].filter((each) => each.getBoundingClientRect().width > 0 && each.getBoundingClientRect().right > viewport + 0.5).map((each) => each.outerHTML.slice(0, 80));
+      });
+      expect(past).toEqual([]);
+      await expect(page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")).resolves.toBe(true);
+      await expect(page.locator("header .topbar-wide details.menu > summary").textContent()).resolves.toContain("pia");
+      await context.close();
+    },
+  );
 
   it("puts the link that skips to the main content first in the keyboard's order", { timeout: 120_000 }, async () => {
     const context = await signedIn(1280, true);
