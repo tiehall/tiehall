@@ -6,6 +6,7 @@ import {
   hookInput,
   INSTALL,
   manualClock,
+  problem,
   saveLogin,
   settle,
   SHUTTING_DOWN,
@@ -167,6 +168,30 @@ describe("tiehall watch", () => {
     expect(ended.code).toBe(1);
     expect(ended.stdout).toBe("");
     expect(ended.stderr).toContain("Upgrade required: This tiehall CLI is version");
+    expect(waits()).toHaveLength(1);
+  });
+
+  // requester-loop: The plugin monitor fallback, "A refused monitor exits" (decisions-from-groups-15-28: design.md,
+  // Decisions this change rests on: D55 (51)).
+  it("exits with code 1 when the install refuses it because the grant of the CLI was revoked", async () => {
+    // The install refuses the access token, and then its refresh, as it does once the CLI's grant is revoked.
+    install.answerNextWait(() => problem("invalid-token", 401, "Unauthorized", "The access token is not valid."));
+    const revoked = async (request: Request) =>
+      new URL(request.url).pathname === "/api/auth/oauth2/token" ? Response.json({ error: "invalid_grant" }, { status: 400 }) : install.fetch(request);
+    watching = startCli(["watch"], { configDir, clock, fetch: revoked, interrupt: stop.signal });
+    const ended = await watching.done;
+    expect(ended.code).toBe(1);
+    expect(ended.stdout).toBe("");
+    expect(ended.stderr).toContain(`The saved login for ${INSTALL} no longer works: run tiehall login ${INSTALL} again.`);
+    expect(waits()).toHaveLength(1);
+  });
+
+  it("exits with code 1 when the install refuses a member it removed", async () => {
+    install.answerNextWait(() => problem("removed-member", 403, "Forbidden", "You are no longer a member of this install."));
+    const ended = await watch().done;
+    expect(ended.code).toBe(1);
+    expect(ended.stdout).toBe("");
+    expect(ended.stderr).toContain("You are no longer a member of this install.");
     expect(waits()).toHaveLength(1);
   });
 

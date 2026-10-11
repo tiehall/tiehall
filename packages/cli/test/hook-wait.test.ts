@@ -141,6 +141,19 @@ describe("news", () => {
     const ended = await wait.done;
     expect(ended).toEqual({ code: 2, stdout: "", stderr: REMINDER });
   });
+
+  // requester-loop: Claude Code Stop-hook waiter (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+  // D55 (51)): an entry the CLI cannot read is skipped, and the entries it can read still wake Claude.
+  it("skips an entry it cannot read, and still names the ones it can", async () => {
+    install.answerNextWait(() =>
+      Response.json({
+        events: [null, "FE-142 request.message_posted", 42, [], { seq: 7 }, { seq: 8, type: "request.message_posted", request_key: "FE-142", team_key: "FE", url: `${INSTALL}/FE-142` }],
+        cursor: 8,
+      }),
+    );
+    expect(await waiter().done).toEqual({ code: 2, stdout: "", stderr: REMINDER });
+    expect(waits()).toHaveLength(1);
+  });
 });
 
 describe("the 30-minute cap", () => {
@@ -197,6 +210,18 @@ describe("a shorter cap", () => {
     await minutes(30);
     expect(await long.done).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(clock.elapsed()).toBe(33 * MINUTE);
+  });
+
+  // requester-loop: Claude Code Stop-hook waiter, "The cap is never raised" (decisions-from-groups-15-28: D55 (51)).
+  it("leaves the cap at 30 minutes when TIEHALL_HOOK_WAIT_CAP_SECONDS is above 1800, by as little as a second", async () => {
+    const above = startCli(["hook", "wait"], { configDir, clock, fetch: install.fetch, stdin: hookInput("session-1"), env: { TIEHALL_HOOK_WAIT_CAP_SECONDS: "1801" } });
+    running.push(above);
+    await install.untilHolding();
+    await minutes(29);
+    expect(above.ended()).toBe(false);
+    await minutes(1);
+    expect(await above.done).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(clock.elapsed()).toBe(CAP_MS);
   });
 });
 

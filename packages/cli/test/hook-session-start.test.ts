@@ -176,10 +176,12 @@ describe("a digest that cannot read", () => {
 
 describe("the hook commands", () => {
   // agent-surfaces: CLI contract and hook commands, "The hook commands are listed".
-  it("are listed by tiehall hook: session-start and wait", async () => {
+  // The SessionEnd hook runs session-end (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (51)).
+  it("are listed by tiehall hook: session-start, wait and session-end", async () => {
     const listed = await startCli(["hook", "--help"], { configDir, clock, fetch: install.fetch }).done;
     expect(listed.code).toBe(0);
     expect(listed.stdout).toMatch(/^ {2}tiehall hook session-start\b/m);
     expect(listed.stdout).toMatch(/^ {2}tiehall hook wait\b/m);
+    expect(listed.stdout).toMatch(/^ {2}tiehall hook session-end\b/m);
   });
 });
