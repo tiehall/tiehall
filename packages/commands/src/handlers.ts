@@ -43,6 +43,7 @@ import { UPDATE_HANDLERS } from "./updates.ts";
 import { USER_HANDLERS } from "./users.ts";
 import { WEB_SHELL_HANDLERS } from "./web-shell.ts";
 import { REQUEST_ACTIVITY_HANDLERS } from "./request-activity.ts";
+import { HALL_HANDLERS } from "./hall.ts";
 import { WRITE_LIMIT_HANDLERS } from "./write-limits.ts";
 
 // One handler per operation of the catalog, by the operation's id (design.md,
@@ -95,4 +96,5 @@ export const HANDLERS: Handlers = {
   ...MIRROR_FAILURE_HANDLERS,
   ...WEB_SHELL_HANDLERS,
   ...REQUEST_ACTIVITY_HANDLERS,
+  ...HALL_HANDLERS,
 };

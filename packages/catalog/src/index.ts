@@ -156,6 +156,7 @@ export { EMAIL_SETTINGS_COMMANDS, emailSettings, readEmailSettings, setEmailSett
 export { INBOX_COMMANDS, standingList } from "./inbox.ts";
 export { WEB_SHELL_COMMANDS, webShell } from "./web-shell.ts";
 export { actorClient, eventActor, REQUEST_ACTIVITY_COMMANDS, requestActivity, requestActivityEvent } from "./request-activity.ts";
+export { HALL_COMMANDS, hallAtWork, hallEvent, hallLine, hallRequest, hallRequestRef, hallTeam, liveCounts, readHallState } from "./hall.ts";
 export { readInboxUpdates, readUpdates, REQUEST_URL, update, UPDATE_COMMANDS, updateRequest, updatesInput, updatesPage, waitEntry, waitForEvents } from "./updates.ts";
 export {
   getPersonalAccessTokenAdminSettings,
