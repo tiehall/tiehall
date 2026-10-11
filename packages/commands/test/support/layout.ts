@@ -52,6 +52,29 @@ export async function phoneWidthProblems(page: Page, options: { tablesScroll?: b
 }
 
 /**
+ * What the browser runs to find, under 768 CSS pixels, the controls shown
+ * lower than 44 CSS pixels: every button, button-styled link, field, menu's
+ * summary and navigation link, as design.md's phone width asks; a link inside
+ * a sentence or a block of text is left out, as above.
+ */
+const PHONE_HEIGHT_CHECK = `() => {
+  const problems = [];
+  const describe = (element) => element.tagName.toLowerCase() + ' "' + ((element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 40) || element.getAttribute("name") || element.id) + '"';
+  const controls = "button, a.button, select, textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio]), summary, nav a, .tabs a";
+  for (const element of document.querySelectorAll(controls)) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0 || getComputedStyle(element).visibility === "hidden") continue;
+    if (rect.height < 43.5) problems.push(describe(element) + " is " + Math.round(rect.height) + " CSS pixels high");
+  }
+  return problems;
+}`;
+
+/** The controls shown lower than 44 CSS pixels, as sentences; none when every one is at least that high, as every control is under 768 CSS pixels. */
+export async function phoneHeightProblems(page: Page): Promise<string[]> {
+  return (await page.evaluate(`(${PHONE_HEIGHT_CHECK})()`)) as string[];
+}
+
+/**
  * What the browser runs to find the table cells whose text takes more than one
  * line: the lines of a cell are the distinct heights at which its text's
  * pieces sit, a few pixels apart counting as one line, so a chip or a time in

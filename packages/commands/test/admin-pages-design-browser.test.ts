@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems, wrappedCells } from "./support/layout.ts";
+import { phoneHeightProblems, phoneWidthProblems, wrappedCells } from "./support/layout.ts";
 import { seedInventory } from "./support/page-inventory.ts";
 import { sessionOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
@@ -79,7 +79,7 @@ describe("the activity log's table at 1,280 CSS pixels", () => {
 });
 
 describe("the admin pages at 320 CSS pixels", () => {
-  it.each(ADMIN_PAGES)("%s scrolls no page sideways but inside a table's box, and every control is at least 24 by 24 CSS pixels", { timeout: 120_000 }, async (path) => {
+  it.each(ADMIN_PAGES)("%s scrolls no page sideways but inside a table's box, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high", { timeout: 120_000 }, async (path) => {
     for (const colorScheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ viewport: { width: 320, height: 640 }, colorScheme });
       await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
@@ -88,6 +88,7 @@ describe("the admin pages at 320 CSS pixels", () => {
       await page.goto(`${web.url}${path}`);
       await page.getByRole("heading", { level: 1 }).waitFor();
       expect(await phoneWidthProblems(page, { tablesScroll: true }), `${path} ${colorScheme}`).toEqual([]);
+      expect(await phoneHeightProblems(page), `${path} ${colorScheme}`).toEqual([]);
       await context.close();
     }
   });

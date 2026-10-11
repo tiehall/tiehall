@@ -2,7 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems, runningAnimations } from "./support/layout.ts";
+import { phoneHeightProblems, phoneWidthProblems, runningAnimations } from "./support/layout.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, tokenOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
@@ -131,13 +131,14 @@ describe("the live hall's theme", () => {
 });
 
 describe("the live hall at 320 CSS pixels", () => {
-  it("scrolls no page sideways, and every control is at least 24 by 24 CSS pixels", { timeout: 120_000 }, async () => {
+  it("scrolls no page sideways, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high", { timeout: 120_000 }, async () => {
     const context = await signedIn({ width: 320, height: 640 });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     await page.goto(`${web.url}/hall`);
     await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
     expect(await phoneWidthProblems(page)).toEqual([]);
+    expect(await phoneHeightProblems(page)).toEqual([]);
     await context.close();
   });
 });

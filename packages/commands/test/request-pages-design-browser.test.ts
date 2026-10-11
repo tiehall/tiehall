@@ -2,7 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems, runningAnimations, wrappedCells } from "./support/layout.ts";
+import { phoneHeightProblems, phoneWidthProblems, runningAnimations, wrappedCells } from "./support/layout.ts";
 import { seedRequestPages } from "./support/request-pages.ts";
 import { startSignIn } from "./support/sign-in.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
@@ -54,7 +54,7 @@ async function signedIn(width: number, colorScheme: "light" | "dark" = "light"):
 
 describe("the request pages at 320 CSS pixels", () => {
   it.each(["/FE-1", "/FE-2", "/requests?list=all", "/requests/new", "/requests/new?team=FE", "/FE"])(
-    "%s scrolls no page sideways, and every control is at least 24 by 24 CSS pixels",
+    "%s scrolls no page sideways, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high",
     { timeout: 120_000 },
     async (path) => {
       const context = await signedIn(320);
@@ -63,6 +63,7 @@ describe("the request pages at 320 CSS pixels", () => {
       await page.goto(`${web.url}${path}`);
       await page.getByRole("heading", { level: 1 }).waitFor();
       expect(await phoneWidthProblems(page)).toEqual([]);
+      expect(await phoneHeightProblems(page), path).toEqual([]);
       await context.close();
     },
   );

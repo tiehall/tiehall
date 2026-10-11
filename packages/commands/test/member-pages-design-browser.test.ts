@@ -2,7 +2,7 @@ import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems } from "./support/layout.ts";
+import { phoneHeightProblems, phoneWidthProblems } from "./support/layout.ts";
 import { seedRequestPages } from "./support/request-pages.ts";
 import { openRequestInTheWebUi, sessionOf } from "./support/requests.ts";
 import { startSignIn } from "./support/sign-in.ts";
@@ -55,7 +55,7 @@ afterAll(async () => {
 }, 300_000);
 
 describe("the inbox and the member's pages at 320 CSS pixels", () => {
-  it.each(["/", "/inbox", "/members", "/settings/email", "/tokens"])("%s scrolls no page sideways, and every control is at least 24 by 24 CSS pixels", { timeout: 120_000 }, async (path) => {
+  it.each(["/", "/inbox", "/members", "/settings/email", "/tokens"])("%s scrolls no page sideways, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high", { timeout: 120_000 }, async (path) => {
     for (const colorScheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ viewport: { width: 320, height: 640 }, colorScheme });
       await context.addCookies([{ name: "tiehall.session_token", value: session, url: web.url }]);
@@ -64,6 +64,7 @@ describe("the inbox and the member's pages at 320 CSS pixels", () => {
       await page.goto(`${web.url}${path}`);
       await page.getByRole("heading", { level: 1 }).waitFor();
       expect(await phoneWidthProblems(page), `${path} ${colorScheme}`).toEqual([]);
+      expect(await phoneHeightProblems(page), `${path} ${colorScheme}`).toEqual([]);
       await context.close();
     }
   });

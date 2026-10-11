@@ -3626,6 +3626,15 @@ a.key:hover {
     min-height: 44px;
   }
 
+  /* The controls whose own rules set a lower height on a wide screen: a row's actions, the hall's Team filter and a
+     list's tabs. */
+  .row-actions .button,
+  .row-actions button,
+  .hall-filter select,
+  .tabs a {
+    min-height: 44px;
+  }
+
   input[type="text"],
   input[type="password"],
   input[type="email"],

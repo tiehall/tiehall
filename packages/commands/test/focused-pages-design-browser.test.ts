@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { startSetup } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
-import { phoneWidthProblems } from "./support/layout.ts";
+import { phoneHeightProblems, phoneWidthProblems } from "./support/layout.ts";
 import { startWebApp, type WebApp } from "./support/web-app.ts";
 
 // The setup screen before setup completes, in a browser (self-host-install:
@@ -67,13 +67,14 @@ describe("the setup screen before setup", () => {
     await context.close();
   });
 
-  it("fits a phone's width at 320 CSS pixels, with the switchboard above the steps", { timeout: 120_000 }, async () => {
+  it("fits a phone's width at 320 CSS pixels, its controls at least 44 CSS pixels high, with the switchboard above the steps", { timeout: 120_000 }, async () => {
     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     await page.goto(`${web.url}/setup`);
     await page.getByLabel("Setup code").waitFor();
     expect(await phoneWidthProblems(page)).toEqual([]);
+    expect(await phoneHeightProblems(page)).toEqual([]);
     const art = await page.locator(".setup-art").boundingBox();
     const flow = await page.locator(".setup-flow").boundingBox();
     expect((art?.y ?? 0) + (art?.height ?? 0)).toBeLessThanOrEqual(flow?.y ?? 0);
