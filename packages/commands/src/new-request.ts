@@ -149,16 +149,44 @@ function fieldOfIssue(path: readonly (string | number)[]): string | undefined {
   return typeof third === "string" ? fields[third] : undefined;
 }
 
-/** A form's refusal, with its issues placed beside the fields they name. */
+/**
+ * What a field needs, in Tiehall's words, said beside it when the operation's
+ * schema refused the form: the schema's own issues are its library's words,
+ * such as "Too small: expected string to have >=1 characters", which read like
+ * code (web-ui: Pages are accessible).
+ */
+const FIELD_NEEDS: Readonly<Record<string, string>> = {
+  title: "Write a title: one line of 1 to 200 characters, not blank.",
+  need: "Say what you need, in 1 to 20,000 characters, not blank.",
+  acceptanceCriteria: "Write each acceptance criterion on a line of its own, in at most 2,000 characters, not blank.",
+  codeRefs: "A code ref is a repository, then a path and a ref if you like, separated by spaces.",
+  links: "A link is an http or https address, then what it is if you like, separated by a space.",
+  dueDate: "A due date is a day, such as 2026-11-02.",
+  targetTeam: "Choose the team the request is for.",
+  requestingTeam: "Choose one of your teams.",
+};
+
+/** Whether a refusal is the operation's schema's, whose issues are its library's words, not Tiehall's. */
+function refusedBySchema(refusal: Refusal): boolean {
+  return refusal.message.endsWith("does not match its schema.");
+}
+
+/** A form's refusal, with its issues placed beside the fields they name, each in Tiehall's words. */
 function refusedFrom(refusal: Refusal, values: URLSearchParams): Refused {
+  const bySchema = refusedBySchema(refusal);
   const byField = new Map<string, string[]>();
-  const others: string[] = [];
+  const others = new Set<string>();
   for (const { path, message } of refusal.issues) {
     const field = fieldOfIssue(path);
-    if (field === undefined) others.push(path.length === 0 ? message : `${path.join(".")}: ${message}`);
-    else byField.set(field, [...(byField.get(field) ?? []), message]);
+    if (field === undefined) others.add(bySchema ? "A value the form sent does not fit its field: check the fields, then send it again." : path.length === 0 ? message : `${path.join(".")}: ${message}`);
+    else {
+      const said = bySchema ? (FIELD_NEEDS[field] ?? message) : message;
+      const known = byField.get(field) ?? [];
+      if (!known.includes(said)) byField.set(field, [...known, said]);
+    }
   }
-  return { values, detail: refusal.message, byField, others };
+  const detail = bySchema ? "Some of its fields need a change: each says what, beside it." : refusal.message;
+  return { values, detail, byField, others: [...others] };
 }
 
 /** A select of teams, by key and name, with the one chosen, if any, selected. */

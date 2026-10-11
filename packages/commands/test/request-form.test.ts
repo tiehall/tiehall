@@ -118,6 +118,17 @@ describe("the web form that opens a request", () => {
     expect((await install.owner.query("SELECT count(*)::int AS n FROM requests")).rows).toEqual(before.rows);
   });
 
+  it("says each refused field's error in Tiehall's own words, never in the schema's", async () => {
+    const answer = await post(dana, { targetTeam: "FE", requestingTeam: "BE", title: "", need: "   ", dueDate: "next week" });
+    expect(answer.status).toBe(400);
+    const html = await answer.text();
+    expect(html).toContain("<p><strong>The request was not opened.</strong> Some of its fields need a change: each says what, beside it.</p>");
+    expect(html).toContain('<p class="field-error" id="title-error">Write a title: one line of 1 to 200 characters, not blank.</p>');
+    expect(html).toContain('<p class="field-error" id="need-error">Say what you need, in 1 to 20,000 characters, not blank.</p>');
+    expect(html).toContain('<p class="field-error" id="dueDate-error">A due date is a day, such as 2026-11-02.</p>');
+    expect(html).not.toMatch(/Too small|expected string|Invalid|does not match its schema|>=|requests\.create/);
+  });
+
   it("tells a member of no team that they cannot open a request, and refuses their form with 403", async () => {
     const html = await (await get(nola)).text();
     expect(html).toContain("You belong to no team");
