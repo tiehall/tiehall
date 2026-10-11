@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actorWords as serverActorWords, clientWords as serverClientWords, relativeTime as serverRelativeTime, type EventActor } from "../src/event-lines.ts";
-import { countsWords as serverCountsWords, whoWords as serverWhoWords } from "../src/hall-page.ts";
+import { actorWords as serverActorWords, clientParts as serverClientParts, relativeTime as serverRelativeTime, type EventActor } from "../src/event-lines.ts";
+import { countsWords as serverCountsWords } from "../src/hall-page.ts";
 import { initialsOf as serverInitialsOf } from "../src/shell.ts";
 
 // The live hall's script, its pure parts (web-ui: The live hall; web-ui: The
@@ -92,8 +92,7 @@ interface HallScript {
   relativeTime(at: string, now: number): string;
   retryDelay(failures: number, random?: () => number): number;
   actorWords(actor: EventActor): string;
-  clientWords(client: NonNullable<EventActor["client"]>): string;
-  whoWords(actor: EventActor): string;
+  clientParts(client: NonNullable<EventActor["client"]>): { name: string; mark: string | null };
   initialsOf(login: string): string;
   countsWords(counts: Counts, doneLastDay?: number): string;
 }
@@ -381,11 +380,20 @@ describe("the script's words", () => {
     { kind: "operator", user: null, client: null },
   ];
 
+  it("keep a client's name, its own claim, apart from the mark Tiehall gives it, as the server does", () => {
+    expect(actors.flatMap(({ client }) => (client === null ? [] : [hall.clientParts(client)]))).toEqual([
+      { name: "Example Agent", mark: "(client.example.com)" },
+      { name: "<img src=x onerror=alert(1)>", mark: "(unverified)" },
+      { name: "unnamed client", mark: "(unverified)" },
+      { name: "tiehall CLI 0.4.0", mark: null },
+      { name: "personal access token", mark: null },
+    ]);
+  });
+
   it("are the server's: who acted, the client, the initials and the counts", () => {
     for (const actor of actors) {
       expect(hall.actorWords(actor)).toBe(serverActorWords(actor));
-      expect(hall.whoWords(actor)).toBe(serverWhoWords(actor));
-      if (actor.client !== null) expect(hall.clientWords(actor.client)).toBe(serverClientWords(actor.client));
+      if (actor.client !== null) expect(hall.clientParts(actor.client)).toEqual(serverClientParts(actor.client));
     }
     for (const login of ["mert-kaya", "selin", "a", "x1-y2", "Ayse_Y"]) expect(hall.initialsOf(login)).toBe(serverInitialsOf(login));
     for (const [counts, done] of [

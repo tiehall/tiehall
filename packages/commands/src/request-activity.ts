@@ -3,7 +3,7 @@ import type { RequestState } from "@tiehall/core";
 import { events, messages, oauthClients, requests, users, type Database } from "@tiehall/db";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
-import { cutName, eventLine, stateAfter, STATE_EVENT_TYPES, type ActorClient, type EventActor, type EventUser } from "./event-lines.ts";
+import { cutName, eventLine, shownText, stateAfter, STATE_EVENT_TYPES, type ActorClient, type EventActor, type EventUser } from "./event-lines.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { resolveRequestKey } from "./request-keys.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -87,8 +87,9 @@ function hostOf(url: string): string | null {
 
 /**
  * Names the actors of these events: the users they name, by login and bot
- * flag, and the agent clients, by the name each gave itself and how the
- * install knows it, read in the call's transaction.
+ * flag, and the agent clients, by the name each gave itself, without the
+ * characters that hide or reverse text, and how the install knows it, read in
+ * the call's transaction.
  */
 export async function actorsOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, rows: readonly Pick<EventRow, "actorKind" | "actorUserId" | "client" | "surface">[]): Promise<(row: (typeof rows)[number]) => EventActor> {
   const userIds = [...new Set(rows.map(({ actorUserId }) => actorUserId).filter((id): id is string => id !== null))];
@@ -114,7 +115,9 @@ export async function actorsOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, 
     const version = cliVersionOf(client);
     if (version !== undefined) return { kind: "cli", host: null, version, unverified: false, untrusted: { name: null } };
     const known = clients.get(client);
-    const name = known?.name === null || known?.name === undefined || known.name.trim() === "" ? null : cutName(known.name);
+    // The name without the characters that hide or reverse text, so it cannot turn the mark beside it round; a name of nothing else is no name.
+    const shown = known?.name === null || known?.name === undefined ? "" : shownText(known.name);
+    const name = shown.trim() === "" ? null : cutName(shown);
     const host = known?.discovery === "cimd" ? hostOf(client) : null;
     if (host !== null) return { kind: "metadata_document", host, version: null, unverified: false, untrusted: { name } };
     return { kind: "registered", host: null, version: null, unverified: true, untrusted: { name } };

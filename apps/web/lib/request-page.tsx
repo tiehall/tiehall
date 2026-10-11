@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import {
-  actedThrough,
   actorWords,
-  clientWords,
+  clientParts,
   packetLinesOf,
   providerChangeLine,
   relativeTime,
   STATE_WORDS,
+  type ActorClient,
   type EventActor,
   type RequestPageData,
 } from "@tiehall/commands/web";
@@ -36,7 +36,11 @@ import { AppShell } from "./shell.tsx";
 // confirm or reject it, and the timeline of its 20 latest events, each with a
 // lamp in the color of the state it left the request in, that state in words,
 // what happened, who and when. Everything people and agents wrote is text:
-// React writes it escaped, so no markup in it runs or loads anything, and a
+// React writes it escaped, so no markup in it runs or loads anything; a
+// client's name sits in a bdi, apart from the mark Tiehall gives it, its
+// verified host or "(unverified)", which no character of the name can
+// reorder (web-ui: What the live hall shows of the people and agents at
+// work); and a
 // packet's link is an anchor to its http or https URL that tells the linked
 // site nothing of the page. Tiehall's own words say what the page states.
 //
@@ -176,6 +180,22 @@ function initialsFor(actor: EventActor): string {
   return { tiehall: "TH", github: "GH", jira: "JI", operator: "OP", agent: "AG", web: "WB" }[actor.kind];
 }
 
+/** A client: its name, the client's own claim, isolated in a bdi, then the mark Tiehall gives it, apart. */
+function ClientName({ client }: { client: ActorClient }): ReactNode {
+  const { name, mark } = clientParts(client);
+  return (
+    <>
+      <bdi className="client-name">{name}</bdi>
+      {mark === null ? null : (
+        <>
+          {" "}
+          <span className="client-mark">{mark}</span>
+        </>
+      )}
+    </>
+  );
+}
+
 /**
  * The banner of who wrote on the request last, and when; while the request is
  * in_progress and that write is an agent's under 10 minutes old, it says that
@@ -186,7 +206,7 @@ function ActivityBanner({ request, activity }: { request: Request; activity: Act
   const last = activity.lastWrite;
   if (last === null) return <p className="activity">Nobody has written on it yet.</p>;
   const { actor } = last;
-  const client = actor.kind === "agent" && actor.client !== null ? clientWords(actor.client) : undefined;
+  const client = actor.kind === "agent" && actor.client !== null ? actor.client : undefined;
   return (
     <div className={activity.agentAtWork ? "activity at-work" : "activity"}>
       <span className={actor.kind === "agent" ? "initials agent" : "initials"} aria-hidden="true">
@@ -196,7 +216,12 @@ function ActivityBanner({ request, activity }: { request: Request; activity: Act
         {activity.agentAtWork ? (
           <>
             <strong>{`${actorWords(actor)} is working on ${request.key}`}</strong>
-            {client === undefined ? null : ` · ${client}`}{" "}
+            {client === undefined ? null : (
+              <>
+                {" · "}
+                <ClientName client={client} />
+              </>
+            )}{" "}
             <span className="typing" aria-hidden="true">
               <span />
               <span />
@@ -207,7 +232,14 @@ function ActivityBanner({ request, activity }: { request: Request; activity: Act
           <>
             {"Last write by "}
             <strong>{actorWords(actor)}</strong>
-            {actor.kind === "web" ? " in the web UI" : client === undefined ? "" : ` · ${client}`}
+            {actor.kind === "web" ? (
+              " in the web UI"
+            ) : client === undefined ? null : (
+              <>
+                {" · "}
+                <ClientName client={client} />
+              </>
+            )}
           </>
         )}
       </p>
@@ -339,7 +371,6 @@ function authorOf(message: Message, activity: Activity): EventActor {
 function MessageItem({ message, activity }: { message: Message; activity: Activity }): ReactNode {
   const author = authorOf(message, activity);
   const team = message.provenance.team;
-  const through = actedThrough(author);
   const answered = message.kind === "question" && message.answered === true;
   return (
     <article id={`message-${message.id}`} className={message.kind === "question" && message.blocking ? "message blocking" : "message"}>
@@ -350,7 +381,15 @@ function MessageItem({ message, activity }: { message: Message; activity: Activi
         <p className="message-meta">
           <strong>{actorWords(author)}</strong>
           {team === null ? null : ` · team ${team.key}`}
-          {through === undefined ? null : ` · ${through}`}
+          {author.kind === "web" ? " · web" : null}
+          {author.kind !== "agent" ? null : author.client === null ? (
+            " · agent"
+          ) : (
+            <>
+              {" · agent · "}
+              <ClientName client={author.client} />
+            </>
+          )}
           {" · "}
           <Ago at={message.postedAt} now={activity.now} />
           {message.editedAt === null ? null : ` · edited, version ${message.version}`}{" "}

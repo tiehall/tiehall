@@ -350,7 +350,7 @@ export { createEventWakeups, EVENTS_CHANNEL, type EventWakeups, type WakeUp } fr
 export { WAIT_HOLD_MS } from "./events-wait.ts";
 export { createInboxRoute, INBOX_PAGE_SIZE, INBOX_PATH } from "./inbox-page.ts";
 export { createHallStateRoute, createHallWaitRoute, HALL_STATE_PATH, HALL_WAIT_PATH, hallNarrowingOf, type HallReadOptions } from "./hall-routes.ts";
-export { countsWords, createHallRoute, hallPageHtml, whoWords } from "./hall-page.ts";
+export { clientHtml, countsWords, createHallRoute, hallPageHtml, whoHtml } from "./hall-page.ts";
 export { GATHER_MS, HALL_FEED, HALL_HANDLERS, HALL_HOLD_MS, HALL_REQUESTS, ON_THE_MAP } from "./hall.ts";
 export { emailQuestion, type QuestionEmailData } from "./question-emails.ts";
 export { emailDigests } from "./digests.ts";

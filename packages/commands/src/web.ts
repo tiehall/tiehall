@@ -190,7 +190,7 @@ export function requestUrlRoute(env: Environment): RequestUrlRoute {
 export { NEGOTIATED_KEY_HEADER, negotiatedUrlOf, requestUrlOf, teamUrlOf } from "./negotiation.ts";
 export { pageContentSecurityPolicy } from "./request-urls.ts";
 export { readRequestPageAs, type RequestActivityView, type RequestPageData, type RequestPageViewer } from "./request-page-data.ts";
-export { actedThrough, actorWords, clientWords, relativeTime, STATE_WORDS, userWords, type ActorClient, type EventActor } from "./event-lines.ts";
+export { actorWords, clientParts, clientWords, relativeTime, STATE_WORDS, userWords, type ActorClient, type EventActor } from "./event-lines.ts";
 export { REQUEST_PAGE_ACTIONS, runRequestPageAction, type RequestPageAction, type RequestPageActionState } from "./request-page-actions.ts";
 export { packetLinesOf } from "./new-request.ts";
 export { providerChangeLine } from "@tiehall/packet/tool-text";

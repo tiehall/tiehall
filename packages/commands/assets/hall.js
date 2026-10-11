@@ -113,31 +113,24 @@ export function actorWords(actor) {
 }
 
 /**
- * A client, such as "Example Agent (client.example.com)", "Claude Code (unverified)" or "tiehall CLI 0.4.0".
+ * A client's name, its own claim or Tiehall's words for it, and the mark Tiehall gives it, apart: the verified host
+ * of a metadata document, "(unverified)" for a registered client, and none for the CLI or a personal access token.
+ * The page isolates the name in a bdi and keeps the mark outside it, so no character of the name can reorder it.
  * @param {Client} client
+ * @returns {{ name: string, mark: string | null }}
  */
-export function clientWords(client) {
+export function clientParts(client) {
   const name = client.untrusted.name ?? "unnamed client";
   switch (client.kind) {
     case "metadata_document":
-      return client.host === null ? name : `${name} (${client.host})`;
+      return { name, mark: client.host === null ? null : `(${client.host})` };
     case "registered":
-      return `${name} (unverified)`;
+      return { name, mark: "(unverified)" };
     case "cli":
-      return client.version === null ? "tiehall CLI" : `tiehall CLI ${client.version}`;
+      return { name: client.version === null ? "tiehall CLI" : `tiehall CLI ${client.version}`, mark: null };
     default:
-      return "personal access token";
+      return { name: "personal access token", mark: null };
   }
-}
-
-/**
- * Who acted: an agent with its client, a person in the web UI, or Tiehall, GitHub, Jira or the operator.
- * @param {Actor} actor
- */
-export function whoWords(actor) {
-  if (actor.kind === "agent") return actor.client === null ? actorWords(actor) : `${actorWords(actor)} · ${clientWords(actor.client)}`;
-  if (actor.kind === "web") return `${actorWords(actor)} in the web UI`;
-  return actorWords(actor);
 }
 
 /**
@@ -552,6 +545,30 @@ function svg(tag, attributes = {}) {
   return made;
 }
 
+/**
+ * A client: its name in a bdi, then its mark, apart.
+ * @param {Client} client
+ * @returns {(Node | string)[]}
+ */
+function clientNodes(client) {
+  const { name, mark } = clientParts(client);
+  /** @type {(Node | string)[]} */
+  const nodes = [element("bdi", "client-name", name)];
+  if (mark !== null) nodes.push(" ", element("span", "client-mark", mark));
+  return nodes;
+}
+
+/**
+ * Who acted: an agent with its client, a person in the web UI, or Tiehall, GitHub, Jira or the operator.
+ * @param {Actor} actor
+ * @returns {(Node | string)[]}
+ */
+function whoNodes(actor) {
+  if (actor.kind === "agent") return actor.client === null ? [actorWords(actor)] : [`${actorWords(actor)} · `, ...clientNodes(actor.client)];
+  if (actor.kind === "web") return [`${actorWords(actor)} in the web UI`];
+  return [actorWords(actor)];
+}
+
 /** @param {string} state */
 function lamp(state) {
   const made = element("span", `lamp ${stateClass(state)}`);
@@ -691,8 +708,8 @@ function start() {
     return element("li", `worker ${agent ? "agent" : "web"}${waitingOn ? " waiting" : ""}`, [
       initials,
       element("div", "worker-text", [
-        element("p", "worker-who", whoWords(entry.actor)),
-        element("p", "worker-on", [element("span", "mono", entry.request.key), ` ${entry.request.untrusted.title}`]),
+        element("p", "worker-who", whoNodes(entry.actor)),
+        element("p", "worker-on", [element("span", "mono", entry.request.key), " ", element("bdi", undefined, entry.request.untrusted.title)]),
         did,
       ]),
     ]);
@@ -701,9 +718,9 @@ function start() {
   /** @param {HallEvent} event @param {boolean} fresh */
   function feedRow(event, fresh) {
     return element("li", `feed-row${waits(event.request) ? " waits" : ""}${fresh && !paused ? " new" : ""}`, [
-      element("p", "feed-meta", [keyTag(event.request.key, `/${event.request.key}`), " ", element("span", "feed-title", event.request.untrusted.title), " ", timeOf(event.at, now())]),
+      element("p", "feed-meta", [keyTag(event.request.key, `/${event.request.key}`), " ", element("bdi", "feed-title", event.request.untrusted.title), " ", timeOf(event.at, now())]),
       element("p", "feed-line", event.line),
-      element("p", "feed-who", whoWords(event.actor)),
+      element("p", "feed-who", whoNodes(event.actor)),
     ]);
   }
 
@@ -716,7 +733,7 @@ function start() {
   function teamRow(each) {
     const live = liveTotal(each.counts) > 0;
     return element("li", `team-row${live ? "" : " dimmed"}`, [
-      element("p", "team-head", [element("span", "team-name", each.untrusted.name), " ", element("span", "team-key", each.key)]),
+      element("p", "team-head", [element("bdi", "team-name", each.untrusted.name), " ", element("span", "team-key", each.key)]),
       element("p", "team-counts", [...lamps(each.counts, each.doneLastDay), element("span", undefined, countsWords(each.counts, each.doneLastDay))]),
     ]);
   }
@@ -840,7 +857,7 @@ function start() {
         : [...lamps(node.counts, node.doneLastDay), element("span", undefined, countsWords(node.counts, node.doneLastDay))];
       const head = compact
         ? [element("span", node.others > 0 ? "team-name" : "team-key", node.others > 0 ? node.name : node.key)]
-        : [element("span", "team-name", node.name), " ", element("span", "team-key", node.key)];
+        : [element("bdi", "team-name", node.name), " ", element("span", "team-key", node.key)];
       holder.append(element("div", classes.join(" "), [element("p", "node-head", head), element("p", "node-counts", counts)]));
       nodeGroup.append(holder);
     }
@@ -862,10 +879,10 @@ function start() {
       const initials = element("span", "initials", initialsOf(entry.actor.user?.login ?? ""));
       const did = element("span", "chip-did", entry.line);
       if (agent && !waitingOn && now() - Date.parse(entry.at) < ACTIVE_MS) did.append(" ", typingDots());
-      const client = agent && entry.actor.client !== null ? clientWords(entry.actor.client) : "web";
+      const client = agent && entry.actor.client !== null ? clientNodes(entry.actor.client) : ["web"];
       const chip = element("div", `map-chip ${agent ? "agent" : "web"}${waitingOn ? " waiting" : ""}`, [
         initials,
-        element("span", "chip-text", [element("span", "chip-what", [element("span", "mono", entry.request.key), ` · ${client}`]), did]),
+        element("span", "chip-text", [element("span", "chip-what", [element("span", "mono", entry.request.key), " · ", ...client]), did]),
       ]);
       holder.append(chip);
       chipGroup.append(holder);

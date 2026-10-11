@@ -27,6 +27,8 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, toke
 const HALL_POLICY =
   "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; connect-src 'self'; require-trusted-types-for 'script'; trusted-types 'none'";
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
+/** The characters that hide or reverse text, as the agent view strips them: a name holding U+202E would reverse the mark beside it. */
+const HIDDEN_OR_REVERSING = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;
 const MARKUP_CLIENT = randomUUID();
 
 let install: TestInstall;
@@ -39,7 +41,8 @@ beforeAll(async () => {
   for (const [key, name] of [
     ["BE", "Backend"],
     ["FE", "Frontend"],
-    ["OPS", "Operations"],
+    // The characters that hide or reverse text, which the hall drops from every name and title it shows.
+    ["OPS", "\u2067Operations\u200B"],
     ["PAY", "Payments & <Billing>"],
   ] as const) {
     team[key] = await addTeam(install.owner, key);
@@ -56,12 +59,12 @@ beforeAll(async () => {
   }
   ada = sessionOf(person["ada"] ?? "");
   await install.owner.query(
-    "INSERT INTO oauth_clients (org_id, client_id, name, client_discovery_id, redirect_uris) SELECT id, $1, 'Example Agent', 'cimd', ARRAY['https://client.example.com/callback'] FROM orgs",
+    "INSERT INTO oauth_clients (org_id, client_id, name, client_discovery_id, redirect_uris) SELECT id, $1, '\u202AExample Agent\u202C', 'cimd', ARRAY['https://client.example.com/callback'] FROM orgs",
     [EXAMPLE_AGENT],
   );
   await install.owner.query("INSERT INTO oauth_clients (org_id, client_id, name, redirect_uris) SELECT id, $1, '<img src=x onerror=alert(1)>', ARRAY['http://127.0.0.1/callback'] FROM orgs", [MARKUP_CLIENT]);
   // FE-1, from BE, on which Mert's agent works; PAY-1, from FE, on which Ayşe's agent asked a blocking question; FE-2, from BE, open, whose title is markup.
-  await openRequest(install, tokenOf(person["selin"] ?? ""), { targetTeam: "FE", title: "Add a forgot password link" });
+  await openRequest(install, tokenOf(person["selin"] ?? ""), { targetTeam: "FE", title: "Add a forgot\u202E password link" });
   const mertsAgent = oauthTokenOf(person["mert"] ?? "", EXAMPLE_AGENT, "mcp");
   expect((await callApi(install, mertsAgent, "POST", "/api/v1/requests/FE-1/claim")).status).toBe(200);
   expect((await callApi(install, mertsAgent, "POST", "/api/v1/requests/FE-1/status", { state: "in_progress" })).status).toBe(200);
@@ -165,7 +168,7 @@ describe("the live hall's page", () => {
     expect(rows[0]).toEqual(["waits", expect.stringMatching(/^FE-2 &#60;script&#62;alert\(2\)&#60;\/script&#62; (now|\d+ s) It was opened selin's agent · personal access token$/)]);
     expect(rows.find(([, row]) => row?.includes("A blocking question was posted"))).toEqual(["waits", expect.stringContaining("PAY-1")]);
     expect(rows.at(-1)).toEqual(["", expect.stringMatching(/^FE-1 Add a forgot password link (now|\d+ s) It was opened selin's agent · personal access token$/)]);
-    expect(feed).toMatch(/<a class="key" href="\/FE-2">FE-2<\/a> <span class="feed-title">&#60;script&#62;alert\(2\)&#60;\/script&#62;<\/span> <time datetime="[0-9T:.Z-]+">/);
+    expect(feed).toMatch(/<a class="key" href="\/FE-2">FE-2<\/a> <bdi class="feed-title">&#60;script&#62;alert\(2\)&#60;\/script&#62;<\/bdi> <time datetime="[0-9T:.Z-]+">/);
     expect(feed).not.toMatch(/class="lamp/);
   });
 
@@ -191,6 +194,19 @@ describe("the live hall's page", () => {
     expect(requests).toContain('<span class="chip open">Open</span> <span class="chip waits">Waits for a person</span>');
     expect(requests).toContain("&#60;script&#62;alert(2)&#60;/script&#62;");
     expect(requests).toMatch(/<td data-label="Claimed by">mert<\/td>/);
+  });
+
+  it("isolates every client name, title and team name in a bdi, keeps Tiehall's mark apart from a client's name, and drops the characters that hide or reverse text", async () => {
+    const { html } = await open();
+    expect(html).not.toMatch(HIDDEN_OR_REVERSING);
+    const atWork = section(html, "at-work-heading");
+    expect(atWork).toContain('<p class="worker-who">ayse&#39;s agent · <bdi class="client-name">&#60;img src=x onerror=alert(1)&#62;</bdi> <span class="client-mark">(unverified)</span></p>');
+    expect(atWork).toContain('<p class="worker-who">mert&#39;s agent · <bdi class="client-name">Example Agent</bdi> <span class="client-mark">(client.example.com)</span></p>');
+    expect(atWork).toContain('<p class="worker-who">selin&#39;s agent · <bdi class="client-name">personal access token</bdi></p>');
+    expect(atWork).toContain('<p class="worker-on"><span class="mono">FE-1</span> <bdi>Add a forgot password link</bdi></p>');
+    expect(section(html, "feed-heading")).toContain('<bdi class="feed-title">Add a forgot password link</bdi>');
+    expect(section(html, "teams-heading")).toContain('<bdi class="team-name">Operations</bdi> <span class="team-key">OPS</span>');
+    expect(JSON.stringify(await install.execute("hall.state", ada, {}, { readOnly: true }))).not.toMatch(HIDDEN_OR_REVERSING);
   });
 
   it("shows every title, name, login and client name as text, never as markup", async () => {

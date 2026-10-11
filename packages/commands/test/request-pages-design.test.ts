@@ -107,6 +107,8 @@ describe("a request's page", () => {
   it("says in its banner that the agent at work is working on it, with the client, and when it last wrote", async () => {
     const banner = element((await open("/FE-1")).html, /<div class="activity at-work">/, "div");
     expect(textOf(banner)).toMatch(/^ME mert's agent is working on FE-1 · Example Agent \(client\.example\.com\) Last write 4\d s ago$/);
+    // The client's name, its own claim, is isolated in a bdi, apart from the host Tiehall verified, so no character of it can reorder the host.
+    expect(banner).toContain('<bdi class="client-name">Example Agent</bdi> <span class="client-mark">(client.example.com)</span>');
     expect(banner).toMatch(/<span class="typing" aria-hidden="true">/);
     expect(banner).toMatch(/<time dateTime="\d{4}-\d\d-\d\dT[\d:.]+Z">4\d s ago<\/time>/);
     const flagged = element((await open("/FE-2")).html, /<div class="activity">/, "div");
@@ -145,6 +147,7 @@ describe("a request's page", () => {
       expect.stringMatching(/^mert's agent · team FE · agent · Example Agent \(client\.example\.com\) · (\d+ s ago|just now) Blocking question · answered$/),
       expect.stringMatching(/^alice · team BE · web · (\d+ s ago|just now) Answer$/),
     ]);
+    expect(thread).toContain('agent · <bdi class="client-name">Example Agent</bdi> <span class="client-mark">(client.example.com)</span>');
     expect(thread).toContain('<span class="chip kind answered">Blocking question · answered</span>');
     expect(thread).toMatch(/<article id="message-[0-9a-f-]+" class="message blocking"><span class="initials agent" aria-hidden="true">ME<\/span>/);
     expect(thread).toContain("Should the link text be English or Turkish?");

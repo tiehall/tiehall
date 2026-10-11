@@ -1,7 +1,7 @@
 import { readHallState } from "@tiehall/catalog";
 import type { RequestState } from "@tiehall/core";
 import type { z } from "zod";
-import { actorWords, clientWords, relativeTime, STATE_WORDS, type EventActor } from "./event-lines.ts";
+import { actorWords, clientParts, relativeTime, STATE_WORDS, type ActorClient, type EventActor } from "./event-lines.ts";
 import { hallNarrowingOf } from "./hall-routes.ts";
 import { assetUrl } from "./asset-urls.ts";
 import { escapeHtml, hallPagePolicy, htmlPage, PAGE_HEADERS, type PageLook } from "./html.ts";
@@ -26,7 +26,10 @@ import { createPageRoute, type PageRoute, type PageRouteOptions } from "./web-pa
 // line"; every team with a lamp per live state and the counts in words; and
 // the lines between teams with the requests on them. It loads the hall's one
 // script, a module from the install, which makes the page live (hall.js).
-// Every title, team name, login and client name is escaped text. A row of the feed about a request
+// Every title, team name, login and client name is escaped text, and every
+// title, team name and client name sits in a bdi, so that no character of it
+// can reorder the words around it; a client's mark, its verified host or
+// "(unverified)", stays outside the name's bdi. A row of the feed about a request
 // that waits on a question or a person has the notice colors and no lamp. The
 // page carries the live hall's policy; a browser without a session is sent to
 // sign in and back, and opening the page renews the session, as opening any
@@ -39,11 +42,17 @@ type RequestRef = HallState["feed"][number]["request"];
 /** The states that are not terminal, in the order a request goes through them, which the lamps and the counts follow. */
 const LIVE_STATES = ["open", "claimed", "in_progress", "needs_info"] as const satisfies readonly RequestState[];
 
+/** A client: its name, isolated in a bdi, then the mark Tiehall gives it, apart, which no character of the name can reorder. */
+export function clientHtml(client: ActorClient): string {
+  const { name, mark } = clientParts(client);
+  return `<bdi class="client-name">${escapeHtml(name)}</bdi>${mark === null ? "" : ` <span class="client-mark">${escapeHtml(mark)}</span>`}`;
+}
+
 /** Who acted, in Tiehall's words: an agent with its client, a person in the web UI, or Tiehall, GitHub, Jira or the operator. */
-export function whoWords(actor: EventActor): string {
-  if (actor.kind === "agent") return actor.client === null ? actorWords(actor) : `${actorWords(actor)} · ${clientWords(actor.client)}`;
-  if (actor.kind === "web") return `${actorWords(actor)} in the web UI`;
-  return actorWords(actor);
+export function whoHtml(actor: EventActor): string {
+  if (actor.kind === "agent") return actor.client === null ? escapeHtml(actorWords(actor)) : `${escapeHtml(actorWords(actor))} · ${clientHtml(actor.client)}`;
+  if (actor.kind === "web") return escapeHtml(`${actorWords(actor)} in the web UI`);
+  return escapeHtml(actorWords(actor));
 }
 
 /** A team's or a line's requests in words, such as "3 open · 1 needs info · 2 done in 24 h", or "Nothing live". */
@@ -86,8 +95,8 @@ function workerHtml(entry: HallState["atWork"][number], now: string): string {
     `          <li class="worker ${agent ? "agent" : "web"}${waiting ? " waiting" : ""}">`,
     `            <span class="initials" aria-hidden="true">${escapeHtml(initialsOf(login))}</span>`,
     '            <div class="worker-text">',
-    `              <p class="worker-who">${escapeHtml(whoWords(entry.actor))}</p>`,
-    `              <p class="worker-on"><span class="mono">${escapeHtml(entry.request.key)}</span> ${escapeHtml(entry.request.untrusted.title)}</p>`,
+    `              <p class="worker-who">${whoHtml(entry.actor)}</p>`,
+    `              <p class="worker-on"><span class="mono">${escapeHtml(entry.request.key)}</span> <bdi>${escapeHtml(entry.request.untrusted.title)}</bdi></p>`,
     `              <p class="worker-did">${escapeHtml(entry.line)} · ${agoHtml(entry.at, now)}${typing}</p>`,
     "            </div>",
     "          </li>",
@@ -98,9 +107,9 @@ function workerHtml(entry: HallState["atWork"][number], now: string): string {
 function feedRowHtml(event: HallState["feed"][number], now: string): string {
   return [
     `          <li class="feed-row${waits(event.request) ? " waits" : ""}">`,
-    `            <p class="feed-meta">${keyTag(event.request.key, `/${event.request.key}`)} <span class="feed-title">${escapeHtml(event.request.untrusted.title)}</span> ${agoHtml(event.at, now)}</p>`,
+    `            <p class="feed-meta">${keyTag(event.request.key, `/${event.request.key}`)} <bdi class="feed-title">${escapeHtml(event.request.untrusted.title)}</bdi> ${agoHtml(event.at, now)}</p>`,
     `            <p class="feed-line">${escapeHtml(event.line)}</p>`,
-    `            <p class="feed-who">${escapeHtml(whoWords(event.actor))}</p>`,
+    `            <p class="feed-who">${whoHtml(event.actor)}</p>`,
     "          </li>",
   ].join("\n");
 }
@@ -110,7 +119,7 @@ function teamRowHtml(team: HallState["teams"][number]): string {
   const live = LIVE_STATES.some((state) => team.counts[state] > 0);
   return [
     `          <li class="team-row${live ? "" : " dimmed"}">`,
-    `            <p class="team-head"><span class="team-name">${escapeHtml(team.untrusted.name)}</span> <span class="team-key">${escapeHtml(team.key)}</span></p>`,
+    `            <p class="team-head"><bdi class="team-name">${escapeHtml(team.untrusted.name)}</bdi> <span class="team-key">${escapeHtml(team.key)}</span></p>`,
     `            <p class="team-counts">${lampsHtml(team.counts, team.doneLastDay)}<span>${escapeHtml(countsWords(team.counts, team.doneLastDay))}</span></p>`,
     "          </li>",
   ].join("\n");

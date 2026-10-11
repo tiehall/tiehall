@@ -286,6 +286,30 @@ describe("requests.activity", () => {
     await expect(install.execute("requests.activity", reader, { key: "FE-99" }, { readOnly: true })).rejects.toMatchObject({ reason: "record-not-found" });
   });
 
+  it("drops the characters that hide or reverse text from a client's name, so the name cannot disguise the mark or the host beside it", async () => {
+    // A request of its own, since a run of agent writes on one request would flag it needs_human.
+    await openRequestInTheWebUi(install, selin, { targetTeam: "FE", title: "Disguised clients" });
+    const reversed = randomUUID();
+    const invisible = randomUUID();
+    const spoofed = "https://moc.tfosorcim.ai/tiehall.json";
+    // U+202E reverses what follows it, the mark included; U+2066 to U+2069 isolate, U+200B to U+200F and U+FEFF hide.
+    await addClient(reversed, "‮edoc edualC", false);
+    await addClient(invisible, "​⁦﻿⁩", false);
+    await addClient(spoofed, "⁧tolipoc⁩‏", true);
+    const cases: [string, string | null, string][] = [
+      [reversed, "edoc edualC", "edoc edualC (unverified)"],
+      [invisible, null, "unnamed client (unverified)"],
+      [spoofed, "tolipoc", "tolipoc (moc.tfosorcim.ai)"],
+    ];
+    for (const [clientId, name, words] of cases) {
+      await comment(oauthTokenOf(deniz, clientId, "mcp"), "FE-6");
+      const read = await activity("FE-6");
+      expect(read.lastWrite?.actor.client?.untrusted.name, words).toBe(name);
+      expect(clientWords(read.lastWrite?.actor.client as never)).toBe(words);
+      expect(JSON.stringify(read)).not.toMatch(/[​-‏‪-‮⁠-⁤⁦-⁩﻿]/u);
+    }
+  });
+
   it("is offered by no agent surface: neither the OpenAPI document nor the MCP tools name it", () => {
     for (const file of ["../../../openapi/v1.json", "../../../mcp/tools.json"]) {
       expect(readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"), file).not.toMatch(/requests\.activity|requestActivity/);

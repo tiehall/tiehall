@@ -2,7 +2,7 @@ import { readHallState, waitForHall } from "@tiehall/catalog";
 import { formatRequestKey, isTerminalState, Refusal, type RequestState } from "@tiehall/core";
 import { users } from "@tiehall/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { eventLine } from "./event-lines.ts";
+import { eventLine, shownText } from "./event-lines.ts";
 import { held, RECHECK_MS, shuttingDown } from "./events-wait.ts";
 import { defineHandler, definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
 import { actorsOf, AT_WORK_MS } from "./request-activity.ts";
@@ -33,7 +33,8 @@ import type { OrgContext } from "./with-org.ts";
 // narrows the lines, the requests, the people and agents at work and the feed
 // to the requests from or to that team, by their current teams, and `agents`
 // the people at work and the feed to events recorded as agent; the teams are
-// always every team.
+// always every team. Titles and team names, like client names, come without
+// the characters that hide or reverse text (event-lines.ts).
 
 /** How many live requests the hall lists, the most recently changed first. */
 export const HALL_REQUESTS = 200;
@@ -203,7 +204,7 @@ export async function hallTeams(context: Pick<OrgContext, "tx" | "orgId">, now: 
   const queries = hallQueries(context.orgId, now, { teamId: undefined, agents: false });
   const rows = await rowsOf<TeamRow>(context, queries.teams);
   const done = new Map((await rowsOf<{ team_id: string; done: number }>(context, queries.done)).map(({ team_id, done }) => [team_id, done]));
-  return rows.map((row) => ({ id: row.id, key: row.key, counts: countsOf(row), doneLastDay: done.get(row.id) ?? 0, untrusted: { name: row.name } }));
+  return rows.map((row) => ({ id: row.id, key: row.key, counts: countsOf(row), doneLastDay: done.get(row.id) ?? 0, untrusted: { name: shownText(row.name) } }));
 }
 
 /** The lines between teams, by the keys of their teams. */
@@ -227,7 +228,7 @@ function requestRefOf(row: Pick<RequestRow, "id" | "number" | "title" | "state" 
   const from = teams.get(row.from_id);
   const to = teams.get(row.to_id);
   if (from === undefined || to === undefined) return undefined;
-  return { id: row.id, key: formatRequestKey(to.key, row.number), state: row.state, from: refOf(from), to: refOf(to), needsHuman: row.needs_human, untrusted: { title: row.title } };
+  return { id: row.id, key: formatRequestKey(to.key, row.number), state: row.state, from: refOf(from), to: refOf(to), needsHuman: row.needs_human, untrusted: { title: shownText(row.title) } };
 }
 
 /** The requests the rows read, as the hall lists them, with their claimants by login and bot flag. */

@@ -1,4 +1,5 @@
 import type { RequestState } from "@tiehall/core";
+import { stripInvisible } from "@tiehall/packet/render";
 import { updateDescription } from "@tiehall/packet/tool-text";
 
 // One description of a domain event about a request, and of who caused it
@@ -15,7 +16,10 @@ import { updateDescription } from "@tiehall/packet/tool-text";
 // Tiehall verified, a registered client's marked unverified, or "unnamed
 // client" when it gave none; the tiehall CLI with its version; and a personal
 // access token as such. The words hold no one's text but logins and client
-// names.
+// names. A client's name, a title and a team's name are shown without the
+// characters that hide or reverse text, the ones the agent view strips, and a
+// page sets a client's name apart from the mark Tiehall gives it, so that no
+// name can turn the mark "unverified" or a verified host round or hide it.
 
 /** A user as an event names them. */
 export interface EventUser {
@@ -73,26 +77,42 @@ export function actorWords(actor: EventActor): string {
   }
 }
 
-/** A client, in Tiehall's words, such as "Example Agent (client.example.com)", "Claude Code (unverified)" or "tiehall CLI 0.4.0". */
-export function clientWords(client: ActorClient): string {
+/**
+ * Text people or agents wrote, such as a client's name, a title or a team's
+ * name, as the web UI shows it: without the characters that hide or reverse
+ * text (U+200B to U+200F, U+202A to U+202E, U+2060 to U+2064, U+2066 to
+ * U+2069, U+FEFF and the tag characters), which the agent view strips too, so
+ * that a name holding U+202E cannot reverse the words Tiehall puts after it.
+ */
+export function shownText(text: string): string {
+  return stripInvisible(text);
+}
+
+/** A client as a page shows it: its name, the client's own claim or Tiehall's words for it, and the mark Tiehall gives it, apart, which a page keeps out of the name's isolation. */
+export interface ClientParts {
+  name: string;
+  mark: string | null;
+}
+
+/** A client's name and its mark: the verified host of a metadata document, "(unverified)" for a registered client, and none for the CLI or a personal access token. */
+export function clientParts(client: ActorClient): ClientParts {
   const name = client.untrusted.name ?? "unnamed client";
   switch (client.kind) {
     case "metadata_document":
-      return client.host === null ? name : `${name} (${client.host})`;
+      return { name, mark: client.host === null ? null : `(${client.host})` };
     case "registered":
-      return `${name} (unverified)`;
+      return { name, mark: "(unverified)" };
     case "cli":
-      return client.version === null ? "tiehall CLI" : `tiehall CLI ${client.version}`;
+      return { name: client.version === null ? "tiehall CLI" : `tiehall CLI ${client.version}`, mark: null };
     case "personal_access_token":
-      return "personal access token";
+      return { name: "personal access token", mark: null };
   }
 }
 
-/** How an actor acted, in a few words: "agent" with its client, or "web". */
-export function actedThrough(actor: EventActor): string | undefined {
-  if (actor.kind === "agent") return actor.client === null ? "agent" : `agent · ${clientWords(actor.client)}`;
-  if (actor.kind === "web") return "web";
-  return undefined;
+/** A client, in Tiehall's words, such as "Example Agent (client.example.com)", "Claude Code (unverified)" or "tiehall CLI 0.4.0". */
+export function clientWords(client: ActorClient): string {
+  const { name, mark } = clientParts(client);
+  return mark === null ? name : `${name} ${mark}`;
 }
 
 /** A state's words, as the request's state chip says it. */

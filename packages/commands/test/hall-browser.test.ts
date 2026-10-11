@@ -361,6 +361,15 @@ describe("the live hall's script", () => {
     await openRequest(install, tokenOf(id("selin")), { targetTeam: "FE", title: "<script>alert(2)</script>" });
     await page.locator("#feed .feed-title", { hasText: "<script>alert(2)</script>" }).first().waitFor();
     await page.locator("#hall-map .map-chip", { hasText: "<img src=x onerror=alert(1)> (unverified)" }).waitFor();
+    // The client's name, its own claim, is isolated in a bdi, apart from the mark Tiehall gives it, so no character of it can reorder the mark.
+    const named = page.locator("#at-work .worker-who", { hasText: "mert's agent · <img src=x onerror=alert(1)> (unverified)" }).first();
+    await expect(named.locator("bdi.client-name").textContent()).resolves.toBe("<img src=x onerror=alert(1)>");
+    await expect(named.locator("bdi.client-name + .client-mark").textContent()).resolves.toBe("(unverified)");
+    const chip = page.locator("#hall-map .map-chip", { hasText: "<img src=x onerror=alert(1)> (unverified)" }).first();
+    await expect(chip.locator("bdi.client-name").textContent()).resolves.toBe("<img src=x onerror=alert(1)>");
+    await expect(chip.locator("bdi.client-name + .client-mark").textContent()).resolves.toBe("(unverified)");
+    await expect(page.locator("#feed bdi.feed-title", { hasText: "<script>alert(2)</script>" }).count()).resolves.toBeGreaterThan(0);
+    await expect(page.locator("#team-list bdi.team-name").count()).resolves.toBeGreaterThan(0);
     await expect(page.locator("main img, main script").count()).resolves.toBe(0);
     expect(hall.dialogs).toEqual([]);
     expect(await page.evaluate("window.tiehallViolations")).toEqual([]);
