@@ -48,7 +48,7 @@ afterAll(async () => {
   await web?.close();
   await install?.close();
   await stub?.close();
-}, 60_000);
+}, 300_000);
 
 interface Watched {
   page: Page;

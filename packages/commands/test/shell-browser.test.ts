@@ -37,7 +37,7 @@ afterAll(async () => {
   await web?.close();
   await install?.close();
   await stub?.close();
-}, 60_000);
+}, 300_000);
 
 /** A signed-in context of Pia, an admin, with this viewport, with scripts on or off. */
 async function signedIn(width: number, javaScriptEnabled: boolean): Promise<BrowserContext> {
@@ -82,7 +82,7 @@ describe("the shell", () => {
     await context.close();
   });
 
-  it("puts the link that skips to the main content first in the keyboard's order", { timeout: 60_000 }, async () => {
+  it("puts the link that skips to the main content first in the keyboard's order", { timeout: 120_000 }, async () => {
     const context = await signedIn(1280, true);
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);

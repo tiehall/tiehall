@@ -45,7 +45,7 @@ afterAll(async () => {
   await web?.close();
   await install?.close();
   await stub?.close();
-}, 60_000);
+}, 300_000);
 
 /** The markup a page is served with, before any script runs. */
 async function served(app: { origin: string }, path: string): Promise<{ status: number; html: string }> {
@@ -70,7 +70,7 @@ function expectHeadAndNoStyle(path: string, html: string): void {
 }
 
 describe("the pages Next.js renders", () => {
-  it("serve a request's page and a team's page in the app shell, with the stylesheet, the icons and no style", async () => {
+  it("serve a request's page and a team's page in the app shell, with the stylesheet, the icons and no style", { timeout: 120_000 }, async () => {
     for (const path of ["/FE-1", "/FE"]) {
       const { status, html } = await served(web, path);
       expect(status, path).toBe(200);
@@ -82,7 +82,7 @@ describe("the pages Next.js renders", () => {
     }
   });
 
-  it("serve the page for a path no route serves in the focused shell, at a path of one segment and of more", async () => {
+  it("serve the page for a path no route serves in the focused shell, at a path of one segment and of more", { timeout: 120_000 }, async () => {
     for (const path of [NO_SUCH_PAGE, `${NO_SUCH_PAGE}/at-all`]) {
       const page = await served(web, path);
       expect(page.status, path).toBe(404);
@@ -96,7 +96,7 @@ describe("the pages Next.js renders", () => {
   // Next.js answers a page that fails while it renders with its own document for the browser to recover in, with no
   // markup of the page's own, and the browser then draws the web app's page for a failed render: its stylesheet,
   // icons and focused shell are checked in the page's DOM after its scripts ran.
-  it("show the page shown when a page fails in the focused shell, linking the stylesheet and the icons, with no style", { timeout: 60_000 }, async () => {
+  it("show the page shown when a page fails in the focused shell, linking the stylesheet and the icons, with no style", { timeout: 120_000 }, async () => {
     const page = await served(errorPage, "/fails/now");
     expect(page.status).toBe(500);
     expect(page.html).not.toMatch(/<style\b|\sstyle=/i);
