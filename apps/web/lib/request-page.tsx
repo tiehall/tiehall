@@ -496,8 +496,8 @@ const TERMINAL: ReadonlySet<string> = new Set(["done", "declined", "withdrawn"])
 function ActionsSection({ request, parts, csrf }: { request: Request; parts: Parts; csrf: string }): ReactNode {
   const forms: ReactNode[] = [];
   const { key, state, claimant, targetTeam } = request;
-  if (state === "open" && parts.targetTeam) forms.push(<ActionForm key="claim" requestKey={key} action="claim" csrf={csrf} button="Claim" className="stack" />);
-  if (state === "claimed" && parts.targetTeam) forms.push(<ActionForm key="start" requestKey={key} action="start" csrf={csrf} button="Start work" className="stack" />);
+  if (state === "open" && parts.targetTeam) forms.push(<ActionForm key="claim" requestKey={key} action="claim" csrf={csrf} button="Claim" className="stack" buttonClass="strong" />);
+  if (state === "claimed" && parts.targetTeam) forms.push(<ActionForm key="start" requestKey={key} action="start" csrf={csrf} button="Start work" className="stack" buttonClass="strong" />);
   if (claimant !== null && !TERMINAL.has(state) && (parts.claimant || parts.targetTeam)) {
     forms.push(
       <ActionForm key="release" requestKey={key} action="release" csrf={csrf} button="Release the claim" className="stack" buttonClass="secondary">
@@ -651,7 +651,7 @@ function CommitmentsSection({ data, parts, csrf }: { data: RequestPageData; part
   const forms: ReactNode[] = [];
   if (!TERMINAL.has(state)) {
     if (parts.targetTeam) {
-      if (DONE_FROM.has(state)) forms.push(<ActionForm key="done" requestKey={key} action="done" csrf={csrf} button="Mark done" className="stack" />);
+      if (DONE_FROM.has(state)) forms.push(<ActionForm key="done" requestKey={key} action="done" csrf={csrf} button="Mark done" className="stack" buttonClass="strong" />);
       forms.push(<ActionForm key="decline" requestKey={key} action="decline" csrf={csrf} button="Decline" className="stack" buttonClass="secondary" />);
       const others = teams.filter((team) => team.key !== request.targetTeam.key);
       if (others.length > 0) {

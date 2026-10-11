@@ -18,7 +18,7 @@ export interface ActionFormProps {
   button: string;
   /** The form's class, such as the stacked form of a side panel. */
   className?: string;
-  /** The button's class: none for a primary button, secondary for the others. */
+  /** The button's class: none for the page's main action, which is gold; strong for a move of the request's state, which is navy; secondary for the others (D59 (2)). */
   buttonClass?: string;
   children?: ReactNode;
 }

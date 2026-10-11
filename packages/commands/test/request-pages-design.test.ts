@@ -160,6 +160,10 @@ describe("a request's page", () => {
     expect(actions).toMatch(/<form[^>]*class="stack"[\s\S]*<button type="submit" class="secondary">Release the claim<\/button>/);
     const commitments = element(one, /<section aria-labelledby="commitments"/, "section");
     for (const button of ["Mark done", "Decline", "Reassign", "Propose the due date", "Propose removing the due date"]) expect(commitments).toContain(`>${button}</button>`);
+    // A move of the request's state is a strong secondary action, navy; posting to the thread, where a blocking
+    // question is answered, is the page's gold main action (D59 (2)).
+    expect(commitments).toContain('<button type="submit" class="strong">Mark done</button>');
+    expect(element(one, /<section aria-labelledby="post"/, "section")).toContain('<button type="submit">Post</button>');
     expect(commitments).toContain('<label for="team">Team to reassign it to</label>');
     const proposals = element((await open("/FE-2")).html, /<section aria-labelledby="proposals"/, "section");
     expect(textOf(proposals)).toMatch(/A decline, pending, proposed by pia (\d+ s ago|just now) ?\./);
