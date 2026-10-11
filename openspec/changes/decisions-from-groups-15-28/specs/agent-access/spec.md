@@ -33,7 +33,7 @@ Source: D8; D55 (14); design.md, Decisions this change rests on; design.md, Rule
 
 #### Scenario: The token endpoint's limit
 
-- **WHEN** the address `203.0.113.5` has called the token endpoint 20 times within one minute and calls it again in that minute
+- **WHEN** the address `203.0.113.5` has made 20 calls to the token endpoint within one minute other than the CLI's polls, such as refresh token exchanges, and makes another such call in that minute
 - **THEN** Tiehall answers 429 with a `Retry-After` header
 - **AND** issues no token for that call
 - **AND** a call to the token endpoint from `198.51.100.7` in that minute is not refused for the limit
