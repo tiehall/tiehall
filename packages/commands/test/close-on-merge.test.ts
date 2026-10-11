@@ -117,6 +117,23 @@ async function mergedPullRequest(
   return opened.number;
 }
 
+/**
+ * The merge of a pull request in acme/tools, which no connected installation covers: GitHub sends the installation
+ * nothing about it, so the test forges the delivery that names it, and processes it as the worker does.
+ */
+async function forgedUncoveredMerge(merged: { number: number; mergedAt: string | null; title: string; head: { ref: string }; repo: { id: number } }): Promise<void> {
+  const [installation] = stub.installations(provider.app);
+  const delivery = await stub.deliver(provider.app, "pull_request", {
+    action: "closed",
+    number: merged.number,
+    pull_request: { number: merged.number, state: "closed", merged_at: merged.mergedAt, title: merged.title, head: { ref: merged.head.ref }, base: { ref: "main" } },
+    repository: { id: merged.repo.id, full_name: "acme/tools" },
+    installation: { id: installation!.id },
+    sender: { id: provider.account("bob"), login: "bob" },
+  });
+  await processDelivery({ database: install.db, github: provider.github, execute: install.execute }, await storeDelivery(install, delivery!));
+}
+
 /** The state-change events of the request, with their provenance. */
 async function stateChangesOf(requestId: string): Promise<{ actor_kind: string; surface: string | null; actor_user_id: string | null; data: Record<string, unknown> }[]> {
   const { rows } = await install.owner.query(
@@ -180,6 +197,56 @@ describe("a pull request that qualifies", () => {
 
     const { rows } = await install.owner.query("SELECT state, cancel_reason FROM proposals WHERE request_id = $1", [request.id]);
     expect(rows).toEqual([{ state: "cancelled", cancel_reason: "terminal_state" }]);
+  });
+
+  // A claim recorded in the same second as the merge counts as made before it, since GitHub's times have whole seconds
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (72)).
+  it("moves a request claimed in the second the pull request merged to done", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const opened = await stub.openPullRequest("acme/web", { title: `Fix ${request.key}`, head: "fix-in-the-same-second", author: "bob" });
+    await deliver("acme/web", opened.number, "opened");
+    const merged = await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+    expect(merged.mergedAt).toMatch(/:\d\dZ$/);
+    // The claim is recorded 900 milliseconds into the second GitHub gives as the merge's time.
+    await install.owner.query("UPDATE requests SET claimed_at = $2::timestamptz + interval '900 milliseconds' WHERE id = $1", [request.id, merged.mergedAt]);
+
+    await deliver("acme/web", opened.number, "closed");
+
+    expect((await stateOf(request.id)).state).toBe("done");
+  });
+
+  // The head branch's name cannot change, so a key in it counts though Tiehall reads it only after the merge
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (73)).
+  it("moves a request whose key is in the branch name to done, though Tiehall first reads the pull request merged", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    // No delivery is processed while the pull request is open: Tiehall reads it first at its merge.
+    const opened = await stub.openPullRequest("acme/web", { title: "Move the footer", head: `${request.key}-footer`, author: "bob" });
+    await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+
+    await deliver("acme/web", opened.number, "closed");
+
+    expect((await stateOf(request.id)).state).toBe("done");
+  });
+
+  // A key read while the pull request was open counts after it is closed and reopened, until a later read finds it gone
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (73)).
+  it("moves a request whose key Tiehall read in an earlier open period of a reopened pull request to done", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const opened = await stub.openPullRequest("acme/web", { title: "Sidebar", body: `Closes ${request.key}`, head: "sidebar-again", author: "bob" });
+    await deliver("acme/web", opened.number, "opened");
+    await stub.closePullRequest("acme/web", opened.number, { by: "bob" });
+    await deliver("acme/web", opened.number, "closed");
+    expect((await stateOf(request.id)).state).toBe("claimed");
+    // Reopened and merged before Tiehall reads it open again.
+    await stub.reopenPullRequest("acme/web", opened.number, { by: "bob" });
+    await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+
+    await deliver("acme/web", opened.number, "closed");
+
+    expect((await stateOf(request.id)).state).toBe("done");
   });
 
   it("acts for no user when the member who merged it was removed, and still closes the request", async () => {
@@ -269,6 +336,25 @@ describe("a pull request that does not qualify", () => {
     expect((await stateOf(request.id)).state).toBe("claimed");
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (73).
+  it("leaves a claimed request alone when a read after a reopen finds the key an earlier open period's read found gone", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const opened = await stub.openPullRequest("acme/web", { title: "Navbar", body: `Closes ${request.key}`, head: "navbar-again", author: "bob" });
+    await deliver("acme/web", opened.number, "opened");
+    await stub.closePullRequest("acme/web", opened.number, { by: "bob" });
+    await deliver("acme/web", opened.number, "closed");
+    await stub.reopenPullRequest("acme/web", opened.number, { by: "bob" });
+    await stub.editPullRequest("acme/web", opened.number, { body: "Closes nothing yet." });
+    await deliver("acme/web", opened.number, "edited");
+    await stub.mergePullRequest("acme/web", opened.number, { by: "bob" });
+
+    await deliver("acme/web", opened.number, "closed");
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect(await stateChangesOf(request.id)).toEqual([]);
+  });
+
   it("leaves an open request that a merged pull request was linked to open", async () => {
     const request = await feRequest();
     await mergedPullRequest("acme/web", {}, async (number) => {
@@ -282,20 +368,29 @@ describe("a pull request that does not qualify", () => {
     const request = await feRequest();
     await install.execute("requests.claim", sessionOf(bob), { key: request.key });
     const opened = await stub.openPullRequest("acme/tools", { title: `Fix ${request.key}`, head: `${request.key}-tools`, author: "bob" });
-    const merged = await stub.mergePullRequest("acme/tools", opened.number, { by: "bob" });
     // GitHub sends the installation nothing about acme/tools; a forged delivery that names it is read and dropped.
-    const [installation] = stub.installations(provider.app);
-    const delivery = await stub.deliver(provider.app, "pull_request", {
-      action: "closed",
-      number: merged.number,
-      pull_request: { number: merged.number, state: "closed", merged_at: merged.mergedAt, title: merged.title, head: { ref: merged.head.ref }, base: { ref: "main" } },
-      repository: { id: merged.repo.id, full_name: "acme/tools" },
-      installation: { id: installation!.id },
-      sender: { id: provider.account("bob"), login: "bob" },
-    });
-    await processDelivery({ database: install.db, github: provider.github, execute: install.execute }, await storeDelivery(install, delivery!));
+    await forgedUncoveredMerge(await stub.mergePullRequest("acme/tools", opened.number, { by: "bob" }));
 
     expect((await stateOf(request.id)).state).toBe("claimed");
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (72).
+  it("links a pull request in a repository no connected installation covers, whose merge then closes nothing", async () => {
+    const request = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+    const opened = await stub.openPullRequest("acme/tools", { title: "Tidy the tools", head: "tidy-tools", author: "bob" });
+
+    await install.execute("requests.link_pr", sessionOf(bob), { key: request.key, url: `https://github.com/acme/tools/pull/${opened.number}` });
+    const { rows: links } = await install.owner.query("SELECT repository_owner, repository_name, number, actor_user_id FROM pull_request_links WHERE request_id = $1", [request.id]);
+    expect(links).toEqual([{ repository_owner: "acme", repository_name: "tools", number: opened.number, actor_user_id: bob }]);
+    const { rows: linked } = await install.owner.query("SELECT count(*)::int AS count FROM events WHERE type = 'request.pull_request_linked' AND data ->> 'requestId' = $1", [request.id]);
+    expect(linked).toEqual([{ count: 1 }]);
+
+    await forgedUncoveredMerge(await stub.mergePullRequest("acme/tools", opened.number, { by: "bob" }));
+
+    expect(await stateOf(request.id)).toEqual({ state: "claimed", claimant_user_id: bob });
+    expect(await stateChangesOf(request.id)).toEqual([]);
+    expect(await proposalCount(request.id)).toBe(0);
   });
 
   it("never lets the provider pull request close a request of its own change set, even when it mentions and links it", async () => {

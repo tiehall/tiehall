@@ -238,6 +238,28 @@ describe("a provider pull request reopened after it closed without merging", () 
     expect((await requestsTo(number, "QA")).map(({ state }) => state)).toEqual(["done"]);
   });
 
+  // After a reopen, the first report whose changes open requests opens them, not only the next report
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (72)).
+  it("opens the new request from a later report when its first report after the reopen has no ERR-level change", async () => {
+    const { number, fe } = await pullRequestWithRequests();
+    await stub.closePullRequest("acme/payments", number, { by: "deniz" });
+    await deliver(number, "closed");
+    await stub.reopenPullRequest("acme/payments", number, { by: "deniz" });
+    await deliver(number, "reopened");
+
+    const warnings = changesOf("warning");
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.some(({ level }) => level === "ERR")).toBe(false);
+    await pushReports(number, warnings, "c");
+    expect(await requestsTo(number, "FE")).toEqual([{ ...fe, state: "withdrawn" }]);
+
+    await pushReports(number, changesOf("breaking"), "d");
+
+    const feRequests = await requestsTo(number, "FE");
+    expect(feRequests.map(({ state }) => state)).toEqual(["withdrawn", "open"]);
+    expect(feRequests[0]?.id).toBe(fe.id);
+  });
+
   it("opens no request from a report that comes while the pull request is closed, and opens it once the pull request is reopened", async () => {
     const { number, mobile } = await pullRequestWithRequests();
     await stub.closePullRequest("acme/payments", number, { by: "deniz" });
