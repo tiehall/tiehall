@@ -133,6 +133,15 @@ export interface CommandDefinition<Input extends z.ZodType = z.ZodType, Output e
   /** It needs the confirmation step, so it runs only in the web UI and no agent surface offers it. */
   readonly confirm: boolean;
   /**
+   * For a commitment operation that also withdraws a pending proposal of the
+   * caller's user: such a call makes no commitment and takes effect at once,
+   * so REST answers it 200 with the proposal it ended, which the operation's
+   * 200 answer allows beside its output (public-api: Commitments over the API
+   * answer 202 with a proposal; decisions-from-groups-15-28: design.md,
+   * Decisions this change rests on: D55 (37)).
+   */
+  readonly endsProposals?: boolean;
+  /**
    * The admin action it is, from the role matrix, for an operation only admins
    * may run (teams-and-roles: What admins and members may do): it runs only in
    * the web UI, so no agent surface offers it.

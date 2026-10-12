@@ -63,7 +63,9 @@ import { createLogger, type Logger } from "./log.ts";
 // - it runs the operation through execute() and answers with its output as
 //   JSON, with 200, or, for a call that makes a commitment, with 202 and the
 //   proposal it became (public-api: Commitments over the API answer 202 with
-//   a proposal). Its callers are
+//   a proposal); a call that withdraws a pending proposal makes none, and
+//   answers 200 with the proposal it ended (decisions-from-groups-15-28:
+//   design.md, Decisions this change rests on: D55 (37)). Its callers are
 //   agents and their tools, and the JSON variant of a request URL is the same
 //   read, so the output is JSON as agents read it: without the invisible
 //   characters the renderer strips, while what people wrote stays stored as
@@ -210,7 +212,9 @@ export function createRestHandler(options: RestOptions): RestHandler {
           }
         }
       }
-      const statusOf = (output: unknown) => (definition.commitment && isProposalAnswer(output) ? 202 : 200);
+      // A commitment answers 202 with the proposal it became; a withdrawal of a pending proposal made none, and answers 200 (D55 (37)).
+      const statusOf = (output: unknown) =>
+        definition.commitment && isProposalAnswer(output) && !(definition.endsProposals === true && output.proposal.state !== "pending") ? 202 : 200;
       const ipAddress = request.headers.get("x-forwarded-for") ?? undefined;
       const userAgent = request.headers.get("user-agent") ?? undefined;
       const executeOptions: ExecuteOptions = {

@@ -18,7 +18,10 @@ import { teamKey } from "./teams.ts";
 //   the request is claimed, and otherwise is added at once;
 // - reassign and withdraw, as requests.propose does on REST.
 // It also withdraws a pending proposal of the caller's user, named by its id,
-// answered with the proposal it ended.
+// answered with the proposal it ended; that call makes no commitment, so REST
+// answers it 200, and a commitment 202 (public-api: Commitments over the API
+// answer 202 with a proposal; decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (37)).
 //
 // A packet change names the revision it expects in expectedRevision, where
 // REST takes it from If-Match: none is refused as REST refuses a missing
@@ -75,6 +78,7 @@ export const proposeTool = defineCommand({
   scopes: ["requests:write"],
   commitment: true,
   confirm: false,
+  endsProposals: true,
   surfaces: ["rest", "mcp", "cli"],
   tool: "propose",
   cli: [{ command: "propose", arguments: ["kind", "key"] }],

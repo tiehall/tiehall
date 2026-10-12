@@ -142,4 +142,24 @@ describe("propose on /api/v1", () => {
     const withdrawn = await api(dana, "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: reassign.body.proposal.id });
     expect(withdrawn.body).toMatchObject({ proposal: { id: reassign.body.proposal.id, state: "withdrawn" } });
   });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (37): a withdrawal makes no commitment
+  // and takes effect at once, so it answers 200 with the ended proposal, while a commitment still answers 202.
+  it("answers a withdrawal with 200 and the withdrawn proposal, and a due date still with 202", async () => {
+    const request = await openToFe();
+    const proposed = await api(dana, "POST", "/api/v1/proposals", { kind: "due_date", key: request.key, dueDate: "2026-10-20" }, { "if-match": '"1"' });
+    expect(proposed).toMatchObject({ status: 202, body: { proposal: { kind: "due_date", state: "pending" } } });
+    const withdrawn = await api(dana, "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: proposed.body.proposal.id });
+    expect(withdrawn.status).toBe(200);
+    expect(withdrawn.body).toMatchObject({ proposal: { id: proposed.body.proposal.id, kind: "due_date", state: "withdrawn", endedAt: expect.stringMatching(/Z$/) } });
+    expect(JSON.stringify(withdrawn.body)).not.toContain("/confirm/");
+  });
+
+  it("says in the OpenAPI document that its 200 answer may carry the ended proposal", async () => {
+    const answer = await harness.api("GET", "/api/v1/openapi.json", {});
+    const document = (await answer.json()) as { paths: Record<string, Record<string, { responses: Record<string, { content: { "application/json": { schema: unknown } } }> }>> };
+    const responses = document.paths["/api/v1/proposals"]?.["post"]?.responses ?? {};
+    expect(JSON.stringify(responses["200"]?.content["application/json"].schema)).toContain('"proposal"');
+    expect(responses["202"]).toBeDefined();
+  });
 });

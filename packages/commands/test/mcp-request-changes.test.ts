@@ -219,6 +219,10 @@ describe.each(PROTOCOL_VERSIONS)("propose, on protocol version %s", (version) =>
     const proposalId = (proposed.structuredContent as { proposal: { id: string } }).proposal.id;
     const withdrawn = await call(sam, version, "propose", { kind: "withdraw_proposal", proposal: proposalId });
     expect(withdrawn.isError).not.toBe(true);
+    // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (37): the REST answer of a withdrawal
+    // becomes 200, and the tool's answer stays the ended proposal.
+    expect(withdrawn.structuredContent).toMatchObject({ proposal: { id: proposalId, state: "withdrawn" } });
+    expect(Object.keys(withdrawn.structuredContent ?? {})).toEqual(["proposal"]);
     const { rows } = await harness.install.owner.query("SELECT state FROM proposals WHERE id = $1", [proposalId]);
     expect(rows[0]?.state).toBe("withdrawn");
     const packet = (await (await harness.api("GET", `/api/v1/requests/${request.key}/packet`, { authorization: `Bearer ${sam.token}` })).json()) as { packet: { due_date?: string } };

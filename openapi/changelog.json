@@ -21,6 +21,14 @@
         "events.wait"
       ],
       "text": "Each entry of GET /api/v1/events/wait now names its request and its team as requestKey and teamKey, as the rest of the API names its fields, instead of request_key and team_key. The break is made before the first release, without the notice period, because no released install serves the old names and the approved OpenSpec change decisions-from-groups-15-28 names it; info.version is 0.2.0."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "breaking",
+      "operationIds": [
+        "proposals.propose"
+      ],
+      "text": "POST /api/v1/proposals with the kind withdraw_proposal now answers 200 with the proposal it ended, as { \"proposal\": … }, instead of 202: a withdrawal makes no commitment and takes effect at once, and the 200 answer allows that body. A commitment proposed through the same operation still answers 202, and the MCP tool propose answers as before. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it."
     }
   ],
   "releases": []

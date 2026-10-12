@@ -285,9 +285,13 @@ function responsesOf(shape: RestShape): ZodOpenApiResponsesObject {
   const { definition, method } = shape;
   const responses: ZodOpenApiResponsesObject = {
     "200": {
-      description: definition.commitment ? "The operation's result, for a call that makes no commitment." : "The operation's result.",
+      description: definition.endsProposals
+        ? "The operation's result, for a call that makes no commitment; for a call that withdraws a pending proposal, which takes effect at once, the proposal it ended."
+        : definition.commitment
+          ? "The operation's result, for a call that makes no commitment."
+          : "The operation's result.",
       ...(definition.etag === undefined ? {} : { headers: etagHeader }),
-      content: { "application/json": { schema: shape.output } },
+      content: { "application/json": { schema: definition.endsProposals ? z.union([shape.output, proposalAnswer]) : shape.output } },
     },
   };
   if (definition.commitment) {

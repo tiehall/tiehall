@@ -2934,178 +2934,20 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "packet": {
+                  "anyOf": [
+                    {
                       "properties": {
-                        "createdAt": {
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
-                          "type": "string"
-                        },
                         "packet": {
-                          "$ref": "#/components/schemas/Packet"
-                        },
-                        "request": {
                           "properties": {
-                            "id": {
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
                               "type": "string"
                             },
-                            "key": {
-                              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "key"
-                          ],
-                          "type": "object"
-                        },
-                        "revision": {
-                          "maximum": 9007199254740991,
-                          "minimum": 1,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "request",
-                        "revision",
-                        "createdAt",
-                        "packet"
-                      ],
-                      "type": "object"
-                    },
-                    "request": {
-                      "properties": {
-                        "claimant": {
-                          "anyOf": [
-                            {
-                              "properties": {
-                                "bot": {
-                                  "type": "boolean"
-                                },
-                                "id": {
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "const": "human",
-                                  "type": "string"
-                                },
-                                "login": {
-                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "id",
-                                "login",
-                                "kind",
-                                "bot"
-                              ],
-                              "type": "object"
+                            "packet": {
+                              "$ref": "#/components/schemas/Packet"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
-                          "type": "string"
-                        },
-                        "id": {
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                          "type": "string"
-                        },
-                        "key": {
-                          "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
-                          "type": "string"
-                        },
-                        "needsHuman": {
-                          "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
-                          "type": "boolean"
-                        },
-                        "providerChange": {
-                          "anyOf": [
-                            {
-                              "properties": {
-                                "api": {
-                                  "description": "The registered API the provider change is to, such as payments-api.",
-                                  "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                  "type": "string"
-                                },
-                                "pullRequest": {
-                                  "description": "The provider pull request that makes the change.",
-                                  "properties": {
-                                    "number": {
-                                      "maximum": 9007199254740991,
-                                      "minimum": 1,
-                                      "type": "integer"
-                                    },
-                                    "repository": {
-                                      "description": "The provider pull request's repository, as owner/name.",
-                                      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
-                                      "type": "string"
-                                    },
-                                    "url": {
-                                      "description": "The provider pull request's URL on GitHub.com.",
-                                      "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "repository",
-                                    "number",
-                                    "url"
-                                  ],
-                                  "type": "object"
-                                },
-                                "shippedAt": {
-                                  "anyOf": [
-                                    {
-                                      "format": "date-time",
-                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ],
-                                  "description": "When the provider pull request merged, which shipped the change; null until it has."
-                                },
-                                "status": {
-                                  "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
-                                  "enum": [
-                                    "open",
-                                    "merged",
-                                    "closed"
-                                  ],
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "api",
-                                "pullRequest",
-                                "status",
-                                "shippedAt"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
-                        },
-                        "requester": {
-                          "properties": {
-                            "team": {
+                            "request": {
                               "properties": {
                                 "id": {
                                   "format": "uuid",
@@ -3113,7 +2955,7 @@
                                   "type": "string"
                                 },
                                 "key": {
-                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                                   "type": "string"
                                 }
                               },
@@ -3123,7 +2965,23 @@
                               ],
                               "type": "object"
                             },
-                            "user": {
+                            "revision": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "request",
+                            "revision",
+                            "createdAt",
+                            "packet"
+                          ],
+                          "type": "object"
+                        },
+                        "request": {
+                          "properties": {
+                            "claimant": {
                               "anyOf": [
                                 {
                                   "properties": {
@@ -3156,80 +3014,641 @@
                                   "type": "null"
                                 }
                               ]
-                            }
-                          },
-                          "required": [
-                            "user",
-                            "team"
-                          ],
-                          "type": "object"
-                        },
-                        "state": {
-                          "enum": [
-                            "open",
-                            "claimed",
-                            "in_progress",
-                            "needs_info",
-                            "done",
-                            "declined",
-                            "withdrawn"
-                          ],
-                          "type": "string"
-                        },
-                        "targetTeam": {
-                          "properties": {
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
                             "id": {
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                               "type": "string"
                             },
                             "key": {
-                              "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                              "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                               "type": "string"
+                            },
+                            "needsHuman": {
+                              "description": "Whether it waits for a person: agents made too many writes on it, so they get 409 needs-human until a member posts a message on it in the web UI or confirms a proposal on it there.",
+                              "type": "boolean"
+                            },
+                            "providerChange": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "api": {
+                                      "description": "The registered API the provider change is to, such as payments-api.",
+                                      "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
+                                      "type": "string"
+                                    },
+                                    "pullRequest": {
+                                      "description": "The provider pull request that makes the change.",
+                                      "properties": {
+                                        "number": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "repository": {
+                                          "description": "The provider pull request's repository, as owner/name.",
+                                          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}$",
+                                          "type": "string"
+                                        },
+                                        "url": {
+                                          "description": "The provider pull request's URL on GitHub.com.",
+                                          "pattern": "^https:\\/\\/github\\.com\\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9\\._-]{1,100}\\/pull\\/[1-9][0-9]{0,8}$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "repository",
+                                        "number",
+                                        "url"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "shippedAt": {
+                                      "anyOf": [
+                                        {
+                                          "format": "date-time",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "When the provider pull request merged, which shipped the change; null until it has."
+                                    },
+                                    "status": {
+                                      "description": "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
+                                      "enum": [
+                                        "open",
+                                        "merged",
+                                        "closed"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "api",
+                                    "pullRequest",
+                                    "status",
+                                    "shippedAt"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request."
+                            },
+                            "requester": {
+                              "properties": {
+                                "team": {
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
+                                },
+                                "user": {
+                                  "anyOf": [
+                                    {
+                                      "properties": {
+                                        "bot": {
+                                          "type": "boolean"
+                                        },
+                                        "id": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "human",
+                                          "type": "string"
+                                        },
+                                        "login": {
+                                          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "login",
+                                        "kind",
+                                        "bot"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "user",
+                                "team"
+                              ],
+                              "type": "object"
+                            },
+                            "state": {
+                              "enum": [
+                                "open",
+                                "claimed",
+                                "in_progress",
+                                "needs_info",
+                                "done",
+                                "declined",
+                                "withdrawn"
+                              ],
+                              "type": "string"
+                            },
+                            "targetTeam": {
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "title"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "id",
-                            "key"
-                          ],
-                          "type": "object"
-                        },
-                        "untrusted": {
-                          "properties": {
-                            "title": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "title"
+                            "key",
+                            "state",
+                            "targetTeam",
+                            "requester",
+                            "claimant",
+                            "createdAt",
+                            "needsHuman",
+                            "providerChange",
+                            "untrusted"
                           ],
                           "type": "object"
                         }
                       },
                       "required": [
-                        "id",
-                        "key",
-                        "state",
-                        "targetTeam",
-                        "requester",
-                        "claimant",
-                        "createdAt",
-                        "needsHuman",
-                        "providerChange",
-                        "untrusted"
+                        "request",
+                        "packet"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "properties": {
+                        "proposal": {
+                          "properties": {
+                            "accountableHuman": {
+                              "properties": {
+                                "bot": {
+                                  "type": "boolean"
+                                },
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "human",
+                                  "type": "string"
+                                },
+                                "login": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "login",
+                                "kind",
+                                "bot"
+                              ],
+                              "type": "object"
+                            },
+                            "cancelReason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "terminal_state",
+                                    "reassigned",
+                                    "accountable_removed",
+                                    "stale"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "change": {
+                              "properties": {
+                                "dueDate": {
+                                  "anyOf": [
+                                    {
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "team": {
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "confirmations": {
+                              "properties": {
+                                "needed": {
+                                  "items": {
+                                    "properties": {
+                                      "rules": {
+                                        "items": {
+                                          "enum": [
+                                            "target_team",
+                                            "requester_side",
+                                            "claimant"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "step": {
+                                        "enum": [
+                                          "accountable_human",
+                                          "other_side"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "team": {
+                                        "anyOf": [
+                                          {
+                                            "properties": {
+                                              "id": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                                "type": "string"
+                                              },
+                                              "key": {
+                                                "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "key"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "user": {
+                                        "anyOf": [
+                                          {
+                                            "properties": {
+                                              "bot": {
+                                                "type": "boolean"
+                                              },
+                                              "id": {
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "const": "human",
+                                                "type": "string"
+                                              },
+                                              "login": {
+                                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "login",
+                                              "kind",
+                                              "bot"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "step",
+                                      "user",
+                                      "rules",
+                                      "team"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "received": {
+                                  "items": {
+                                    "properties": {
+                                      "confirmedAt": {
+                                        "format": "date-time",
+                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                        "type": "string"
+                                      },
+                                      "step": {
+                                        "enum": [
+                                          "accountable_human",
+                                          "other_side"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "user": {
+                                        "properties": {
+                                          "bot": {
+                                            "type": "boolean"
+                                          },
+                                          "id": {
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                            "type": "string"
+                                          },
+                                          "kind": {
+                                            "const": "human",
+                                            "type": "string"
+                                          },
+                                          "login": {
+                                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "login",
+                                          "kind",
+                                          "bot"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    },
+                                    "required": [
+                                      "step",
+                                      "user",
+                                      "confirmedAt"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "needed",
+                                "received"
+                              ],
+                              "type": "object"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "endedAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "expiresAt": {
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                              "type": "string"
+                            },
+                            "id": {
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                              "type": "string"
+                            },
+                            "kind": {
+                              "description": "The kind of commitment it proposes.",
+                              "enum": [
+                                "due_date",
+                                "scope",
+                                "decline",
+                                "reassign",
+                                "withdraw",
+                                "done"
+                              ],
+                              "type": "string"
+                            },
+                            "proposedBy": {
+                              "properties": {
+                                "actorKind": {
+                                  "enum": [
+                                    "agent",
+                                    "web_session",
+                                    "integration"
+                                  ],
+                                  "type": "string"
+                                },
+                                "surface": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "web",
+                                        "mcp",
+                                        "cli",
+                                        "api",
+                                        "github",
+                                        "jira"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "user": {
+                                  "properties": {
+                                    "bot": {
+                                      "type": "boolean"
+                                    },
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "const": "human",
+                                      "type": "string"
+                                    },
+                                    "login": {
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "login",
+                                    "kind",
+                                    "bot"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "user",
+                                "actorKind",
+                                "surface"
+                              ],
+                              "type": "object"
+                            },
+                            "request": {
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
+                            },
+                            "state": {
+                              "description": "pending while it waits for its confirmations; applied once it took effect; otherwise how it ended without taking effect.",
+                              "enum": [
+                                "pending",
+                                "applied",
+                                "rejected",
+                                "withdrawn",
+                                "expired",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "client": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "packet": {
+                                  "anyOf": [
+                                    {
+                                      "$ref": "#/components/schemas/Packet"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "client",
+                                "packet"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "request",
+                            "kind",
+                            "state",
+                            "accountableHuman",
+                            "proposedBy",
+                            "change",
+                            "confirmations",
+                            "createdAt",
+                            "expiresAt",
+                            "endedAt",
+                            "cancelReason",
+                            "untrusted"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "proposal"
                       ],
                       "type": "object"
                     }
-                  },
-                  "required": [
-                    "request",
-                    "packet"
-                  ],
-                  "type": "object"
+                  ]
                 }
               }
             },
-            "description": "The operation's result, for a call that makes no commitment."
+            "description": "The operation's result, for a call that makes no commitment; for a call that withdraws a pending proposal, which takes effect at once, the proposal it ended."
           },
           "202": {
             "content": {
