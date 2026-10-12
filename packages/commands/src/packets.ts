@@ -1,6 +1,7 @@
 import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision, type Packet } from "@tiehall/catalog";
-import { changedPacketFields, jsonPatch, packetCommitments, Refusal } from "@tiehall/core";
+import { changedPacketFields, jsonPatch, packetCommitments, Refusal, sameJson } from "@tiehall/core";
 import { teams } from "@tiehall/db";
+import { agentJson } from "@tiehall/packet/render";
 import { and, eq } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
@@ -32,7 +33,13 @@ import { assertRevisionKeepsRequiredFields, REQUIRED_FIELD_CHECKS, type Requirin
 // or proposed, that drops a field the request's team requires and the current
 // revision has is refused with 400 and creates nothing
 // (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-// D55 (41); required-fields.ts).
+// D55 (41); required-fields.ts). A field whose new value reads, as agents
+// read it, the same as its current value is no change and keeps its stored
+// text, so an agent that sends back the packet it read, without the
+// characters the agent view strips, changes only what it changed
+// (agent-safety: Invisible characters are stripped from the agent view;
+// decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (36)).
 //
 // What changed since revision N (handoff-packet: What changed since revision
 // N): the fields that differ between revision N and the current revision, and
@@ -75,7 +82,7 @@ export async function revisePacket(
       `The packet is at revision ${current.revision}, not ${expectedRevision}: read it again and send its ETag in If-Match.`,
     );
   }
-  const packet = next(current.packet as Packet);
+  const packet = keptAsRead(current.packet as Packet, next(current.packet as Packet));
   if (packet.kind !== current.packet.kind) {
     const message = `A revision keeps the packet's kind, which is ${current.packet.kind}.`;
     throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
@@ -96,6 +103,23 @@ export async function revisePacket(
   }
   const teamId = await teamActedFor(context, userId, row);
   return context.write(async (writer) => packetRevisionOf(writer, row.id, await storePacketRevision(writer, row.id, packet)), { teamId });
+}
+
+/**
+ * The packet a change makes, with each field under untrusted whose new value
+ * reads, as agents read it, the same as its current value kept as it is
+ * stored: such a value is no change, so a packet read and sent back changes
+ * only what its sender changed, and the stored text keeps the characters the
+ * agent view strips, such as the carriage returns of a web form's line breaks.
+ */
+function keptAsRead(current: Packet, packet: Packet): Packet {
+  const before: Readonly<Record<string, unknown>> = current.untrusted;
+  const untrusted = Object.fromEntries(
+    Object.entries(packet.untrusted).map(([field, value]) =>
+      Object.hasOwn(before, field) && sameJson(agentJson(value), agentJson(before[field])) ? [field, before[field]] : [field, value],
+    ),
+  );
+  return { ...packet, untrusted } as Packet;
 }
 
 /** The team a request is addressed to, by its id and its current key. */

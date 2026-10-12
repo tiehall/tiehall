@@ -536,8 +536,9 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 
 #### T5. Control characters
 
-- **Choice.** The stripping step of the one renderer (`packages/packet/src/render.ts`, the main change's T14) removes the C0 controls but tab and line feed, DEL and the C1 controls with the invisible characters, for markdown and for every string of the JSON agents read; the CLI prints only what that step returns.
-- **Why.** One renderer is one place to get it right for every surface.
+- **Choice.** The stripping step of the one renderer (`packages/packet/src/render.ts`, the main change's T14) removes the C0 controls but tab and line feed, DEL and the C1 controls with the invisible characters, for markdown and for every string of the JSON agents read; the CLI prints only what that step returns. A packet change, added or proposed, through `revisePacket()` (`packages/commands/src/packets.ts`) keeps the stored value of each field under `untrusted` whose new value reads, as agents read it, the same as the current one, so such a value is no change: an agent that sends back the packet it read, without the carriage returns of the line breaks a web form wrote, changes only what it changed, and the stored text stays as it was written.
+- **Why.** One renderer is one place to get it right for every surface. A browser sends a text area's line breaks as CR LF, so without the comparison every packet that came from the web form, read and sent back by an agent with one more link, changed its need, which on a claimed request is a scope proposal.
+- **Alternatives.** *Turning CR LF into LF where the web forms are read:* leaves the other characters the agent view strips, and line breaks that an API client sends as CR LF, to count as a change, and changes what the person wrote.
 
 #### T6. Updates and cursors
 
