@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { finalVersionOf, parseChangelog, type ChangelogRelease } from "@tiehall/catalog/changelog";
 import { compareVersions, isVersion } from "@tiehall/core";
 import type { WaitingApiChanges } from "./api-changelog.ts";
+import { packetNoticeProblems } from "./packet-compat.ts";
 
 // What a release's notes say besides its image (public-api: The changelog page
 // and the release notes; self-host-install: Migrations expand, then contract;
@@ -13,7 +14,12 @@ import type { WaitingApiChanges } from "./api-changelog.ts";
 //   changelog page of an install running it lists. A release candidate gets no
 //   record of its own (design.md, Technical decisions: T13, R-e): its notes
 //   carry its final version's record once that is made, and before it the
-//   entries waiting under unreleased, which that record will collect;
+//   entries waiting under unreleased, which that record will collect. No
+//   release, a release candidate included, contains a breaking packet change
+//   until 14 days after its notice (handoff-packet: Breaking packet changes
+//   before publication), so the entries it carries are checked on the day the
+//   release is made: recording a final version checks them only on its
+//   record's day, and a candidate tagged before that record has none;
 // - the contract steps it adds since the previous release: the migrations of
 //   packages/db/migrations marked `-- migrate: contract after <release>` that
 //   the previous release's tag does not hold. A contract step ships at least
@@ -124,16 +130,34 @@ export function noSkipReleases(root: string): NoSkipRelease[] {
   });
 }
 
+/** The calendar day in UTC, as YYYY-MM-DD: the day the release workflow makes the release. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Refuses a release made on this day that would carry a breaking packet change before its notice has run. */
+function refuseEarlyPacketChanges(entries: ChangelogRelease["entries"], date: string): void {
+  const early = packetNoticeProblems(entries, date);
+  if (early.length > 0) throw new Error(early.join("\n"));
+}
+
 /**
  * The API changes openapi/changelog.json records for the release, refusing a release it does not record or records
  * stale. A release candidate has no record of its own: it takes its final version's, or, while that is not recorded,
- * the entries waiting for it.
+ * the entries waiting for it. Either way, a release made on the day date that would carry a breaking packet change
+ * before its 14 days of notice have run is refused.
  */
-export function recordedApiChanges(root: string, version: string, previous: string | undefined): ChangelogRelease | WaitingApiChanges {
+export function recordedApiChanges(
+  root: string,
+  version: string,
+  previous: string | undefined,
+  date: string = today(),
+): ChangelogRelease | WaitingApiChanges {
   const changelog = parseChangelog(readFileSync(join(root, CHANGELOG), "utf8"));
   const final = finalVersionOf(version);
   const release = changelog.releases.find((each) => each.version === (final ?? version));
   if (release === undefined && final !== undefined) {
+    refuseEarlyPacketChanges(changelog.unreleased, date);
     const apiVersion = (JSON.parse(readFileSync(join(root, DOCUMENT), "utf8")) as { info?: { version?: string } }).info?.version ?? "";
     return { final, apiVersion, entries: changelog.unreleased };
   }
@@ -150,13 +174,17 @@ export function recordedApiChanges(root: string, version: string, previous: stri
         "the document changed after the release was recorded, so record the release again.",
     );
   }
+  refuseEarlyPacketChanges(release.entries, date);
   return release;
 }
 
-/** What the release's notes say besides its image, read from the repository at root, whose previous release is the tag previous. */
-export function releaseSources(root: string, version: string, previous: string | undefined): ReleaseSources {
+/**
+ * What the release's notes say besides its image, read from the repository at root, whose previous release is the tag
+ * previous, for a release made on the day date.
+ */
+export function releaseSources(root: string, version: string, previous: string | undefined, date: string = today()): ReleaseSources {
   return {
-    api: recordedApiChanges(root, version, previous),
+    api: recordedApiChanges(root, version, previous, date),
     contractSteps: newContractSteps(root, version, previous),
     noSkip: noSkipReleases(root).filter((entry) => compareVersions(entry.version, version) <= 0),
   };

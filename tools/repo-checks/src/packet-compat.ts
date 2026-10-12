@@ -20,8 +20,11 @@ import { packetValidator } from "@tiehall/packet";
 //   (schemas: ["packet"]), dated no earlier than the day the check runs, since
 //   the notice counts from that date.
 // When a release is recorded, packetNoticeProblems() refuses it while an
-// unreleased breaking packet change is less than 14 days old. A changelog that
-// does not parse fails the check, label or not.
+// unreleased breaking packet change is less than 14 days old. The release
+// workflow checks again on the day it runs, for a release candidate too: the
+// entries the release carries, its record's or, for a candidate whose final
+// version is not recorded yet, the unreleased ones. A changelog that does not
+// parse fails the check, label or not.
 
 /** How long a breaking packet change is announced before a release may contain it. */
 export const PACKET_NOTICE_DAYS = 14;
@@ -143,9 +146,9 @@ function changedValidFixtures({ validBase, validRevision }: PacketPullRequest): 
   return breaks;
 }
 
-/** The unreleased breaking packet changes a release on this day would contain before their notice has run. */
-export function packetNoticeProblems(changelog: Changelog, releaseDate: string): string[] {
-  return changelog.unreleased.filter(isPacketBreak).flatMap(({ date }) => {
+/** The breaking packet changes among a release's entries that a release on this day would contain before their notice has run. */
+export function packetNoticeProblems(entries: readonly ChangelogEntry[], releaseDate: string): string[] {
+  return entries.filter(isPacketBreak).flatMap(({ date }) => {
     const allowed = addDays(date, PACKET_NOTICE_DAYS);
     return releaseDate < allowed ? [`The breaking packet change announced on ${date} may be released from ${allowed} on, not on ${releaseDate}.`] : [];
   });

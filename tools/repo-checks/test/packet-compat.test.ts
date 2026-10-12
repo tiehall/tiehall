@@ -170,14 +170,14 @@ describe("a release that contains a breaking packet change", () => {
 
   it("waits 14 days from the change's notice", () => {
     expect(PACKET_NOTICE_DAYS).toBe(14);
-    expect(packetNoticeProblems(changelog, "2026-11-15")).toEqual([
+    expect(packetNoticeProblems(changelog.unreleased, "2026-11-15")).toEqual([
       "The breaking packet change announced on 2026-11-02 may be released from 2026-11-16 on, not on 2026-11-15.",
     ]);
-    expect(packetNoticeProblems(changelog, "2026-11-16")).toEqual([]);
+    expect(packetNoticeProblems(changelog.unreleased, "2026-11-16")).toEqual([]);
   });
 
   it("is not held back by other entries", () => {
-    expect(packetNoticeProblems(parseChangelog(changelogWith({ ...NOTICE, schemas: undefined, operationIds: ["requests.get"] })), "2026-11-03")).toEqual([]);
-    expect(packetNoticeProblems(parseChangelog(changelogWith({ ...NOTICE, kind: "note" })), "2026-11-03")).toEqual([]);
+    expect(packetNoticeProblems(parseChangelog(changelogWith({ ...NOTICE, schemas: undefined, operationIds: ["requests.get"] })).unreleased, "2026-11-03")).toEqual([]);
+    expect(packetNoticeProblems(parseChangelog(changelogWith({ ...NOTICE, kind: "note" })).unreleased, "2026-11-03")).toEqual([]);
   });
 });

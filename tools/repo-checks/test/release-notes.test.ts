@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { documentedCommand } from "../src/docs-commands.ts";
 import { installCommands, installCommandsWithoutImage } from "../src/install-commands.ts";
 import { parseReleaseImage, renderReleaseNotes } from "../src/release-notes.ts";
+import { recordedApiChanges } from "../src/release-sources.ts";
 
 // The release notes (self-host-install: Releases carry signed attestations;
 // self-host-install: `init` prints a complete `.env`; public-api: The
@@ -262,6 +263,53 @@ describe("the notes of a release with a deprecation, a contract step and a relea
     expect(none.stdout).toContain("No entry waits for 1.4.0.");
     // The final version is not recorded yet, so its own notes cannot be written.
     expect(write("1.4.0", "--previous", "v1.3.0", "--check").stderr).toContain("openapi/changelog.json records no release 1.4.0");
+    git("checkout", "--quiet", "--", "openapi/changelog.json");
+  });
+
+  // handoff-packet: Breaking packet changes before publication. A release candidate is a release too, so neither
+  // contains a breaking packet change until 14 days after its notice: the release workflow checks the entries a
+  // release carries on the day it runs, its final version's record or, before that is made, the waiting entries.
+  it("of a release are refused while a breaking packet change they carry has had less than 14 days of notice", () => {
+    const file = join(repo, "openapi/changelog.json");
+    const recorded = JSON.parse(readFileSync(file, "utf8")) as { unreleased: unknown[]; releases: { entries: unknown[] }[] };
+    const [final, ...older] = recorded.releases as [{ entries: unknown[] }, ...{ entries: unknown[] }[]];
+    const breaking = (date: string) => ({ date, kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." });
+    const today = new Date().toISOString().slice(0, 10);
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const early = `The breaking packet change announced on ${today} may be released from ${day(14)} on, not on `;
+    const candidate = `ghcr.io/acme/tiehall:1.4.0-rc.1@${digest}`;
+    const waiting = (date: string) => writeFileSync(file, JSON.stringify({ ...recorded, unreleased: [breaking(date)], releases: older }, null, 2));
+    const carried = (date: string) =>
+      writeFileSync(file, JSON.stringify({ ...recorded, unreleased: [], releases: [{ ...final, entries: [...final.entries, breaking(date)] }, ...older] }, null, 2));
+
+    // Before 1.4.0 is recorded, the change waits under unreleased, and its candidate would carry it.
+    waiting(today);
+    for (const run of [
+      write("1.4.0-rc.1", "--previous", "v1.3.0", "--check"),
+      write("1.4.0-rc.1", "--previous", "v1.3.0", "--image", candidate, "--repository", repository, "--commit", commit),
+    ]) {
+      expect(run.status).toBe(1);
+      expect(run.stdout).toBe("");
+      expect(run.stderr).toContain(early);
+    }
+    waiting("2026-10-10");
+    expect(() => recordedApiChanges(repo, "1.4.0-rc.1", "v1.3.0", "2026-10-12")).toThrow(
+      "The breaking packet change announced on 2026-10-10 may be released from 2026-10-24 on, not on 2026-10-12.",
+    );
+    expect(() => recordedApiChanges(repo, "1.4.0-rc.1", "v1.3.0", "2026-10-23")).toThrow("may be released from 2026-10-24 on, not on 2026-10-23.");
+    expect(recordedApiChanges(repo, "1.4.0-rc.1", "v1.3.0", "2026-10-24")).toMatchObject({ final: "1.4.0", entries: [breaking("2026-10-10")] });
+    waiting(day(-30));
+    expect(write("1.4.0-rc.1", "--previous", "v1.3.0", "--check").status).toBe(0);
+
+    // Once 1.4.0 is recorded, its record carries the change, for the final release and for a candidate tagged after it.
+    carried(today);
+    for (const version of ["1.4.0", "1.4.0-rc.1"]) {
+      const run = write(version, "--previous", "v1.3.0", "--check");
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(early);
+    }
+    carried(day(-30));
+    for (const version of ["1.4.0", "1.4.0-rc.1"]) expect(write(version, "--previous", "v1.3.0", "--check").status).toBe(0);
     git("checkout", "--quiet", "--", "openapi/changelog.json");
   });
 

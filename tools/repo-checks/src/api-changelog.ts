@@ -64,7 +64,7 @@ export async function recordRelease(options: ReleaseToRecord): Promise<{ changel
   const changelog = parseChangelog(options.changelog);
   if (changelog.releases.some(({ version }) => version === options.version)) throw new Error(`Release ${options.version} is already recorded.`);
   // No release contains a breaking packet change until 14 days after its notice (handoff-packet: Breaking packet changes before publication).
-  const early = packetNoticeProblems(changelog, options.date);
+  const early = packetNoticeProblems(changelog.unreleased, options.date);
   if (early.length > 0) throw new Error(early.join("\n"));
   const apiVersion = (JSON.parse(options.document) as { info?: { version?: string } }).info?.version ?? "";
   const release: ChangelogRelease = {
