@@ -448,7 +448,7 @@ Source: D28 #26; D55 (41); design.md, Decisions this change rests on; design.md,
 
 #### Scenario: Every path holds a revision to the team it would move to
 
-- **WHEN** a reassignment of FE-142 to MOBILE, which requires code refs, is pending, and the requester proposes a packet change without code refs through `tiehall propose` or the web UI's packet change
+- **WHEN** FE-142's packet has code refs, a reassignment of FE-142 to MOBILE, which requires them, is pending, and the requester proposes a packet change without code refs through `tiehall propose` or the web UI's packet change
 - **THEN** the change is refused and names MOBILE's code refs as missing
 - **AND** nothing is proposed
 

@@ -46,7 +46,12 @@ import type { OrgContext } from "./with-org.ts";
 // same team or API, marked as going on from the previous page, and the rest
 // of its list as it stands when that page is read, after that key, so no
 // consumer is left out. A team or an API that fits on a page of its own is
-// never split: a page it would take past the cap ends before it.
+// never split: a page it would take past the cap ends before it. A team's
+// intake notes are shown once, on the page that begins with it, and fenced by
+// the teams that page lists for it (directoryText): as the reader's own team's
+// text only when one of them is the reader's, and as another team's otherwise,
+// as notes whose writer is unknown are, so a long list never makes another
+// team's notes read as the reader's own.
 
 export const DIRECTORY_HANDLERS: Handlers = {
   [whoami.id]: defineHandler(whoami, async ({ skillVersion }, context) => {

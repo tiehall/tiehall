@@ -459,6 +459,11 @@ describe("the directory", () => {
     );
     expect(cut).toContain(notes);
     expect(cut).toContain("More of the teams that team FE's intake notes' writer belonged to follow on the next page.");
+    // The notes are fenced by the teams this page lists for them: the reader's own team's text only when one is theirs.
+    const cutTeam = { ...FE, requiredFields: [], intakeNotesWrittenBy: [QA], continuedOnNextPage: true, untrusted: { name: "Frontend", intakeNotes: notes } };
+    const notesOrigin = (teams: string[]) => directoryText({ teams: [cutTeam], apis: [], next: "dDpGRQ" }, { teams }).find(({ text }) => text === notes)?.origin;
+    expect(notesOrigin(["QA"])).toBe("same team");
+    expect(notesOrigin(["FE", "OPS"])).toBe("other team");
     expect(cut).toContain(`API ${API} of team QA, which teams FE and QA consume, with more of its consumers on the next page, is named:`);
     expect(cut).toContain("payments-api");
     const goesOn = view(
