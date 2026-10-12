@@ -254,6 +254,14 @@ const ROWS: Row[] = [
   { name: "Accept: application/json with a token gets the /api/v1 read", path: "/FE-1", as: "token:bob", accept: "application/json", check: isJsonOfFe1 },
   { name: ".json with a token gets the /api/v1 read", path: "/FE-1.json", as: "token:bob", check: isJsonOfFe1 },
   { name: ".json wins over Accept: text/html", path: "/FE-1.json", as: "token:bob", accept: "text/html", check: isJsonOfFe1 },
+  // A token that negotiates HTML gets markdown, since a caller that sends one is a program that cannot sign in
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (38)).
+  { name: "a token that accepts */* gets markdown", path: "/FE-1", as: "token:bob", accept: "*/*", check: isMarkdownOfFe1 },
+  { name: "a token without an Accept header gets markdown", path: "/FE-1", as: "token:bob", check: isMarkdownOfFe1 },
+  { name: "a token with Accept: text/html gets markdown", path: "/FE-1", as: "token:bob", accept: "text/html", check: isMarkdownOfFe1 },
+  { name: "a token with a browser's Accept header gets markdown", path: "/FE-1", as: "token:bob", accept: BROWSER, check: isMarkdownOfFe1 },
+  { name: "a token no install issued that negotiates HTML gets 401, not sign-in", path: "/FE-1", as: "token:nobody", accept: BROWSER, check: isToldWhatToUse },
+  { name: "a removed member's token that negotiates HTML gets 403 as a problem", path: "/FE-1", as: "token:dana", accept: BROWSER, check: isRemovedMember(false) },
   // Without credentials.
   { name: "a browser without a session is sent to sign-in", path: "/FE-1", as: "none", accept: BROWSER, check: isSentToSignIn("/FE-1") },
   { name: "a call without credentials or Accept is sent to sign-in", path: "/FE-1", as: "none", check: isSentToSignIn("/FE-1") },

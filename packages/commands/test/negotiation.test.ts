@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   NEGOTIATED_KEY_HEADER,
   negotiate,
+  pageRouteNegotiatesHtml,
   negotiatedUrlHeaders,
   negotiatedUrlOf,
   requestUrlNegotiatesHtml,
@@ -134,6 +135,33 @@ describe("the representation a call negotiates", () => {
     expect(requestUrlNegotiatesHtml("/FE", undefined)).toBe(true);
     expect(requestUrlNegotiatesHtml("/FE", "application/json")).toBe(false);
     expect(requestUrlNegotiatesHtml("/FE.md", BROWSER)).toBe(false);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (38): a call that carries an
+  // Authorization header is a program, such as curl or an agent's fetch tool, which cannot use a sign-in page, so
+  // where it would negotiate HTML it gets markdown; HTML goes only to a call without the header.
+  it.each([[null], [""], ["*/*"], ["text/html"], [BROWSER], ["image/png"]])("gives a call with an Authorization header and Accept: %s markdown", (accept) => {
+    expect(negotiate(accept, undefined, true)).toBe("markdown");
+    expect(negotiate(accept, undefined, false)).toBe("html");
+  });
+
+  it("keeps what such a call names besides HTML, and its suffix", () => {
+    expect(negotiate("application/json", undefined, true)).toBe("json");
+    expect(negotiate("text/markdown", undefined, true)).toBe("markdown");
+    expect(negotiate(BROWSER, "json", true)).toBe("json");
+    expect(negotiate(BROWSER, "markdown", true)).toBe("markdown");
+  });
+
+  it("decides that a request URL or an intake page called with an Authorization header negotiates no HTML, and so answers no refusal page", () => {
+    for (const path of ["/FE-142", "/FE", "/%46E-142"]) {
+      for (const accept of [BROWSER, "*/*", undefined]) {
+        expect(requestUrlNegotiatesHtml(path, accept, true), `${path} ${accept}`).toBe(false);
+        expect(pageRouteNegotiatesHtml(path, accept, true), `${path} ${accept}`).toBe(false);
+      }
+    }
+    expect(requestUrlNegotiatesHtml("/members", BROWSER, true)).toBeUndefined();
+    // Every other page route still answers a browser's refusal with a page, as before.
+    expect(pageRouteNegotiatesHtml("/members", BROWSER, true)).toBe(true);
   });
 });
 

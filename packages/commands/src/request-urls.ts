@@ -211,7 +211,8 @@ export function createRequestUrlRoute(options: RequestUrlOptions): RequestUrlRou
     const url = new URL(request.url);
     const path = negotiatedUrlOf(url.pathname);
     if (path === undefined) return undefined;
-    const representation = negotiate(request.headers.get("accept"), path.suffix);
+    // A call with an Authorization header that negotiates HTML gets markdown (D55 (38)).
+    const representation = negotiate(request.headers.get("accept"), path.suffix, request.headers.get("authorization") !== null);
     const head = request.method === "HEAD";
     const post = request.method === "POST";
     // The URL as it is written plainly, where a browser signs in and comes back to, and which a refusal's page leads on to.

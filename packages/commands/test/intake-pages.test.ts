@@ -157,6 +157,22 @@ describe("a team's intake page", () => {
     }
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (38): a call with a token is a
+  // program, so where it would negotiate HTML it gets the markdown; a browser's session still gets the page.
+  it("gives a token that negotiates HTML the markdown, and a session without one the page", async () => {
+    for (const accept of ["*/*", undefined, "text/html", BROWSER]) {
+      const answer = await call("/FE", bobsToken(accept));
+      expect(answer.status, String(accept)).toBe(200);
+      expect(mediaType(answer), String(accept)).toBe("text/markdown");
+      expect(answer.body).toContain("Team FE requires the acceptance criteria and a due date of the requests opened to it.");
+    }
+    for (const accept of ["*/*", undefined]) {
+      const page = await call("/FE", asBob(accept));
+      expect(page.status).toBe(200);
+      expect(mediaType(page)).toBe("text/html");
+    }
+  });
+
   it("gives an agent JSON, by Accept and by suffix, exactly the body of the /api/v1 read of the team", async () => {
     const read = await call("/api/v1/teams/FE", bobsToken());
     expect(read.status).toBe(200);

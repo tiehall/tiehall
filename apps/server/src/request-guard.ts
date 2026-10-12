@@ -307,7 +307,7 @@ function refuse(request: IncomingMessage, response: ServerResponse, problem: Htt
   const answer =
     wayOn === undefined
       ? { status: problem.status, headers: new Headers(problem.headers), body: problemBody }
-      : refusalAnswerAs(pageRouteNegotiatesHtml(request.url ?? "/", request.headers.accept), problem, wayOn);
+      : refusalAnswerAs(pageRouteNegotiatesHtml(request.url ?? "/", request.headers.accept, request.headers.authorization !== undefined), problem, wayOn);
   response.writeHead(answer.status, {
     ...Object.fromEntries(answer.headers),
     "content-length": Buffer.byteLength(answer.body),

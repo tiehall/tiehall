@@ -19,6 +19,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 // specific that Tiehall serves, such as */*; and a header that names none of
 // the three, such as image/png, gets HTML too, the default.
 //
+// A call that carries an Authorization header is a program, such as curl or
+// an agent's fetch tool, which cannot use a sign-in page: where it would
+// negotiate HTML, it gets markdown, and HTML goes only to a call without the
+// header, which a web session serves or, without one, sends to sign-in
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (38)).
+//
 // A team's intake page, /<TEAM>, such as /FE, is negotiated the same way.
 //
 // A path whose letters, digits, hyphens or dots are written percent-encoded,
@@ -154,9 +161,17 @@ function mediaRanges(accept: string): MediaRange[] {
 
 /**
  * The representation a request URL serves a call: the one its suffix names,
- * or the one its Accept header asks for, HTML when it asks for none of them.
+ * or the one its Accept header asks for, HTML when it asks for none of them;
+ * for a call that carries an Authorization header, markdown where that would
+ * be HTML.
  */
-export function negotiate(accept: string | null | undefined, suffix?: Exclude<Representation, "html">): Representation {
+export function negotiate(accept: string | null | undefined, suffix?: Exclude<Representation, "html">, authorized = false): Representation {
+  const representation = negotiateAccept(accept, suffix);
+  return representation === "html" && authorized ? "markdown" : representation;
+}
+
+/** The representation the suffix names, or the one the Accept header asks for, HTML when it asks for none of them. */
+function negotiateAccept(accept: string | null | undefined, suffix: Exclude<Representation, "html"> | undefined): Representation {
   if (suffix !== undefined) return suffix;
   if (accept === null || accept === undefined || accept.trim() === "") return "html";
   const ranges = mediaRanges(accept);
@@ -178,8 +193,12 @@ export function negotiate(accept: string | null | undefined, suffix?: Exclude<Re
   return best?.representation ?? "html";
 }
 
-/** Whether a call to this path and query negotiates HTML, given its Accept header; undefined when it is no request URL or intake page. */
-export function requestUrlNegotiatesHtml(target: string, accept: string | null | undefined): boolean | undefined {
+/**
+ * Whether a call to this path and query negotiates HTML, given its Accept
+ * header and whether it carries an Authorization header; undefined when it is
+ * no request URL or intake page.
+ */
+export function requestUrlNegotiatesHtml(target: string, accept: string | null | undefined, authorized = false): boolean | undefined {
   let pathname: string;
   try {
     pathname = new URL(target, "http://localhost").pathname;
@@ -187,7 +206,7 @@ export function requestUrlNegotiatesHtml(target: string, accept: string | null |
     return undefined;
   }
   const path = negotiatedUrlOf(pathname);
-  return path === undefined ? undefined : negotiate(accept, path.suffix) === "html";
+  return path === undefined ? undefined : negotiate(accept, path.suffix, authorized) === "html";
 }
 
 /** The headers every answer of a request URL varies with. */

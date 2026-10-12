@@ -83,10 +83,12 @@ function postedFrom(referrer: string | undefined): string | undefined {
 
 /**
  * Whether a refusal of a call to this page route, a path and query, with this
- * Accept header is a page: on a request URL when the call negotiates HTML
- * there, and on every other page route when its Accept header names
+ * Accept header is a page: on a request URL or an intake page when the call
+ * negotiates HTML there, which a call with an Authorization header never does
+ * (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (38)), and on every other page route when its Accept header names
  * text/html with a quality above 0.
  */
-export function pageRouteNegotiatesHtml(target: string, accept: string | null | undefined): boolean {
-  return requestUrlNegotiatesHtml(target, accept) ?? namesHtml(accept);
+export function pageRouteNegotiatesHtml(target: string, accept: string | null | undefined, authorized = false): boolean {
+  return requestUrlNegotiatesHtml(target, accept, authorized) ?? namesHtml(accept);
 }

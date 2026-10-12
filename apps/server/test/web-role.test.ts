@@ -198,6 +198,13 @@ describe("the web role on SIGTERM", STARTS_THE_ROLE, () => {
       expect(answer.headers.get("content-type"), path).toBe("application/problem+json");
       expect(answer.headers.get("vary"), path).toBe("Accept, Authorization");
     }
+    // A call with an Authorization header negotiates no HTML there, so it gets the problem whatever it accepts
+    // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (38)).
+    for (const path of ["/FE-142", "/FE"]) {
+      const answer = await fetch(`http://127.0.0.1:${web.port}${path}`, { headers: { accept: BROWSER, authorization: "Bearer th_pat_reader" } });
+      expect(answer.status, path).toBe(503);
+      expect(answer.headers.get("content-type"), path).toBe("application/problem+json");
+    }
     expect(await slow).toBe("slow call done");
     expect(await web.exited).toBe(0);
   });
