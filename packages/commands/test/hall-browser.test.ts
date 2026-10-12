@@ -603,6 +603,48 @@ describe("the live hall on a phone", () => {
   });
 });
 
+/**
+ * What of each team's node on the map lies outside the node's box: its name, its key or its counts, as sentences.
+ * Plain JavaScript, as a string.
+ */
+const OUTSIDE_NODES = `() => {
+  const problems = [];
+  for (const node of document.querySelectorAll("#hall-map .node")) {
+    const box = node.getBoundingClientRect();
+    if (node.scrollWidth > node.clientWidth) problems.push("a node's content is " + node.scrollWidth + " CSS pixels wide in a node of " + node.clientWidth);
+    for (const part of node.querySelectorAll(".team-name, .team-key, .node-counts")) {
+      const rect = part.getBoundingClientRect();
+      const inside = rect.width > 0 && rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5 && rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
+      if (!inside) problems.push(part.className + ' "' + part.textContent.slice(0, 20) + '" lies outside its node');
+    }
+  }
+  return problems;
+}`;
+
+// A team's name may have 100 characters, more than a node on the map has room for: the node keeps its key and its
+// counts in its box and cuts the name short, which the list of teams below the map shows whole.
+describe("a team's long name on the map", () => {
+  afterAll(async () => {
+    await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES["short team names"]]);
+  });
+
+  it.each([
+    [1280, 800],
+    [768, 1024],
+  ] as const)("keeps the key, the name and the counts of each team inside its node at %i by %i, with a team named in 100 characters", { timeout: 120_000 }, async (width, height) => {
+    await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES["a team's longest name"]]);
+    const { context, page } = await openHall({ width, height });
+    try {
+      await page.locator("#hall-map .node").first().waitFor();
+      await expect(page.locator("#hall-map .node .team-key", { hasText: /^MOB$/ }).isVisible()).resolves.toBe(true);
+      expect(await page.evaluate(`(${OUTSIDE_NODES})()`)).toEqual([]);
+      await expect(page.locator("#team-list").getByText(TEAM_NAMES["a team's longest name"]).isVisible()).resolves.toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
 describe("a minute of updates", () => {
   it("breaks no policy, Trusted Types included, reads by pull alone, and leaves no style attribute in the page", { timeout: 240_000 }, async () => {
     const hall = await openHall();

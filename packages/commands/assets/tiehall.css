@@ -2935,6 +2935,19 @@ textarea[aria-invalid="true"] {
   white-space: nowrap;
 }
 
+/* A team's name may have 100 characters, more than its node has room for: the name is cut short with an ellipsis, and
+   the key and the counts keep their places inside the node; the list of teams below the map shows the name whole
+   (web-ui: The live hall with many teams and on a phone; design.md, Design: The live hall). */
+.node-head > .team-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-head > .team-key {
+  flex: none;
+}
+
 .node.compact .team-key {
   color: var(--ink);
   font-weight: 500;

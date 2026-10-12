@@ -8,5 +8,5 @@ export const ASSET_DIGESTS: Readonly<Record<string, string>> = {
   "/assets/icon-512.png": "AzEtTxs-h85KmNEI7AClcb",
   "/assets/icon.svg": "t_wo019r4xIV98HdE-cn5-",
   "/assets/manifest.webmanifest": "-4JYJDx6sJzbnGGW6daehm",
-  "/assets/tiehall.css": "VCQTJKN6lDcutUrzuCBzRM",
+  "/assets/tiehall.css": "IwgD67CUt4xbC9oT2hSd0E",
 };
