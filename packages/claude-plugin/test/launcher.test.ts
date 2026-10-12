@@ -17,8 +17,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // writes nothing that reaches Claude, and nothing wakes it. Only the waiter's
 // error output is passed on, since it is the reminder that wakes Claude; the
 // other hooks' is dropped. With a CLI older than the install's minimum, the
-// install answers 400 upgrade-required: the digest prints no updates and the
-// waiter exits without code 2 and without calling again.
+// install answers 400 upgrade-required: the digest prints no updates but one
+// line that asks to upgrade the CLI, and the waiter exits without code 2 and
+// without calling again.
 
 const launcher = fileURLToPath(new URL("../hooks/tiehall-hook.sh", import.meta.url));
 const cliMain = fileURLToPath(new URL("../../cli/src/main.ts", import.meta.url));
@@ -153,9 +154,13 @@ describe("with a tiehall command older than the install's minimum", () => {
     server?.close();
   });
 
-  it("prints no updates at the start of a session: the install answers 400 upgrade-required, and no update is fetched", async () => {
+  it("prints no updates at the start of a session but the line that asks to upgrade: the install answers 400 upgrade-required, and no update is fetched", async () => {
     calls.length = 0;
-    expect(await launch("session-start", `${real}:/usr/bin:/bin`, { TIEHALL_URL: url, TIEHALL_CONFIG_DIR: configDir })).toEqual({ code: 0, stdout: "", stderr: "" });
+    expect(await launch("session-start", `${real}:/usr/bin:/bin`, { TIEHALL_URL: url, TIEHALL_CONFIG_DIR: configDir })).toEqual({
+      code: 0,
+      stdout: "Tiehall: this tiehall CLI is older than the install supports, so it shows no updates. Run npm install --global tiehall@latest, then start a new session.\n",
+      stderr: "",
+    });
     expect(calls).toEqual(["POST /api/v1/updates"]);
   });
 

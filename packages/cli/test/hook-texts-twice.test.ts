@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { noticeEventType, noticeKey, noticeTeam, noticeUrl, type Notice } from "@tiehall/packet/notices";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DIGEST_HEADING, DIGEST_MORE, reminderOf, REMINDER_HEADING, sessionDigestOf } from "../src/hooks.ts";
+import { DIGEST_HEADING, DIGEST_MORE, DIGEST_UPGRADE, reminderOf, REMINDER_HEADING, sessionDigestOf } from "../src/hooks.ts";
 import { watchLine } from "../src/watch.ts";
 
 // The texts the CLI prints about updates come from templates
@@ -10,7 +10,8 @@ import { watchLine } from "../src/watch.ts";
 // SessionStart digest; requester-loop: Claude Code Stop-hook waiter;
 // requester-loop: The plugin monitor fallback): the SessionStart digest, the
 // waiter's reminder and the lines of `tiehall watch`, each Tiehall's words
-// and a notice line per update. Each is rendered twice from the updates of one
+// and a notice line per update, and the digest's line that asks to upgrade an
+// old CLI, Tiehall's words alone. Each is rendered twice from the updates of one
 // request that does not change, FE-142, with the clock a day and a half later,
 // another time zone and another Math.random for the second rendering, and
 // both renderings are identical. The rest of what Tiehall writes is in
@@ -34,6 +35,7 @@ const TEXTS: Record<string, (() => string)[]> = {
   DIGEST_HEADING: [() => DIGEST_HEADING],
   DIGEST_MORE: [() => DIGEST_MORE],
   REMINDER_HEADING: [() => REMINDER_HEADING],
+  DIGEST_UPGRADE: [() => DIGEST_UPGRADE],
 };
 
 /** Moves the clock, the time zone and Math.random, so that a rendering that reads any of them differs. */
@@ -76,6 +78,7 @@ describe("the CLI's texts about updates, rendered twice from FE-142 unchanged", 
     }
     expect(printed).toEqual([
       "hooks.ts: reminderOf(notices)",
+      "hooks.ts: `${DIGEST_UPGRADE}\\n`",
       "hooks.ts: sessionDigestOf(news)",
       "watch.ts: watchLine(notice)",
       "watch.ts: problemText(waited.problem)",

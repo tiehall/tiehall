@@ -145,12 +145,26 @@ describe("a digest that cannot read", () => {
     });
   });
 
-  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI".
-  it("prints no updates when the install needs a newer CLI", async () => {
-    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI"; requester-loop: Claude Code SessionStart digest,
+  // "An old CLI asks for an upgrade"; agent-safety: Notices that can reach a model carry only server text, "Fixed words,
+  // and no one's text" (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (52)).
+  it("prints exactly one line, which asks to run npm install --global tiehall@latest, and no update, when the install needs a newer CLI", async () => {
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE", text: INJECTION });
     install.answerEveryCall(UPGRADE_REQUIRED);
-    expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
+    const printed = await digest();
+    expect(printed).toEqual({
+      code: 0,
+      stdout: "Tiehall: this tiehall CLI is older than the install supports, so it shows no updates. Run npm install --global tiehall@latest, then start a new session.\n",
+      stderr: "",
+    });
+    expect(printed.stdout).not.toContain("FE-142");
     expect(install.calls.map(({ path }) => path)).toEqual(["/api/v1/updates"]);
+  });
+
+  it("prints nothing when the install refuses it for another reason", async () => {
+    install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    install.answerEveryCall(() => problem("forbidden", 403, "Forbidden", "You are no longer a member of this install."));
+    expect(await digest()).toEqual({ code: 0, stdout: "", stderr: "" });
   });
 
   it("prints nothing once 10 seconds pass while the install does not answer the refresh of an expired access token", async () => {

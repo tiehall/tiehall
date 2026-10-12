@@ -308,7 +308,8 @@ describe("clean error output", () => {
     expect(waits()).toHaveLength(1);
   });
 
-  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI".
+  // agent-surfaces: The Claude Code plugin, "A hook runs an old CLI"; requester-loop: Claude Code Stop-hook waiter, "An
+  // old CLI's waiter stays silent" (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (52)).
   it("exits without code 2, without a word and without calling again when the install needs a newer CLI", async () => {
     install.answerEveryCall(UPGRADE_REQUIRED);
     expect(await waiter().done).toEqual({ code: 0, stdout: "", stderr: "" });

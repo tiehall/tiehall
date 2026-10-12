@@ -70,8 +70,18 @@ const TOPICS: Topic[] = [
     topic: "the plugin and skill",
     page: "docs/claude-code-plugin.md",
     heading: "The hooks",
-    // The last: decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44).
-    says: ["SessionStart", "Stop", "`asyncRewake`", "30 minutes", "exit code 2", "`tiehall watch`", "acknowledge", "the hooks no longer announce it"],
+    // The last two: decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44), (52).
+    says: [
+      "SessionStart",
+      "Stop",
+      "`asyncRewake`",
+      "30 minutes",
+      "exit code 2",
+      "`tiehall watch`",
+      "acknowledge",
+      "the hooks no longer announce it",
+      "prints one line that asks you to run `npm install --global tiehall@latest`",
+    ],
   },
   {
     topic: "PATs and bot users",

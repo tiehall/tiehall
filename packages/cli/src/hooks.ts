@@ -11,7 +11,9 @@ import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
 // design.md, Technical decisions: T15). Claude Code runs them for itself, and
 // what they write can reach Claude unasked, so they write only Tiehall's own
 // text, and nothing at all when they cannot do their work: no saved login, an
-// install that refuses them, a CLI older than the install supports. They read
+// install that refuses them; but for a CLI older than the install supports,
+// the SessionStart digest prints one fixed line that asks for the upgrade,
+// and the waiter stays silent. They read
 // from the install whose URL the plugin was given, which the plugin's
 // launcher passes as --install, and Claude Code's input on their standard
 // input names the session.
@@ -107,6 +109,20 @@ export const DIGEST_HEADING =
 
 /** The digest's last line when more updates wait than it lists. */
 export const DIGEST_MORE = "More updates wait after these: whats_new reads them all.";
+
+/**
+ * The digest's one line when the install refuses this CLI as older than it
+ * supports, in Tiehall's words, never the install's text (requester-loop:
+ * Claude Code SessionStart digest; agent-safety: Notices that can reach a
+ * model carry only server text; decisions-from-groups-15-28: design.md,
+ * Decisions this change rests on: D55 (52)). The waiter stays silent, so
+ * that it does not wake Claude on every turn until the upgrade.
+ */
+export const DIGEST_UPGRADE =
+  "Tiehall: this tiehall CLI is older than the install supports, so it shows no updates. Run npm install --global tiehall@latest, then start a new session.";
+
+/** The problem type with which the install refuses a CLI older than it supports. */
+const UPGRADE_REQUIRED = "https://tiehall.com/problems/upgrade-required";
 
 /** The reminder's first line, in Tiehall's words, before one line per update. */
 export const REMINDER_HEADING = "Tiehall: news on your requests. Read it with whats_new, or run tiehall updates, and acknowledge what you have handled.";
@@ -387,7 +403,8 @@ async function newsPastTheMark(environment: CliEnvironment, session: Session, st
 /**
  * `tiehall hook session-start`: prints the digest of the updates after the
  * furthest cursor of the user's agent clients that have not been announced,
- * read without acknowledging anything, or nothing; 0 whatever happens.
+ * read without acknowledging anything, or, when the install needs a newer
+ * CLI, the one line that asks for the upgrade, or nothing; 0 whatever happens.
  */
 export async function hookSessionStart(environment: CliEnvironment, install: string | undefined): Promise<number> {
   const stop = new AbortController();
@@ -397,7 +414,10 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
     const session = sessionFor(environment, login);
     void sleepOf(environment)(DIGEST_READ_MS, stop.signal).then(() => stop.abort());
     const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT, readAfter: "furthest_cursor" }, signal: stop.signal }), stop.signal);
-    if (!answer.ok) return 0;
+    if (!answer.ok) {
+      if (answer.status === 400 && (answer.body as { type?: unknown } | undefined)?.type === UPGRADE_REQUIRED) environment.stdout(`${DIGEST_UPGRADE}\n`);
+      return 0;
+    }
     const page = answer.body as { events?: unknown; more?: unknown } | undefined;
     if (!Array.isArray(page?.events)) return 0;
     const entries = (page.events as UpdateEntry[]).map(({ number, type, request }) => ({

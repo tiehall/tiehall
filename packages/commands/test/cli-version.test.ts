@@ -143,11 +143,14 @@ describe("tiehall login from a CLI older than the minimum", () => {
   });
 });
 
-// agent-surfaces: The Claude Code plugin, "A hook runs an old CLI". The hooks run the CLI, so the minimum holds them
-// too: the install refuses an old CLI's hooks with 400 upgrade-required, the digest prints no updates, and the waiter
-// exits without code 2 and without calling again.
+// agent-surfaces: The Claude Code plugin, "A hook runs an old CLI"; requester-loop: Claude Code SessionStart digest, "An
+// old CLI asks for an upgrade"; requester-loop: Claude Code Stop-hook waiter, "An old CLI's waiter stays silent". The
+// hooks run the CLI, so the minimum holds them too: the install refuses an old CLI's hooks with 400 upgrade-required,
+// the digest prints no updates but one fixed line that asks to upgrade the CLI, and the waiter exits without code 2,
+// without a word and without calling again (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (52)).
 describe("the hooks of a CLI older than the minimum", () => {
-  it("fetch no updates: the digest prints nothing, and the waiter exits without code 2 after one call", async () => {
+  it("fetch no updates: the digest prints the line that asks to upgrade, and the waiter exits without code 2 after one call", async () => {
     const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
     const result = await harness.install.web(sam.session).write("messages.post", { key: request.key, kind: "comment", body: "For FE." }, harness.install.fromThePage(sam.session));
     expect(result.ok).toBe(true);
@@ -155,7 +158,7 @@ describe("the hooks of a CLI older than the minimum", () => {
     try {
       machine.pretendVersion(older(MINIMUM_CLI_VERSION));
       const input = (event: string) => ({ stdin: JSON.stringify({ session_id: "session-old", hook_event_name: event }), sleep: realSleep });
-      expect(await machine.run(["hook", "session-start"], input("SessionStart"))).toEqual({ code: 0, stdout: "", stderr: "" });
+      expect(await machine.run(["hook", "session-start"], input("SessionStart"))).toEqual({ code: 0, stdout: `Tiehall: this tiehall CLI is older than the install supports, so it shows no updates. Run npm install --global tiehall@latest, then start a new session.\n`, stderr: "" });
       const from = machine.calls.length;
       expect(await machine.run(["hook", "wait"], input("Stop"))).toEqual({ code: 0, stdout: "", stderr: "" });
       expect(machine.calls.slice(from).map(({ url }) => new URL(url).pathname)).toEqual(["/api/v1/events/wait"]);
