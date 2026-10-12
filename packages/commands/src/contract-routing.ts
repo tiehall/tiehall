@@ -296,18 +296,23 @@ type UpdateOutcome =
 /**
  * What an update says on a request of the change set, in Tiehall's words: how
  * the number of breaking changes changed from the request's packet to the
- * report, and what the update did to the request.
+ * report, and what the update did to the request. It never names the API: its
+ * name, which an admin wrote, is its provider team's text, which agents read
+ * fenced, in the request's provider change, never in a system message, which
+ * is Tiehall's own (agent-safety: Every string shown to agents has an origin;
+ * decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (80)).
  */
 export function updateText(section: ReportedContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
   const after = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const head = `Diff updated: ${request.before} → ${after} breaking. The contract Action reported ${pr} again, at commit ${report.headSha.slice(0, 12)}`;
-  const listed = `${head}: packet revision ${outcome.revision} lists the ${counted(section.changes.length, "change")} to ${section.api} that the diff engine classified, each with its level.`;
+  const listed = `${head}: packet revision ${outcome.revision} lists the ${counted(section.changes.length, "change")} to the API that the diff engine classified, each with its level.`;
   switch (outcome.kind) {
     case "revised":
       return listed;
     case "gone": {
-      const gone = `The breaking changes are gone: ${pr} no longer makes a change to ${section.api} that opens requests.`;
+      const gone = `The breaking changes are gone: ${pr} no longer makes a change to the API that opens requests.`;
       return outcome.withdrawn
         ? `${listed} ${gone} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}. If a later report brings breaking changes back, Tiehall opens a new request.`
         : `${listed} ${gone} ${request.key} is claimed, so Tiehall leaves it as it is.`;

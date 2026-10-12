@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { requestWithThreadText } from "@tiehall/packet/tool-text";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CiCaller, WebSessionCaller } from "../src/index.ts";
@@ -7,7 +8,7 @@ import { addInstallation } from "./support/apis.ts";
 import { changesOf, CONTRACT_WORKFLOW, PAYMENTS_REPOSITORY, reportOf, runDueUpdates, type ClassifiedChange } from "./support/contract.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, joinTeams, sessionOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, sessionOf, tokenOf } from "./support/requests.ts";
 
 // Applying a change set's update (contract-changes: Each update adds a packet
 // revision and a system message; requests: System actions need no proposal
@@ -197,6 +198,24 @@ describe("a push that adds a breaking change", () => {
       { type: "request.packet_revised", actor_kind: "system", surface: "github" },
       { type: "request.message_posted", actor_kind: "system", surface: "github" },
     ]);
+  });
+
+  // agent-safety: Every string shown to agents has an origin (decisions-from-groups-15-28: design.md, Decisions this
+  // change rests on: D55 (80)): the API's name, which an admin wrote, is its provider team's text, and a system message
+  // is Tiehall's own, so the message leaves the name out, and an agent reads it only in the provider change, fenced.
+  it("leaves out the API's name, its provider team's text, so an agent reads it only fenced as that team's", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+
+    await pushReports(threeBreaking(), "c");
+
+    const answer = await callApi(install, tokenOf(bob), "GET", `/api/v1/requests/${fe.key}`);
+    expect(answer.status).toBe(200);
+    const texts = requestWithThreadText(answer.body, { teams: ["FE"] });
+    const tiehalls = texts.filter(({ origin }) => origin === "tiehall").map(({ text }) => text);
+    expect(tiehalls.join("\n")).toContain("Diff updated: 2 → 3 breaking");
+    expect(tiehalls.join("\n")).not.toContain("payments-api");
+    expect(texts.filter(({ text }) => text.includes("payments-api")).map(({ origin }) => origin)).toEqual(["other team", "other team"]);
   });
 
   it("revises every request of the change set that has not ended, and says when the count stays the same", async () => {

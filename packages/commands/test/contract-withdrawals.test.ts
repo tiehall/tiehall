@@ -152,6 +152,9 @@ describe("an update that holds no change that opens requests", () => {
     expect(mobileMessage).toMatchObject({ actor_kind: "system", surface: "github" });
     expect(mobileMessage?.body).toContain("The breaking changes are gone");
     expect(mobileMessage?.body).toContain(`${mobile.key} is claimed`);
+    // The API's name is its provider team's text, which a system message, Tiehall's own, leaves out
+    // (agent-safety: Every string shown to agents has an origin; decisions-from-groups-15-28, D55 (80)).
+    for (const message of [feMessage, mobileMessage]) expect(message?.body).not.toContain("payments-api");
   });
 
   it("counts a request whose claim was released as unclaimed, and withdraws it", async () => {
