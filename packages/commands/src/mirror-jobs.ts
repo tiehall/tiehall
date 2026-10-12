@@ -38,7 +38,12 @@ import type { OrgContext } from "./with-org.ts";
 // and does all the failed one would have done, the comments it missed
 // included, since jobs project the request as it is when they run. The same
 // write records the failed job for its banner, which the worker may not have
-// done yet, and the banner stays until a job of the request succeeds.
+// done yet, and the banner stays until a job of the request succeeds. A newer
+// job sent while the failed one was still tried waits behind it until its
+// attempts are used up: the worker, once it reaches the failed job's dead
+// letter, takes it out of the queue as it records it (mirrors.ts), so the
+// newer job runs then; with no newer job waiting, the failed job stays, for
+// Retry, until the request's next change.
 
 /** A mirror job: bring the request's mirror issue up to date with the request as it is now. */
 export const mirrorRequest = defineJobType<{ requestId: string }>("mirror.sync", 1, {
@@ -94,7 +99,7 @@ export async function wakeMirror({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">
     if (mapped === undefined) return;
   }
   // A failed job of the request would hold this one back: it leaves the queue, and its banner stays until a job succeeds.
-  const failedAt = await jobs.dropFailed?.(tx, mirrorRequest.queue, requestId);
-  if (failedAt !== undefined) await tx.insert(mirrorFailures).values({ orgId, requestId, failedAt }).onConflictDoNothing();
+  const failed = await jobs.dropFailed?.(tx, mirrorRequest.queue, requestId);
+  if (failed !== undefined) await tx.insert(mirrorFailures).values({ orgId, requestId, failedAt: failed.failedAt }).onConflictDoNothing();
   await jobs.send(tx, mirrorRequest.queue, { requestId }, { singletonKey: requestId });
 }

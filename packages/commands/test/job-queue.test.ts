@@ -266,6 +266,61 @@ describe("a job type that runs one key at a time", () => {
     finish.get(`${other}:1`)?.();
   });
 
+  // A failed job holds back its key's later jobs until it leaves the queue (decisions-from-groups-15-28: design.md,
+  // Technical decisions: T10): the write that sends a newer job takes it out, and the worker, once it reaches its dead
+  // letter, takes it out only when a newer job already waits behind it, and leaves it for a Retry otherwise.
+  it("takes a key's failed job out of the queue, or, when asked to, only when a newer job of the key waits behind it", async () => {
+    workers.push(
+      await startWorker({
+        connection: app,
+        jobs: [{ type: oneAtATime, handle: async () => Promise.reject(new Error("the tracker refused the call")) }],
+        pollingIntervalSeconds: 0.5,
+        logger: silent,
+      }),
+    );
+    const requestId = randomUUID();
+    const send = (step: number) =>
+      write({ database: db, jobs: queue }, agent, async (writer) => {
+        await writer.record(messagePosted, { requestId, messageId: randomUUID() });
+        await writer.enqueue(oneAtATime, { requestId, step }, { singletonKey: requestId });
+      });
+    const drop = (options?: { onlyBehindNewer: boolean }) => db.transaction((tx) => queue.dropFailed(tx, oneAtATime.queue, requestId, options));
+    await send(1);
+    await until("the job to use up its attempts", async () => ((await jobsIn(oneAtATime.queue)).some(({ state }) => state === "failed") ? true : undefined));
+    await Promise.all(workers.splice(0).map((worker) => worker.stop()));
+
+    // Nothing waits behind it: it stays, for a Retry.
+    expect(await drop({ onlyBehindNewer: true })).toEqual({ failedAt: expect.any(Date), dropped: false });
+    expect(await jobsIn(oneAtATime.queue)).toEqual([{ state: "failed", data: { requestId, step: 1 } }]);
+    // A newer job waits behind it: it leaves the queue, and the newer job is the key's only one.
+    await send(2);
+    expect(await drop({ onlyBehindNewer: true })).toEqual({ failedAt: expect.any(Date), dropped: true });
+    expect(await jobsIn(oneAtATime.queue)).toEqual([{ state: "created", data: { requestId, step: 2 } }]);
+    expect(await drop({ onlyBehindNewer: true })).toBeUndefined();
+    expect(await drop()).toBeUndefined();
+  });
+
+  it("takes a key's failed job out of the queue for a newer job's write, with nothing waiting behind it yet", async () => {
+    workers.push(
+      await startWorker({
+        connection: app,
+        jobs: [{ type: oneAtATime, handle: async () => Promise.reject(new Error("the tracker refused the call")) }],
+        pollingIntervalSeconds: 0.5,
+        logger: silent,
+      }),
+    );
+    const requestId = randomUUID();
+    await write({ database: db, jobs: queue }, agent, async (writer) => {
+      await writer.record(messagePosted, { requestId, messageId: randomUUID() });
+      await writer.enqueue(oneAtATime, { requestId, step: 1 }, { singletonKey: requestId });
+    });
+    await until("the job to use up its attempts", async () => ((await jobsIn(oneAtATime.queue)).some(({ state }) => state === "failed") ? true : undefined));
+    await Promise.all(workers.splice(0).map((worker) => worker.stop()));
+
+    expect(await db.transaction((tx) => queue.dropFailed(tx, oneAtATime.queue, requestId))).toEqual({ failedAt: expect.any(Date), dropped: true });
+    expect(await jobsIn(oneAtATime.queue)).toEqual([]);
+  });
+
   it("sends each job with its key", async () => {
     const requestId = randomUUID();
     await write({ database: db, jobs: queue }, agent, async (writer) => {

@@ -10,6 +10,7 @@ import {
   mirrorRequest,
   mirrorRequests,
   type Banner,
+  type FailedJob,
   type InstallGitHub,
   type JobSender,
   type WebSessionCaller,
@@ -181,15 +182,33 @@ describe("a mirror job in the dead-letter queue", () => {
 
   it("is not shown when a newer job of the request took it out of the queue before the worker reached it, as that job records it", async () => {
     const request = await claimedRequest();
-    // The queue holds no failed job of the request any more: a newer one superseded it (mirror-jobs.ts).
-    const superseded: JobSender = { send: async () => {}, holdsFailed: async () => false };
+    const asked: unknown[] = [];
+    /** The worker's job queue, which holds the request's failed job, or not, and says whether it took it out. */
+    const holding = (failed: FailedJob | undefined): JobSender => ({
+      send: async () => {},
+      dropFailed: async (_tx, queue, key, options) => {
+        asked.push({ queue, key, options });
+        return failed;
+      },
+    });
 
-    await deadLetter(request.id, superseded);
+    // The queue holds no failed job of the request any more: a newer one superseded it (mirror-jobs.ts).
+    await deadLetter(request.id, holding(undefined));
 
     expect(await bannersOf(ada)).toEqual([]);
+    // The worker takes the failed job out of the queue only when a newer job of the request waits behind it.
+    expect(asked).toEqual([{ queue: mirrorRequest.queue, key: request.id, options: { onlyBehindNewer: true } }]);
     // Without a newer job, the failed job is in the queue still, and is shown.
-    await deadLetter(request.id, { send: async () => {}, holdsFailed: async () => true });
+    await deadLetter(request.id, holding({ failedAt: new Date(), dropped: false }));
     expect(await bannersOf(ada)).toHaveLength(1);
+  });
+
+  it("is shown when the worker took it out of the queue for a newer job that waited behind it", async () => {
+    const request = await claimedRequest();
+
+    await deadLetter(request.id, { send: async () => {}, dropFailed: async () => ({ failedAt: new Date(), dropped: true }) });
+
+    expect((await bannersOf(ada)).map(({ id }) => id)).toEqual([`mirror_failed:${request.id}`]);
   });
 
   it("follows the request to its target team: a reassigned request's banner shows to the members of its new team", async () => {

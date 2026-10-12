@@ -53,13 +53,19 @@ export interface JobSender {
    * one key at a time whose attempts were used up, which holds back the later
    * jobs of its key, such as a request's mirror job in the dead-letter queue,
    * so a newer job of the key runs instead (decisions-from-groups-15-28:
-   * design.md, Technical decisions: T10). Returns when that job failed, or
-   * undefined when the key has none. A sender without a queue behind it, such
-   * as a test's, has none.
+   * design.md, Technical decisions: T10). With `onlyBehindNewer`, it takes the
+   * job out only when a newer job of its key already waits behind it, and
+   * leaves it otherwise, for a Retry to run again. Returns when that job
+   * failed and whether it was taken out, or undefined when the key has none. A
+   * sender without a queue behind it, such as a test's, has none.
    */
-  dropFailed?(tx: Transaction, queue: string, key: string): Promise<Date | undefined>;
-  /** Whether a queue that runs one key at a time holds a job of this key whose attempts were used up. */
-  holdsFailed?(queue: string, key: string): Promise<boolean>;
+  dropFailed?(tx: Transaction, queue: string, key: string, options?: { onlyBehindNewer?: boolean }): Promise<FailedJob | undefined>;
+}
+
+/** A key's job whose attempts were used up: when it failed, and whether dropFailed took it out of its queue. */
+export interface FailedJob {
+  failedAt: Date;
+  dropped: boolean;
 }
 
 /** How the queue retries a kind of job. */

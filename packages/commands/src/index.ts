@@ -310,6 +310,7 @@ export {
   defineJobType,
   JobTypeError,
   type DefinedJobType,
+  type FailedJob,
   type JobData,
   type JobOptions,
   type JobSender,

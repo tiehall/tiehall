@@ -3,7 +3,7 @@ import type pg from "pg";
 import { fromDrizzle, getConstructionPlans, getMigrationPlans, PgBoss } from "pg-boss";
 import pgBoss from "pg-boss/package.json" with { type: "json" };
 import { JOB_QUEUE_SCHEMA, MigrationError, withPassword, type DatabaseConnection } from "@tiehall/db";
-import type { DefinedJobType, JobData, JobSender, JobSettings } from "./jobs.ts";
+import type { DefinedJobType, FailedJob, JobData, JobSender, JobSettings } from "./jobs.ts";
 import type { Logger } from "./log.ts";
 
 // The job queue (design.md, Technical decisions: T5 and T6): pg-boss, with its
@@ -83,8 +83,7 @@ export interface JobQueue extends JobSender {
   /** The pg-boss instance, for the worker in this package. */
   readonly boss: PgBoss;
   retryFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string): Promise<boolean>;
-  dropFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string): Promise<Date | undefined>;
-  holdsFailed(queue: string, key: string): Promise<boolean>;
+  dropFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string, options?: { onlyBehindNewer?: boolean }): Promise<FailedJob | undefined>;
   /**
    * Stops taking jobs, gives the active ones up to the timeout to finish, then
    * releases the rest, which run again once a worker starts, and closes the
@@ -145,21 +144,23 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
       );
       return true;
     },
-    async dropFailed(tx, queue, key) {
+    async dropFailed(tx, queue, key, { onlyBehindNewer = false } = {}) {
       const db = fromDrizzle(tx, sql);
-      const failed = (await boss.findJobs(queue, { key, db })).filter(({ state }) => state === "failed");
+      const jobs = await boss.findJobs(queue, { key, db });
+      const failed = jobs.filter(({ state }) => state === "failed");
       if (failed.length === 0) return undefined;
+      // Read through the transaction, the time comes as Postgres wrote it.
+      const at = failed[0]?.completedOn;
+      const failedAt = at === null || at === undefined ? new Date() : new Date(at);
+      // A newer job that waits behind the failed one is still created: a key holds at most one job that is active,
+      // waiting to be tried again or failed, which here is the failed one.
+      if (onlyBehindNewer && !jobs.some(({ state }) => state === "created")) return { failedAt, dropped: false };
       await boss.deleteJob(
         queue,
         failed.map(({ id }) => id),
         { db },
       );
-      // Read through the transaction, the time comes as Postgres wrote it.
-      const at = failed[0]?.completedOn;
-      return at === null || at === undefined ? new Date() : new Date(at);
-    },
-    async holdsFailed(queue, key) {
-      return (await boss.findJobs(queue, { key })).some(({ state }) => state === "failed");
+      return { failedAt, dropped: true };
     },
     async stop({ timeoutMs = 10_000 } = {}) {
       await boss.stop({ graceful: true, timeout: timeoutMs, close: true });
@@ -188,11 +189,8 @@ export function lazyJobSender(open: () => Promise<JobQueue>): JobSender {
     async retryFailed(tx, name, key) {
       return (await opened()).retryFailed(tx, name, key);
     },
-    async dropFailed(tx, name, key) {
-      return (await opened()).dropFailed(tx, name, key);
-    },
-    async holdsFailed(name, key) {
-      return (await opened()).holdsFailed(name, key);
+    async dropFailed(tx, name, key, options) {
+      return (await opened()).dropFailed(tx, name, key, options);
     },
   };
 }

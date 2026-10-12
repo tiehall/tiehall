@@ -27,9 +27,12 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 // the request sends a newer job, which takes the failed one out of the queue
 // and records it here when the worker has not yet (mirror-jobs.ts), and does
 // everything it would have done, since mirror jobs are level-triggered; the
-// banner says so. A failed job that a newer one took out of the queue before
-// the worker reached its dead letter is not recorded again by it, so a
-// banner the newer job cleared does not come back. Who sees the banner may
+// banner says so. A newer job sent while the failed one was still tried
+// waits behind it, and the worker, as it records the failed job here, takes it
+// out of the queue, so the newer job runs (mirrors.ts). A failed job that a
+// newer one took out of the queue before the worker reached its dead letter
+// is not recorded again by it, so a banner the newer job cleared does not
+// come back. Who sees the banner may
 // press Retry, in the web UI only: it runs the failed job again, at once, with
 // one more attempt; with no failed job left in the queue, as when a newer job
 // or pg-boss took it out, Retry sends a new one. Anyone else gets 403, and a
@@ -70,13 +73,11 @@ function utcTime(at: Date): string {
 }
 
 /** Records that the request's mirror job reached the dead-letter queue at this time; a later failure replaces an earlier one. */
-export async function recordMirrorFailure(database: Database, requestId: string, failedAt: Date): Promise<void> {
-  await withOrg(database, async ({ tx, orgId }) => {
-    await tx
-      .insert(mirrorFailures)
-      .values({ orgId, requestId, failedAt })
-      .onConflictDoUpdate({ target: [mirrorFailures.orgId, mirrorFailures.requestId], set: { failedAt, retriedAt: null } });
-  });
+export async function recordMirrorFailure({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, requestId: string, failedAt: Date): Promise<void> {
+  await tx
+    .insert(mirrorFailures)
+    .values({ orgId, requestId, failedAt })
+    .onConflictDoUpdate({ target: [mirrorFailures.orgId, mirrorFailures.requestId], set: { failedAt, retriedAt: null } });
 }
 
 /** Forgets the request's failed mirror job, once a mirror job of the request succeeded. */

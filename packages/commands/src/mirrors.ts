@@ -1113,7 +1113,11 @@ export async function adaptersOf(services: Pick<WorkerServices, "database" | "gi
  * then forgets a failed mirror job of the request, whose banner goes. A job
  * that used up its attempts reaches the dead-letter queue, which the worker
  * works to record it for its banner (mirror-failures.ts), unless a newer job
- * of the request took it out of the queue meanwhile.
+ * of the request took it out of the queue meanwhile. A newer job sent while
+ * the failed one was still tried waits behind it, so the worker then takes
+ * the failed job out of the queue, in the transaction that records it, and
+ * the newer job runs (decisions-from-groups-15-28: design.md, Technical
+ * decisions: T10); with none waiting, the failed job stays, for Retry.
  */
 export const mirrorRequests: WorkerJob<{ requestId: string }> = {
   type: mirrorRequest,
@@ -1132,9 +1136,13 @@ export const mirrorRequests: WorkerJob<{ requestId: string }> = {
     }
   },
   async deadLetter(job, { database, now, jobs }) {
-    // A newer job of the request took the failed one out of the queue before the worker reached its dead letter, and
-    // recorded it then (mirror-jobs.ts): the newer job carries the mirror on, and a banner its success cleared stays gone.
-    if (jobs?.holdsFailed !== undefined && !(await jobs.holdsFailed(mirrorRequest.queue, job.data.requestId))) return;
-    await recordMirrorFailure(database, job.data.requestId, now());
+    const { requestId } = job.data;
+    await withOrg(database, async (context) => {
+      // A newer job of the request took the failed one out of the queue before the worker reached its dead letter, and
+      // recorded it then (mirror-jobs.ts): the newer job carries the mirror on, and a banner its success cleared stays
+      // gone. A newer job that waits behind the failed one, sent while it was still tried, runs once it leaves the queue.
+      if (jobs?.dropFailed !== undefined && (await jobs.dropFailed(context.tx, mirrorRequest.queue, requestId, { onlyBehindNewer: true })) === undefined) return;
+      await recordMirrorFailure(context, requestId, now());
+    });
   },
 };

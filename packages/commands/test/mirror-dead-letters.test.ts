@@ -31,7 +31,10 @@ import { addTeam, joinTeams, openRequestInTheWebUi, sessionOf } from "./support/
 // takes the failed one out of the queue, and the banner stays while the newer
 // job fails and goes once it succeeds, showing the request as it is then.
 // Without a change, Retry runs the failed job again once GitHub works, which
-// creates the issue, and the banner goes.
+// creates the issue, and the banner goes. A change made while the job is
+// still tried sends a newer job that waits behind it, and runs, without
+// Retry, once the failed job reaches the dead-letter queue, which the worker
+// then takes it out of the queue for (Technical decisions: T10).
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -232,5 +235,40 @@ describe("a mirror job GitHub keeps failing", () => {
     // The retried job made the issue.
     await issueShowing(other.id, "claimed");
     expect(await mirrorJobOf(other.id, "failed")).toBeUndefined();
+  }, 120_000);
+
+  it("does not hold back a change made while it was still tried: the newer job waits behind it, and runs once it reaches the dead-letter queue", async () => {
+    refusing = true;
+    const other = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
+    await install.execute("requests.claim", ayse, { key: other.key });
+    const from = refusals.length;
+    // Its first attempt fails, and while it waits for the next one, a change sends a newer job, which waits behind it.
+    await until("the first attempt to fail", () => mirrorJobOf(other.id, "retry"));
+    await install.execute("requests.set_status", ayse, { key: other.key, state: "in_progress" });
+    expect(await mirrorJobOf(other.id, "created")).toBeDefined();
+    // Its other 4 attempts, each let run at once, fail too, and it reaches the dead-letter queue.
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      const retry = await until(`attempt ${attempt - 1} to fail`, async () => {
+        const job = await mirrorJobOf(other.id, "retry");
+        return job?.retry_count === attempt - 2 ? job : undefined;
+      });
+      await install.owner.query("UPDATE pgboss.job SET start_after = now() WHERE id = $1", [retry.id]);
+      await until(`attempt ${attempt} to fail`, async () => (refusals.length === from + attempt ? true : undefined));
+    }
+    await until("the job to reach the dead-letter queue", async () => ((await deadLettered(other.id)) === 1 ? true : undefined));
+
+    // The newer job runs without Retry, and GitHub still refuses it: the failed job is out of the queue, and its banner shows.
+    await until("the newer job to run", async () => (refusals.length === from + 6 ? true : undefined));
+    expect(await mirrorJobOf(other.id, "failed")).toBeUndefined();
+    const retry = await until("the newer job to wait for its next attempt", () => mirrorJobOf(other.id, "retry"));
+    expect((await bannersOf(ayse)).map(({ id }) => id)).toContain(`mirror_failed:${other.id}`);
+
+    // GitHub works again, and the newer job's next attempt makes the issue, showing the request as it is now; the banner goes.
+    refusing = false;
+    await install.owner.query("UPDATE pgboss.job SET start_after = now() WHERE id = $1", [retry.id]);
+    const issue = await issueShowing(other.id, "in_progress");
+    expect(issue.labels).not.toContain("tiehall:claimed");
+    await until("the banner to go", async () => ((await bannersOf(ayse)).length === 0 ? true : undefined));
+    expect(refusals).toHaveLength(from + 6);
   }, 120_000);
 });
