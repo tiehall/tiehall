@@ -4,6 +4,7 @@ import { mirrorFailures, requests, teamMembers, teams, type Database } from "@ti
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Banner } from "./admin-alerts.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
+import { LOGGABLE } from "./log.ts";
 import type { Member } from "./members.ts";
 import { mirrorRequest } from "./mirror-jobs.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
@@ -20,15 +21,41 @@ import { createPageRoute, seeOther, type PageRoute, type PageRouteOptions } from
 // A recorded job is a banner in the web UI (admin-alerts.ts), with a Retry
 // button and a link to the request, for the install's admins and the members
 // of the request's target team as it is now, and for no one else. Its jobs
-// run one key at a time, so the failed job holds back the request's later
-// mirror jobs, which the banner says. Who sees the banner may press Retry, in
-// the web UI only: it runs the failed job again, at once, with one more
-// attempt, and the jobs it held back run after it; with no failed job left in
-// the queue, as when pg-boss deleted it, Retry sends a new one. Anyone else
-// gets 403, and a request whose mirror job has not failed gets 409. Retry
-// records when it was pressed, which the banner then says; the banner goes
-// once a mirror job of the request succeeds, and shows again, with the new
-// time, when the retried job fails.
+// run one key at a time, but the failed job does not hold back the request's
+// later mirror jobs (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (76); Technical decisions: T10): the next change of
+// the request sends a newer job, which takes the failed one out of the queue
+// and records it here when the worker has not yet (mirror-jobs.ts), and does
+// everything it would have done, since mirror jobs are level-triggered; the
+// banner says so. A failed job that a newer one took out of the queue before
+// the worker reached its dead letter is not recorded again by it, so a
+// banner the newer job cleared does not come back. Who sees the banner may
+// press Retry, in the web UI only: it runs the failed job again, at once, with
+// one more attempt; with no failed job left in the queue, as when a newer job
+// or pg-boss took it out, Retry sends a new one. Anyone else gets 403, and a
+// request whose mirror job has not failed gets 409. Retry records when it was
+// pressed, which the banner then says; the banner goes once a mirror job of
+// the request succeeds, and shows again, with the new time, when the retried
+// job fails.
+//
+// A mirror issue the tracker no longer has, which GitHub answers a write to
+// with 404 or 410, as when someone deleted the issue or moved it out of
+// Tiehall's reach, is no failure: the adapter throws MirrorIssueGoneError,
+// and the job marks the mirror gone, writes to it no more, adds one notice to
+// the request, and succeeds, so the banner goes (mirrors.ts; D55 (79)).
+
+/**
+ * A write to a mirror issue that the tracker answered as gone: it no longer
+ * has the issue, or no longer lets Tiehall reach it (GitHub's 404 or 410).
+ * The mirror job marks the mirror gone and writes to it no more (mirrors.ts).
+ */
+export class MirrorIssueGoneError extends Error {
+  override name = "MirrorIssueGoneError";
+  readonly [LOGGABLE] = true;
+  constructor(tracker: string) {
+    super(`The ${tracker} mirror issue is gone: the tracker no longer has it, or no longer lets Tiehall reach it.`);
+  }
+}
 
 /** Where the Retry button of a failed mirror job's banner posts. */
 export const MIRROR_RETRY_PATH = "/mirrors/retry";
@@ -88,7 +115,7 @@ export async function mirrorFailureBanners(context: Pick<OrgContext, "tx" | "org
       id: `mirror_failed:${requestId}`,
       text:
         `Tiehall could not update the mirror issue of ${key}: its mirror job failed on every attempt, the last at ${utcTime(failedAt)}, and stopped. ` +
-        `Later changes of ${key} reach its mirror issue once the job runs again.${retrying}`,
+        `The next change of ${key} runs its mirror job again, as Retry does.${retrying}`,
       link: { href: `/${key}`, text: `Open ${key}` },
       button: { label: "Retry", action: MIRROR_RETRY_PATH, fields: { requestId } },
     };

@@ -5,12 +5,15 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or, sql, type SQL } 
 import { alias } from "drizzle-orm/pg-core";
 import { installLink, type ServerText } from "./email.ts";
 import { createGitHubIssues } from "./github-issues.ts";
+import type { JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
-import { clearMirrorFailure, recordMirrorFailure } from "./mirror-failures.ts";
+import { addSystemMessage } from "./messages.ts";
+import { clearMirrorFailure, MirrorIssueGoneError, recordMirrorFailure } from "./mirror-failures.ts";
 import { mirrorRequest } from "./mirror-jobs.ts";
 import { awayComment, backComment, mirrorSummary, mirrorTitle, questionComment, stateComment, stateLabel, type MirrorSummary } from "./mirror-texts.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob, WorkerServices } from "./worker.ts";
+import { writeIn } from "./write.ts";
 
 // The tracker mirrors (tracker-mirrors: A mirror is a projection of the
 // request; tracker-mirrors: Mirror writes are idempotent and never echo;
@@ -111,6 +114,15 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   change set merges, the event that records it wakes the job, and the
 //   summary says the change shipped, naming the pull request; that changes
 //   no state, so it adds no comment.
+// - Gone (tracker-mirrors: Failed mirror jobs are shown with a Retry button;
+//   decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (79); Technical decisions: T10): when the tracker answers a write to
+//   an issue, or the read of its comments, as gone (GitHub's 404 or 410), as
+//   for an issue someone deleted or moved out of Tiehall's reach, the job
+//   marks the mirror gone, with one notice on the request's thread in
+//   Tiehall's words, and writes to that issue no more; it does not open the
+//   issue again, nor another in its place, and the job succeeds, so the
+//   banner of a failed job of the request goes. Every later job skips it.
 // Nothing a person wrote in Tiehall reaches the issue but the request's
 // title: its summary and label are server text (mirror-texts.ts).
 
@@ -229,6 +241,8 @@ export interface MirrorRow {
   mappingId: string | null;
   /** Whether the mapping that made it holds still: only then does Tiehall write to its issue. */
   mapped: boolean;
+  /** Whether the tracker answered a write to its issue as gone: Tiehall writes to it no more. */
+  gone: boolean;
 }
 
 /** A team's mapping, as the job reads it: its id, the tracker, the place, whether it mirrors on open, and when it was made. */
@@ -367,6 +381,7 @@ function mirrorRowOf(row: typeof mirrors.$inferSelect, mapped: boolean): MirrorR
     away: row.away,
     mappingId: row.mappingId,
     mapped,
+    gone: row.goneAt !== null,
   };
 }
 
@@ -651,11 +666,16 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
   // A mirror whose create is under way counts too: the tracker may have made its issue, which a retry looks for.
   const leftBehind = rows.filter(
     (candidate) =>
-      candidate !== mirror && candidate.mapped && (candidate.issue !== null || candidate.shownState !== null) && !candidate.away && isLeftBehind(candidate, request),
+      candidate !== mirror &&
+      candidate.mapped &&
+      !candidate.gone &&
+      (candidate.issue !== null || candidate.shownState !== null) &&
+      !candidate.away &&
+      isLeftBehind(candidate, request),
   );
   // The events since the earliest comments of the mirrors that follow, or followed, the request until now.
   // A mirror whose create is under way has its comments' start recorded too, from the read its create carries.
-  const reading = [...(mirror !== undefined && mirror.shownState !== null ? [mirror] : []), ...leftBehind];
+  const reading = [...(mirror !== undefined && mirror.shownState !== null && !mirror.gone ? [mirror] : []), ...leftBehind];
   const since = reading.length === 0 ? undefined : Math.min(...reading.map(({ commentedThrough }) => commentedThrough));
   const read =
     since === undefined
@@ -806,6 +826,65 @@ async function whileMapped(logger: Logger, writes: () => Promise<void>): Promise
   }
 }
 
+/** How a notice names each tracker. */
+const TRACKER_NAMES: Readonly<Record<Tracker, string>> = { github: "GitHub", jira: "Jira" };
+
+/**
+ * The notice on a request whose mirror issue the tracker answered as gone, in
+ * Tiehall's words: the tracker, the key the issue mirrors, and that Tiehall
+ * leaves the issue and the request as they are.
+ */
+export function mirrorGoneText({ tracker, mirroredKey, key }: { tracker: Tracker; mirroredKey: string; key: string }): string {
+  const name = TRACKER_NAMES[tracker];
+  return (
+    `The ${name} mirror issue of ${mirroredKey} is gone: ${name} no longer has it, or no longer lets Tiehall reach it. ` +
+    `Tiehall writes to it no more and does not open it again; ${key} does not change.`
+  );
+}
+
+/** The key a mirror's issue mirrors: the request's key in the mirror's team when the mirror was made, which a reassignment since may have left behind. */
+function mirroredKeyOf(plan: MirrorPlan, mirror: MirrorRow): string {
+  const teamKey = plan.teamKeys.get(mirror.teamId);
+  return teamKey === undefined || mirror.number === null ? plan.request.key : formatRequestKey(teamKey, mirror.number);
+}
+
+/** A system notice wakes no job (mirror-jobs.ts: changesMirror()), so the write that records a gone mirror sends none. */
+const NO_JOBS: JobSender = {
+  send: () => Promise.reject(new Error("The notice of a gone mirror issue sends no job.")),
+};
+
+/**
+ * Marks the mirror gone, once: Tiehall writes to its issue no more, and the
+ * request's thread gets one notice of it, recorded as the system's, from the
+ * tracker. A mirror marked gone already is left as it is.
+ */
+async function markGone(services: MirrorServices, plan: MirrorPlan, mirror: MirrorRow, logger: Logger): Promise<void> {
+  const marked = await withOrg(services.database, async (context) => {
+    const [row] = await context.tx
+      .update(mirrors)
+      .set({ goneAt: sql`now()`, expectedState: null, pendingComment: null })
+      .where(and(eq(mirrors.orgId, context.orgId), eq(mirrors.id, mirror.id), isNull(mirrors.goneAt)))
+      .returning({ id: mirrors.id });
+    if (row === undefined) return false;
+    const mirroredKey = mirroredKeyOf(plan, mirror);
+    await writeIn(context, NO_JOBS, { actorKind: "system", surface: mirror.tracker }, (writer) =>
+      addSystemMessage(writer, plan.request.id, mirrorGoneText({ tracker: mirror.tracker, mirroredKey, key: plan.request.key })),
+    );
+    return true;
+  });
+  if (marked) logger.info("mirror: the tracker answered a write to the mirror issue as gone, so it is marked gone and written no more", { mirrorId: mirror.id });
+}
+
+/** Runs writes to a mirror's issue, which end when the tracker answers one as gone: the mirror is then marked gone, and the job goes on. */
+async function untilGone(services: MirrorServices, plan: MirrorPlan, mirror: MirrorRow, logger: Logger, writes: () => Promise<void>): Promise<void> {
+  try {
+    await writes();
+  } catch (error) {
+    if (!(error instanceof MirrorIssueGoneError)) throw error;
+    await markGone(services, plan, mirror, logger);
+  }
+}
+
 /** The mirror in the target team's tracker: created under the team's rule, then commented and updated to show the request now. */
 async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping: MirrorMapping, logger: Logger): Promise<void> {
   const { request } = plan;
@@ -821,6 +900,8 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
   // is open and unclaimed in it.
   const wanted = !isTerminalState(request.state) && plan.reached;
   let mirror = plan.mirror;
+  // An issue the tracker answered as gone is written to no more, and none is made in its place.
+  if (mirror?.gone === true) return;
   let fresh = false;
   if (mirror === undefined) {
     if (!wanted) return;
@@ -909,51 +990,52 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
   }
   const following = mirror as MirrorRow & { issue: string };
   const mirrorId = following.id;
+  await untilGone(services, plan, following, logger, async () => {
+    if (following.shownState === null) {
+      // A mirror made before its comments were kept: they start from the request as it is now.
+      await saveMirror(services.database, mirrorId, { commentedThrough: plan.latest, shownState: request.state });
+    }
+    const writes = writesOf(
+      plan.events.filter(({ number }) => number > following.commentedThrough),
+      following.shownState ?? request.state,
+    );
+    let written = false;
+    let rest = writes;
+    if (following.away) {
+      // A reassignment had left the issue behind, and the request is back: one notice, for the write that brought it
+      // back, and the comments go on from there.
+      const at = writes.findLastIndex(({ moves }) => moves.some(({ teamId }) => teamId === following.teamId));
+      const back = at === -1 ? undefined : writes[at];
+      const from = back?.moves.find(({ teamId }) => teamId === following.teamId)?.previousTeamId;
+      const text = backComment({
+        key: request.key,
+        from: from === undefined ? undefined : plan.teamKeys.get(from),
+        state: request.state,
+        link: projection.summary.link,
+        undone: back?.undone === true,
+      });
+      written = await commentFor(services, adapter, following, back ?? { through: plan.latest, state: request.state }, text, { away: false });
+      rest = at === -1 ? [] : writes.slice(at + 1);
+    }
+    // One comment per write that changed the request's state or asked a question, in order, while the request was with the
+    // issue's team: a reassignment away and back before the job ran leaves nothing on the issue.
+    let here = true;
+    for (const write of rest) {
+      let text: ServerText | undefined;
+      if (write.moves.length > 0) here = write.moves.some(({ teamId }) => teamId === following.teamId);
+      else if (here) text = commentOf(write, request.key, projection.summary.link);
+      if (await commentFor(services, adapter, following, write, text)) written = true;
+    }
 
-  if (following.shownState === null) {
-    // A mirror made before its comments were kept: they start from the request as it is now.
-    await saveMirror(services.database, mirrorId, { commentedThrough: plan.latest, shownState: request.state });
-  }
-  const writes = writesOf(
-    plan.events.filter(({ number }) => number > following.commentedThrough),
-    following.shownState ?? request.state,
-  );
-  let written = false;
-  let rest = writes;
-  if (following.away) {
-    // A reassignment had left the issue behind, and the request is back: one notice, for the write that brought it
-    // back, and the comments go on from there.
-    const at = writes.findLastIndex(({ moves }) => moves.some(({ teamId }) => teamId === following.teamId));
-    const back = at === -1 ? undefined : writes[at];
-    const from = back?.moves.find(({ teamId }) => teamId === following.teamId)?.previousTeamId;
-    const text = backComment({
-      key: request.key,
-      from: from === undefined ? undefined : plan.teamKeys.get(from),
-      state: request.state,
-      link: projection.summary.link,
-      undone: back?.undone === true,
-    });
-    written = await commentFor(services, adapter, following, back ?? { through: plan.latest, state: request.state }, text, { away: false });
-    rest = at === -1 ? [] : writes.slice(at + 1);
-  }
-  // One comment per write that changed the request's state or asked a question, in order, while the request was with the
-  // issue's team: a reassignment away and back before the job ran leaves nothing on the issue.
-  let here = true;
-  for (const write of rest) {
-    let text: ServerText | undefined;
-    if (write.moves.length > 0) here = write.moves.some(({ teamId }) => teamId === following.teamId);
-    else if (here) text = commentOf(write, request.key, projection.summary.link);
-    if (await commentFor(services, adapter, following, write, text)) written = true;
-  }
-
-  const update = updateOf(following.pushed, projection);
-  // Nothing the mirror shows has changed since Tiehall last wrote it: nothing more is written.
-  if (update === undefined) {
-    if (written) logger.info("mirror: commented on the mirror issue", { mirrorId });
-    return;
-  }
-  await updateIssue(services, adapter, following, update, pushedOf(projection));
-  logger.info("mirror: updated the mirror issue", { mirrorId });
+    const update = updateOf(following.pushed, projection);
+    // Nothing the mirror shows has changed since Tiehall last wrote it: nothing more is written.
+    if (update === undefined) {
+      if (written) logger.info("mirror: commented on the mirror issue", { mirrorId });
+      return;
+    }
+    await updateIssue(services, adapter, following, update, pushedOf(projection));
+    logger.info("mirror: updated the mirror issue", { mirrorId });
+  });
 }
 
 /**
@@ -989,9 +1071,14 @@ async function leave(services: MirrorServices, plan: MirrorPlan, left: MirrorRow
   } else {
     mirror = left as MirrorRow & { issue: string };
   }
+  const issued = mirror;
+  await untilGone(services, plan, issued, logger, () => leaveIssue(services, plan, issued, adapter, logger));
+}
+
+/** The writes that leave a mirror issue behind the reassigned request: its comments, the notice, and its close as not planned. */
+async function leaveIssue(services: MirrorServices, plan: MirrorPlan, mirror: MirrorRow & { issue: string }, adapter: TrackerAdapter, logger: Logger): Promise<void> {
   const { request } = plan;
-  const teamKey = plan.teamKeys.get(mirror.teamId);
-  const mirroredKey = teamKey === undefined || mirror.number === null ? request.key : formatRequestKey(teamKey, mirror.number);
+  const mirroredKey = mirroredKeyOf(plan, mirror);
   const mirroredLink = installLink(services.installUrl, `/${mirroredKey}`);
   const writes = writesOf(
     plan.events.filter(({ number }) => number > mirror.commentedThrough),
@@ -1025,7 +1112,8 @@ export async function adaptersOf(services: Pick<WorkerServices, "database" | "gi
  * The worker's mirror job: brings one request's mirror issue up to date, and
  * then forgets a failed mirror job of the request, whose banner goes. A job
  * that used up its attempts reaches the dead-letter queue, which the worker
- * works to record it for its banner (mirror-failures.ts).
+ * works to record it for its banner (mirror-failures.ts), unless a newer job
+ * of the request took it out of the queue meanwhile.
  */
 export const mirrorRequests: WorkerJob<{ requestId: string }> = {
   type: mirrorRequest,
@@ -1043,7 +1131,10 @@ export const mirrorRequests: WorkerJob<{ requestId: string }> = {
       if (!(error instanceof SetupRequiredError)) throw error;
     }
   },
-  async deadLetter(job, { database, now }) {
+  async deadLetter(job, { database, now, jobs }) {
+    // A newer job of the request took the failed one out of the queue before the worker reached its dead letter, and
+    // recorded it then (mirror-jobs.ts): the newer job carries the mirror on, and a banner its success cleared stays gone.
+    if (jobs?.holdsFailed !== undefined && !(await jobs.holdsFailed(mirrorRequest.queue, job.data.requestId))) return;
     await recordMirrorFailure(database, job.data.requestId, now());
   },
 };

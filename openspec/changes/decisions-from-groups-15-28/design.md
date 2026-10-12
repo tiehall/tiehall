@@ -563,8 +563,9 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 
 #### T10. Mirror jobs
 
-- **Choice.** `packages/commands/src/mirror-jobs.ts` sends a request's next mirror job under a key that no dead-lettered job holds, and its success clears the request's dead letter. `github-issues.ts` turns a 404 or 410 on a mirror issue into a mirror state `gone`, kept on the mirror's row by a migration, which every later job skips.
-- **Why.** Jobs are level-triggered, so the newest one is the only one that matters.
+- **Choice.** `packages/commands/src/mirror-jobs.ts` sends a request's next mirror job under a key that no dead-lettered job holds: the request's own key, from which the write that sends the job takes the dead-lettered job out of the queue in its transaction, recording that job for its banner when the worker has not yet; the worker then records nothing for the dead letter of a job a newer one took out, and the newer job's success clears the request's dead letter and its banner. `github-issues.ts` turns a 404 or 410 on a write to a mirror issue, or on the read of its comments, into a mirror state `gone`, kept on the mirror's row in the column `mirrors.gone_at` that the migration `0102_mark_a_mirror_issue_gone.sql` adds, with one notice on the request, and every later job skips it.
+- **Why.** Jobs are level-triggered, so the newest one is the only one that matters; keeping the request's key keeps its jobs one at a time.
+- **Alternatives.** *A key of its own for the newer job, beside the dead-lettered job's:* a Retry of the dead-lettered job would then run beside the newer jobs, so two jobs could write one issue at once, or make it twice. *Recording the dead letter only when the worker reaches it:* a newer job that succeeded first would see its cleared banner come back.
 
 #### T11. Receipts for every confirmation
 

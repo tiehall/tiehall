@@ -245,6 +245,8 @@ export class GitHubWorld {
   readonly authorizations = new Set<string>();
   /** Issues and pull requests, by repository id and number. */
   readonly items = new Map<string, StubIssue | StubPullRequest>();
+  /** The issues someone deleted, by repository id and number, which GitHub answers with 410. */
+  readonly deletedIssues = new Set<string>();
   installationTokenLength = DEFAULT_INSTALLATION_TOKEN_LENGTH;
   memberAnswers: MemberAnswers = "forbidden";
   private clockOffset = 0;
@@ -608,6 +610,17 @@ export class GitHubWorld {
 
   item(repo: StubRepo, number: number): StubIssue | StubPullRequest | undefined {
     return this.items.get(`${repo.id}#${number}`);
+  }
+
+  /** Deletes an issue, as an admin of its repository may: GitHub answers every later call about it with 410. */
+  deleteIssue(issue: StubIssue): void {
+    this.items.delete(`${issue.repo.id}#${issue.number}`);
+    this.deletedIssues.add(`${issue.repo.id}#${issue.number}`);
+  }
+
+  /** Whether someone deleted the issue with this number in the repository. */
+  wasDeleted(repo: StubRepo, number: number): boolean {
+    return this.deletedIssues.has(`${repo.id}#${number}`);
   }
 
   itemsOf(repo: StubRepo): Array<StubIssue | StubPullRequest> {

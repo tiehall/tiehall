@@ -83,6 +83,8 @@ export interface JobQueue extends JobSender {
   /** The pg-boss instance, for the worker in this package. */
   readonly boss: PgBoss;
   retryFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string): Promise<boolean>;
+  dropFailed(tx: Parameters<JobSender["send"]>[0], queue: string, key: string): Promise<Date | undefined>;
+  holdsFailed(queue: string, key: string): Promise<boolean>;
   /**
    * Stops taking jobs, gives the active ones up to the timeout to finish, then
    * releases the rest, which run again once a worker starts, and closes the
@@ -143,6 +145,22 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
       );
       return true;
     },
+    async dropFailed(tx, queue, key) {
+      const db = fromDrizzle(tx, sql);
+      const failed = (await boss.findJobs(queue, { key, db })).filter(({ state }) => state === "failed");
+      if (failed.length === 0) return undefined;
+      await boss.deleteJob(
+        queue,
+        failed.map(({ id }) => id),
+        { db },
+      );
+      // Read through the transaction, the time comes as Postgres wrote it.
+      const at = failed[0]?.completedOn;
+      return at === null || at === undefined ? new Date() : new Date(at);
+    },
+    async holdsFailed(queue, key) {
+      return (await boss.findJobs(queue, { key })).some(({ state }) => state === "failed");
+    },
     async stop({ timeoutMs = 10_000 } = {}) {
       await boss.stop({ graceful: true, timeout: timeoutMs, close: true });
     },
@@ -150,9 +168,9 @@ export async function openJobQueue(options: JobQueueOptions): Promise<JobQueue> 
 }
 
 /**
- * A job sender that opens its queue when it first sends a job, or runs a
- * failed one again, as the web role's does, and opens it again on the next
- * call when opening it failed. It passes each job's options on, such as the
+ * A job sender that opens its queue when it first sends a job, runs a failed
+ * one again or takes one out, as the web role's does, and opens it again on
+ * the next call when opening it failed. It passes each job's options on, such as the
  * key a job runs under, which a queue that runs one key at a time refuses a
  * job without, and when a job may start.
  */
@@ -169,6 +187,12 @@ export function lazyJobSender(open: () => Promise<JobQueue>): JobSender {
     },
     async retryFailed(tx, name, key) {
       return (await opened()).retryFailed(tx, name, key);
+    },
+    async dropFailed(tx, name, key) {
+      return (await opened()).dropFailed(tx, name, key);
+    },
+    async holdsFailed(name, key) {
+      return (await opened()).holdsFailed(name, key);
     },
   };
 }

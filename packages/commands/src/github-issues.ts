@@ -4,6 +4,7 @@ import { installationCovering } from "./contract-requesters.ts";
 import { gitHubUnavailable, GitHubUnavailableError, pagesOf, statusOfCall, type GitHubClient } from "./github-client.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
 import { LOGGABLE } from "./log.ts";
+import { MirrorIssueGoneError } from "./mirror-failures.ts";
 import type { MirrorSummary } from "./mirror-texts.ts";
 import type { CloseReason, IssueNow, IssueUpdate, MirrorProjection, TrackerAccount, TrackerAdapter } from "./mirrors.ts";
 import { withOrg } from "./with-org.ts";
@@ -30,7 +31,12 @@ import { withOrg } from "./with-org.ts";
 // labels people add stay. A comment Tiehall adds ends with a comment of the
 // same kind that names its own marker, by which a retried comment is found
 // among the issue's comments. The issue's state is set with GitHub's state
-// and state_reason: closed as completed or not_planned, or open again.
+// and state_reason: closed as completed or not_planned, or open again. A
+// write to an issue, or the read of its comments, that GitHub answers with
+// 404 or 410, as for an issue someone deleted or moved out of the App's
+// reach, throws MirrorIssueGoneError, which the mirror job marks the mirror
+// gone for (decisions-from-groups-15-28: design.md, Technical decisions:
+// T10); any other failure is GitHub being unavailable.
 
 /** The line a mirror issue's body ends with, which names its marker; GitHub's Markdown does not show it. */
 export function markerLine(marker: string): string {
@@ -78,6 +84,12 @@ const COMMENTS = z.array(z.looseObject({ body: z.string().nullable().optional() 
 /** Why GitHub says a closed issue was closed: completed unless it names another reason Tiehall tells apart. */
 function closeReasonOf(stateReason: string | null | undefined): CloseReason {
   return stateReason === "not_planned" ? "not_planned" : stateReason === "duplicate" ? "duplicate" : "completed";
+}
+
+/** The error of a call about one mirror issue: gone when GitHub answers 404 or 410, as for an issue it no longer has; unavailable otherwise. */
+function issueCallFailed(what: string, error: unknown): Error {
+  const status = statusOfCall(error);
+  return status === 404 || status === 410 ? new MirrorIssueGoneError("GitHub") : gitHubUnavailable(what, error);
 }
 
 function accountOf(account: z.output<typeof ACCOUNT>): TrackerAccount {
@@ -182,7 +194,7 @@ export function createGitHubIssues({ app, database }: GitHubIssuesOptions): Trac
           }
         }
       } catch (error) {
-        throw gitHubUnavailable("an update of a mirror issue", error);
+        throw issueCallFailed("an update of a mirror issue", error);
       }
     },
 
@@ -196,7 +208,7 @@ export function createGitHubIssues({ app, database }: GitHubIssuesOptions): Trac
           body: `${text}\n\n${commentMarkerLine(marker)}`,
         });
       } catch (error) {
-        throw gitHubUnavailable("a comment on a mirror issue", error);
+        throw issueCallFailed("a comment on a mirror issue", error);
       }
     },
 
@@ -216,7 +228,7 @@ export function createGitHubIssues({ app, database }: GitHubIssuesOptions): Trac
           if (comments.data.some(({ body }) => (body ?? "").includes(line))) return true;
         }
       } catch (error) {
-        throw gitHubUnavailable("the listing of a mirror issue's comments", error);
+        throw issueCallFailed("the listing of a mirror issue's comments", error);
       }
       return false;
     },

@@ -25,10 +25,13 @@ import { addTeam, joinTeams, openRequestInTheWebUi, sessionOf } from "./support/
 // after the first, and when that one fails too, the job moves to the
 // dead-letter queue, which the worker works to show it as a banner. The test
 // does not wait the 14 minutes: it reads when the queue would run each next
-// attempt, then lets it run at once. A change of the request made meanwhile
-// waits behind the failed job, as every later job of the request does. Once
-// GitHub works again, Retry runs the failed job, which creates the issue, the
-// change that waited follows it, and the banner goes.
+// attempt, then lets it run at once. A change of the request made after does
+// not wait behind the failed job (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (76)): its newer job runs at once and
+// takes the failed one out of the queue, and the banner stays while the newer
+// job fails and goes once it succeeds, showing the request as it is then.
+// Without a change, Retry runs the failed job again once GitHub works, which
+// creates the issue, and the banner goes.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -114,6 +117,47 @@ async function bannersOf(session: WebSessionCaller): Promise<Banner[]> {
   return ((await install.execute("install.get_banners", session, {}, { readOnly: true })) as { banners: Banner[] }).banners;
 }
 
+/**
+ * Lets the request's mirror job fail until it reaches the dead-letter queue,
+ * running each next attempt at once rather than in 14 minutes; returns how
+ * long the queue would have waited before the attempts after the first.
+ */
+async function failUntilDeadLettered(requestId: string): Promise<number> {
+  const from = refusals.length;
+  let scheduled = 0;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const retry = await until(`attempt ${attempt} to fail`, async () => {
+      const job = await mirrorJobOf(requestId, "retry");
+      return job?.retry_count === attempt - 1 ? job : undefined;
+    });
+    expect(refusals).toHaveLength(from + attempt);
+    const wait = retry.start_after.getTime() - refusals[from + attempt - 1]!;
+    expect(wait).toBeGreaterThanOrEqual(14 * 60_000 - 5_000);
+    expect(wait).toBeLessThanOrEqual(14 * 60_000 + 5_000);
+    scheduled += wait;
+    // Not in the dead-letter queue yet: it is tried again.
+    expect(await deadLettered(requestId)).toBe(0);
+    // The test lets the next attempt run now rather than in 14 minutes.
+    await install.owner.query("UPDATE pgboss.job SET start_after = now() WHERE id = $1", [retry.id]);
+    await until(`attempt ${attempt + 1} to fail`, async () => (refusals.length === from + attempt + 1 ? true : undefined));
+  }
+  await until("the fifth attempt to fail", () => mirrorJobOf(requestId, "failed"));
+  expect(refusals).toHaveLength(from + 5);
+  await until("the job to reach the dead-letter queue", async () => ((await deadLettered(requestId)) === 1 ? true : undefined));
+  return scheduled;
+}
+
+/** The request's mirror issue in acme/fe-intake, once it carries the label of this state. */
+async function issueShowing(requestId: string, state: string) {
+  return until(`the issue to show ${state}`, async () => {
+    const { rows } = await install.owner.query<{ issue: string | null }>("SELECT issue FROM mirrors WHERE request_id = $1", [requestId]);
+    const number = rows[0]?.issue;
+    if (number === null || number === undefined) return undefined;
+    const found = stub.issue("acme/fe-intake", Number(number));
+    return found.labels.includes(`tiehall:${state}`) ? found : undefined;
+  });
+}
+
 describe("a mirror job GitHub keeps failing", () => {
   let request: { key: string; id: string };
 
@@ -121,27 +165,8 @@ describe("a mirror job GitHub keeps failing", () => {
     request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
     await install.execute("requests.claim", ayse, { key: request.key });
 
-    let scheduled = 0;
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
-      const retry = await until(`attempt ${attempt} to fail`, async () => {
-        const job = await mirrorJobOf(request.id, "retry");
-        return job?.retry_count === attempt - 1 ? job : undefined;
-      });
-      expect(refusals).toHaveLength(attempt);
-      const wait = retry.start_after.getTime() - refusals[attempt - 1]!;
-      expect(wait).toBeGreaterThanOrEqual(14 * 60_000 - 5_000);
-      expect(wait).toBeLessThanOrEqual(14 * 60_000 + 5_000);
-      scheduled += wait;
-      // Not in the dead-letter queue yet: it is tried again.
-      expect(await deadLettered(request.id)).toBe(0);
-      // The test lets the next attempt run now rather than in 14 minutes.
-      await install.owner.query("UPDATE pgboss.job SET start_after = now() WHERE id = $1", [retry.id]);
-      await until(`attempt ${attempt + 1} to fail`, async () => (refusals.length === attempt + 1 ? true : undefined));
-    }
+    const scheduled = await failUntilDeadLettered(request.id);
 
-    await until("the fifth attempt to fail", () => mirrorJobOf(request.id, "failed"));
-    expect(refusals).toHaveLength(5);
-    await until("the job to reach the dead-letter queue", async () => ((await deadLettered(request.id)) === 1 ? true : undefined));
     // Without the test's hurry, the fifth attempt would have come after the 4 waits and the 4 attempts before it, each of which
     // took well under a second here: between 50 and 70 minutes after the first.
     expect(scheduled).toBeGreaterThanOrEqual(50 * 60_000);
@@ -160,12 +185,36 @@ describe("a mirror job GitHub keeps failing", () => {
     expect(await bannersOf(mo)).toEqual([]);
   }, 60_000);
 
-  it("holds back the request's later changes, which follow once Retry after a fix runs it, and the banner goes", async () => {
-    // A change made while the job is failed waits behind it.
+  it("does not hold back the request's later changes: a newer job runs without Retry, and its banner stays while it fails and goes once it succeeds", async () => {
+    // A change made after the job failed sends a newer job, which runs at once, without anyone pressing Retry, and takes the
+    // failed one out of the queue.
     await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
-    await sleep(1500);
-    expect(await mirrorJobOf(request.id, "failed")).toBeDefined();
-    expect(refusals).toHaveLength(5);
+    await until("the newer job to run", async () => (refusals.length === 6 ? true : undefined));
+    expect(await mirrorJobOf(request.id, "failed")).toBeUndefined();
+    const retry = await until("the newer job to wait for its next attempt", () => mirrorJobOf(request.id, "retry"));
+    // GitHub still refuses it: the banner stays.
+    expect(await bannersOf(ada)).toHaveLength(1);
+    expect(await bannersOf(ayse)).toHaveLength(1);
+
+    // GitHub works again, and the newer job's next attempt makes the issue, showing the request as it is now.
+    refusing = false;
+    await install.owner.query("UPDATE pgboss.job SET start_after = now() WHERE id = $1", [retry.id]);
+    const issue = await issueShowing(request.id, "in_progress");
+    expect(issue.labels).not.toContain("tiehall:claimed");
+    await until("the banner to go", async () => ((await bannersOf(ada)).length === 0 ? true : undefined));
+    expect(await bannersOf(ayse)).toEqual([]);
+    // The failed job never ran again, and its dead letter is no longer in the queue.
+    expect(refusals).toHaveLength(6);
+    expect(await mirrorJobOf(request.id, "failed")).toBeUndefined();
+    expect(await deadLettered(request.id)).toBe(1);
+  }, 60_000);
+
+  it("with no change since, runs again when Retry is pressed after a fix, and its banner goes", async () => {
+    refusing = true;
+    const other = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "FE" });
+    await install.execute("requests.claim", ayse, { key: other.key });
+    await failUntilDeadLettered(other.id);
+    await until("the banner", async () => ((await bannersOf(ayse)).some(({ id }) => id === `mirror_failed:${other.id}`) ? true : undefined));
 
     refusing = false;
     const route = createMirrorRetryRoute({ execute: install.execute, session: async () => ayse, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
@@ -173,22 +222,15 @@ describe("a mirror job GitHub keeps failing", () => {
       new Request(`${URL_OF_INSTALL}${MIRROR_RETRY_PATH}`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
-        body: new URLSearchParams({ csrf: install.fromThePage(ayse).csrfToken ?? "", requestId: request.id, back: "/" }).toString(),
+        body: new URLSearchParams({ csrf: install.fromThePage(ayse).csrfToken ?? "", requestId: other.id, back: "/" }).toString(),
       }),
     );
     expect(answer.status).toBe(303);
 
     await until("the banner to go", async () => ((await bannersOf(ada)).length === 0 ? true : undefined));
     expect(await bannersOf(ayse)).toEqual([]);
-    // The retried job made the issue, and the change that waited reached it.
-    const issue = await until("the change that waited to reach the issue", async () => {
-      const { rows } = await install.owner.query<{ issue: string | null }>("SELECT issue FROM mirrors WHERE request_id = $1", [request.id]);
-      const number = rows[0]?.issue;
-      if (number === null || number === undefined) return undefined;
-      const found = stub.issue("acme/fe-intake", Number(number));
-      return found.labels.includes("tiehall:in_progress") ? found : undefined;
-    });
-    expect(issue.labels).not.toContain("tiehall:claimed");
-    expect(await deadLettered(request.id)).toBe(1);
-  }, 60_000);
+    // The retried job made the issue.
+    await issueShowing(other.id, "claimed");
+    expect(await mirrorJobOf(other.id, "failed")).toBeUndefined();
+  }, 120_000);
 });

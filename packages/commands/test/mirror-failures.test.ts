@@ -3,12 +3,15 @@ import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createHomeRoute,
+  createInstallGitHub,
   createMirrorRetryRoute,
   MIRROR_RETRY_PATH,
+  mirrorGoneText,
   mirrorRequest,
   mirrorRequests,
   type Banner,
   type InstallGitHub,
+  type JobSender,
   type WebSessionCaller,
 } from "../src/index.ts";
 import { providerOnStub, type StubProvider } from "./support/contract.ts";
@@ -26,7 +29,12 @@ import { shellReader } from "./support/shell.ts";
 // the web UI, with a Retry button, for the install's admins and the members
 // of the team the request is to, and for no one else. Retry runs the job
 // again, and the banner goes once a mirror job of the request succeeds. The
-// whole path through the real job queue is in mirror-dead-letters.test.ts.
+// whole path through the real job queue is in mirror-dead-letters.test.ts,
+// with a newer job of the request that supersedes a failed one
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (76)). A mirror issue GitHub answers with 404 or 410, as for one
+// someone deleted, is marked gone: the job writes to it no more, adds one
+// notice to the request, and succeeds, so its banner goes (D55 (79)).
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -71,11 +79,11 @@ async function runMirrorJob(requestId: string, github: InstallGitHub = provider.
   );
 }
 
-/** What the worker does with the request's mirror job once it reached the dead-letter queue. */
-async function deadLetter(requestId: string): Promise<void> {
+/** What the worker does with the request's mirror job once it reached the dead-letter queue, with the worker's job queue when given. */
+async function deadLetter(requestId: string, jobs?: JobSender): Promise<void> {
   await mirrorRequests.deadLetter!(
     { id: randomUUID(), queue: mirrorRequest.deadLetterQueue, data: { requestId }, signal: new AbortController().signal },
-    { database: install.db, now: () => new Date() },
+    { database: install.db, now: () => new Date(), ...(jobs === undefined ? {} : { jobs }) },
   );
 }
 
@@ -169,6 +177,19 @@ describe("a mirror job in the dead-letter queue", () => {
     await deadLetter(request.id);
     await deadLetter(request.id);
     expect((await bannersOf(ada)).filter(({ id }) => id.startsWith("mirror_failed:"))).toHaveLength(1);
+  });
+
+  it("is not shown when a newer job of the request took it out of the queue before the worker reached it, as that job records it", async () => {
+    const request = await claimedRequest();
+    // The queue holds no failed job of the request any more: a newer one superseded it (mirror-jobs.ts).
+    const superseded: JobSender = { send: async () => {}, holdsFailed: async () => false };
+
+    await deadLetter(request.id, superseded);
+
+    expect(await bannersOf(ada)).toEqual([]);
+    // Without a newer job, the failed job is in the queue still, and is shown.
+    await deadLetter(request.id, { send: async () => {}, holdsFailed: async () => true });
+    expect(await bannersOf(ada)).toHaveLength(1);
   });
 
   it("follows the request to its target team: a reassigned request's banner shows to the members of its new team", async () => {
@@ -267,5 +288,81 @@ describe("the banner", () => {
     } finally {
       await install.owner.query("UPDATE github_installations SET suspended_at = NULL");
     }
+  });
+});
+
+describe("a mirror issue GitHub no longer has", () => {
+  /** The request's mirror issue, as its row records it: its number, and when it was marked gone. */
+  async function mirrorOf(requestId: string): Promise<{ issue: number; goneAt: Date | null }> {
+    const { rows } = await install.owner.query<{ issue: string; gone_at: Date | null }>("SELECT issue, gone_at FROM mirrors WHERE request_id = $1", [requestId]);
+    expect(rows).toHaveLength(1);
+    return { issue: Number(rows[0]!.issue), goneAt: rows[0]!.gone_at };
+  }
+
+  async function noticesOf(requestId: string): Promise<{ body: string; surface: string | null }[]> {
+    const { rows } = await install.owner.query<{ body: string; surface: string | null }>(
+      `SELECT v.body, m.surface FROM messages m JOIN message_versions v ON v.message_id = m.id
+        WHERE m.request_id = $1 AND m.actor_kind = 'system' ORDER BY m.number`,
+      [requestId],
+    );
+    return rows;
+  }
+
+  /** The calls Tiehall made to GitHub about the intake repository's issues since this point. */
+  const issueCalls = (from: number) => stub.received.slice(from).filter(({ host, path }) => host === "api" && path.startsWith("/repos/acme/fe-intake/issues"));
+
+  it("is marked gone at the job's next write, which adds one notice to the request and succeeds, so the job's banner goes", async () => {
+    const request = await claimedRequest();
+    await runMirrorJob(request.id);
+    const { issue } = await mirrorOf(request.id);
+    // Someone deletes the issue on GitHub, which then answers every call about it with 410; the request changes, and its job had failed.
+    await stub.deleteIssue("acme/fe-intake", issue, { by: "ayse" });
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
+    await deadLetter(request.id);
+    expect(await bannersOf(ada)).toHaveLength(1);
+
+    await runMirrorJob(request.id);
+
+    expect((await mirrorOf(request.id)).goneAt).not.toBeNull();
+    expect(await noticesOf(request.id)).toEqual([{ body: mirrorGoneText({ tracker: "github", mirroredKey: request.key, key: request.key }), surface: "github" }]);
+    expect(await bannersOf(ada)).toEqual([]);
+    expect(await bannersOf(ayse)).toEqual([]);
+  });
+
+  it("is written to no more, and not opened again, whatever the request does after: no call reaches GitHub, and no second notice is added", async () => {
+    const request = await claimedRequest();
+    await runMirrorJob(request.id);
+    await stub.deleteIssue("acme/fe-intake", (await mirrorOf(request.id)).issue, { by: "ayse" });
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
+    await runMirrorJob(request.id);
+    const from = stub.received.length;
+
+    await install.execute("messages.post", ayse, { key: request.key, kind: "question", blocking: false, body: "Which currency?" });
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "done" });
+    await runMirrorJob(request.id);
+
+    expect(issueCalls(from)).toEqual([]);
+    expect(await noticesOf(request.id)).toHaveLength(1);
+    // Its row stays the request's one mirror: no issue is made in its place.
+    expect((await mirrorOf(request.id)).goneAt).not.toBeNull();
+  });
+
+  it("is marked gone on GitHub's 404 too, as for an issue moved out of Tiehall's reach", async () => {
+    const request = await claimedRequest();
+    await runMirrorJob(request.id);
+    const { issue } = await mirrorOf(request.id);
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
+    const movedAway: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.startsWith(`/repos/acme/fe-intake/issues/${issue}`)) {
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404, headers: { "content-type": "application/json" } });
+      }
+      return fetch(input, init);
+    };
+
+    await runMirrorJob(request.id, createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: movedAway, logger: install.logger }));
+
+    expect((await mirrorOf(request.id)).goneAt).not.toBeNull();
+    expect(await noticesOf(request.id)).toHaveLength(1);
   });
 });

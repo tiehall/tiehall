@@ -14,6 +14,7 @@ import * as githubIssues from "../src/github-issues.ts";
 import { createGitHubIssues, syncMirror, type GitHubAppAccess, type WebSessionCaller } from "../src/index.ts";
 import * as messages from "../src/messages.ts";
 import * as mirrorTexts from "../src/mirror-texts.ts";
+import * as mirrors from "../src/mirrors.ts";
 import * as providerPullRequests from "../src/provider-pull-requests.ts";
 import * as trackerChanges from "../src/tracker-changes.ts";
 import { providerOnStub } from "./support/contract.ts";
@@ -349,6 +350,12 @@ const OTHERS: Record<string, Case> = {
       () => trackerChanges.mirrorClosedText({ tracker: "jira", mirroredKey: "MOB-7", key: REQUEST.key, state: REQUEST.state }),
     ],
   },
+  "mirrors.ts mirrorGoneText": {
+    renders: [
+      () => mirrors.mirrorGoneText({ tracker: "github", mirroredKey: REQUEST.key, key: REQUEST.key }),
+      () => mirrors.mirrorGoneText({ tracker: "jira", mirroredKey: "MOB-7", key: REQUEST.key }),
+    ],
+  },
   "messages.ts flipNoticeText": { renders: [() => messages.flipNoticeText(REQUEST.key)] },
   "contract-routing.ts updateText": {
     renders: [
@@ -384,7 +391,7 @@ const OTHERS: Record<string, Case> = {
 };
 
 /** The builders of system messages: the third argument of every call to addSystemMessage must be a call of one of these. */
-const SYSTEM_MESSAGE_BUILDERS = new Set(["mergedText", "mirrorClosedText", "flipNoticeText", "updateText", "closeText", "shippedText"]);
+const SYSTEM_MESSAGE_BUILDERS = new Set(["mergedText", "mirrorClosedText", "mirrorGoneText", "flipNoticeText", "updateText", "closeText", "shippedText"]);
 
 /** Where code outside the template modules may cast a value to an email's server text, and why. */
 const SERVER_TEXT_CASTS: Record<string, string> = {

@@ -724,6 +724,11 @@ export function createHandlers(context: ServerContext): StubHandlers {
     return world.item(repo, Number(number));
   }
 
+  /** GitHub's answer about an issue it does not have: 410 for one someone deleted, 404 otherwise. */
+  function noIssue(repo: StubRepo, number: string): StubResponse {
+    return world.wasDeleted(repo, Number(number)) ? apiError(410, "This issue was deleted") : NOT_FOUND();
+  }
+
   function inBackground(work: Promise<unknown>): void {
     work.catch(() => {});
   }
@@ -1032,7 +1037,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "read"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue === undefined) return NOT_FOUND();
+          if (issue === undefined) return noIssue(found.repo, number!);
           // GitHub names who closed an issue when it is read on its own, not in a listing or a delivery.
           const closedBy = issue.kind === "issue" && issue.closedBy !== null ? authorJson(context.urls(), issue.closedBy) : null;
           return json(200, { ...issueJson(context.urls(), world, issue), ...(issue.kind === "issue" ? { closed_by: closedBy } : {}) });
@@ -1046,7 +1051,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "write"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue === undefined) return NOT_FOUND();
+          if (issue === undefined) return noIssue(found.repo, number!);
           const body = jsonBody(request) ?? {};
           const actions: string[] = [];
           if (typeof body["title"] === "string" && body["title"] !== issue.title) {
@@ -1091,7 +1096,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "read"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue === undefined) return NOT_FOUND();
+          if (issue === undefined) return noIssue(found.repo, number!);
           const comments = issue.kind === "issue" ? issue.comments : [];
           const page = paged(context.urls(), request, comments);
           return json(200, page.items.map((comment) => commentJson(context.urls(), issue, comment)), page.headers);
@@ -1105,7 +1110,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "write"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue === undefined) return NOT_FOUND();
+          if (issue === undefined) return noIssue(found.repo, number!);
           const text = jsonBody(request)?.["body"];
           if (typeof text !== "string" || text === "") return apiError(422, "Invalid request.\n\n\"body\" wasn't supplied.");
           const comment = world.addComment(issue, text, authorOf(found.author));
@@ -1131,7 +1136,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "write"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue?.kind !== "issue") return NOT_FOUND();
+          if (issue?.kind !== "issue") return issue === undefined ? noIssue(found.repo, number!) : NOT_FOUND();
           const body = JSON.parse(request.body.toString("utf8") || "[]") as unknown;
           const wanted = (Array.isArray(body) ? body : ((body as { labels?: unknown }).labels ?? [])) as unknown[];
           for (const label of wanted) {
@@ -1152,7 +1157,7 @@ export function createHandlers(context: ServerContext): StubHandlers {
           const found = repoFor(context, caller, owner!, name!, ["issues", "write"]);
           if (isResponse(found)) return found;
           const issue = item(found.repo, number!);
-          if (issue?.kind !== "issue") return NOT_FOUND();
+          if (issue?.kind !== "issue") return issue === undefined ? noIssue(found.repo, number!) : NOT_FOUND();
           if (!issue.labels.includes(label!)) return apiError(404, "Label does not exist");
           issue.labels = issue.labels.filter((candidate) => candidate !== label);
           issue.updatedAt = world.timestamp();

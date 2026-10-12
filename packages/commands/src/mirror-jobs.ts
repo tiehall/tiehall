@@ -1,4 +1,4 @@
-import { mirrors, requests, trackerMappings } from "@tiehall/db";
+import { mirrorFailures, mirrors, requests, trackerMappings } from "@tiehall/db";
 import { and, eq, isNotNull, or } from "drizzle-orm";
 import { defineJobType, type JobSender } from "./jobs.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -30,8 +30,15 @@ import type { OrgContext } from "./with-org.ts";
 // minutes at the most. So the fifth attempt comes 56 minutes after the first
 // when each attempt fails at once, and 64 when each runs until it expires:
 // between 50 and 70 minutes after the first, as the rule wants. A job in the
-// dead-letter queue is shown with a Retry button (mirror-failures.ts), and
-// holds back the request's later jobs until it runs again.
+// dead-letter queue is shown with a Retry button (mirror-failures.ts). It does
+// not hold back the request's later jobs (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (76); Technical decisions:
+// T10): the write that sends a newer job takes the failed one out of the
+// queue, so the newer job runs under the request's key, still one at a time,
+// and does all the failed one would have done, the comments it missed
+// included, since jobs project the request as it is when they run. The same
+// write records the failed job for its banner, which the worker may not have
+// done yet, and the banner stays until a job of the request succeeds.
 
 /** A mirror job: bring the request's mirror issue up to date with the request as it is now. */
 export const mirrorRequest = defineJobType<{ requestId: string }>("mirror.sync", 1, {
@@ -63,7 +70,8 @@ export function changesMirror(type: string, data: Readonly<Record<string, unknow
 /**
  * Sends the request's mirror job in the write's transaction, when the request
  * has a mirror issue, or its target team maps a tracker and its mapping may
- * mirror the request now; sends nothing otherwise.
+ * mirror the request now, taking out of the queue a failed job of the request
+ * that would hold it back; sends nothing otherwise.
  */
 export async function wakeMirror({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, jobs: JobSender, requestId: string): Promise<void> {
   const [mirrored] = await tx
@@ -85,5 +93,8 @@ export async function wakeMirror({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">
       );
     if (mapped === undefined) return;
   }
+  // A failed job of the request would hold this one back: it leaves the queue, and its banner stays until a job succeeds.
+  const failedAt = await jobs.dropFailed?.(tx, mirrorRequest.queue, requestId);
+  if (failedAt !== undefined) await tx.insert(mirrorFailures).values({ orgId, requestId, failedAt }).onConflictDoNothing();
   await jobs.send(tx, mirrorRequest.queue, { requestId }, { singletonKey: requestId });
 }

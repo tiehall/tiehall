@@ -1,0 +1,1 @@
+ALTER TABLE "mirrors" ADD COLUMN "gone_at" timestamp with time zone;

@@ -178,6 +178,8 @@ export interface GitHubStub {
   issue(repo: string, number: number): StubIssue;
   closeIssue(repo: string, number: number, input: { by: string; reason?: "completed" | "not_planned" | "duplicate" }, options?: DeliveryOptions): Promise<StubIssue>;
   reopenIssue(repo: string, number: number, input: { by: string }, options?: DeliveryOptions): Promise<StubIssue>;
+  /** Deletes the issue, as an admin of its repository may: GitHub answers every later call about it with 410, and delivers its `deleted` event. */
+  deleteIssue(repo: string, number: number, input: { by: string }, options?: DeliveryOptions): Promise<StubIssue>;
   assignIssue(repo: string, number: number, input: { by: string; assignees: string[] }, options?: DeliveryOptions): Promise<StubIssue>;
 
   /** A user authorization without a browser: the code the callback would receive. */
@@ -523,6 +525,12 @@ export async function startGitHubStub(options: GitHubStubOptions = {}): Promise<
       const now = world.timestamp();
       Object.assign(found, { state: "closed", stateReason: input.reason ?? "completed", closedAt: now, closedBy: { kind: "user", user: world.user(input.by) }, updatedAt: now });
       await deliveries.issue("closed", found, world.user(input.by), mode(options));
+      return found;
+    },
+    async deleteIssue(fullName, number, input, options) {
+      const found = issue(fullName, number);
+      world.deleteIssue(found);
+      await deliveries.issue("deleted", found, world.user(input.by), mode(options));
       return found;
     },
     async reopenIssue(fullName, number, input, options) {

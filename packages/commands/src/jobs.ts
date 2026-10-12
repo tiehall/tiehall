@@ -48,6 +48,18 @@ export interface JobSender {
    * queue behind it, such as a test's, has none.
    */
   retryFailed?(tx: Transaction, queue: string, key: string): Promise<boolean>;
+  /**
+   * Takes out, inside the caller's transaction, the job of a queue that runs
+   * one key at a time whose attempts were used up, which holds back the later
+   * jobs of its key, such as a request's mirror job in the dead-letter queue,
+   * so a newer job of the key runs instead (decisions-from-groups-15-28:
+   * design.md, Technical decisions: T10). Returns when that job failed, or
+   * undefined when the key has none. A sender without a queue behind it, such
+   * as a test's, has none.
+   */
+  dropFailed?(tx: Transaction, queue: string, key: string): Promise<Date | undefined>;
+  /** Whether a queue that runs one key at a time holds a job of this key whose attempts were used up. */
+  holdsFailed?(queue: string, key: string): Promise<boolean>;
 }
 
 /** How the queue retries a kind of job. */

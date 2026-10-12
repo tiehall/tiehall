@@ -3151,6 +3151,13 @@ export const mirrors = pgTable(
      * team's mapping that names its place and was made before it.
      */
     mappingId: uuid("mapping_id"),
+    /**
+     * When the tracker answered a write to the issue as gone (GitHub's 404 or
+     * 410), as for an issue someone deleted or moved out of Tiehall's reach:
+     * Tiehall writes to it no more and does not open it again. Null while it
+     * is there.
+     */
+    goneAt: timestamp("gone_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

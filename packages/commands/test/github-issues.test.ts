@@ -2,7 +2,21 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createGitHubIssues, createInstallGitHub, issueBody, markerLine, mirrorSummary, syncMirror, type GitHubAppAccess, type InstallGitHub, type WebSessionCaller } from "../src/index.ts";
+import {
+  createGitHubIssues,
+  createInstallGitHub,
+  GitHubUnavailableError,
+  issueBody,
+  markerLine,
+  MirrorIssueGoneError,
+  mirrorSummary,
+  stateLabel,
+  syncMirror,
+  type GitHubAppAccess,
+  type InstallGitHub,
+  type ServerText,
+  type WebSessionCaller,
+} from "../src/index.ts";
 import { providerOnStub, type StubProvider } from "./support/contract.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -17,7 +31,11 @@ import { addTeam, joinTeams, openRequestInTheWebUi, packetOf, sessionOf } from "
 // summary Tiehall wrote with the request's link on the install, and the label
 // of its state, and nothing from the packet or the thread. The GitHub stub
 // plays GitHub; the fixtures under fixtures/github-issues are GitHub's
-// documented answers to the reads the adapter makes.
+// documented answers to the reads the adapter makes. A write to an issue
+// GitHub no longer has, which it answers with 404 or 410, tells the mirror job
+// that the issue is gone (tracker-mirrors: Failed mirror jobs are shown with a
+// Retry button; decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (79)), and any other failure that GitHub is unavailable.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -194,5 +212,45 @@ describe("reading a mirror issue back, from GitHub's documented answers", () => 
 
   it("reads an issue GitHub no longer has as gone", async () => {
     expect(await readWith(JSON.stringify({ message: "This issue was deleted", documentation_url: "https://docs.github.com/rest" }), 410)).toBeUndefined();
+  });
+});
+
+describe("a write to a mirror issue GitHub no longer has", () => {
+  /** The adapter, reaching GitHub through a fetch that answers every call about issue 1347 with this status. */
+  async function writingWith(status: number, message: string) {
+    const answering: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (/\/issues\/1347(\/|$)/.test(url.pathname)) return new Response(JSON.stringify({ message }), { status, headers: { "content-type": "application/json" } });
+      return fetch(input, init);
+    };
+    const github = createInstallGitHub({ database: install.db, secrets: () => install.box, apiUrl: stub.apiUrl, fetch: answering, logger: install.logger });
+    const { rows } = await install.owner.query<{ id: string }>("SELECT repository_id AS id FROM github_covered_repositories WHERE full_name = 'acme/fe-intake'");
+    return { adapter: createGitHubIssues({ app: (await github.app())!, database: install.db }), target: rows[0]!.id };
+  }
+
+  const marker = randomUUID();
+  const summary = mirrorSummary({ installUrl: URL_OF_INSTALL, key: "FE-142", targetTeam: "FE", requestingTeam: "BE" });
+  const comment = "FE-142 is now in_progress." as ServerText;
+
+  for (const [status, message] of [
+    [404, "Not Found"],
+    [410, "This issue was deleted"],
+  ] as const) {
+    it(`fails as gone when GitHub answers ${status}, for a change of the issue, its label, a comment and the read of its comments`, async () => {
+      const { adapter, target } = await writingWith(status, message);
+      await expect(adapter.updateIssue(target, "1347", marker, { state: { open: false, closeReason: "completed" }, summary })).rejects.toBeInstanceOf(MirrorIssueGoneError);
+      await expect(adapter.updateIssue(target, "1347", marker, { label: { add: stateLabel("in_progress"), remove: stateLabel("claimed") } })).rejects.toBeInstanceOf(
+        MirrorIssueGoneError,
+      );
+      await expect(adapter.addComment(target, "1347", comment, randomUUID())).rejects.toBeInstanceOf(MirrorIssueGoneError);
+      await expect(adapter.findComment(target, "1347", randomUUID(), new Date())).rejects.toBeInstanceOf(MirrorIssueGoneError);
+    });
+  }
+
+  it("fails as unavailable, not gone, when GitHub answers with another error", async () => {
+    const { adapter, target } = await writingWith(502, "Server Error");
+    const write = adapter.addComment(target, "1347", comment, randomUUID());
+    await expect(write).rejects.toBeInstanceOf(GitHubUnavailableError);
+    await expect(write).rejects.not.toBeInstanceOf(MirrorIssueGoneError);
   });
 });
