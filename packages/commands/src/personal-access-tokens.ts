@@ -54,6 +54,12 @@ import type { Writer } from "./write.ts";
 //   90 days, or the shorter maximum an admin has set; a longer one is refused
 //   with 400 outside-settings, on the review page and again when it is
 //   confirmed, since the maximum may change in between;
+// - carries a label its owner writes, of 1 to 100 characters with no control
+//   character, which pages show quoted and escaped, as the owner's own text,
+//   and no reminder names;
+// - is refused with 403 personal-access-tokens-off while an admin has
+//   switched personal access tokens off, on the review page and again when it
+//   is confirmed, and the page then offers no form to create one;
 // - has a value that starts with th_pat_ and 32 random bytes, base64url, of
 //   which Tiehall keeps only the SHA-256 digest: the confirmation's page shows
 //   the value once, and no later page, answer or event holds it;
@@ -117,6 +123,23 @@ export async function personalAccessTokenSettingsIn(
   return { on: row?.on ?? true, maxLifetimeDays: Math.min(row?.maxLifetimeDays ?? PERSONAL_ACCESS_TOKEN_MAX_DAYS, PERSONAL_ACCESS_TOKEN_MAX_DAYS) };
 }
 
+/**
+ * Refuses a new token while an admin has switched personal access tokens off,
+ * with 403 personal-access-tokens-off (agent-access: An admin sets the PAT
+ * switch and the maximum lifetime; decisions-from-groups-15-28: design.md,
+ * Decisions this change rests on: D55 (19)): a token made then would work for
+ * nothing until an admin switched them on, and then without that admin
+ * knowing it exists.
+ */
+function assertSwitchedOn(on: boolean): void {
+  if (!on) {
+    throw new Refusal(
+      "personal-access-tokens-off",
+      "An admin has switched personal access tokens off in this install, so no new one can be created until an admin switches them on again.",
+    );
+  }
+}
+
 /** Refuses a lifetime longer than the install's longest with 400 outside-settings. */
 function assertLifetime(expiresInDays: number, maxLifetimeDays: number): void {
   if (expiresInDays > maxLifetimeDays) {
@@ -143,7 +166,8 @@ function ownerOf(caller: Caller): string {
 export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
   [createPersonalAccessToken.id]: defineHandler(createPersonalAccessToken, async ({ name, scopes, expiresInDays }, context) => {
     const userId = ownerOf(context.caller);
-    const { maxLifetimeDays } = await personalAccessTokenSettingsIn(context);
+    const { on, maxLifetimeDays } = await personalAccessTokenSettingsIn(context);
+    assertSwitchedOn(on);
     assertLifetime(expiresInDays, maxLifetimeDays);
     const createdAt = context.now();
     const expiresAt = new Date(createdAt.getTime() + expiresInDays * DAY_MS);
@@ -248,7 +272,8 @@ export const PERSONAL_ACCESS_TOKEN_HANDLERS: Handlers = {
 export const PERSONAL_ACCESS_TOKEN_REVIEWS: Reviews = {
   [createPersonalAccessToken.id]: async (input, context) => {
     const { name, scopes, expiresInDays } = input as CreateInput;
-    const { maxLifetimeDays } = await personalAccessTokenSettingsIn(context);
+    const { on, maxLifetimeDays } = await personalAccessTokenSettingsIn(context);
+    assertSwitchedOn(on);
     assertLifetime(expiresInDays, maxLifetimeDays);
     const review: Review = {
       title: "Create a personal access token",
@@ -491,11 +516,12 @@ function grantItem(grant: ListedGrant, csrf: string): string {
   ].join("\n");
 }
 
-/** One personal access token, as a card: its label, what it may do, its expiry, and the form that revokes it. */
+/** One personal access token, as a card: its label, quoted as its owner's own text, what it may do, its expiry, and the form that revokes it. */
 function tokenItem(token: ListedToken, csrf: string): string {
   return [
     '      <li class="card">',
-    `        <p class="card-title">${escapeHtml(token.name)}${token.expired ? ' <span class="chip tag warn">Expired</span>' : ""}</p>`,
+    `        <p class="card-title">A personal access token labeled:${token.expired ? ' <span class="chip tag warn">Expired</span>' : ""}</p>`,
+    `        <blockquote class="untrusted" data-origin="external"><p>${escapeHtml(quotePreamble("external"))}</p><pre>${escapeHtml(token.name)}</pre></blockquote>`,
     `        <p class="hint">${escapeHtml(`Created on ${pageDay(token.createdAt)}; ${token.expired ? "expired" : "expires"} on ${pageDay(token.expiresAt)}. It may:`)}</p>`,
     '        <ul class="scope-list">',
     ...scopeList(token.scopes),
@@ -513,7 +539,6 @@ function tokensPage(
   csrf: string,
   shell: PageShell,
 ): string {
-  const defaultDays = Math.min(30, maxLifetimeDays);
   return htmlPage(
     "Connected agents and tokens",
     [
@@ -529,28 +554,36 @@ function tokensPage(
       ]),
       panelHtml("create-token", "Create a personal access token", [
         '        <p class="hint">A personal access token lets a script, or a host that can only send a header, call Tiehall\'s API as you, within your role and the scopes you choose. Creating one needs a confirmation.</p>',
-        `        <form method="post" action="${TOKENS_PATH}">`,
-        '          <input type="hidden" name="action" value="create">',
-        '          <div class="field">',
-        '            <label for="token-name">Label</label>',
-        '            <input type="text" id="token-name" name="name" maxlength="100" required>',
-        "          </div>",
-        '          <fieldset class="choices">',
-        "            <legend>Scopes</legend>",
-        ...SCOPES.map(
-          (scope) =>
-            `            <p class="check"><input type="checkbox" id="scope-${escapeHtml(scope.replace(":", "-"))}" name="scope" value="${escapeHtml(scope)}"> <label for="scope-${escapeHtml(scope.replace(":", "-"))}">${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</label></p>`,
-        ),
-        "          </fieldset>",
-        '          <div class="field">',
-        `            <label for="token-days">${escapeHtml(`Days until it expires, at most ${maxLifetimeDays}`)}</label>`,
-        `            <input type="number" id="token-days" name="expiresInDays" min="1" max="${maxLifetimeDays}" value="${defaultDays}" required>`,
-        "          </div>",
-        `          <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
-        '          <button type="submit">Review the token</button>',
-        "        </form>",
+        ...(on ? createTokenForm(maxLifetimeDays, csrf) : ['        <p class="notice">An admin has switched personal access tokens off in this install, so no new one can be created until an admin switches them on again.</p>']),
       ]),
     ].join("\n"),
     shell,
   );
+}
+
+/** The form that creates a personal access token: a label, the scopes and the lifetime, which says the install's longest. */
+function createTokenForm(maxLifetimeDays: number, csrf: string): string[] {
+  const defaultDays = Math.min(30, maxLifetimeDays);
+  return [
+    `        <form method="post" action="${TOKENS_PATH}">`,
+    '          <input type="hidden" name="action" value="create">',
+    '          <div class="field">',
+    '            <label for="token-name">Label</label>',
+    '            <input type="text" id="token-name" name="name" maxlength="100" required>',
+    "          </div>",
+    '          <fieldset class="choices">',
+    "            <legend>Scopes</legend>",
+    ...SCOPES.map(
+      (scope) =>
+        `            <p class="check"><input type="checkbox" id="scope-${escapeHtml(scope.replace(":", "-"))}" name="scope" value="${escapeHtml(scope)}"> <label for="scope-${escapeHtml(scope.replace(":", "-"))}">${escapeHtml(SCOPE_TEXTS[scope] ?? scope)}</label></p>`,
+    ),
+    "          </fieldset>",
+    '          <div class="field">',
+    `            <label for="token-days">${escapeHtml(`Days until it expires, at most ${maxLifetimeDays}`)}</label>`,
+    `            <input type="number" id="token-days" name="expiresInDays" min="1" max="${maxLifetimeDays}" value="${defaultDays}" required>`,
+    "          </div>",
+    `          <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">`,
+    '          <button type="submit">Review the token</button>',
+    "        </form>",
+  ];
 }

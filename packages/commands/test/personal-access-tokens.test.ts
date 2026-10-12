@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { WebSessionCaller } from "../src/index.ts";
+import { escapeHtml } from "../src/html.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { hiddenField, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 import { addUser } from "./support/members.ts";
@@ -259,6 +260,36 @@ describe("a token's label", () => {
     expect(((await answer.json()) as { type: string }).type).toBe("https://tiehall.com/problems/invalid-input");
     await expect(harness.personalAccessToken(ana, { name: "script\u0000two" })).rejects.toThrow(/answered 400/);
     expect(await tokenCount()).toBe(before);
+  });
+});
+
+// agent-access: Personal access tokens are scoped, expiring and created in the web UI (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (18)). A label is its owner's own text, of 1 to 100 characters with
+// no control character, which can garble a page or a terminal; the page shows it quoted and escaped.
+describe("a token's label, bounded", () => {
+  it("of 101 characters, or with a control character such as U+001B, is refused with 400, and nothing is created", async () => {
+    const before = await tokenCount();
+    for (const name of ["a".repeat(101), "deploy\u001b[31mscript", "line\u0085break", "tab\u0009ok"]) {
+      const answer = await reviewPage(ana, { name, scopes: ["requests:read"], expiresInDays: 10 });
+      expect(answer.status, JSON.stringify(name)).toBe(400);
+      expect(((await answer.json()) as { type: string }).type).toBe("https://tiehall.com/problems/invalid-input");
+    }
+    await expect(harness.personalAccessToken(ana, { name: "escape\u001b" })).rejects.toThrow(/answered 400/);
+    expect(await tokenCount()).toBe(before);
+  });
+
+  it("of 100 characters is taken", async () => {
+    const token = await harness.personalAccessToken(ana, { name: "b".repeat(100) });
+    expect(token.startsWith("th_pat_")).toBe(true);
+  });
+
+  it("with markup shows on the Connected agents and tokens page as text, quoted", async () => {
+    const label = '<b>Deploy</b> & "bot"';
+    await harness.personalAccessToken(ana, { name: label });
+    const page = await (await harness.handle(new Request(`${URL_OF_INSTALL}/tokens`, { headers: { cookie: ana.cookie, accept: "text/html" } }))).text();
+    expect(page).not.toContain("<b>Deploy</b>");
+    const quotes = [...page.matchAll(/<blockquote class="untrusted" data-origin="external">([\s\S]*?)<\/blockquote>/g)].map(([, inner]) => inner);
+    expect(quotes.some((inner) => inner?.includes(`<pre>${escapeHtml(label)}</pre>`))).toBe(true);
   });
 });
 

@@ -17,14 +17,22 @@ import { defineCommand, SCOPES } from "./command.ts";
 /** The prefix of every personal access token's value. */
 export const PERSONAL_ACCESS_TOKEN_PREFIX = "th_pat_";
 
-/** The label a user gives a token, to tell their tokens apart: their own words, 1 to 100 characters, with no NUL character. */
+/**
+ * The label a user gives a token, to tell their tokens apart: their own words,
+ * 1 to 100 characters, with no control character, which can garble a page or
+ * a terminal (agent-access: Personal access tokens are scoped, expiring and
+ * created in the web UI; decisions-from-groups-15-28: design.md, Decisions
+ * this change rests on: D55 (18)).
+ */
+export const PERSONAL_ACCESS_TOKEN_LABEL_MAX_LENGTH = 100;
+
 const tokenName = z
   .string()
   .trim()
   .min(1)
-  .max(100)
-  .regex(/^[^\u0000]*$/, "A label holds no NUL character.")
-  .meta({ description: "A label for the token, such as what uses it, to tell your tokens apart: 1 to 100 characters, with no NUL character." });
+  .max(PERSONAL_ACCESS_TOKEN_LABEL_MAX_LENGTH)
+  .regex(/^[^\u0000-\u001f\u007f-\u009f]*$/, "A label holds no control character.")
+  .meta({ description: "A label for the token, such as what uses it, to tell your tokens apart: 1 to 100 characters, with no control character." });
 
 export const createPersonalAccessToken = defineCommand({
   id: "personal_access_tokens.create",

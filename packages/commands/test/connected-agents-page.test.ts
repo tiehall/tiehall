@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { WebSessionCaller } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { hiddenField, startAgentAccess, type AgentAccessHarness, type AgentClient, type SignedIn } from "./support/agent-access.ts";
+import { addUser } from "./support/members.ts";
+import { sessionOf } from "./support/requests.ts";
 
 // Users list and revoke their own agent grants and tokens (agent-access: Users
 // list and revoke their own agent grants and tokens; activity-log: Which
@@ -120,6 +123,29 @@ describe("the Connected agents and tokens page", () => {
     expect(cliCard).toContain("Revoking this grant signs the tiehall CLI out on every machine where you ran tiehall login.");
     expect(otherCard).toBeDefined();
     expect(otherCard).not.toContain("every machine");
+  });
+
+  // agent-access: An admin sets the PAT switch and the maximum lifetime (decisions-from-groups-15-28: design.md,
+  // Decisions this change rests on: D55 (19)): while an admin has switched personal access tokens off, the page offers
+  // no form to create one, and says why.
+  it("offers no form to create a personal access token while an admin has switched them off, and says that an admin did", async () => {
+    const ada: WebSessionCaller = sessionOf(await addUser(harness.install.owner, { role: "admin", login: "ada" }));
+    const setSwitch = async (on: boolean) => {
+      const answer = await harness.install.confirm(ada, "settings.set_personal_access_tokens", { on });
+      expect(answer.status).toBe(200);
+    };
+    const createForm = '<input type="hidden" name="action" value="create">';
+    expect(await page(ana)).toContain(createForm);
+    await setSwitch(false);
+    try {
+      const html = await page(ana);
+      expect(html).not.toContain(createForm);
+      expect(html).not.toContain('id="token-name"');
+      expect(html).toContain("An admin has switched personal access tokens off in this install");
+    } finally {
+      await setSwitch(true);
+    }
+    expect(await page(ana)).toContain(createForm);
   });
 
   it("revokes nothing of another member's: their grant and their token get 404 and keep working", async () => {

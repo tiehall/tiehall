@@ -3,7 +3,7 @@ import { createPersonalAccessTokenSettingsRoute, type WebSessionCaller } from ".
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { sessionOf } from "./support/requests.ts";
-import { startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { hiddenField, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
 
 // An admin sets the PAT switch and the maximum lifetime (agent-access: An
 // admin sets the PAT switch and the maximum lifetime; agent-access: Every
@@ -149,6 +149,36 @@ describe("the PAT switch", () => {
         user_agent: "Mozilla/5.0 (admin)",
       },
     ]);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (19). While the switch is off,
+  // creating a token is refused with 403 personal-access-tokens-off and creates nothing, a confirmation from a review
+  // page opened while it was on included, so no dormant token waits for the day an admin switches them on.
+  it("switched off refuses creating a token with 403 personal-access-tokens-off, a valid confirmation included, and creates nothing", async () => {
+    const input = { name: "Made while off", scopes: ["requests:read"], expiresInDays: 10 };
+    const reviewPath = `${URL_OF_INSTALL}/confirm/personal_access_tokens.create?input=${encodeURIComponent(JSON.stringify(input))}`;
+    const review = await (await harness.handle(new Request(reviewPath, { headers: { cookie: ana.cookie, accept: "text/html" } }))).text();
+    const count = async () => (await harness.install.owner.query("SELECT count(*)::int AS n FROM personal_access_tokens")).rows[0].n as number;
+    expect((await change(ada, SWITCH, { on: false })).status).toBe(200);
+    try {
+      const before = await count();
+      const confirmed = await harness.handle(
+        new Request(`${URL_OF_INSTALL}/confirm/personal_access_tokens.create`, {
+          method: "POST",
+          headers: { cookie: ana.cookie, accept: "application/json", "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin" },
+          body: new URLSearchParams({ input: hiddenField(review, "input"), nonce: hiddenField(review, "nonce"), csrf: hiddenField(review, "csrf") }).toString(),
+        }),
+      );
+      expect(confirmed.status).toBe(403);
+      expect(((await confirmed.json()) as { type: string }).type).toBe("https://tiehall.com/problems/personal-access-tokens-off");
+      // The review page refuses it too.
+      const reviewed = await harness.handle(new Request(reviewPath, { headers: { cookie: ana.cookie, accept: "application/json" } }));
+      expect(reviewed.status).toBe(403);
+      expect(((await reviewed.json()) as { type: string }).type).toBe("https://tiehall.com/problems/personal-access-tokens-off");
+      expect(await count()).toBe(before);
+    } finally {
+      expect((await change(ada, SWITCH, { on: true })).status).toBe(200);
+    }
   });
 
   it("changed by a member gets 403, and stays on", async () => {
