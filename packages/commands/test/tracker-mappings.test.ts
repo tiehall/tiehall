@@ -5,6 +5,7 @@ import { createTeamsRoute, csrfTokenFor, mirrorRequest, syncMirror, TEAMS_PATH, 
 import { providerOnStub } from "./support/contract.ts";
 import { FakeTracker } from "./support/fake-tracker.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
+import { holdRow, untilWaiting } from "./support/locks.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams, openRequestInTheWebUi } from "./support/requests.ts";
 
@@ -161,7 +162,7 @@ describe("mirroring on open", () => {
 // tied to the mapping that made it, so a new mapping, even to the same place, never writes to an earlier one's issues.
 describe("a mapping removed, and one made later", () => {
   beforeAll(async () => {
-    for (const key of ["WEB", "APP", "NEWS", "SHOP", "MAIL", "HELP", "POST", "MOVE", "RACE", "PAST", "JIRA"]) {
+    for (const key of ["WEB", "APP", "NEWS", "SHOP", "MAIL", "HELP", "POST", "MOVE", "RACE", "PAST", "JIRA", "LATE", "SOON", "EARLY"]) {
       teams[key] = await addTeam(install.owner, key);
       await joinTeams(install.owner, ayse.userId, teams[key]!);
     }
@@ -207,6 +208,62 @@ describe("a mapping removed, and one made later", () => {
     await install.execute("requests.set_status", ayse, { key: before.key, state: "in_progress" });
     await runSentMirrorJobs();
 
+    expect(tracker.issues).toEqual([]);
+  });
+
+  // A write and a mapping made at once: the write counts as after the mapping exactly when it commits after it, and so
+  // sees the mapping and sends the mirror job, wherever its transaction began.
+  it("makes an issue for a request whose claim began before it and committed after it, as the claim's write sent the mirror job", async () => {
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "LATE" });
+    install.sentJobs.splice(0);
+    // Another write of the request holds its row, so the claim waits there, begun before the mapping, and commits after it.
+    const held = await holdRow(install.databaseUrl, "SELECT id FROM requests WHERE id = $1 FOR UPDATE", [request.id]);
+    const claiming = install.execute("requests.claim", ayse, { key: request.key });
+    await untilWaiting(install.owner, 1);
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["LATE"], repository: "acme/mobile-intake" });
+    await held.release();
+    await claiming;
+
+    expect(mirrorJobsOf(request.id)).toHaveLength(1);
+    await runSentMirrorJobs();
+    expect(tracker.issues.map(({ title, labels }) => ({ title, labels }))).toEqual([{ title: expect.stringMatching(new RegExp(`^${request.key}: `)), labels: ["tiehall:claimed"] }]);
+  });
+
+  it("makes an issue for a request whose opening began before it and committed after it, on a team that mirrors on open", async () => {
+    // The team's first request makes its count of requests, which the next opening locks.
+    await openRequestInTheWebUi(install, alice, { targetTeam: "SOON" });
+    install.sentJobs.splice(0);
+    // Another opening for the team holds its count, so this one waits there, begun before the mapping, and commits after it.
+    const held = await holdRow(install.databaseUrl, "SELECT last_number FROM request_counters WHERE team_id = $1 FOR UPDATE", [teams["SOON"]]);
+    const opening = openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "SOON" });
+    await untilWaiting(install.owner, 1);
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["SOON"], repository: "acme/mobile-intake", mirrorOnOpen: true });
+    await held.release();
+    const request = await opening;
+
+    expect(mirrorJobsOf(request.id)).toHaveLength(1);
+    await runSentMirrorJobs();
+    expect(tracker.issues.map(({ title, labels }) => ({ title, labels }))).toEqual([{ title: expect.stringMatching(new RegExp(`^${request.key}: `)), labels: ["tiehall:open"] }]);
+  });
+
+  it("makes no issue for a request whose claim committed before it, though they ran at once, as the claim's write could not see it", async () => {
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "EARLY" });
+    install.sentJobs.splice(0);
+    // A write in flight holds the event counter: the claim waits for it first, then the mapping, once its row is in.
+    const held = await holdRow(install.databaseUrl, "SELECT last_number FROM event_sequence FOR UPDATE");
+    const claiming = install.execute("requests.claim", ayse, { key: request.key });
+    await untilWaiting(install.owner, 1);
+    let mapped = false;
+    const mapping = install.execute("mirrors.map_repository", ada, { teamId: teams["EARLY"], repository: "acme/mobile-intake" }).finally(() => {
+      mapped = true;
+    });
+    await untilWaiting(install.owner, 2, () => mapped);
+    await held.release();
+    await Promise.all([claiming, mapping]);
+
+    expect(mirrorJobsOf(request.id)).toEqual([]);
+    await install.execute("requests.set_status", ayse, { key: request.key, state: "in_progress" });
+    await runSentMirrorJobs();
     expect(tracker.issues).toEqual([]);
   });
 
@@ -321,9 +378,10 @@ describe("a mapping removed, and one made later", () => {
   });
 
   it("keeps writing to a mirror made before mirrors were tied to their mappings, until its team maps the place again", async () => {
-    // As an install left them before mirrors were tied to their mappings: a mapping with no id, and mirrors that name none.
+    // As an install left them before mirrors were tied to their mappings: a mapping with no id and no event number, whose
+    // time orders the request's events, and mirrors that name none.
     await install.execute("mirrors.map_repository", ada, { teamId: teams["PAST"], repository: "acme/mobile-intake" });
-    await install.owner.query("UPDATE tracker_mappings SET id = NULL WHERE team_id = $1", [teams["PAST"]]);
+    await install.owner.query("UPDATE tracker_mappings SET id = NULL, made_after_event = NULL WHERE team_id = $1", [teams["PAST"]]);
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "PAST" });
     await install.execute("requests.claim", ayse, { key: request.key });
     await runSentMirrorJobs();
@@ -349,11 +407,14 @@ describe("a mapping removed, and one made later", () => {
   it("ties a Jira mirror issue to its mapping as a GitHub one: a removed mapping's issue gets nothing, and a new mapping to the project starts afresh", async () => {
     const jira = new FakeTracker("jira");
     const syncJira = (requestId: string) => syncMirror({ database: install.db, adapters: { jira }, installUrl: URL_OF_INSTALL, logger: install.logger }, requestId);
-    // The Jira mapping as a team's mapping to a project stores it, which group 25's operations make in the web UI.
+    // The Jira mapping as a team's mapping to a project stores it, with the org's last event number, which group 25's
+    // operations make in the web UI.
     const mapProject = () =>
-      install.owner.query("INSERT INTO tracker_mappings (org_id, team_id, tracker, target, target_name) SELECT org_id, id, 'jira', '10042', 'JIRA' FROM teams WHERE id = $1", [
-        teams["JIRA"],
-      ]);
+      install.owner.query(
+        `INSERT INTO tracker_mappings (org_id, team_id, tracker, target, target_name, made_after_event)
+           SELECT t.org_id, t.id, 'jira', '10042', 'JIRA', s.last_number FROM teams t JOIN event_sequence s ON s.org_id = t.org_id WHERE t.id = $1`,
+        [teams["JIRA"]],
+      );
     await mapProject();
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "JIRA" });
     await install.execute("requests.claim", ayse, { key: request.key });

@@ -34,7 +34,11 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 //   opening or its move into the team; nothing is filled in for a request
 //   that reached it before, and none is made for one that has ended
 //   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-//   D55 (75)). A team with no mapping gets none.
+//   D55 (75)). A team with no mapping gets none. "After" is by commit: the
+//   event of the claim, opening or move is numbered after the last event the
+//   mapping recorded when it was made (tracker-mappings.ts), which is exactly
+//   when the write that recorded it saw the mapping and sent the mirror job;
+//   for a mapping made before it recorded one, its time is compared instead.
 // - Whose issue: each issue keeps the mapping that made it, and Tiehall
 //   writes to it only while that mapping holds. A removed mapping's issues
 //   are left as people leave them, a reassignment's notice included, and a
@@ -236,6 +240,8 @@ export interface MirrorMapping {
   mirrorOnOpen: boolean;
   /** When it was made, exactly as stored. */
   createdAt: string;
+  /** The number of the org's last event when it was made; null for a mapping made before the number was kept. */
+  madeAfterEvent: number | null;
 }
 
 /** A request, as its mirror shows it. */
@@ -543,8 +549,8 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
   const latest = sequence?.lastNumber ?? 0;
   const target = alias(teams, "target_team");
   const requesting = alias(teams, "requesting_team");
-  // The request with its target team's mapping, read together: the mapping's time is kept exactly as stored, as the
-  // request's events are compared with it.
+  // The request with its target team's mapping, read together: the mapping's time is kept exactly as stored, as a
+  // mapping made before it kept the number of its last event has the request's events compared with its time.
   const [row] = await tx
     .select({
       request: requests,
@@ -555,7 +561,7 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
       place: trackerMappings.target,
       mirrorOnOpen: trackerMappings.mirrorOnOpen,
       mappedAt: sql<string | null>`${trackerMappings.createdAt}::text`,
-      openedSince: sql<boolean | null>`${requests.createdAt} > ${trackerMappings.createdAt}`,
+      madeAfterEvent: trackerMappings.madeAfterEvent,
     })
     .from(requests)
     .innerJoin(target, and(eq(target.orgId, requests.orgId), eq(target.id, requests.targetTeamId)))
@@ -566,23 +572,38 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
   const mapping: MirrorMapping | undefined =
     row.tracker === null || row.place === null || row.mirrorOnOpen === null || row.mappedAt === null
       ? undefined
-      : { id: row.mappingId, tracker: row.tracker as Tracker, target: row.place, mirrorOnOpen: row.mirrorOnOpen, createdAt: row.mappedAt };
-  // The claims and reassignments of the request, and which of them came after the mapping was made.
-  const mappedAt = mapping?.createdAt ?? null;
+      : {
+          id: row.mappingId,
+          tracker: row.tracker as Tracker,
+          target: row.place,
+          mirrorOnOpen: row.mirrorOnOpen,
+          createdAt: row.mappedAt,
+          madeAfterEvent: row.madeAfterEvent,
+        };
+  // The opening, claims and reassignments of the request, and which of them came after the mapping was made: those
+  // numbered after the mapping's last event, whose writes committed after it and saw it, or, for a mapping that kept
+  // no number, those that occurred after its time.
+  const afterMapping =
+    mapping === undefined
+      ? sql`false`
+      : mapping.madeAfterEvent === null
+        ? sql`${events.occurredAt} > ${mapping.createdAt}::timestamptz`
+        : sql`${events.number} > ${mapping.madeAfterEvent}`;
   const claimant = row.request.claimantUserId;
   const [marks] = await tx
     .select({
+      openedSince: sql<boolean | null>`bool_or(${events.type} = 'request.opened' AND ${afterMapping})`,
       reassigned: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.reassigned')`,
-      reassignedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.reassigned' AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
-      claimedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.claimed' AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
-      claimantSince: sql<boolean | null>`bool_or(${events.type} = 'request.claimed' AND ${events.data} ->> 'userId' = ${claimant} AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
+      reassignedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.reassigned' AND ${afterMapping})`,
+      claimedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.claimed' AND ${afterMapping})`,
+      claimantSince: sql<boolean | null>`bool_or(${events.type} = 'request.claimed' AND ${events.data} ->> 'userId' = ${claimant} AND ${afterMapping})`,
     })
     .from(events)
     .where(
       and(
         eq(events.orgId, orgId),
         eq(events.class, "domain"),
-        inArray(events.type, ["request.claimed", "request.reassigned"]),
+        inArray(events.type, ["request.opened", "request.claimed", "request.reassigned"]),
         sql`${events.data} ->> 'requestId' = ${requestId}`,
       ),
     );
@@ -601,7 +622,7 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
   // after the mapping was made. The request came into its team by its opening, or by its last reassignment, which moved
   // it there.
   const claimed = (claimant !== null && marks?.claimantSince === true) || (claimSince !== undefined && (lastMove === undefined || claimSince > lastMove));
-  const arrived = lastMove === undefined ? row.openedSince === true : numberOf(marks?.reassignedSince) === lastMove;
+  const arrived = lastMove === undefined ? marks?.openedSince === true : numberOf(marks?.reassignedSince) === lastMove;
   const reached = mapping !== undefined && (claimed || (mapping.mirrorOnOpen && arrived));
   const request: MirroredRequest = {
     id: row.request.id,

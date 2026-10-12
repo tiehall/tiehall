@@ -2974,6 +2974,14 @@ export const trackerMappings = pgTable(
      * null for a mapping made before mirrors kept the mapping that made them.
      */
     id: uuid("id").default(sql`gen_random_uuid()`),
+    /**
+     * The number of the org's last event when the mapping was made, read
+     * while its transaction holds the event counter until it commits: a
+     * request's event numbered after it committed after the mapping, and its
+     * write saw the mapping. Null for a mapping made before the number was
+     * kept, whose time is compared instead.
+     */
+    madeAfterEvent: bigint("made_after_event", { mode: "number" }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.teamId] }),

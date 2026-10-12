@@ -1,8 +1,9 @@
 import { listTrackerMappings, mapIntakeRepository, removeTrackerMapping, setDoneProposals, setMirrorOnOpen, type trackerMapping } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { githubApp, githubConnectedInstallations, githubCoveredRepositories, githubInstallations, teams, trackerMappings } from "@tiehall/db";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
+import { holdEventCounter } from "./event-sequence.ts";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { installationCoveringNamed } from "./github-pull-requests.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -31,10 +32,15 @@ import type { OrgContext } from "./with-org.ts";
 //   that reach the team's point after it was made (mirrors.ts;
 //   decisions-from-groups-15-28: design.md, Decisions this change rests on:
 //   D55 (75)). Each mapping gets an id of its own, which its mirrors keep,
-//   and the time it was made, taken at its insert, just before its commit,
-//   not at its transaction's start: a claim made while that transaction runs
-//   cannot see the mapping, so it sends no mirror job, and it counts as made
-//   before the mapping, as the job reads it.
+//   and the number of the org's last event when it was made, read once its
+//   row is inserted while it holds the event counter until it commits
+//   (event-sequence.ts; design.md of that change, Technical decisions: T17).
+//   A write that records a request's event before the mapping reads that
+//   number commits before the mapping, so it cannot see it and sends no
+//   mirror job; one that records it after waits for the mapping to commit,
+//   then sees it and sends the job. The job orders the request's events
+//   against the mapping by that number, so it counts each write as the
+//   write's own wake-up did, wherever the write's transaction began.
 // - The listing names the covered repositories GitHub reported public when
 //   they were last read: a mirror issue copies its request's title into the
 //   intake repository, so the teams page warns about a public one.
@@ -44,6 +50,19 @@ import type { OrgContext } from "./with-org.ts";
 // once meet the mapping's key, one per team: the second gets 409.
 
 type TrackerMappingView = z.input<typeof trackerMapping>;
+
+/**
+ * Records, on the team's mapping just inserted, the number of the org's last event, holding the event counter until
+ * the mapping commits, so the mirror job orders the requests' events against the mapping as they committed. Every
+ * operation that makes a mapping calls it last, as the counter is the last lock of a write (event-sequence.ts).
+ */
+async function orderAgainstEvents(context: OrgContext, teamId: string): Promise<void> {
+  const last = await holdEventCounter(context);
+  await context.tx
+    .update(trackerMappings)
+    .set({ madeAfterEvent: last })
+    .where(and(eq(trackerMappings.orgId, context.orgId), eq(trackerMappings.teamId, teamId)));
+}
 
 /** The team, read in the call's transaction; 404 when the install has no such team. */
 async function assertTeam({ tx, orgId }: OrgContext, teamId: string): Promise<void> {
@@ -113,12 +132,13 @@ export const TRACKER_MAPPING_HANDLERS: Handlers = {
     }
     const [created] = await tx
       .insert(trackerMappings)
-      .values({ orgId, teamId, tracker: "github", target: String(covering.repositoryId), targetName: covering.fullName, mirrorOnOpen, createdAt: sql`clock_timestamp()` })
+      .values({ orgId, teamId, tracker: "github", target: String(covering.repositoryId), targetName: covering.fullName, mirrorOnOpen })
       .onConflictDoNothing()
       .returning({ teamId: trackerMappings.teamId });
     if (created === undefined) {
       throw new Refusal("conflict", "The team maps a tracker already, and a team mirrors into one tracker only. Remove its mapping first.");
     }
+    await orderAgainstEvents(context, teamId);
     return mappingOf(context, teamId);
   }),
 

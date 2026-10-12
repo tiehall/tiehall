@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { eventSequence } from "@tiehall/db";
 import type { OrgContext } from "./with-org.ts";
 
@@ -56,7 +56,10 @@ import type { OrgContext } from "./with-org.ts";
 //    takes them;
 // 7. the org's event counter, here, with the first event: the last lock a
 //    write takes. What a write does after its first event, such as cancelling
-//    the proposals its change ends, locks only rows it holds already.
+//    the proposals its change ends, locks only rows it holds already. A new
+//    tracker mapping, which appends no event, holds the counter last too,
+//    once its row is inserted, to read the number the mirror job orders a
+//    request's events against (tracker-mappings.ts).
 // packages/commands/test/proposal-locks.test.ts,
 // member-organization-locks.test.ts and member-removal-races.test.ts run the
 // pairs of writes that once waited on each other, in both orders.
@@ -71,4 +74,15 @@ export async function takeEventNumber({ tx, orgId }: OrgContext): Promise<number
     .returning({ number: eventSequence.lastNumber });
   if (taken === undefined) throw new Error("The event sequence returned no number.");
   return taken.number;
+}
+
+/**
+ * Locks the org's event counter until the transaction ends without taking a number, for a write that appends no event
+ * but is ordered against the events as they commit, such as a new tracker mapping (tracker-mappings.ts). Returns the
+ * last number given: every event up to it has committed, and every later one commits after this transaction, whose
+ * changes its write then sees. Setup's own event makes the counter, so a call made once setup is complete finds it.
+ */
+export async function holdEventCounter({ tx, orgId }: OrgContext): Promise<number> {
+  const [held] = await tx.select({ lastNumber: eventSequence.lastNumber }).from(eventSequence).where(eq(eventSequence.orgId, orgId)).for("update");
+  return held?.lastNumber ?? 0;
 }
