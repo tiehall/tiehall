@@ -21,11 +21,12 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // (13)), against the web app as the image runs it and an install whose people
 // and agents act meanwhile. The script makes the page live, shows Pause motion
 // and holds a wait, so an agent's blocking question reaches the feed and the
-// team's count within 2 seconds; the map's place is laid out from the first
-// frame the page paints, before the script runs, so drawing the map moves
-// nothing, whatever the widths of the system's font; the map draws a node per team, a line per pair, at most 12 people
-// and agents at work and at most 8 dots, each an SVG circle moved through its
-// cx and cy; Pause motion stops every animation and starts them again, and
+// team's count within 2 seconds; the toolbar and the map's place are laid out
+// from the first frame the page paints, before the script runs, so drawing the
+// map moves neither, whatever the widths of the system's font and the length
+// of the team names; the map draws a node per team, a line per pair, at most
+// 12 people and agents at work and at most 8 dots, each an SVG circle moved
+// through its cx and cy; Pause motion stops every animation and starts them again, and
 // reduced motion starts with it pressed; a hidden page holds no wait and
 // catches up once shown; a restart shows Reconnecting and then Live; an ended
 // session shows Signed out; 60 events while the page is held back make it read
@@ -239,6 +240,10 @@ describe("the live hall's script", () => {
     await expect(pause.isVisible()).resolves.toBe(true);
     await expect(pause.getAttribute("aria-pressed")).resolves.toBe("false");
     await expect(page.locator("#live-state").getAttribute("class")).resolves.toBe("live-state live");
+    // The lamp's unseen copy, which keeps the title as wide as in the first frame, shows nothing and is read by nothing.
+    await expect(page.locator(".live-reserve").isVisible()).resolves.toBe(false);
+    await expect(page.getByText("Not live: updates need JavaScript").isVisible()).resolves.toBe(false);
+    await expect(page.locator(".hall-toolbar").ariaSnapshot()).resolves.not.toContain("Not live");
     await context.close();
   });
 
@@ -411,11 +416,25 @@ const STAGE_LAYOUT = `() => {
 }`;
 
 /**
- * Records, in the page, the layout of the first frame the browser paints of the live hall: at the first animation
- * frame in which the map's place is in the page, the stage's layout, the page's background, whether the hall's script
- * had run by then, and the font faces the page declares. A browser runs a page's animation frames only once its
- * stylesheet has loaded, each right before it paints, so that frame is the first look of the hall the page shows. Plain
+ * The layout of the live hall's toolbar as the browser lays it out: the boxes of the toolbar, of its title with the
+ * live lamp, and of its actions, as x, y, width and height. While the title and the actions keep their boxes, the
+ * toolbar breaks into the same lines at any width, however wide the font and the team names set them. Plain
  * JavaScript, as a string.
+ */
+const TOOLBAR_LAYOUT = `() => {
+  const box = (selector) => {
+    const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+    return [x, y, width, height].map(Math.round);
+  };
+  return { toolbar: box(".hall-toolbar"), title: box(".hall-title"), actions: box(".hall-actions") };
+}`;
+
+/**
+ * Records, in the page, the layout of the first frame the browser paints of the live hall: at the first animation
+ * frame in which the map's place is in the page, the stage's layout, the toolbar's, the page's background, whether the
+ * hall's script had run by then, and the font faces the page declares. A browser runs a page's animation frames only
+ * once its stylesheet has loaded, each right before it paints, so that frame is the first look of the hall the page
+ * shows. Plain JavaScript, as a string.
  */
 const FIRST_FRAME = `(() => {
   if (location.pathname !== "/hall") return;
@@ -429,6 +448,7 @@ const FIRST_FRAME = `(() => {
       background: getComputedStyle(document.body).backgroundColor,
       faces: document.fonts.size,
       layout: (${STAGE_LAYOUT})(),
+      toolbar: (${TOOLBAR_LAYOUT})(),
     };
   };
   requestAnimationFrame(frame);
@@ -447,10 +467,20 @@ const TEXT_WIDTHS = {
   "text narrower than it": "-0.04em",
 } as const;
 
+/**
+ * The names of the teams the toolbar's Team filter lists, which set how wide its select is: the four teams' short
+ * names, or MOB named at length, up to the 100 characters a team's name may have.
+ */
+const TEAM_NAMES = {
+  "short team names": "Mobile",
+  "a team named at length": "Developer Experience and Platform Engineering",
+  "a team's longest name": "Developer Experience, Platform Engineering, Build Infrastructure, Release Tooling and Internal Tools",
+} as const;
+
 // The widths run from a tablet's to a wide screen's: at each, the toolbar above the map keeps the lines it is laid out
-// on whatever its words and however wide its font sets them, so the map's place stays where the first frame put it,
-// although the live lamp's words before the script runs, "Not live: updates need JavaScript", are wider than "Live",
-// and Pause motion shows only once the script runs.
+// on whatever its words, however long the team names in its filter and however wide its font sets them, so the map's
+// place stays where the first frame put it, although the live lamp's words before the script runs, "Not live: updates
+// need JavaScript", are wider than "Live", and Pause motion shows only once the script runs.
 describe("the live hall's first frame", () => {
   const cases = [
     [1280, 800],
@@ -458,57 +488,78 @@ describe("the live hall's first frame", () => {
     [1024, 768],
     [960, 720],
     [768, 1024],
-  ].flatMap(([width, height]) => Object.keys(TEXT_WIDTHS).map((text) => [width ?? 0, height ?? 0, text as keyof typeof TEXT_WIDTHS] as const));
+  ].flatMap(([width, height]) =>
+    Object.keys(TEAM_NAMES).flatMap((names) => Object.keys(TEXT_WIDTHS).map((text) => [width ?? 0, height ?? 0, names as keyof typeof TEAM_NAMES, text as keyof typeof TEXT_WIDTHS] as const)),
+  );
 
-  it.each(cases)("lays out the map's place from the first frame the page paints at %i by %i, in %s, before its script runs, so drawing the map does not move it", { timeout: 120_000 }, async (width, height, text) => {
+  afterAll(async () => {
+    await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES["short team names"]]);
+  });
+
+  it.each(cases)("lays out the toolbar and the map's place from the first frame the page paints at %i by %i, with %s, in %s, before its script runs, so drawing the map moves neither", { timeout: 120_000 }, async (width, height, names, text) => {
+    await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES[names]]);
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
-    await context.addCookies([{ name: "tiehall.session_token", value: cookie, url: web.url }]);
-    const page = await context.newPage();
-    page.setDefaultTimeout(30_000);
-    const fonts: string[] = [];
-    page.on("request", (request) => {
-      if (request.resourceType() === "font") fonts.push(request.url());
-    });
-    await page.addInitScript({ content: FIRST_FRAME });
-    const spacing = TEXT_WIDTHS[text];
-    if (spacing !== undefined) {
-      // The install's own stylesheet, with one rule more at its end: the page's policy lets it load, as it is the
-      // install's, while a style element of the test's own would break that policy.
-      await page.route(/\/assets\/tiehall\.css(\?|$)/, async (route) => {
-        const response = await route.fetch();
-        await route.fulfill({ response, body: `${await response.text()}\n* { letter-spacing: ${spacing} !important; }\n` });
+    // A case that fails closes its browser all the same, so the wait it held does not count against the next case's.
+    try {
+      await context.addCookies([{ name: "tiehall.session_token", value: cookie, url: web.url }]);
+      const page = await context.newPage();
+      page.setDefaultTimeout(30_000);
+      const fonts: string[] = [];
+      page.on("request", (request) => {
+        if (request.resourceType() === "font") fonts.push(request.url());
       });
+      await page.addInitScript({ content: FIRST_FRAME });
+      const spacing = TEXT_WIDTHS[text];
+      if (spacing !== undefined) {
+        // The install's own stylesheet, with one rule more at its end: the page's policy lets it load, as it is the
+        // install's, while a style element of the test's own would break that policy.
+        await page.route(/\/assets\/tiehall\.css(\?|$)/, async (route) => {
+          const response = await route.fetch();
+          await route.fulfill({ response, body: `${await response.text()}\n* { letter-spacing: ${spacing} !important; }\n` });
+        });
+      }
+      // The hall's script is held until the page has painted, as a slow network or a slow first read of the state would
+      // hold it, so the frames painted before it arrives are the ones this test reads.
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(/\/assets\/hall\.js(\?|$)/, async (route) => {
+        await held;
+        await route.continue();
+      });
+      await page.goto(`${web.url}/hall`, { waitUntil: "commit" });
+      await expect.poll(() => page.evaluate("window.tiehallFirstFrame !== undefined"), { timeout: 10_000 }).toBe(true);
+      const first = (await page.evaluate("window.tiehallFirstFrame")) as {
+        live: boolean;
+        background: string;
+        faces: number;
+        layout: { map: number[]; feed: number[] | null; columns: string };
+        toolbar: Record<string, number[]>;
+      };
+      release();
+      await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
+      await page.locator("#hall-map .node").first().waitFor();
+      await page.locator("#pause-motion").waitFor();
+      const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
+      const toolbar = (await page.evaluate(`(${TOOLBAR_LAYOUT})()`)) as Record<string, number[]>;
+      expect(first.live).toBe(false);
+      expect(first.background).toBe("rgb(7, 16, 38)");
+      // The page declares no font face and loads no font: its text is in the system's own font from the first frame on.
+      expect(first.faces).toBe(0);
+      await expect(page.evaluate("document.fonts.size")).resolves.toBe(0);
+      expect(fonts).toEqual([]);
+      expect(drawn.map[2]).toBeGreaterThan(0);
+      expect(drawn.map[3]).toBeGreaterThan(0);
+      expect(first.layout.map).toEqual(drawn.map);
+      expect(first.layout.columns).toBe(drawn.columns);
+      if (first.layout.feed !== null) expect(first.layout.feed.slice(0, 3)).toEqual(drawn.feed.slice(0, 3));
+      // The toolbar's title and actions keep their boxes as the page comes alive, so it breaks into the same lines
+      // before the script runs and after, whatever widths the font and the team names give them.
+      expect(first.toolbar).toEqual(toolbar);
+    } finally {
+      await context.close();
     }
-    // The hall's script is held until the page has painted, as a slow network or a slow first read of the state would
-    // hold it, so the frames painted before it arrives are the ones this test reads.
-    let release = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await page.route(/\/assets\/hall\.js(\?|$)/, async (route) => {
-      await held;
-      await route.continue();
-    });
-    await page.goto(`${web.url}/hall`, { waitUntil: "commit" });
-    await expect.poll(() => page.evaluate("window.tiehallFirstFrame !== undefined"), { timeout: 10_000 }).toBe(true);
-    const first = (await page.evaluate("window.tiehallFirstFrame")) as { live: boolean; background: string; faces: number; layout: { map: number[]; feed: number[] | null; columns: string } };
-    release();
-    await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
-    await page.locator("#hall-map .node").first().waitFor();
-    await page.locator("#pause-motion").waitFor();
-    const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
-    expect(first.live).toBe(false);
-    expect(first.background).toBe("rgb(7, 16, 38)");
-    // The page declares no font face and loads no font: its text is in the system's own font from the first frame on.
-    expect(first.faces).toBe(0);
-    await expect(page.evaluate("document.fonts.size")).resolves.toBe(0);
-    expect(fonts).toEqual([]);
-    expect(drawn.map[2]).toBeGreaterThan(0);
-    expect(drawn.map[3]).toBeGreaterThan(0);
-    expect(first.layout.map).toEqual(drawn.map);
-    expect(first.layout.columns).toBe(drawn.columns);
-    if (first.layout.feed !== null) expect(first.layout.feed.slice(0, 3)).toEqual(drawn.feed.slice(0, 3));
-    await context.close();
   });
 });
 

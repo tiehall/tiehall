@@ -41,6 +41,12 @@ import { createPageRoute, type PageRoute, type PageRouteOptions } from "./web-pa
 type HallState = z.output<typeof readHallState.output>;
 type Counts = HallState["teams"][number]["counts"];
 
+/**
+ * What the live lamp says before the hall's script runs, and without scripts: the widest words it says as the page comes
+ * alive, which an unseen copy of the lamp keeps saying, so the toolbar's title stays as wide once the lamp says "Live".
+ */
+const NOT_LIVE = "Not live: updates need JavaScript";
+
 /** The states that are not terminal, in the order a request goes through them, which the lamps and the counts follow. */
 const LIVE_STATES = ["open", "claimed", "in_progress", "needs_info"] as const satisfies readonly RequestState[];
 
@@ -185,7 +191,10 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     '      <div class="hall-toolbar">',
     '        <div class="hall-title">',
     "          <h1>Live hall</h1>",
-    '          <p class="live-state off" id="live-state"><span class="live-lamp" aria-hidden="true"></span><span id="live-words">Not live: updates need JavaScript</span></p>',
+    '          <div class="live-place">',
+    `            <p class="live-state off" id="live-state"><span class="live-lamp" aria-hidden="true"></span><span id="live-words">${NOT_LIVE}</span></p>`,
+    `            <p class="live-state live-reserve" aria-hidden="true"><span class="live-lamp"></span><span>${NOT_LIVE}</span></p>`,
+    "          </div>",
     "        </div>",
     '        <div class="hall-actions">',
     filterHtml(state, narrowing),

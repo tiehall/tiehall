@@ -133,6 +133,13 @@ describe("the live hall's page", () => {
     const main = mainOf((await open()).html);
     expect(main).toMatch(/<h1>Live hall<\/h1>/);
     expect(main).toMatch(/<p class="live-state off" id="live-state"><span class="live-lamp" aria-hidden="true"><\/span><span id="live-words">Not live: updates need JavaScript<\/span><\/p>/);
+    // The lamp's place keeps, unseen and unread, a copy of the lamp with the words it says before the script runs, the
+    // widest it says as the page comes alive, which holds the title as wide from the first frame on.
+    const place = element(main, /<div class="live-place">/, "div");
+    expect(place).toMatch(/^<div class="live-place">\s*<p class="live-state off" id="live-state">/);
+    expect(place).toMatch(
+      /<\/p>\s*<p class="live-state live-reserve" aria-hidden="true"><span class="live-lamp"><\/span><span>Not live: updates need JavaScript<\/span><\/p>\s*<\/div>$/,
+    );
     const form = element(main, /<form class="hall-filter"/, "form");
     expect(form).toMatch(/^<form class="hall-filter" method="get" action="\/hall">/);
     expect(form).toContain('<label for="hall-team">Team</label>');
