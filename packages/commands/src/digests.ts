@@ -1,5 +1,5 @@
 import { emailDigests as digestRecords, members, questionNotices, users } from "@tiehall/db";
-import { and, asc, eq, inArray, isNotNull, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, max, sql } from "drizzle-orm";
 import {
   DIGEST,
   DIGEST_UPDATES,
@@ -32,10 +32,14 @@ import type { WorkerJob } from "./worker.ts";
 // T7). Each member with the digest on and an address, whose days since their
 // last digest include the one that ended last, gets one email that gathers
 // their updates of those days, those whats_new returns, from the needs_human
-// events to how proposals ended: every update except a question that was
-// emailed to them at once, and except every event of their own, what they did
-// in the web UI included (decisions-from-groups-15-28: design.md, Decisions
-// this change rests on: D55 (43); findings-from-claude-code-run: design.md,
+// events to how proposals ended, and, for a member who opted in to a team's
+// emails as a requester, the updates on the requests whose requester is that
+// team alone, while they are in it (requester-loop: When the requester is a
+// team; decisions-from-groups-15-28, D55 (65)): every update except a
+// question that was emailed to them at once, and except every event of their
+// own, what they did in the web UI included (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (43);
+// findings-from-claude-code-run: design.md,
 // Findings: F2 (4)). The email goes to the primary verified address of their
 // GitHub account, and the worker records that it went, with the first and the
 // last day it covers, in the transaction that sends it, so a user gets at most
@@ -88,6 +92,50 @@ interface Digest {
   updates: number;
 }
 
+/** An event as the digest reads it. */
+interface DigestEvent {
+  number: number;
+  type: string;
+  occurredAt: Date;
+  data: Record<string, string | number | boolean>;
+}
+
+/**
+ * The updates, from one time until another, oldest first, on the requests
+ * whose requester is a team alone, of the teams whose emails as a requester
+ * the user opted in to and still belongs to (requester-loop: When the
+ * requester is a team; decisions-from-groups-15-28, D55 (65)): each domain
+ * event on such a request but the user's own, which the digest leaves out
+ * (decisions-from-groups-15-28, D55 (43), as findings-from-claude-code-run's
+ * item (4) narrows it). At most `limit` of them, and whether more follow.
+ */
+async function teamRequestedUpdatesBetween(
+  { tx, orgId }: OrgContext,
+  { userId, from, until, limit }: { userId: string; from: Date; until: Date; limit: number },
+): Promise<{ events: DigestEvent[]; more: boolean }> {
+  const { rows } = await tx.execute<{ number: string | number; type: string; occurred_at: Date | string; data: DigestEvent["data"] }>(sql`
+    SELECT e.number, e.type, e.occurred_at, e.data
+      FROM events e
+     WHERE e.org_id = ${orgId} AND e.class = 'domain'
+       AND e.occurred_at >= ${from.toISOString()}::timestamptz AND e.occurred_at < ${until.toISOString()}::timestamptz
+       AND e.actor_user_id IS DISTINCT FROM ${userId}
+       AND e.data->>'requestId' IN (
+         SELECT r.id::text
+           FROM requests r
+           JOIN team_requester_emails o ON o.org_id = r.org_id AND o.team_id = r.requesting_team_id
+           JOIN team_members tm ON tm.org_id = o.org_id AND tm.team_id = o.team_id AND tm.user_id = o.user_id
+          WHERE r.org_id = ${orgId} AND r.requesting_user_id IS NULL AND o.user_id = ${userId})
+     ORDER BY e.number
+     LIMIT ${limit + 1}`);
+  const events = rows.map((row) => ({
+    number: Number(row.number),
+    type: row.type,
+    occurredAt: row.occurred_at instanceof Date ? row.occurred_at : new Date(row.occurred_at),
+    data: row.data,
+  }));
+  return { events: events.slice(0, limit), more: events.length > limit };
+}
+
 /**
  * The digests to send now: one per member with the digest on and an address,
  * with none yet for the day that ended last, that has updates in the days
@@ -116,7 +164,13 @@ async function digestsOf(context: OrgContext, { until, installUrl }: { until: Da
     const from = coverageStart(lastCovered.get(userId) ?? null, until);
     // The day that ended last is covered already.
     if (from >= until) continue;
-    const { events, more } = await updatesBetween(context, { userId, scope: "whats_new", readers: "people", from, until, limit: 5_000 });
+    // The user's updates, those whats_new returns, and the updates on the requests of the teams they get the emails of as a
+    // requester, each once, in the order they happened.
+    const own = await updatesBetween(context, { userId, scope: "whats_new", readers: "people", from, until, limit: 5_000 });
+    const team = await teamRequestedUpdatesBetween(context, { userId, from, until, limit: 5_000 });
+    const merged = [...new Map([...own.events, ...team.events].map((event) => [event.number, event])).values()].sort((a, b) => a.number - b.number);
+    const events = merged.slice(0, 5_000);
+    const more = own.more || team.more || merged.length > events.length;
     // A question emailed to the user as it came is not repeated.
     const messageIds = events.map(({ data }) => data["messageId"]).filter((id): id is string => typeof id === "string");
     const emailed = new Set(

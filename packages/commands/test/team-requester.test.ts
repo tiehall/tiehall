@@ -5,6 +5,7 @@ import {
   createEmailSettingsRoute,
   csrfTokenFor,
   EMAIL_SETTINGS_PATH,
+  emailDigests,
   emailQuestion,
   notifyWaitingProposals,
   openMailer,
@@ -257,5 +258,37 @@ describe("the email settings page", () => {
     expect(refused).toMatchObject({ status: 403 });
     const { rows } = await install.owner.query("SELECT count(*)::int AS count FROM team_requester_emails WHERE user_id = $1", [id("kim")]);
     expect(rows[0]).toEqual({ count: 0 });
+  });
+});
+
+// A member who opted in to the team's emails as a requester also gets, in their daily digest, the updates on the
+// requests whose requester is that team (requester-loop: When the requester is a team, "An opted-in member's digest
+// holds the team's requests"; decisions-from-groups-15-28, D55 (65)). Each member gets one digest a day, so this
+// runs the day's digest once, last.
+describe("the daily digest of a member of a team that is a requester", () => {
+  it("lists a state change of a request whose requester is the team for a member who opted in, and nothing about it for one who did not", async () => {
+    const request = await teamRequestedRequest();
+    expect((await callApi(install, tokenOf(id("bob")), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    expect((await callApi(install, tokenOf(id("bob")), "POST", `/api/v1/requests/${request.key}/status`, { state: "in_progress" })).status).toBe(200);
+    // Events carry the database's time: the digest of the day they happened on goes out once that day has ended, and a
+    // member's first digest covers the 7 latest ended days, the last of them that day.
+    const { rows } = await install.owner.query<{ at: Date }>("SELECT max(occurred_at) AS at FROM events WHERE data->>'requestId' = $1", [request.id]);
+    const day = (rows[0]?.at ?? new Date()).toISOString().slice(0, 10);
+    const after = new Date(Date.parse(`${day}T00:00:00Z`) + 24 * 3_600_000 + 5 * 60_000);
+
+    await emailDigests.handle({ id: randomUUID(), queue: emailDigests.type.queue, data: {}, signal: new AbortController().signal }, { database: install.db, now: () => after, mailer, installUrl: URL_OF_INSTALL });
+
+    const textTo = (address: string) =>
+      sink.messages
+        .filter(({ to }) => to.includes(address))
+        .map(({ data }) => data.replace(/=\r\n/g, "").replace(/=3D/g, "=").replace(/\r\n/g, "\n"))
+        .join("\n");
+    const lee = textTo("lee@acme.example");
+    const firstDay = new Date(Date.parse(`${day}T00:00:00Z`) - 6 * 24 * 3_600_000).toISOString().slice(0, 10);
+    expect(lee).toContain(`Subject: Tiehall: your updates of ${firstDay} to ${day} (UTC)`);
+    expect(lee).toContain(`${request.key} (team FE): ${URL_OF_INSTALL}/${request.key}`);
+    expect(lee).toContain("request.claimed: it was claimed");
+    expect(lee).toContain("request.started: work on it started");
+    expect(textTo("kim@acme.example")).not.toContain(request.key);
   });
 });

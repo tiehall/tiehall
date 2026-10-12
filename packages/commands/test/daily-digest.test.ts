@@ -510,3 +510,41 @@ describe("the email settings page", () => {
     expect(await open(sessionOf(id("sam")), false)).toContain("This install has no SMTP settings, so Tiehall sends no email");
   });
 });
+
+// requester-loop: When the requester is a team, "An opted-in member's digest holds the team's requests"
+// (decisions-from-groups-15-28, D55 (65)): a member who opted in to a team's emails as a requester also gets, in
+// their digest, the updates on the requests whose requester is that team alone, while they are in it.
+describe("the requests a team alone requests", () => {
+  it("are in the digest of each member who opted in to the team's emails as a requester, and of no other member", async () => {
+    // People of their own, since each user gets one digest a day: Eve opens the request, Ida and Max are in BE.
+    for (const login of ["eve", "ida", "max", "una"]) {
+      person[login] = await addUser(install.owner, { login });
+      await install.owner.query("UPDATE users SET email = $2 WHERE id = $1", [person[login], `${login}@example.com`]);
+      await joinTeams(install.owner, id(login), (await install.owner.query<{ id: string }>("SELECT id FROM teams WHERE key = 'BE'")).rows[0]?.id ?? "");
+    }
+    const request = await openRequest(install, tokenOf(id("eve")), { targetTeam: "FE" });
+    // BE alone is the requester, as of a contract-change request whose provider PR's author is no member.
+    await install.owner.query("UPDATE requests SET requesting_user_id = NULL WHERE id = $1", [request.id]);
+    // Ida opted in to BE's emails as a requester, and so did Una, who then left BE; Max did not.
+    for (const login of ["ida", "una"]) {
+      await install.owner.query("INSERT INTO team_requester_emails (org_id, user_id, team_id, opted_in_at) SELECT org_id, $1, requesting_team_id, now() FROM requests WHERE id = $2", [
+        id(login),
+        request.id,
+      ]);
+    }
+    await install.owner.query("DELETE FROM team_members WHERE user_id = $1", [id("una")]);
+    expect((await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    expect((await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/status`, { state: "in_progress" })).status).toBe(200);
+    await runImmediateEmails();
+    const { day, after } = await dayOf(request.id);
+
+    await runJob(emailDigests, after);
+
+    const [digest] = emailsTo("ida");
+    expect(digest?.subject).toBe(digestSubject(day));
+    expect(digest?.text).toContain(`${request.key} (team FE): ${URL_OF_INSTALL}/${request.key}`);
+    expect(digest?.text).toContain("request.claimed: it was claimed");
+    expect(digest?.text).toContain("request.started: work on it started");
+    for (const login of ["max", "una"]) expect(emailsTo(login).map(({ text }) => text).join("\n"), login).not.toContain(request.key);
+  });
+});
