@@ -36,6 +36,9 @@ const teams: Record<string, string> = {};
 /** A CI run of the contract Action in acme/payments. */
 const ciRun = (): CiCaller => ({ kind: "ci", repositoryId: String(PAYMENTS_REPOSITORY.id), repositoryOwnerId: String(acmeId), jobWorkflowRef: CONTRACT_WORKFLOW });
 
+/** The breaking pair's changes with the level of one changed: its WARN-level change rated INFO, which leaves two ERR-level ones. */
+const oneLevelChanged = (): ClassifiedChange[] => changesOf("breaking").map((change) => (change.level === "WARN" ? { ...change, level: "INFO" } : change));
+
 /** The breaking pair's changes with a third ERR-level change, as a later push adds it. */
 const threeBreaking = (): ClassifiedChange[] => [
   ...changesOf("breaking"),
@@ -198,7 +201,7 @@ describe("a push that adds a breaking change", () => {
 
   it("revises every request of the change set that has not ended, and says when the count stays the same", async () => {
     await pushReports(changesOf("breaking"));
-    await pushReports(changesOf("breaking"), "d");
+    await pushReports(oneLevelChanged(), "d");
 
     for (const team of ["FE", "MOBILE"]) {
       const request = await requestTo(team);
@@ -206,6 +209,62 @@ describe("a push that adds a breaking change", () => {
       const [message] = await threadOf(request.id);
       expect(message?.body).toContain("Diff updated: 2 → 2 breaking");
     }
+  });
+});
+
+// An update whose classified changes, each change's id, level and operation, equal the last update's adds nothing
+// (contract-changes: Each update adds a packet revision and a system message; decisions-from-groups-15-28, D55 (64)).
+describe("a rerun that changes nothing", () => {
+  it("adds no revision, no message and no notice to any request of the change set, and cancels no pending packet change", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+    await install.execute("requests.claim", sessionOf(bob), { key: fe.key });
+    const { rows } = await install.owner.query<{ packet: Record<string, any> }>("SELECT packet FROM packet_revisions WHERE request_id = $1 AND number = 1", [fe.id]);
+    const packet = rows[0]?.packet ?? {};
+    const proposed = (await install.execute("packets.add_revision", sessionOf(deniz), {
+      key: fe.key,
+      expectedRevision: 1,
+      packet: { ...packet, untrusted: { ...packet["untrusted"], need: "Move to the new payment fields before the release on Friday." } },
+    })) as { proposal: { id: string } };
+    // MOBILE's request ends, so an update that changed something would give it a notice.
+    const mobile = await requestTo("MOBILE");
+    await install.owner.query("UPDATE requests SET state = 'withdrawn' WHERE id = $1", [mobile.id]);
+    const before = await latestEvent();
+
+    // The same workflow run again, and a push that leaves the API's changes as they were, in another order.
+    await pushReports(changesOf("breaking"), "b");
+    await pushReports([...changesOf("breaking")].reverse(), "d");
+
+    expect((await revisionsOf(fe.id)).map(({ number }) => number)).toEqual([1]);
+    expect(await threadOf(fe.id)).toEqual([]);
+    expect(await proposalsOf(fe.id)).toEqual([{ id: proposed.proposal.id, kind: "scope", state: "pending", cancel_reason: null }]);
+    expect((await revisionsOf(mobile.id)).map(({ number }) => number)).toEqual([1]);
+    expect(await threadOf(mobile.id)).toEqual([]);
+    expect(await eventsAfter(fe.id, before)).toEqual([]);
+    expect(await eventsAfter(mobile.id, before)).toEqual([]);
+    expect((await requestTo("FE")).state).toBe("claimed");
+  });
+
+  it("adds a revision once one change's level changes", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+    await pushReports(changesOf("breaking"), "c");
+    expect((await revisionsOf(fe.id)).map(({ number }) => number)).toEqual([1]);
+
+    await pushReports(oneLevelChanged(), "d");
+
+    expect((await revisionsOf(fe.id)).map(({ number }) => number)).toEqual([1, 2]);
+    expect((await threadOf(fe.id)).map(({ body }) => body)).toEqual([expect.stringContaining("Diff updated: 2 → 2 breaking")]);
+  });
+
+  it("adds a revision once a change's operation changes, or a change is added", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+
+    await pushReports(changesOf("breaking").map((change, index) => (index === 0 ? { ...change, operation: "PUT /payments" } : change)), "c");
+    await pushReports([...changesOf("breaking"), { id: "endpoint-added", level: "INFO", operation: "GET /refunds/{id}" }], "d");
+
+    expect((await revisionsOf(fe.id)).map(({ number }) => number)).toEqual([1, 2, 3]);
   });
 });
 

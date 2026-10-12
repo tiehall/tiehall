@@ -61,10 +61,15 @@ function at(time: string): void {
 /** The head commit of a report sent at this time: one per time, so a revision shows which report it applied. */
 const headAt = (time: string) => time.replace(/:/g, "").padEnd(40, "0").replace(/[^0-9a-f]/g, "0");
 
-/** The CI run reports the pull request at the clock's time, with breaking changes and the head commit of that time. */
+/**
+ * The CI run reports the pull request at the clock's time, with breaking changes, one change of that time's own,
+ * since a report whose changes equal the last update's adds no revision (decisions-from-groups-15-28, D55 (64)),
+ * and the head commit of that time.
+ */
 async function reportAt(time: string): Promise<void> {
   at(time);
-  await install.execute("contract.report", ciRun(), reportOf("payments-api", changesOf("breaking"), { pullRequest, head: headAt(time) }));
+  const changes = [...changesOf("breaking"), { id: "endpoint-added", level: "INFO" as const, operation: `GET /reports/${time}` }];
+  await install.execute("contract.report", ciRun(), reportOf("payments-api", changes, { pullRequest, head: headAt(time) }));
 }
 
 /** Runs, at this time, every job of the worker that applies an update and whose time has come, as the worker does. */

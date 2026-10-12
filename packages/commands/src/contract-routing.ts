@@ -58,7 +58,13 @@ import type { Writer } from "./write.ts";
 //   terminal state (done, declined or withdrawn) gets only a notice of the
 //   update, in the same words, and keeps its packet and its state (contract-
 //   changes: Each update adds a packet revision and a system message;
-//   handoff-packet: Packet changes that are commitments);
+//   handoff-packet: Packet changes that are commitments); a report whose
+//   classified changes, each change's id, level and operation, equal those of
+//   the report the change set's last update applied, in any order, adds no
+//   revision, no message and no notice to any of them, and so cancels no
+//   pending packet change, since a rerun or a push that leaves the API alone
+//   says nothing new (decisions-from-groups-15-28, D55 (64)); it can still
+//   open requests, as below;
 // - when the report holds no change that opens requests, each of those
 //   requests that is unclaimed at that moment, whatever claims it had before,
 //   is then withdrawn, as a system withdrawal with no proposal and no
@@ -348,6 +354,14 @@ export async function withdrawAsSystem(writer: Writer, requestId: string, curren
   await cancelProposals(writer, requestId, { kind: "terminal_state" });
 }
 
+/** Whether two reports classify the same changes: each change's id, level and operation, in any order. */
+export function sameChanges(a: ReportedContractSection["changes"], b: ReportedContractSection["changes"]): boolean {
+  if (a.length !== b.length) return false;
+  const listed = (changes: ReportedContractSection["changes"]) => changes.map(({ id, level, operation }) => JSON.stringify([id, level, operation])).sort();
+  const [left, right] = [listed(a), listed(b)];
+  return left.every((change, index) => change === right[index]);
+}
+
 /** By id, for the lock order. */
 const byId = <T>(id: (item: T) => string) => (a: T, b: T) => (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : 0);
 
@@ -410,8 +424,11 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
   const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
   await recordWaiting(context, changeSet, waiting);
   // A new report updates every request of the change set: a revision where it has not ended, a notice where it has;
-  // a team's withdrawn request that a new one replaces gets nothing more.
-  const toUpdate = report === undefined ? [] : existing.filter(({ teamId }) => !toOpen.some(({ id }) => id === teamId)).sort(byId(({ requestId }) => requestId));
+  // a team's withdrawn request that a new one replaces gets nothing more. A report whose classified changes equal
+  // those the last update applied updates none of them.
+  const applied = report === undefined || changeSet.appliedReportId === null ? undefined : await reportById(context, changeSet.appliedReportId);
+  const changed = report !== undefined && (applied === undefined || !sameChanges(applied.changes, report.changes));
+  const toUpdate = !changed ? [] : existing.filter(({ teamId }) => !toOpen.some(({ id }) => id === teamId)).sort(byId(({ requestId }) => requestId));
   // The requester of the requests it opens: the pull request's author while a member of the install, or the provider team alone.
   const requestingUserId = toOpen.length === 0 ? null : await requestingUserOf(context, current.authorGitHubId);
   if (toUpdate.length === 0 && toOpen.length === 0) {

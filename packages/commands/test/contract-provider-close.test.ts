@@ -151,6 +151,12 @@ async function revisionCount(requestId: string): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
+/**
+ * The breaking pair's changes and one more, as a later push of the pull request reports them: an update whose
+ * changes equal the last update's adds nothing to the requests (decisions-from-groups-15-28, D55 (64)).
+ */
+const pushedAgain = (): ClassifiedChange[] => [...changesOf("breaking"), { id: "endpoint-added", level: "INFO", operation: "GET /refunds/{id}" }];
+
 /** A pull request whose report opened requests to FE, MOBILE and QA, with MOBILE's in progress and QA's done. */
 async function pullRequestWithRequests(): Promise<{ number: number; fe: ContractRequest; mobile: ContractRequest; qa: ContractRequest }> {
   const number = await providerPullRequest();
@@ -227,7 +233,7 @@ describe("a provider pull request reopened after it closed without merging", () 
 
     await stub.reopenPullRequest("acme/payments", number, { by: "deniz" });
     await deliver(number, "reopened");
-    await pushReports(number, changesOf("breaking"), "c");
+    await pushReports(number, pushedAgain(), "c");
 
     const feRequests = await requestsTo(number, "FE");
     expect(feRequests.map(({ state }) => state)).toEqual(["withdrawn", "open"]);
@@ -236,6 +242,25 @@ describe("a provider pull request reopened after it closed without merging", () 
     expect(await revisionCount(mobile.id)).toBe(2);
     // The done request of QA gets the update's notice, and no second request.
     expect((await requestsTo(number, "QA")).map(({ state }) => state)).toEqual(["done"]);
+  });
+
+  // A report whose changes equal the last update's adds nothing to the requests that stayed, while it still opens
+  // the new request (decisions-from-groups-15-28, D55 (64), (72)).
+  it("opens the new request from a report after the reopen whose changes equal the last update's, and adds nothing to the claimed one", async () => {
+    const { number, fe, mobile } = await pullRequestWithRequests();
+    await stub.closePullRequest("acme/payments", number, { by: "deniz" });
+    await deliver(number, "closed");
+    const notices = (await threadOf(mobile.id)).length;
+    await stub.reopenPullRequest("acme/payments", number, { by: "deniz" });
+    await deliver(number, "reopened");
+
+    await pushReports(number, changesOf("breaking"), "c");
+
+    const feRequests = await requestsTo(number, "FE");
+    expect(feRequests.map(({ state }) => state)).toEqual(["withdrawn", "open"]);
+    expect(feRequests[0]?.id).toBe(fe.id);
+    expect(await revisionCount(mobile.id)).toBe(1);
+    expect(await threadOf(mobile.id)).toHaveLength(notices);
   });
 
   // After a reopen, the first report whose changes open requests opens them, not only the next report
@@ -266,7 +291,7 @@ describe("a provider pull request reopened after it closed without merging", () 
     await deliver(number, "closed");
 
     // A run that started before the close reports after it.
-    await pushReports(number, changesOf("breaking"), "c");
+    await pushReports(number, pushedAgain(), "c");
     expect((await requestsTo(number, "FE")).map(({ state }) => state)).toEqual(["withdrawn"]);
     expect(await revisionCount(mobile.id)).toBe(2);
 

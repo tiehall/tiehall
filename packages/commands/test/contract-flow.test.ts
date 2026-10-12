@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CATALOG, OPENAPI_JSON } from "@tiehall/catalog";
@@ -29,8 +29,10 @@ import { addTeam, callApi, joinTeams, sessionOf, tokenOf } from "./support/reque
 // issuer, for the run's OIDC token, and sends the report to the install's
 // real REST route, which checks the token against that issuer's keys. FE and
 // MOBILE, which declared that they consume payments-api, each get a request.
-// A later push makes the Action report again, and each request gets a packet
-// revision and a system message. FE's own pull request, whose branch names
+// A later push that leaves the document alone makes the Action report the
+// same changes again, which adds nothing (decisions-from-groups-15-28, D55
+// (64)); a push that changes the document makes it report again, and each
+// request gets a packet revision and a system message. FE's own pull request, whose branch names
 // FE's request, merges after FE claimed it and closes it, and the provider
 // pull request's merge marks the change shipped on both, closing neither.
 // GitHub's deliveries are logged by the stub, and stored and processed as the
@@ -202,9 +204,23 @@ describe("the contract flow, from the Action's run to the provider's merge", () 
       expect(packet.packet.untrusted.contract.head.sha).toBe(checkout.head);
     }
 
-    // A push to the pull request: the Action runs on synchronize and reports again, which adds a revision and a system message.
+    // A push that leaves the document alone: the Action reports the same changes again, which adds nothing.
     writeFileSync(join(checkout.path, "README.md"), "The payments service, with the new payment fields.\n");
     git(checkout.path, "commit", "--quiet", "--all", "--message", "A push");
+    const readme: Repository = { ...checkout, head: git(checkout.path, "rev-parse", "HEAD") };
+    const unchanged = await runActionWith(scratch, { number: providerPr.number, repository: readme, action: "synchronize", npx: pinnedCli, inputs: { "install-url": URL_OF_INSTALL } });
+    expect(unchanged.code).toBe(0);
+    expect(unchanged.outputs["reported"]).toBe("true");
+    await applyUpdates();
+    for (const key of Object.values(keys)) {
+      expect((await packetOf(key)).revision).toBe(1);
+      expect((await read(key)).messages).toEqual([]);
+    }
+
+    // A push that adds an operation to the document: the Action runs on synchronize and reports again, which adds a revision and a system message.
+    const document = join(checkout.path, "openapi", "payments.yaml");
+    writeFileSync(document, readFileSync(document, "utf8").replace("paths:\n", 'paths:\n  /receipts:\n    get:\n      responses:\n        "200":\n          description: The receipts.\n'));
+    git(checkout.path, "commit", "--quiet", "--all", "--message", "Another push");
     const pushed: Repository = { ...checkout, head: git(checkout.path, "rev-parse", "HEAD") };
     const synchronized = await runActionWith(scratch, { number: providerPr.number, repository: pushed, action: "synchronize", npx: pinnedCli, inputs: { "install-url": URL_OF_INSTALL } });
     expect(synchronized.code).toBe(0);
