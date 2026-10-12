@@ -57,7 +57,7 @@ import { memberOf } from "./members.ts";
 import { createGitHubFetch } from "./outbound.ts";
 import type { SecretBox } from "./secret-box.ts";
 import { isSetupSession } from "./setup-code.ts";
-import { AdmissionWithdrawnError, applyAdmission, decideAdmission, isMemberNow, type Admission } from "./sign-in-admission.ts";
+import { AdmissionWithdrawnError, applyAdmission, decideAdmission, GITHUB_UNAVAILABLE, isMemberNow, type Admission } from "./sign-in-admission.ts";
 import { completeOrCloseSetup, SetupCompletionError } from "./setup-completion.ts";
 import { readSetupState, SETUP_PATH } from "./setup-gate.ts";
 import { GITHUB_WEB_URL } from "./setup-github.ts";
@@ -207,6 +207,15 @@ const TO_SETUP: WayOn = { href: SETUP_PATH, text: "Back to the setup screen" };
 export const SIGN_IN_REFUSED =
   "Your GitHub account may not sign in to this install. Ask an admin of the install for an invite, then sign in again.";
 
+/**
+ * What a person reads whose sign-in only an organization's membership could
+ * admit, when GitHub failed the lookup (sign-in: Who may sign in;
+ * decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (7)).
+ */
+export const SIGN_IN_GITHUB_UNAVAILABLE =
+  "GitHub could not be reached to check your membership of its organizations, so you are not signed in. Try again in a moment.";
+
 /** What a sign-in from the setup screen without a setup session reads. */
 export const SETUP_SIGN_IN_REFUSED =
   "Setup is completed only by a sign-in from the browser that entered the setup code, while setup is not complete. Open the setup screen in that browser.";
@@ -228,6 +237,8 @@ const NO_USER_TOKEN = {
 const REFUSED_CODE = "sign_in_refused";
 /** The code of a sign-in from the setup screen that a reopened step refuses, because the person is not an admin. */
 const SETUP_ADMINS_ONLY_CODE = "setup_admins_only";
+/** The code Better Auth carries a sign-in under whose membership lookup GitHub failed, to the callback's 502. */
+const GITHUB_UNAVAILABLE_CODE = "github_unavailable";
 
 /** How many days a web session lasts after it was created or last extended, when it is not used. */
 export const SESSION_IDLE_DAYS = 7;
@@ -347,6 +358,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
     secrets: options.secrets,
     ...(options.github?.apiUrl === undefined ? {} : { apiUrl: options.github.apiUrl }),
     ...(options.github?.fetch === undefined ? {} : { fetch: options.github.fetch }),
+    ...(options.github?.timeoutMs === undefined ? {} : { timeoutMs: options.github.timeoutMs }),
     logger,
   });
   // Sign-in events start no job.
@@ -531,6 +543,8 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           }
           if (Number.isSafeInteger(githubAccountId) && githubAccountId > 0 && data.source.action !== "link-account") {
             const admission = await decideAdmission(admissionServices, { id: githubAccountId, login });
+            // GitHub failed the lookup that alone could admit the person: no refusal happened, so none is recorded.
+            if (admission === GITHUB_UNAVAILABLE) return { error: GITHUB_UNAVAILABLE_CODE, errorDescription: SIGN_IN_GITHUB_UNAVAILABLE };
             if (admission !== undefined) {
               admissions.set(githubAccountId, admission);
               return;
@@ -922,6 +936,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
         if (answer.status === 404) return answerRefused(new Refusal("route-not-found", "The install serves no such sign-in route."));
         if (answer.status === 429) return answerRefused(await refusalOfLimit(answer));
         if (refusalOf(answer)) return answerRefused(new Refusal("sign-in-refused", SIGN_IN_REFUSED), answer.headers);
+        if (refusalOf(answer, GITHUB_UNAVAILABLE_CODE)) return answerRefused(new Refusal("integration-unavailable", SIGN_IN_GITHUB_UNAVAILABLE), answer.headers);
         return withSetCookies(answer, renewal);
       } catch (error) {
         logger.error("sign-in service: a request to the sign-in service failed", { error });

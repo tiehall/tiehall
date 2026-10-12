@@ -32,7 +32,14 @@ import { writeIn, type Origin } from "./write.ts";
 // invite clears the block, which its security events name.
 // An installation nobody connected admits no one, and a lookup that fails, or
 // that would go through a suspended or deleted installation, admits no one
-// through that organization. Anyone else is refused.
+// through that organization. Anyone else is refused, except a person who
+// could be admitted only through an organization's membership when GitHub
+// failed a lookup through a working installation, with an error Tiehall gives
+// no answer of its own for or no answer within 10 seconds, and no other lookup
+// reported them a member: GitHub's failure decided nothing, so that sign-in is
+// answered as GitHub being unavailable, not as a refusal (sign-in: Who may
+// sign in; decisions-from-groups-15-28: design.md, Decisions this change rests
+// on: D55 (7); Technical decisions: T3).
 //
 // The decision is made before the sign-in service writes anything, so a
 // refused sign-in creates no session, no user and no membership, and every
@@ -112,12 +119,17 @@ async function blockOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, githubAc
   return row?.createdAt;
 }
 
+/** A sign-in that only an organization's membership could admit, whose lookup GitHub failed: neither admitted nor refused. */
+export const GITHUB_UNAVAILABLE = "github_unavailable";
+
 /**
  * Decides whether a GitHub account may sign in, by its numeric id and its
- * login as GitHub gave it for this sign-in; undefined refuses it. It reads
- * Tiehall's records in a read-only transaction, and asks GitHub outside it.
+ * login as GitHub gave it for this sign-in; undefined refuses it, and
+ * GITHUB_UNAVAILABLE says that GitHub failed a lookup that alone could have
+ * admitted it. It reads Tiehall's records in a read-only transaction, and asks
+ * GitHub outside it.
  */
-export async function decideAdmission(services: AdmissionServices, account: { id: number; login: string }): Promise<Admission | undefined> {
+export async function decideAdmission(services: AdmissionServices, account: { id: number; login: string }): Promise<Admission | typeof GITHUB_UNAVAILABLE | undefined> {
   const app = await services.github.app();
   const state = await withOrg(
     services.database,
@@ -151,12 +163,20 @@ export async function decideAdmission(services: AdmissionServices, account: { id
   if (state.blocked || !state.organizationsAdmit) return undefined;
   if (app === undefined || state.organizations.length === 0) return undefined;
   const reporting: number[] = [];
+  let failed = false;
   for (const installation of state.organizations) {
     const report = await organizationMembership(app.client, installation, account.login);
     if (report === "member") reporting.push(installation.organizationId);
     else if (report === "unknown") services.logger.warn("sign-in service: GitHub gave no report of an organization membership", { installationId: installation.installationId });
+    else if (report === "unavailable") {
+      failed = true;
+      services.logger.warn("sign-in service: GitHub could not be reached for an organization membership, so the sign-in is answered with 502", {
+        installationId: installation.installationId,
+      });
+    }
   }
-  return reporting.length === 0 ? undefined : { through: "organization", organizations: reporting };
+  if (reporting.length > 0) return { through: "organization", organizations: reporting };
+  return failed ? GITHUB_UNAVAILABLE : undefined;
 }
 
 /** What a join did besides making the person a member. */

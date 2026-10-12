@@ -82,13 +82,14 @@ export type Departure = { left: OrganizationInstallation } | { stays: readonly n
 /**
  * Judges a member Tiehall saw in these organizations by what each working
  * connected installation's organization reports of them, by the organization's
- * account id; an organization that gave no report counts as unknown.
+ * account id; an organization that gave no report, or whose lookup GitHub
+ * failed, counts as unknown.
  */
 export function departureOf(seen: ReadonlySet<number>, installations: readonly OrganizationInstallation[], reports: ReadonlyMap<number, OrganizationReport>): Departure {
   const reportOf = (installation: OrganizationInstallation) => reports.get(installation.organizationId) ?? "unknown";
   const reporting = installations.filter((installation) => reportOf(installation) === "member").map(({ organizationId }) => organizationId);
   if (reporting.length > 0) return { stays: reporting };
-  if (installations.some((installation) => reportOf(installation) === "unknown")) return { stays: [] };
+  if (installations.some((installation) => reportOf(installation) === "unknown" || reportOf(installation) === "unavailable")) return { stays: [] };
   const left = installations.find((installation) => seen.has(installation.organizationId) && reportOf(installation) === "not_member");
   return left === undefined ? { stays: [] } : { left };
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startGitHubStub, type GitHubStub, type StubInstallation, type StubUser } from "@tiehall/testing/github";
-import { readInstallations, SIGN_IN_REFUSED } from "../src/index.ts";
+import { readInstallations, SIGN_IN_GITHUB_UNAVAILABLE, SIGN_IN_REFUSED } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInAttempt, type SignInHarness } from "./support/sign-in.ts";
@@ -28,9 +28,11 @@ let anaUserId: string;
 let pia: string;
 /** The stub's accounts, by login. */
 const accounts = new Map<string, StubUser>();
+/** What the install's logger wrote. */
+const logLines: string[] = [];
 
 beforeAll(async () => {
-  install = await startTestInstall();
+  install = await startTestInstall({ log: (line) => logLines.push(line) });
   stub = await startGitHubStub();
   for (const login of ["omar-acme", "lee-acme", "lou-acme", "ana-k", "kim-labs", "sam-outside", "jo-contracts", "jan-contracts", "joy-contracts"]) {
     accounts.set(login, stub.addUser({ login, email: `${login}@example.com` }));
@@ -150,18 +152,85 @@ describe("an outside collaborator", () => {
   });
 });
 
+// sign-in: Who may sign in; public-api: One error model for Tiehall's own refusals (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (7); Technical decisions: T3). When a person could be admitted only
+// through an organization's membership, and GitHub fails the look-up through a working connected installation, with an
+// error it gives no answer of its own for or no answer within 10 seconds, while no other look-up reports the account a
+// member, the sign-in is answered 502 integration-unavailable: it admits no one, creates no session, user or
+// membership, records no refused sign-in, and Tiehall logs a warning.
 describe("a failed membership lookup", () => {
-  it("admits no one through that organization", async () => {
-    // GitHub answers the lookup with a server error.
-    const failing = await startSignIn(install, stub, {
+  /** A sign-in service whose calls to GitHub's member endpoints of these organizations fail as `fail` answers them. */
+  function failingLookups(organizations: RegExp, fail: (input: string | URL | Request, init?: RequestInit) => Promise<Response>, timeoutMs?: number) {
+    return startSignIn(install, stub, {
       sameAppAs: harness,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
       fetch: async (input, init) => {
         const url = new URL(input instanceof Request ? input.url : String(input));
-        if (/^\/orgs\/[^/]+\/members/.test(url.pathname)) return new Response('{"message":"Server Error"}', { status: 500 });
+        if (organizations.test(url.pathname)) return fail(input, init);
         return fetch(input, init);
       },
     });
-    await expectRefused(await failing.signIn("lou-acme"), "lou-acme");
+  }
+
+  async function expectUnavailable(attempt: SignInAttempt, login: string, from: number): Promise<void> {
+    expect(attempt.response.status).toBe(502);
+    expect(attempt.response.headers.get("content-type")).toBe("application/problem+json");
+    const problem = (await attempt.response.json()) as { type: string; detail: string };
+    expect(problem.type).toBe("https://tiehall.com/problems/integration-unavailable");
+    expect(problem.detail).toBe(SIGN_IN_GITHUB_UNAVAILABLE);
+    expect(await harness.sessionOf(attempt.jar)).toBeUndefined();
+    expect(await counts(login)).toEqual({ users: 0, members: 0, sessions: 0 });
+    // No refusal happened: the activity log gains nothing, and no record of the account is kept.
+    expect(await eventsSince(from)).toEqual([]);
+    const { rows } = await install.owner.query("SELECT 1 FROM sign_in_refusals WHERE github_login = $1", [login]);
+    expect(rows).toEqual([]);
+  }
+
+  it("answers 502 integration-unavailable when GitHub answers the lookup with 500, admits no one, records no refused sign-in and logs a warning", async () => {
+    const failing = await failingLookups(/^\/orgs\/[^/]+\/members/, async () => new Response('{"message":"Server Error"}', { status: 500 }));
+    const from = await lastEvent();
+    const logged = logLines.length;
+    await expectUnavailable(await failing.signIn("lou-acme"), "lou-acme", from);
+    expect(logLines.slice(logged).map((line) => JSON.parse(line) as { level: string; msg: string })).toContainEqual(
+      expect.objectContaining({ level: "warn", msg: expect.stringContaining("GitHub could not be reached") }),
+    );
+  });
+
+  it("answers 502 when GitHub does not answer the lookup within the client's wait, lowered here", async () => {
+    const failing = await failingLookups(
+      /^\/orgs\/[^/]+\/members/,
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          // GitHub never answers: the client's wait gives up.
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        }),
+      300,
+    );
+    const from = await lastEvent();
+    await expectUnavailable(await failing.signIn("lou-acme"), "lou-acme", from);
+  });
+
+  it("admits a member that another connected installation reports, though the lookup through one fails", async () => {
+    // Max is a member of acme and of acme-ops, whose installation an admin connected too; GitHub fails acme's lookup.
+    accounts.set("max-ops", stub.addUser({ login: "max-ops" }));
+    stub.addOrg({ login: "acme-ops", members: { "omar-acme": "admin", "max-ops": "member" } });
+    await stub.addMember("acme", "max-ops");
+    const ops = await stub.install(harness.app, { account: "acme-ops" });
+    const connected = await harness.connect("acme-ops");
+    try {
+      const failing = await failingLookups(/^\/orgs\/acme\/members/, async () => new Response('{"message":"Server Error"}', { status: 500 }));
+      const { response, jar } = await failing.signIn("max-ops");
+      expect(response.status).toBe(302);
+      expect(await failing.sessionOf(jar)).toMatchObject({ kind: "web_session" });
+      expect(await roleOf("max-ops")).toBe("member");
+      const { rows } = await install.owner.query(
+        `SELECT mo.github_organization_id FROM member_organizations mo JOIN users u ON u.org_id = mo.org_id AND u.id = mo.user_id
+          WHERE u.github_login = 'max-ops'`,
+      );
+      expect(rows).toEqual([{ github_organization_id: String(ops.account.id) }]);
+    } finally {
+      await install.owner.query("DELETE FROM github_connected_installations WHERE installation_id = $1", [connected["acme-ops"]]);
+    }
   });
 });
 

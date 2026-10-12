@@ -1,7 +1,7 @@
 import { githubConnectedInstallations, githubInstallations } from "@tiehall/db";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { everyPage, statusOfCall, type GitHubClient } from "./github-client.ts";
+import { everyPage, gitHubFailedCall, statusOfCall, type GitHubClient } from "./github-client.ts";
 import { gitHubAccountNamed } from "./github-users.ts";
 import type { OrgContext } from "./with-org.ts";
 
@@ -14,12 +14,17 @@ import type { OrgContext } from "./with-org.ts";
 // listing found it. GitHub also refuses a token for an installation it
 // suspended since, so such a lookup fails.
 //
-// A lookup has three answers. GitHub reports the account a member, or it
+// A lookup has four answers. GitHub reports the account a member, or it
 // positively reports that the account is not one: GitHub answers the lookup
 // with 404, to a token that may see the organization's members, as below.
-// Anything else, a server error, a refused token or no answer at all, is no
-// report, and never counts as the account leaving or joining; so is a lookup
-// GitHub does not answer within the client's timeout (github-client.ts).
+// GitHub fails the lookup: it answers with a server error or a rate-limit
+// refusal, or not within the client's timeout (github-client.ts), which a
+// sign-in answers with 502 (sign-in-admission.ts; decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (7)). Or GitHub gives no
+// report, as when it refuses, with an answer of its own, the token of an
+// installation it suspended or deleted, or answers a token that may not see
+// the members, as below. Neither of the last two ever counts as the account
+// leaving or joining.
 //
 // GitHub serves its member endpoints to a requester that may not see an
 // organization's members as it serves anyone: the check answers 302, to the
@@ -38,8 +43,22 @@ import type { OrgContext } from "./with-org.ts";
 // permissions GitHub issued it with, for up to an hour, and nothing in a list
 // says whether it holds the public members only.
 
-/** What GitHub reports of an account's membership of an organization. */
-export type OrganizationReport = "member" | "not_member" | "unknown";
+/**
+ * What GitHub reports of an account's membership of an organization:
+ * `unavailable` when GitHub failed the lookup, and `unknown` when it gave no
+ * report for another reason.
+ */
+export type OrganizationReport = "member" | "not_member" | "unknown" | "unavailable";
+
+/**
+ * What a lookup that failed with this error reports: GitHub failing it, as
+ * gitHubFailedCall() reads the error, or no report, as for GitHub's refusal of
+ * the token of an installation it suspended or deleted, or of a call made
+ * with a token it issued before.
+ */
+function failedLookup(error: unknown): OrganizationReport {
+  return gitHubFailedCall(error) ? "unavailable" : "unknown";
+}
 
 /** A connected installation of the App on a GitHub organization, which may be asked who its members are. */
 export interface OrganizationInstallation {
@@ -119,7 +138,11 @@ async function membershipCheck(client: GitHubClient, installation: OrganizationI
       .installation(installation.installationId)
       .request("GET /orgs/{org}/members/{username}", { org: installation.organizationLogin, username: login, request: { redirect: "manual" } }));
   } catch (error) {
-    return statusOfCall(error) === 404 ? "not_member" : "unknown";
+    const answered = statusOfCall(error);
+    if (answered === 404) return "not_member";
+    // The check's redirect, to the public members, which it answers a requester that may not see the members.
+    if (answered !== undefined && answered >= 300 && answered < 400) return "unknown";
+    return failedLookup(error);
   }
   return status === 204 ? "member" : "unknown";
 }
@@ -132,8 +155,8 @@ async function membershipCheck(client: GitHubClient, installation: OrganizationI
 export async function organizationMembership(client: GitHubClient, installation: OrganizationInstallation, login: string): Promise<OrganizationReport> {
   try {
     if (!(await seesMembers(client, installation))) return "unknown";
-  } catch {
-    return "unknown";
+  } catch (error) {
+    return failedLookup(error);
   }
   return membershipCheck(client, installation, login);
 }

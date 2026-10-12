@@ -145,6 +145,23 @@ export function statusOfCall(error: unknown): number | undefined {
 }
 
 /**
+ * Whether GitHub failed a call, rather than answering it with a refusal of
+ * its own (sign-in: Who may sign in; decisions-from-groups-15-28: design.md,
+ * Decisions this change rests on: D55 (7)): it gave no answer within the
+ * client's wait, an answer the call cannot use, a server error (5xx) or a
+ * rate-limit refusal (429), to the call or to the request for an installation
+ * token made before it. Any other 4xx, such as GitHub's 403 for an
+ * installation it suspended, is GitHub's own answer. It looks through a
+ * GitHubUnavailableError to the error it wraps.
+ */
+export function gitHubFailedCall(error: unknown): boolean {
+  const cause = error instanceof GitHubUnavailableError && error.cause !== undefined ? error.cause : error;
+  if ((cause as { response?: unknown } | undefined)?.response === undefined) return true;
+  const status = statusOf(cause);
+  return status === undefined || status === 429 || status >= 500;
+}
+
+/**
  * GitHub failed a call that an action needs: it answered with a status the
  * caller gives no answer of its own for, or did not answer within the
  * client's wait. Its message is Tiehall's own words, naming the call and

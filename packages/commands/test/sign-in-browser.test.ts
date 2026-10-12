@@ -24,25 +24,33 @@ import { shellReader } from "./support/shell.ts";
 let install: TestInstall;
 let stub: GitHubStub;
 let harness: SignInHarness;
+/** The sign-in service the install's routes use: the harness's, unless a test puts another in its place. */
+let active: SignInHarness;
 let server: Server;
 let browser: Browser;
 
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
-  stub.addOrg({ login: "acme" });
   const ana = stub.addUser({ login: "ana-k", email: "ana@acme.example" });
   stub.addUser({ login: "kim-outside" });
+  stub.addUser({ login: "omar-acme" });
+  stub.addUser({ login: "lee-acme" });
+  stub.addOrg({ login: "acme", members: { "omar-acme": "admin", "lee-acme": "member" } });
   await addUser(install.owner, { login: "ana-k", githubAccountId: ana.id });
   harness = await startSignIn(install, stub);
-  const home = createHomeRoute({ session: (request) => harness.service.session(request.headers), secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) });
+  active = harness;
+  // The App is installed on acme, whose members may sign in through it.
+  await stub.install(harness.app, { account: "acme" });
+  await harness.connect("acme");
+  const home = createHomeRoute({ session: (request) => active.service.session(request.headers), secret: () => install.authSecret, logger: install.logger, shell: shellReader(install.execute) });
 
   const route = (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     if (pathname === "/") return home(request);
-    if (pathname === "/sign-in") return harness.service.page(request);
-    if (pathname === "/sign-out") return harness.service.signOut(request);
-    if (pathname.startsWith("/api/auth/")) return harness.service.handler(request);
+    if (pathname === "/sign-in") return active.service.page(request);
+    if (pathname === "/sign-out") return active.service.signOut(request);
+    if (pathname.startsWith("/api/auth/")) return active.service.handler(request);
     return Promise.resolve(new Response("Not found", { status: 404 }));
   };
   const certificate = createTestCertificate({ dnsNames: ["tiehall.example.com"] });
@@ -138,5 +146,40 @@ describe("signing in with GitHub in a browser", { timeout: 90_000 }, () => {
     await expect(page.getByRole("link", { name: "Go to the sign-in page" }).getAttribute("href")).resolves.toBe("/sign-in");
     expect((await context.cookies(URL_OF_INSTALL)).map(({ name }) => name)).not.toContain("__Secure-tiehall.session_token");
     await context.close();
+  });
+
+  // sign-in: Who may sign in (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (7)). When
+  // GitHub fails the look-up of acme's members, Lee, who could be admitted only through acme, gets 502 as a page that
+  // says GitHub could not be reached and to try again, with a link to the sign-in page.
+  it("answers a sign-in whose membership look-up GitHub fails with 502 as a page that says to try again, with a link to sign in", async () => {
+    active = await startSignIn(install, stub, {
+      sameAppAs: harness,
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (/^\/orgs\/acme\/members/.test(url.pathname)) return new Response('{"message":"Server Error"}', { status: 500 });
+        return fetch(input, init);
+      },
+    });
+    try {
+      stub.signIn("lee-acme");
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`${URL_OF_INSTALL}/sign-in`);
+      await Promise.all([page.waitForURL(`${stub.webUrl}/login/oauth/authorize?*`), page.getByRole("button", { name: "Sign in with GitHub" }).click()]);
+      const [unavailable] = await Promise.all([
+        page.waitForResponse((response) => response.url().startsWith(`${URL_OF_INSTALL}/api/auth/callback/github`)),
+        page.getByRole("button", { name: `Authorize ${active.app.name}` }).click(),
+      ]);
+      expect(unavailable.status()).toBe(502);
+      expect(unavailable.headers()["content-type"]).toBe("text/html; charset=utf-8");
+      await expect(page.getByRole("heading", { level: 1 }).textContent()).resolves.toBe("Integration unavailable");
+      await expect(page.content()).resolves.toContain("GitHub could not be reached");
+      await expect(page.content()).resolves.toContain("https://tiehall.com/problems/integration-unavailable");
+      await expect(page.getByRole("link", { name: "Go to the sign-in page" }).getAttribute("href")).resolves.toBe("/sign-in");
+      expect((await context.cookies(URL_OF_INSTALL)).map(({ name }) => name)).not.toContain("__Secure-tiehall.session_token");
+      await context.close();
+    } finally {
+      active = harness;
+    }
   });
 });
