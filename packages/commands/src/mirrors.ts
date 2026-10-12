@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { formatRequestKey, isTerminalState, REQUEST_STATES, type RequestState } from "@tiehall/core";
 import { apis, contractChangeRequests, contractChangeSets, events, eventSequence, mirrors, requests, teams, trackerMappings, type Database } from "@tiehall/db";
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { installLink, type ServerText } from "./email.ts";
 import { createGitHubIssues } from "./github-issues.ts";
@@ -27,12 +27,22 @@ import type { WorkerJob, WorkerServices } from "./worker.ts";
 // show it. A job that runs late, twice or out of order is harmless, and many
 // changes that land before a job runs cost one write. The jobs of one request
 // run one at a time, so no two of them write its issue together.
-// - Which issue: the one in the place its target team's mapping names (for
-//   GitHub, the intake repository), for the request's key in that team. A
-//   request gets one once it has been claimed there, or from its opening when
-//   the team mirrors on open, unless it has ended; a team with no mapping
-//   gets none, and an issue whose team's mapping no longer names its place is
-//   left as it is.
+// - Which issue: the one its target team's mapping made, in the place it
+//   names (for GitHub, the intake repository), for the request's key in that
+//   team. A request gets one once it reached the team's point after the
+//   mapping was made: a claim there, or, when the team mirrors on open, its
+//   opening or its move into the team; nothing is filled in for a request
+//   that reached it before, and none is made for one that has ended
+//   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (75)). A team with no mapping gets none.
+// - Whose issue: each issue keeps the mapping that made it, and Tiehall
+//   writes to it only while that mapping holds. A removed mapping's issues
+//   are left as people leave them, a reassignment's notice included, and a
+//   later mapping of the team, even to the same place, makes issues of its
+//   own. A mirror made before mirrors kept their mapping belongs to its
+//   team's mapping of the same place that was made before it. Every write to
+//   an issue first checks that its mapping holds, so a mapping removed while
+//   a job runs stops the job's writes after the one under way.
 // - Reassignment (tracker-mirrors: Reassignment moves the mirror): a request
 //   reassigned to another team gets a key there, and with it a mirror in
 //   that team's tracker under that team's rule; it is open and unclaimed
@@ -211,13 +221,21 @@ export interface MirrorRow {
   number: number | null;
   /** Whether a reassignment left the issue behind, so it follows the request no more. */
   away: boolean;
+  /** The id of the mapping that made it; null for a mirror made before mirrors kept it, or under a mapping with no id. */
+  mappingId: string | null;
+  /** Whether the mapping that made it holds still: only then does Tiehall write to its issue. */
+  mapped: boolean;
 }
 
-/** A team's mapping, as the job reads it: the tracker, the place, and whether it mirrors on open. */
+/** A team's mapping, as the job reads it: its id, the tracker, the place, whether it mirrors on open, and when it was made. */
 export interface MirrorMapping {
+  /** Null for a mapping made before mirrors kept the mapping that made them. */
+  id: string | null;
   tracker: Tracker;
   target: string;
   mirrorOnOpen: boolean;
+  /** When it was made, exactly as stored. */
+  createdAt: string;
 }
 
 /** A request, as its mirror shows it. */
@@ -228,8 +246,6 @@ interface MirroredRequest {
   number: number;
   title: string;
   state: RequestState;
-  /** Whether it has been claimed in its target team: it is claimed now, or was claimed there once and released, since its last reassignment. */
-  claimed: boolean;
   targetTeamId: string;
   targetKey: string;
   requestingKey: string;
@@ -324,8 +340,8 @@ export function trackerChanges(known: IssueState, expected: Pick<IssueState, "op
   return changes;
 }
 
-/** A mirror's row as stored, typed. */
-function mirrorRowOf(row: typeof mirrors.$inferSelect): MirrorRow {
+/** A mirror's row as stored, typed, with whether the mapping that made it holds still. */
+function mirrorRowOf(row: typeof mirrors.$inferSelect, mapped: boolean): MirrorRow {
   return {
     id: row.id,
     requestId: row.requestId,
@@ -343,6 +359,8 @@ function mirrorRowOf(row: typeof mirrors.$inferSelect): MirrorRow {
     pendingComment: row.pendingComment as PendingComment | null,
     number: row.number,
     away: row.away,
+    mappingId: row.mappingId,
+    mapped,
   };
 }
 
@@ -434,6 +452,13 @@ export function writesOf(events: readonly RequestEvent[], shown: RequestState): 
 interface MirrorPlan {
   request: MirroredRequest;
   mapping: MirrorMapping | undefined;
+  /**
+   * Whether the request reached its team's point since the team's mapping was
+   * made: a claim there that it holds now, or that came after its last
+   * reassignment, or, when the team mirrors on open, its opening or its move
+   * into the team. False when the team maps no tracker.
+   */
+  reached: boolean;
   mirror: MirrorRow | undefined;
   /** The mirror issues of the request in other teams, or under another key of its team, that still follow it, made or with their create under way: a reassignment left them. */
   leftBehind: MirrorRow[];
@@ -443,6 +468,55 @@ interface MirrorPlan {
   events: RequestEvent[];
   /** The keys of the teams the mirrors and the events name, by id. */
   teamKeys: ReadonlyMap<string, string>;
+}
+
+/**
+ * A mirror joined with the mapping that made it, while that mapping holds:
+ * its team's mapping whose id it keeps, or, for a mirror that keeps none, its
+ * team's mapping of the same place that was made before it.
+ */
+export function madeBy(): SQL | undefined {
+  return and(
+    eq(trackerMappings.orgId, mirrors.orgId),
+    eq(trackerMappings.teamId, mirrors.teamId),
+    eq(trackerMappings.tracker, mirrors.tracker),
+    eq(trackerMappings.target, mirrors.target),
+    or(eq(trackerMappings.id, mirrors.mappingId), and(isNull(mirrors.mappingId), lte(trackerMappings.createdAt, mirrors.createdAt))),
+  );
+}
+
+/** The team's mapping the job read, if it holds still: by its id, or, for one with no id, by when it was made. */
+function isMapping(mapping: MirrorMapping): SQL | undefined {
+  return mapping.id === null
+    ? and(isNull(trackerMappings.id), sql`${trackerMappings.createdAt} = ${mapping.createdAt}::timestamptz`)
+    : eq(trackerMappings.id, mapping.id);
+}
+
+/** Thrown before a write to an issue whose mapping was removed while the job ran: the job writes nothing more to it. */
+class MappingRemoved extends Error {
+  override name = "MappingRemoved";
+  readonly mirrorId: string;
+  constructor(mirrorId: string) {
+    super("The mapping that made this mirror was removed, so Tiehall writes nothing more to its issue.");
+    this.mirrorId = mirrorId;
+  }
+}
+
+/** Throws MappingRemoved unless the mapping that made the mirror holds still: every write to its issue asks first. */
+async function assertMapped(database: Database, mirrorId: string): Promise<void> {
+  const held = await withOrg(
+    database,
+    async ({ tx, orgId }) => {
+      const [row] = await tx
+        .select({ id: mirrors.id })
+        .from(mirrors)
+        .innerJoin(trackerMappings, madeBy())
+        .where(and(eq(mirrors.orgId, orgId), eq(mirrors.id, mirrorId)));
+      return row !== undefined;
+    },
+    { readOnly: true },
+  );
+  if (!held) throw new MappingRemoved(mirrorId);
 }
 
 /** Whether the mirror row is in the place a mapping names, for this key of the request in this team. */
@@ -469,18 +543,39 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
   const latest = sequence?.lastNumber ?? 0;
   const target = alias(teams, "target_team");
   const requesting = alias(teams, "requesting_team");
+  // The request with its target team's mapping, read together: the mapping's time is kept exactly as stored, as the
+  // request's events are compared with it.
   const [row] = await tx
-    .select({ request: requests, targetKey: target.key, requestingKey: requesting.key })
+    .select({
+      request: requests,
+      targetKey: target.key,
+      requestingKey: requesting.key,
+      mappingId: trackerMappings.id,
+      tracker: trackerMappings.tracker,
+      place: trackerMappings.target,
+      mirrorOnOpen: trackerMappings.mirrorOnOpen,
+      mappedAt: sql<string | null>`${trackerMappings.createdAt}::text`,
+      openedSince: sql<boolean | null>`${requests.createdAt} > ${trackerMappings.createdAt}`,
+    })
     .from(requests)
     .innerJoin(target, and(eq(target.orgId, requests.orgId), eq(target.id, requests.targetTeamId)))
     .innerJoin(requesting, and(eq(requesting.orgId, requests.orgId), eq(requesting.id, requests.requestingTeamId)))
+    .leftJoin(trackerMappings, and(eq(trackerMappings.orgId, requests.orgId), eq(trackerMappings.teamId, requests.targetTeamId)))
     .where(and(eq(requests.orgId, orgId), eq(requests.id, requestId)));
   if (row === undefined) return undefined;
-  // A claim counts for the team the request is with only when it came after the request's last reassignment.
+  const mapping: MirrorMapping | undefined =
+    row.tracker === null || row.place === null || row.mirrorOnOpen === null || row.mappedAt === null
+      ? undefined
+      : { id: row.mappingId, tracker: row.tracker as Tracker, target: row.place, mirrorOnOpen: row.mirrorOnOpen, createdAt: row.mappedAt };
+  // The claims and reassignments of the request, and which of them came after the mapping was made.
+  const mappedAt = mapping?.createdAt ?? null;
+  const claimant = row.request.claimantUserId;
   const [marks] = await tx
     .select({
-      claimed: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.claimed')`,
       reassigned: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.reassigned')`,
+      reassignedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.reassigned' AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
+      claimedSince: sql<string | null>`max(${events.number}) FILTER (WHERE ${events.type} = 'request.claimed' AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
+      claimantSince: sql<boolean | null>`bool_or(${events.type} = 'request.claimed' AND ${events.data} ->> 'userId' = ${claimant} AND ${events.occurredAt} > ${mappedAt}::timestamptz)`,
     })
     .from(events)
     .where(
@@ -498,36 +593,44 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
     .innerJoin(contractChangeSets, and(eq(contractChangeSets.orgId, contractChangeRequests.orgId), eq(contractChangeSets.id, contractChangeRequests.changeSetId)))
     .innerJoin(apis, and(eq(apis.orgId, contractChangeSets.orgId), eq(apis.id, contractChangeSets.apiId)))
     .where(and(eq(contractChangeRequests.orgId, orgId), eq(contractChangeRequests.requestId, requestId), isNotNull(contractChangeSets.providerMergedAt)));
-  const lastClaim = marks?.claimed === null || marks?.claimed === undefined ? undefined : Number(marks.claimed);
-  const lastMove = marks?.reassigned === null || marks?.reassigned === undefined ? undefined : Number(marks.reassigned);
+  const numberOf = (value: string | null | undefined) => (value === null || value === undefined ? undefined : Number(value));
+  const lastMove = numberOf(marks?.reassigned);
+  const claimSince = numberOf(marks?.claimedSince);
+  // A claim counts for the team the request is with when the request holds it now, its claimant's own, or when it came
+  // after the request's last reassignment, as a claim since released; and it counts for the mapping only when it came
+  // after the mapping was made. The request came into its team by its opening, or by its last reassignment, which moved
+  // it there.
+  const claimed = (claimant !== null && marks?.claimantSince === true) || (claimSince !== undefined && (lastMove === undefined || claimSince > lastMove));
+  const arrived = lastMove === undefined ? row.openedSince === true : numberOf(marks?.reassignedSince) === lastMove;
+  const reached = mapping !== undefined && (claimed || (mapping.mirrorOnOpen && arrived));
   const request: MirroredRequest = {
     id: row.request.id,
     key: formatRequestKey(row.targetKey, row.request.number),
     number: row.request.number,
     title: row.request.title,
     state: row.request.state as RequestState,
-    claimed:
-      row.request.claimantUserId !== null ||
-      (lastMove === undefined ? row.request.claimedAt !== null || lastClaim !== undefined : lastClaim !== undefined && lastClaim > lastMove),
     targetTeamId: row.request.targetTeamId,
     targetKey: row.targetKey,
     requestingKey: row.requestingKey,
     shipped: provider === undefined ? undefined : { repository: provider.repository, number: provider.number },
   };
-  const [mapped] = await tx
-    .select({ tracker: trackerMappings.tracker, target: trackerMappings.target, mirrorOnOpen: trackerMappings.mirrorOnOpen })
-    .from(trackerMappings)
-    .where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.teamId, request.targetTeamId)));
-  const mapping = mapped === undefined ? undefined : { tracker: mapped.tracker as Tracker, target: mapped.target, mirrorOnOpen: mapped.mirrorOnOpen };
-  const rows = (await tx.select().from(mirrors).where(and(eq(mirrors.orgId, orgId), eq(mirrors.requestId, requestId))).orderBy(asc(mirrors.createdAt))).map(mirrorRowOf);
+  // Each mirror of the request, with whether the mapping that made it holds still: a mirror whose mapping was removed
+  // is written to no more, whatever the request does.
+  const rows = (
+    await tx
+      .select({ mirror: mirrors, mapped: sql<boolean>`${trackerMappings.teamId} IS NOT NULL` })
+      .from(mirrors)
+      .leftJoin(trackerMappings, madeBy())
+      .where(and(eq(mirrors.orgId, orgId), eq(mirrors.requestId, requestId)))
+      .orderBy(asc(mirrors.createdAt))
+  ).map(({ mirror, mapped }) => mirrorRowOf(mirror, mapped));
   // The mirror made for the request's key in this team comes before one made before mirrors had keys.
-  const mirror =
-    mapping === undefined
-      ? undefined
-      : (rows.find((candidate) => isCurrent(candidate, request, mapping) && candidate.number !== null) ?? rows.find((candidate) => isCurrent(candidate, request, mapping)));
+  const current = (candidate: MirrorRow) => mapping !== undefined && candidate.mapped && isCurrent(candidate, request, mapping);
+  const mirror = rows.find((candidate) => current(candidate) && candidate.number !== null) ?? rows.find(current);
   // A mirror whose create is under way counts too: the tracker may have made its issue, which a retry looks for.
   const leftBehind = rows.filter(
-    (candidate) => candidate !== mirror && (candidate.issue !== null || candidate.shownState !== null) && !candidate.away && isLeftBehind(candidate, request),
+    (candidate) =>
+      candidate !== mirror && candidate.mapped && (candidate.issue !== null || candidate.shownState !== null) && !candidate.away && isLeftBehind(candidate, request),
   );
   // The events since the earliest comments of the mirrors that follow, or followed, the request until now.
   // A mirror whose create is under way has its comments' start recorded too, from the read its create carries.
@@ -558,7 +661,7 @@ async function planOf(context: OrgContext, requestId: string): Promise<MirrorPla
     .select({ id: teams.id, key: teams.key })
     .from(teams)
     .where(and(eq(teams.orgId, orgId), inArray(teams.id, [...teamIds])));
-  return { request, mapping, mirror, leftBehind, latest, events: requestEvents, teamKeys: new Map(keys.map(({ id, key }) => [id, key])) };
+  return { request, mapping, reached, mirror, leftBehind, latest, events: requestEvents, teamKeys: new Map(keys.map(({ id, key }) => [id, key])) };
 }
 
 /** The trackers' adapters the job writes through, by tracker; a tracker with none is not written to. */
@@ -606,6 +709,7 @@ async function commentFor(
     const pending = mirror.pendingComment?.through === write.through ? mirror.pendingComment : undefined;
     const made = pending !== undefined && (await adapter.findComment(mirror.target, mirror.issue, pending.marker, new Date(Date.parse(pending.at) - CREATE_LOOKBACK_MS)));
     if (!made) {
+      await assertMapped(services.database, mirror.id);
       const comment: PendingComment = pending ?? { through: write.through, state: write.state, marker: randomUUID(), at: new Date().toISOString() };
       await saveMirror(services.database, mirror.id, { pendingComment: comment });
       await adapter.addComment(mirror.target, mirror.issue, text, comment.marker);
@@ -622,6 +726,7 @@ async function commentFor(
  * issue taken before either and recorded after is told apart.
  */
 async function updateIssue(services: MirrorServices, adapter: TrackerAdapter, mirror: MirrorRow & { issue: string }, update: IssueUpdate, pushed: Pushed): Promise<void> {
+  await assertMapped(services.database, mirror.id);
   const state = update.state;
   // A change of the issue's state, read back meanwhile, is this write's own.
   if (state !== undefined) {
@@ -665,8 +770,19 @@ export async function syncMirror(services: MirrorServices, requestId: string): P
   const logger = (services.logger ?? createLogger()).child({ job: mirrorRequest.name, requestId });
   const plan = await withOrg(services.database, (context) => planOf(context, requestId), { readOnly: true });
   if (plan === undefined) return;
-  if (plan.mapping !== undefined) await syncFollowing(services, plan, plan.mapping, logger);
-  for (const left of plan.leftBehind) await leave(services, plan, left, logger);
+  const mapping = plan.mapping;
+  if (mapping !== undefined) await whileMapped(logger, () => syncFollowing(services, plan, mapping, logger));
+  for (const left of plan.leftBehind) await whileMapped(logger, () => leave(services, plan, left, logger));
+}
+
+/** Runs one mirror's writes, which stop before the first write after the mapping that made the mirror was removed. */
+async function whileMapped(logger: Logger, writes: () => Promise<void>): Promise<void> {
+  try {
+    await writes();
+  } catch (error) {
+    if (!(error instanceof MappingRemoved)) throw error;
+    logger.info("mirror: the mapping that made the mirror was removed while the job ran, so nothing more is written to its issue", { mirrorId: error.mirrorId });
+  }
 }
 
 /** The mirror in the target team's tracker: created under the team's rule, then commented and updated to show the request now. */
@@ -679,36 +795,62 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
     return;
   }
   const projection = projectionOf(request, services.installUrl);
-  // A request gets its mirror issue once claimed in its team, or from its opening there when the team mirrors on open,
-  // unless it has ended; a request reassigned to the team is open and unclaimed in it.
-  const wanted = !isTerminalState(request.state) && (request.claimed || mapping.mirrorOnOpen);
+  // A request gets its mirror issue once it reached its team's point since the mapping was made, its claim there, or
+  // its opening or its move there when the team mirrors on open, unless it has ended; a request reassigned to the team
+  // is open and unclaimed in it.
+  const wanted = !isTerminalState(request.state) && plan.reached;
   let mirror = plan.mirror;
   let fresh = false;
   if (mirror === undefined) {
     if (!wanted) return;
-    mirror = await withOrg(services.database, async ({ tx, orgId }) => {
-      const inserted = await tx
+    const made = await withOrg(services.database, async ({ tx, orgId }) => {
+      // The mirror keeps the mapping the job read, which must hold still: one removed since gets no mirror, and one made
+      // since is another mapping.
+      const [held] = await tx
+        .select({ teamId: trackerMappings.teamId })
+        .from(trackerMappings)
+        .where(and(eq(trackerMappings.orgId, orgId), eq(trackerMappings.teamId, request.targetTeamId), isMapping(mapping)));
+      if (held === undefined) return undefined;
+      const [inserted] = await tx
         .insert(mirrors)
-        .values({ orgId, requestId, teamId: request.targetTeamId, number: request.number, tracker: mapping.tracker, target: mapping.target, ...createdOf(projection, plan) })
+        .values({
+          orgId,
+          requestId,
+          teamId: request.targetTeamId,
+          number: request.number,
+          tracker: mapping.tracker,
+          target: mapping.target,
+          mappingId: mapping.id,
+          ...createdOf(projection, plan),
+        })
         .onConflictDoNothing()
-        .returning({ id: mirrors.id });
-      fresh = inserted.length > 0;
-      const [row] = await tx
-        .select()
-        .from(mirrors)
-        .where(
-          and(
-            eq(mirrors.orgId, orgId),
-            eq(mirrors.requestId, requestId),
-            eq(mirrors.teamId, request.targetTeamId),
-            eq(mirrors.number, request.number),
-            eq(mirrors.tracker, mapping.tracker),
-            eq(mirrors.target, mapping.target),
-          ),
-        );
+        .returning();
+      fresh = inserted !== undefined;
+      const [row] =
+        inserted !== undefined || mapping.id === null
+          ? [inserted]
+          : await tx
+              .select()
+              .from(mirrors)
+              .where(
+                and(
+                  eq(mirrors.orgId, orgId),
+                  eq(mirrors.requestId, requestId),
+                  eq(mirrors.teamId, request.targetTeamId),
+                  eq(mirrors.number, request.number),
+                  eq(mirrors.tracker, mapping.tracker),
+                  eq(mirrors.target, mapping.target),
+                  eq(mirrors.mappingId, mapping.id),
+                ),
+              );
       if (row === undefined) throw new Error("The mirror's row was not found after it was written.");
-      return mirrorRowOf(row);
+      return mirrorRowOf(row, true);
     });
+    if (made === undefined) {
+      logger.info("mirror: made no mirror issue, as the team's mapping was removed since the job read it");
+      return;
+    }
+    mirror = made;
   }
 
   if (mirror.issue === null) {
@@ -723,6 +865,7 @@ async function syncFollowing(services: MirrorServices, plan: MirrorPlan, mapping
         logger.info("mirror: made no mirror issue, as the request no longer gets one", { mirrorId: mirror.id });
         return;
       }
+      await assertMapped(services.database, mirror.id);
       if (!fresh) await saveMirror(services.database, mirror.id, createdOf(projection, plan));
       issue = await adapter.createIssue(mirror.target, projection, mirror.marker);
     }

@@ -208,7 +208,7 @@ describe("with the setting on", () => {
   it("a close of a mirror issue in a repository FE no longer maps only adds a notice: that issue no longer follows the request", async () => {
     const request = await mirroredRequest();
     try {
-      // FE moves to a new intake repository, with the setting on; the request gets a new issue there on its next change.
+      // FE moves to a new intake repository, with the setting on; the request, claimed before, gets no issue there.
       await install.execute("mirrors.remove_mapping", ada, { teamId: fe });
       await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/fe-new-intake" });
       await install.execute("mirrors.set_done_proposals", ada, { teamId: fe, on: true });
@@ -227,6 +227,22 @@ describe("with the setting on", () => {
       await install.execute("mirrors.remove_mapping", ada, { teamId: fe });
       await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/fe-intake" });
     }
+  });
+
+  // Each mirror issue is tied to the mapping that made it (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (75)): a new mapping to the same repository makes issues of its own, and the old one follows no request.
+  it("a close of a mirror issue whose mapping was removed only adds a notice, even once FE maps its repository again", async () => {
+    const request = await mirroredRequest();
+    await install.execute("mirrors.remove_mapping", ada, { teamId: fe });
+    await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/fe-intake" });
+    await install.execute("mirrors.set_done_proposals", ada, { teamId: fe, on: true });
+
+    await closedOnGitHub(request.number, "ayse");
+
+    expect(await proposalsOf(request.id)).toEqual([]);
+    expect(await noticesOf(request.id)).toEqual([
+      `The GitHub mirror issue of ${request.key} was closed. A close in GitHub does not change the request: ${request.key} is still in_progress.`,
+    ]);
   });
 
   it("a close as not planned is no Done: it is recorded, and adds no proposal and no notice", async () => {

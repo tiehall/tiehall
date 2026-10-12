@@ -1,7 +1,7 @@
 import { listTrackerMappings, mapIntakeRepository, removeTrackerMapping, setDoneProposals, setMirrorOnOpen, type trackerMapping } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { githubApp, githubConnectedInstallations, githubCoveredRepositories, githubInstallations, teams, trackerMappings } from "@tiehall/db";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { defineHandler, type Handlers } from "./execute.ts";
 import { installationCoveringNamed } from "./github-pull-requests.ts";
@@ -25,9 +25,16 @@ import type { OrgContext } from "./with-org.ts";
 // - A new mapping has the setting for tracker "Done" proposals off; turned
 //   on, a close of a mirror issue by a member of the team becomes a done
 //   proposal for them (tracker-changes.ts).
-// - Removing a mapping stops new mirror issues for the team; the issues made
-//   before stay in the tracker, and Tiehall writes to them no more while no
-//   mapping names their place.
+// - Removing a mapping stops every write to the mirror issues it made, which
+//   stay in the tracker as people leave them; a later mapping of the team,
+//   even to the same place, makes issues of its own, only for the requests
+//   that reach the team's point after it was made (mirrors.ts;
+//   decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (75)). Each mapping gets an id of its own, which its mirrors keep,
+//   and the time it was made, taken at its insert, just before its commit,
+//   not at its transaction's start: a claim made while that transaction runs
+//   cannot see the mapping, so it sends no mirror job, and it counts as made
+//   before the mapping, as the job reads it.
 // - The listing names the covered repositories GitHub reported public when
 //   they were last read: a mirror issue copies its request's title into the
 //   intake repository, so the teams page warns about a public one.
@@ -106,7 +113,7 @@ export const TRACKER_MAPPING_HANDLERS: Handlers = {
     }
     const [created] = await tx
       .insert(trackerMappings)
-      .values({ orgId, teamId, tracker: "github", target: String(covering.repositoryId), targetName: covering.fullName, mirrorOnOpen })
+      .values({ orgId, teamId, tracker: "github", target: String(covering.repositoryId), targetName: covering.fullName, mirrorOnOpen, createdAt: sql`clock_timestamp()` })
       .onConflictDoNothing()
       .returning({ teamId: trackerMappings.teamId });
     if (created === undefined) {

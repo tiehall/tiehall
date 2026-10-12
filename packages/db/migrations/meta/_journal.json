@@ -659,6 +659,13 @@
       "when": 1791680067626,
       "tag": "0093_index_the_domain_events_for_the_web_ui",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791791681686,
+      "tag": "0094_tie_mirrors_to_their_mappings",
+      "breakpoints": true
     }
   ]
 }

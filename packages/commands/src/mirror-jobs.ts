@@ -12,8 +12,10 @@ import type { OrgContext } from "./with-org.ts";
 // event that can change what a mirror shows, such as a claim or a state
 // change, so the job commits with the change, or not at all; it sends at most
 // one per request and write, and only for a request that has a mirror issue,
-// or whose target team maps a tracker and that its mapping would mirror now:
-// once claimed, or from its opening when the team mirrors on open.
+// or whose target team maps a tracker and that its mapping may mirror now:
+// once claimed, or from its opening when the team mirrors on open. The job
+// then decides, by whether the request reached that point after the mapping
+// was made, and writes only to issues whose mapping holds (mirrors.ts).
 //
 // The jobs of one request run one at a time, in the order of the writes that
 // sent them, never two at once (the queue's key_strict_fifo policy, keyed by
@@ -60,8 +62,8 @@ export function changesMirror(type: string, data: Readonly<Record<string, unknow
 
 /**
  * Sends the request's mirror job in the write's transaction, when the request
- * has a mirror issue, or its target team maps a tracker and its mapping
- * mirrors the request now; sends nothing otherwise.
+ * has a mirror issue, or its target team maps a tracker and its mapping may
+ * mirror the request now; sends nothing otherwise.
  */
 export async function wakeMirror({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, jobs: JobSender, requestId: string): Promise<void> {
   const [mirrored] = await tx

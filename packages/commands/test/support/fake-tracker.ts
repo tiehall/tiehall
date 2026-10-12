@@ -40,6 +40,8 @@ export class FakeTracker implements TrackerAdapter {
   readonly calls: string[] = [];
   /** Runs at the start of each create, before the tracker makes the issue, such as to look at the database then. */
   beforeCreate: ((target: string, marker: string) => Promise<void>) | undefined;
+  /** Runs at the start of each write call, before the tracker applies it, such as to change the install meanwhile. */
+  beforeWrite: ((call: Failure["call"]) => Promise<void>) | undefined;
   private readonly failures: Failure[] = [];
 
   constructor(tracker: Tracker = "github") {
@@ -73,6 +75,7 @@ export class FakeTracker implements TrackerAdapter {
   async createIssue(target: string, projection: MirrorProjection, marker: string): Promise<string> {
     this.calls.push("createIssue");
     this.writes.push("createIssue");
+    await this.beforeWrite?.("createIssue");
     await this.beforeCreate?.(target, marker);
     this.failure("createIssue", "before");
     const issue: FakeIssue = {
@@ -97,6 +100,7 @@ export class FakeTracker implements TrackerAdapter {
   async updateIssue(target: string, number: string, _marker: string, update: IssueUpdate): Promise<void> {
     this.calls.push("updateIssue");
     this.writes.push("updateIssue");
+    await this.beforeWrite?.("updateIssue");
     this.failure("updateIssue", "before");
     const issue = this.issue(target, number);
     if (update.title !== undefined) issue.title = update.title;
@@ -111,6 +115,7 @@ export class FakeTracker implements TrackerAdapter {
   async addComment(target: string, number: string, text: string, marker: string): Promise<void> {
     this.calls.push("addComment");
     this.writes.push("addComment");
+    await this.beforeWrite?.("addComment");
     this.failure("addComment", "before");
     this.issue(target, number).comments.push({ text, marker });
     this.failure("addComment", "after");

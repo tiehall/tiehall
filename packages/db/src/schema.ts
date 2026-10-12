@@ -2946,7 +2946,11 @@ export const contractWarnDigestEmails = pgTable(
 // issue by a member of the team become a done proposal (tracker-mirrors: A
 // tracker "Done" never closes a request by itself). Only admins change
 // mappings, in the web UI; mappings are not security events (design.md,
-// Readings to confirm with the founder: R21).
+// Readings to confirm with the founder: R21). Each mapping has an id of its
+// own, which the mirrors it makes keep: removing it stops every write to them,
+// and a later mapping of the team starts afresh, even in the same place
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (75)).
 export const trackerMappings = pgTable(
   "tracker_mappings",
   {
@@ -2964,6 +2968,12 @@ export const trackerMappings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** Whether a tracker "Done" by a member of the team becomes a done proposal for them; off until an admin turns it on. */
     doneProposals: boolean("done_proposals").notNull().default(false),
+    /**
+     * The mapping's own id, which the mirrors it makes keep, so that no later
+     * mapping of the team, even to the same place, writes to their issues;
+     * null for a mapping made before mirrors kept the mapping that made them.
+     */
+    id: uuid("id").default(sql`gen_random_uuid()`),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.teamId] }),
@@ -2981,10 +2991,11 @@ export const trackerMappings = pgTable(
 // The mirror issues of requests (tracker-mirrors: A mirror is a projection of
 // the request; tracker-mirrors: Mirror writes are idempotent and never echo;
 // design.md, Design rules: Tracker mirrors; design.md, Technical decisions:
-// T16). One row per request, key and place a team's mapping names: the
-// request, the team whose tracker holds the issue and the request's number in
-// that team, the tracker and the place in it, and, once it exists, the
-// tracker's reference of the issue, such as its number in the repository. A
+// T16). One row per request, key and mapping of a team: the request, the
+// team whose tracker holds the issue and the request's number in that team,
+// the tracker and the place in it, the mapping that made it, and, once it
+// exists, the tracker's reference of the issue, such as its number in the
+// repository. A
 // reassignment leaves the row of the old team's issue behind, marked away once
 // the issue got its notice and was closed (tracker-mirrors: Reassignment moves
 // the mirror); undoing it brings the request back to that row. The mirror job writes the row, with a random
@@ -3058,10 +3069,17 @@ export const mirrors = pgTable(
      * the request again.
      */
     away: boolean("away").notNull().default(false),
+    /**
+     * The id of the team's mapping that made the mirror: Tiehall writes to
+     * the issue only while that mapping holds. Null for a mirror made before
+     * mirrors kept it, or under a mapping that has no id, which belongs to the
+     * team's mapping that names its place and was made before it.
+     */
+    mappingId: uuid("mapping_id"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),
-    uniqueIndex("mirrors_request_place_number").on(table.orgId, table.requestId, table.teamId, table.number, table.tracker, table.target),
+    uniqueIndex("mirrors_request_mapping_number").on(table.orgId, table.requestId, table.teamId, table.number, table.tracker, table.target, table.mappingId),
     uniqueIndex("mirrors_issue").on(table.orgId, table.tracker, table.target, table.issue).where(sql`${table.issue} IS NOT NULL`),
     foreignKey({
       name: "mirrors_request_fk",

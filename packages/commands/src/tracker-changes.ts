@@ -5,7 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { defineHandler, type Handlers, type HandlerContext } from "./execute.ts";
 import { memberOf, teamsOfMember, type Member } from "./members.ts";
 import { addSystemMessage } from "./messages.ts";
-import { trackerChanges, type IssueState, type TrackerChange } from "./mirrors.ts";
+import { madeBy, trackerChanges, type IssueState, type TrackerChange } from "./mirrors.ts";
 import { createProposal } from "./proposals.ts";
 import { lifecycleOf, lockRequestById } from "./request-changes.ts";
 import type { RequestRow } from "./request-views.ts";
@@ -56,8 +56,8 @@ import type { RequestRow } from "./request-views.ts";
 // GitHub, every close but one with the state_reason not_planned). It never
 // moves the request to done. When its team's mapping has the setting for
 // tracker "Done" proposals on, which is off until an admin turns it on, the
-// mirror is the one in the tracker and place that the mapping of the
-// request's target team names now, for its key there, not one a
+// mirror is the one that the mapping of the request's target team made, for
+// its key there, while that mapping holds (mirrors.ts), not one a
 // reassignment or a change of the mapping left behind, the
 // close acts for a member of that team, mapped from the tracker account that
 // closed the issue, and the request's state allows a move to done (claimed,
@@ -109,17 +109,18 @@ function isTrackerDone(change: TrackerChange): boolean {
 async function proposerOf(
   context: HandlerContext,
   request: RequestRow,
-  mirror: { teamId: string; number: number | null; tracker: string; target: string },
+  mirror: { id: string; teamId: string; number: number | null },
 ): Promise<Member | undefined> {
   const userId = context.caller.kind === "integration_event" ? context.caller.userId : undefined;
   // Only the mirror that follows the request now: one a reassignment left behind is not its target team's.
   if (userId === undefined || mirror.teamId !== request.targetTeamId || (mirror.number !== null && mirror.number !== request.number)) return undefined;
+  // Nor one whose mapping was removed, which Tiehall leaves as it is, even when a later mapping names its place.
   const [mapping] = await context.tx
-    .select({ doneProposals: trackerMappings.doneProposals, tracker: trackerMappings.tracker, target: trackerMappings.target })
-    .from(trackerMappings)
-    .where(and(eq(trackerMappings.orgId, context.orgId), eq(trackerMappings.teamId, request.targetTeamId)));
-  // Nor one in a place the team's mapping no longer names, which Tiehall leaves as it is.
-  if (mapping?.doneProposals !== true || mapping.tracker !== mirror.tracker || mapping.target !== mirror.target) return undefined;
+    .select({ doneProposals: trackerMappings.doneProposals })
+    .from(mirrors)
+    .innerJoin(trackerMappings, madeBy())
+    .where(and(eq(mirrors.orgId, context.orgId), eq(mirrors.id, mirror.id)));
+  if (mapping?.doneProposals !== true) return undefined;
   if (!(await teamsOfMember(context, userId)).some(({ id }) => id === request.targetTeamId)) return undefined;
   if (!changeRequest(await lifecycleOf(context, request), { kind: "done" }).ok) return undefined;
   return memberOf(context, userId);
@@ -164,7 +165,7 @@ export const TRACKER_CHANGE_HANDLERS: Handlers = {
     const expected = stateByOther && now.open !== known.open ? null : (row.expectedState as Pick<IssueState, "open" | "closeReason"> | null);
     const changes: TrackerChange[] = trackerChanges(known, expected, now);
     const done = changes.some(isTrackerDone);
-    const proposer = done ? await proposerOf(context, request, row) : undefined;
+    const proposer = done ? await proposerOf(context, request, { id: mirrorId, teamId: row.teamId, number: row.number }) : undefined;
     if (changes.length > 0) {
       await context.write(async (writer) => {
         await writer.changesRequest(request.id);
