@@ -140,6 +140,43 @@ describe("registrations behind a proxy the operator names", () => {
   });
 });
 
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (24). An IPv6 client the proxy forwards
+// is counted by its /64, as the request guard yields its address.
+describe("registrations from IPv6 addresses behind a proxy the operator names", () => {
+  let install: Install | undefined;
+  beforeAll(async () => {
+    install = await startInstall(["127.0.0.1"]);
+  });
+  afterAll(() => stop(install));
+
+  it("share the 10 an hour within one /64, and an address in another /64 registers", async () => {
+    const proxied = install!;
+    for (let index = 1; index <= 10; index += 1) {
+      const answer = await register(proxied, `2001:db8:1:2::${index}`);
+      await answer.arrayBuffer();
+      expect(answer.status, `registration ${index}`).toBe(201);
+    }
+    const refused = await register(proxied, "2001:db8:1:2::9");
+    expect(refused.status).toBe(429);
+    await refused.arrayBuffer();
+    const other = await register(proxied, "2001:db8:1:3::5");
+    expect(other.status).toBe(201);
+  });
+
+  it("count a registration whose metadata breaks its bounds, which gets 400 invalid_client_metadata and not a 500", async () => {
+    const proxied = install!;
+    const answer = await fetch(`http://127.0.0.1:${proxied.port}/api/auth/oauth2/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "2001:db8:9:9::1" },
+      body: JSON.stringify({ client_name: "a".repeat(101), redirect_uris: ["http://127.0.0.1:53682/callback"], token_endpoint_auth_method: "none" }),
+    });
+    expect(answer.status).toBe(400);
+    expect(((await answer.json()) as { error?: string }).error).toBe("invalid_client_metadata");
+    const { rows } = await proxied.owner.query("SELECT count(*)::int AS n FROM oauth_client_registrations WHERE ip_address <<= '2001:db8:9:9::/64'");
+    expect(rows[0].n).toBe(1);
+  });
+});
+
 describe("registrations from a client that is no trusted proxy", () => {
   let install: Install | undefined;
   beforeAll(async () => {

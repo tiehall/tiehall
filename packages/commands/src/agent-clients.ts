@@ -26,9 +26,18 @@ import type { WorkerJob } from "./worker.ts";
 // its own computer, often does not say it is one; the registration is taken
 // as a native client's then, as the loopback redirect URIs show it is.
 //
+// An IPv6 client is counted by its /64, since one host commonly holds a
+// whole /64: every address in one /64 shares the 10 registrations an hour
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (24); Technical decisions: T4). An IPv4 address, written as one or as
+// an IPv4-mapped IPv6 address, is counted by itself.
+//
 // A registration whose metadata holds a NUL character in any text, which no
-// text Tiehall stores may hold, is refused with 400 invalid_client_metadata,
-// and still counts.
+// text Tiehall stores may hold, or breaks the bounds of a client's metadata,
+// a name of 1 to 100 characters and at most 10 redirect URIs of at most 2,048
+// characters each (D55 (25)), is refused with 400 invalid_client_metadata,
+// never a 500, and still counts. A metadata document is held to the same
+// bounds, and its URL to 1,024 characters (authorization-server.ts).
 //
 // A registered client that has never completed an authorization, so that no
 // grant and no token of it exists, is removed 7 days after it registered, by a
@@ -48,6 +57,18 @@ export const UNUSED_CLIENT_DAYS = 7;
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+
+/** How long a client's name is, at most, in characters. */
+export const CLIENT_NAME_MAX_LENGTH = 100;
+/** How many redirect URIs a client has, at most. */
+export const CLIENT_REDIRECT_URIS_MAX = 10;
+/** How long a client's redirect URI is, at most, in characters. */
+export const CLIENT_REDIRECT_URI_MAX_LENGTH = 2048;
+/** How long a client id that is a metadata document's URL is, at most, in characters. */
+export const CLIENT_ID_URL_MAX_LENGTH = 1024;
+
+/** The prefix an IPv6 client is counted by. */
+const IPV6_PREFIX_LENGTH = 64;
 
 /** The code the registration limit refuses with, which the sign-in service turns into the error model's 429. */
 export const REGISTRATION_LIMIT_CODE = "registration_limit";
@@ -77,6 +98,32 @@ function isNativeRedirect(uri: unknown): boolean {
   }
 }
 
+/**
+ * What breaks the bounds of a client's metadata, registered or in its
+ * document, in Tiehall's words, or undefined when nothing does: a name of 1
+ * to 100 characters, when it gives one, and at most 10 redirect URIs of at
+ * most 2,048 characters each.
+ */
+export function clientMetadataBoundsProblem(metadata: unknown): string | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const { client_name: name, redirect_uris: redirects } = metadata as Record<string, unknown>;
+  if (typeof name === "string" && (name.trim() === "" || [...name].length > CLIENT_NAME_MAX_LENGTH)) {
+    return `A client's name has 1 to ${CLIENT_NAME_MAX_LENGTH} characters.`;
+  }
+  if (Array.isArray(redirects)) {
+    if (redirects.length > CLIENT_REDIRECT_URIS_MAX) return `A client has at most ${CLIENT_REDIRECT_URIS_MAX} redirect URIs.`;
+    if (redirects.some((uri) => typeof uri === "string" && [...uri].length > CLIENT_REDIRECT_URI_MAX_LENGTH)) {
+      return `A client's redirect URI has at most ${CLIENT_REDIRECT_URI_MAX_LENGTH} characters.`;
+    }
+  }
+  return undefined;
+}
+
+/** Whether a client address is counted by its IPv6 /64, rather than by itself: an IPv6 address that is no IPv4-mapped one. */
+function countedBySubnet(address: string): boolean {
+  return isIP(address) === 6 && !/^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(address);
+}
+
 /** Whether a client's metadata, registered or in its document, holds a NUL character in any text, however deep. */
 export function holdsNul(value: unknown): boolean {
   if (typeof value === "string") return value.includes("\u0000");
@@ -104,15 +151,24 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             if (request === undefined) return;
             const address = clientAddressOf(request.headers);
             const at = now();
+            // An IPv6 client is counted, and locked, by its /64, which the database works out from its address.
+            const subnet = address !== undefined && countedBySubnet(address);
+            const lockKey = subnet
+              ? sql`'tiehall.client_registrations:' || network(set_masklen(${address}::inet, ${IPV6_PREFIX_LENGTH}))::text`
+              : sql`${`tiehall.client_registrations:${address ?? ""}`}`;
             const decided = await withOrg(options.database, async ({ tx, orgId }) => {
-              await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tiehall.client_registrations:${address ?? ""}`}, 0))`);
+              await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
               const recent = await tx
                 .select({ registeredAt: oauthClientRegistrations.registeredAt })
                 .from(oauthClientRegistrations)
                 .where(
                   and(
                     eq(oauthClientRegistrations.orgId, orgId),
-                    address === undefined ? isNull(oauthClientRegistrations.ipAddress) : eq(oauthClientRegistrations.ipAddress, address),
+                    address === undefined
+                      ? isNull(oauthClientRegistrations.ipAddress)
+                      : subnet
+                        ? sql`${oauthClientRegistrations.ipAddress} <<= set_masklen(${address}::inet, ${IPV6_PREFIX_LENGTH})`
+                        : eq(oauthClientRegistrations.ipAddress, address),
                     gt(oauthClientRegistrations.registeredAt, new Date(at.getTime() - HOUR_MS)),
                   ),
                 )
@@ -143,6 +199,9 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             if (holdsNul(body)) {
               throw new APIError("BAD_REQUEST", { error: "invalid_client_metadata", error_description: "A registration's texts hold no NUL character." });
             }
+            // A client's metadata is bounded, so no text breaks the database's own bounds later.
+            const outOfBounds = clientMetadataBoundsProblem(body);
+            if (outOfBounds !== undefined) throw new APIError("BAD_REQUEST", { error: "invalid_client_metadata", error_description: outOfBounds });
             // A registration whose every redirect URI is native is a native client's, whether or not it says so.
             const redirects = body["redirect_uris"];
             if (body["application_type"] === undefined && Array.isArray(redirects) && redirects.length > 0 && redirects.every(isNativeRedirect)) {

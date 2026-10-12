@@ -3,7 +3,8 @@ import { connect as netConnect, type AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createOutboundFetcher, type ConnectTarget } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { CLIENT_REDIRECT_URI, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { CLIENT_REDIRECT_URI, hiddenField, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
+import { addTeam, joinTeams, packetOf } from "./support/requests.ts";
 
 // Clients identified by a Client ID Metadata Document are preferred
 // (agent-access: Clients identified by a Client ID Metadata Document are
@@ -63,6 +64,13 @@ beforeAll(async () => {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Vendor\u0000agent" }));
     }
     if (request.url === "/oauth/moved.json") return response.writeHead(302, { location: "https://vendor.example/oauth/client.json" }).end();
+    if (request.url === "/oauth/long-name.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "a".repeat(101) }));
+    }
+    if (request.url === "/oauth/many-redirects.json") {
+      const redirects = Array.from({ length: 11 }, (_, index) => `http://127.0.0.1:${33_400 + index}/callback`);
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: redirects }));
+    }
     return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url));
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -151,6 +159,88 @@ describe("a client identified by a Client ID Metadata Document", () => {
     const answer = await authorizeAs("https://vendor.example/oauth/moved.json");
     expect(answer.status).toBe(400);
     expect(fetched).toEqual(["https://vendor.example/oauth/moved.json"]);
+  });
+});
+
+// agent-access: Clients identified by a Client ID Metadata Document are preferred (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (25); Technical decisions: T4). A client_id URL has at most 1,024
+// characters, and a document gives a name of 1 to 100 characters and at most 10 redirect URIs of at most 2,048
+// characters each: an authorization request outside these bounds is refused with invalid_client, a URL too long without
+// fetching anything, and never with a 500. A client at the URL's bound works throughout, as the database's own bounds
+// on what a client's id is written into allow.
+describe("the bounds of a client identified by its metadata document", () => {
+  /** A client id URL on vendor.example of exactly this many characters. */
+  function clientIdOf(length: number): string {
+    const start = "https://vendor.example/oauth/";
+    return `${start}${"p".repeat(length - start.length - ".json".length)}.json`;
+  }
+
+  it("refuses a client_id URL of 1,025 characters with invalid_client, fetching nothing", async () => {
+    const clientId = clientIdOf(1025);
+    expect(clientId).toHaveLength(1025);
+    const answer = await authorizeAs(clientId);
+    expect(answer.status).toBe(400);
+    expect(((await answer.json()) as { error?: string }).error).toBe("invalid_client");
+    expect(fetched).toEqual([]);
+    expect(connections).toEqual([]);
+    expect(await clientRow(clientId)).toBeUndefined();
+  });
+
+  it("refuses a document whose name has 101 characters, or that lists 11 redirect URIs, with invalid_client and no consent screen", async () => {
+    for (const clientId of ["https://vendor.example/oauth/long-name.json", "https://vendor.example/oauth/many-redirects.json"]) {
+      const answer = await authorizeAs(clientId);
+      expect(answer.status, clientId).toBe(400);
+      expect(((await answer.json()) as { error?: string }).error, clientId).toBe("invalid_client");
+      expect(answer.headers.get("location"), clientId).toBeNull();
+      expect(await clientRow(clientId), clientId).toBeUndefined();
+    }
+  });
+
+  it("lets a client whose client_id URL has 1,024 characters sign in, write, read its updates and repeat a write, with no 500", async () => {
+    const clientId = clientIdOf(1024);
+    expect(clientId).toHaveLength(1024);
+    await addTeam(harness.install.owner, "FE");
+    const be = await addTeam(harness.install.owner, "BE");
+    await joinTeams(harness.install.owner, ana.userId, be);
+
+    // The authorization request goes on to the consent screen, where Ana approves the client.
+    const pkce = pkcePair();
+    const started = await harness.authorize(ana.cookie, { clientId, redirectUri: CLIENT_REDIRECT_URI }, pkce, { scope: "requests:read requests:write" }, { "x-forwarded-for": "198.51.100.200" });
+    const consent = new URL(started.headers.get("location") ?? "", URL_OF_INSTALL);
+    expect(consent.pathname).toBe("/consent");
+    const html = await (await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }))).text();
+    const confirmed = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve`, {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", accept: "text/html" },
+        body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+      }),
+    );
+    expect(confirmed.status).toBe(303);
+    const back = await harness.handle(new Request(new URL(confirmed.headers.get("location") ?? "", URL_OF_INSTALL), { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    const code = new URL(back.headers.get("location") ?? "", URL_OF_INSTALL).searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    const exchanged = await harness.exchange({ clientId, redirectUri: CLIENT_REDIRECT_URI }, code, pkce);
+    expect(exchanged.status).toBe(200);
+    const authorization = `Bearer ${String(exchanged.body["access_token"])}`;
+
+    // A write with an Idempotency-Key, and its repeat, which gets the first answer.
+    const open = () =>
+      harness.api("POST", "/api/v1/requests", { authorization, "idempotency-key": "open-dark-mode" }, { targetTeam: "FE", requestingTeam: "BE", title: "Add a dark mode", packet: packetOf() });
+    const first = await open();
+    expect(first.status).toBe(200);
+    const repeated = await open();
+    expect(repeated.status).toBe(200);
+    expect(await repeated.json()).toEqual(await first.json());
+    // The client's own updates, read and acknowledged, which move its cursor.
+    const read = await harness.api("POST", "/api/v1/updates", { authorization }, {});
+    expect(read.status).toBe(200);
+    const { cursor } = (await read.json()) as { cursor: number };
+    const acknowledged = await harness.api("POST", "/api/v1/updates", { authorization }, { acknowledge: cursor + 1 });
+    expect(acknowledged.status).toBeLessThan(500);
+    // Its refresh token works too.
+    const refreshed = await harness.refresh({ clientId, redirectUri: CLIENT_REDIRECT_URI }, String(exchanged.body["refresh_token"]));
+    expect(refreshed.status).toBe(200);
   });
 });
 

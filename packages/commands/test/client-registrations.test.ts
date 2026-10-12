@@ -98,6 +98,32 @@ describe("registrations from one address", () => {
   });
 });
 
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (24); Technical decisions: T4. One host
+// commonly holds a whole IPv6 /64, so an IPv6 client is counted by its /64: every address in one /64 shares the 10
+// registrations an hour, and an address in another /64 does not.
+describe("registrations from IPv6 addresses", () => {
+  it("share the 10 an hour within one /64, and another /64 registers", async () => {
+    at("2026-10-01T12:00:00Z");
+    for (let index = 1; index <= 10; index += 1) {
+      const answer = await harness.register({}, { "x-forwarded-for": `2001:db8:1:2::${index.toString(16)}` });
+      expect(answer.status, `registration ${index}`).toBe(201);
+    }
+    const refused = await harness.register({}, { "x-forwarded-for": "2001:db8:1:2:ffff:ffff:ffff:fffe" });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await harness.register({}, { "x-forwarded-for": "2001:db8:1:3::5" })).status).toBe(201);
+  });
+
+  it("count an IPv4 address written as IPv6 by its IPv4 address alone", async () => {
+    at("2026-10-01T13:00:00Z");
+    for (let index = 1; index <= 10; index += 1) {
+      expect((await harness.register({}, { "x-forwarded-for": "::ffff:192.0.2.10" })).status, `registration ${index}`).toBe(201);
+    }
+    expect((await harness.register({}, { "x-forwarded-for": "::ffff:192.0.2.10" })).status).toBe(429);
+    expect((await harness.register({}, { "x-forwarded-for": "::ffff:192.0.2.11" })).status).toBe(201);
+  });
+});
+
 describe("a registered client never used", () => {
   it("is removed 7 days after it registered, and its id is refused afterwards; a used one and a younger one stay", async () => {
     at("2026-10-02T12:00:00Z");
@@ -151,6 +177,40 @@ describe("a registration", () => {
       expect(((await answer.json()) as { error?: string }).error).toBe("invalid_client_metadata");
     }
     expect(await clientCount()).toBe(before);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (25); Technical decisions: T4. A
+  // client's name has 1 to 100 characters, and a client at most 10 redirect URIs of at most 2,048 characters each; a
+  // registration outside these bounds is refused with 400 invalid_client_metadata, never a 500, and still counts.
+  it("outside its metadata's bounds gets 400 invalid_client_metadata, stores no client, and counts", async () => {
+    at("2026-10-10T10:00:00Z");
+    const address = { "x-forwarded-for": "203.0.113.77" };
+    const before = await clientCount();
+    const tooLong = `http://127.0.0.1:33418/${"a".repeat(2049 - "http://127.0.0.1:33418/".length)}`;
+    expect(tooLong).toHaveLength(2049);
+    for (const metadata of [
+      { client_name: "a".repeat(101) },
+      { client_name: "" },
+      { redirect_uris: Array.from({ length: 11 }, (_, index) => `http://127.0.0.1:${33_400 + index}/callback`) },
+      { redirect_uris: [tooLong] },
+    ]) {
+      const answer = await harness.register(metadata, address);
+      expect(answer.status, JSON.stringify(metadata).slice(0, 80)).toBe(400);
+      expect(((await answer.json()) as { error?: string }).error).toBe("invalid_client_metadata");
+    }
+    expect(await clientCount()).toBe(before);
+    const { rows } = await harness.install.owner.query("SELECT count(*)::int AS n FROM oauth_client_registrations WHERE host(ip_address) = '203.0.113.77'");
+    expect(rows[0].n).toBe(4);
+  });
+
+  it("at its metadata's bounds is taken: a name of 100 characters, and 10 redirect URIs of up to 2,048 characters", async () => {
+    at("2026-10-10T11:00:00Z");
+    const longest = `http://127.0.0.1:33418/${"a".repeat(2048 - "http://127.0.0.1:33418/".length)}`;
+    const answer = await harness.register(
+      { client_name: "a".repeat(100), redirect_uris: [longest, ...Array.from({ length: 9 }, (_, index) => `http://127.0.0.1:${33_400 + index}/callback`)] },
+      { "x-forwarded-for": "203.0.113.78" },
+    );
+    expect(answer.status).toBe(201);
   });
 
   it("of a web client with an https redirect URI stays a web client's", async () => {

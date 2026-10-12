@@ -5,7 +5,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { SCOPES } from "@tiehall/catalog";
-import { holdsNul } from "./agent-clients.ts";
+import { CLIENT_ID_URL_MAX_LENGTH, clientMetadataBoundsProblem, holdsNul } from "./agent-clients.ts";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
 import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
@@ -36,8 +36,11 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   address without connecting to it, and here follows no redirect; the
 //   client counts as identified only when the document's client_id equals the
 //   URL exactly, and a document whose texts hold a NUL character, which no
-//   text Tiehall stores may hold, is refused with invalid_client like one the
-//   plugin cannot read. At most 60 documents a minute are fetched from one
+//   text Tiehall stores may hold, or that breaks the bounds of a client's
+//   metadata (agent-clients.ts), is refused with invalid_client like one the
+//   plugin cannot read; so is a URL of more than 1,024 characters, which is
+//   not fetched (decisions-from-groups-15-28: design.md, Decisions this change
+//   rests on: D55 (25)). At most 60 documents a minute are fetched from one
 //   host, on whatever port its URL names, and an authorization request that
 //   cannot be checked because its host's limit is used up gets 429 with
 //   Retry-After; no other limit on the fetches applies.
@@ -273,10 +276,12 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
     fetchClientMetadataResource: async (input) => {
       const document = await fetchDocument(input instanceof Request ? input.url : input.toString());
       const headers = document.contentType === undefined ? {} : { "content-type": document.contentType };
-      // No text Tiehall stores may hold a NUL character: a document with one is refused as the client's, as the
-      // plugin refuses a body it cannot read, and no client is stored.
-      if (document.status === 200 && holdsNul(parsedJson(document.body))) {
-        const refused = new APIError("BAD_REQUEST", { error: "invalid_client", error_description: "The metadata document's texts hold a NUL character." });
+      // No text Tiehall stores may hold a NUL character, and a client's metadata is bounded: a document that breaks
+      // either is refused as the client's, as the plugin refuses a body it cannot read, and no client is stored.
+      const parsed = document.status === 200 ? parsedJson(document.body) : undefined;
+      const problem = holdsNul(parsed) ? "The metadata document's texts hold a NUL character." : clientMetadataBoundsProblem(parsed);
+      if (problem !== undefined) {
+        const refused = new APIError("BAD_REQUEST", { error: "invalid_client", error_description: problem });
         return new Response(new ReadableStream({ start: (stream) => stream.error(refused) }), { status: 200, headers });
       }
       return new Response(document.body, { status: document.status, headers });
@@ -284,7 +289,9 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
     // The one limit agent-access names: 60 fetches a minute from one host, which the plugin would count per origin, a
     // host and a port, so a client could name another port for each fetch. It is counted per host just before each
     // fetch, and the plugin's own limits are set out of reach.
+    // A client_id URL longer than 1,024 characters is refused with invalid_client before anything is fetched or counted.
     isMetadataDocumentUrlAllowed: (url) => {
+      if ([...url].length > CLIENT_ID_URL_MAX_LENGTH) return false;
       countFetch(url);
       return true;
     },
