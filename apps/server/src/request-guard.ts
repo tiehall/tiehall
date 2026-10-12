@@ -73,6 +73,11 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 //   declared and not sent": a declared length reserved when the head arrived
 //   let a client that sent nothing hold it until Node's 300-second request
 //   timeout);
+// - a body the guard holds is copied into one buffer that grows as its bytes
+//   arrive, to at most twice their number, and none of the chunks Node hands
+//   over is kept: each is an object of its own, of some 200 bytes of heap
+//   however few bytes it carries, so a body sent in small chunks would take
+//   many times the memory the cap counts for it (holdBody);
 // - a body whose chunk would take the bytes reserved past the cap is answered
 //   at once with the error model's 503 busy, `Retry-After: 5` and
 //   `Connection: close`, and is read no further, as a body over its limit is.
@@ -213,6 +218,7 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
     const release = whenDone(request, response, () => bodies.release(reserved));
     holdBody(
       request,
+      declared ?? limit,
       limit,
       (bytes) => {
         if (!bodies.reserve(bytes)) return false;
@@ -346,6 +352,9 @@ function whenDone(request: IncomingMessage, response: ServerResponse, release: (
   return once;
 }
 
+/** What a body the guard holds has before its first byte arrives. */
+const NOTHING_HELD = Buffer.alloc(0);
+
 /**
  * Holds a body until it is complete, whether its request declares its length
  * or sends it in chunks, counting its bytes as the connection delivers them:
@@ -354,37 +363,53 @@ function whenDone(request: IncomingMessage, response: ServerResponse, release: (
  * the body is complete within the limit it hands the whole body back to the
  * request and calls complete. It takes the chunks where Node puts a request's
  * body, the request's push(), so nothing reads them before the size is known.
+ *
+ * It copies each chunk into one buffer that grows as the bytes arrive, and
+ * keeps none of the chunks: Node hands over each chunk as an object of its
+ * own, of some 200 bytes of heap however few bytes it carries, so a body
+ * kept chunk by chunk and sent a byte per chunk took some 200 times the
+ * memory the cap counts for it. The buffer doubles when it is full, so each
+ * byte is copied a few times at most, and is never more than twice the bytes
+ * that have arrived, nor more than the most the body may hold: its declared
+ * length, or else its limit.
  */
 function holdBody(
   request: IncomingMessage,
+  most: number,
   limit: number,
   reserve: (bytes: number) => boolean,
   complete: () => void,
   over: () => void,
   busy: () => void,
 ): void {
-  const held: Buffer[] = [];
+  let held = NOTHING_HELD;
   let received = 0;
   request.push = (chunk: Buffer | null): boolean => {
     if (chunk === null) {
       Reflect.deleteProperty(request, "push");
-      for (const piece of held) request.push(piece);
+      if (received > 0) request.push(held.subarray(0, received));
       request.push(null);
       complete();
       return false;
     }
-    received += chunk.length;
-    if (received > limit) {
-      held.length = 0;
+    const needed = received + chunk.length;
+    if (needed > limit) {
+      held = NOTHING_HELD;
       over();
       return false;
     }
     if (!reserve(chunk.length)) {
-      held.length = 0;
+      held = NOTHING_HELD;
       busy();
       return false;
     }
-    held.push(chunk);
+    if (needed > held.length) {
+      const grown = Buffer.alloc(Math.max(needed, Math.min(most, 2 * held.length)));
+      held.copy(grown, 0, 0, received);
+      held = grown;
+    }
+    chunk.copy(held, received);
+    received = needed;
     // Keep the connection delivering chunks, though nothing reads them yet.
     return true;
   };

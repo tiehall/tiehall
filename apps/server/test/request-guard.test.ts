@@ -1,6 +1,9 @@
+import { createHash, randomBytes } from "node:crypto";
 import http, { type IncomingHttpHeaders } from "node:http";
-import type { AddressInfo, Socket } from "node:net";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBodiesInFlight, type BodiesInFlight } from "@tiehall/commands";
 import { installRequestGuard, type RequestGuard } from "../src/request-guard.ts";
@@ -36,15 +39,20 @@ interface Install {
   guard: RequestGuard;
   /** The method and path of every call the app behind the guard was handed. */
   seen: string[];
+  /** The SHA-256, in hex, of every body the app behind the guard read, in the order it read them. */
+  digests: string[];
   /** Every connection the server took, in the order it took them. */
   sockets: Socket[];
 }
 
 let installed: { guard: RequestGuard; server: http.Server } | undefined;
 const clients: http.ClientRequest[] = [];
+/** The connections the tests open themselves, to send a body's chunks as they choose. */
+const connections: Socket[] = [];
 
 afterEach(async () => {
   for (const client of clients.splice(0)) client.destroy();
+  for (const connection of connections.splice(0)) connection.destroy();
   if (installed !== undefined) {
     const { guard, server } = installed;
     installed = undefined;
@@ -56,7 +64,7 @@ afterEach(async () => {
 
 /**
  * Installs the guard on a counter of its own and starts a server behind it, as the Next.js standalone server is
- * started, whose app reads every body it is handed and answers 200 with the bytes it read. With a request timeout,
+ * started, whose app reads every body it is handed, keeps its digest, and answers 200 with the bytes it read. With a request timeout,
  * the server ends a call whose request has not fully arrived after that many milliseconds, as Node's own 300-second
  * timeout does, and checks for such calls often.
  */
@@ -64,13 +72,19 @@ async function start(requestTimeoutMs?: number): Promise<Install> {
   const bodies = createBodiesInFlight();
   const guard = installRequestGuard({ proxies: new TrustedProxies([]), url: "https://tiehall.example.com", bodies });
   const seen: string[] = [];
+  const digests: string[] = [];
   const options: http.ServerOptions =
     requestTimeoutMs === undefined ? {} : { requestTimeout: requestTimeoutMs, headersTimeout: requestTimeoutMs, connectionsCheckingInterval: 50 };
   const server = http.createServer(options, (request, response) => {
     seen.push(`${request.method} ${request.url}`);
     let bytes = 0;
-    request.on("data", (chunk: Buffer) => (bytes += chunk.length));
+    const digest = createHash("sha256");
+    request.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      digest.update(chunk);
+    });
     request.on("end", () => {
+      digests.push(digest.digest("hex"));
       response.writeHead(200, { "content-type": "text/plain" });
       response.end(`read ${bytes} bytes`);
     });
@@ -79,7 +93,7 @@ async function start(requestTimeoutMs?: number): Promise<Install> {
   server.on("connection", (socket: Socket) => sockets.push(socket));
   installed = { guard, server };
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return { port: (server.address() as AddressInfo).port, bodies, guard, seen, sockets };
+  return { port: (server.address() as AddressInfo).port, bodies, guard, seen, digests, sockets };
 }
 
 /** Waits until the check holds, failing after the given seconds. */
@@ -165,6 +179,39 @@ function send(install: Install, path: string, bytes: number, declared: boolean):
   });
 }
 
+/**
+ * Opens a connection of its own to the server and sends the head of a POST to this path whose body goes in chunks,
+ * so the test frames the body's chunks as it chooses; received() is what the server has sent back on it.
+ */
+function chunkedConnection(install: Install, path: string): { connection: Socket; received: () => string } {
+  const connection = connect(install.port, "127.0.0.1");
+  connections.push(connection);
+  let received = "";
+  connection.setEncoding("latin1");
+  connection.on("data", (text: string) => (received += text));
+  connection.on("error", () => {});
+  connection.write(`POST ${path} HTTP/1.1\r\nhost: 127.0.0.1\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n`);
+  return { connection, received: () => received };
+}
+
+/** These pieces of a body, each framed as one chunk of a body sent in chunks, without the last chunk that ends it. */
+function framed(pieces: Buffer[]): Buffer {
+  return Buffer.concat(pieces.flatMap((piece) => [Buffer.from(`${piece.length.toString(16)}\r\n`, "latin1"), piece, Buffer.from("\r\n", "latin1")]));
+}
+
+/** The last chunk, which ends a body sent in chunks. */
+const LAST_CHUNK = "0\r\n\r\n";
+
+function sha256(body: Buffer): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+/** Collects the garbage the process holds, so that its heap counts only what is still in use. */
+const collectGarbage = ((): (() => void) => {
+  setFlagsFromString("--expose-gc");
+  return runInNewContext("gc") as () => void;
+})();
+
 function expectBusy(answer: Answer): void {
   expect(answer.status).toBe(503);
   expect(answer.headers["retry-after"]).toBe("5");
@@ -237,5 +284,64 @@ describe("the request guard's cap on bodies being received at once", () => {
     const report = await send(install, "/api/v1/contract-reports", 15 * MiB, true);
     expect(report.status).toBe(200);
     expect(report.body).toBe(`read ${15 * MiB} bytes`);
+  });
+});
+
+// The guard copies a body it holds into one buffer that grows as the body's bytes arrive, to at most twice the bytes
+// that have arrived, and does not keep the chunks Node hands it: each of those is an object of its own, of some 200
+// bytes of heap however few bytes it carries, so a body sent a byte per chunk took some 200 times the memory the cap
+// counted for it, and one body well within its limit could exhaust the web role's memory while the cap counted a few
+// MiB of it.
+describe("the request guard's hold on a body", () => {
+  it("holds a body sent a byte per chunk in memory of about its size, not in an object per chunk", async () => {
+    const install = await start();
+    const bytes = MiB;
+    // A chunk of one byte for each byte of the body, and not the last chunk, so the guard holds the body.
+    const chunks = Buffer.from("1\r\nX\r\n".repeat(bytes), "latin1");
+    collectGarbage();
+    const before = process.memoryUsage().heapUsed;
+    const { connection, received } = chunkedConnection(install, "/api/v1/contract-reports");
+    connection.write(chunks);
+    await until("the body's bytes to arrive", () => install.bodies.held === bytes);
+    collectGarbage();
+    // An object per chunk took some 200 MiB of heap here.
+    expect(process.memoryUsage().heapUsed - before).toBeLessThan(16 * MiB);
+
+    connection.write(LAST_CHUNK);
+    await until("the app's answer", () => received().includes(`read ${bytes} bytes`));
+    expect(install.digests).toEqual([sha256(Buffer.alloc(bytes, "X"))]);
+    expect(install.bodies.held).toBe(0);
+  });
+
+  it("passes a held body on byte for byte, whether its request declares its length or sends it in chunks of any size", async () => {
+    const install = await start();
+    const body = randomBytes(300 * 1024 + 7);
+    const pieces: Buffer[] = [];
+    for (let at = 0, next = 0, sizes = [1, 7, 4096, 65_536, 1, 100_000]; at < body.length; next += 1) {
+      const piece = body.subarray(at, at + (sizes[next] ?? body.length));
+      pieces.push(piece);
+      at += piece.length;
+    }
+
+    const { connection, received } = chunkedConnection(install, "/webhooks/github");
+    connection.write(framed(pieces));
+    connection.write(LAST_CHUNK);
+    await until("the app's answer to the body in chunks", () => received().includes(`read ${body.length} bytes`));
+
+    const declared = post(install, "/webhooks/github", body.length);
+    const answered = new Promise<Answer>((resolve, reject) => {
+      declared.on("response", (response) => void collect(response).then(resolve, reject));
+      declared.on("error", reject);
+    });
+    for (const piece of pieces) {
+      declared.write(piece);
+      // Apart, so that the pieces tend to arrive in reads of their own.
+      await sleep(5);
+    }
+    declared.end();
+    expect((await answered).body).toBe(`read ${body.length} bytes`);
+
+    expect(install.digests).toEqual([sha256(body), sha256(body)]);
+    expect(install.bodies.held).toBe(0);
   });
 });
