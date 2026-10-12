@@ -211,6 +211,16 @@ describe("registering an API", () => {
     expect(await stored()).toEqual([expect.objectContaining({ name, repository: "acme/payments" })]);
   });
 
+  // Expected failures: D55 (59) and contract-changes allow a name of any of those characters, and the code, as the
+  // OpenAPI document and the MCP tool snapshot publish its pattern, wants a letter or digit first. No task of
+  // decisions-from-groups-15-28 changes either; the maintainer decides which one gives way (task 1.14's note).
+  for (const name of ["-payments", ".payments", "_payments"]) {
+    it.fails(`takes a name that starts with ${name[0]}, such as ${name}`, async () => {
+      expect((await install.confirm(ada, REGISTER, { name, team: pay, repository: "acme/payments" })).status).toBe(200);
+      expect(await stored()).toEqual([expect.objectContaining({ name, repository: "acme/payments" })]);
+    });
+  }
+
   it("is refused with 403 without a valid confirmation, and registers nothing", async () => {
     const from = await lastEvent();
     const input = { name: "payments-api", team: pay, repository: "acme/payments" };
