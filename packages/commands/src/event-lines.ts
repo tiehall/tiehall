@@ -81,8 +81,11 @@ export function actorWords(actor: EventActor): string {
  * Text people or agents wrote, such as a client's name, a title or a team's
  * name, as the web UI shows it: without the characters that hide or reverse
  * text (U+200B to U+200F, U+202A to U+202E, U+2060 to U+2064, U+2066 to
- * U+2069, U+FEFF and the tag characters), which the agent view strips too, so
- * that a name holding U+202E cannot reverse the words Tiehall puts after it.
+ * U+2069, U+FEFF and the tag characters), so that a name holding U+202E
+ * cannot reverse the words Tiehall puts after it, nor the control characters
+ * a terminal acts on, which a page does not show either; the agent view
+ * strips the same characters (decisions-from-groups-15-28: design.md,
+ * Decisions this change rests on: D55 (36)).
  */
 export function shownText(text: string): string {
   return stripInvisible(text);

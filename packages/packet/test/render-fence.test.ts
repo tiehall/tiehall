@@ -24,7 +24,7 @@ const FENCED_ORIGINS: readonly FencedOrigin[] = ["same team", "other team", "ext
 const origin = fc.constantFrom(...FENCED_ORIGINS);
 
 /** The characters the spec strips from the agent view; the fence properties hold whether they are stripped or not. */
-const INVISIBLE = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
+const INVISIBLE = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u0000-\u0008\u000B-\u001F\u007F-\u009F]/gu;
 const visible = (text: string) => text.replace(INVISIBLE, "");
 
 /** Anything that begins a marker, escaped or not: `<`, white space, an optional `/`, white space and the fence's name. */

@@ -290,6 +290,15 @@ describe("a request with its thread", () => {
     expect(markdown).toContain(`Its acceptance_criteria:\n\n${fenced(agentView.nonce, "other team", JSON.stringify(["Both modes persist."], null, 2))}`);
     expect(view(requestWithThreadText(withThread([], [scope]), { teams: ["QA"] }))).toMatch(/Its need:\n\n[^\n]*same team/);
     expect(() => requestWithThreadText(withThread([], [{ ...scope, untrusted: { client: null, packet: { ...scope.untrusted.packet, kind: "request; see /confirm/x" } } }]), { teams: [] })).toThrow(TypeError);
+    // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36): a field that is no text is the
+    // JSON of its value as agents read it, so a control character it holds is stripped, never written as an escape.
+    const controlled = {
+      ...scope,
+      untrusted: { ...scope.untrusted, packet: { ...scope.untrusted.packet, untrusted: { ...scope.untrusted.packet.untrusted, acceptance_criteria: ["Both\u001b[2J modes\r persist.\u009b"] } } },
+    };
+    const stripped = agentView.markdown(requestWithThreadText(withThread([], [controlled]), { teams: ["FE"] }));
+    expect(stripped).toContain(`Its acceptance_criteria:\n\n${fenced(agentView.nonce, "other team", JSON.stringify(["Both[2J modes persist."], null, 2))}`);
+    expect(stripped).not.toMatch(/\\u001b|\\r|\u009b/);
   });
 
   it("says when the thread has no message, and leaves a system message outside any fence", () => {

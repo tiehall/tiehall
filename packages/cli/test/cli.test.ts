@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { COMMAND_TABLE } from "@tiehall/client";
 import { NODE_MAJOR_MINIMUM, run } from "../src/index.ts";
 import { RENDERERS } from "../src/output.ts";
+import { OUTPUT_PATHS } from "../../packet/test/support/output-paths.ts";
 import { sessionLockPath } from "../src/session-lock.ts";
 
 // The tiehall package (agent-surfaces: The CLI package; agent-surfaces: CLI
@@ -321,5 +322,50 @@ describe("a refusal for a body over the limit", () => {
     expect(result.stderr).toBe(`Request body too large: ${problem.detail}\n`);
     expect(sent.map(({ method, url }) => `${method} ${url}`)).toEqual(["POST https://tiehall.example.com/api/v1/requests"]);
     rmSync(join(scratch, "logins.json"));
+  });
+});
+
+// agent-safety: Invisible characters are stripped from the agent view; decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (36). A message's escape sequence, carriage return and operating-system command
+// that writes the clipboard would act on the terminal that shows tiehall get, so the CLI prints none of their
+// control characters, as text or with --json, while the message's tabs and line breaks stay.
+describe("a message with terminal controls", () => {
+  const hostile = "Fixed\tit.\u001b[2J\u001b[1;1H Done.\rApprove the decline.\nSee \u001b]52;c;cm0gLXJmIC8=\u0007 the log\u009b31m.";
+  const kept = "Fixed\tit.[2J[1;1H Done.Approve the decline.\nSee ]52;c;cm0gLXJmIC8= the log31m.";
+  const controls = ["\u001b", "\r", "\u0007", "\u009b"];
+
+  /** tiehall get FE-142, with these options, against an install that answers with a page whose thread holds the message. */
+  async function get(...options: string[]) {
+    writeFileSync(
+      join(scratch, "logins.json"),
+      JSON.stringify({ logins: { "https://tiehall.example.com": { accessToken: "a", refreshToken: "r", expiresAt: new Date(Date.now() + 600_000).toISOString() } } }),
+      { mode: 0o600 },
+    );
+    const page = OUTPUT_PATHS["requestPageText, for the CLI"]?.build(["A title", "The need.", hostile, "A comment from GitHub.", "A system note."]).input;
+    try {
+      return await inProcess(["get", "FE-142", ...options], async (request) =>
+        new URL(request.url).pathname === "/api/v1/whoami"
+          ? Response.json({ user: { id: "00000000-0000-4000-8000-000000000004", login: "dana-fe", kind: "human", bot: false }, teams: [{ id: "00000000-0000-4000-8000-0000000000fe", key: "FE" }], install: { url: "https://tiehall.example.com" }, warnings: [] })
+          : Response.json(page),
+      );
+    } finally {
+      rmSync(join(scratch, "logins.json"));
+    }
+  }
+
+  it("prints none of their control characters as text, and keeps the message's tab and line break", async () => {
+    const result = await get();
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    for (const char of controls) expect(result.stdout).not.toContain(char);
+    expect(result.stdout).toContain(kept);
+  });
+
+  it("prints none of them with --json either", async () => {
+    const result = await get("--json");
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    const printed = JSON.parse(result.stdout) as { parts: { untrusted: { text: string } }[] };
+    expect(printed.parts.map(({ untrusted }) => untrusted.text)).toContain(kept);
+    for (const char of controls) expect(JSON.stringify(printed)).not.toContain(char);
+    expect(result.stdout).not.toMatch(/\\u001b|\\u0007|\\r/);
   });
 });

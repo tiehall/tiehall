@@ -150,9 +150,15 @@ async function writerOf(
   return writer === undefined || writer.teamId === null || writer.teamKey === null ? null : { id: writer.teamId, key: writer.teamKey };
 }
 
-/** The text of a packet field: a text as it is, anything else as its JSON. */
+/**
+ * The text of a packet field: a text as it is, anything else as its JSON, made
+ * from its value as agents read it, so a control character the JSON would
+ * write as an escape, such as \u001b, is stripped like every other one
+ * (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (36)).
+ */
 function fieldText(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return typeof value === "string" ? value : JSON.stringify(agentJson(value), null, 2);
 }
 
 /** The parts of the packet: one for each field the revision carries, with the team that wrote its text. */

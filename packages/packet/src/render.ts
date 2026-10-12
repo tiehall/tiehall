@@ -37,8 +37,15 @@
 // characters and directional marks (U+200B–U+200F), bidirectional embeddings
 // and overrides (U+202A–U+202E), invisible operators and the word joiner
 // (U+2060–U+2064), bidirectional isolates (U+2066–U+2069) and the zero-width
-// no-break space (U+FEFF). Stripping comes before escaping, so a marker that
-// only stripping completes is escaped too. In JSON, the keys of objects are
+// no-break space (U+FEFF); and the control characters a terminal acts on
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (36); its design.md, Technical decisions: T5): the C0 controls but tab
+// and line feed (U+0000–U+0008, U+000B–U+001F), DEL (U+007F) and the C1
+// controls (U+0080–U+009F), so no escape sequence, carriage return or
+// operating-system command, such as OSC 52, which writes the clipboard, from
+// text Tiehall did not generate reaches a terminal that shows the CLI's
+// output or a model. Stripping comes before escaping, so a marker that only
+// stripping completes is escaped too. In JSON, the keys of objects are
 // stripped as well. What people wrote is stored as they wrote it; only what
 // agents read leaves these characters out.
 //
@@ -90,8 +97,8 @@ export interface AgentView {
   json<T>(value: T): T;
 }
 
-/** The characters stripped from every string agents read. */
-const INVISIBLE = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
+/** The characters stripped from every string agents read: the invisible ones, and the controls a terminal acts on but tab and line feed. */
+const INVISIBLE = /[\u{E0000}-\u{E007F}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u0000-\u0008\u000B-\u001F\u007F-\u009F]/gu;
 
 /** A string without the characters stripped from the agent view. */
 export function stripInvisible(text: string): string {

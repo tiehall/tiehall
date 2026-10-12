@@ -57,8 +57,8 @@ const readInTheWebUi = async (id = messageId) => {
   if (!result.ok) throw new Error(`messages.get answered ${result.problem.status}`);
   return result.output;
 };
-/** The original body as agents read it: without its zero-width space. */
-const ORIGINAL_FOR_AGENTS = ORIGINAL.replace("\u200B", "");
+/** The original body as agents read it: without its zero-width space and its carriage return (decisions-from-groups-15-28, D55 (36)), its tab kept. */
+const ORIGINAL_FOR_AGENTS = ORIGINAL.replace("\u200B", "").replace("\r", "");
 
 /** Every stored version's bytes, as the database holds them. */
 async function storedVersions(): Promise<{ version: number; bytes: Buffer }[]> {

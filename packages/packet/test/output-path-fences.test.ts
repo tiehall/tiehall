@@ -43,6 +43,11 @@ const STRIPPED_RANGES: readonly (readonly [number, number])[] = [
   [0x2060, 0x2064],
   [0x2066, 0x2069],
   [0xfeff, 0xfeff],
+  // The control characters a terminal acts on (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36)).
+  [0x0000, 0x0008],
+  [0x000b, 0x001f],
+  [0x007f, 0x007f],
+  [0x0080, 0x009f],
 ];
 const STRIPPED = STRIPPED_RANGES.flatMap(([first, last]) => Array.from({ length: last - first + 1 }, (_, index) => String.fromCodePoint(first + index)));
 const isStripped = (char: string) => STRIPPED.includes(char);

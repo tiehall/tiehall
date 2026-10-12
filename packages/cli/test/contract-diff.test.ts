@@ -32,6 +32,11 @@ const STRIPPED_RANGES: readonly (readonly [number, number])[] = [
   [0x2060, 0x2064],
   [0x2066, 0x2069],
   [0xfeff, 0xfeff],
+  // The control characters a terminal acts on (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36)).
+  [0x0000, 0x0008],
+  [0x000b, 0x001f],
+  [0x007f, 0x007f],
+  [0x0080, 0x009f],
 ];
 const isStripped = (char: string) => STRIPPED_RANGES.some(([first, last]) => (char.codePointAt(0) ?? 0) >= first && (char.codePointAt(0) ?? 0) <= last);
 const visible = (text: string) => [...text].filter((char) => !isStripped(char)).join("");

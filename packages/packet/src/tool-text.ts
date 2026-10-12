@@ -21,7 +21,7 @@
 // and stays outside any fence.
 
 import { proposalText, type ProposalJson } from "./proposals.ts";
-import type { AgentText, FencedOrigin } from "./render.ts";
+import { agentJson, type AgentText, type FencedOrigin } from "./render.ts";
 
 /** Who reads: the keys of the reader's teams, by which each text's origin is decided. */
 export interface Reader {
@@ -316,7 +316,8 @@ function pendingProposalTexts(proposal: ProposalJson, packetOrigin: FencedOrigin
     for (const field of PACKET_FIELDS) {
       const value = fields[field];
       if (value === undefined) continue;
-      texts.push({ origin: "tiehall", text: `Its ${field}:` }, { origin: packetOrigin, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
+      // A field that is no text is its JSON, made from its value as agents read it, so no control character stays as an escape (D55 (36)).
+      texts.push({ origin: "tiehall", text: `Its ${field}:` }, { origin: packetOrigin, text: typeof value === "string" ? value : JSON.stringify(agentJson(value), null, 2) });
     }
   }
   return texts;

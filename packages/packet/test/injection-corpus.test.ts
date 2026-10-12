@@ -7,7 +7,10 @@ import { agentJson, closingMarker, createAgentView, FENCE_NAME, fencePreamble, o
 // view). Each entry of injection-corpus.json is an attempt to escape the fence
 // or to hide text from a person: fake closing markers, a guessed nonce, a fake
 // preamble, markers split by invisible characters, text in Unicode tag
-// characters, bidirectional overrides and an attempt to leave a JSON string.
+// characters, bidirectional overrides, an attempt to leave a JSON string, and
+// the escape sequences, carriage returns and operating-system commands a
+// terminal acts on (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (36)).
 // Rendered as markdown, each entry stays in one fence, with every marker it
 // holds escaped; rendered as JSON, it stays under its untrusted object; and in
 // both views, no invisible character of the spec's list is left.
@@ -26,7 +29,11 @@ const STRIPPED_RANGES: readonly [number, number][] = [
   [0x202a, 0x202e],
   [0x2060, 0x2064],
   [0x2066, 0x2069],
-  [0xfeff, 0xfeff],
+  [0xfeff, 0xfeff],  // The control characters a terminal acts on (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36)).
+  [0x0000, 0x0008],
+  [0x000b, 0x001f],
+  [0x007f, 0x007f],
+  [0x0080, 0x009f],
 ];
 const isStripped = (codePoint: number) => STRIPPED_RANGES.some(([first, last]) => codePoint >= first && codePoint <= last);
 const visible = (text: string) => [...text].filter((char) => !isStripped(char.codePointAt(0) ?? 0)).join("");

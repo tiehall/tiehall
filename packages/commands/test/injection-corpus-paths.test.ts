@@ -153,7 +153,8 @@ async function readUrl(person: McpPerson, path: string): Promise<string> {
 function expectRequestPageFenced(fences: readonly Fence[], entry: CorpusEntry, title: string, what: string): void {
   expectFenced(fences, title, "other team", `${what}, its title`);
   expectFenced(fences, entry.text, "other team", `${what}, its need`);
-  expectFenced(fences, JSON.stringify([entry.text], null, 2), "other team", `${what}, its acceptance criteria`);
+  // A field that is no text is the JSON of its value as agents read it, so a control character it holds is stripped, not escaped (D55 (36)).
+  expectFenced(fences, JSON.stringify([visible(entry.text)], null, 2), "other team", `${what}, its acceptance criteria`);
   expectFenced(fences, entry.text, "same team", `${what}, FE's comment`);
   // QA's comment: as other-team text, a second fence beside the need's.
   const others = fences.filter((fence) => fence.origin === "other team" && visible(unescapeMarkers(fence.content)) === visible(unescapeMarkers(entry.text)));
@@ -172,7 +173,7 @@ describe.each(CORPUS.map((entry, index) => ({ ...entry, index })))("$name", (ent
     expect(page.request.key).toBe(request().key);
     expect(page.request.untrusted.title).toBe(visible(request().title));
     expect(page.parts.map((part) => part.untrusted.text)).toEqual(
-      expect.arrayContaining([visible(entry.text), visible(JSON.stringify([entry.text], null, 2)), visible(entry.text)]),
+      expect.arrayContaining([visible(entry.text), JSON.stringify([visible(entry.text)], null, 2), visible(entry.text)]),
     );
   });
 

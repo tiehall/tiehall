@@ -31,7 +31,11 @@ export const STRIPPED_RANGES: readonly (readonly [number, number])[] = [
   [0x202a, 0x202e],
   [0x2060, 0x2064],
   [0x2066, 0x2069],
-  [0xfeff, 0xfeff],
+  [0xfeff, 0xfeff],  // The control characters a terminal acts on (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36)).
+  [0x0000, 0x0008],
+  [0x000b, 0x001f],
+  [0x007f, 0x007f],
+  [0x0080, 0x009f],
 ];
 
 const isStripped = (codePoint: number) => STRIPPED_RANGES.some(([first, last]) => codePoint >= first && codePoint <= last);
