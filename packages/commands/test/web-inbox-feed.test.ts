@@ -184,6 +184,64 @@ describe("the web inbox page", () => {
   });
 });
 
+// The WARN digests of the standing list (contract-changes: Potentially breaking changes go to a daily digest;
+// decisions-from-groups-15-28, D55 (69), (70)): each gives each API's count of WARN-level changes, its name and its
+// provider pull request's link, never the changes' text, with a form that dismisses it from the reader's list alone.
+describe("the web inbox page's WARN digests", () => {
+  let fay: WebSessionCaller;
+
+  /** FE's WARN digest of yesterday, with one WARN-level change to payments-api in acme/payments#310, as an update records it. */
+  async function yesterdaysDigest(): Promise<string> {
+    fay = sessionOf(await addUser(install.owner, { login: "fay" }));
+    const { rows: fe } = await install.owner.query<{ id: string }>("SELECT id FROM teams WHERE key = 'FE'");
+    const team = fe[0]?.id ?? "";
+    await joinTeams(install.owner, fay.userId, team);
+    const { rows: api } = await install.owner.query<{ id: string }>(
+      `INSERT INTO apis (org_id, name, provider_team_id, repository_id, repository_owner_id, repository_full_name, registered_by)
+         SELECT orgs.id, 'payments-api', teams.id, 7001, 7000, 'acme/payments', $1 FROM orgs, teams WHERE teams.key = 'BE' RETURNING id`,
+      [lee.userId],
+    );
+    const { rows: set } = await install.owner.query<{ id: string }>(
+      "INSERT INTO contract_change_sets (org_id, api_id, repository_id, pull_request_number) SELECT org_id, id, 7001, 310 FROM apis WHERE id = $1 RETURNING id",
+      [api[0]?.id],
+    );
+    const { rows: report } = await install.owner.query<{ id: string }>(
+      `INSERT INTO contract_reports (org_id, api_id, repository_id, repository_owner_id, job_workflow_ref, pull_request_number, base_ref, base_sha, head_ref, head_sha, engine_name, engine_version, changes)
+         SELECT org_id, id, 7001, 7000, 'acme/payments/.github/workflows/contract.yml@refs/heads/main', 310, 'main', $2, 'refunds', $3, 'oasdiff', '1.32.1', $4 FROM apis WHERE id = $1 RETURNING id`,
+      [api[0]?.id, "a".repeat(40), "b".repeat(40), JSON.stringify([{ id: "request-parameter-removed", level: "WARN", operation: "GET /payments" }])],
+    );
+    await install.owner.query(
+      "INSERT INTO contract_warn_digest_entries (org_id, team_id, change_set_id, day, report_id, recorded_at) SELECT org_id, $1, id, current_date - 1, $2, now() - interval '1 day' FROM contract_change_sets WHERE id = $3",
+      [team, report[0]?.id, set[0]?.id],
+    );
+    return team;
+  }
+
+  /** The hidden fields of the page's form that dismisses a WARN digest. */
+  function dismissForm(html: string): Record<string, string> {
+    const forms = [...html.matchAll(/<form method="post" action="\/inbox">([\s\S]*?)<\/form>/g)].map(([, form]) => form ?? "");
+    const form = forms.find((each) => each.includes('name="action" value="dismiss_warn_digest"')) ?? "";
+    return Object.fromEntries([...form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map(([, name, value]) => [name ?? "", value ?? ""]));
+  }
+
+  it("gives the API's count, name and pull request link and no change text, and its form dismisses it from the reader's list alone", async () => {
+    const team = await yesterdaysDigest();
+    const { html } = await page(dana);
+    expect(html).toContain("payments-api in acme/payments#310: 1 potentially breaking change");
+    expect(html).toContain('<a href="https://github.com/acme/payments/pull/310" rel="noreferrer">the provider pull request</a>');
+    for (const text of ["request-parameter-removed", "GET /payments"]) expect(html).not.toContain(text);
+    const fields = dismissForm(html);
+    expect(fields).toMatchObject({ action: "dismiss_warn_digest", team });
+
+    const answer = await post(dana, fields);
+    expect(answer.status).toBe(303);
+    expect(answer.headers.get("location")).toBe(INBOX_PATH);
+
+    expect((await page(dana)).html).not.toContain("payments-api in acme/payments#310");
+    expect((await page(fay)).html).toContain("payments-api in acme/payments#310: 1 potentially breaking change");
+  });
+});
+
 // requester-loop: What whats_new covers, "The user's confirmation in the web UI reaches their agent" and "The user's
 // answer in the web UI reaches their agent's readers"; requester-loop: Proposal outcomes reach the proposing agent, "A
 // withdrawal through the agent is not news to it", "The accountable human's own rejection reaches their agent only"

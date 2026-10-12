@@ -401,7 +401,7 @@ export function warnDigestText({ team, day, changeSets, inbox, settings }: { tea
   }
   lines.push(
     "",
-    `The standing list of your web inbox lists each change, with the operation it touches: ${inbox}`,
+    `Each pull request lists its changes. This digest stays in the standing list of your web inbox until you dismiss it, or for 7 days: ${inbox}`,
     `This email comes with your daily digest; turn the digest off in your email settings: ${settings}`,
     "",
   );

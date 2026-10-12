@@ -15,8 +15,11 @@ import { teamRef } from "./requests.ts";
 // declarations of their teams that they consume an API, while each waits
 // (contract-changes: Declarations are re-confirmed every 90 days), and their
 // teams' daily WARN digests, newest first, each listed once its UTC day has
-// ended (contract-changes: Potentially breaking changes go to a daily
-// digest). Only the web UI reads it.
+// ended, until the person dismisses it or for 7 days, with each API's count of
+// WARN-level changes, its name and its provider pull request, never the
+// changes' text (contract-changes: Potentially breaking changes go to a daily
+// digest; decisions-from-groups-15-28, D55 (69), (70)). Only the web UI reads
+// it, and dismisses a WARN digest from the person's own list.
 
 export const standingList = defineCommand({
   id: "inbox.standing_list",
@@ -57,15 +60,13 @@ export const standingList = defineCommand({
         day: z.iso.date(),
         /** What the digest says, in Tiehall's words. */
         text: z.string(),
-        /** Each change set whose WARN-level changes opened no request that day: the API, the provider pull request and the changes. */
+        /** Each change set whose WARN-level changes opened no request that day: the API, the provider pull request and how many changes. */
         changeSets: z.array(
           z.object({
             api: z.string(),
             pullRequest: z.object({ repository: z.string(), number: z.int(), url: z.string() }),
-            untrusted: z.object({
-              /** The WARN-level changes of the day's latest report, as the diff engine classified them: its id for each and the operation it touches. */
-              changes: z.array(z.object({ id: z.string(), operation: z.string() })),
-            }),
+            /** How many WARN-level changes the day's latest report has. */
+            warnChanges: z.int(),
           }),
         ),
       }),
@@ -91,4 +92,26 @@ export const standingList = defineCommand({
   stability: "alpha",
 });
 
-export const INBOX_COMMANDS = [standingList];
+// Dismissing a WARN digest from the standing list (contract-changes:
+// Potentially breaking changes go to a daily digest; decisions-from-groups-
+// 15-28, D55 (69)). A member of the team dismisses the team's digest of a day
+// from their own list; the other members keep it. It needs no confirmation
+// step, as it changes nothing but the person's own list, and only the web UI
+// offers it.
+
+export const dismissWarnDigest = defineCommand({
+  id: "inbox.dismiss_warn_digest",
+  summary: "Dismiss one of your team's daily WARN digests from the standing list of your web inbox; the team's other members keep it.",
+  input: z.object({
+    team: z.uuid().meta({ description: "The team the digest is for, one you are a member of." }),
+    day: z.iso.date().meta({ description: "The UTC day the digest covers." }),
+  }),
+  output: z.object({ team: teamRef, day: z.iso.date() }),
+  scopes: [],
+  commitment: false,
+  confirm: false,
+  surfaces: [],
+  stability: "alpha",
+});
+
+export const INBOX_COMMANDS = [standingList, dismissWarnDigest];

@@ -7,6 +7,7 @@ import { CONTRACT_ATTACHMENT_HANDLERS } from "./contract-attachments.ts";
 import { CONTRACT_FAN_OUT_HANDLERS } from "./contract-fan-out.ts";
 import { CONTRACT_REPORT_HANDLERS } from "./contract-reports.ts";
 import { CONTRACT_ROUTING_HANDLERS } from "./contract-routing.ts";
+import { WARN_DIGEST_HANDLERS } from "./contract-warn-digests.ts";
 import { ACTIVITY_LOG_HANDLERS } from "./activity-log.ts";
 import { AGENT_GRANT_HANDLERS } from "./agent-grants.ts";
 import { DEVICE_APPROVAL_HANDLERS } from "./device-approval.ts";
@@ -90,6 +91,7 @@ export const HANDLERS: Handlers = {
   ...PROVIDER_PULL_REQUEST_HANDLERS,
   ...CONTRACT_ATTACHMENT_HANDLERS,
   ...CONTRACT_ROUTING_HANDLERS,
+  ...WARN_DIGEST_HANDLERS,
   ...CONTRACT_FAN_OUT_HANDLERS,
   ...TRACKER_MAPPING_HANDLERS,
   ...TRACKER_CHANGE_HANDLERS,

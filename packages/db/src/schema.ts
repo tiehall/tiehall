@@ -2967,6 +2967,38 @@ export const contractWarnDigestEmails = pgTable(
   ],
 );
 
+// A member's dismissal of their team's daily WARN digest of a day from the
+// standing list of their web inbox (contract-changes: Potentially breaking
+// changes go to a daily digest; decisions-from-groups-15-28, D55 (69)): the
+// digest leaves that member's list alone, and every member's 7 days after its
+// day ended.
+export const contractWarnDigestDismissals = pgTable(
+  "contract_warn_digest_dismissals",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    userId: uuid("user_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    /** The UTC day the digest covers. */
+    day: date("day").notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.teamId, table.day] }),
+    foreignKey({
+      name: "contract_warn_digest_dismissals_user_fk",
+      columns: [table.orgId, table.userId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    foreignKey({
+      name: "contract_warn_digest_dismissals_team_fk",
+      columns: [table.orgId, table.teamId],
+      foreignColumns: [teams.orgId, teams.id],
+    }),
+  ],
+);
+
 // The tracker each team mirrors its requests into (tracker-mirrors: Each team
 // maps to one tracker; tracker-mirrors: Mirror issues are created on claim by
 // default; design.md, Design rules: Tracker mirrors). One row per team that

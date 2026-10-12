@@ -1,4 +1,4 @@
-import { readInboxUpdates, reconfirmConsumer, rejectProposal, standingList, type proposal } from "@tiehall/catalog";
+import { dismissWarnDigest, readInboxUpdates, reconfirmConsumer, rejectProposal, standingList, type proposal } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { commitmentPhrase } from "./email.ts";
@@ -101,7 +101,7 @@ interface StandingList {
     team: { id: string; key: string };
     day: string;
     text: string;
-    changeSets: { api: string; pullRequest: { repository: string; number: number; url: string }; untrusted: { changes: { id: string; operation: string }[] } }[];
+    changeSets: { api: string; pullRequest: { repository: string; number: number; url: string }; warnChanges: number }[];
   }[];
   reconfirmations: { api: { id: string; name: string }; team: { id: string; key: string }; text: string }[];
 }
@@ -233,26 +233,24 @@ function standingSections(list: StandingList, csrf: string, now: string): string
     list.reminders.length === 0
       ? []
       : [panelHtml("reminders-heading", "Reminders", ['        <ul class="plain-list" id="reminders">', ...list.reminders.map(({ text }) => `          <li>${escapeHtml(text)}</li>`), "        </ul>"])];
-  // The changes come from the diff engine in the provider's CI: text, escaped, as everything people and other systems wrote.
+  // Each API's count of WARN-level changes, its name and its pull request, never the changes' text, which the provider's
+  // CI wrote; a form dismisses the digest from the reader's own list (decisions-from-groups-15-28, D55 (69), (70)).
   const warnDigests =
     list.warnDigests.length === 0
       ? []
       : [
           panelHtml("warn-digests-heading", "WARN digests", [
             '        <ul class="plain-list" id="warn-digests">',
-            ...list.warnDigests.map(({ text, changeSets }) =>
+            ...list.warnDigests.map(({ team, day, text, changeSets }) =>
               [
                 "          <li>",
                 `            <p>${escapeHtml(text)}</p>`,
                 "            <ul>",
-                ...changeSets.map(({ api, pullRequest, untrusted }) =>
-                  [
-                    `              <li>${escapeHtml(`${api} in ${pullRequest.repository}#${pullRequest.number}`)} (<a href="${escapeHtml(pullRequest.url)}" rel="noreferrer">the provider pull request</a>):`,
-                    `                <ul>${untrusted.changes.map(({ id, operation }) => `<li>${escapeHtml(`${id}: ${operation}`)}</li>`).join("")}</ul>`,
-                    "              </li>",
-                  ].join("\n"),
+                ...changeSets.map(({ api, pullRequest, warnChanges }) =>
+                  `              <li>${escapeHtml(`${api} in ${pullRequest.repository}#${pullRequest.number}: ${warnChanges} potentially breaking change${warnChanges === 1 ? "" : "s"}`)} (<a href="${escapeHtml(pullRequest.url)}" rel="noreferrer">the provider pull request</a>)</li>`,
                 ),
                 "            </ul>",
+                postForm(INBOX_PATH, { action: "dismiss_warn_digest", team: team.id, day }, csrf, `Dismiss ${team.key}'s WARN digest of ${day}`, "            ", "secondary"),
                 "          </li>",
               ].join("\n"),
             ),
@@ -303,7 +301,14 @@ export function createInboxRoute(options: PageRouteOptions): PageRoute {
         await write(reconfirmConsumer.id, { api: form.get("api") ?? "", team: form.get("team") ?? "" });
         return seeOther(INBOX_PATH);
       }
-      if (action !== "acknowledge") throw new Refusal("invalid-input", "The form acknowledges the updates it shows, rejects a proposal, or re-confirms a declaration.");
+      if (action === "dismiss_warn_digest") {
+        // Dismissing a WARN digest changes only the reader's own list, so it needs no confirmation step.
+        await write(dismissWarnDigest.id, { team: form.get("team") ?? "", day: form.get("day") ?? "" });
+        return seeOther(INBOX_PATH);
+      }
+      if (action !== "acknowledge") {
+        throw new Refusal("invalid-input", "The form acknowledges the updates it shows, rejects a proposal, re-confirms a declaration, or dismisses a WARN digest.");
+      }
       const upTo = form.get("upTo") ?? "";
       if (!/^[1-9][0-9]{0,15}$/.test(upTo)) throw new Refusal("invalid-input", "The form names the last update it shows by its number.");
       await write(readInboxUpdates.id, { acknowledge: Number(upTo), limit: 1 });

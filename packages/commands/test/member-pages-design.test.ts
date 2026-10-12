@@ -99,7 +99,7 @@ async function inboxOf(reader: WebSessionCaller): Promise<{ html: string; waitin
           team: { id: randomUUID(), key: "FE" },
           day: "2026-10-10",
           text: "FE's WARN digest of 2026-10-10: 1 potentially breaking change.",
-          changeSets: [{ api: "payments-api", pullRequest: { repository: "acme/payments", number: 88, url: "https://github.com/acme/payments/pull/88" }, untrusted: { changes: [{ id: "response-property-type-changed", operation: "GET /orders" }] } }],
+          changeSets: [{ api: "payments-api", pullRequest: { repository: "acme/payments", number: 88, url: "https://github.com/acme/payments/pull/88" }, warnChanges: 1 }],
         },
       ],
       reconfirmations: [{ api: { id: randomUUID(), name: "payments-api" }, team: { id: randomUUID(), key: "FE" }, text: "FE declared that it consumes payments-api, last confirmed on 2026-07-01." }],

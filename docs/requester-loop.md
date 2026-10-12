@@ -23,7 +23,7 @@ Your web inbox, at `/inbox`, has two parts. The update feed holds your updates, 
 - each proposal that waits for a confirmation you may give, with a link to its confirm page and a form that rejects it;
 - the receipts of your confirmations and undos, each with its undo link while the commitment can still be undone;
 - the reminders that your personal access tokens expire soon;
-- for each of your teams, its daily digest of potentially breaking API changes, and its requests to re-confirm the APIs it consumes, as [Contract changes](contract-changes.md#the-consumer-map) describes.
+- for each of your teams, its daily digest of potentially breaking API changes, until you dismiss it or for 7 days, and its requests to re-confirm the APIs it consumes, as [Contract changes](contract-changes.md#the-consumer-map) describes.
 
 ## Questions and answers
 

@@ -1,6 +1,20 @@
-import type { ContractSection } from "@tiehall/catalog";
-import { apis, contractChangeSets, contractReports, contractWarnDigestEmails, contractWarnDigestEntries, members, teamMembers, teams, users } from "@tiehall/db";
-import { and, asc, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
+import { dismissWarnDigest, type ContractSection } from "@tiehall/catalog";
+import { Refusal } from "@tiehall/core";
+import {
+  apis,
+  contractChangeSets,
+  contractReports,
+  contractWarnDigestDismissals,
+  contractWarnDigestEmails,
+  contractWarnDigestEntries,
+  members,
+  teamMembers,
+  teams,
+  users,
+} from "@tiehall/db";
+import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
+import { defineHandler, type Handlers } from "./execute.ts";
+import { actingUserOf } from "./request-changes.ts";
 import { apiNameText, installLink, pullRequestText, serverDay, teamKey, WARN_DIGEST, warnDigestText } from "./email.ts";
 import { EMAIL_SETTINGS_PATH } from "./email-settings-page.ts";
 import { INBOX_PATH } from "./inbox-page.ts";
@@ -24,13 +38,17 @@ import type { WorkerJob } from "./worker.ts";
 // A team's digest of a day is its entries of that day. Once the day has ended,
 // it is listed in the standing list of the web inbox of each member of the
 // team, newest day first, with each change set's API, provider pull request
-// and WARN-level changes, and it stays listed. When SMTP is set, the worker's
+// and how many WARN-level changes it has, never the changes' text, which the
+// provider's CI wrote; it stays listed until the member dismisses it, which
+// leaves the other members' lists as they are, or until 7 days after its day
+// ended, whichever comes first (decisions-from-groups-15-28, D55 (69), (70)).
+// When SMTP is set, the worker's
 // hourly job emails the digest of the day that ended last to each member of
 // the team who has an address and the daily digest on, which also covers this
 // digest, once: it records each email in the transaction that sends it, so a
 // send that fails is sent again by the next run. The email names each change
 // set's API, provider pull request and how many WARN-level changes it has, in
-// Tiehall's words, and leads to the standing list for the changes themselves,
+// Tiehall's words, and leads to the pull requests for the changes themselves,
 // which the diff engine's output in the provider's CI named.
 
 /** The UTC day of a time, as YYYY-MM-DD. */
@@ -57,12 +75,15 @@ export async function recordWarnDigestEntries(
     });
 }
 
-/** A change set of a WARN digest, as the standing list shows it. */
+/** A change set of a WARN digest, as the standing list shows it: the API, the provider pull request and how many WARN-level changes. */
 export interface WarnDigestChangeSetView {
   api: string;
   pullRequest: { repository: string; number: number; url: string };
-  untrusted: { changes: { id: string; operation: string }[] };
+  warnChanges: number;
 }
+
+/** How many days a WARN digest stays in the standing list after its day ended, unless the member dismisses it first. */
+export const WARN_DIGEST_LISTED_DAYS = 7;
 
 /** A team's daily WARN digest, as the standing list shows it. */
 export interface WarnDigestView {
@@ -102,10 +123,19 @@ export function warnDigestHeading(team: string, day: string): string {
   return `${team}'s WARN digest of ${day} (UTC): potentially breaking changes reported that day to APIs ${team} declared it consumes, which open no request while each API's WARN switch is off.`;
 }
 
-/** The WARN digests of the user's teams, of the UTC days that have ended by now, newest day first. */
+/**
+ * The WARN digests of the user's teams, newest day first: those of the UTC
+ * days that have ended by now, less than 7 days ago, which the user has not
+ * dismissed.
+ */
 export async function warnDigestViews(context: Pick<OrgContext, "tx" | "orgId">, userId: string, now: Date): Promise<WarnDigestView[]> {
   const mine = sql`EXISTS (SELECT 1 FROM ${teamMembers} m WHERE m.org_id = ${contractWarnDigestEntries.orgId} AND m.team_id = ${contractWarnDigestEntries.teamId} AND m.user_id = ${userId})`;
-  const entries = await digestEntries(context, and(mine, lt(contractWarnDigestEntries.day, dayOf(now))));
+  const kept = sql`NOT EXISTS (SELECT 1 FROM ${contractWarnDigestDismissals} d
+                                WHERE d.org_id = ${contractWarnDigestEntries.orgId} AND d.team_id = ${contractWarnDigestEntries.teamId}
+                                  AND d.day = ${contractWarnDigestEntries.day} AND d.user_id = ${userId})`;
+  // A day's digest is produced when the day ends, and listed for 7 days from then: the days from 7 days ago until yesterday.
+  const earliest = dayOf(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - WARN_DIGEST_LISTED_DAYS)));
+  const entries = await digestEntries(context, and(mine, kept, lt(contractWarnDigestEntries.day, dayOf(now)), gte(contractWarnDigestEntries.day, earliest)));
   const digests: WarnDigestView[] = [];
   for (const entry of entries) {
     let digest = digests.at(-1);
@@ -121,7 +151,7 @@ export async function warnDigestViews(context: Pick<OrgContext, "tx" | "orgId">,
     digest.changeSets.push({
       api: entry.api,
       pullRequest: { repository: entry.repository, number: entry.number, url: `https://github.com/${entry.repository}/pull/${entry.number}` },
-      untrusted: { changes: entry.warn },
+      warnChanges: entry.warn.length,
     });
   }
   return digests;
@@ -213,4 +243,23 @@ export const emailWarnDigests: WorkerJob<Record<string, never>> = {
       });
     }
   },
+};
+
+export const WARN_DIGEST_HANDLERS: Handlers = {
+  [dismissWarnDigest.id]: defineHandler(dismissWarnDigest, async ({ team, day }, context) => {
+    const userId = actingUserOf(context);
+    const [found] = await context.tx
+      .select({ id: teams.id, key: teams.key, member: teamMembers.userId })
+      .from(teams)
+      .leftJoin(teamMembers, and(eq(teamMembers.orgId, teams.orgId), eq(teamMembers.teamId, teams.id), eq(teamMembers.userId, userId)))
+      .where(and(eq(teams.orgId, context.orgId), eq(teams.id, team)));
+    if (found === undefined) throw new Refusal("record-not-found", "There is no such team.");
+    if (found.member === null) throw new Refusal("forbidden", `Only a member of ${found.key} may dismiss ${found.key}'s WARN digests.`);
+    // Dismissing it again changes nothing.
+    await context.tx
+      .insert(contractWarnDigestDismissals)
+      .values({ orgId: context.orgId, userId, teamId: found.id, day, dismissedAt: context.now() })
+      .onConflictDoNothing();
+    return { team: { id: found.id, key: found.key }, day };
+  }),
 };

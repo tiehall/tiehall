@@ -116,7 +116,7 @@ interface WarnDigest {
   team: { key: string };
   day: string;
   text: string;
-  changeSets: { api: string; pullRequest: { repository: string; number: number; url: string }; untrusted: { changes: { id: string; operation: string }[] } }[];
+  changeSets: { api: string; pullRequest: { repository: string; number: number; url: string }; warnChanges: number }[];
 }
 
 async function warnDigestsOf(userId: string): Promise<WarnDigest[]> {
@@ -158,14 +158,17 @@ describe("a report with a WARN-level change and no ERR-level change, while the W
     nextDay();
     for (const userId of [mehmet, ayse]) {
       const digest = (await warnDigestsOf(userId)).find((listed) => listed.day === day && listed.team.key === "FE");
+      // Each API's count of WARN-level changes, its name and its pull request's link, and never the changes' own text
+      // (decisions-from-groups-15-28, D55 (70)).
       expect(digest?.changeSets).toEqual([
         {
           api: "payments-api",
           pullRequest: { repository: "acme/payments", number: pullRequest, url: `https://github.com/acme/payments/pull/${pullRequest}` },
-          untrusted: { changes: [{ id: "request-parameter-removed", operation: "GET /payments" }] },
+          warnChanges: 1,
         },
       ]);
       expect(digest?.text).toContain(`FE's WARN digest of ${day}`);
+      for (const text of ["request-parameter-removed", "GET /payments"]) expect(JSON.stringify(digest)).not.toContain(text);
     }
     // MOBILE's digest is MOBILE's members', not FE's.
     expect((await warnDigestsOf(mehmet)).filter(({ day: listed, team }) => listed === day && team.key === "MOBILE")).toEqual([]);
@@ -187,6 +190,8 @@ describe("a report with a WARN-level change and no ERR-level change, while the W
     const mehmetsEmail = sent.find(({ to }) => to === "mehmet@example.com");
     expect(mehmetsEmail?.text).toContain(`payments-api in acme/payments#${pullRequest}: 1 potentially breaking change`);
     expect(mehmetsEmail?.text).toContain(`https://github.com/acme/payments/pull/${pullRequest}`);
+    for (const text of ["request-parameter-removed", "GET /payments"]) expect(mehmetsEmail?.text).not.toContain(text);
+    expect(mehmetsEmail?.text).toContain(`This digest stays in the standing list of your web inbox until you dismiss it, or for 7 days: ${URL_OF_INSTALL}/inbox`);
     // Ayşe turned the digest off: no email, and the standing list still lists FE's digest.
     expect(sent.some(({ to }) => to === "ayse@example.com")).toBe(false);
     expect((await warnDigestsOf(ayse)).some((digest) => digest.day === day && digest.team.key === "FE")).toBe(true);
@@ -204,6 +209,52 @@ describe("a report with a WARN-level change and no ERR-level change, while the W
 
     expect(emails()).toEqual([]);
     expect((await warnDigestsOf(mehmet)).some((digest) => digest.day === day)).toBe(true);
+  });
+});
+
+// A team's WARN digest stays in a member's standing list until that member dismisses it, or until 7 days after it was
+// produced, when its UTC day ended (contract-changes: Potentially breaking changes go to a daily digest, "A WARN digest
+// leaves the standing list"; decisions-from-groups-15-28, D55 (69)).
+describe("a WARN digest in the standing list", () => {
+  /** Dismisses the team's digest of the day from the member's standing list, as the web inbox's form does. */
+  const dismiss = (userId: string, team: string, day: string) => {
+    const session = sessionOf(userId);
+    return install.web(session).write("inbox.dismiss_warn_digest", { team, day }, install.fromThePage(session));
+  };
+
+  it("leaves the standing list of the member who dismisses it, and stays in the other members' lists", async () => {
+    await pushReports(warnOnly());
+    const day = today();
+    nextDay();
+
+    expect(await dismiss(mehmet, teams["FE"] ?? "", day)).toMatchObject({ ok: true, output: { team: { key: "FE" }, day } });
+
+    expect((await warnDigestsOf(mehmet)).filter((digest) => digest.day === day)).toEqual([]);
+    expect((await warnDigestsOf(ayse)).filter((digest) => digest.day === day).map(({ team }) => team.key)).toEqual(["FE"]);
+    // Dismissing it again changes nothing.
+    expect(await dismiss(mehmet, teams["FE"] ?? "", day)).toMatchObject({ ok: true });
+  });
+
+  it("leaves every member's standing list 7 days after its day ended", async () => {
+    await pushReports(warnOnly());
+    const day = today();
+    const ended = Date.parse(`${day}T00:00:00Z`) + 24 * 3_600_000;
+
+    clock = new Date(ended + 7 * 24 * 3_600_000 - 60_000);
+    for (const userId of [mehmet, ayse]) expect((await warnDigestsOf(userId)).filter((digest) => digest.day === day), userId).toHaveLength(1);
+
+    clock = new Date(ended + 7 * 24 * 3_600_000);
+    for (const userId of [mehmet, ayse]) expect((await warnDigestsOf(userId)).filter((digest) => digest.day === day), userId).toEqual([]);
+  });
+
+  it("refuses to dismiss the digest of a team the member is not in with 403", async () => {
+    await pushReports(warnOnly());
+    const day = today();
+    nextDay();
+
+    expect(await dismiss(mehmet, teams["MOBILE"] ?? "", day)).toMatchObject({ ok: false, problem: { status: 403 } });
+    const { rows } = await install.owner.query("SELECT count(*)::int AS count FROM contract_warn_digest_dismissals WHERE user_id = $1 AND team_id = $2", [mehmet, teams["MOBILE"]]);
+    expect(rows[0]).toEqual({ count: 0 });
   });
 });
 

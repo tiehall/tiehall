@@ -17,7 +17,7 @@ Because the map is kept by hand, it can go stale, so Tiehall asks the team to re
 How a report reaches the consuming teams depends on each change's level, as the diff engine classifies it:
 
 - Breaking (ERR) changes open one request to each consuming team, with the classified changes in the packet's contract section; a later report for the same pull request updates those requests rather than opening new ones.
-- Potentially breaking (WARN) changes go to each consuming team's daily digest, in the standing list of its members' web inboxes and by email to those who keep the daily digest on, unless the API's WARN switch is on.
+- Potentially breaking (WARN) changes go to each consuming team's daily digest, in the standing list of its members' web inboxes and by email to those who keep the daily digest on, unless the API's WARN switch is on. The digest gives, for each API, how many such changes its pull request makes, its name and a link to the pull request, which shows the changes themselves. It stays in your standing list until you dismiss it, which leaves your teammates' lists as they are, or for 7 days after its day ended.
 - Informational (INFO) changes only appear in the change list of requests that exist already.
 
 One pull request opens requests to at most 10 consuming teams at once; when more teams consume the API, the first 10 are opened and the rest wait until an admin confirms them, with the confirmation step, from the banner the admins see.
