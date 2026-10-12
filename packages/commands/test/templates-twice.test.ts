@@ -363,9 +363,9 @@ const OTHERS: Record<string, Case> = {
   "provider-pull-requests.ts closeText": {
     renders: [
       ...[true, false].map((withdrawn) => () =>
-        providerPullRequests.closeText("acme/payments#310", { requestId: REQUEST.proposalId, teamId: REQUEST.marker, key: REQUEST.key, state: withdrawn ? "open" : "claimed", withdrawnOnCloseAt: null }, withdrawn),
+        providerPullRequests.closeText("acme/payments#310", { requestId: REQUEST.proposalId, teamId: REQUEST.marker, key: REQUEST.key, state: withdrawn ? "open" : "claimed", withdrawnOnCloseAt: null, withdrawnWhenGoneAt: null }, withdrawn),
       ),
-      () => providerPullRequests.closeText("acme/payments#310", { requestId: REQUEST.proposalId, teamId: REQUEST.marker, key: REQUEST.key, state: "done", withdrawnOnCloseAt: null }, false),
+      () => providerPullRequests.closeText("acme/payments#310", { requestId: REQUEST.proposalId, teamId: REQUEST.marker, key: REQUEST.key, state: "done", withdrawnOnCloseAt: null, withdrawnWhenGoneAt: null }, false),
     ],
   },
   "api-consumers.ts reconfirmationText": {

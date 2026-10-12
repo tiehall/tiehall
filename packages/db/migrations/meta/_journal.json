@@ -701,6 +701,13 @@
       "when": 1791824765433,
       "tag": "0099_record_whose_side_a_link_is_on",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1791824792964,
+      "tag": "0100_record_a_withdrawal_when_changes_go",
+      "breakpoints": true
     }
   ]
 }

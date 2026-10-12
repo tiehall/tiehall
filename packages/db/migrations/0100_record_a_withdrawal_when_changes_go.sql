@@ -1,0 +1,1 @@
+ALTER TABLE "contract_change_requests" ADD COLUMN "withdrawn_when_gone_at" timestamp with time zone;

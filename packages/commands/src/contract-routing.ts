@@ -73,8 +73,12 @@ import type { Writer } from "./write.ts";
 //   the breaking changes are gone, and which of the two the update did
 //   (contract-changes: Requests are withdrawn when the breaking changes
 //   disappear; requests: System withdrawals never touch a claimed request).
-//   A later report of the change set that brings breaking changes back opens
-//   no second request for a team, whose withdrawn request gets a notice;
+//   A later update of the change set whose changes open requests again opens
+//   a new request to each team whose request it withdrew this way, which
+//   replaces the withdrawn one, and the withdrawn one stays withdrawn
+//   (contract-changes: Requests are withdrawn when the breaking changes
+//   disappear; decisions-from-groups-15-28, D55 (68)); a request withdrawn
+//   otherwise, such as by its requester's side, gets only a notice;
 // - the changes that open requests are the report's ERR-level ones, and its
 //   WARN-level ones while the API's WARN switch is on; a report whose
 //   WARN-level changes open nothing lists them in the daily WARN digest of each
@@ -231,6 +235,8 @@ export interface ChangeSetRequest {
   state: RequestState;
   /** When the provider pull request's close without merging withdrew it; null otherwise. */
   withdrawnOnCloseAt: Date | null;
+  /** When an update withdrew it because the change set's changes no longer opened requests; null otherwise. */
+  withdrawnWhenGoneAt: Date | null;
 }
 
 /**
@@ -246,6 +252,7 @@ export async function requestsOfChangeSet({ tx, orgId }: OrgContext, changeSetId
       teamId: contractChangeRequests.teamId,
       openedAt: contractChangeRequests.openedAt,
       withdrawnOnCloseAt: contractChangeRequests.withdrawnOnCloseAt,
+      withdrawnWhenGoneAt: contractChangeRequests.withdrawnWhenGoneAt,
       state: requests.state,
       number: requests.number,
       teamKey: teams.key,
@@ -257,12 +264,13 @@ export async function requestsOfChangeSet({ tx, orgId }: OrgContext, changeSetId
     .orderBy(asc(contractChangeRequests.teamId), desc(contractChangeRequests.openedAt), desc(contractChangeRequests.requestId));
   return rows
     .sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime() || (a.requestId < b.requestId ? -1 : 1))
-    .map(({ requestId, teamId, state, number, teamKey, withdrawnOnCloseAt }) => ({
+    .map(({ requestId, teamId, state, number, teamKey, withdrawnOnCloseAt, withdrawnWhenGoneAt }) => ({
       requestId,
       teamId,
       key: formatRequestKey(teamKey, number),
       state: state as RequestState,
       withdrawnOnCloseAt,
+      withdrawnWhenGoneAt,
     }));
 }
 
@@ -301,7 +309,7 @@ export function updateText(section: ReportedContractSection, report: StoredRepor
     case "gone": {
       const gone = `The breaking changes are gone: ${pr} no longer makes a change to ${section.api} that opens requests.`;
       return outcome.withdrawn
-        ? `${listed} ${gone} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}.`
+        ? `${listed} ${gone} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}. If a later report brings breaking changes back, Tiehall opens a new request.`
         : `${listed} ${gone} ${request.key} is claimed, so Tiehall leaves it as it is.`;
     }
     case "notice":
@@ -414,11 +422,16 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
     const consumers = await consumingTeams(context, changeSet.apiId);
     await recordWarnDigestEntries(context, { changeSetId: changeSet.id, reportId: report.id, teamIds: consumers.map(({ id }) => id), now: context.now() });
   }
-  // Who may get a request: a consuming team that has none for the change set, or whose request the provider pull
-  // request's close withdrew before this report came, once the pull request is open again; nobody while it is closed.
+  // Who may get a request: a consuming team that has none for the change set, whose request the provider pull
+  // request's close withdrew before this report came, once the pull request is open again, or whose request an
+  // earlier update withdrew because its changes no longer opened requests; nobody while the pull request is closed.
   const opensFor = (teamId: string) => {
     const request = existing.find((candidate) => candidate.teamId === teamId);
-    return request === undefined || (request.withdrawnOnCloseAt !== null && current.receivedAt.getTime() >= request.withdrawnOnCloseAt.getTime());
+    return (
+      request === undefined ||
+      request.withdrawnWhenGoneAt !== null ||
+      (request.withdrawnOnCloseAt !== null && current.receivedAt.getTime() >= request.withdrawnOnCloseAt.getTime())
+    );
   };
   const candidates = opening && changeSet.providerClosedAt === null ? (await consumingTeams(context, changeSet.apiId)).filter(({ id }) => opensFor(id)) : [];
   const { letIn: toOpen, waiting } = await fanOut(context, changeSet, candidates);
@@ -471,7 +484,14 @@ async function applyUpdate(context: HandlerContext, changeSetId: string): Promis
       // No change opens requests any more: a system withdrawal of an unclaimed request; a claimed one stays as it is.
       const withdrawn = lifecycle.claimantId === null;
       await addSystemMessage(writer, request.requestId, updateText(section, current, { ...request, before }, { kind: "gone", revision: revised, withdrawn }));
-      if (withdrawn) await withdrawAsSystem(writer, request.requestId, lifecycle);
+      if (withdrawn) {
+        await withdrawAsSystem(writer, request.requestId, lifecycle);
+        // A later update whose changes open requests again opens the team a new one.
+        await writer.tx
+          .update(contractChangeRequests)
+          .set({ withdrawnWhenGoneAt: writer.now() })
+          .where(and(eq(contractChangeRequests.orgId, writer.orgId), eq(contractChangeRequests.requestId, request.requestId)));
+      }
     }
     const opened: string[] = [];
     for (const team of toOpen) {

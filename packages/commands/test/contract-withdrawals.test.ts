@@ -201,17 +201,47 @@ describe("an update that holds no change that opens requests", () => {
     expect(await proposalsOf(fe.id)).toEqual([{ kind: "decline", state: "cancelled", cancel_reason: "terminal_state" }]);
   });
 
-  it("opens no second request when the breaking changes come back, and the withdrawn one gets a notice", async () => {
+  // contract-changes: Requests are withdrawn when the breaking changes disappear, "Breaking changes that come back open
+  // a new request" (decisions-from-groups-15-28, D55 (68)).
+  it("opens a new request for the team when the breaking changes come back, and the withdrawn one stays withdrawn with no notice", async () => {
     await pushReports(changesOf("breaking"));
     await pushReports(changesOf("informational"), "c");
     const fe = await requestTo("FE");
     expect(fe.state).toBe("withdrawn");
+    const mobile = await requestTo("MOBILE");
+    const before = (await threadOf(fe.id)).length;
 
     await pushReports(changesOf("breaking"), "d");
 
-    expect(await requestsTo("FE")).toEqual([fe]);
-    const thread = await threadOf(fe.id);
-    expect(thread.at(-1)?.body).toContain("Diff updated: 0 → 2 breaking");
-    expect(thread.at(-1)?.body).toContain(`${fe.key} is withdrawn`);
+    const [withdrawn, opened, ...more] = await requestsTo("FE");
+    expect(more).toEqual([]);
+    expect(withdrawn).toEqual(fe);
+    expect(opened).toMatchObject({ state: "open", claimant_user_id: null });
+    expect(opened?.key).not.toBe(fe.key);
+    expect((await threadOf(fe.id)).at(-1)?.body).toContain("If a later report brings breaking changes back, Tiehall opens a new request.");
+    expect(await threadOf(fe.id)).toHaveLength(before);
+    // MOBILE's request, withdrawn too, is replaced the same way.
+    expect((await requestsTo("MOBILE")).map(({ id, state }) => ({ id, state }))).toEqual([{ id: mobile.id, state: "withdrawn" }, { id: expect.any(String), state: "open" }]);
+    // A later update revises the new request, not the withdrawn one.
+    await pushReports([...changesOf("breaking"), { id: "endpoint-added", level: "INFO", operation: "GET /refunds/{id}" }], "e");
+    expect(await threadOf(fe.id)).toHaveLength(before);
+    expect((await threadOf(opened?.id ?? "")).map(({ body }) => body)).toEqual([expect.stringContaining("Diff updated: 2 → 2 breaking")]);
+  });
+
+  it("opens no second request for a team whose request the requester side withdrew, which gets a notice", async () => {
+    await pushReports(changesOf("breaking"));
+    const fe = await requestTo("FE");
+    // A request withdrawn by people, not by the system for vanished changes.
+    await install.owner.query("UPDATE requests SET state = 'withdrawn' WHERE id = $1", [fe.id]);
+
+    await pushReports(threeBreaking(), "c");
+
+    expect(await requestsTo("FE")).toEqual([{ ...fe, state: "withdrawn" }]);
+    expect((await threadOf(fe.id)).at(-1)?.body).toContain(`${fe.key} is withdrawn`);
   });
 });
+
+/** The breaking pair's changes with a third ERR-level change, as a later push adds it. */
+function threeBreaking(): ClassifiedChange[] {
+  return [...changesOf("breaking"), { id: "response-property-type-changed", level: "ERR", operation: "GET /payments/{id}" }];
+}

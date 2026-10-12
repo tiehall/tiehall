@@ -2758,6 +2758,13 @@ export const contractChangeRequests = pgTable(
      * reopened, opens the team a new request. Null for any other request.
      */
     withdrawnOnCloseAt: timestamp("withdrawn_on_close_at", { withTimezone: true }),
+    /**
+     * When Tiehall withdrew the request because the change set's changes no
+     * longer opened requests; a later update whose changes open requests
+     * opens the team a new request (decisions-from-groups-15-28, D55 (68)).
+     * Null for any other request.
+     */
+    withdrawnWhenGoneAt: timestamp("withdrawn_when_gone_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.requestId] }),
