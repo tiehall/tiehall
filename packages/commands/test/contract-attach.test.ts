@@ -184,6 +184,23 @@ describe("attaching a classified diff over REST", () => {
     expect((await packetNow(request.key)).revision).toBe(1);
   });
 
+  // A developer may diff two refs that no pull request holds yet (contract-changes: Attaching a contract diff to a
+  // request by hand; handoff-packet: Packet fields; decisions-from-groups-15-28, D55 (63)).
+  it("attaches a diff that names no provider PR and no provider status, as the next revision", async () => {
+    const request = await openToFe();
+    const { provider_pr: _pr, provider_status: _status, ...withoutPullRequest } = CONTRACT;
+
+    const answer = await attachOverRest(deniz.token, request.key, { "if-match": '"1"' }, withoutPullRequest);
+
+    expect(answer.status).toBe(200);
+    const current = await packetNow(request.key);
+    expect(current.revision).toBe(2);
+    expect(current.packet.untrusted.contract).toEqual(withoutPullRequest);
+    // get_request and the request's page show the section without a pull request.
+    const read = await harness.api("GET", `/api/v1/requests/${request.key}`, { authorization: `Bearer ${mehmet.token}` });
+    expect(read.status).toBe(200);
+  });
+
   it("refuses a contract section that fails the packet's schema with 400", async () => {
     const request = await openToFe();
 
@@ -203,6 +220,16 @@ describe.each(PROTOCOL_VERSIONS)("attach_contract_changes, on protocol version %
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ request: { key: request.key }, packet: { revision: 2 } });
     expect((await packetNow(request.key)).packet.untrusted.contract).toEqual(CONTRACT);
+  });
+
+  it("attaches a diff that names no provider PR and no provider status", async () => {
+    const request = await openToFe();
+    const { provider_pr: _pr, provider_status: _status, ...withoutPullRequest } = CONTRACT;
+
+    const result = await attachOverMcp(deniz, version, { key: request.key, expectedRevision: 1, contract: withoutPullRequest });
+
+    expect(result.isError).not.toBe(true);
+    expect((await packetNow(request.key)).packet.untrusted.contract).toEqual(withoutPullRequest);
   });
 
   it("returns a scope-change proposal for a claimed request", async () => {

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ContractSection } from "@tiehall/catalog";
+import type { ReportedContractSection } from "@tiehall/catalog";
 import * as notices from "@tiehall/packet/notices";
 import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -60,7 +60,7 @@ const REQUEST = {
 } as const;
 
 /** The contract section of FE-142's provider change. */
-const SECTION: ContractSection = {
+const SECTION: ReportedContractSection = {
   api: "payments-api",
   base: { ref: "main", sha: "a".repeat(40) },
   head: { ref: "drop-legacy-amount", sha: "b".repeat(40) },

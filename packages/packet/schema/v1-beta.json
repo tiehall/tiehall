@@ -72,7 +72,7 @@
               "x-tiehall-untrusted": true
             },
             "contract": {
-              "description": "The contract section: the API change the diff engine classified, as its report or its developer gave it.",
+              "description": "The contract section: the API change the diff engine classified, as its report or its developer gave it. A section a developer attaches by hand may name no provider pull request and no provider status.",
               "properties": {
                 "api": {
                   "description": "The registered API that changes, such as payments-api.",
@@ -235,6 +235,7 @@
                       "description": "The pull request's page.",
                       "format": "uri",
                       "maxLength": 2048,
+                      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/",
                       "type": "string"
                     }
                   },
@@ -259,9 +260,7 @@
                 "base",
                 "head",
                 "engine",
-                "changes",
-                "provider_pr",
-                "provider_status"
+                "changes"
               ],
               "type": "object",
               "x-tiehall-untrusted": true
@@ -292,6 +291,7 @@
                     "description": "An http or https URL.",
                     "format": "uri",
                     "maxLength": 2048,
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/",
                     "type": "string"
                   }
                 },
@@ -559,6 +559,7 @@
                       "description": "The pull request's page.",
                       "format": "uri",
                       "maxLength": 2048,
+                      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/",
                       "type": "string"
                     }
                   },
@@ -616,6 +617,7 @@
                     "description": "An http or https URL.",
                     "format": "uri",
                     "maxLength": 2048,
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/",
                     "type": "string"
                   }
                 },

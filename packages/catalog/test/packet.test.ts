@@ -86,6 +86,25 @@ describe("the packet's fields", () => {
     expect(variants.map((variant) => ((variant["properties"] as Record<string, Json>)["kind"] as Json)["const"])).toEqual([...PACKET_KINDS]);
   });
 
+  // A developer may diff two refs that no pull request holds yet (decisions-from-groups-15-28, D55 (63)).
+  it("lets a request packet's contract section, attached by hand, leave out the provider PR and its status, and holds a contract change's to both", () => {
+    const contract = (fixture("valid/contract-packet.json")["untrusted"] as Json)["contract"] as Json;
+    const { provider_pr: _pr, provider_status: _status, ...handAttached } = contract;
+    const withContract = (kind: string, section: Json) => ({ schema_version: "1-beta", kind, untrusted: { need: "Review the change.", contract: section } });
+    expect(packet.safeParse(withContract("request", handAttached)).success).toBe(true);
+    expect(packet.safeParse(withContract("request", { ...handAttached, provider_pr: contract["provider_pr"] })).success).toBe(true);
+    expect(packet.safeParse(withContract("contract_change", contract)).success).toBe(true);
+    expect(packet.safeParse(withContract("contract_change", handAttached)).success).toBe(false);
+    expect(packet.safeParse(withContract("contract_change", { ...handAttached, provider_pr: contract["provider_pr"] })).success).toBe(false);
+    expect(packet.safeParse(withContract("contract_change", { ...handAttached, provider_status: "open" })).success).toBe(false);
+    const contractOf = (kind: string) => {
+      const variant = variants.find((each) => ((each["properties"] as Record<string, Json>)["kind"] as Json)["const"] === kind) as Json;
+      return ((((variant["properties"] as Record<string, Json>)["untrusted"] as Json)["properties"] as Record<string, Json>)["contract"] as Json)["required"];
+    };
+    expect(contractOf("request")).toEqual(["api", "base", "head", "engine", "changes"]);
+    expect(contractOf("contract_change")).toEqual(["api", "base", "head", "engine", "changes", "provider_pr", "provider_status"]);
+  });
+
   it("refuses a known field of the wrong type", () => {
     const base = fixture("valid/request-packet.json");
     const untrusted = base["untrusted"] as Json;
@@ -116,6 +135,25 @@ describe("the packet's fields", () => {
     for (const url of ["javascript:alert(document.domain)", "data:text/html,<script>alert(1)</script>", "ftp://files.example.com/specs", "not a url at all"]) {
       expect(packet.safeParse(withLink(url)).success, url).toBe(false);
       expect(packet.safeParse(withPullRequest(url)).success, url).toBe(false);
+    }
+  });
+
+  // The schema states the rule as a pattern, so a validator that skips formats keeps it too (decisions-from-groups-15-28, D55 (83)).
+  it("states the http or https rule of each URL field in the schema as a pattern, besides the uri format", () => {
+    const uriFields: Json[] = [];
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (typeof node !== "object" || node === null) return;
+      if ((node as Json)["format"] === "uri") uriFields.push(node as Json);
+      Object.values(node).forEach(visit);
+    };
+    visit(schema);
+    // A link's URL and the provider PR's, in each of the two variants.
+    expect(uriFields).toHaveLength(4);
+    for (const field of uriFields) {
+      const pattern = new RegExp(String(field["pattern"]), "u");
+      expect(["https://a.example", "http://a.example", "HTTPS://a.example"].every((url) => pattern.test(url))).toBe(true);
+      expect(["javascript:alert(1)", "data:text/html,x", "ftp://a.example"].some((url) => pattern.test(url))).toBe(false);
     }
   });
 });

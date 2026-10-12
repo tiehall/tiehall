@@ -428,7 +428,7 @@ export interface components {
                     /** @description The repository, such as acme/web. */
                     repository: string;
                 }[];
-                /** @description The contract section: the API change the diff engine classified, as its report or its developer gave it. */
+                /** @description The contract section: the API change the diff engine classified, as its report or its developer gave it. A section a developer attaches by hand may name no provider pull request and no provider status. */
                 contract?: {
                     /** @description The registered API that changes, such as payments-api. */
                     api: string;
@@ -481,7 +481,7 @@ export interface components {
                     /** @description How a consumer moves to the new contract. */
                     migration_notes?: string;
                     /** @description The provider's pull request that makes the change. */
-                    provider_pr: {
+                    provider_pr?: {
                         /** @description The pull request's number. */
                         number: number;
                         /** @description The provider's repository, such as acme/payments. */
@@ -496,7 +496,7 @@ export interface components {
                      * @description The provider pull request's state: open, merged, which ships the change, or closed without merging.
                      * @enum {string}
                      */
-                    provider_status: "open" | "merged" | "closed";
+                    provider_status?: "open" | "merged" | "closed";
                 };
                 /** @description Data of other tools, each under a reverse-DNS namespace such as com.acme.billing, kept exactly as sent; at most 16 KB (16,384 bytes) as JSON. */
                 extensions?: {
@@ -2776,7 +2776,7 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description The contract section: the API change the diff engine classified, as its report or its developer gave it. */
+                    /** @description The contract section: the API change the diff engine classified, as its report or its developer gave it. A section a developer attaches by hand may name no provider pull request and no provider status. */
                     contract: {
                         /** @description The registered API that changes, such as payments-api. */
                         api: string;
@@ -2829,7 +2829,7 @@ export interface operations {
                         /** @description How a consumer moves to the new contract. */
                         migration_notes?: string;
                         /** @description The provider's pull request that makes the change. */
-                        provider_pr: {
+                        provider_pr?: {
                             /** @description The pull request's number. */
                             number: number;
                             /** @description The provider's repository, such as acme/payments. */
@@ -2844,7 +2844,7 @@ export interface operations {
                          * @description The provider pull request's state: open, merged, which ships the change, or closed without merging.
                          * @enum {string}
                          */
-                        provider_status: "open" | "merged" | "closed";
+                        provider_status?: "open" | "merged" | "closed";
                     };
                 };
             };

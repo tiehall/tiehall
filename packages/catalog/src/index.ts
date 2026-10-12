@@ -109,6 +109,7 @@ export {
   postMessage,
 } from "./messages.ts";
 export {
+  attachedContractSection,
   CHANGE_LEVELS,
   contractSection,
   EXTENSION_NAMESPACE,
@@ -127,6 +128,7 @@ export {
   type Packet,
   type PacketKind,
   type PacketStage,
+  type ReportedContractSection,
 } from "./packet.ts";
 export {
   addPacketRevision,

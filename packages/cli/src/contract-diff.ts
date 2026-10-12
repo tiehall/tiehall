@@ -30,7 +30,9 @@ import { OASDIFF_MINIMUM } from "./version.ts";
 // attach_contract_changes, naming the revision it expects with --if-match, as
 // a packet change does; the section names the provider pull request,
 // --pull-request in the repository of the git remote origin unless
-// --repository names another. Attaching routes nothing to the API's
+// --repository names another, or, without --pull-request, no pull request
+// and no provider status, since the two refs may be in no pull request yet
+// (decisions-from-groups-15-28, D55 (63)). Attaching routes nothing to the API's
 // consumers, and no document leaves the machine: the install gets the
 // classified changes alone.
 
@@ -42,7 +44,7 @@ const DIFF_OPTIONS: Readonly<Record<string, string>> = {
   "--head": "The ref that makes the changes; HEAD unless given.",
   "--attach": "The key of a request to attach the classified changes to, as the contract section of its packet, such as FE-142.",
   "--if-match": "With --attach: the revision of the request's packet you expect to be current, as tiehall get shows it.",
-  "--pull-request": "The number of the provider pull request that makes the changes, which the contract section names; needed with --attach.",
+  "--pull-request": "The number of the provider pull request that makes the changes, which the contract section names; without it, the section names no pull request.",
   "--repository": "The pull request's repository, such as acme/payments; the one of the git remote origin unless given.",
 };
 
@@ -135,9 +137,6 @@ export async function contractDiff(environment: CliEnvironment, globals: { json:
   const attach = options.get("--attach");
   const pullRequest = options.get("--pull-request");
   if (pullRequest !== undefined && !/^[1-9][0-9]{0,9}$/.test(pullRequest)) throw new CliError("--pull-request names the pull request's number, such as 310.");
-  if (attach !== undefined && pullRequest === undefined) {
-    throw new CliError("tiehall contract diff --attach needs --pull-request <number>, the provider pull request that makes the changes, which the contract section names.");
-  }
 
   // The engine first: an older one runs nothing.
   const version = engineVersion(environment);

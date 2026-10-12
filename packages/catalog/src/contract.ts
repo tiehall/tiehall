@@ -2,7 +2,7 @@ import { z } from "zod";
 import { API_NAME, apiName } from "./apis.ts";
 import { CONTRACT_REPORT_ID } from "./body-limits.ts";
 import { defineCommand } from "./command.ts";
-import { CHANGE_LEVELS, contractSection } from "./packet.ts";
+import { attachedContractSection, CHANGE_LEVELS } from "./packet.ts";
 import { packetRevision } from "./packets.ts";
 import { request, requestKey, requestKeyOutput } from "./requests.ts";
 import { teamKey } from "./teams.ts";
@@ -131,7 +131,9 @@ export const reportContractChanges = defineCommand({
 // hook commands; handoff-packet: Packet changes that are commitments; design.md,
 // Decisions this change rests on: D14, D23; D28 #3, #15, #77; D30 (3)). A
 // developer runs `tiehall contract diff` on their own machine and attaches the
-// classified result to a request as the contract section of its packet. It
+// classified result to a request as the contract section of its packet, which
+// may name no provider pull request and no provider status, since the two refs
+// may be in no pull request yet (decisions-from-groups-15-28, D55 (63)). It
 // needs the contracts:report scope, and follows the rules of packet changes:
 // only the requester side attaches; the call names the revision it expects,
 // which REST takes from If-Match, and a missing or stale one is refused as
@@ -156,7 +158,7 @@ export const attachContractChanges = defineCommand({
       .min(1)
       .optional()
       .meta({ description: "The revision of the packet you expect to be current, as get_request shows it; REST takes it from If-Match, as that revision's ETag. A call that names none, or one that is no longer current, is refused." }),
-    contract: contractSection,
+    contract: attachedContractSection,
   }),
   output: z.object({ request, packet: packetRevision }),
   method: "POST",

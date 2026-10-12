@@ -335,7 +335,11 @@ function ContractSection({ contract }: { contract: Contract }): ReactNode {
     <>
       <h3>Contract change</h3>
       <p>{`API ${contract.api}, from ${contract.base.ref} (${contract.base.sha}) to ${contract.head.ref} (${contract.head.sha}), classified by ${contract.engine.name} ${contract.engine.version}.`}</p>
-      <p>{`Provider pull request ${contract.provider_pr.repository}#${contract.provider_pr.number}, ${contract.provider_status}.`}</p>
+      <p>
+        {contract.provider_pr === undefined
+          ? "It names no provider pull request."
+          : `Provider pull request ${contract.provider_pr.repository}#${contract.provider_pr.number}${contract.provider_status === undefined ? "" : `, ${contract.provider_status}`}.`}
+      </p>
       <ul>
         {contract.changes.map((change, index) => (
           <li key={index}>{`${change.level} ${change.id}: ${change.operation}`}</li>

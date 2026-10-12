@@ -66,7 +66,7 @@ describe("the packet docs", () => {
     for (const kind of schema.oneOf.map((variant) => variant.properties?.["kind"]?.const)) expect(reference).toContain(`\`${String(kind)}\``);
   });
 
-  it("say what the schema itself refuses of a URL: an http or https URL for Tiehall, and no scheme for a validator while the schema's URL fields name none", () => {
+  it("say what the schema itself refuses of a URL: an http or https URL, as a pattern a validator that skips formats keeps too", () => {
     const text = part("Fields").replace(/\s+/g, " ");
     expect(text).toContain("each with its `url`, an `http` or `https` URL");
     /** Every node of the schema with the uri format. */
@@ -89,11 +89,16 @@ describe("the packet docs", () => {
       typeof value === "object" && value !== null && (value as Record<string, unknown>)["format"] === "uri" ? { ...value, pattern: "^[Hh][Tt][Tt][Pp][Ss]?://" } : value,
     ) as Record<string, unknown>;
     expect(namesNoScheme(withScheme)).toBe(false);
-    // A validator of the schema accepts what the schema accepts; the page says so while the URL fields name no scheme.
-    const schemeless = namesNoScheme(readPacketSchema());
-    const caveat = "does not refuse a URL of another scheme, such as a `javascript:` or `data:` URL";
-    if (schemeless) expect(text).toContain(caveat);
-    else expect(text).not.toContain(caveat);
+    // The schema's URL fields name the scheme (decisions-from-groups-15-28, D55 (83)), so the page's caveat is gone.
+    expect(namesNoScheme(readPacketSchema())).toBe(false);
+    expect(text).not.toContain("does not refuse a URL of another scheme");
+    expect(text).toContain("a pattern that admits only `http` and `https`");
+    expect(text).toContain("refuses a URL of another scheme, such as a `javascript:` or `data:` URL");
+  });
+
+  it("say that a contract section attached by hand may leave out the provider pull request and its status", () => {
+    const text = part("Fields").replace(/\s+/g, " ");
+    expect(text).toContain("In a `request` packet, `provider_pr` and `provider_status` may be left out");
   });
 
   it("say how user-written fields are marked untrusted, naming each field the schema marks", () => {

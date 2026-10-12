@@ -143,7 +143,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
           "object"
         ],
         "required": true,
-        "description": "The contract section: the API change the diff engine classified, as its report or its developer gave it."
+        "description": "The contract section: the API change the diff engine classified, as its report or its developer gave it. A section a developer attaches by hand may name no provider pull request and no provider status."
       },
       {
         "name": "Idempotency-Key",

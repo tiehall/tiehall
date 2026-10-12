@@ -421,11 +421,25 @@ describe("--attach", () => {
     expect(ran.stderr).toContain("The packet is at revision 2, not 1");
   });
 
-  it("needs the provider pull request's number, and sends nothing without it", async () => {
-    const ran = await contractDiff([...DIFF, "--attach", "FE-142", "--if-match", "1", "--install", INSTALL]);
-    expect(ran.code).toBe(1);
-    expect(ran.stderr).toContain("--pull-request");
-    expect(ran.calls).toEqual([]);
+  // A developer may diff two refs that no pull request holds yet (contract-changes: Attaching a contract diff to a
+  // request by hand; decisions-from-groups-15-28, D55 (63)).
+  it("attaches a section that names no provider pull request and no status when --pull-request is not given", async () => {
+    const ran = await contractDiff([...DIFF, "--attach", "FE-142", "--if-match", "1", "--install", INSTALL], {
+      answer: (request) =>
+        new URL(request.url).pathname === "/api/v1/whoami"
+          ? Response.json({ user: { id: "u1", login: "deniz", kind: "human", bot: false }, teams: [{ id: "t1", key: "PAY" }], install: { url: INSTALL } })
+          : Response.json(
+              {
+                request: { id: "r1", key: "FE-142", state: "open", targetTeam: { id: "t2", key: "FE" }, requester: { user: { id: "u1", login: "deniz", kind: "human", bot: false }, team: { id: "t1", key: "PAY" } }, claimant: null, createdAt: "2026-10-02T09:00:00.000Z", needsHuman: false, untrusted: { title: "Move to the new payment fields" } },
+                packet: { request: { id: "r1", key: "FE-142" }, revision: 2, createdAt: "2026-10-02T09:01:00.000Z", packet: { schema_version: "1-beta", kind: "request", untrusted: { need: "n" } } },
+              },
+              { headers: { etag: '"2"' } },
+            ),
+    });
+
+    expect(ran.code).toBe(0);
+    const { provider_pr: _pr, provider_status: _status, ...withoutPullRequest } = contractSection();
+    expect(ran.calls.find(({ method }) => method === "POST")?.body).toEqual({ contract: withoutPullRequest });
   });
 });
 

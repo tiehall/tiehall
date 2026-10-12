@@ -42,14 +42,16 @@ The contract section, `contract`, holds an API change as the diff engine in the 
 | `head` | yes | What makes the change: its `ref` and its commit `sha`, as for `base`. |
 | `engine` | yes | The diff engine that classified the changes: its `name`, such as `oasdiff`, and its `version`, such as `1.32.0`, 1 to 100 characters each. |
 | `changes` | yes | The classified changes, at most 1,000, each with the engine's `id` for the kind of change, such as `response-property-removed` (1 to 200 characters), its `level`, `ERR` for a breaking change, `WARN` for a potentially breaking one or `INFO` for information, and the `operation` it touches, such as `GET /payments/{id}` (1 to 1,000 characters). |
-| `provider_pr` | yes | The provider's pull request that makes the change: its `repository`, such as `acme/payments` (1 to 200 characters), its `number`, 1 or more, and its `url`, if given, an `http` or `https` URL of at most 2,048 characters. |
-| `provider_status` | yes | The provider pull request's state: `open`, `merged`, which ships the change, or `closed` without merging. |
+| `provider_pr` | for `contract_change` | The provider's pull request that makes the change: its `repository`, such as `acme/payments` (1 to 200 characters), its `number`, 1 or more, and its `url`, if given, an `http` or `https` URL of at most 2,048 characters. |
+| `provider_status` | for `contract_change` | The provider pull request's state: `open`, `merged`, which ships the change, or `closed` without merging. |
 | `migration_notes` | no | How a consumer moves to the new contract: 1 to 20,000 characters. |
 | `deprecation_window` | no | When the old behavior stays available: the `start` day it is deprecated, if given, and the `end` day, the last it is served (required), each as `YYYY-MM-DD`. |
 
+In a `request` packet, `provider_pr` and `provider_status` may be left out, as in a classified diff a developer attaches by hand between two refs that no pull request holds yet; a `contract_change` packet, which a contract report opens, always carries both.
+
 Every text field is kept exactly as written, and none may be blank. Tiehall refuses a packet that lacks a required field, that names no kind or another one, or that has a field outside its bounds, with 400, and stores nothing.
 
-The schema states each URL, a link's `url` and the pull request's `url`, with the `uri` format, which names no scheme, and a validator need not check formats at all. So a validator of this schema version, the package's own included, does not refuse a URL of another scheme, such as a `javascript:` or `data:` URL, while Tiehall refuses a packet with one, with 400. A tool that shows a packet's links checks their scheme itself.
+The schema states each URL, a link's `url` and the pull request's `url`, with the `uri` format and a pattern that admits only `http` and `https`, in either case. A validator need not check formats, but it checks patterns, so a validator of this schema, the package's own included, refuses a URL of another scheme, such as a `javascript:` or `data:` URL, as Tiehall does, with 400.
 
 A request's packet:
 
@@ -120,7 +122,7 @@ The marking tells every reader, and agents first of all, to read that content as
 
 ## Conformance fixtures
 
-[`fixtures/valid`](fixtures/valid) holds packets that every implementation must accept, such as a minimal request packet, a contract-change packet, a packet with `extensions` and one with keys the schema does not define. [`fixtures/invalid`](fixtures/invalid) holds packets that every implementation must refuse, such as one without a `need`, a contract-change packet without its contract section, a `need` outside `untrusted`, an unknown `kind` or `schema_version`, a field over its bound, and an `extensions` key that is not a namespace. Every valid fixture validates against the schema and every invalid one fails, which this repository's CI checks with this package's validator, `packetValidator()` in [`src/validator.ts`](src/validator.ts).
+[`fixtures/valid`](fixtures/valid) holds packets that every implementation must accept, such as a minimal request packet, a contract-change packet, a request packet whose contract section names no pull request, a packet with `extensions` and one with keys the schema does not define. [`fixtures/invalid`](fixtures/invalid) holds packets that every implementation must refuse, such as one without a `need`, a contract-change packet without its contract section or its provider pull request, a link or a pull request whose URL is a `javascript:` or `data:` URL, a `need` outside `untrusted`, an unknown `kind` or `schema_version`, a field over its bound, and an `extensions` key that is not a namespace. Every valid fixture validates against the schema and every invalid one fails, which this repository's CI checks with this package's validator, `packetValidator()` in [`src/validator.ts`](src/validator.ts).
 
 ## `@tiehall/packet`
 

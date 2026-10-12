@@ -1,0 +1,8 @@
+{
+  "schema_version": "1-beta",
+  "kind": "request",
+  "untrusted": {
+    "need": "Add a dark mode.",
+    "links": [{ "url": "javascript:alert(document.domain)", "title": "Dark mode design" }]
+  }
+}

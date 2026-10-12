@@ -18,11 +18,17 @@ import { z } from "zod";
 // that text there (agent-safety: User text in JSON sits under untrusted
 // objects): the need, which every packet has; the acceptance criteria; code
 // refs; links; the contract section, which a contract-change packet must have
-// and any other packet may carry, such as a diff attached by hand; and
+// and any other packet may carry, such as a diff attached by hand, which may
+// name no provider pull request and no provider status, since a developer may
+// diff two refs that no pull request holds yet (decisions-from-groups-15-28,
+// D55 (63)); and
 // `extensions`, whose keys are reverse-DNS namespaces and whose contents are
 // kept exactly as sent, up to 16 KB of JSON (handoff-packet: The `extensions`
 // field). The schema marks `untrusted` and each field in it with the
-// annotation x-tiehall-untrusted. A packet's own objects are open: the schema
+// annotation x-tiehall-untrusted. Each URL, a link's and the provider pull
+// request's, is an http or https URL, which the schema states as a pattern
+// besides the uri format, so a validator that skips formats refuses another
+// scheme too (decisions-from-groups-15-28, D55 (83)). A packet's own objects are open: the schema
 // forbids no additional property, while Tiehall's parse drops the keys it does
 // not know (handoff-packet: Open objects, strict server). Nothing here
 // transforms a value or gives a default, so a packet reads back exactly as it
@@ -118,6 +124,20 @@ function untrusted(description: string) {
   return { description, [UNTRUSTED_MARK]: true } as const;
 }
 
+/**
+ * An http or https URL of at most 2,048 characters, such as a link's. The
+ * scheme is checked as the URL parses and stated in the schema as a pattern
+ * that admits http and https in either case, as a URL's scheme is, so a
+ * validator that skips the uri format still refuses a javascript: or data: URL.
+ */
+function httpUrl(description: string) {
+  return z
+    .url({ protocol: /^https?$/ })
+    .regex(/^[Hh][Tt][Tt][Pp][Ss]?:\/\//, "An http or https URL.")
+    .max(2048)
+    .meta({ format: "uri", description });
+}
+
 /** Text someone wrote: 1 to max characters, not all blank, kept exactly as written. */
 function text(max: number) {
   return z.string().min(1).max(max).regex(/\S/, "The text is not blank.");
@@ -139,39 +159,66 @@ const classifiedChange = z.object({
   operation: text(1000).meta({ description: "The operation the change touches, such as GET /payments/{id}." }),
 });
 
-/** The contract section: an API change the diff engine classified in the provider's CI or on a developer's machine. */
-export const contractSection = z
+/** The fields of a contract section before the provider pull request: the API, the refs, the engine and its classified changes. */
+const changeFields = {
+  api: text(200).meta({ description: "The registered API that changes, such as payments-api." }),
+  base: gitRef.meta({ description: "The ref and commit the change is compared against." }),
+  head: gitRef.meta({ description: "The ref and commit that make the change." }),
+  engine: z
+    .object({
+      name: text(100).meta({ description: "The diff engine's name, such as oasdiff." }),
+      version: text(100).meta({ description: "The diff engine's version, such as 1.32.0." }),
+    })
+    .meta({ description: "The diff engine that classified the changes." }),
+  changes: z.array(classifiedChange).max(1000).meta({ description: "The classified changes, each with its id, level and operation." }),
+};
+
+/** The fields of a contract section after the provider pull request: how consumers move, and when. */
+const movingFields = {
+  migration_notes: text(20000).optional().meta({ description: "How a consumer moves to the new contract." }),
+  deprecation_window: z
+    .object({
+      start: day.optional().meta({ description: "The day the old behavior is deprecated." }),
+      end: day.meta({ description: "The last day the old behavior is served." }),
+    })
+    .optional()
+    .meta({ description: "When the old behavior stays available." }),
+};
+
+const providerPullRequest = z
   .object({
-    api: text(200).meta({ description: "The registered API that changes, such as payments-api." }),
-    base: gitRef.meta({ description: "The ref and commit the change is compared against." }),
-    head: gitRef.meta({ description: "The ref and commit that make the change." }),
-    engine: z
-      .object({
-        name: text(100).meta({ description: "The diff engine's name, such as oasdiff." }),
-        version: text(100).meta({ description: "The diff engine's version, such as 1.32.0." }),
-      })
-      .meta({ description: "The diff engine that classified the changes." }),
-    changes: z.array(classifiedChange).max(1000).meta({ description: "The classified changes, each with its id, level and operation." }),
-    provider_pr: z
-      .object({
-        repository: text(200).meta({ description: "The provider's repository, such as acme/payments." }),
-        number: z.number().int().min(1).meta({ description: "The pull request's number." }),
-        url: z.url({ protocol: /^https?$/ }).max(2048).optional().meta({ description: "The pull request's page." }),
-      })
-      .meta({ description: "The provider's pull request that makes the change." }),
-    provider_status: z
-      .enum(PROVIDER_STATUSES)
-      .meta({ description: "The provider pull request's state: open, merged, which ships the change, or closed without merging." }),
-    migration_notes: text(20000).optional().meta({ description: "How a consumer moves to the new contract." }),
-    deprecation_window: z
-      .object({
-        start: day.optional().meta({ description: "The day the old behavior is deprecated." }),
-        end: day.meta({ description: "The last day the old behavior is served." }),
-      })
-      .optional()
-      .meta({ description: "When the old behavior stays available." }),
+    repository: text(200).meta({ description: "The provider's repository, such as acme/payments." }),
+    number: z.number().int().min(1).meta({ description: "The pull request's number." }),
+    url: httpUrl("The pull request's page.").optional(),
   })
+  .meta({ description: "The provider's pull request that makes the change." });
+
+const providerStatus = z
+  .enum(PROVIDER_STATUSES)
+  .meta({ description: "The provider pull request's state: open, merged, which ships the change, or closed without merging." });
+
+/**
+ * The contract section of a contract-change packet, which a report opens: it
+ * always names the provider pull request and its status.
+ */
+export const contractSection = z
+  .object({ ...changeFields, provider_pr: providerPullRequest, provider_status: providerStatus, ...movingFields })
   .meta(untrusted("The contract section: the API change the diff engine classified, as its report or its developer gave it."));
+
+/**
+ * The contract section a request's packet may carry, such as a diff a
+ * developer attaches by hand: the provider pull request and its status may be
+ * left out, since a developer may diff two refs that no pull request holds yet
+ * (handoff-packet: Packet fields; contract-changes: Attaching a contract diff
+ * to a request by hand; decisions-from-groups-15-28, D55 (63)).
+ */
+export const attachedContractSection = z
+  .object({ ...changeFields, provider_pr: providerPullRequest.optional(), provider_status: providerStatus.optional(), ...movingFields })
+  .meta(
+    untrusted(
+      "The contract section: the API change the diff engine classified, as its report or its developer gave it. A section a developer attaches by hand may name no provider pull request and no provider status.",
+    ),
+  );
 
 /** The fields under `untrusted` that every kind of packet has. */
 const untrustedFields = {
@@ -195,7 +242,7 @@ const untrustedFields = {
   links: z
     .array(
       z.object({
-        url: z.url({ protocol: /^https?$/ }).max(2048).meta({ description: "An http or https URL." }),
+        url: httpUrl("An http or https URL."),
         title: text(200).optional().meta({ description: "What the link is." }),
       }),
     )
@@ -230,7 +277,7 @@ const requestPacket = z.object({
   schema_version: schemaVersion,
   kind: z.literal("request").meta({ description: "A request's packet." }),
   due_date: dueDate,
-  untrusted: z.object({ ...untrustedFields, contract: contractSection.optional() }).meta(UNTRUSTED_OBJECT),
+  untrusted: z.object({ ...untrustedFields, contract: attachedContractSection.optional() }).meta(UNTRUSTED_OBJECT),
 });
 
 const contractChangePacket = z.object({
@@ -247,5 +294,8 @@ export const packet = z
 
 export type Packet = z.output<typeof packet>;
 
-/** A packet's contract section, as the packet schema parses it. */
-export type ContractSection = z.output<typeof contractSection>;
+/** A packet's contract section, as the packet schema parses it: a request's may name no provider pull request and no status. */
+export type ContractSection = z.output<typeof attachedContractSection>;
+
+/** A contract-change packet's contract section, which names the provider pull request and its status. */
+export type ReportedContractSection = z.output<typeof contractSection>;

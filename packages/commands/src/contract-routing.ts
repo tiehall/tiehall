@@ -1,4 +1,4 @@
-import { applyChangeSet, PACKET_SCHEMA_VERSION, packet as packetSchema, type ContractSection, type Packet } from "@tiehall/catalog";
+import { applyChangeSet, PACKET_SCHEMA_VERSION, packet as packetSchema, type ReportedContractSection, type Packet } from "@tiehall/catalog";
 import { formatRequestKey, isTerminalState, requestOpened, requestStateChanged, type RequestLifecycle, type RequestState } from "@tiehall/core";
 import { apiConsumers, apis, contractChangeRequests, contractChangeSets, contractReports, requests, teams } from "@tiehall/db";
 import { and, asc, desc, eq, gt, isNull, lte } from "drizzle-orm";
@@ -143,7 +143,7 @@ interface StoredReport {
   headSha: string;
   engineName: string;
   engineVersion: string;
-  changes: ContractSection["changes"];
+  changes: ReportedContractSection["changes"];
   receivedAt: Date;
   /** The provider pull request's author, by GitHub's id, as the App read it when the report came; null when it could not be known. */
   authorGitHubId: number | null;
@@ -183,7 +183,7 @@ async function latestReportBy({ tx, orgId }: OrgContext, changeSet: ChangeSetRow
     .where(and(ofChangeSet(orgId, changeSet), lte(contractReports.receivedAt, by)))
     .orderBy(desc(contractReports.receivedAt), desc(contractReports.id))
     .limit(1);
-  return row === undefined ? undefined : { ...row, changes: row.changes as ContractSection["changes"] };
+  return row === undefined ? undefined : { ...row, changes: row.changes as ReportedContractSection["changes"] };
 }
 
 /** A report of the change set by its id. */
@@ -192,7 +192,7 @@ async function reportById({ tx, orgId }: OrgContext, reportId: string): Promise<
     .select(REPORT_COLUMNS)
     .from(contractReports)
     .where(and(eq(contractReports.orgId, orgId), eq(contractReports.id, reportId)));
-  return row === undefined ? undefined : { ...row, changes: row.changes as ContractSection["changes"] };
+  return row === undefined ? undefined : { ...row, changes: row.changes as ReportedContractSection["changes"] };
 }
 
 /** When the change set's first report received after this time came, which starts its next burst; undefined when none came. */
@@ -284,7 +284,7 @@ type UpdateOutcome =
  * the number of breaking changes changed from the request's packet to the
  * report, and what the update did to the request.
  */
-export function updateText(section: ContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
+export function updateText(section: ReportedContractSection, report: StoredReport, request: { key: string; state: RequestState; before: number }, outcome: UpdateOutcome): string {
   const after = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const head = `Diff updated: ${request.before} → ${after} breaking. The contract Action reported ${pr} again, at commit ${report.headSha.slice(0, 12)}`;
@@ -304,7 +304,7 @@ export function updateText(section: ContractSection, report: StoredReport, reque
 }
 
 /** The contract section of a report, for the API at its repository. */
-function contractSectionOf(report: StoredReport, api: { name: string; repositoryFullName: string }): ContractSection {
+function contractSectionOf(report: StoredReport, api: { name: string; repositoryFullName: string }): ReportedContractSection {
   return {
     api: api.name,
     base: { ref: report.baseRef, sha: report.baseSha },
@@ -317,7 +317,7 @@ function contractSectionOf(report: StoredReport, api: { name: string; repository
 }
 
 /** The packet a contract-change request is opened with: Tiehall's words for the need, and the report's contract section. */
-export function packetOf(section: ContractSection, team: string): Packet {
+export function packetOf(section: ReportedContractSection, team: string): Packet {
   const breaking = section.changes.filter(({ level }) => level === "ERR").length;
   const pr = `${section.provider_pr.repository}#${section.provider_pr.number}`;
   const need =
@@ -328,7 +328,7 @@ export function packetOf(section: ContractSection, team: string): Packet {
 }
 
 /** The title of a contract-change request, in Tiehall's words, within the 200 characters of a title. */
-export function titleOf(section: ContractSection): string {
+export function titleOf(section: ReportedContractSection): string {
   return `Breaking changes to ${section.api} in ${section.provider_pr.repository}#${section.provider_pr.number}`.slice(0, 200);
 }
 
