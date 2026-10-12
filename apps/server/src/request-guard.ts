@@ -50,6 +50,14 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 //   a short grace period in which it is still not read, so that the client
 //   reads the 413 before the reset its unread body causes.
 //
+// Methods no route takes (agent-surfaces: Negotiated request URLs; public-api:
+// One error model for Tiehall's own refusals; decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (42)): a call with a method
+// the Fetch standard forbids, such as TRACE, never reaches the app, which
+// could not build its Request and would answer 500; the guard answers it, on
+// every path, with the error model's 404 route-not-found, once the body limit
+// and a shutdown have had their say.
+//
 // Refusals to browsers (public-api: One error model for Tiehall's own
 // refusals; github-layer-hardening: design.md, Decisions this change rests on:
 // D50 (7); Technical decisions: T5): on a page route (wayOnOfPageRoute), a
@@ -110,6 +118,12 @@ const SHUTTING_DOWN = httpProblem(
 );
 const SHUTTING_DOWN_BODY = JSON.stringify(SHUTTING_DOWN.body);
 
+/** The methods the Fetch standard forbids, which Next.js cannot build a Request of, so no route takes them. */
+const FORBIDDEN_METHODS = new Set(["CONNECT", "TRACE", "TRACK"]);
+/** The answer to a call with one of them: the error model's 404 for a route the surface does not offer. */
+const NO_ROUTE = httpProblem(new Refusal("route-not-found", "No route here takes this method."));
+const NO_ROUTE_BODY = JSON.stringify(NO_ROUTE.body);
+
 /**
  * How long a connection whose body was refused stays ended but open, and
  * unread, before it is closed: time for the client to read the 413 before the
@@ -139,6 +153,7 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
     });
     const serve = (): void => {
       if (newDuringShutdown) return shuttingDown(request, response, origin);
+      if (FORBIDDEN_METHODS.has((request.method ?? "GET").toUpperCase())) return noRoute(request, response, origin);
       setForwardedHeaders(request, options.proxies);
       listener(request, response);
     };
@@ -195,6 +210,12 @@ function shuttingDown(request: IncomingMessage, response: ServerResponse, origin
   // The call's body is not read; the connection closes after the answer.
   request.resume();
   refuse(request, response, SHUTTING_DOWN, SHUTTING_DOWN_BODY, origin);
+}
+
+function noRoute(request: IncomingMessage, response: ServerResponse, origin: string): void {
+  // The call's body is not read; the connection closes after the answer.
+  request.resume();
+  refuse(request, response, NO_ROUTE, NO_ROUTE_BODY, origin);
 }
 
 /**

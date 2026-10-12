@@ -259,6 +259,69 @@ describe("the web role's answers of request URLs", STARTS_THE_ROLE, () => {
   });
 });
 
+// agent-surfaces: Negotiated request URLs; public-api: One error model for Tiehall's own refusals
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (42)). A method the Fetch standard
+// forbids, such as TRACE, is one no route takes, and one Next.js cannot hand its proxy or a route: it cannot build
+// the call's Request, and answers 500, as the fixture does. The web role's request guard answers such a call itself,
+// on every path, with 404 route-not-found, as the error model's row for a route the surface does not offer: the
+// refusal's page to a call that negotiates HTML on a page route, a request URL by its own negotiation, and the problem
+// to every other call, with the headers of every answer of a request URL on one. The app never sees the call.
+describe("the web role's answer to a method no route takes", STARTS_THE_ROLE, () => {
+  const ROUTE_NOT_FOUND = "https://tiehall.com/problems/route-not-found";
+
+  /** Calls the role with TRACE at this path, with exactly these headers. */
+  function trace(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
+    return new Promise((resolve, reject) => {
+      const outgoing = http.request({ host: "127.0.0.1", port, path, method: "TRACE", headers }, (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => (body += chunk));
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body }));
+        response.on("error", reject);
+      });
+      outgoing.on("error", reject);
+      outgoing.end();
+    });
+  }
+
+  it("answers TRACE on every path with 404 route-not-found, a page where the call negotiates HTML, before the app sees it", async () => {
+    const web = await startWebRole();
+
+    for (const [path, headers] of [
+      ["/FE-142", { accept: BROWSER }],
+      ["/FE-142", {}],
+      ["/", { accept: BROWSER }],
+    ] as const) {
+      const page = await trace(web.port, path, headers);
+      expect(page.status, path).toBe(404);
+      expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+      expect(page.body).toContain(`<code>${ROUTE_NOT_FOUND}</code>`);
+    }
+
+    for (const [path, headers] of [
+      ["/FE-142", { accept: "application/json", authorization: "Bearer th_pat_unused" }],
+      ["/FE-142.json", {}],
+      ["/FE-142.md", { accept: BROWSER }],
+      ["/api/v1/inbox", { accept: BROWSER }],
+      ["/mcp", {}],
+    ] as const) {
+      const problem = await trace(web.port, path, headers);
+      expect(problem.status, path).toBe(404);
+      expect(problem.headers["content-type"]).toBe("application/problem+json");
+      expect(JSON.parse(problem.body)).toMatchObject({ type: ROUTE_NOT_FOUND, status: 404 });
+    }
+
+    // A request URL's answer carries the headers of every answer of one.
+    const answer = await trace(web.port, "/FE-142.md");
+    expect(answer.headers["vary"]).toBe("Accept, Authorization");
+    expect(answer.headers["cache-control"]).toBe("private, no-store");
+    expect(answer.headers["etag"]).toEqual(expect.any(String));
+    expect((await trace(web.port, "/api/v1/inbox")).headers["vary"]).toBeUndefined();
+
+    expect(web.output()).not.toContain("as Next.js does");
+  });
+});
+
 describe("the web role's log", STARTS_THE_ROLE, () => {
   it("is only JSON lines on standard output, with what the server prints to the console redacted like any line", async () => {
     const web = await startWebRole();

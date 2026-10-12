@@ -14,7 +14,8 @@
 // from its socket when it closes. With LOG_HEADS=on it prints each call's method and path as soon as the server
 // has its head, from a listener of its own that the request guard does not wrap, so a test knows the server
 // holds a call whose body is still arriving. A request URL, /FE-142 with or without .md or .json, and
-// /members/page answer as Next.js answers a page, with its own Vary.
+// /members/page answer as Next.js answers a page, with its own Vary. A call with a method the Fetch standard
+// forbids, such as TRACE, gets 500 on every path, as Next.js answers one, and the fixture prints that it did.
 import http from "node:http";
 import process from "node:process";
 import { shutdownSignal } from "@tiehall/commands";
@@ -39,6 +40,16 @@ function readThenAnswer(request: http.IncomingMessage, response: http.ServerResp
 }
 
 const server = http.createServer((request, response) => {
+  try {
+    new Request("http://localhost/", { method: request.method ?? "GET" });
+  } catch {
+    // As Next.js answers a method the Fetch standard forbids, such as TRACE: it cannot build the call's Request for
+    // its proxy, and answers 500.
+    console.log(`fixture: ${request.method} ${request.url} answered 500, as Next.js does`);
+    response.writeHead(500, { "content-type": "text/plain" });
+    response.end("Internal Server Error");
+    return;
+  }
   if (request.url === "/slow") {
     console.log("fixture: slow call started");
     setTimeout(() => response.end("slow call done"), Number(process.env["SLOW_MS"] ?? "1500"));
