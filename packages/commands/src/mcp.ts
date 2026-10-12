@@ -62,6 +62,13 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 //   the webhooks has, 2 MiB, and refuses a larger one with HTTP 413 before
 //   anything else about the call is judged, as REST does (public-api: Request
 //   bodies have a size limit);
+// - refuses a request whose Origin header names another origin than the
+//   install's, TIEHALL_URL's scheme, host and port, with HTTP 403 forbidden,
+//   before its token is checked and before any tool runs, as MCP's transport
+//   rules ask against DNS rebinding; a request with no Origin header, as MCP
+//   clients outside a browser send, is not refused for it (agent-surfaces: One
+//   MCP endpoint for both protocol versions; decisions-from-groups-15-28:
+//   design.md, Decisions this change rests on: D55 (26));
 // - asks who is calling, from the token in the Authorization header alone,
 //   with the same check as /api/v1: an OAuth access token the install issued
 //   for its MCP resource, or a personal access token. A call without one gets
@@ -73,8 +80,8 @@ import { withOrg, type OrgContext } from "./with-org.ts";
 //   invalid_token (teams-and-roles: Removing a member);
 // - refuses a tool call whose token lacks a scope the tool's operation needs
 //   with HTTP 403 insufficient_scope, naming the scope, before anything runs.
-// These are the OAuth refusals, which on /mcp are HTTP statuses and never tool
-// results, as the error model defines; they are RFC 9457 problems, whatever
+// These, and the refusal of a foreign Origin, are refusals that on /mcp are
+// HTTP statuses and never tool results, as the error model defines; they are RFC 9457 problems, whatever
 // the call accepts. A token whose person is not a member of the install, a
 // personal access token the token check refuses so or an access token the
 // re-check finds so, is the one refusal of the checks that is no OAuth
@@ -363,6 +370,10 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
     { onerror: (error) => logger.warn("mcp: the SDK refused a call", { error }) },
   );
 
+  // The install's own origin, TIEHALL_URL's, which a browser's request to /mcp must come from; the request's own
+  // origin when the route is given no URL.
+  const installOrigin = options.url === undefined ? undefined : new URL(options.url).origin;
+
   return async function handle(request) {
     const url = new URL(request.url);
     let body: Uint8Array;
@@ -372,6 +383,12 @@ export function createMcpRoute(options: McpRouteOptions): McpRoute {
       if (error instanceof Refusal) return problem(error);
       logger.error("mcp: the body could not be read", { error });
       return internalError();
+    }
+    // A request a browser page on another origin sent, as in DNS rebinding, is refused before its token is checked and
+    // before any tool runs; one with no Origin header, as MCP clients outside a browser send, is not.
+    const origin = request.headers.get("origin");
+    if (origin !== null && origin !== (installOrigin ?? url.origin)) {
+      return problem(new Refusal("forbidden", "A request to the MCP server from a page on another origin than the install's is refused."));
     }
     let calling: Calling;
     let authInfo: CallingInfo;

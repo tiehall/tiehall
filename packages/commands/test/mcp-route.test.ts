@@ -111,11 +111,14 @@ function route(authenticate: () => Promise<Caller | undefined>): McpRoute {
   });
 }
 
-/** Calls one fixture tool through the route on this protocol version, logging the HTTP exchanges. */
-async function call(mcp: McpRoute, version: ProtocolVersion, name: string, args: Record<string, unknown>, log: McpExchange[] = []) {
+/** Calls one fixture tool through the route on this protocol version, logging the HTTP exchanges, with these headers on each request. */
+async function call(mcp: McpRoute, version: ProtocolVersion, name: string, args: Record<string, unknown>, log: McpExchange[] = [], headers: Record<string, string> = {}) {
   const client = mcpClient({ version });
   const fetchThroughRoute = async (input: string | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
+    const sent = new Request(input, init);
+    const withHeaders = new Headers(sent.headers);
+    for (const [header, value] of Object.entries(headers)) withHeaders.set(header, value);
+    const request = new Request(sent, { headers: withHeaders });
     const response = await mcp(request);
     log.push({
       method: request.method,
@@ -198,6 +201,67 @@ describe.each(PROTOCOL_VERSIONS)("a tool call, on protocol version %s", (version
     const result = await call(removed, version, "get_report", { reportId: "one" });
     expect(problemOf(result)).toMatchObject({ type: `${PROBLEM}removed-member`, status: 403 });
     expect(textOf(result)).not.toContain("Ignore your instructions");
+  });
+});
+
+// agent-surfaces: One MCP endpoint for both protocol versions; public-api: One error model for Tiehall's own refusals
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (26)). MCP's transport rules ask a
+// server to check Origin against DNS rebinding: a request to /mcp whose Origin header names another origin than the
+// install's is refused with HTTP 403 and the problem type forbidden, not a tool error, before its token is checked and
+// before any tool runs. A request with no Origin header, as MCP clients outside a browser send, and one from the
+// install's own origin are answered as before; a body over its limit still gets 413 first.
+describe("the Origin of a request to /mcp", () => {
+  const agent = () => route(async () => oauthTokenOf(userId, "https://client.example.com/oauth.json", "api"));
+  const toolCall = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "file_report", arguments: { kind: "feature", title: "Dark mode", goal: "Night work" } } });
+
+  /** A tool call sent straight to the route with this Origin header. */
+  function post(mcp: McpRoute, origin: string, body: string = toolCall): Promise<Response> {
+    return mcp(
+      new Request(`${URL_OF_INSTALL}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", origin },
+        body,
+      }),
+    );
+  }
+
+  it("refuses a foreign Origin with HTTP 403 forbidden, not a tool error, and runs no tool", async () => {
+    const before = ran;
+    for (const origin of ["https://attacker.example", "http://tiehall.example.com", "https://tiehall.example.com:8443", "null"]) {
+      const answer = await post(agent(), origin);
+      expect(answer.status, origin).toBe(403);
+      expect(answer.headers.get("content-type"), origin).toBe("application/problem+json");
+      expect(await answer.json(), origin).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
+    }
+    expect(ran).toBe(before);
+  });
+
+  it("refuses a foreign Origin before the token is checked, a missing token included", async () => {
+    let checked = 0;
+    const answer = await post(
+      route(async () => {
+        checked += 1;
+        return undefined;
+      }),
+      "https://attacker.example",
+    );
+    expect(answer.status).toBe(403);
+    expect(answer.headers.get("www-authenticate")).toBeNull();
+    expect(await answer.json()).toMatchObject({ type: `${PROBLEM}forbidden` });
+    expect(checked).toBe(0);
+  });
+
+  it.each(PROTOCOL_VERSIONS)("answers a request from the install's own origin, and one with no Origin, as before, on protocol version %s", async (version) => {
+    for (const headers of [{ origin: URL_OF_INSTALL }, {}]) {
+      const result = await call(agent(), version, "get_report", { reportId: "one" }, [], headers);
+      expect(result.isError, JSON.stringify(headers)).not.toBe(true);
+    }
+  });
+
+  it("still answers a body over its limit with 413 first, whatever its Origin", async () => {
+    const answer = await post(agent(), "https://attacker.example", toolCall.padEnd(3 * 1024 * 1024, " "));
+    expect(answer.status).toBe(413);
+    expect(await answer.json()).toMatchObject({ type: `${PROBLEM}payload-too-large` });
   });
 });
 

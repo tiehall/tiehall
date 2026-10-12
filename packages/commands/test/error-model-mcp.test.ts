@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createInstallGitHub, readInstallations } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
+import { URL_OF_INSTALL } from "./support/install.ts";
 import { connectMcp, mcpPerson, MODERN, PROBLEM, problemOf, type McpPerson } from "./support/mcp.ts";
 import { openRequestInTheWebUi } from "./support/requests.ts";
 
@@ -100,6 +101,34 @@ describe("the MCP tools", () => {
     const problem = problemOf(refused) as { type?: string; status?: number; retryAfter?: number };
     expect(problem).toMatchObject({ type: `${PROBLEM}rate-limited`, status: 429 });
     expect(problem.retryAfter).toBeGreaterThan(0);
+    const { rows } = await harness.install.owner.query("SELECT count(*)::int AS count FROM messages WHERE request_id = $1", [request.id]);
+    expect(rows[0]?.count).toBe(0);
+  });
+});
+
+// public-api: One error model for Tiehall's own refusals (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (26)). A request whose Origin header names another origin than the install's is one of the
+// refusals on /mcp that are HTTP statuses, not tool errors: 403 forbidden, before the token is checked, with a valid
+// token too, and nothing runs.
+describe("the HTTP statuses of /mcp", () => {
+  it("answer a foreign Origin with HTTP 403 forbidden, not a tool result inside a 200, though the token is valid, and post nothing", async () => {
+    const request = await openToFe();
+    const answer = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/mcp`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${dana.token}`,
+          origin: "https://attacker.example",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": MODERN,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "post_message", arguments: { key: request.key, kind: "comment", body: "From a page." } } }),
+      }),
+    );
+    expect(answer.status).toBe(403);
+    expect(answer.headers.get("content-type")).toBe("application/problem+json");
+    expect(await answer.json()).toMatchObject({ type: `${PROBLEM}forbidden`, status: 403 });
     const { rows } = await harness.install.owner.query("SELECT count(*)::int AS count FROM messages WHERE request_id = $1", [request.id]);
     expect(rows[0]?.count).toBe(0);
   });
