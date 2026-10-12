@@ -8,7 +8,7 @@ import { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "
 import type { ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lockRequest, teamActedFor } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
-import { assertRevisionKeepsRequiredFields, REQUIRED_FIELD_CHECKS, type RequiringTeam } from "./required-fields.ts";
+import { assertRevisionKeepsRequiredFields, pendingReassignmentTeams, REQUIRED_FIELD_CHECKS, type RequiringTeam } from "./required-fields.ts";
 
 // The packet operations (handoff-packet: Immutable, numbered revisions;
 // handoff-packet: Open objects, strict server; handoff-packet: Packet changes
@@ -31,9 +31,10 @@ import { assertRevisionKeepsRequiredFields, REQUIRED_FIELD_CHECKS, type Requirin
 // change is added at once: the revision and its event commit together, with
 // the requester side's team as the team the user acted for. A revision, added
 // or proposed, that drops a field the request's team requires and the current
-// revision has is refused with 400 and creates nothing
-// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-// D55 (41); required-fields.ts). A field whose new value is its current value
+// revision has, or one that the team of a pending reassignment of the request
+// requires, is refused with 400 and creates nothing, and the reassignment
+// stays pending (decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (41); required-fields.ts). A field whose new value is its current value
 // as it was read is no change and keeps its stored text: the value as agents
 // read it, without the characters the agent view strips, or the value with its
 // line breaks written another way, as a browser sends back the stored text a
@@ -90,9 +91,15 @@ export async function revisePacket(
     const message = `A revision keeps the packet's kind, which is ${current.packet.kind}.`;
     throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
   }
-  // A revision, added or proposed, keeps every field the request's team requires that the current revision has (D55 (41)).
-  await assertRevisionKeepsRequiredFields(context, await targetTeamOf(context, row.targetTeamId), current.packet as Packet, packet, (field) =>
-    action === "propose_due_date" && field === "due_date" ? ["dueDate"] : REQUIRED_FIELD_CHECKS[field].path,
+  // A revision, added or proposed, keeps every field that the current revision has and that the request's team
+  // requires, or the team of a pending reassignment of it (D55 (41)).
+  await assertRevisionKeepsRequiredFields(
+    context,
+    await targetTeamOf(context, row.targetTeamId),
+    await pendingReassignmentTeams(context, row.id, context.now()),
+    current.packet as Packet,
+    packet,
+    (field) => (action === "propose_due_date" && field === "due_date" ? ["dueDate"] : REQUIRED_FIELD_CHECKS[field].path),
   );
   const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
   if (action === "propose_due_date" && !commitments.includes("due_date")) await assertSideAllows(context, userId, row, "add_revision");

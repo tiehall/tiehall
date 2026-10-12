@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createNewRequestRoute, csrfTokenFor, NEW_REQUEST_PATH } from "../src/index.ts";
+import { createNewRequestRoute, csrfTokenFor, NEW_REQUEST_PATH, runRequestPageAction } from "../src/index.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { signedInCli, type CliMachine } from "./support/cli.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
@@ -198,5 +198,144 @@ describe("required fields on reassignment and revisions", () => {
     } finally {
       await harness.install.owner.query("UPDATE teams SET required_fields = '{}' WHERE key = 'OPS'");
     }
+  });
+});
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (41), as the maintainer answered on
+// 2026-10-12. While a reassignment of a request is pending, a packet revision added or proposed is held to the
+// required fields of both the team the request is addressed to and the team the reassignment would move it to: one
+// that drops a field either team requires, and the current revision has, is refused as a revision that drops a
+// required field is, naming the team whose field it drops, on every path a revision is added or proposed by, over
+// /api/v1, the MCP tool propose, `tiehall propose` and the web UI's packet change, and the pending reassignment stays
+// valid. MOB requires code refs, FE the acceptance criteria and a due date, and QA nothing.
+describe("required fields while a reassignment is pending", () => {
+  const CODE_REFS = [{ repository: "acme/web", path: "src/settings/theme.ts", ref: "main" }];
+  const CODED = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings page.", code_refs: CODE_REFS } };
+  const UNCODED = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings and profile pages." } };
+
+  /** A request Sam opens over /api/v1 to this team, with this packet. */
+  async function openTo(team: string, packet: Record<string, unknown>): Promise<{ id: string; key: string }> {
+    const answer = await harness.api("POST", "/api/v1/requests", { authorization: `Bearer ${sam.token}` }, { targetTeam: team, title: "Add a dark mode", packet });
+    expect(answer.status).toBe(200);
+    return (await answer.json()) as { id: string; key: string };
+  }
+
+  /** Dana, of the target team, proposes to reassign the request to MOB; the proposal waits for its confirmations. */
+  async function reassignToMob(key: string): Promise<string> {
+    const answer = await harness.api("POST", "/api/v1/proposals", { authorization: `Bearer ${dana.token}` }, { kind: "reassign", key, team: "MOB" });
+    expect(answer.status).toBe(202);
+    return ((await answer.json()) as { proposal: { id: string } }).proposal.id;
+  }
+
+  async function stateOf(requestId: string): Promise<{ revisions: number; proposals: { kind: string; state: string }[] }> {
+    const { rows: revisions } = await harness.install.owner.query<{ count: number }>("SELECT count(*)::int AS count FROM packet_revisions WHERE request_id = $1", [requestId]);
+    const { rows: proposals } = await harness.install.owner.query<{ kind: string; state: string }>("SELECT kind, state FROM proposals WHERE request_id = $1 ORDER BY created_at", [requestId]);
+    return { revisions: revisions[0]?.count ?? 0, proposals };
+  }
+
+  const addRevision = (key: string, packet: unknown, revision = 1) =>
+    harness.api("POST", `/api/v1/requests/${key}/packet/revisions`, { authorization: `Bearer ${sam.token}`, "if-match": `"${revision}"` }, { packet });
+
+  it("refuses a revision that drops a field the team of a pending reassignment requires, on every path, and keeps the reassignment pending", async () => {
+    const request = await openTo("QA", CODED);
+    await reassignToMob(request.key);
+    const before = await stateOf(request.id);
+    expect(before).toEqual({ revisions: 1, proposals: [{ kind: "reassign", state: "pending" }] });
+
+    // Over /api/v1.
+    const added = await addRevision(request.key, UNCODED);
+    expect(added.status).toBe(400);
+    const problem = (await added.json()) as { type: string; detail: string; errors?: unknown };
+    expect(problem.type).toBe(`${PROBLEM}invalid-input`);
+    expect(problem.detail).toBe(
+      "Team MOB, to which a pending proposal would reassign this request, requires code refs, which the packet's current revision has and this revision drops, so nothing was added or proposed.",
+    );
+    expect(errorsOf(problem)).toEqual([{ path: ["packet", "untrusted", "code_refs"], message: "Team MOB requires code refs." }]);
+    const proposed = await harness.api("POST", "/api/v1/proposals", { authorization: `Bearer ${sam.token}`, "if-match": '"1"' }, { kind: "scope", key: request.key, packet: UNCODED });
+    expect(proposed.status).toBe(400);
+    expect(errorsOf((await proposed.json()) as { errors?: unknown }).map(({ message }) => message)).toEqual(["Team MOB requires code refs."]);
+
+    // Through the MCP tool propose.
+    const client = await connectMcp(harness, { token: sam.token, version: PROTOCOL_VERSIONS[0] });
+    try {
+      const result = await client.callTool({ name: "propose", arguments: { kind: "scope", key: request.key, packet: UNCODED, expectedRevision: 1 } });
+      const refused = problemOf(result as never);
+      expect(refused).toMatchObject({ type: `${PROBLEM}invalid-input`, status: 400 });
+      expect(errorsOf(refused).map(({ message }) => message)).toEqual(["Team MOB requires code refs."]);
+    } finally {
+      await client.close();
+    }
+
+    // Through `tiehall propose`.
+    const run = await samCli.run(["propose", "scope", request.key, "--packet", JSON.stringify(UNCODED), "--if-match", "1"]);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("packet.untrusted.code_refs: Team MOB requires code refs.");
+
+    // Through the web UI's packet change.
+    const web = harness.install.web(sam.session);
+    const changed = await runRequestPageAction(
+      new URLSearchParams({ action: "change_packet", key: request.key, revision: "1", need: "Add a dark mode to the settings and profile pages.", codeRefs: "" }),
+      { read: (commandId, input) => web.read(commandId, input), write: (commandId, input) => web.write(commandId, input, harness.install.fromThePage(sam.session)) },
+    );
+    expect(changed).toMatchObject({ ok: false, action: "change_packet", problem: { status: 400 } });
+    expect(errorsOf((changed as { problem: { errors?: unknown } }).problem).map(({ message }) => message)).toEqual(["Team MOB requires code refs."]);
+
+    // Nothing was added or proposed, and the reassignment still waits for its confirmations.
+    expect(await stateOf(request.id)).toEqual(before);
+    // A revision that keeps the code refs is taken, and the reassignment stays pending.
+    expect((await addRevision(request.key, { ...CODED, untrusted: { ...CODED.untrusted, need: "Add a dark mode everywhere." } })).status).toBe(200);
+    expect(await stateOf(request.id)).toEqual({ revisions: 2, proposals: [{ kind: "reassign", state: "pending" }] });
+  });
+
+  it("names each team whose required field a revision drops: the one the request is addressed to and the one it would move to", async () => {
+    const both = { ...packetOf(), due_date: "2026-12-01", untrusted: { need: "Add a dark mode.", acceptance_criteria: ["It follows the system setting."], code_refs: CODE_REFS } };
+    const request = await openTo("FE", both);
+    await reassignToMob(request.key);
+    const answer = await addRevision(request.key, { ...both, untrusted: { need: "Add a dark mode." } });
+    expect(answer.status).toBe(400);
+    const problem = (await answer.json()) as { detail: string; errors?: unknown };
+    expect(problem.detail).toBe(
+      "Team FE requires the acceptance criteria, and team MOB, to which a pending proposal would reassign this request, requires code refs, which the packet's current revision has and this revision drops, so nothing was added or proposed.",
+    );
+    expect(errorsOf(problem).map(({ message }) => message)).toEqual(["Team FE requires the acceptance criteria.", "Team MOB requires code refs."]);
+    expect((await stateOf(request.id)).revisions).toBe(1);
+  });
+
+  it("takes a revision that lacks a field the team it would move to requires when the current revision lacks it too", async () => {
+    const request = await openTo("QA", CODED);
+    await reassignToMob(request.key);
+    // MOB comes to require links after the reassignment was proposed; the packet has none.
+    await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['code_refs', 'links'] WHERE key = 'MOB'");
+    try {
+      expect((await addRevision(request.key, { ...CODED, untrusted: { ...CODED.untrusted, need: "Add a dark mode everywhere." } })).status).toBe(200);
+    } finally {
+      await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['code_refs'] WHERE key = 'MOB'");
+    }
+  });
+
+  it("holds a revision to the fields of the team it would move to only while the reassignment is pending", async () => {
+    // Withdrawn by its proposer, the reassignment holds nothing.
+    const withdrawn = await openTo("QA", CODED);
+    const proposal = await reassignToMob(withdrawn.key);
+    const ended = await harness.api("POST", "/api/v1/proposals", { authorization: `Bearer ${dana.token}` }, { kind: "withdraw_proposal", proposal });
+    expect(ended.status).toBe(200);
+    expect((await addRevision(withdrawn.key, UNCODED)).status).toBe(200);
+    // Nor does a reassignment whose 7 days are over, which no confirmation can take any more, even before the job that
+    // marks it expired has run: a proposal never changes what it proposes, so the test stores one made 8 days ago, and
+    // the one made now is withdrawn.
+    const lapsed = await openTo("QA", CODED);
+    const made = await reassignToMob(lapsed.key);
+    await harness.install.owner.query(
+      `INSERT INTO proposals (org_id, request_id, kind, second_confirmation, accountable_user_id, accountable_side, actor_kind, client, surface, team_id, change, base_revision, state, created_at, expires_at)
+       SELECT org_id, request_id, kind, second_confirmation, accountable_user_id, accountable_side, actor_kind, client, surface, team_id, change, base_revision, 'pending', now() - interval '8 days', now() - interval '1 day'
+       FROM proposals WHERE id = $1`,
+      [made],
+    );
+    expect((await harness.api("POST", "/api/v1/proposals", { authorization: `Bearer ${dana.token}` }, { kind: "withdraw_proposal", proposal: made })).status).toBe(200);
+    expect((await stateOf(lapsed.id)).proposals).toEqual([
+      { kind: "reassign", state: "pending" },
+      { kind: "reassign", state: "withdrawn" },
+    ]);
+    expect((await addRevision(lapsed.key, UNCODED)).status).toBe(200);
   });
 });

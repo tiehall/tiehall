@@ -1,8 +1,8 @@
 import type { IntakeField, Packet } from "@tiehall/catalog";
 import { Refusal, type RefusalIssue } from "@tiehall/core";
-import { teams } from "@tiehall/db";
+import { proposals, teams } from "@tiehall/db";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { OrgContext } from "./with-org.ts";
 
 // A team's required fields (agent-surfaces: Requests missing a team's required
@@ -19,7 +19,15 @@ import type { OrgContext } from "./with-org.ts";
 // - a revision that drops a field its team requires, and the current revision
 //   has, is neither added nor proposed; one that lacks a field the current
 //   revision lacks too is taken, so a request opened before its team required
-//   a field is not blocked by a rule it predates.
+//   a field is not blocked by a rule it predates;
+// - while a reassignment of the request is pending, a revision is held in the
+//   same way to the fields of the team it would move to as well, as the
+//   maintainer answered on 2026-10-12, so a confirmed reassignment never
+//   brings a request to a team without a field the team requires that the
+//   packet had when the reassignment was proposed. The refusal names the team
+//   whose field the revision drops, and the reassignment stays pending. A
+//   reassignment whose 7 days are over holds nothing, since no confirmation
+//   can take it any more, even before the job marks it expired.
 // An empty list, such as no acceptance criteria, counts as missing. Each is
 // refused as input that fails the schema, with 400, naming each missing field
 // in the order the team's intake page lists them, and creates nothing. The
@@ -80,22 +88,55 @@ export async function assertReassignable(context: Pick<OrgContext, "tx" | "orgId
 }
 
 /**
- * Refuses a revision that drops a field its request's team requires and the
- * current revision has; `pathOf` names where the input sets each field.
+ * The teams that the request's pending reassignments would move it to, each
+ * once, in the order they were proposed: the reassignments that no
+ * confirmation can take any more, whose 7 days are over by the call's clock,
+ * are left out. The caller holds the request's row, which every proposal and
+ * confirmation of the request locks first, so none of them changes meanwhile.
+ */
+export async function pendingReassignmentTeams({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, requestId: string, now: Date): Promise<RequiringTeam[]> {
+  const pending = await tx
+    .select({ change: proposals.change })
+    .from(proposals)
+    .where(and(eq(proposals.orgId, orgId), eq(proposals.requestId, requestId), eq(proposals.kind, "reassign"), eq(proposals.state, "pending"), gt(proposals.expiresAt, now)))
+    .orderBy(asc(proposals.createdAt), asc(proposals.id));
+  const ids = [...new Set(pending.map(({ change }) => (change as { teamId: string }).teamId))];
+  if (ids.length === 0) return [];
+  const rows = await tx.select({ id: teams.id, key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), inArray(teams.id, ids)));
+  return ids.flatMap((id) => rows.filter((row) => row.id === id));
+}
+
+/**
+ * Refuses a revision that drops a field that the request's team requires, or
+ * the team of one of its pending reassignments, and that the current revision
+ * has; `pathOf` names where the input sets each field. The refusal names each
+ * team whose field the revision drops.
  */
 export async function assertRevisionKeepsRequiredFields(
   context: Pick<OrgContext, "tx" | "orgId">,
   team: RequiringTeam,
+  reassignedTo: readonly RequiringTeam[],
   current: Packet,
   next: Packet,
   pathOf: (field: IntakeField) => string[] = (field) => REQUIRED_FIELD_CHECKS[field].path,
 ): Promise<void> {
-  const missing = (await requiredFieldsOf(context, team.id)).filter((field) => REQUIRED_FIELD_CHECKS[field].has(current) && !REQUIRED_FIELD_CHECKS[field].has(next));
-  if (missing.length === 0) return;
-  throw missingFields(
-    team,
-    missing,
-    pathOf,
-    `Team ${team.key} requires ${requiredFieldsText(missing)}, which the packet's current revision has and this revision drops, so nothing was added or proposed.`,
+  const holding: { team: RequiringTeam; pending: boolean }[] = [{ team, pending: false }, ...reassignedTo.map((other) => ({ team: other, pending: true }))];
+  const dropped: { team: RequiringTeam; fields: IntakeField[]; pending: boolean }[] = [];
+  for (const { team: holder, pending } of holding) {
+    const fields = (await requiredFieldsOf(context, holder.id)).filter((field) => REQUIRED_FIELD_CHECKS[field].has(current) && !REQUIRED_FIELD_CHECKS[field].has(next));
+    if (fields.length > 0) dropped.push({ team: holder, fields, pending });
+  }
+  if (dropped.length === 0) return;
+  const issues: RefusalIssue[] = dropped.flatMap(({ team: holder, fields }) =>
+    fields.map((field) => ({ path: pathOf(field), message: `Team ${holder.key} requires ${requiredFieldsText([field])}.` })),
+  );
+  const requirements = dropped.map(
+    ({ team: holder, fields, pending }, index) =>
+      `${index === 0 ? "Team" : "team"} ${holder.key}${pending ? ", to which a pending proposal would reassign this request," : ""} requires ${requiredFieldsText(fields)}`,
+  );
+  throw new Refusal(
+    "invalid-input",
+    `${requirements.join(", and ")}, which the packet's current revision has and this revision drops, so nothing was added or proposed.`,
+    { issues },
   );
 }

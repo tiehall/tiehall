@@ -404,7 +404,7 @@ Source: D28 #4, #26, #64; D55 (39); design.md, Decisions this change rests on; d
 
 ### Requirement: Requests missing a team's required fields are refused
 
-`open_request`, `tiehall open` and the web form SHALL refuse a request that lacks a field its target team requires, SHALL list the missing fields in the refusal, and SHALL create nothing. A team's required fields SHALL also hold when a reassignment into the team is proposed and when a packet revision is added to, or proposed for, a request addressed to it: a reassignment proposal into a team whose required fields the current packet lacks, and a revision that drops a field its team requires and the current revision has, SHALL be refused in the same way, listing the missing fields, and SHALL create nothing. An empty list, such as acceptance criteria with no item, SHALL count as missing. The requests a contract report opens, and the revisions a report adds, SHALL stay exempt, as the requirement on intake settings defines. The refusal is the one for input that fails the schema: a validation error on the MCP tools and in the web form, and HTTP 400 on `/api/v1`, which `tiehall open` calls, as the public-api capability's error model defines.
+`open_request`, `tiehall open` and the web form SHALL refuse a request that lacks a field its target team requires, SHALL list the missing fields in the refusal, and SHALL create nothing. A team's required fields SHALL also hold when a reassignment into the team is proposed and when a packet revision is added to, or proposed for, a request addressed to it: a reassignment proposal into a team whose required fields the current packet lacks, and a revision that drops a field its team requires and the current revision has, SHALL be refused in the same way, listing the missing fields, and SHALL create nothing. An empty list, such as acceptance criteria with no item, SHALL count as missing. While a reassignment of a request is pending, a packet revision added to it or proposed for it SHALL also be held to the required fields of the team the reassignment would move it to: a revision that drops a field that either team requires and the current revision has SHALL be refused in the same way, naming the team whose field it drops, and the reassignment SHALL stay pending. A reassignment whose time for confirmations is over SHALL hold no revision. The requests a contract report opens, and the revisions a report adds, SHALL stay exempt, as the requirement on intake settings defines. The refusal is the one for input that fails the schema: a validation error on the MCP tools and in the web form, and HTTP 400 on `/api/v1`, which `tiehall open` calls, as the public-api capability's error model defines.
 
 Source: D28 #26; D55 (41); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -438,6 +438,19 @@ Source: D28 #26; D55 (41); design.md, Decisions this change rests on; design.md,
 - **WHEN** FE requires the acceptance criteria, FE-142's current revision has two, and the requester's agent adds a revision with an empty list of acceptance criteria
 - **THEN** the call is refused with a validation error that names the acceptance criteria as missing
 - **AND** FE-142's packet keeps its current revision
+
+#### Scenario: A revision while a reassignment is pending
+
+- **WHEN** MOBILE requires code refs, FE-142's current revision has two, a reassignment of FE-142 to MOBILE is pending, and the requester's agent adds a revision without code refs
+- **THEN** the call is refused with a validation error that names MOBILE's code refs as missing
+- **AND** FE-142's packet keeps its current revision
+- **AND** the reassignment of FE-142 to MOBILE stays pending
+
+#### Scenario: Every path holds a revision to the team it would move to
+
+- **WHEN** a reassignment of FE-142 to MOBILE, which requires code refs, is pending, and the requester proposes a packet change without code refs through `tiehall propose` or the web UI's packet change
+- **THEN** the change is refused and names MOBILE's code refs as missing
+- **AND** nothing is proposed
 
 #### Scenario: A report's revision is exempt
 
