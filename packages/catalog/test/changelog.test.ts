@@ -5,6 +5,7 @@ import {
   addedEntries,
   API_BREAKING_LABEL,
   ChangelogError,
+  finalVersionOf,
   parseChangelog,
   releaseItems,
   type ChangelogRelease,
@@ -152,6 +153,16 @@ describe("a release in the changelog", () => {
       "releases[2].changes[0]: level is 1 (information), 2 (warning) or 3 (error).",
       "releases[3].changes[0]: text says what changed.",
     ]);
+  });
+
+  // design.md, Technical decisions: T13, R-e. Everything a release changes is recorded under its final version.
+  it("is refused for a release candidate, whose changes and entries are recorded under its final version", () => {
+    expect(() => parseChangelog(changelog([], [{ ...release, version: "1.4.0-rc.1" }]))).toThrow(
+      "releases[0]: version 1.4.0-rc.1 is a release candidate's, which gets no record of its own: its changes and entries are recorded under the final version, 1.4.0.",
+    );
+    expect(finalVersionOf("1.4.0-rc.1")).toBe("1.4.0");
+    expect(finalVersionOf("2.0.0-beta.2")).toBe("2.0.0");
+    expect(finalVersionOf("1.4.0")).toBeUndefined();
   });
 
   it("shows the maintainers' entries first and then each change, with what it is about", () => {

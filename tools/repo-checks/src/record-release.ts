@@ -14,6 +14,9 @@ import { recordRelease, releaseNotes } from "./api-changelog.ts";
 // Usage: node tools/repo-checks/src/record-release.ts <version> [--previous <git ref>] [--date YYYY-MM-DD] [--notes <file>]
 // Without --previous, the release is the first one and every operation is
 // listed as added. The notes go to standard output unless --notes names a file.
+// A release candidate gets no record of its own, so the version is a final
+// release's: its record collects every change and entry for its candidates too
+// (design.md, Technical decisions: T13, R-e).
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const { values, positionals } = parseArgs({

@@ -47,6 +47,20 @@ describe("recording a release", () => {
     expect(recorded.entries).toEqual([{ date: "2026-11-17", kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }]);
   });
 
+  // design.md, Technical decisions: T13, R-e. A release candidate gets no record of its own: its final version's
+  // record collects every change and every entry, the maintainers' hand-written ones included.
+  it("refuses a release candidate, leaving the entries waiting for the final version, whose record carries them", async () => {
+    const release = { date: "2026-12-01", previousDocument: fixture("base.json"), document: fixture("revision.json") };
+    await expect(recordRelease({ ...release, version: "1.4.0-rc.1", changelog: fixture("changelog-before.json") })).rejects.toThrow(
+      "1.4.0-rc.1 is a release candidate, which gets no record of its own in openapi/changelog.json: record its final version, 1.4.0, " +
+        "which collects every API change and every entry, the hand-written ones included.",
+    );
+    const waiting = parseChangelog(fixture("changelog-before.json")).unreleased;
+    expect(waiting.length).toBeGreaterThan(0);
+    const { release: recorded } = await recordRelease({ ...release, version: "1.4.0", changelog: fixture("changelog-before.json") });
+    expect(recorded.entries).toEqual(waiting);
+  });
+
   it("compares the first release with an empty document, so every operation it has is listed as added", async () => {
     const changes = await apiChanges(EMPTY_DOCUMENT, fixture("base.json"));
     expect(changes.filter(({ operationId }) => operationId !== undefined).map(({ id, operationId }) => `${id} ${operationId}`).sort()).toEqual([

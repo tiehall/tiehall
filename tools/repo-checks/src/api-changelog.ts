@@ -1,4 +1,4 @@
-import { parseChangelog, releaseItems, type ApiChange, type ChangelogItem, type ChangelogRelease } from "@tiehall/catalog/changelog";
+import { finalVersionOf, parseChangelog, releaseItems, type ApiChange, type ChangelogEntry, type ChangelogItem, type ChangelogRelease } from "@tiehall/catalog/changelog";
 import { runOnDocuments } from "./oasdiff.ts";
 import { packetNoticeProblems } from "./packet-compat.ts";
 
@@ -11,7 +11,10 @@ import { packetNoticeProblems } from "./packet-compat.ts";
 // carries the file, so its /docs/api/changelog lists every release up to it,
 // and the release notes carry the same items, both from releaseItems().
 // Tiehall emails nobody about API changes: the page and the notes are the
-// notice.
+// notice. A release candidate gets no record of its own (design.md, Technical
+// decisions: T13, R-e): its final version's record collects every change and
+// every entry, the hand-written ones included, and the candidate's notes carry
+// that record once it is made, or before it the entries waiting for it.
 
 /** The document the first release is compared with: no operation at all, so each one it has is listed as added. */
 export const EMPTY_DOCUMENT = `${JSON.stringify({ openapi: "3.1.0", info: { title: "Tiehall API", version: "0.0.0" }, paths: {} }, null, 2)}\n`;
@@ -50,6 +53,13 @@ export interface ReleaseToRecord {
 
 /** openapi/changelog.json with the release recorded, and the release's record. */
 export async function recordRelease(options: ReleaseToRecord): Promise<{ changelog: string; release: ChangelogRelease }> {
+  const final = finalVersionOf(options.version);
+  if (final !== undefined) {
+    throw new Error(
+      `${options.version} is a release candidate, which gets no record of its own in openapi/changelog.json: record its final version, ${final}, ` +
+        "which collects every API change and every entry, the hand-written ones included.",
+    );
+  }
   const raw = JSON.parse(options.changelog) as Record<string, unknown>;
   const changelog = parseChangelog(options.changelog);
   if (changelog.releases.some(({ version }) => version === options.version)) throw new Error(`Release ${options.version} is already recorded.`);
@@ -108,18 +118,41 @@ const LABELS: Readonly<Record<ChangelogItem["kind"], string>> = {
   info: "",
 };
 
-/** The API section of a release's notes, in Markdown: the same items as the changelog page. */
-export function releaseNotes(release: ChangelogRelease): string {
-  const items = releaseItems(release);
-  const lines = [
-    "## API changes",
-    "",
-    `The REST API is at version ${release.apiVersion} in this release. Every install lists these changes on /docs/api/changelog.`,
-    "",
-    ...(items.length === 0 ? ["No change to the API."] : items.map(noteLine)),
-    "",
-  ];
-  return lines.join("\n");
+/** What a release candidate's notes list of the API while its final version is not recorded yet: the entries waiting for it. */
+export interface WaitingApiChanges {
+  /** The final version whose record will hold the candidate's changes and these entries, such as 1.4.0. */
+  final: string;
+  /** The OpenAPI document's info.version in the release candidate, such as 0.4.0. */
+  apiVersion: string;
+  /** The maintainers' entries no release carries yet, under unreleased. */
+  entries: ChangelogEntry[];
+}
+
+/**
+ * The API section of a release's notes, in Markdown: the same items as the changelog page. The version is the
+ * release's own; a release candidate's notes carry its final version's record, or the entries waiting for it.
+ */
+export function releaseNotes(api: ChangelogRelease | WaitingApiChanges, version = "version" in api ? api.version : api.final): string {
+  if ("final" in api) {
+    const items = releaseItems({ entries: api.entries, changes: [] });
+    return [
+      "## API changes",
+      "",
+      `The REST API is at version ${api.apiVersion} in this release candidate. A release candidate records no API changes of its own: ` +
+        `they are recorded under ${api.final}, with the entries below, and listed in its notes and on /docs/api/changelog of an install that runs it. ` +
+        "An install that runs this release candidate lists the entries on /docs/api/changelog as not released yet.",
+      "",
+      ...(items.length === 0 ? [`No entry waits for ${api.final}.`] : items.map(noteLine)),
+      "",
+    ].join("\n");
+  }
+  const items = releaseItems(api);
+  const lead =
+    version === api.version
+      ? `The REST API is at version ${api.apiVersion} in this release. Every install lists these changes on /docs/api/changelog.`
+      : `This release candidate carries the API changes recorded for ${api.version}, and the REST API is at version ${api.apiVersion} in it. ` +
+        "Every install that runs it lists these changes on /docs/api/changelog.";
+  return ["## API changes", "", lead, "", ...(items.length === 0 ? ["No change to the API."] : items.map(noteLine)), ""].join("\n");
 }
 
 function noteLine(item: ChangelogItem): string {

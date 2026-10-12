@@ -7,7 +7,10 @@
 // shown with the release that carries it. `releases` holds what each release
 // changed, newest first: when a release is made, the pinned oasdiff's
 // changelog of openapi/v1.json since the previous release is recorded with
-// the unreleased entries (design.md, Technical decisions: T12). The changelog
+// the unreleased entries (design.md, Technical decisions: T12). A release
+// candidate, such as 1.4.0-rc.1, gets no record of its own: every change and
+// every entry, the hand-written ones included, is recorded under its final
+// version (design.md, Technical decisions: T13, R-e). The changelog
 // page at /docs/api/changelog and each release's notes show the same items,
 // which releaseItems() gives. The compatibility check in CI reads the file at
 // a pull request's merge base and in the pull request, so this module imports
@@ -102,13 +105,23 @@ export class ChangelogError extends Error {
 
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const RELEASE_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+/** A final release's version: a release candidate's, such as 1.4.0-rc.1, gets no record of its own. */
+const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
+const CANDIDATE_VERSION = /^(\d+\.\d+\.\d+)-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$/;
 const API_VERSION = /^\d+\.\d+\.\d+$/;
 const RELEASE_FIELDS = new Set(["version", "date", "apiVersion", "entries", "changes"]);
 const CHANGE_FIELDS = new Set(["id", "level", "method", "path", "operationId", "text"]);
 const OPERATION_ID = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
 const ENTRY_FIELDS = new Set(["date", "kind", "text", "operationIds", "schemas"]);
 const TOP_LEVEL_FIELDS = new Set(["$comment", "unreleased", "releases"]);
+
+/**
+ * The final version a release candidate's version names, such as 1.4.0 for 1.4.0-rc.1, under which its changes and
+ * entries are recorded; undefined for a final release's version.
+ */
+export function finalVersionOf(version: string): string | undefined {
+  return CANDIDATE_VERSION.exec(version)?.[1];
+}
 
 /** The changelog in this JSON text; throws ChangelogError naming every problem when it breaks the format. */
 export function parseChangelog(text: string): Changelog {
@@ -134,7 +147,14 @@ function releaseProblems(release: unknown, at: string): string[] {
   if (!isObject(release)) return [`${at}: a release is an object with a version, a date, an apiVersion, entries and changes.`];
   const problems: string[] = [];
   const { version, date, apiVersion, entries, changes } = release;
-  if (typeof version !== "string" || !RELEASE_VERSION.test(version)) problems.push(`${at}: version is a release version, such as 1.4.0.`);
+  const final = typeof version === "string" ? finalVersionOf(version) : undefined;
+  if (final !== undefined) {
+    problems.push(
+      `${at}: version ${version as string} is a release candidate's, which gets no record of its own: its changes and entries are recorded under the final version, ${final}.`,
+    );
+  } else if (typeof version !== "string" || !RELEASE_VERSION.test(version)) {
+    problems.push(`${at}: version is a release version, such as 1.4.0.`);
+  }
   if (typeof date !== "string" || !isDate(date)) problems.push(`${at}: date is a calendar day, such as 2026-12-15.`);
   if (typeof apiVersion !== "string" || !API_VERSION.test(apiVersion)) {
     problems.push(`${at}: apiVersion is the document's info.version, such as 0.4.0.`);

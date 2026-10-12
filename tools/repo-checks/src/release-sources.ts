@@ -1,15 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseChangelog, type ChangelogRelease } from "@tiehall/catalog/changelog";
+import { finalVersionOf, parseChangelog, type ChangelogRelease } from "@tiehall/catalog/changelog";
 import { compareVersions, isVersion } from "@tiehall/core";
+import type { WaitingApiChanges } from "./api-changelog.ts";
 
 // What a release's notes say besides its image (public-api: The changelog page
 // and the release notes; self-host-install: Migrations expand, then contract;
 // self-host-install: Upgrades apply migrations before the app starts):
 // - the release's API changes, as `pnpm changelog:release` recorded them in
 //   openapi/changelog.json before the release was tagged, the same entries the
-//   changelog page of an install running it lists;
+//   changelog page of an install running it lists. A release candidate gets no
+//   record of its own (design.md, Technical decisions: T13, R-e): its notes
+//   carry its final version's record once that is made, and before it the
+//   entries waiting under unreleased, which that record will collect;
 // - the contract steps it adds since the previous release: the migrations of
 //   packages/db/migrations marked `-- migrate: contract after <release>` that
 //   the previous release's tag does not hold. A contract step ships at least
@@ -44,7 +48,8 @@ export interface NoSkipRelease {
 }
 
 export interface ReleaseSources {
-  api: ChangelogRelease;
+  /** The release's record; for a release candidate, its final version's record, or the entries waiting for it. */
+  api: ChangelogRelease | WaitingApiChanges;
   contractSteps: ContractStep[];
   noSkip: NoSkipRelease[];
 }
@@ -119,9 +124,19 @@ export function noSkipReleases(root: string): NoSkipRelease[] {
   });
 }
 
-/** The API changes openapi/changelog.json records for the release, refusing a release it does not record or records stale. */
-export function recordedApiChanges(root: string, version: string, previous: string | undefined): ChangelogRelease {
-  const release = parseChangelog(readFileSync(join(root, CHANGELOG), "utf8")).releases.find((each) => each.version === version);
+/**
+ * The API changes openapi/changelog.json records for the release, refusing a release it does not record or records
+ * stale. A release candidate has no record of its own: it takes its final version's, or, while that is not recorded,
+ * the entries waiting for it.
+ */
+export function recordedApiChanges(root: string, version: string, previous: string | undefined): ChangelogRelease | WaitingApiChanges {
+  const changelog = parseChangelog(readFileSync(join(root, CHANGELOG), "utf8"));
+  const final = finalVersionOf(version);
+  const release = changelog.releases.find((each) => each.version === (final ?? version));
+  if (release === undefined && final !== undefined) {
+    const apiVersion = (JSON.parse(readFileSync(join(root, DOCUMENT), "utf8")) as { info?: { version?: string } }).info?.version ?? "";
+    return { final, apiVersion, entries: changelog.unreleased };
+  }
   if (release === undefined) {
     throw new Error(
       `${CHANGELOG} records no release ${version}: record it with pnpm changelog:release ${version}${previous === undefined ? "" : ` --previous ${previous}`}, ` +
@@ -131,7 +146,7 @@ export function recordedApiChanges(root: string, version: string, previous: stri
   const apiVersion = (JSON.parse(readFileSync(join(root, DOCUMENT), "utf8")) as { info?: { version?: string } }).info?.version;
   if (apiVersion !== release.apiVersion) {
     throw new Error(
-      `${CHANGELOG} records release ${version} with the API at version ${release.apiVersion}, but ${DOCUMENT} is at version ${apiVersion ?? "none"}: ` +
+      `${CHANGELOG} records release ${release.version} with the API at version ${release.apiVersion}, but ${DOCUMENT} is at version ${apiVersion ?? "none"}: ` +
         "the document changed after the release was recorded, so record the release again.",
     );
   }

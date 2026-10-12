@@ -1,6 +1,6 @@
 import type { ChangelogRelease } from "@tiehall/catalog/changelog";
 import { compareVersions, MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION } from "@tiehall/core";
-import { releaseNotes as apiChangesSection } from "./api-changelog.ts";
+import { releaseNotes as apiChangesSection, type WaitingApiChanges } from "./api-changelog.ts";
 import { documentedCommand, INSTALL_DOCS } from "./docs-commands.ts";
 import { checkMarketplace, type ListedPlugin } from "./marketplace.ts";
 import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "./release-files.ts";
@@ -105,8 +105,11 @@ export interface ReleaseNotesInput {
   commit: string;
   /** The marketplace that lists the release's Claude Code plugin, and the plugin; read from the repository unless given. */
   plugin?: { marketplace: string; plugin: ListedPlugin };
-  /** The release's API changes, as openapi/changelog.json records them. */
-  api: ChangelogRelease;
+  /**
+   * The release's API changes, as openapi/changelog.json records them; for a release candidate, its final version's
+   * record, or the entries waiting for it while that is not recorded.
+   */
+  api: ChangelogRelease | WaitingApiChanges;
   /** The contract steps the release adds since the previous release. */
   contractSteps: readonly ContractStep[];
   /** The releases up to this one that must not be skipped. */
@@ -166,7 +169,7 @@ export function renderReleaseNotes({ root, version, image, repository, commit, p
     ["```", `TIEHALL_IMAGE=${reference}`, "```"].join("\n"),
     commands(documentedCommand(root, "upgrade-pull-up")),
     ...clientPieces(name, web, tag, parseReleaseCommit(commit), plugin ?? releasePlugin(root)),
-    apiChangesSection(api).trimEnd(),
+    apiChangesSection(api, version).trimEnd(),
   ];
   return `${sections.join("\n\n")}\n`;
 }

@@ -104,12 +104,14 @@ describe("the release notes", () => {
       image: parseReleaseImage(`ghcr.io/acme/tiehall:1.3.0-rc.1@${digest}`, "1.3.0-rc.1"),
       repository,
       commit,
-      api: unchanged("1.3.0-rc.1"),
+      // A release candidate carries its final version's record (design.md, Technical decisions: T13, R-e).
+      api: unchanged("1.3.0"),
       contractSteps: [],
       noSkip: [],
     });
     expect(candidate.split("\n")[0]).toBe("# Tiehall 1.3.0-rc.1");
     expect(candidate.replace(/\s+/g, " ")).toContain("This is a release candidate of 1.3.0");
+    expect(candidate.replace(/\s+/g, " ")).toContain("This release candidate carries the API changes recorded for 1.3.0");
     expect(flat).not.toContain("release candidate");
   });
 
@@ -214,6 +216,63 @@ describe("the notes of a release with a deprecation, a contract step and a relea
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toBe("The notes of 1.4.0 can be written: 2 API changes and 1 entry, 1 contract step, 1 release that must not be skipped.\n");
+  });
+
+  // design.md, Technical decisions: T13, R-e. A release candidate gets no changelog record of its own: every API
+  // change and every entry, the maintainers' hand-written ones included, is recorded under the final version.
+  it("of a release candidate carry its final version's record once that is made", () => {
+    const candidate = `ghcr.io/acme/tiehall:1.4.0-rc.1@${digest}`;
+    const run = write("1.4.0-rc.1", "--previous", "v1.3.0", "--image", candidate, "--repository", repository, "--commit", commit);
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    const text = run.stdout.replace(/\s+/g, " ");
+    expect(text).toContain("This is a release candidate of 1.4.0");
+    expect(text).toContain("This release candidate carries the API changes recorded for 1.4.0");
+    expect(run.stdout).toContain("- `GET /api/v1/requests` (requests.list): endpoint deprecated with sunset date `2026-12-15` (stability: beta)");
+    expect(run.stdout).toContain("- Note (requests.list): requests.list is deprecated: read a team's requests with its search operation instead.");
+    const check = write("1.4.0-rc.1", "--previous", "v1.3.0", "--check");
+    expect(check.stderr).toBe("");
+    expect(check.stdout).toBe("The notes of 1.4.0-rc.1 can be written: 2 API changes and 1 entry, recorded for 1.4.0, 1 contract step, 1 release that must not be skipped.\n");
+  });
+
+  it("of a release candidate list, before its final version is recorded, the entries waiting for it and no API change of their own", () => {
+    // The changelog as it stood before 1.4.0 was recorded: the maintainers' note waits under unreleased.
+    const file = join(repo, "openapi/changelog.json");
+    const recorded = JSON.parse(readFileSync(file, "utf8")) as { unreleased: unknown[]; releases: { entries: unknown[] }[] };
+    const [final, ...older] = recorded.releases;
+    writeFileSync(file, JSON.stringify({ ...recorded, unreleased: final?.entries ?? [], releases: older }, null, 2));
+    const candidate = `ghcr.io/acme/tiehall:1.4.0-rc.1@${digest}`;
+    const run = write("1.4.0-rc.1", "--previous", "v1.3.0", "--image", candidate, "--repository", repository, "--commit", commit);
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    const text = run.stdout.replace(/\s+/g, " ");
+    expect(text).toContain("The REST API is at version 0.3.0 in this release candidate.");
+    expect(text).toContain("A release candidate records no API changes of its own: they are recorded under 1.4.0, with the entries below,");
+    expect(run.stdout).toContain("- Note (requests.list): requests.list is deprecated: read a team's requests with its search operation instead.");
+    expect(run.stdout).not.toContain("endpoint deprecated with sunset date");
+    expect(run.stdout).not.toContain("No change to the API.");
+    const check = write("1.4.0-rc.1", "--previous", "v1.3.0", "--check");
+    expect(check.stderr).toBe("");
+    expect(check.stdout).toBe(
+      "The notes of 1.4.0-rc.1 can be written: its API changes are recorded under 1.4.0, with 1 entry that waits for it, 1 contract step, 1 release that must not be skipped.\n",
+    );
+    // With no entry waiting, the notes say so.
+    writeFileSync(file, JSON.stringify({ ...recorded, unreleased: [], releases: older }, null, 2));
+    const none = write("1.4.0-rc.1", "--previous", "v1.3.0", "--image", candidate, "--repository", repository, "--commit", commit);
+    expect(none.stdout).toContain("No entry waits for 1.4.0.");
+    // The final version is not recorded yet, so its own notes cannot be written.
+    expect(write("1.4.0", "--previous", "v1.3.0", "--check").stderr).toContain("openapi/changelog.json records no release 1.4.0");
+    git("checkout", "--quiet", "--", "openapi/changelog.json");
+  });
+
+  it("refuse a changelog that records a release candidate", () => {
+    const file = join(repo, "openapi/changelog.json");
+    const recorded = JSON.parse(readFileSync(file, "utf8")) as { releases: { version: string }[] };
+    writeFileSync(file, JSON.stringify({ ...recorded, releases: recorded.releases.map((each, index) => (index === 0 ? { ...each, version: "1.4.0-rc.1" } : each)) }, null, 2));
+    const run = write("1.4.0-rc.1", "--previous", "v1.3.0", "--check");
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("releases[0]: version 1.4.0-rc.1 is a release candidate's, which gets no record of its own");
+    git("checkout", "--quiet", "--", "openapi/changelog.json");
   });
 
   it("refuse a release the changelog does not record, or records with another API version than the release's document", () => {

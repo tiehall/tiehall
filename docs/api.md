@@ -37,7 +37,7 @@ Every answer of a deprecated operation carries the `Deprecation` header (RFC 974
 
 ## The changelog
 
-Each install serves the API's changelog at `/docs/api/changelog`, which needs no sign-in. It lists the changes of every release up to the one it runs, from the pinned diff engine's changelog of the document between releases, and the maintainers' entries, such as a deprecation, a graduation or an urgent break. Each release's notes carry the same entries. This is the notice: Tiehall sends no email about API changes to anyone who holds a token. Read the changelog before you upgrade a client, and the release notes before you upgrade an install. This repository keeps it as [`openapi/changelog.json`](../openapi/changelog.json).
+Each install serves the API's changelog at `/docs/api/changelog`, which needs no sign-in. It lists the changes of every release up to the one it runs, from the pinned diff engine's changelog of the document between releases, and the maintainers' entries, such as a deprecation, a graduation or an urgent break. Each release's notes carry the same entries. A release candidate gets no entries of its own: its changes are listed under the release it leads to, and an install that runs a candidate lists the entries waiting for that release as not released yet. This is the notice: Tiehall sends no email about API changes to anyone who holds a token. Read the changelog before you upgrade a client, and the release notes before you upgrade an install. This repository keeps it as [`openapi/changelog.json`](../openapi/changelog.json).
 
 ## Idempotency
 

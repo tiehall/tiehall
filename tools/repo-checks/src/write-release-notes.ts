@@ -57,9 +57,14 @@ try {
   const sources = releaseSources(resolve(values.root), version, previous);
   const plugin = releasePlugin(resolve(values.root));
   if (image === undefined || commit === undefined) {
+    const { api } = sources;
+    const changes =
+      "final" in api
+        ? `its API changes are recorded under ${api.final}, with ${count(api.entries.length, "entry that waits", "entries that wait")} for it`
+        : `${count(api.changes.length, "API change", "API changes")} and ${count(api.entries.length, "entry", "entries")}` +
+          (api.version === version ? "" : `, recorded for ${api.version}`);
     console.log(
-      `The notes of ${version} can be written: ${count(sources.api.changes.length, "API change", "API changes")} and ` +
-        `${count(sources.api.entries.length, "entry", "entries")}, ${count(sources.contractSteps.length, "contract step", "contract steps")}, ` +
+      `The notes of ${version} can be written: ${changes}, ${count(sources.contractSteps.length, "contract step", "contract steps")}, ` +
         `${count(sources.noSkip.length, "release that must not be skipped", "releases that must not be skipped")}.`,
     );
   } else {
