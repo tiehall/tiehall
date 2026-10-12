@@ -2426,9 +2426,9 @@ export const appliedCommitments = pgTable(
 // ids, its own and its owner's, which a rename keeps and which the GitHub
 // Actions OIDC token of a CI run in it names (repository_id and
 // repository_owner_id), with its full name as shown then. The admin may bind
-// the API to one workflow, by the job_workflow_ref of the runs that may report
-// for it. A name names one API, which keeps its id when an admin unregisters
-// it and registers it again.
+// the API to one workflow, by the path of its file, which the job_workflow_ref
+// of the runs that may report for it names before its ref. A name names one
+// API, which keeps its id when an admin unregisters it and registers it again.
 export const apis = pgTable(
   "apis",
   {
@@ -2444,7 +2444,12 @@ export const apis = pgTable(
     repositoryOwnerId: bigint("repository_owner_id", { mode: "number" }).notNull(),
     /** The repository's owner and name as GitHub gave them when the API was registered, such as acme/payments, to show it by. */
     repositoryFullName: text("repository_full_name").notNull(),
-    /** The one workflow whose runs may report for the API, as their OIDC tokens' job_workflow_ref names it; null for any workflow of the repository. */
+    /**
+     * The one workflow whose runs may report for the API, by the path of its
+     * file, such as acme/payments/.github/workflows/contract.yml: their OIDC
+     * tokens' job_workflow_ref without its ref, which a binding first kept and
+     * is read without; null for any workflow of the repository.
+     */
     jobWorkflowRef: text("job_workflow_ref"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     registeredByUserId: uuid("registered_by").notNull(),

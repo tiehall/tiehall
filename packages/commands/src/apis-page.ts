@@ -60,12 +60,12 @@ export function createApisRoute(options: PageRouteOptions): PageRoute {
       if (form.get("action") !== "register") throw new Refusal("route-not-found", "The APIs page offers no such action.");
       // Only an admin's form leads on: a member gets 403, as for the page.
       await read(listApis.id, {});
-      const workflow = field(form, "jobWorkflowRef");
+      const workflow = field(form, "workflow");
       const input = {
         name: field(form, "name"),
         team: field(form, "team"),
         repository: field(form, "repository"),
-        ...(workflow === "" ? {} : { jobWorkflowRef: workflow }),
+        ...(workflow === "" ? {} : { workflow }),
       };
       return seeOther(reviewPath(registerApi.id, input));
     },
@@ -80,7 +80,7 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       `          <td>${keyTag(api.name)}</td>`,
       `          <td>${keyTag(api.provider.key)}</td>`,
       `          <td>${escapeHtml(api.repository)}</td>`,
-      `          <td>${escapeHtml(api.jobWorkflowRef ?? "Any workflow of its repository")}</td>`,
+      `          <td>${escapeHtml(api.workflow ?? "Any workflow of its repository")}</td>`,
       `          <td>${escapeHtml(userName(api.registeredBy))}, ${utcHtml(api.registeredAt)}</td>`,
       `          <td>${escapeHtml(api.warnOpensRequests ? "On: they open requests" : "Off: they go to the daily WARN digests")}</td>`,
       '          <td><div class="row-actions">',
@@ -124,7 +124,11 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
             fieldHtml("api-team", "Provider team", `<select id="api-team" name="team">${teamOptions}</select>`),
             fieldHtml("api-repository", "GitHub repository, as owner/name", '<input type="text" id="api-repository" name="repository" list="covered-repositories" required>'),
             `        <datalist id="covered-repositories">${covered.map((name) => `<option value="${escapeHtml(name)}">`).join("")}</datalist>`,
-            fieldHtml("api-workflow", "Only this workflow may report, by its job_workflow_ref, such as acme/payments/.github/workflows/contract.yml@refs/heads/main (optional)", '<input type="text" id="api-workflow" name="jobWorkflowRef">'),
+            fieldHtml(
+              "api-workflow",
+              "Only this workflow may report, from any branch or pull request, by the path of its workflow file, such as acme/payments/.github/workflows/contract.yml (optional)",
+              '<input type="text" id="api-workflow" name="workflow">',
+            ),
             '        <button type="submit">Review the registration</button>',
             "      </form>",
             covered.length === 0 ? '      <p class="notice">No connected installation covers a repository yet: connect one on the GitHub page first.</p>' : "",

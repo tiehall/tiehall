@@ -7,10 +7,13 @@ import { createSign, generateKeyPairSync, randomUUID, type KeyObject } from "nod
 // https://token.actions.githubusercontent.com, whose public keys it publishes
 // as a JSON Web Key Set. A test issuer here holds a key pair of its own and
 // publishes its public key as such a set, which a test hands to the install in
-// place of GitHub's; it signs tokens with the claims GitHub gives a run of a
-// pull_request workflow, which a test can change one by one. It signs with
-// node:crypto, apart from the library the install verifies with. A second key,
-// which the set does not hold, signs a token that is not the issuer's.
+// place of GitHub's; it signs tokens with the claims GitHub gives a run, which
+// a test can change one by one: by default a push to main that runs
+// .github/workflows/contract.yml, and for a run for a pull request, the pull
+// request's merge ref, with the pairs of `ref` and `job_workflow_ref` GitHub
+// issues (decisions-from-groups-15-28, D55 (61)). It signs with node:crypto,
+// apart from the library the install verifies with. A second key, which the
+// set does not hold, signs a token that is not the issuer's.
 
 /** GitHub Actions' OIDC issuer, as every token it signs names it. */
 export const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";
@@ -45,8 +48,16 @@ export interface ActionsRun {
   repository: string;
   repositoryId: number | string;
   repositoryOwnerId: number | string;
-  /** The workflow the run belongs to; .github/workflows/contract.yml on main of the repository unless given. */
-  jobWorkflowRef?: string;
+  /** The workflow file the run belongs to, under the repository: .github/workflows/contract.yml unless given. */
+  workflow?: string;
+  /** The pull request the run is for, as a run of a pull_request workflow is; a push to main unless given. */
+  pullRequest?: number;
+  /**
+   * The run's workflow with the ref it ran from, as job_workflow_ref names it,
+   * in place of the pair the workflow and the pull request make; its ref is
+   * then the token's `ref`.
+   */
+  jobWorkflowRef?: string | undefined;
 }
 
 export interface ActionsOidc {
@@ -72,10 +83,16 @@ export function createActionsOidc(): ActionsOidc {
     token(run, options = {}) {
       const now = Math.floor((options.now ?? new Date()).getTime() / 1000);
       const [owner = ""] = run.repository.split("/");
+      // GitHub's pair: a push runs the workflow from the branch, a pull request's run from the pull request's merge ref.
+      const pull = run.pullRequest;
+      const jobWorkflowRef =
+        run.jobWorkflowRef ?? `${run.repository}/${run.workflow ?? ".github/workflows/contract.yml"}@${pull === undefined ? "refs/heads/main" : `refs/pull/${pull}/merge`}`;
+      const at = jobWorkflowRef.indexOf("@refs/");
+      const ref = jobWorkflowRef.slice((at === -1 ? jobWorkflowRef.lastIndexOf("@") : at) + 1);
       const claims: Record<string, unknown> = {
         iss: GITHUB_ACTIONS_ISSUER,
         aud: run.audience,
-        sub: `repo:${run.repository}:pull_request`,
+        sub: pull === undefined ? `repo:${run.repository}:ref:${ref}` : `repo:${run.repository}:pull_request`,
         jti: randomUUID(),
         iat: now,
         nbf: now - 300,
@@ -84,11 +101,11 @@ export function createActionsOidc(): ActionsOidc {
         repository_id: String(run.repositoryId),
         repository_owner: owner,
         repository_owner_id: String(run.repositoryOwnerId),
-        job_workflow_ref: run.jobWorkflowRef ?? `${run.repository}/.github/workflows/contract.yml@refs/heads/main`,
-        workflow_ref: run.jobWorkflowRef ?? `${run.repository}/.github/workflows/contract.yml@refs/heads/main`,
-        ref: "refs/pull/310/merge",
+        job_workflow_ref: jobWorkflowRef,
+        workflow_ref: jobWorkflowRef,
+        ref,
         sha: "c".repeat(40),
-        event_name: "pull_request",
+        event_name: pull === undefined ? "push" : "pull_request",
         run_id: "9100200300",
       };
       for (const [name, value] of Object.entries(options.claims ?? {})) {

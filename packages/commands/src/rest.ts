@@ -110,8 +110,12 @@ export interface RestOptions {
   /** The documents of later major versions, as JSON text, by major version: 2 for /api/v2/openapi.json; none while only /api/v1 exists. */
   documents?: Readonly<Record<number, string>>;
   execute: Execute;
-  /** Who is calling, from the call's credentials; undefined when it carries none; a refusal for a token that is not valid. */
-  authenticate(request: Request): Promise<Caller | undefined>;
+  /**
+   * Who is calling, from the call's credentials, for the operation the call's
+   * path serves; undefined when it carries none; a refusal for a token that is
+   * not valid, or for a caller that may not call that operation at all.
+   */
+  authenticate(request: Request, operation: { id: string }): Promise<Caller | undefined>;
   /** The URL of the protected resource metadata, which the challenge of a refused token points to. */
   resourceMetadata?: string;
   logger?: Logger;
@@ -182,7 +186,7 @@ export function createRestHandler(options: RestOptions): RestHandler {
   async function answer(request: Request, url: URL, found: ResolvedRoute, body: string): Promise<Response> {
     const { definition, parameters } = found;
     try {
-      const caller = await options.authenticate(request);
+      const caller = await options.authenticate(request, definition);
       if (caller === undefined) {
         return problem(
           challenged(new Refusal("unauthenticated", "This operation needs a token in the Authorization header.", { challenge: { scope: definition.scopes } })),

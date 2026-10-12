@@ -31,7 +31,9 @@ let danaId: string;
 let acmeId: number;
 let paymentsApi: string;
 
-const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+/** The workflow file billing-api is bound to, and a run of it on main, as its token's job_workflow_ref names it. */
+const CONTRACT_WORKFLOW_FILE = "acme/payments/.github/workflows/contract.yml";
+const CONTRACT_WORKFLOW = `${CONTRACT_WORKFLOW_FILE}@refs/heads/main`;
 
 /** A CI run in acme/payments, as its token names it. */
 const paymentsRun = (run: Partial<ActionsRun> = {}): ActionsRun => ({
@@ -133,7 +135,7 @@ beforeAll(async () => {
   }));
   expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
   expect(
-    (await install.confirm(ada, "apis.register", { name: "billing-api", team: pay, repository: "acme/payments", jobWorkflowRef: CONTRACT_WORKFLOW })).status,
+    (await install.confirm(ada, "apis.register", { name: "billing-api", team: pay, repository: "acme/payments", workflow: CONTRACT_WORKFLOW_FILE })).status,
   ).toBe(200);
   paymentsApi = (await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'payments-api'")).rows[0]?.id ?? "";
 }, 60_000);
@@ -175,12 +177,20 @@ describe("a contract report", () => {
     ["a run in another repository", { repository: "acme/web", repositoryId: 7002 }, "payments-api"],
     ["another workflow of a bound API's repository", { jobWorkflowRef: "acme/payments/.github/workflows/nightly.yml@refs/heads/main" }, "billing-api"],
     ["a run for an API that is not registered", {}, "ledger-api"],
+    ["a run of a bound API's workflow for another pull request than PR #310 (decisions-from-groups-15-28, D55 (61))", { jobWorkflowRef: undefined, pullRequest: 311 }, "billing-api"],
   ])("from %s is refused with 403 and stores nothing", async (_case, run, apiName) => {
     const answer = await report(oidc.token(paymentsRun(run)), reportOf(CHANGES, apiName));
 
     expect(answer.status).toBe(403);
     expect(answer.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
     expect(await stored()).toEqual([]);
+  });
+
+  it("from a run of a bound API's workflow for PR #310 is accepted, and stored with the run's job_workflow_ref (decisions-from-groups-15-28, D55 (61))", async () => {
+    const answer = await report(oidc.token(paymentsRun({ jobWorkflowRef: undefined, pullRequest: 310 })), reportOf(CHANGES, "billing-api"));
+
+    expect(answer.status).toBe(200);
+    expect(await stored()).toEqual([expect.objectContaining({ pull_request_number: 310, job_workflow_ref: `${CONTRACT_WORKFLOW_FILE}@refs/pull/310/merge` })]);
   });
 
   it("from a CI run in a repository no API is registered to is refused with 403 before its body is judged, whatever it holds", async () => {

@@ -23,9 +23,14 @@ import type { OrgContext } from "./with-org.ts";
 // (repository_id and repository_owner_id), and only a run in that repository
 // may report for the API. The owner is the account the covering installation
 // is on, since an installation covers only that account's repositories. The
-// admin may also bind the API to one workflow, by its job_workflow_ref, whose
-// owner and repository are kept in lower case, as GitHub compares them; its
-// path and ref are kept as given.
+// admin may also bind the API to one workflow, by the path of its file, such
+// as acme/payments/.github/workflows/contract.yml, whose owner and repository
+// are kept in lower case, as GitHub compares them, and its path as given
+// (decisions-from-groups-15-28, D55 (61)). A run's job_workflow_ref names the
+// file and the ref it ran from; it matches the binding without the `@` and
+// that ref, so the workflow's runs on every branch and pull request match it.
+// A binding stored with its ref, as bindings were first kept, is read without
+// it too, so no stored binding needs rewriting.
 //
 // A repository that no connected installation that is neither suspended nor
 // deleted covers gets 409, as the error model gives a state conflict, and so
@@ -59,10 +64,12 @@ import type { OrgContext } from "./with-org.ts";
 // Actions OIDC bound to registered repositories): a registered API, by the
 // name the report gives, whose repository's GitHub id and owner's GitHub id
 // are the ones the run's OIDC token names, and, for an API bound to a
-// workflow, whose workflow is the run's. Any other report, one for an API
-// that is unregistered or does not exist included, is refused with 403, as
-// the error model gives a CI caller acting outside what it may call, so a
-// CI caller learns nothing of the APIs of other repositories.
+// workflow, whose workflow is the run's. A run for a pull request, whose
+// token's ref is refs/pull/<n>/merge, reports only for pull request n
+// (D55 (61)). Any other report, one for an API that is unregistered or does
+// not exist included, is refused with 403, as the error model gives a CI
+// caller acting outside what it may call, so a CI caller learns nothing of the
+// APIs of other repositories.
 
 type RegisteredApi = z.input<typeof registeredApi>;
 
@@ -138,12 +145,16 @@ function keepsTheApi(previous: { providerTeamId: string; repositoryId: number },
 }
 
 /**
- * A job_workflow_ref as Tiehall keeps and compares it: the owner and
- * repository of the workflow in lower case, as GitHub compares their names,
- * and the path and ref as they are.
+ * The workflow file that a job_workflow_ref, or a binding, names, as Tiehall
+ * keeps and compares it: without the `@` and the ref that follow the file's
+ * path, with the owner and repository of the workflow in lower case, as GitHub
+ * compares their names, and the path as it is. The ref follows the first `@`
+ * after a .yml or .yaml file name, since a file name may hold an `@` too.
  */
-export function normalJobWorkflowRef(ref: string): string {
-  const [owner = "", repository = "", ...rest] = ref.split("/");
+export function workflowFileOf(ref: string): string {
+  const at = /^.+?\.ya?ml(?=@)/.exec(ref)?.[0].length ?? ref.indexOf("@");
+  const file = at === -1 ? ref : ref.slice(0, at);
+  const [owner = "", repository = "", ...rest] = file.split("/");
   return [owner.toLowerCase(), repository.toLowerCase(), ...rest].join("/");
 }
 
@@ -156,7 +167,7 @@ async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, i
       teamId: teams.id,
       teamKey: teams.key,
       repository: apis.repositoryFullName,
-      jobWorkflowRef: apis.jobWorkflowRef,
+      workflow: apis.jobWorkflowRef,
       registeredAt: apis.registeredAt,
       warnOpensRequests: apis.warnOpensRequests,
       userId: users.id,
@@ -173,7 +184,7 @@ async function registeredApis({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, i
     name: row.name,
     provider: { id: row.teamId, key: row.teamKey },
     repository: row.repository,
-    jobWorkflowRef: row.jobWorkflowRef,
+    workflow: row.workflow === null ? null : workflowFileOf(row.workflow),
     registeredAt: row.registeredAt.toISOString(),
     registeredBy: { id: row.userId, login: row.login, kind: "human" as const, bot: row.bot },
     warnOpensRequests: row.warnOpensRequests,
@@ -209,7 +220,7 @@ export const API_HANDLERS: Handlers = {
     return { api, warnOpensRequests: on };
   }),
 
-  [registerApi.id]: defineHandler(registerApi, async ({ name, team, repository, jobWorkflowRef }, context) => {
+  [registerApi.id]: defineHandler(registerApi, async ({ name, team, repository, workflow }, context) => {
     if ((await teamKeyOf(context, team)) === undefined) throw new Refusal("record-not-found", "There is no such team.");
     const covered = await coveredRepositoryNamed(context, repository);
     if (covered === undefined) throw notCovered(repository);
@@ -226,7 +237,7 @@ export const API_HANDLERS: Handlers = {
         repositoryId: covered.repositoryId,
         repositoryOwnerId: covered.ownerId,
         repositoryFullName: covered.fullName,
-        jobWorkflowRef: jobWorkflowRef === undefined ? null : normalJobWorkflowRef(jobWorkflowRef),
+        jobWorkflowRef: workflow === undefined ? null : workflowFileOf(workflow),
         registeredAt: new Date(),
         registeredByUserId: context.caller.userId,
         unregisteredAt: null,
@@ -308,10 +319,16 @@ export interface ReportableApi {
 /**
  * The registered API with this name that the CI run may report for: bound to
  * the repository, and the repository's owner, that the run's OIDC token
- * names, and, for an API bound to a workflow, to the run's workflow; refused
- * with 403 otherwise.
+ * names, and, for an API bound to a workflow, to the run's workflow file;
+ * refused with 403 otherwise. Given the pull request a report is about, a run
+ * for a pull request is refused with 403 for any other.
  */
-export async function reportableApi({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, caller: CiCaller, name: string): Promise<ReportableApi> {
+export async function reportableApi(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  caller: CiCaller,
+  name: string,
+  pullRequest?: number,
+): Promise<ReportableApi> {
   const [row] = await tx
     .select({
       id: apis.id,
@@ -327,11 +344,17 @@ export async function reportableApi({ tx, orgId }: Pick<OrgContext, "tx" | "orgI
     row !== undefined &&
     String(row.repositoryId) === caller.repositoryId &&
     String(row.repositoryOwnerId) === caller.repositoryOwnerId &&
-    (row.jobWorkflowRef === null || row.jobWorkflowRef === normalJobWorkflowRef(caller.jobWorkflowRef));
+    (row.jobWorkflowRef === null || workflowFileOf(row.jobWorkflowRef) === workflowFileOf(caller.jobWorkflowRef));
   if (!allowed) {
     throw new Refusal(
       "ci-caller-refused",
       "This CI run may not report for that API: it is not registered to the run's repository, or it is bound to another workflow.",
+    );
+  }
+  if (pullRequest !== undefined && caller.pullRequest !== undefined && pullRequest !== caller.pullRequest) {
+    throw new Refusal(
+      "ci-caller-refused",
+      `This CI run ran for pull request #${caller.pullRequest}, so it may report contract changes only for that pull request.`,
     );
   }
   return { id: row.id, name: row.name, providerTeamId: row.providerTeamId };
@@ -339,7 +362,7 @@ export async function reportableApi({ tx, orgId }: Pick<OrgContext, "tx" | "orgI
 
 export const API_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
   [registerApi.id]: async (input, context) => {
-    const { name, team, repository, jobWorkflowRef } = input as z.output<typeof registerApi.input>;
+    const { name, team, repository, workflow } = input as z.output<typeof registerApi.input>;
     const key = await teamKeyOf(context, team);
     if (key === undefined) throw new Refusal("record-not-found", "There is no such team.");
     const covered = await coveredRepositoryNamed(context, repository);
@@ -374,9 +397,9 @@ export const API_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
             ]),
         {
           text:
-            jobWorkflowRef === undefined
+            workflow === undefined
               ? `CI runs of any workflow in ${covered.fullName} may then report contract changes to ${name}, each with the GitHub Actions OIDC token of its run; runs in any other repository may not.`
-              : `Only runs of the workflow ${normalJobWorkflowRef(jobWorkflowRef)} in ${covered.fullName} may then report contract changes to ${name}, each with the GitHub Actions OIDC token of its run.`,
+              : `Only runs of the workflow ${workflowFileOf(workflow)} in ${covered.fullName}, from any branch or pull request, may then report contract changes to ${name}, each with the GitHub Actions OIDC token of its run, and a run for a pull request only for that pull request.`,
         },
         { text: `Breaking changes those reports carry open requests to the teams that declare they consume ${name}, with ${key} as the provider team.` },
       ],

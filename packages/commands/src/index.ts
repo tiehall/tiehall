@@ -526,7 +526,7 @@ export {
 export { applyChangeSets, type ApplyChangeSetData } from "./contract-routing.ts";
 export { emailWarnDigests, warnDigestViews, type WarnDigestView } from "./contract-warn-digests.ts";
 export { createTeamApisRoute, TEAM_APIS_PATH, TEAM_PAGE_ACTIONS, teamPageWrite, type TeamPageAction } from "./team-page-actions.ts";
-export { API_HANDLERS, API_REVIEWS, normalJobWorkflowRef, reportableApi, type ReportableApi } from "./apis.ts";
+export { API_HANDLERS, API_REVIEWS, reportableApi, workflowFileOf, type ReportableApi } from "./apis.ts";
 export {
   ADMIN_PATH,
   APIS_PATH,

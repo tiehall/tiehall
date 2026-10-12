@@ -24,7 +24,8 @@ import { addTeam, sessionOf } from "./support/requests.ts";
 // route and contract.report, and stores the report the CLI sent.
 
 const TOKEN_SERVICE = "https://pipelines.actions.example.net/oidc/token?api-version=2.0";
-const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+const CONTRACT_WORKFLOW_FILE = "acme/payments/.github/workflows/contract.yml";
+const CONTRACT_WORKFLOW = `${CONTRACT_WORKFLOW_FILE}@refs/heads/main`;
 
 let install: TestInstall;
 let oidc: ActionsOidc;
@@ -43,7 +44,7 @@ beforeAll(async () => {
   const ada = sessionOf(await addUser(install.owner, { role: "admin", login: "ada" }));
   const pay = await addTeam(install.owner, "PAY");
   ({ accountId: acmeId } = await addInstallation(install.owner, { account: "acme", repositories: [{ fullName: "acme/payments", id: 7001 }] }));
-  expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: CONTRACT_WORKFLOW })).status).toBe(200);
+  expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", workflow: CONTRACT_WORKFLOW_FILE })).status).toBe(200);
   scratch = mkdtempSync(join(tmpdir(), "tiehall-contract-report-"));
   changelog = join(scratch, "changelog.json");
   writeFileSync(

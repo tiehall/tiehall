@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { repositoryOf, runActionWith, type Npx, type Repository } from "../../../actions/contract/test/support/runner.ts";
 import { createAgentTokenCheck, createApiCallerCheck, createCiTokenCheck, createRestHandler, processDelivery, type RestHandler } from "../src/index.ts";
 import type { TiehallCli } from "./support/cli.ts";
-import { CONTRACT_WORKFLOW, providerOnStub, runDueUpdates, type StubProvider } from "./support/contract.ts";
+import { CONTRACT_WORKFLOW, CONTRACT_WORKFLOW_FILE, providerOnStub, runDueUpdates, type StubProvider } from "./support/contract.ts";
 import { storeDelivery } from "./support/github-app.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -63,7 +63,7 @@ beforeAll(async () => {
   await joinTeams(install.owner, deniz, pay);
   await joinTeams(install.owner, bob, fe);
   await joinTeams(install.owner, erin, mobile);
-  expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: CONTRACT_WORKFLOW })).status).toBe(200);
+  expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", workflow: CONTRACT_WORKFLOW_FILE })).status).toBe(200);
   const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'payments-api'");
   const api = rows[0]?.id ?? "";
   await install.execute("apis.declare_consumer", sessionOf(bob), { api, team: fe });

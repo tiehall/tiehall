@@ -30,7 +30,7 @@ import {
   type Execute,
   type SecretBox,
 } from "../src/index.ts";
-import { CONTRACT_WORKFLOW, providerOnStub, reportOf, runDueUpdates, type StubProvider } from "./support/contract.ts";
+import { CONTRACT_WORKFLOW, CONTRACT_WORKFLOW_FILE, providerOnStub, reportOf, runDueUpdates, type StubProvider } from "./support/contract.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, joinTeams, openRequestInTheWebUi, sessionOf } from "./support/requests.ts";
@@ -109,7 +109,7 @@ describe("contract.report", () => {
     const fe = await addTeam(install.owner, "FE");
     await joinTeams(install.owner, deniz, pay);
     await joinTeams(install.owner, bob, fe);
-    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: CONTRACT_WORKFLOW })).status).toBe(200);
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments", workflow: CONTRACT_WORKFLOW_FILE })).status).toBe(200);
     const api = (await install.owner.query<{ id: string }>("SELECT id FROM apis")).rows[0]?.id ?? "";
     await install.execute("apis.declare_consumer", sessionOf(bob), { api, team: fe });
   }, 60_000);

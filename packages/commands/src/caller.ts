@@ -51,6 +51,8 @@ export interface CiCaller {
   repositoryOwnerId: string;
   /** The workflow the run belongs to, from the token's job_workflow_ref claim, such as acme/payments/.github/workflows/contract.yml@refs/heads/main. */
   jobWorkflowRef: string;
+  /** The pull request the run is for, from the token's ref claim when it is refs/pull/<n>/merge; none for any other run. */
+  pullRequest?: number;
 }
 
 /** One of Tiehall's own jobs in the worker, acting for no user. */

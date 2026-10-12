@@ -37,7 +37,13 @@ import { addTeam, sessionOf } from "./support/requests.ts";
 // names, and, for an API bound to a workflow, only from a run of that
 // workflow; any other report gets 403. A CI caller acts for no user, may call
 // nothing but contract.report (403 elsewhere), and neither the membership
-// re-check nor the PAT switch applies to it.
+// re-check nor the PAT switch applies to it. A run for a pull request may
+// report only for that pull request (decisions-from-groups-15-28, D55 (61)).
+// The checks come in an order (D55 (58)): an operation other than
+// contract.report is refused before GitHub Actions' keys are read; then the
+// token itself; then a repository with no registered API, whose token is not
+// recorded; then a replay; and a token that gets past those is spent, whatever
+// becomes of its report.
 //
 // These tests call a stand-in of contract.report, a REST operation with its
 // id that takes only the API's name and answers with the API the run may
@@ -52,24 +58,23 @@ let acmeId: number;
 let paymentsApi: string;
 let billingApi: string;
 
-/** The workflow that billing-api is bound to. */
-const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+/** The workflow file that billing-api is bound to, by its path. */
+const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml";
 
-/** A run in acme/payments, as its token names it. */
+/** A run of contract.yml in acme/payments, as its token names it: a push to main unless given. */
 const paymentsRun = (run: Partial<ActionsRun> = {}): ActionsRun => ({
   audience: URL_OF_INSTALL,
   repository: "acme/payments",
   repositoryId: 7001,
   repositoryOwnerId: acmeId,
-  jobWorkflowRef: CONTRACT_WORKFLOW,
   ...run,
 });
 
-/** A stand-in of contract.report: the API's name in, the API the CI run may report for out. */
+/** A stand-in of contract.report: the API's name, and the pull request it reports on, in; the API the CI run may report for out. */
 const report = defineCommand({
   id: "contract.report",
   summary: "Report the classified changes of a provider pull request to a registered API.",
-  input: z.object({ api: z.string() }),
+  input: z.object({ api: z.string(), pullRequest: z.object({ number: z.number().int().positive() }).optional() }),
   output: z.object({ api: z.uuid() }),
   method: "POST",
   path: "/api/v1/contract-reports",
@@ -99,12 +104,12 @@ function api(options: Partial<CiTokenCheckOptions> = {}): (request: Request) => 
   const execute = createExecute({
     catalog,
     handlers: {
-      [report.id]: defineHandler(report, async ({ api: name }, context) => {
+      [report.id]: defineHandler(report, async ({ api: name, pullRequest }, context) => {
         if (context.caller.kind !== "ci") throw new Refusal("forbidden", "Only a CI run reports.");
         // A CI caller acts for no user.
         expect(context.member).toBeUndefined();
         expect(context.provenance).toEqual({ actorKind: "system", surface: "github" });
-        return { api: (await reportableApi(context, context.caller, name)).id };
+        return { api: (await reportableApi(context, context.caller, name, pullRequest?.number)).id };
       }),
       [otherOperation.id]: defineHandler(otherOperation, async () => ({ items: [] })),
     },
@@ -115,16 +120,26 @@ function api(options: Partial<CiTokenCheckOptions> = {}): (request: Request) => 
   return createRestHandler({ catalog, document: OPENAPI_JSON, execute, authenticate: createApiCallerCheck({ agent, ci }), logger: install.logger });
 }
 
-/** Reports for the API with the token, as the contract Action's CLI does. */
-async function send(token: string, name: string, route = api()): Promise<{ status: number; body: any; headers: Headers }> {
+/** Sends the body to the stand-in of contract.report with the token, as the contract Action's CLI does. */
+async function sendBody(token: string, body: unknown, route = api()): Promise<{ status: number; body: any; headers: Headers }> {
   const response = await route(
     new Request(`${URL_OF_INSTALL}/api/v1/contract-reports`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ api: name }),
+      body: JSON.stringify(body),
     }),
   );
   return { status: response.status, body: await response.json(), headers: response.headers };
+}
+
+/** Reports for the API with the token, as the contract Action's CLI does. */
+function send(token: string, name: string, route = api()): Promise<{ status: number; body: any; headers: Headers }> {
+  return sendBody(token, { api: name }, route);
+}
+
+/** Reports for the API about the pull request with the token. */
+function sendAbout(token: string, name: string, pullRequest: number): Promise<{ status: number; body: any; headers: Headers }> {
+  return sendBody(token, { api: name, pullRequest: { number: pullRequest } });
 }
 
 beforeAll(async () => {
@@ -141,7 +156,7 @@ beforeAll(async () => {
   }));
   expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
   expect(
-    (await install.confirm(ada, "apis.register", { name: "billing-api", team: pay, repository: "acme/payments", jobWorkflowRef: CONTRACT_WORKFLOW })).status,
+    (await install.confirm(ada, "apis.register", { name: "billing-api", team: pay, repository: "acme/payments", workflow: CONTRACT_WORKFLOW })).status,
   ).toBe(200);
   const { rows } = await install.owner.query<{ id: string; name: string }>("SELECT id, name FROM apis");
   paymentsApi = rows.find(({ name }) => name === "payments-api")?.id ?? "";
@@ -173,14 +188,14 @@ describe("a report from a CI run", () => {
   });
 
   it("is accepted from any workflow of its repository for an API with no workflow binding", async () => {
-    const answer = await send(oidc.token(paymentsRun({ jobWorkflowRef: "acme/payments/.github/workflows/nightly.yml@refs/heads/main" })), "payments-api");
+    const answer = await send(oidc.token(paymentsRun({ workflow: ".github/workflows/nightly.yml" })), "payments-api");
     expect(answer).toMatchObject({ status: 200, body: { api: paymentsApi } });
   });
 
   it("for an API bound to a workflow is accepted from that workflow and refused with 403 from another of its repository", async () => {
     expect(await send(oidc.token(paymentsRun()), "billing-api")).toMatchObject({ status: 200, body: { api: billingApi } });
 
-    const other = await send(oidc.token(paymentsRun({ jobWorkflowRef: "acme/payments/.github/workflows/nightly.yml@refs/heads/main" })), "billing-api");
+    const other = await send(oidc.token(paymentsRun({ workflow: ".github/workflows/nightly.yml" })), "billing-api");
 
     expect(other.status).toBe(403);
     expect(other.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused`, status: 403 });
@@ -231,6 +246,72 @@ describe("a report from a CI run", () => {
     } finally {
       await install.owner.query("UPDATE apis SET unregistered_at = NULL, unregistered_by = NULL WHERE repository_id = 7001");
     }
+  });
+});
+
+describe("a run for a pull request (decisions-from-groups-15-28, D55 (61))", () => {
+  it("of a bound API's workflow reports for its own pull request, and is refused with 403 for another", async () => {
+    const run = paymentsRun({ pullRequest: 310 });
+
+    expect(await sendAbout(oidc.token(run), "billing-api", 310)).toMatchObject({ status: 200, body: { api: billingApi } });
+
+    const other = await sendAbout(oidc.token(run), "billing-api", 311);
+    expect(other.status).toBe(403);
+    expect(other.body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
+  });
+
+  it("of a bound API's workflow matches a binding stored with its ref, as bindings were first kept, without that ref", async () => {
+    await install.owner.query("UPDATE apis SET job_workflow_ref = $1 WHERE id = $2", [`${CONTRACT_WORKFLOW}@refs/heads/main`, billingApi]);
+    try {
+      expect(await sendAbout(oidc.token(paymentsRun({ pullRequest: 312 })), "billing-api", 312)).toMatchObject({ status: 200, body: { api: billingApi } });
+      expect((await send(oidc.token(paymentsRun({ workflow: ".github/workflows/nightly.yml" })), "billing-api")).status).toBe(403);
+    } finally {
+      await install.owner.query("UPDATE apis SET job_workflow_ref = $1 WHERE id = $2", [CONTRACT_WORKFLOW, billingApi]);
+    }
+  });
+
+  it("is held to its own pull request for an API with no workflow binding too, while a push reports for any", async () => {
+    expect((await sendAbout(oidc.token(paymentsRun({ pullRequest: 310 })), "payments-api", 311)).status).toBe(403);
+    expect(await sendAbout(oidc.token(paymentsRun()), "payments-api", 311)).toMatchObject({ status: 200, body: { api: paymentsApi } });
+  });
+});
+
+describe("the order of a CI caller's checks (decisions-from-groups-15-28, D55 (58))", () => {
+  it("refuses another operation with 403 before GitHub Actions' keys are read, so never with 502", async () => {
+    let read = 0;
+    const route = api({
+      keys: async () => {
+        read += 1;
+        throw new TypeError("fetch failed");
+      },
+    });
+
+    const other = await route(new Request(`${URL_OF_INSTALL}/api/v1/requests`, { headers: { authorization: `Bearer ${oidc.token(paymentsRun())}` } }));
+
+    expect(other.status).toBe(403);
+    expect(await other.json()).toMatchObject({ type: `${PROBLEM_TYPE_BASE}ci-caller-refused` });
+    expect(read).toBe(0);
+    // contract.report needs the keys, and without them gets 502.
+    expect((await send(oidc.token(paymentsRun()), "payments-api", route)).status).toBe(502);
+    expect(read).toBeGreaterThan(0);
+  });
+
+  it("refuses a token from a repository no registered API is bound to with 403 each time it comes, never with 401", async () => {
+    const token = oidc.token(paymentsRun({ repository: "acme/web", repositoryId: 7002 }));
+    const before = await seenTokens();
+
+    expect((await send(token, "payments-api")).status).toBe(403);
+    expect((await send(token, "payments-api")).status).toBe(403);
+    expect(await seenTokens()).toBe(before);
+  });
+
+  it("spends the token of a report refused for its input", async () => {
+    const token = oidc.token(paymentsRun());
+
+    const refused = await sendBody(token, { api: 42 });
+
+    expect(refused).toMatchObject({ status: 400, body: { type: `${PROBLEM_TYPE_BASE}invalid-input` } });
+    expect(await send(token, "payments-api")).toMatchObject(invalidToken);
   });
 });
 
@@ -295,7 +376,7 @@ describe("a CI caller", () => {
 
   it("is refused with 403 on every operation of the real catalog but contract.report", async () => {
     const execute = install.execute;
-    const ci: Caller = { kind: "ci", repositoryId: "7001", repositoryOwnerId: String(acmeId), jobWorkflowRef: CONTRACT_WORKFLOW };
+    const ci: Caller = { kind: "ci", repositoryId: "7001", repositoryOwnerId: String(acmeId), jobWorkflowRef: `${CONTRACT_WORKFLOW}@refs/heads/main` };
     for (const definition of CATALOG.commands.filter(({ surfaces, id }) => surfaces.includes("rest") && id !== "contract.report")) {
       await expect(execute(definition.id, ci, {}), definition.id).rejects.toMatchObject({ status: 403, reason: "ci-caller-refused" });
     }

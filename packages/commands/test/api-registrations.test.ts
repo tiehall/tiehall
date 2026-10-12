@@ -129,10 +129,10 @@ describe("registering an API", () => {
     ]);
   });
 
-  it("binds it to the one workflow the admin names, whose job_workflow_ref alone may then report for it", async () => {
-    const workflow = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+  it("binds it to the one workflow the admin names by its file's path, whose runs alone, from any ref, may then report for it (decisions-from-groups-15-28, D55 (61))", async () => {
+    const workflow = "acme/payments/.github/workflows/contract.yml";
 
-    const answer = await install.confirm(ada, REGISTER, { name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: workflow });
+    const answer = await install.confirm(ada, REGISTER, { name: "payments-api", team: pay, repository: "acme/payments", workflow });
 
     expect(answer.status).toBe(200);
     expect((await stored())[0]).toMatchObject({ name: "payments-api", workflow });
@@ -148,14 +148,16 @@ describe("registering an API", () => {
       name: "payments-api",
       team: pay,
       repository: "acme/payments",
-      jobWorkflowRef: "acme/payments/.github/workflows/contract.yml@refs/heads/main",
+      workflow: "acme/payments/.github/workflows/contract.yml",
     });
 
     expect(page.status).toBe(200);
     const html = await page.text();
     expect(html).toContain("Register the API payments-api for the team PAY");
     expect(html).toContain("acme/payments");
-    expect(html).toContain("acme/payments/.github/workflows/contract.yml@refs/heads/main");
+    expect(html).toContain(
+      "Only runs of the workflow acme/payments/.github/workflows/contract.yml in acme/payments, from any branch or pull request, may then report contract changes to payments-api",
+    );
     expect(await stored()).toEqual([]);
   });
 
@@ -219,7 +221,11 @@ describe("registering an API", () => {
     ["a name that starts with a dot", { name: ".payments", repository: "acme/payments" }],
     ["a name that starts with an underscore", { name: "_payments", repository: "acme/payments" }],
     ["a repository that is not owner/name", { name: "payments-api", repository: "payments" }],
-    ["a workflow that is not a job_workflow_ref", { name: "payments-api", repository: "acme/payments", jobWorkflowRef: "contract.yml" }],
+    ["a workflow that is not a workflow file's path", { name: "payments-api", repository: "acme/payments", workflow: "contract.yml" }],
+    [
+      "a workflow named with its ref, which a binding leaves out",
+      { name: "payments-api", repository: "acme/payments", workflow: "acme/payments/.github/workflows/contract.yml@refs/heads/main" },
+    ],
   ])("is refused with 400 for %s", async (_case, input) => {
     const answer = await reviewPage(ada, { team: pay, ...input });
     expect(answer.status).toBe(400);
@@ -249,7 +255,7 @@ describe("registering an API", () => {
 
     expect((await reviewPage(dana, input)).status).toBe(403);
     expect((await postWithoutNonce(dana, input)).status).toBe(403);
-    expect((await pageForm(dana, { action: "register", name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: "" })).status).toBe(403);
+    expect((await pageForm(dana, { action: "register", name: "payments-api", team: pay, repository: "acme/payments", workflow: "" })).status).toBe(403);
 
     expect(await stored()).toEqual([]);
     expect(await eventsSince(from)).toEqual([]);
@@ -281,13 +287,26 @@ describe("the APIs page", () => {
   });
 
   it("leads an admin's form to the review page of the registration it names, with no workflow when none is given", async () => {
-    const answer = await pageForm(ada, { action: "register", name: "payments-api", team: pay, repository: "acme/payments", jobWorkflowRef: "" });
+    const answer = await pageForm(ada, { action: "register", name: "payments-api", team: pay, repository: "acme/payments", workflow: "" });
 
     expect(answer.status).toBe(303);
     expect(answer.headers.get("location")).toBe(
       `/confirm/${REGISTER}?input=${encodeURIComponent(JSON.stringify({ name: "payments-api", team: pay, repository: "acme/payments" }))}`,
     );
     expect(await stored()).toEqual([]);
+  });
+
+  it("asks for the workflow file's path, and leads to the review page of a registration bound to it", async () => {
+    const page = await (await apisRoute(ada)(new Request(`${URL_OF_INSTALL}/admin/apis`, { headers: { accept: "text/html" } }))).text();
+    expect(page).toContain("by the path of its workflow file, such as acme/payments/.github/workflows/contract.yml");
+    expect(page).toContain('name="workflow"');
+    const workflow = "acme/payments/.github/workflows/contract.yml";
+
+    const answer = await pageForm(ada, { action: "register", name: "payments-api", team: pay, repository: "acme/payments", workflow });
+
+    expect(answer.headers.get("location")).toBe(
+      `/confirm/${REGISTER}?input=${encodeURIComponent(JSON.stringify({ name: "payments-api", team: pay, repository: "acme/payments", workflow }))}`,
+    );
   });
 
   it("gets 403 for a member", async () => {

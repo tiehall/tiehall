@@ -16,8 +16,9 @@ import { GitHubUnavailableError } from "./github-client.ts";
 // personal access token or an OAuth token, whatever scopes it carries, is
 // refused with 403, as the error model gives a caller whose part does not
 // allow the action. A CI run may report only for an API registered to its
-// repository and, for an API bound to a workflow, from that workflow
-// (apis.ts), and is refused with 403 otherwise. An accepted report is stored
+// repository and, for an API bound to a workflow, from that workflow, and a
+// run for a pull request only about that pull request (apis.ts), and is
+// refused with 403 otherwise. An accepted report is stored
 // as it was sent, with the run's repository, owner and workflow as its OIDC
 // token named them, in the call's transaction, for routing to read; it
 // changes no request itself, and so appends no event. The report joins its
@@ -45,7 +46,7 @@ async function authorOf(input: { api: string; pullRequest: { number: number } },
   const { caller } = context;
   if (caller.kind !== "ci") return undefined;
   const reportable = await context.read(async (orgContext) =>
-    reportableApi(orgContext, caller, input.api).then(
+    reportableApi(orgContext, caller, input.api, input.pullRequest.number).then(
       () => true,
       (error: unknown) => {
         if (error instanceof Refusal) return false;
@@ -73,7 +74,7 @@ export const CONTRACT_REPORT_HANDLERS: Handlers = {
     if (caller.kind !== "ci") {
       throw new Refusal("forbidden", "Only a CI run of the contract Action reports contract changes, with its run's GitHub Actions OIDC token.");
     }
-    const api = await reportableApi(context, caller, input.api);
+    const api = await reportableApi(context, caller, input.api, input.pullRequest.number);
     const authorGitHubId = context.prepared?.authorGitHubId ?? null;
     const receivedAt = context.now();
     // The change set: made by its first report, and locked by every report until its transaction ends.

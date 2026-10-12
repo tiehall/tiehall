@@ -204,7 +204,7 @@ describe("unregistering an API", () => {
       name: "payments-api",
       team: fe,
       repository: "acme/web",
-      jobWorkflowRef: "acme/web/.github/workflows/contract.yml@refs/heads/main",
+      workflow: "acme/web/.github/workflows/contract.yml",
     });
 
     expect(again.status).toBe(200);
@@ -251,10 +251,8 @@ describe("registering an unregistered API's name again (decisions-from-groups-15
   });
 
   it("keeps them when only the workflow changes, and the repository's name is written in another case", async () => {
-    const workflow = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
-    expect(
-      (await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "ACME/Payments", jobWorkflowRef: workflow })).status,
-    ).toBe(200);
+    const workflow = "acme/payments/.github/workflows/contract.yml";
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "ACME/Payments", workflow })).status).toBe(200);
 
     expect(await routedTo(paymentsApi)).toEqual(["FE"]);
   });

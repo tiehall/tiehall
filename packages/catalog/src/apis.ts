@@ -38,19 +38,20 @@ export const apiName = z
   .meta({ description: "The API's name, such as payments-api." });
 
 /**
- * A workflow's job_workflow_ref, as GitHub Actions names it in the OIDC token
- * of a run: the repository that holds the workflow file, the file's path under
- * .github/workflows, and the ref it ran from, such as
- * acme/payments/.github/workflows/contract.yml@refs/heads/main. The workflow
- * may live in another repository than the API's, as a reusable workflow does.
+ * A workflow file, as an API is bound to it (decisions-from-groups-15-28,
+ * D55 (61)): the repository that holds it and its path under
+ * .github/workflows, such as acme/payments/.github/workflows/contract.yml,
+ * which is a run's job_workflow_ref without the `@` and the ref that follow
+ * it. The workflow may live in another repository than the API's, as a
+ * reusable workflow does. Its runs from any branch or pull request match it.
  */
-export const JOB_WORKFLOW_REF = new RegExp(`^${GITHUB_REPOSITORY.source.slice(1, -1)}/\\.github/workflows/[^@\\s]+\\.ya?ml@\\S+$`);
+export const WORKFLOW_FILE = new RegExp(`^${GITHUB_REPOSITORY.source.slice(1, -1)}/\\.github/workflows/[^@\\s]+\\.ya?ml$`);
 
-export const jobWorkflowRef = z
+export const workflowFile = z
   .string()
   .max(1024)
-  .regex(JOB_WORKFLOW_REF, "A workflow is named by its job_workflow_ref, such as acme/payments/.github/workflows/contract.yml@refs/heads/main.")
-  .meta({ description: "The one workflow whose runs may report for the API, such as acme/payments/.github/workflows/contract.yml@refs/heads/main." });
+  .regex(WORKFLOW_FILE, "A workflow is named by the path of its file, without a ref, such as acme/payments/.github/workflows/contract.yml.")
+  .meta({ description: "The one workflow whose runs may report for the API, by the path of its file, such as acme/payments/.github/workflows/contract.yml." });
 
 /** A repository on GitHub.com, as owner/name, such as acme/payments. */
 const repository = z
@@ -66,8 +67,8 @@ export const registeredApi = z.object({
   provider: teamRef,
   /** The repository, as owner/name, as GitHub named it when the API was registered. */
   repository: z.string(),
-  /** The workflow whose runs alone may report for it; null for any workflow of its repository. */
-  jobWorkflowRef: z.string().nullable(),
+  /** The workflow file whose runs alone may report for it; null for any workflow of its repository. */
+  workflow: z.string().nullable(),
   registeredAt: z.iso.datetime(),
   registeredBy: user,
   /** The API's WARN switch: whether its WARN-level changes open requests, rather than going to the consuming teams' daily WARN digests. */
@@ -82,7 +83,7 @@ export const registerApi = defineCommand({
     name: apiName,
     team: z.uuid().meta({ description: "The provider team, which the API is registered to." }),
     repository,
-    jobWorkflowRef: jobWorkflowRef.optional(),
+    workflow: workflowFile.optional(),
   }),
   output: z.object({ api: registeredApi }),
   scopes: [],

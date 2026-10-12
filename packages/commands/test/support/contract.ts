@@ -39,8 +39,11 @@ export function changesOf(pair: OasdiffPair): ClassifiedChange[] {
   }));
 }
 
-/** The workflow the contract Action runs in, in the provider's repository. */
-export const CONTRACT_WORKFLOW = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+/** The workflow file the contract Action runs in, in the provider's repository, as an API is bound to it. */
+export const CONTRACT_WORKFLOW_FILE = "acme/payments/.github/workflows/contract.yml";
+
+/** A run of that workflow on main, as its token's job_workflow_ref names it. */
+export const CONTRACT_WORKFLOW = `${CONTRACT_WORKFLOW_FILE}@refs/heads/main`;
 
 /** acme/payments, the provider's repository, by GitHub's id. */
 export const PAYMENTS_REPOSITORY = { fullName: "acme/payments", id: 7001 } as const;

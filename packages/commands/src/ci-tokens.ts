@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CONTRACT_REPORT_ID } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { usedCiTokens, type Database } from "@tiehall/db";
 import { and, eq, lt } from "drizzle-orm";
@@ -6,7 +7,7 @@ import { createLocalJWKSet, createRemoteJWKSet, customFetch, decodeJwt, jwtVerif
 import type { AgentTokenCheck } from "./agent-tokens.ts";
 import { repositoryHasRegisteredApi } from "./apis.ts";
 import { bearerTokenOf } from "./agent-tokens.ts";
-import type { CiCaller } from "./caller.ts";
+import type { Caller, CiCaller } from "./caller.ts";
 import { defineJobType } from "./jobs.ts";
 import { createGitHubActionsFetch, GITHUB_ACTIONS_OIDC_ORIGIN, type Fetch } from "./outbound.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -46,16 +47,27 @@ import { SetupRequiredError, withOrg } from "./with-org.ts";
 // be presented again.
 //
 // The CI caller acts for the repository its token names, and for no user:
-// neither the membership re-check nor the PAT switch applies to it. execute()
-// lets it call contract.report alone, and contract.report takes a report only
-// for an API registered to that repository and, for an API bound to a
-// workflow, from that workflow (apis.ts). A run in a repository that no
-// registered API is bound to may call nothing at all, and any GitHub user can
-// have a workflow of their own ask for a token whose audience is the install's
-// URL: so a token that passes the check but names such a repository is refused
-// here, with 403 ci-caller-refused, as the error model gives a report for an
-// API not registered to the run's repository, before anything else of its
-// call, its body included, is judged, and its jti is not recorded.
+// neither the membership re-check nor the PAT switch applies to it. It may
+// call contract.report alone, which takes a report only for an API registered
+// to that repository and, for an API bound to a workflow, from that workflow,
+// and from a run for a pull request, whose ref is refs/pull/<n>/merge, only
+// about pull request n (apis.ts). A run in a repository that no registered API
+// is bound to may call nothing at all, and any GitHub user can have a workflow
+// of their own ask for a token whose audience is the install's URL.
+//
+// So a CI caller's call to /api/v1 is checked in this order
+// (decisions-from-groups-15-28, D55 (58)), after the body's size and the
+// path, which answers 404 when it serves no operation. A call to an operation
+// other than contract.report is refused with 403 ci-caller-refused before the
+// keys are read (createApiCallerCheck), so it never waits for GitHub or gets
+// 502. Then the token itself: its signature, issuer, audience and expiry, 401
+// invalid_token or 502 as above. Then a token that names a repository no
+// registered API is bound to is refused with 403 ci-caller-refused, before
+// anything else of its call, its body included, is judged, and its jti is not
+// recorded, so the same token gets 403 again, not 401. Then a jti recorded
+// before is a replay, 401 invalid_token; any other is recorded, and so spent,
+// before the report itself is checked, so a report refused after that, for
+// its input, its API, its workflow or its pull request, has spent its token.
 
 /** GitHub Actions' OIDC issuer, as its tokens name it. */
 export const GITHUB_ACTIONS_ISSUER = GITHUB_ACTIONS_OIDC_ORIGIN;
@@ -71,6 +83,9 @@ const EXPIRED_TOKEN_GRACE_MS = 5 * 60_000;
 
 /** A GitHub id, as GitHub Actions' claims give it: a whole number, as a string. */
 const GITHUB_ID = /^[1-9][0-9]{0,19}$/;
+
+/** The ref a run for a pull request runs from, which names the pull request's number. */
+const PULL_REQUEST_REF = /^refs\/pull\/([1-9][0-9]{0,9})\/merge$/;
 
 export interface CiTokenCheckOptions {
   /** The install's URL (TIEHALL_URL), as its origin: the audience a token must name. */
@@ -147,12 +162,15 @@ export function createCiTokenCheck(options: CiTokenCheckOptions): CiTokenCheck {
     // Exactly one audience, the install's own.
     const audience = claims["aud"];
     if (!(audience === options.url || (Array.isArray(audience) && audience.length === 1 && audience[0] === options.url))) throw invalidToken();
-    const { jti, repository_id: repositoryId, repository_owner_id: repositoryOwnerId, job_workflow_ref: jobWorkflowRef, exp } = claims;
+    const { jti, repository_id: repositoryId, repository_owner_id: repositoryOwnerId, job_workflow_ref: jobWorkflowRef, ref, exp } = claims;
     if (typeof jti !== "string" || jti.length === 0 || jti.length > 255) throw invalidToken();
     if (typeof repositoryId !== "string" || !GITHUB_ID.test(repositoryId)) throw invalidToken();
     if (typeof repositoryOwnerId !== "string" || !GITHUB_ID.test(repositoryOwnerId)) throw invalidToken();
     if (typeof jobWorkflowRef !== "string" || jobWorkflowRef.length === 0 || jobWorkflowRef.length > 1024) throw invalidToken();
     if (typeof exp !== "number") throw invalidToken();
+    if (ref !== undefined && typeof ref !== "string") throw invalidToken();
+    // A run for a pull request runs from the pull request's merge ref, which names it.
+    const pullRequest = PULL_REQUEST_REF.exec(ref ?? "")?.[1];
     const outcome = await withOrg(options.database, async (context) => {
       // A run in a repository that no registered API is bound to may call nothing.
       if (!(await repositoryHasRegisteredApi(context, { repositoryId, repositoryOwnerId }))) return "unregistered";
@@ -168,7 +186,7 @@ export function createCiTokenCheck(options: CiTokenCheckOptions): CiTokenCheck {
       throw new Refusal("ci-caller-refused", "No API is registered to this CI run's repository, so it may not call Tiehall.");
     }
     if (outcome === "replayed") throw invalidToken();
-    return { kind: "ci", repositoryId, repositoryOwnerId, jobWorkflowRef };
+    return { kind: "ci", repositoryId, repositoryOwnerId, jobWorkflowRef, ...(pullRequest === undefined ? {} : { pullRequest: Number(pullRequest) }) };
   };
 }
 
@@ -178,15 +196,23 @@ function isJoseError(error: unknown): boolean {
   return error instanceof Error && typeof code === "string" && (code.startsWith("ERR_JW") || code.startsWith("ERR_JOSE"));
 }
 
+/** Who a call to /api/v1 acts for, given the operation its path serves. */
+export type ApiCallerCheck = (request: Request, operation: { id: string }) => Promise<Caller | undefined>;
+
 /**
  * Who a call to /api/v1 acts for, from the bearer token in its Authorization
  * header: a CI caller for a token that names GitHub Actions as its issuer, and
- * otherwise whom the agent token check says.
+ * otherwise whom the agent token check says. A CI caller's call to any
+ * operation but contract.report is refused before its token is checked, so
+ * before GitHub Actions' keys are read.
  */
-export function createApiCallerCheck(checks: { agent: AgentTokenCheck; ci: CiTokenCheck }): AgentTokenCheck {
-  return async (request) => {
+export function createApiCallerCheck(checks: { agent: AgentTokenCheck; ci: CiTokenCheck }): ApiCallerCheck {
+  return async (request, operation) => {
     const token = bearerTokenOf(request);
-    if (token !== undefined && isGitHubActionsToken(token)) return checks.ci(token);
+    if (token !== undefined && isGitHubActionsToken(token)) {
+      if (operation.id !== CONTRACT_REPORT_ID) throw new Refusal("ci-caller-refused", "A CI caller may only report contract changes.");
+      return checks.ci(token);
+    }
     return checks.agent(request);
   };
 }
