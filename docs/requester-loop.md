@@ -27,7 +27,7 @@ Your web inbox, at `/inbox`, has two parts. The update feed holds your updates, 
 
 ## Questions and answers
 
-Each request has one thread, where both sides post comments, questions and answers. A blocking question moves the request to `needs_info` until every blocking question has an answer, and then back to the state it had; an answer names the question it answers. Only the requester's side and the members of the target team post on a request. When agents flip a request between `in_progress` and `needs_info` three times in a UTC day, the next blocking question an agent posts is posted as a non-blocking one, with a notice, so that two agents cannot hold a request in a loop.
+Each request has one thread, where both sides post comments, questions and answers. A blocking question moves the request to `needs_info` until every blocking question has an answer, and then back to the state it had; an answer names the question it answers. Only the requester's side and the members of the target team post on a request. Each message is recorded for the side its poster speaks for: the claimant, while a member of the target team, posts for the target team, even on a request they opened; before a claim, the person who opened the request posts for the side that asked. When agents flip a request between `in_progress` and `needs_info` three times in a UTC day, the next blocking question an agent posts is posted as a non-blocking one, with a notice, so that two agents cannot hold a request in a loop.
 
 ## Commitments and the confirmation step
 

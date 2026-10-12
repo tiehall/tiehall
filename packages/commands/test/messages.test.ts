@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { startSmtpSink, type SmtpSink } from "@tiehall/testing/smtp";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { startTestInstall, type TestInstall } from "./support/install.ts";
+import { emailQuestion, openMailer, type Mailer } from "../src/index.ts";
+import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequestInTheWebUi, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequestInTheWebUi, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
 
 // A request's thread (requests: Thread messages and blocking questions;
 // requests: Requests only, with questions in the request's thread; design.md,
@@ -225,5 +228,137 @@ describe("the events of the thread", () => {
       { type: "request.state_changed", data: { requestId, state: "claimed", previousState: "needs_info" } },
     ]);
     expect(JSON.stringify(rows)).not.toContain("secret plan");
+  });
+});
+
+// requests: The side a message is posted for (findings-from-claude-code-run: design.md, Findings: F4 (7); design.md,
+// Technical decisions: T5). Every message is recorded for one side of its request, as the team in its provenance,
+// which the server decides from the caller and the request: the claimant, while a member of the target team, posts
+// for the target team, even when they opened the request or belong to its requesting team; otherwise the requesting
+// user posts for the requesting team, a member of the target team for the target team, and a member of the
+// requesting team for the requesting team. An edit keeps the side, a question is asked of the other side, as its
+// email shows, and a proposal keeps the side the rules of cross-team commitments give it. Sami and Kim belong to both
+// FE and BE; each request here is opened by Sami for FE, to BE.
+describe("the side a message is posted for", () => {
+  let sami: string;
+  let kim: string;
+  let dana: string;
+  let sink: SmtpSink;
+  let mailer: Mailer;
+
+  beforeAll(async () => {
+    sami = await addUser(install.owner, { login: "sami" });
+    kim = await addUser(install.owner, { login: "kim" });
+    dana = await addUser(install.owner, { login: "dana" });
+    for (const user of [sami, kim]) await joinTeams(install.owner, user, team["FE"] ?? "", team["BE"] ?? "");
+    await joinTeams(install.owner, dana, team["BE"] ?? "");
+    for (const [user, login] of [[sami, "sami"], [kim, "kim"], [dana, "dana"]] as const) {
+      await install.owner.query("UPDATE users SET email = $2 WHERE id = $1", [user, `${login}@example.com`]);
+    }
+    sink = await startSmtpSink();
+    mailer = openMailer({ host: "127.0.0.1", port: sink.port, tls: "none", from: "Tiehall <tiehall@acme.example>" });
+  });
+
+  afterAll(async () => {
+    mailer?.close();
+    await sink?.close();
+  });
+
+  /** A request Sami opens in the web UI for FE, to BE; returns its key. */
+  async function openedBySami(): Promise<string> {
+    return (await openRequestInTheWebUi<{ key: string }>(install, sami, { targetTeam: "BE", requestingTeam: "FE" })).key;
+  }
+
+  /** Posts a message on the request with the user's agent; returns it as the API answers it. */
+  async function postOn(on: string, user: string, message: Record<string, unknown>): Promise<{ id: string; provenance: { team: { key: string } | null } }> {
+    const answer = await post(user, message, on);
+    if (answer.status !== 200) throw new Error(`messages.post answered ${answer.status}: ${JSON.stringify(answer.body)}`);
+    return answer.body.message;
+  }
+
+  /** The key of the team a message of the request is recorded for, as get_request shows it. */
+  async function sideOf(on: string, messageId: string): Promise<string | undefined> {
+    const messages = (await read(on)).messages as { id: string; provenance: { team: { key: string } | null } }[];
+    return messages.find(({ id }) => id === messageId)?.provenance.team?.key;
+  }
+
+  /** Runs the question emails the posts started, and returns to whom each went. */
+  async function questionEmailsTo(): Promise<string[]> {
+    const before = sink.messages.length;
+    for (const { queue, data } of install.sentJobs.splice(0)) {
+      if (queue !== emailQuestion.type.queue) continue;
+      await emailQuestion.handle({ id: randomUUID(), queue, data: data as { messageId: string }, signal: new AbortController().signal }, { database: install.db, now: () => new Date(), mailer, installUrl: URL_OF_INSTALL });
+    }
+    return sink.messages.slice(before).flatMap(({ to }) => to);
+  }
+
+  const claimOn = async (on: string, user: string) => expect((await callApi(install, tokenOf(user), "POST", `/api/v1/requests/${on}/claim`)).status).toBe(200);
+
+  it("is the target team for a claimant who opened the request, whose question is then asked of nobody else", async () => {
+    const on = await openedBySami();
+    await claimOn(on, sami);
+    install.sentJobs.splice(0);
+    const question = await postOn(on, sami, { kind: "question", body: "Which region?" });
+    expect(question.provenance.team?.key).toBe("BE");
+    expect(await sideOf(on, question.id)).toBe("BE");
+    // Asked of the requester, who is Sami: no one is emailed.
+    expect(await questionEmailsTo()).toEqual([]);
+  });
+
+  it("is the requesting team for the requester before a claim, in the web UI too", async () => {
+    const on = await openedBySami();
+    const session = sessionOf(sami);
+    const result = await install.web(session).write<{ message: { id: string } }>("messages.post", { key: on, kind: "question", body: "Any news?" }, install.fromThePage(session));
+    if (!result.ok) throw new Error(`messages.post answered ${JSON.stringify(result.problem)}`);
+    expect(await sideOf(on, result.output.message.id)).toBe("FE");
+  });
+
+  it("is the target team for a member of both teams who neither opened nor claimed the request, whose question is asked of the requester", async () => {
+    const on = await openedBySami();
+    await claimOn(on, dana);
+    const comment = await postOn(on, kim, { kind: "comment", body: "BE is on it." });
+    expect(await sideOf(on, comment.id)).toBe("BE");
+    install.sentJobs.splice(0);
+    const question = await postOn(on, kim, { kind: "question", body: "Which region?" });
+    expect(await sideOf(on, question.id)).toBe("BE");
+    expect(await questionEmailsTo()).toEqual(["sami@example.com"]);
+  });
+
+  it("is the requesting team for a claimant who opened the request and has left the target team", async () => {
+    const on = await openedBySami();
+    await claimOn(on, sami);
+    await install.owner.query("DELETE FROM team_members WHERE user_id = $1 AND team_id = $2", [sami, team["BE"]]);
+    try {
+      const comment = await postOn(on, sami, { kind: "comment", body: "Back on the FE side." });
+      expect(await sideOf(on, comment.id)).toBe("FE");
+    } finally {
+      await joinTeams(install.owner, sami, team["BE"] ?? "");
+    }
+  });
+
+  it("is kept by an edit, though the poster has claimed the request since", async () => {
+    const on = await openedBySami();
+    const question = await postOn(on, sami, { kind: "question", body: "Which region?" });
+    expect(await sideOf(on, question.id)).toBe("FE");
+    await claimOn(on, sami);
+    const edited = await callApi(install, tokenOf(sami), "POST", `/api/v1/messages/${question.id}/versions`, { body: "Which region, eu or us?" });
+    expect(edited.status).toBe(200);
+    expect(await sideOf(on, question.id)).toBe("FE");
+    const { rows } = await install.owner.query<{ key: string }>(
+      "SELECT t.key FROM events e JOIN teams t ON t.org_id = e.org_id AND t.id = e.team_id WHERE e.type = 'request.message_edited' AND e.data->>'messageId' = $1",
+      [question.id],
+    );
+    expect(rows).toEqual([{ key: "FE" }]);
+  });
+
+  it("leaves a proposal's side as the rules of cross-team commitments give it: the requester's, for a claimant who opened the request", async () => {
+    const on = await openedBySami();
+    await claimOn(on, sami);
+    const proposed = await sendApi(install, tokenOf(sami), "POST", "/api/v1/proposals", { body: { kind: "due_date", key: on, dueDate: "2026-12-01" }, headers: { "if-match": '"1"' } });
+    expect(proposed.status).toBe(202);
+    const { rows } = await install.owner.query<{ key: string }>("SELECT t.key FROM proposals p JOIN teams t ON t.org_id = p.org_id AND t.id = p.team_id WHERE p.id = $1", [
+      proposed.body.proposal.id,
+    ]);
+    expect(rows).toEqual([{ key: "FE" }]);
   });
 });

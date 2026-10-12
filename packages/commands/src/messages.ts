@@ -52,6 +52,14 @@ import type { Writer } from "./write.ts";
 // that names the version; nothing ever changes or removes an earlier version,
 // which the database also refuses (migration 0017).
 //
+// A message is recorded for the side its poster speaks for, as the team in
+// its provenance, which the server decides when it is posted (requests: The
+// side a message is posted for; findings-from-claude-code-run: design.md,
+// Findings: F4 (7); design.md, Technical decisions: T5): the claimant, while a
+// member of the target team, posts for the target team; otherwise as
+// teamActedFor() decides for every write. An edit keeps the side, and a
+// question is asked of the other side (question-emails.ts).
+//
 // Posting and editing are writes on the request, which the loop limit counts
 // for an agent (agent-safety: Runaway agent loops flag the request
 // needs_human); a message posted from a web session is a human action, which
@@ -166,7 +174,7 @@ export const MESSAGE_HANDLERS: Handlers = {
       const question = await questionOf(context, row.id, questionId);
       if (question.blocking && !question.answered) next = transition(current, { kind: "answer_blocking" });
     }
-    const teamId = await teamActedFor(context, userId, row);
+    const teamId = await teamActedFor(context, userId, row, "message");
     const stamp = stampOf(context.provenance, teamId);
     return context.write(async (writer) => {
       await writer.changesRequest(row.id);
@@ -216,9 +224,10 @@ export const MESSAGE_HANDLERS: Handlers = {
     const userId = actingUserOf(context);
     const row = await messageRowOf(context, messageId);
     if (row.actorUserId !== userId) throw new Refusal("forbidden", "Only the author of a message may edit it.");
-    // Edits of the thread's messages run one after the other, so each takes the next version.
-    const request = await lockRequestById(context, row.requestId);
-    const teamId = await teamActedFor(context, userId, request);
+    // Edits of the thread's messages run one after the other, so each takes the next version. An edit keeps the
+    // side the message was posted for (requests: The side a message is posted for).
+    await lockRequestById(context, row.requestId);
+    const teamId = row.teamId ?? undefined;
     return context.write(async (writer) => {
       await writer.changesRequest(row.requestId);
       const [latest] = await writer.tx

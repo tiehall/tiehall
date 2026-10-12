@@ -75,18 +75,24 @@ export async function assertSideAllows(context: OrgContext, userId: string, row:
  * requesting team for the user who opened it, otherwise the target team or the
  * requesting team they belong to; none for someone on neither side now, such as
  * a claimant who has left the target team. An action of the target team's,
- * such as a claim, names the target team when the user belongs to it.
+ * such as a claim, names the target team when the user belongs to it. A
+ * message takes the claim first (requests: The side a message is posted for;
+ * findings-from-claude-code-run: design.md, Findings: F4 (7); design.md,
+ * Technical decisions: T5): the request's claimant, while a member of its
+ * target team, posts for the target team, even when they opened the request
+ * or belong to its requesting team, since they work on it as its claimant.
  */
 export async function teamActedFor(
   context: OrgContext,
   userId: string,
   row: RequestRow,
-  side: "either" | "target" = "either",
+  side: "either" | "target" | "message" = "either",
 ): Promise<string | undefined> {
   const teamIds = (await teamsOfMember(context, userId)).map(({ id }) => id);
-  if (side === "either" && row.requestingUserId === userId) return row.requestingTeamId;
+  if (side === "message" && row.claimantUserId === userId && teamIds.includes(row.targetTeamId)) return row.targetTeamId;
+  if (side !== "target" && row.requestingUserId === userId) return row.requestingTeamId;
   if (teamIds.includes(row.targetTeamId)) return row.targetTeamId;
-  if (side === "either" && teamIds.includes(row.requestingTeamId)) return row.requestingTeamId;
+  if (side !== "target" && teamIds.includes(row.requestingTeamId)) return row.requestingTeamId;
   return undefined;
 }
 
