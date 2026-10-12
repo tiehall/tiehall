@@ -113,7 +113,7 @@ Then create teams on the admin pages, invite people or let the organization's me
 
 ## GitHub's modes: webhook or polling
 
-GitHub runs in webhook mode, in which GitHub delivers each change to the install, or in polling mode, in which Tiehall asks GitHub for changes every 60 seconds. A reconciliation every 15 minutes finds what either mode missed. The admin page at `/admin/github` shows the mode. An App with a webhook starts in webhook mode, and falls back to polling mode when GitHub cannot deliver to the install.
+GitHub runs in webhook mode, in which GitHub delivers each change to the install, or in polling mode, in which Tiehall asks GitHub for changes every 60 seconds. A reconciliation every 15 minutes finds what either mode missed. The admin page at `/admin/github` shows the mode. An App with a webhook starts in webhook mode, and falls back to polling mode when GitHub cannot deliver to the install, or holds no webhook for the App any more because someone removed it in the App's settings. To move back after removing the webhook, add it again with the same URL and the webhook secret stored in Tiehall, then switch GitHub to webhook mode on the admin page.
 
 To move an App without a webhook to webhook mode, once GitHub can reach the install, follow the steps the admin page shows:
 

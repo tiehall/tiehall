@@ -241,7 +241,20 @@ const EMAIL: Record<string, Case> = {
     ],
   },
   githubModeSentence: { renders: [() => email.githubModeSentence(true), () => email.githubModeSentence(false)] },
-  GITHUB_WEBHOOK_ALERT: { renders: [true, false].map((polling) => emailOf(email.GITHUB_WEBHOOK_ALERT, () => ({ page: email.installLink(INSTALL, "/admin/github"), polling: email.githubModeSentence(polling) }))) },
+  githubWebhookProblemSentence: { renders: [() => email.githubWebhookProblemSentence(true), () => email.githubWebhookProblemSentence(false)] },
+  githubWebhookFixSentence: { renders: [() => email.githubWebhookFixSentence(true), () => email.githubWebhookFixSentence(false)] },
+  GITHUB_WEBHOOK_ALERT: {
+    renders: [true, false].flatMap((polling) =>
+      [true, false].map((removed) =>
+        emailOf(email.GITHUB_WEBHOOK_ALERT, () => ({
+          page: email.installLink(INSTALL, "/admin/github"),
+          polling: email.githubModeSentence(polling),
+          problem: email.githubWebhookProblemSentence(removed),
+          fix: email.githubWebhookFixSentence(removed),
+        })),
+      ),
+    ),
+  },
   GITHUB_INSTALLATION_ALERT: {
     renders: [emailOf(email.GITHUB_INSTALLATION_ALERT, () => ({ broken: email.brokenInstallationsSentence({ suspended: ["acme"], deleted: [] }), page: email.installLink(INSTALL, "/admin/github") }))],
   },

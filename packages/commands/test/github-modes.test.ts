@@ -16,6 +16,7 @@ import {
   settleModeFromDeliveryLog,
   withOrg,
   WORKER_JOBS,
+  type Banner,
   type GitHubEvent,
   type WebSessionCaller,
 } from "../src/index.ts";
@@ -163,6 +164,32 @@ describe("the check of the App's delivery log", () => {
     expect(await mode()).toBe("webhook");
     expect(readsOfTheLog(from)).toBe(0);
     expect(await modeEvents()).toEqual([]);
+  });
+
+  // tracker-mirrors: GitHub and Jira each run in webhook mode or polling mode (decisions-from-groups-15-28: design.md,
+  // Decisions this change rests on: D55 (6); Technical decisions: T2). With a webhook secret stored, GitHub's 404 for
+  // the delivery log means that it holds no webhook for the App any more, so the check moves GitHub to polling mode,
+  // settles the mode and shows the banner about GitHub's webhook.
+  it("takes GitHub's 404 for the delivery log, with a webhook secret stored, for a removed webhook: polling mode, a security event and the banner", async () => {
+    await stub.install(app, { account: "acme", repositories: ["acme/web"] });
+    await stub.settled();
+    await listInstallations();
+    stub.updateApp(app, { hook: null });
+
+    await check();
+
+    expect(await mode()).toBe("polling");
+    expect(await pageText()).toContain("GitHub runs in polling mode");
+    expect(await modeEvents()).toEqual([
+      { actor_kind: "system", actor_user_id: null, data: { mode: "polling", previousMode: "webhook", cause: "webhook_removed" } },
+    ]);
+    const { banners } = (await install.execute("install.get_banners", ada, {}, { readOnly: true })) as { banners: Banner[] };
+    expect(banners.find(({ id }) => id === "github_webhook")?.text).toContain("GitHub holds no webhook for the install's App any more");
+    // The mode is settled: the check reads the log no more.
+    const from = stub.received.length;
+    await check();
+    expect(readsOfTheLog(from)).toBe(0);
+    expect(await modeEvents()).toHaveLength(1);
   });
 
   it("waits for the first installation, and for a delivery made after the credentials were stored", async () => {

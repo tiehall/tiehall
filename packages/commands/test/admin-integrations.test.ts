@@ -11,6 +11,7 @@ import {
   openMailer,
   readInstallations,
   recordGivenUpDelivery,
+  recordRemovedWebhook,
   withOrg,
   type Banner,
   type EmailStatus,
@@ -74,7 +75,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await install.owner.query("UPDATE github_app SET mode = 'webhook', webhook_given_up_at = NULL, mode_set_by = 'tiehall'");
+  await install.owner.query("UPDATE github_app SET mode = 'webhook', webhook_given_up_at = NULL, webhook_removed = false, mode_set_by = 'tiehall'");
   await install.owner.query("UPDATE github_installations SET suspended_at = NULL, deleted_at = NULL");
   install.sentJobs.length = 0;
 });
@@ -251,6 +252,26 @@ describe("the admins' email about a given-up GitHub delivery", () => {
     expect(await runAlertJobs(openMailer(undefined))).toBe(1);
     expect(sink.messages).toEqual([]);
     expect((await adminPage(ada)).html).toContain(WEBHOOK_BANNER);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (6). GitHub's 404 for the delivery
+  // log while a webhook secret is stored says that GitHub holds no webhook for the App any more: the email, once, and
+  // the banner name that cause and how to fix it.
+  it("names a webhook removed on GitHub as its cause, as the banner does", async () => {
+    const appId = Number((await install.owner.query<{ app_id: string }>("SELECT app_id FROM github_app")).rows[0]?.app_id);
+    await withOrg(install.db, (context) =>
+      recordRemovedWebhook(context, { send: async (_tx, queue, data) => void install.sentJobs.push({ queue, data }) }, appId),
+    );
+    expect(await runAlertJobs()).toBe(1);
+    expect(sink.messages.map(({ to }) => to[0]).sort()).toEqual(["ada@acme.example", "pia@acme.example"]);
+    const text = sink.messages[0]?.data.replace(/=\r?\n/g, "") ?? "";
+    expect(text).toContain("GitHub holds no webhook for the install's App any more");
+    expect(text).toContain("Add the webhook again in the App's settings on GitHub");
+    expect(text).toContain("GitHub now runs in polling mode");
+    expect(text).not.toContain("gave up");
+    const banner = (await adminPage(ada)).html;
+    expect(banner).toContain(`${WEBHOOK_BANNER}: GitHub holds no webhook for the install's App any more`);
+    expect(banner).not.toContain("gave one up");
   });
 
   it("is not sent once the banner has gone before the job runs", async () => {

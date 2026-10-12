@@ -55,6 +55,24 @@ import { writeIn } from "./write.ts";
 // (github-webhooks.ts), and by storing the App's credentials, which also sets
 // the mode as Tiehall's again (github-app.ts).
 //
+// A webhook removed on GitHub (tracker-mirrors: GitHub and Jira each run in
+// webhook mode or polling mode; tracker-mirrors: Broken integrations are
+// surfaced; decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (6); Technical decisions: T2): while GitHub runs in webhook
+// mode and a webhook secret is stored, GitHub's 404 for the App's delivery
+// log, which the redelivery job and the check after the first installation
+// read, means that GitHub holds no webhook for the App any more, as when
+// someone removed it in the App's settings. No delivery can arrive then, so
+// GitHub moves to polling mode whoever last set the mode, an admin's switch
+// to webhook mode included, in one write with a security event that names no
+// user and the cause webhook_removed; the same write raises the banner about
+// GitHub's webhook, as a give-up does, emailing the admins when it was not
+// showing, and records that the banner's cause is the removed webhook. The
+// banner clears as a give-up's does; an admin who switches back to webhook
+// mode before the webhook is restored sees the next run move GitHub to
+// polling mode again. While no webhook secret is stored, as for an App
+// created without a webhook, a 404 is no failure and changes nothing.
+//
 // Moving to webhook mode (github-app-reachability: design.md, Design rules:
 // Moving to webhook mode): an App without a webhook moves to webhook mode once
 // an admin has added the webhook on GitHub and stored the same secret in
@@ -119,7 +137,7 @@ export const GITHUB_MODE_HANDLERS: Handlers = {
       // given up later undo a switch to webhook mode; it clears a give-up, and with it the banner.
       await writer.tx
         .update(githubApp)
-        .set({ mode, modeSetBy: "admin", webhookGivenUpAt: null, modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())` })
+        .set({ mode, modeSetBy: "admin", webhookGivenUpAt: null, webhookRemoved: false, modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())` })
         .where(eq(githubApp.orgId, writer.orgId));
       await writer.record(githubModeChanged, { mode, previousMode, cause: "admin_switch" });
       return { mode, previousMode };
@@ -229,13 +247,19 @@ export async function settleModeFromDeliveryLog(options: DeliveryLogCheckOptions
   });
   if (stored === undefined) return undefined;
   const attempts = await readDeliveryLog(app.client, readFromCredentials(stored), logger);
-  // No delivery log at all, as for an App without a webhook: nothing to settle, and nothing failed.
-  if (attempts === undefined) return undefined;
+  const jobs = options.jobs ?? { send: () => Promise.reject(new Error("Settling GitHub's mode sends no job.")) };
+  if (attempts === undefined) {
+    // No delivery log at all: with a webhook secret stored, in webhook mode, GitHub holds no webhook for the App any
+    // more; otherwise, as for an App without a webhook, there is nothing to settle, and nothing failed.
+    const removed = await withOrg(database, (context) => recordRemovedWebhook(context, jobs, app.appId));
+    if (!removed) return undefined;
+    logger.info("github: GitHub holds no webhook for the App any more, which put GitHub in polling mode");
+    return "polling";
+  }
   const counted = attempts.filter((attempt) => madeAfterCredentials(attempt, stored));
   if (counted.length === 0) return undefined;
   const settled: GitHubMode = counted.some(attemptFailed) ? "polling" : "webhook";
 
-  const jobs = options.jobs ?? { send: () => Promise.reject(new Error("Settling GitHub's mode sends no job.")) };
   const changed = await withOrg(database, async (context) => {
     // Settled once, for the App the log was read for; an admin's switch meanwhile wins.
     const updated = await context.tx
@@ -273,7 +297,7 @@ export async function recordGivenUpDelivery(context: OrgContext, jobs: JobSender
   if (row.givenUpAt === null) {
     const [raised] = await context.tx
       .update(githubApp)
-      .set({ webhookGivenUpAt: sql`now()` })
+      .set({ webhookGivenUpAt: sql`now()`, webhookRemoved: false })
       .where(eq(githubApp.orgId, context.orgId))
       .returning({ at: githubApp.webhookGivenUpAt });
     // The banner shows from now on, and every admin is emailed about it once, when SMTP is set (admin-alerts.ts).
@@ -287,6 +311,46 @@ export async function recordGivenUpDelivery(context: OrgContext, jobs: JobSender
     .where(eq(githubApp.orgId, context.orgId));
   await writeIn(context, jobs, { actorKind: "system" }, (writer) =>
     writer.record(githubModeChanged, { mode: "polling", previousMode: "webhook", cause: "given_up_delivery" }),
+  );
+  return true;
+}
+
+/**
+ * Records, in the caller's transaction, that GitHub answered a read of the
+ * delivery log of the App with this id with 404 (decisions-from-groups-15-28:
+ * design.md, Technical decisions: T2). While GitHub runs in webhook mode and a
+ * webhook secret is stored, that means GitHub holds no webhook for the App any
+ * more: GitHub moves to polling mode, whoever last set the mode, with a
+ * security event that names no user, and the banner about GitHub's webhook
+ * shows with the removed webhook as its cause; raising it when it was not
+ * showing emails every admin once. Returns whether it moved the mode; it
+ * records nothing in polling mode, while no webhook secret is stored, or when
+ * the App's credentials were replaced meanwhile.
+ */
+export async function recordRemovedWebhook(context: OrgContext, jobs: JobSender, appId: number): Promise<boolean> {
+  const [row] = await context.tx
+    .select({ appId: githubApp.appId, mode: githubApp.mode, givenUpAt: githubApp.webhookGivenUpAt })
+    .from(githubApp)
+    .where(eq(githubApp.orgId, context.orgId))
+    .for("update");
+  if (row === undefined || row.appId !== appId || row.mode !== "webhook" || !(await hasWebhookSecret(context))) return false;
+  const [raised] = await context.tx
+    .update(githubApp)
+    .set({
+      mode: "polling",
+      modeSetBy: "tiehall",
+      modeSettledAt: sql`coalesce(${githubApp.modeSettledAt}, now())`,
+      webhookGivenUpAt: sql`coalesce(${githubApp.webhookGivenUpAt}, now())`,
+      webhookRemoved: true,
+    })
+    .where(eq(githubApp.orgId, context.orgId))
+    .returning({ at: githubApp.webhookGivenUpAt });
+  // The banner shows from now on, and every admin is emailed about it once, when SMTP is set (admin-alerts.ts).
+  if (row.givenUpAt === null) {
+    await jobs.send(context.tx, emailAdminAlerts.type.queue, { alert: "github_webhook", raisedAt: (raised?.at ?? new Date()).toISOString() });
+  }
+  await writeIn(context, jobs, { actorKind: "system" }, (writer) =>
+    writer.record(githubModeChanged, { mode: "polling", previousMode: "webhook", cause: "webhook_removed" }),
   );
   return true;
 }

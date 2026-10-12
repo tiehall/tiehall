@@ -611,10 +611,12 @@ export const GITHUB_MODES = ["webhook", "polling"] as const;
  * GitHub's mode changed (tracker-mirrors: GitHub and Jira each run in webhook
  * mode or polling mode; activity-log: Which actions are security events): an
  * admin switched it in the web UI, a failed delivery in the App's delivery
- * log after its first installation put GitHub in polling mode, or a delivery
+ * log after its first installation put GitHub in polling mode, a delivery
  * the redelivery job gave up did (github-layer-hardening: design.md, Technical
- * decisions: T8). It is a change of the integration; its provenance names the
- * admin, or the system.
+ * decisions: T8), or GitHub's 404 for the delivery log while a webhook secret
+ * is stored, which says that GitHub holds no webhook for the App any more,
+ * did (decisions-from-groups-15-28: design.md, Technical decisions: T2). It is
+ * a change of the integration; its provenance names the admin, or the system.
  */
 export const githubModeChanged = defineEventType({
   type: "github.mode_changed",
@@ -622,7 +624,7 @@ export const githubModeChanged = defineEventType({
   fields: {
     mode: { kind: "enum", values: GITHUB_MODES },
     previousMode: { kind: "enum", values: GITHUB_MODES },
-    cause: { kind: "enum", values: ["admin_switch", "failed_delivery", "given_up_delivery"] },
+    cause: { kind: "enum", values: ["admin_switch", "failed_delivery", "given_up_delivery", "webhook_removed"] },
   },
 });
 

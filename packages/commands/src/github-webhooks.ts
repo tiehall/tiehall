@@ -212,7 +212,7 @@ export function createGitHubWebhookRoute(options: GitHubWebhookRouteOptions): Gi
         if (stored.length > 0) {
           await tx
             .update(githubApp)
-            .set({ webhookGivenUpAt: null })
+            .set({ webhookGivenUpAt: null, webhookRemoved: false })
             .where(and(eq(githubApp.orgId, org.id), isNotNull(githubApp.webhookGivenUpAt)));
         }
         return new Response(null, { status: 202, headers: { "cache-control": "no-store" } });

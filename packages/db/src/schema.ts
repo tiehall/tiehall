@@ -393,6 +393,16 @@ export const githubApp = pgTable(
      * stored after the give-up verifies, or the App's credentials are stored.
      */
     webhookGivenUpAt: timestamp("webhook_given_up_at", { withTimezone: true }),
+    /**
+     * Whether the banner about GitHub's webhook shows because GitHub holds no
+     * webhook for the App any more: GitHub answered a read of the delivery log
+     * with 404 while a webhook secret was stored (decisions-from-groups-15-28:
+     * design.md, Decisions this change rests on: D55 (6); Technical decisions:
+     * T2), which the banner and the admins' email name as its cause. False
+     * when a given-up delivery raised the banner, and whenever the banner is
+     * cleared with webhookGivenUpAt.
+     */
+    webhookRemoved: boolean("webhook_removed").notNull().default(false),
   },
   (table) => [
     check("github_app_owner_type_known", sql`${table.ownerType} IN ('Organization', 'User')`),

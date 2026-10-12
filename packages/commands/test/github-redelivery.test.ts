@@ -6,6 +6,7 @@ import {
   connectInstallations,
   createGitHubAdminRoute,
   createInstallGitHub,
+  emailAdminAlerts,
   GITHUB_ADMIN_PATH,
   polledDeliveryId,
   processDelivery,
@@ -15,13 +16,15 @@ import {
   redeliverGitHubDeliveries,
   WORKER_JOBS,
   withOrg,
+  type Banner,
   type GitHubEvent,
+  type JobSender,
   type WebSessionCaller,
 } from "../src/index.ts";
 import { databaseClock, serveWebhooks, storeStubApp, type StoredStubApp, type WebhookServer } from "./support/github-app.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { sessionOf } from "./support/requests.ts";
+import { addTeam, joinTeams, sessionOf } from "./support/requests.ts";
 
 // Failed GitHub deliveries are redelivered (tracker-mirrors: Failed GitHub
 // deliveries are redelivered; design.md, Design rules: Tracker mirrors;
@@ -83,11 +86,11 @@ afterEach(async () => {
   await install?.close();
 });
 
-/** One run of the redelivery job, as the worker runs it every 10 minutes, by the worker's clock. */
-async function redeliver(github = stored.github, now: () => Date = () => new Date()): Promise<void> {
+/** One run of the redelivery job, as the worker runs it every 10 minutes, by the worker's clock, sending its jobs with these. */
+async function redeliver(github = stored.github, now: () => Date = () => new Date(), jobs: JobSender = { send: async () => {} }): Promise<void> {
   await redeliverGitHubDeliveries.handle(
     { id: randomUUID(), queue: redeliverGitHubDeliveries.type.queue, data: {}, signal: new AbortController().signal },
-    { database: install.db, now, github, jobs: { send: async () => {} } },
+    { database: install.db, now, github, jobs },
   );
   // GitHub accepts a redelivery at once and makes it afterwards.
   await stub.settled();
@@ -594,5 +597,155 @@ describe("a delivery given up (github-layer-hardening 1.21)", () => {
     expect(asked()).toEqual([]);
     expect(await appRow()).toEqual({ mode: "webhook", given_up_at: null });
     expect(await modeEvents()).toEqual([]);
+  });
+});
+
+// A webhook removed on GitHub (tracker-mirrors: GitHub and Jira each run in webhook mode or polling mode;
+// tracker-mirrors: Broken integrations are surfaced; decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (6); Technical decisions: T2). While GitHub runs in webhook mode and a webhook secret is stored,
+// GitHub's 404 for the App's delivery log means that it holds no webhook for the App any more, as when someone removed
+// it in the App's settings: no delivery can arrive, so Tiehall moves GitHub to polling mode whoever last set the mode,
+// with a security event that names no user, and shows the banner about GitHub's webhook to the admins and to the
+// members of each team whose mirrors go through GitHub, emailing the admins once. While no webhook secret is stored, a
+// 404 changes nothing.
+describe("a webhook removed on GitHub (decisions-from-groups-15-28 1.20)", () => {
+  /** The emails to the admins that the runs started. */
+  let alerts: Record<string, unknown>[];
+  const jobs: JobSender = {
+    send: async (_tx, queue, data) => {
+      if (queue === emailAdminAlerts.type.queue) alerts.push(data);
+    },
+  };
+  /** A member of FE, which mirrors through GitHub, and one of DATA, which mirrors nowhere. */
+  let ayse: WebSessionCaller;
+  let dan: WebSessionCaller;
+
+  beforeEach(async () => {
+    alerts = [];
+    const fe = await addTeam(install.owner, "FE");
+    const data = await addTeam(install.owner, "DATA");
+    ayse = sessionOf(await addUser(install.owner, { login: "ayse" }));
+    dan = sessionOf(await addUser(install.owner, { login: "dan" }));
+    await joinTeams(install.owner, ayse.userId, fe);
+    await joinTeams(install.owner, dan.userId, data);
+    // The repositories of the connected installation, read as a sync does once it is connected.
+    await readInstallations({ database: install.db, app: (await stored.github.app())! });
+    await install.execute("mirrors.map_repository", ada, { teamId: fe, repository: "acme/web" });
+  });
+
+  async function appRow(): Promise<{ mode: string; given_up_at: Date | null }> {
+    const { rows } = await install.owner.query<{ mode: string; given_up_at: Date | null }>("SELECT mode, webhook_given_up_at AS given_up_at FROM github_app");
+    return rows[0]!;
+  }
+
+  async function modeEvents(): Promise<{ actor_kind: string; actor_user_id: string | null; data: Record<string, string>; occurred_at: Date }[]> {
+    const { rows } = await install.owner.query<{ actor_kind: string; actor_user_id: string | null; data: Record<string, string>; occurred_at: Date }>(
+      "SELECT actor_kind, actor_user_id, data, occurred_at FROM events WHERE type = 'github.mode_changed' ORDER BY number",
+    );
+    return rows;
+  }
+
+  /** The text of the banner about GitHub's webhook this person sees, or undefined. */
+  async function webhookBanner(session: WebSessionCaller): Promise<string | undefined> {
+    const { banners } = (await install.execute("install.get_banners", session, {}, { readOnly: true })) as { banners: Banner[] };
+    return banners.find(({ id }) => id === "github_webhook")?.text;
+  }
+
+  async function adminPage(): Promise<string> {
+    const route = createGitHubAdminRoute({ execute: install.execute, session: async () => ada, url: URL_OF_INSTALL, secret: () => install.authSecret, logger: install.logger });
+    const page = await route(new Request(`${URL_OF_INSTALL}${GITHUB_ADMIN_PATH}`));
+    expect(page.status).toBe(200);
+    return page.text();
+  }
+
+  const switchTo = (mode: "webhook" | "polling") => install.execute("github.set_mode", ada, { mode });
+
+  it("moves GitHub to polling mode, even after an admin's switch to webhook mode, with a security event that names no user, the webhook banner and one email", async () => {
+    await switchTo("polling");
+    await switchTo("webhook");
+    // Someone removes the webhook in the App's settings on GitHub, which then answers a read of the delivery log with 404.
+    stub.updateApp(app, { hook: null });
+
+    await redeliver(stored.github, () => new Date(), jobs);
+
+    const row = await appRow();
+    expect(row.mode).toBe("polling");
+    expect(row.given_up_at).not.toBeNull();
+    expect(await adminPage()).toContain("GitHub runs in polling mode");
+    const events = await modeEvents();
+    expect(events.map(({ actor_kind, actor_user_id, data }) => ({ actor_kind, actor_user_id, data }))).toEqual([
+      { actor_kind: "web_session", actor_user_id: ada.userId, data: { mode: "polling", previousMode: "webhook", cause: "admin_switch" } },
+      { actor_kind: "web_session", actor_user_id: ada.userId, data: { mode: "webhook", previousMode: "polling", cause: "admin_switch" } },
+      { actor_kind: "system", actor_user_id: null, data: { mode: "polling", previousMode: "webhook", cause: "webhook_removed" } },
+    ]);
+    // The same write: the banner and the event carry its time.
+    expect(events.at(-1)!.occurred_at).toEqual(row.given_up_at);
+
+    // The admins and the members of FE, whose mirrors go through GitHub, see the banner, which names the cause; a member of DATA does not.
+    for (const session of [ada, ayse]) expect(await webhookBanner(session)).toContain("GitHub holds no webhook for the install's App any more");
+    expect(await webhookBanner(dan)).toBeUndefined();
+    expect(alerts).toEqual([{ alert: "github_webhook", raisedAt: row.given_up_at!.toISOString() }]);
+
+    // In polling mode the job reads no log, and records nothing more.
+    const from = stub.received.length;
+    for (let run = 0; run < 2; run += 1) await redeliver(stored.github, () => new Date(), jobs);
+    expect(stub.received.slice(from).filter(({ path }) => path.startsWith("/app/hook"))).toEqual([]);
+    expect(await appRow()).toEqual(row);
+    expect(await modeEvents()).toHaveLength(3);
+    expect(alerts).toHaveLength(1);
+  });
+
+  it("changes nothing for GitHub's 404 while no webhook secret is stored, and alerts no one", async () => {
+    await install.owner.query("DELETE FROM integration_secrets WHERE name = 'github_app.webhook_secret'");
+    stub.updateApp(app, { hook: null });
+
+    await redeliver(stored.github, () => new Date(), jobs);
+
+    expect(await appRow()).toEqual({ mode: "webhook", given_up_at: null });
+    expect(await modeEvents()).toEqual([]);
+    expect(await webhookBanner(ada)).toBeUndefined();
+    expect(alerts).toEqual([]);
+  });
+
+  it("is cleared by an admin's next switch of the mode, and a run that still finds no webhook moves GitHub to polling mode again", async () => {
+    stub.updateApp(app, { hook: null });
+    await redeliver(stored.github, () => new Date(), jobs);
+    expect((await appRow()).mode).toBe("polling");
+
+    await switchTo("webhook");
+    expect(await appRow()).toEqual({ mode: "webhook", given_up_at: null });
+    expect(await webhookBanner(ada)).toBeUndefined();
+
+    await redeliver(stored.github, () => new Date(), jobs);
+    const row = await appRow();
+    expect(row.mode).toBe("polling");
+    expect(row.given_up_at).not.toBeNull();
+    expect(await webhookBanner(ada)).toContain("GitHub holds no webhook for the install's App any more");
+    expect((await modeEvents()).map(({ data }) => data["cause"])).toEqual(["webhook_removed", "admin_switch", "webhook_removed"]);
+    // The banner came back, so the admins are emailed about it again.
+    expect(alerts).toHaveLength(2);
+  });
+
+  it("is cleared by a verified delivery once the webhook is added back on GitHub", async () => {
+    stub.updateApp(app, { hook: null });
+    await redeliver(stored.github, () => new Date(), jobs);
+    expect(await webhookBanner(ada)).toBeDefined();
+
+    stub.updateApp(app, { hook: { url: hooks.url } });
+    await stub.openPullRequest("acme/web", { title: "Fix the header", head: "fix-header", author: "omar" });
+    await stub.settled();
+    expect(stub.deliveries(app).at(-1)).toMatchObject({ event: "pull_request", statusCode: 202 });
+
+    expect(await webhookBanner(ada)).toBeUndefined();
+    expect(await webhookBanner(ayse)).toBeUndefined();
+  });
+
+  it("names a given-up delivery, not a removed webhook, when a delivery is given up while the webhook is there", async () => {
+    await missedDelivery();
+    stub.setHookReachable(false);
+    for (let run = 0; run <= REDELIVERY_ASKS; run += 1) await redeliver(stored.github, () => new Date(), jobs);
+    const text = await webhookBanner(ada);
+    expect(text).toContain("Tiehall gave one up after asking GitHub 5 times");
+    expect(text).not.toContain("holds no webhook");
   });
 });

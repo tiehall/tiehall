@@ -2,7 +2,7 @@ import { githubApp, githubDeliveries, githubRedeliveries, type Database } from "
 import { and, eq, gt, gte, inArray, isNull, lt, notExists, sql } from "drizzle-orm";
 import { askRedelivery, attemptFailed, madeAfterCredentials, readDeliveryLog, readFromCredentials, type DeliveryAttempt } from "./github-delivery-log.ts";
 import type { GitHubAppAccess } from "./github-installations.ts";
-import { githubModeOf, recordGivenUpDelivery } from "./github-mode.ts";
+import { githubModeOf, recordGivenUpDelivery, recordRemovedWebhook } from "./github-mode.ts";
 import { defineJobType, type JobSender } from "./jobs.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { SetupRequiredError, withOrg } from "./with-org.ts";
@@ -52,6 +52,11 @@ import type { WorkerJob } from "./worker.ts";
 // admin chose webhook mode (github-mode.ts). The parameters are the design's:
 // 5 requests, a log read back at most 3 days, GitHub's redelivery window, and
 // from 15 minutes before the previous run.
+//
+// A run that finds no delivery log at all, GitHub's 404, while a webhook
+// secret is stored, finds that GitHub holds no webhook for the App any more,
+// which moves GitHub to polling mode whoever last set it (github-mode.ts;
+// decisions-from-groups-15-28: design.md, Technical decisions: T2).
 
 /** How many times Tiehall asks GitHub to redeliver one delivery before it gives up on it. */
 export const REDELIVERY_ASKS = 5;
@@ -95,8 +100,15 @@ export async function redeliverFailedDeliveries(options: RedeliveryOptions): Pro
     ),
   );
   const attempts = await readDeliveryLog(app.client, since, logger);
-  // An App without a webhook has no delivery log, and so nothing to redeliver.
-  if (attempts === undefined) return 0;
+  if (attempts === undefined) {
+    // No delivery log: with a webhook secret stored, GitHub holds no webhook for the App any more, so no delivery can
+    // arrive and GitHub moves to polling mode (github-mode.ts); an App without a webhook has nothing to redeliver.
+    const jobs = options.jobs ?? { send: () => Promise.reject(new Error("Recording a removed webhook sends no job.")) };
+    if (await withOrg(database, (context) => recordRemovedWebhook(context, jobs, app.appId))) {
+      logger.warn("github: GitHub holds no webhook for the App any more, which put GitHub in polling mode");
+    }
+    return 0;
+  }
 
   // The last attempt of each delivery made after the credentials were stored, which counts only when it failed.
   const last = new Map<string, DeliveryAttempt>();

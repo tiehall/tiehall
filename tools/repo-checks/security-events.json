@@ -190,6 +190,14 @@
           }
         },
         {
+          "action": "GitHub put in polling mode by a removed webhook",
+          "event": "github.mode_changed",
+          "test": {
+            "file": "packages/commands/test/github-redelivery.test.ts",
+            "case": "moves GitHub to polling mode, even after an admin's switch to webhook mode, with a security event that names no user, the webhook banner and one email"
+          }
+        },
+        {
           "action": "the GitHub App's webhook secret stored",
           "event": "github.webhook_secret_stored",
           "test": {

@@ -208,6 +208,7 @@ export {
   GITHUB_WEBHOOK_SECRET_HANDLERS,
   githubModeOf,
   recordGivenUpDelivery,
+  recordRemovedWebhook,
   settleModeFromDeliveryLog,
   type DeliveryLogCheckOptions,
   type GitHubMode,

@@ -78,6 +78,7 @@ export async function storeGitHubApp(context: OrgContext, box: SecretBox, app: C
         polledAt: null,
         modeSetBy: "tiehall",
         webhookGivenUpAt: null,
+        webhookRemoved: false,
       },
     });
   await storeSecret(context, box, "github_app.client_secret", app.clientSecret);

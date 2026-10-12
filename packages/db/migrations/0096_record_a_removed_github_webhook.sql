@@ -1,0 +1,1 @@
+ALTER TABLE "github_app" ADD COLUMN "webhook_removed" boolean DEFAULT false NOT NULL;

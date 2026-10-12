@@ -11,6 +11,8 @@ import {
   GITHUB_INSTALLATION_ALERT,
   GITHUB_WEBHOOK_ALERT,
   githubModeSentence,
+  githubWebhookFixSentence,
+  githubWebhookProblemSentence,
   installLink,
   repositoryText,
   teamKeysText,
@@ -34,13 +36,14 @@ import type { WorkerJob } from "./worker.ts";
 // the problem does.
 //
 // The problems built so far:
-// - Tiehall gave up a GitHub webhook delivery (github-redelivery.ts), which
-//   the App's row records until an admin switches GitHub's mode or a delivery
-//   that reaches the install after the give-up is verified. Its banner shows
-//   to the admins and to the members of each team that maps a GitHub intake
-//   repository. The write that records the give-up when none is recorded
-//   starts the email to the admins (github-mode.ts), so later give-ups while
-//   the banner shows start none.
+// - Tiehall gave up a GitHub webhook delivery (github-redelivery.ts), or found
+//   that GitHub holds no webhook for the App any more (github-mode.ts), which
+//   the App's row records, with which of the two it is, until an admin
+//   switches GitHub's mode or a delivery that reaches the install after it is
+//   verified. Its banner shows to the admins and to the members of each team
+//   that maps a GitHub intake repository, and names the cause. The write that
+//   records it when none is recorded starts the email to the admins
+//   (github-mode.ts), so later give-ups while the banner shows start none.
 // - A connected installation of the install's GitHub App is suspended or
 //   deleted on GitHub, as the latest listing of the App's installations, or a
 //   delivery about it, recorded (github-installations.ts). Its banner shows
@@ -69,13 +72,18 @@ export type Banner = z.output<typeof banner>;
 /** The admin alerts that are emailed, by their ids. */
 export type AdminAlert = "github_webhook" | "contract_fan_out" | "github_installation";
 
-/** The problem with GitHub's webhook that the App's row shows, if any: when it was raised, and whether GitHub moved to polling mode. */
-async function githubWebhookProblem({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<{ raisedAt: Date; polling: boolean } | undefined> {
+/**
+ * The problem with GitHub's webhook that the App's row shows, if any: when it
+ * was raised, whether GitHub moved to polling mode, and whether its cause is
+ * that GitHub holds no webhook for the App any more rather than a given-up
+ * delivery.
+ */
+async function githubWebhookProblem({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">): Promise<{ raisedAt: Date; polling: boolean; removed: boolean } | undefined> {
   const [row] = await tx
-    .select({ raisedAt: githubApp.webhookGivenUpAt, mode: githubApp.mode })
+    .select({ raisedAt: githubApp.webhookGivenUpAt, mode: githubApp.mode, removed: githubApp.webhookRemoved })
     .from(githubApp)
     .where(and(eq(githubApp.orgId, orgId), isNotNull(githubApp.webhookGivenUpAt)));
-  return row?.raisedAt === null || row?.raisedAt === undefined ? undefined : { raisedAt: row.raisedAt, polling: row.mode === "polling" };
+  return row?.raisedAt === null || row?.raisedAt === undefined ? undefined : { raisedAt: row.raisedAt, polling: row.mode === "polling", removed: row.removed };
 }
 
 /** A connected installation of the App in use that is suspended or deleted on GitHub, with the teams whose mirrors go through it. */
@@ -182,10 +190,15 @@ export async function bannersFor(context: Pick<OrgContext, "tx" | "orgId">, memb
   if (webhook !== undefined && sees(await teamsMirroringThroughGitHub(context))) {
     banners.push({
       id: "github_webhook",
-      text:
-        "GitHub's webhook deliveries to this install fail: Tiehall gave one up after asking GitHub 5 times to deliver it again. " +
-        `${githubModeSentence(webhook.polling)} ` +
-        (admin ? "Check the webhook in the App's settings on GitHub, on its Advanced tab." : "An admin of the install can check the webhook in the App's settings on GitHub."),
+      text: webhook.removed
+        ? "GitHub's webhook deliveries to this install fail: GitHub holds no webhook for the install's App any more, as when someone removes it in the App's settings. " +
+          `${githubModeSentence(webhook.polling)} ` +
+          (admin
+            ? "Add the webhook again in the App's settings on GitHub, with the secret Tiehall stores, then switch GitHub back to webhook mode."
+            : "An admin of the install can add the webhook again in the App's settings on GitHub.")
+        : "GitHub's webhook deliveries to this install fail: Tiehall gave one up after asking GitHub 5 times to deliver it again. " +
+          `${githubModeSentence(webhook.polling)} ` +
+          (admin ? "Check the webhook in the App's settings on GitHub, on its Advanced tab." : "An admin of the install can check the webhook in the App's settings on GitHub."),
       link: admin ? GITHUB_PAGE : ADMINS,
     });
   }
@@ -228,7 +241,12 @@ async function alertEmailOf(context: Pick<OrgContext, "tx" | "orgId">, data: Adm
     const problem = await githubWebhookProblem(context);
     if (problem === undefined || problem.raisedAt.getTime() !== raisedAt.getTime()) return undefined;
     return (mailer, to, installUrl) =>
-      mailer.send(to, GITHUB_WEBHOOK_ALERT, { page: installLink(installUrl, "/admin/github"), polling: githubModeSentence(problem.polling) });
+      mailer.send(to, GITHUB_WEBHOOK_ALERT, {
+        page: installLink(installUrl, "/admin/github"),
+        polling: githubModeSentence(problem.polling),
+        problem: githubWebhookProblemSentence(problem.removed),
+        fix: githubWebhookFixSentence(problem.removed),
+      });
   }
   if (data.changeSetId === undefined) return undefined;
   const [fanOut] = await waitingFanOuts(context, data.changeSetId);
