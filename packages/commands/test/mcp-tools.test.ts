@@ -510,3 +510,198 @@ describe.each(PROTOCOL_VERSIONS)("directory's pages, on protocol version %s", (v
     }
   });
 });
+
+// agent-surfaces: The MCP tools; decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (39), as
+// the maintainer answered on 2026-10-12. When one registered API's consumers would take even a page that begins with
+// that API past the 32,000 characters, the page ends inside its list of consumers, says so, and names a cursor from
+// which the next page goes on with the same API and the rest of its consumers, so that no consumer is left out; a team
+// whose intake notes' writer belonged to so many teams is listed across pages the same way. The later page reads the
+// list as it stands then, after the last team key the earlier page listed. 600 teams, LC0001 to LC0600, consume the API
+// lc-api-a, and their intake notes' writer, of team LCW, belonged to all of them; lc-api-b has 2 consumers.
+describe("directory's long lists", () => {
+  const version = PROTOCOL_VERSIONS[0];
+
+  interface PagedTeam {
+    id: string;
+    key: string;
+    intakeNotesWrittenBy: { id: string; key: string }[] | null;
+    continuedFromPreviousPage?: boolean;
+    continuedOnNextPage?: boolean;
+  }
+  interface PagedApi {
+    id: string;
+    consumers: { id: string; key: string }[];
+    untrusted: { name: string };
+    continuedFromPreviousPage?: boolean;
+    continuedOnNextPage?: boolean;
+  }
+  interface Page {
+    teams: PagedTeam[];
+    apis: PagedApi[];
+    next: string | null;
+  }
+  interface ReadPage {
+    page: Page;
+    text: string;
+    size: number;
+  }
+
+  const LONG = Array.from({ length: 600 }, (_, index) => `LC${String(index + 1).padStart(4, "0")}`);
+  let longKeys: string[];
+  let writerTeamId: string;
+  let apiA: string;
+
+  beforeAll(async () => {
+    const { owner } = harness.install;
+    await owner.query("INSERT INTO teams (org_id, key, name) SELECT o.id, k.key, 'Team ' || k.key FROM orgs o, unnest($1::text[]) AS k(key)", [LONG]);
+    // The keys in the database's own order, which directory and its cursors keep to.
+    longKeys = (await owner.query<{ key: string }>("SELECT key FROM teams WHERE key = ANY($1) ORDER BY key", [LONG])).rows.map(({ key }) => key);
+    const { rows: writer } = await owner.query<{ id: string }>(
+      `INSERT INTO teams (org_id, key, name, intake_notes, intake_notes_writer_team_ids)
+       SELECT o.id, 'LCW', 'Long writers', 'File one request per long list.', (SELECT array_agg(id) FROM teams WHERE key = ANY($1)) FROM orgs o RETURNING id`,
+      [LONG],
+    );
+    writerTeamId = writer[0]?.id ?? "";
+    const { rows: registered } = await owner.query<{ id: string; name: string }>(
+      `INSERT INTO apis (org_id, name, provider_team_id, repository_id, repository_owner_id, repository_full_name, registered_by)
+       SELECT o.id, n.name, $2, 9700 + n.ordinality, 9000, 'acme/' || n.name, $3 FROM orgs o, unnest($1::text[]) WITH ORDINALITY AS n(name, ordinality) RETURNING id, name`,
+      [["lc-api-a", "lc-api-b"], writerTeamId, erin.userId],
+    );
+    apiA = registered.find(({ name }) => name === "lc-api-a")?.id ?? "";
+    const apiB = registered.find(({ name }) => name === "lc-api-b")?.id ?? "";
+    await owner.query(
+      `INSERT INTO api_consumers (org_id, api_id, team_id, declared_by, declared_at, last_confirmed_at)
+       SELECT org_id, $1, id, $3, now(), now() FROM teams WHERE key = ANY($2)`,
+      [apiA, LONG, erin.userId],
+    );
+    await owner.query(
+      `INSERT INTO api_consumers (org_id, api_id, team_id, declared_by, declared_at, last_confirmed_at)
+       SELECT org_id, $1, id, $3, now(), now() FROM teams WHERE key = ANY($2)`,
+      [apiB, ["LC0001", "LC0002"], erin.userId],
+    );
+  }, 120_000);
+
+  afterAll(async () => {
+    const { owner } = harness.install;
+    await owner.query("DELETE FROM api_consumers WHERE api_id IN (SELECT id FROM apis WHERE name LIKE 'lc-api-%')");
+    await owner.query("DELETE FROM apis WHERE name LIKE 'lc-api-%'");
+    await owner.query("DELETE FROM teams WHERE key LIKE 'LC%'");
+  });
+
+  /** One page of directory as Dana's agent reads it: its structured content, its text and its size. */
+  async function readPage(cursor: string | undefined): Promise<ReadPage> {
+    const result = await call(dana, version, "directory", cursor === undefined ? {} : { cursor });
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+    return { page: result.structuredContent as Page, text: textOf(result), size: resultSize(result) };
+  }
+
+  /** Every page from the first, each read after `between` has run with the page before it. */
+  async function readAll(between: (read: ReadPage) => Promise<void> = async () => {}): Promise<ReadPage[]> {
+    const pages: ReadPage[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const read = await readPage(cursor);
+      pages.push(read);
+      if (read.page.next === null) return pages;
+      expect(read.text).toContain(`call directory with cursor "${read.page.next}"`);
+      await between(read);
+      cursor = read.page.next;
+      expect(pages.length).toBeLessThan(60);
+    }
+  }
+
+  it("ends a page inside an API's consumers that pass a page, and goes on with them on the next, every page within 32,000 characters", async () => {
+    const pages = await readAll();
+    for (const { page, size } of pages) {
+      expect(size).toBeLessThanOrEqual(32_000);
+      expect(page.teams.length).toBeLessThanOrEqual(50);
+      expect(page.apis.length).toBeLessThanOrEqual(50);
+    }
+    const parts = pages.flatMap(({ page }, index) => page.apis.filter(({ id }) => id === apiA).map((api) => ({ api, index })));
+    expect(parts.length).toBeGreaterThan(1);
+    // Each part but the last ends its page, and the next page begins with the next part.
+    for (const [at, { api, index }] of parts.entries()) {
+      const last = at === parts.length - 1;
+      const page = pages[index]!.page;
+      expect(api.untrusted.name).toBe("lc-api-a");
+      expect(api.continuedFromPreviousPage === true).toBe(at > 0);
+      expect(api.continuedOnNextPage === true).toBe(!last);
+      // The page that begins with the API, and each page after it, begins with its part.
+      expect(page.apis[0]?.id).toBe(apiA);
+      if (at === 0) expect(page.teams).toEqual([]);
+      if (!last) {
+        expect(page.apis.at(-1)?.id).toBe(apiA);
+        expect(parts[at + 1]?.index).toBe(index + 1);
+        expect(pages[index]!.text).toContain("with more of its consumers on the next page");
+      }
+      if (at > 0) expect(pages[index]!.text).toContain(`API ${apiA} of team LCW, from the previous page, is also consumed by teams`);
+    }
+    // No consumer is left out, and none is listed twice.
+    expect(parts.flatMap(({ api }) => api.consumers.map(({ key }) => key))).toEqual(longKeys);
+    // An API that fits on a page is never split.
+    const others = pages.flatMap(({ page }) => page.apis.filter(({ untrusted }) => untrusted.name === "lc-api-b"));
+    expect(others).toHaveLength(1);
+    expect(others[0]).not.toHaveProperty("continuedFromPreviousPage");
+    expect(others[0]).not.toHaveProperty("continuedOnNextPage");
+    expect(others[0]?.consumers.map(({ key }) => key)).toEqual(["LC0001", "LC0002"]);
+  });
+
+  it("ends a page inside the teams a team's intake notes' writer belonged to, and goes on with them on the next", async () => {
+    const pages = await readAll();
+    const parts = pages.flatMap(({ page }, index) => page.teams.filter(({ id }) => id === writerTeamId).map((team) => ({ team, index })));
+    expect(parts.length).toBeGreaterThan(1);
+    for (const [at, { team, index }] of parts.entries()) {
+      const last = at === parts.length - 1;
+      expect(team.key).toBe("LCW");
+      expect(team.continuedFromPreviousPage === true).toBe(at > 0);
+      expect(team.continuedOnNextPage === true).toBe(!last);
+      expect(pages[index]!.size).toBeLessThanOrEqual(32_000);
+      if (!last) {
+        expect(pages[index]!.page.teams.at(-1)?.id).toBe(writerTeamId);
+        expect(parts[at + 1]?.index).toBe(index + 1);
+      }
+      // The notes are shown once, with the team's first part; a later part says it goes on.
+      expect(pages[index]!.text.includes("File one request per long list.")).toBe(at === 0);
+      expect(pages[index]!.page.teams[0]?.id).toBe(writerTeamId);
+      if (at === 0) expect(pages[index]!.text).toContain("More of the teams that team LCW's intake notes' writer belonged to follow on the next page.");
+      if (at > 0) expect(pages[index]!.text).toContain("Team LCW goes on from the previous page");
+    }
+    expect(parts.flatMap(({ team }) => (team.intakeNotesWrittenBy ?? []).map(({ key }) => key))).toEqual([...LONG].sort());
+  });
+
+  it("goes on, after a page that ends inside an API's consumers, with its consumers as they stand when the next page is read", async () => {
+    const { owner } = harness.install;
+    let checked = false;
+    try {
+      await readAll(async ({ page }) => {
+        const cut = page.apis.at(-1);
+        if (checked || cut?.id !== apiA || cut.continuedOnNextPage !== true) return;
+        // Before the next page is read: a consumer whose key comes before the last one listed, and one whose key comes
+        // right after it, are declared, and the consumer that came next is removed.
+        const lastListed = cut.consumers.at(-1)?.key ?? "";
+        const following = longKeys[longKeys.indexOf(lastListed) + 1] ?? "";
+        await owner.query("INSERT INTO teams (org_id, key, name) SELECT id, k, k FROM orgs, unnest($1::text[]) AS k", [["LC0001A", `${lastListed}A`]]);
+        await owner.query(
+          `INSERT INTO api_consumers (org_id, api_id, team_id, declared_by, declared_at, last_confirmed_at)
+           SELECT org_id, $1, id, $3, now(), now() FROM teams WHERE key = ANY($2)`,
+          [apiA, ["LC0001A", `${lastListed}A`], erin.userId],
+        );
+        await owner.query("DELETE FROM api_consumers WHERE api_id = $1 AND team_id = (SELECT id FROM teams WHERE key = $2)", [apiA, following]);
+        const next = await readPage(page.next ?? undefined);
+        const goesOn = next.page.apis[0];
+        expect(goesOn?.id).toBe(apiA);
+        expect(goesOn?.continuedFromPreviousPage).toBe(true);
+        const keys = goesOn?.consumers.map(({ key }) => key) ?? [];
+        expect(keys[0]).toBe(`${lastListed}A`);
+        expect(keys).not.toContain("LC0001A");
+        expect(keys).not.toContain(following);
+        checked = true;
+      });
+      expect(checked).toBe(true);
+    } finally {
+      await owner.query("DELETE FROM api_consumers WHERE team_id IN (SELECT id FROM teams WHERE key = ANY($1))", [["LC0001A"]]);
+      await owner.query("DELETE FROM api_consumers WHERE api_id = $1 AND team_id IN (SELECT id FROM teams WHERE key LIKE 'LC%A')", [apiA]);
+      await owner.query("DELETE FROM teams WHERE key LIKE 'LC%A'");
+    }
+  });
+});

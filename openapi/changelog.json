@@ -45,7 +45,7 @@
       "operationIds": [
         "directory.get"
       ],
-      "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A team's intake notes hold at most 4,000 characters."
+      "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A registered API whose consumers would take even a page that begins with it past the 32,000 characters goes on from one page to the next: the page ends inside its consumers, where the API carries continuedOnNextPage, and the next page begins with the same API, carrying continuedFromPreviousPage, and the consumers after the last one listed, so none is left out; a team whose intakeNotesWrittenBy would do the same goes on the same way. A team's intake notes hold at most 4,000 characters."
     }
   ],
   "releases": []

@@ -38,6 +38,7 @@ export const NEW_REQUEST_PATH = "/requests/new";
 
 /** A team as the directory lists it. */
 interface DirectoryTeam {
+  id: string;
   key: string;
   requiredFields: IntakeField[];
   untrusted: { name: string; intakeNotes: string };
@@ -362,7 +363,7 @@ export function createNewRequestRoute(options: PageRouteOptions): PageRoute {
     path: NEW_REQUEST_PATH,
     name: "new request",
     async get(query, { read, csrf, shell }) {
-      const { teams } = await wholeDirectory<DirectoryTeam, unknown>(read);
+      const { teams } = await wholeDirectory<DirectoryTeam>(read);
       const { teams: mine } = await read<{ teams: { key: string }[] }>(whoami.id, {});
       const chosen = query.get("team") ?? undefined;
       return htmlAnswer(newRequestPage(teams, mine.map(({ key }) => key), chosen, csrf, shell));
@@ -375,7 +376,7 @@ export function createNewRequestRoute(options: PageRouteOptions): PageRoute {
         // A form the operation refuses for its input comes back with what was typed, the refusal at its top and each
         // refused field named beside it (web-ui: Pages are accessible); any other refusal is the refusal's page.
         if (!(error instanceof Refusal) || error.reason !== "invalid-input") throw error;
-        const { teams } = await wholeDirectory<DirectoryTeam, unknown>(read);
+        const { teams } = await wholeDirectory<DirectoryTeam>(read);
         const { teams: mine } = await read<{ teams: { key: string }[] }>(whoami.id, {});
         const member = await read<ShellMember>(webShell.id, {});
         const shell: PageShell = { form: "app", member, path: NEW_REQUEST_PATH, csrf };

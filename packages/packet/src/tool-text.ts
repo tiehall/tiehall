@@ -550,17 +550,27 @@ export function contractDiffFailureText(failure: ContractDiffFailureJson): Agent
   ];
 }
 
+/**
+ * Where a team or an API that a page of directory lists goes on: from the
+ * previous page, which ended inside its list, and in the next page, which this
+ * one ends inside its list for (decisions-from-groups-15-28, D55 (39)).
+ */
+interface ContinuedJson {
+  continuedFromPreviousPage?: boolean;
+  continuedOnNextPage?: boolean;
+}
+
 /** The install's teams and registered APIs, as directory returns them. */
 export interface DirectoryJson {
-  teams: {
+  teams: ({
     id: string;
     key: string;
     requiredFields?: readonly string[];
     /** The teams the admin who last wrote the intake notes belonged to then; null for notes from before Tiehall kept them; absent from an install that says nothing of it. */
     intakeNotesWrittenBy?: readonly TeamJson[] | null;
     untrusted: { name: string; intakeNotes?: string };
-  }[];
-  apis: { id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } }[];
+  } & ContinuedJson)[];
+  apis: ({ id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } } & ContinuedJson)[];
   /** The cursor of the next page, while more teams or APIs remain; null, or absent, on the last page. */
   next?: string | null;
 }
@@ -641,7 +651,10 @@ export function teamIntakeText(team: TeamIntakeJson, reader: Reader): AgentText[
  * wrote for it, which say how it wants requests filed, fenced the same way,
  * and the fields it requires, in Tiehall's words; and the registered APIs,
  * each with its provider team and the teams declared as its consumers, and
- * its name, fenced as its provider team's.
+ * its name, fenced as its provider team's. A team or an API that goes on from
+ * the previous page is named by its key or id, with what is new on this page,
+ * since that page showed the rest; one that goes on in the next page says so
+ * (decisions-from-groups-15-28, D55 (39)).
  */
 export function directoryText(directory: DirectoryJson, reader: Reader): AgentText[] {
   const keys = directory.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
@@ -652,6 +665,12 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
   else if (directory.apis.length === 0) texts.push({ origin: "tiehall", text: "The install has no team yet." });
   for (const team of directory.teams) {
     const key = checked(team.key, TEAM_KEY, "team key");
+    // The intake notes' writer's teams decide only how the notes are fenced, which the previous page did.
+    if (team.continuedFromPreviousPage === true) {
+      texts.push({ origin: "tiehall", text: `Team ${key} goes on from the previous page, with more of the teams its intake notes' writer belonged to.` });
+      if (team.continuedOnNextPage === true) texts.push({ origin: "tiehall", text: `More of them follow on the next page.` });
+      continue;
+    }
     texts.push({ origin: "tiehall", text: `Team ${key} is named:` });
     texts.push({ origin: originOf(team, reader), text: team.untrusted.name });
     const notes = team.untrusted.intakeNotes ?? "";
@@ -661,6 +680,9 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
     }
     const required = team.requiredFields ?? [];
     if (required.length > 0) texts.push({ origin: "tiehall", text: `Team ${key} requires ${requiredFieldsText(required)}.` });
+    if (team.continuedOnNextPage === true) {
+      texts.push({ origin: "tiehall", text: `More of the teams that team ${key}'s intake notes' writer belonged to follow on the next page.` });
+    }
   }
   // APIs come after every team, so a last page without one means that no API is registered.
   if (directory.apis.length === 0 && next === undefined) {
@@ -668,12 +690,17 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
   }
   for (const api of directory.apis) {
     const consumers = api.consumers.map(({ key }) => checked(key, TEAM_KEY, "team key"));
-    const consumed =
-      consumers.length === 0 ? "which no team consumes yet" : `which team${consumers.length === 1 ? "" : "s"} ${listed(consumers)} consume${consumers.length === 1 ? "s" : ""}`;
-    texts.push({
-      origin: "tiehall",
-      text: `API ${checked(api.id, UUID, "API id")} of team ${checked(api.provider.key, TEAM_KEY, "team key")}, ${consumed}, is named:`,
-    });
+    const named = `API ${checked(api.id, UUID, "API id")} of team ${checked(api.provider.key, TEAM_KEY, "team key")}`;
+    const teamsOf = `team${consumers.length === 1 ? "" : "s"} ${listed(consumers)}`;
+    // The previous page showed the API's name: the part that goes on names it by its id.
+    if (api.continuedFromPreviousPage === true) {
+      const more = api.continuedOnNextPage === true ? " More of its consumers follow on the next page." : "";
+      texts.push({ origin: "tiehall", text: `${named}, from the previous page, is also consumed by ${teamsOf}.${more}` });
+      continue;
+    }
+    const consumed = consumers.length === 0 ? "which no team consumes yet" : `which ${teamsOf} consume${consumers.length === 1 ? "s" : ""}`;
+    const more = api.continuedOnNextPage === true ? ", with more of its consumers on the next page" : "";
+    texts.push({ origin: "tiehall", text: `${named}, ${consumed}${more}, is named:` });
     texts.push({ origin: originOf(api.provider, reader), text: api.untrusted.name });
   }
   if (next !== undefined) texts.push({ origin: "tiehall", text: `More teams or APIs follow: call directory with cursor "${next}" for the next page.` });

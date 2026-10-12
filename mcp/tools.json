@@ -2484,7 +2484,7 @@
       "stability": "beta"
     },
     {
-      "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page.",
+      "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page. An API with more consumers than a page holds goes on from one page to the next, as does a team whose notes' writer belonged to that many teams.",
       "inputSchema": {
         "properties": {
           "cursor": {
@@ -2522,6 +2522,16 @@
                     "type": "object"
                   },
                   "type": "array"
+                },
+                "continuedFromPreviousPage": {
+                  "const": true,
+                  "description": "Present when the previous page ended inside this API's consumers: the teams listed here are the ones after the last that page listed, by key, as they stand now, and the rest of the API is listed again. Absent otherwise.",
+                  "type": "boolean"
+                },
+                "continuedOnNextPage": {
+                  "const": true,
+                  "description": "Present when this page ends inside this API's consumers, which would not fit on a page with the rest of the API: the next page goes on with this API and the teams after the last one listed here. Absent otherwise.",
+                  "type": "boolean"
                 },
                 "id": {
                   "format": "uuid",
@@ -2583,6 +2593,16 @@
           "teams": {
             "items": {
               "properties": {
+                "continuedFromPreviousPage": {
+                  "const": true,
+                  "description": "Present when the previous page ended inside this team's intakeNotesWrittenBy: the teams listed here are the ones after the last that page listed, by key, as they stand now, and the rest of the team is listed again. Absent otherwise.",
+                  "type": "boolean"
+                },
+                "continuedOnNextPage": {
+                  "const": true,
+                  "description": "Present when this page ends inside this team's intakeNotesWrittenBy, which would not fit on a page with the rest of the team: the next page goes on with this team and the teams after the last one listed here. Absent otherwise.",
+                  "type": "boolean"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",

@@ -1,7 +1,7 @@
 import { declareConsumer, listTeamApis, reconfirmConsumer, removeConsumer, type consumerDeclaration } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { apiConsumerReconfirmationEmails, apiConsumers, apis, members, teamMembers, teams, users } from "@tiehall/db";
-import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { apiNameText, installLink, RECONFIRMATION_REQUEST, serverDay, teamKey } from "./email.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
@@ -66,14 +66,19 @@ export function reconfirmationText(request: { team: string; api: string; lastCon
 
 type ConsumerDeclaration = z.input<typeof consumerDeclaration>;
 
-/** The teams that declared they consume the API, while it is registered, by key; contract-change routing reads only these. */
-export async function consumersOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, apiId: string): Promise<{ id: string; key: string }[]> {
+/**
+ * The teams that declared they consume the API, while it is registered, by
+ * key; contract-change routing reads only these. Given a team key, only the
+ * ones whose keys come after it, in the database's order of keys, as a page
+ * of directory goes on with them.
+ */
+export async function consumersOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, apiId: string, afterKey?: string): Promise<{ id: string; key: string }[]> {
   return tx
     .select({ id: teams.id, key: teams.key })
     .from(apiConsumers)
     .innerJoin(apis, and(eq(apis.orgId, apiConsumers.orgId), eq(apis.id, apiConsumers.apiId)))
     .innerJoin(teams, and(eq(teams.orgId, apiConsumers.orgId), eq(teams.id, apiConsumers.teamId)))
-    .where(and(eq(apiConsumers.orgId, orgId), eq(apiConsumers.apiId, apiId), isNull(apis.unregisteredAt)))
+    .where(and(eq(apiConsumers.orgId, orgId), eq(apiConsumers.apiId, apiId), isNull(apis.unregisteredAt), afterKey === undefined ? undefined : gt(teams.key, afterKey)))
     .orderBy(asc(teams.key));
 }
 

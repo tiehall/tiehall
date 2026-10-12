@@ -25,7 +25,14 @@ import { INSTALL_URL, user } from "./schemas.ts";
 // 32,000 characters that cap a page of get_request, its text and its
 // structured content together, and names the cursor of the next page while
 // more remain (agent-surfaces: The MCP tools; decisions-from-groups-15-28:
-// design.md, Decisions this change rests on: D55 (39)).
+// design.md, Decisions this change rests on: D55 (39)). A registered API whose
+// consumers would take even a page that begins with it past those characters
+// is listed across pages: each page ends inside its consumers, ordered by
+// team key, with the cursor from which the next page goes on with the same
+// API and the rest of them, and each part says whether it goes on from the
+// previous page and in the next one; a team whose intakeNotesWrittenBy would
+// do the same is listed across pages the same way, as the maintainer answered
+// on 2026-10-12.
 // teams.get reads one team as directory lists it, by its key or an earlier
 // key, which is what the team's intake page shows, and the JSON of that page
 // is its body (agent-surfaces: Team intake pages). Every member may read them,
@@ -100,6 +107,28 @@ const directoryApi = z.object({
   untrusted: z.object({ name: z.string() }),
 });
 
+/**
+ * Whether a part of a team or an API that a page of directory lists goes on
+ * from the previous page, or in the next one: the list it is cut inside is
+ * the team's intakeNotesWrittenBy, or the API's consumers.
+ */
+function continued(list: string, entry: string) {
+  return {
+    continuedFromPreviousPage: z
+      .literal(true)
+      .optional()
+      .meta({
+        description: `Present when the previous page ended inside ${list}: the teams listed here are the ones after the last that page listed, by key, as they stand now, and the rest of the ${entry} is listed again. Absent otherwise.`,
+      }),
+    continuedOnNextPage: z
+      .literal(true)
+      .optional()
+      .meta({
+        description: `Present when this page ends inside ${list}, which would not fit on a page with the rest of the ${entry}: the next page goes on with this ${entry} and the teams after the last one listed here. Absent otherwise.`,
+      }),
+  };
+}
+
 /** The most teams, and the most registered APIs, that a page of directory holds. */
 export const DIRECTORY_PAGE_ITEMS = 50;
 
@@ -109,7 +138,7 @@ export const DIRECTORY_CURSOR = /^[A-Za-z0-9_-]{1,400}$/;
 export const readDirectory = defineCommand({
   id: "directory.get",
   summary:
-    "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page.",
+    "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page. An API with more consumers than a page holds goes on from one page to the next, as does a team whose notes' writer belonged to that many teams.",
   input: z.object({
     cursor: z
       .string()
@@ -118,8 +147,8 @@ export const readDirectory = defineCommand({
       .meta({ description: "The next page's cursor, as the previous page named it in next; the first page without it." }),
   }),
   output: z.object({
-    teams: z.array(directoryTeam),
-    apis: z.array(directoryApi),
+    teams: z.array(directoryTeam.extend(continued("this team's intakeNotesWrittenBy", "team"))),
+    apis: z.array(directoryApi.extend(continued("this API's consumers", "API"))),
     next: z.string().regex(DIRECTORY_CURSOR).nullable().meta({ description: "The cursor of the next page, which you pass as cursor; null on the last page." }),
   }),
   scopes: ["requests:read"],

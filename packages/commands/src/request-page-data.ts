@@ -58,7 +58,7 @@ export async function readRequestPage(read: PageRead, key: string, request?: Req
   const { "proposals": proposals } = await read<{ "proposals": ProposalView[] }>(listRequestProposals.id, { key: found.key });
   const { user, teams } = await read<RequestPageViewer>(whoami.id, {});
   // Every page of directory: the page lists every team of the install.
-  const directory = await wholeDirectory<{ key: string; untrusted: { name: string } }, unknown>(read);
+  const directory = await wholeDirectory<{ id: string; key: string; untrusted: { name: string } }>(read);
   const activity = await read<RequestActivityView>(requestActivity.id, { key: found.key });
   return {
     request: found,

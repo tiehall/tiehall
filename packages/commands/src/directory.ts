@@ -1,5 +1,5 @@
 import { DIRECTORY_PAGE_ITEMS, getTeam, PAGE_CHARACTERS, readDirectory, whoami, type IntakeField } from "@tiehall/catalog";
-import { compareVersions, MINIMUM_SKILL_VERSION, Refusal } from "@tiehall/core";
+import { compareVersions, MINIMUM_SKILL_VERSION, Refusal, TEAM_KEY } from "@tiehall/core";
 import { apis, teams, users } from "@tiehall/db";
 import { createAgentView } from "@tiehall/packet/render";
 import { directoryText, type DirectoryJson, type Reader } from "@tiehall/packet/tool-text";
@@ -35,6 +35,18 @@ import type { OrgContext } from "./with-org.ts";
 // page names the cursor of the next while more remain: the place after its
 // last team or API, encoded, which only the install makes and reads, so a
 // team or an API added or removed between pages moves no other one.
+//
+// A team or an API that does not fit whole on a page that begins with it, an
+// API with several hundred consumers or a team whose intake notes' writer
+// belonged to that many teams, is the one that a page ends inside, as the
+// maintainer answered on 2026-10-12: the page takes as much of its list, the
+// API's consumers or the team's intakeNotesWrittenBy, in the order of their
+// keys, as fits, at least one, marks it as going on in the next page, and
+// names the place after the last key it listed; the next page begins with the
+// same team or API, marked as going on from the previous page, and the rest
+// of its list as it stands when that page is read, after that key, so no
+// consumer is left out. A team or an API that fits on a page of its own is
+// never split: a page it would take past the cap ends before it.
 
 export const DIRECTORY_HANDLERS: Handlers = {
   [whoami.id]: defineHandler(whoami, async ({ skillVersion }, context) => {
@@ -64,80 +76,243 @@ export const DIRECTORY_HANDLERS: Handlers = {
 
   [readDirectory.id]: defineHandler(readDirectory, async ({ cursor }, context) => {
     const after = placeOf(cursor);
-    const teamsAfter: SQL[] = [eq(teams.orgId, context.orgId)];
-    if (after?.kind === "team") teamsAfter.push(gt(teams.key, after.value));
-    // One more than a page holds of each, which says whether more follow.
-    const teamRows =
-      after?.kind === "api"
-        ? []
-        : await context.tx
-            .select(TEAM_COLUMNS)
-            .from(teams)
-            .where(and(...teamsAfter))
-            .orderBy(asc(teams.key))
-            .limit(DIRECTORY_PAGE_ITEMS + 1);
-    const apisAfter: SQL[] = [eq(apis.orgId, context.orgId), isNull(apis.unregisteredAt)];
-    if (after?.kind === "api") apisAfter.push(gt(apis.name, after.value));
-    const apiRows = await context.tx
-      .select({ id: apis.id, name: apis.name, providerId: teams.id, providerKey: teams.key })
-      .from(apis)
-      .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
-      .where(and(...apisAfter))
-      .orderBy(asc(apis.name))
-      .limit(DIRECTORY_PAGE_ITEMS + 1);
     const keys = await teamKeysById(context);
     const reader: Reader = { teams: (await teamsOfMember(context, actingUserOf(context))).map(({ key }) => key) };
     let page: DirectoryPage = { teams: [], apis: [], next: null };
-    /** The page with one more team or API, when it still fits; the first of a page always does. */
-    const fitted = (more: DirectoryPage): boolean => {
-      if (page.teams.length + page.apis.length > 0 && pageCharacters(more, reader) > PAGE_CHARACTERS) return false;
-      page = more;
-      return true;
-    };
-    for (const row of teamRows.slice(0, DIRECTORY_PAGE_ITEMS)) {
-      if (!fitted({ ...page, teams: [...page.teams, listedTeam(row, keys)], next: cursorOf({ kind: "team", value: row.key }) })) break;
-    }
-    let more = teamRows.length > page.teams.length;
-    if (!more) {
-      for (const api of apiRows.slice(0, DIRECTORY_PAGE_ITEMS)) {
-        const listed = { id: api.id, provider: { id: api.providerId, key: api.providerKey }, consumers: await consumersOf(context, api.id), untrusted: { name: api.name } };
-        if (!fitted({ ...page, apis: [...page.apis, listed], next: cursorOf({ kind: "api", value: api.name }) })) break;
+    /** Takes the team or API onto the page whole, or, as the first of the page, as much of its list as fits. */
+    const take = (candidate: Candidate): "taken" | "cut" | "full" => {
+      const count = candidate.kind === "team" ? page.teams.length : page.apis.length;
+      if (count >= DIRECTORY_PAGE_ITEMS) return "full";
+      const whole = withEntry(page, candidate, candidate.entry, candidate.after);
+      const first = page.teams.length + page.apis.length === 0;
+      if (pageCharacters(whole, reader) <= PAGE_CHARACTERS || (first && candidate.list.length <= 1)) {
+        page = whole;
+        return "taken";
       }
-      more = apiRows.length > page.apis.length;
+      if (!first) return "full";
+      // The most of its list that fits, found by halving: at least one, and fewer than all, which do not fit.
+      const part = (count: number): DirectoryPage => {
+        const items = candidate.list.slice(0, count);
+        return withEntry(page, candidate, candidate.cut(items), candidate.inside(items.at(-1)?.key ?? ""));
+      };
+      let fits = 1;
+      let fails = candidate.list.length;
+      while (fails - fits > 1) {
+        const middle = Math.floor((fits + fails) / 2);
+        if (pageCharacters(part(middle), reader) <= PAGE_CHARACTERS) fits = middle;
+        else fails = middle;
+      }
+      page = part(fits);
+      return "cut";
+    };
+    // The candidates hold one more than a page takes of each, besides the one it goes on with, which says whether more follow.
+    let more = false;
+    if (after?.kind !== "api" && after?.kind !== "consumers") {
+      for (const candidate of await teamCandidates(context, after, keys)) {
+        if (take(candidate) !== "taken") {
+          more = true;
+          break;
+        }
+      }
+    }
+    // The APIs come after every team, so a page takes them only once it has taken the last team.
+    if (!more) {
+      for (const candidate of await apiCandidates(context, after)) {
+        if (take(candidate) !== "taken") {
+          more = true;
+          break;
+        }
+      }
     }
     return { ...page, next: more ? page.next : null };
   }),
 };
 
+/** A team as directory and teams.get list it. */
+type ListedTeam = ReturnType<typeof listedTeam>;
+
+/** A registered API as directory lists it. */
+interface ListedApi {
+  id: string;
+  provider: { id: string; key: string };
+  consumers: { id: string; key: string }[];
+  untrusted: { name: string };
+}
+
+/** Whether a part of a team or an API goes on from the previous page, or in the next one; absent when it does not. */
+interface Continued {
+  continuedFromPreviousPage?: true;
+  continuedOnNextPage?: true;
+}
+
 /** A page of directory, as it answers. */
-type DirectoryPage = DirectoryJson & { teams: ReturnType<typeof listedTeam>[]; next: string | null };
+type DirectoryPage = DirectoryJson & { teams: (ListedTeam & Continued)[]; apis: (ListedApi & Continued)[]; next: string | null };
+
+/** A team as a list names it: a team's intakeNotesWrittenBy, or an API's consumers. */
+interface ListedRef {
+  id: string;
+  key: string;
+}
+
+/** A team or an API a page may take: whole, with what remains of its list, or the part of its list that fits. */
+interface CandidateOf<Kind extends "team" | "api", Entry> {
+  kind: Kind;
+  /** The whole of it that remains, marked when it goes on from the previous page. */
+  entry: Entry & Continued;
+  /** Its list, in the order of the teams' keys. */
+  list: readonly ListedRef[];
+  /** It with only these of its list, marked as going on in the next page. */
+  cut(items: readonly ListedRef[]): Entry & Continued;
+  /** The place after it. */
+  after: Place;
+  /** The place inside its list, after this team key. */
+  inside(key: string): Place;
+}
+
+type Candidate = CandidateOf<"team", ListedTeam> | CandidateOf<"api", ListedApi>;
+
+/** The page with this team or API added, whole or in part, naming this place as the next page's. */
+function withEntry(page: DirectoryPage, candidate: Candidate, entry: Candidate["entry"], next: Place): DirectoryPage {
+  return candidate.kind === "team"
+    ? { ...page, teams: [...page.teams, entry as ListedTeam & Continued], next: cursorOf(next) }
+    : { ...page, apis: [...page.apis, entry as ListedApi & Continued], next: cursorOf(next) };
+}
+
+/** A team as a page may take it, going on from the previous page or not: its list is its intakeNotesWrittenBy. */
+function teamCandidate(listed: ListedTeam, goesOn: boolean): Candidate {
+  const from: Continued = goesOn ? { continuedFromPreviousPage: true } : {};
+  return {
+    kind: "team",
+    entry: { ...listed, ...from },
+    list: listed.intakeNotesWrittenBy ?? [],
+    cut: (items) => ({ ...listed, intakeNotesWrittenBy: [...items], ...from, continuedOnNextPage: true }),
+    after: { kind: "team", team: listed.key },
+    inside: (key) => ({ kind: "writers", team: listed.key, after: key }),
+  };
+}
+
+/** A registered API as a page may take it, going on from the previous page or not: its list is its consumers. */
+function apiCandidate(listed: ListedApi, goesOn: boolean): Candidate {
+  const from: Continued = goesOn ? { continuedFromPreviousPage: true } : {};
+  return {
+    kind: "api",
+    entry: { ...listed, ...from },
+    list: listed.consumers,
+    cut: (items) => ({ ...listed, consumers: [...items], ...from, continuedOnNextPage: true }),
+    after: { kind: "api", api: listed.untrusted.name },
+    inside: (key) => ({ kind: "consumers", api: listed.untrusted.name, after: key }),
+  };
+}
+
+/**
+ * The teams a page may take after this place: the team whose list it is
+ * inside, with the rest of that list, when any remains, then one more than a
+ * page holds of the teams after it by key.
+ */
+async function teamCandidates(context: OrgContext, after: Place | undefined, keys: ReadonlyMap<string, string>): Promise<Candidate[]> {
+  const candidates: Candidate[] = [];
+  const conditions: SQL[] = [eq(teams.orgId, context.orgId)];
+  if (after?.kind === "team" || after?.kind === "writers") conditions.push(gt(teams.key, after.team));
+  if (after?.kind === "writers") {
+    const [row] = await context.tx.select(TEAM_COLUMNS).from(teams).where(and(eq(teams.orgId, context.orgId), eq(teams.key, after.team)));
+    const listed = row === undefined ? undefined : listedTeam(row, keys);
+    const rest = listed?.intakeNotesWrittenBy?.filter(({ key }) => key > after.after) ?? [];
+    if (listed !== undefined && rest.length > 0) candidates.push(teamCandidate({ ...listed, intakeNotesWrittenBy: rest }, true));
+  }
+  const rows = await context.tx
+    .select(TEAM_COLUMNS)
+    .from(teams)
+    .where(and(...conditions))
+    .orderBy(asc(teams.key))
+    .limit(DIRECTORY_PAGE_ITEMS + 1);
+  return [...candidates, ...rows.map((row) => teamCandidate(listedTeam(row, keys), false))];
+}
+
+/**
+ * The registered APIs a page may take after this place: the API whose
+ * consumers it is inside, with those after its key, when any remain, then one
+ * more than a page holds of the APIs after it by name; after a team, every
+ * API from the first.
+ */
+async function apiCandidates(context: OrgContext, after: Place | undefined): Promise<Candidate[]> {
+  const registered = (...conditions: SQL[]) =>
+    context.tx
+      .select({ id: apis.id, name: apis.name, providerId: teams.id, providerKey: teams.key })
+      .from(apis)
+      .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
+      .where(and(eq(apis.orgId, context.orgId), isNull(apis.unregisteredAt), ...conditions));
+  type Row = Awaited<ReturnType<typeof registered>>[number];
+  const listed = async (api: Row, afterKey?: string): Promise<ListedApi> => ({
+    id: api.id,
+    provider: { id: api.providerId, key: api.providerKey },
+    consumers: await consumersOf(context, api.id, afterKey),
+    untrusted: { name: api.name },
+  });
+  const candidates: Candidate[] = [];
+  if (after?.kind === "consumers") {
+    const [api] = await registered(eq(apis.name, after.api));
+    const rest = api === undefined ? undefined : await listed(api, after.after);
+    if (rest !== undefined && rest.consumers.length > 0) candidates.push(apiCandidate(rest, true));
+  }
+  const rows = await registered(...(after?.kind === "api" || after?.kind === "consumers" ? [gt(apis.name, after.api)] : []))
+    .orderBy(asc(apis.name))
+    .limit(DIRECTORY_PAGE_ITEMS + 1);
+  for (const row of rows) candidates.push(apiCandidate(await listed(row), false));
+  return candidates;
+}
 
 /** The characters of a page as its caller reads it: its markdown and its structured content together. */
 function pageCharacters(page: DirectoryPage, reader: Reader): number {
   return createAgentView().markdown(directoryText(page, reader)).length + JSON.stringify(page).length;
 }
 
-/** A place in directory's order: after a team's key, or after a registered API's name, which comes after every team. */
-interface Place {
-  kind: "team" | "api";
-  value: string;
-}
+/**
+ * A place in directory's order: after a team's key; inside a team's
+ * intakeNotesWrittenBy, after a team's key; after a registered API's name,
+ * which comes after every team; or inside its consumers, after a team's key.
+ */
+type Place =
+  | { kind: "team"; team: string }
+  | { kind: "writers"; team: string; after: string }
+  | { kind: "api"; api: string }
+  | { kind: "consumers"; api: string; after: string };
+
+/** A team key inside a cursor. */
+const KEY = TEAM_KEY.source.slice(1, -1);
+
+/** The forms of a decoded cursor, by the letter that begins it; a key never holds a colon, so the last colon ends a name. */
+const PLACES: readonly [RegExp, (match: RegExpExecArray) => Place][] = [
+  [/^t:(.{1,100})$/s, (match) => ({ kind: "team", team: match[1] ?? "" })],
+  [new RegExp(`^w:(${KEY}):(${KEY})$`), (match) => ({ kind: "writers", team: match[1] ?? "", after: match[2] ?? "" })],
+  [/^a:(.{1,100})$/s, (match) => ({ kind: "api", api: match[1] ?? "" })],
+  [new RegExp(`^c:(.{1,100}):(${KEY})$`, "s"), (match) => ({ kind: "consumers", api: match[1] ?? "", after: match[2] ?? "" })],
+];
 
 /** The cursor of the page after this place. */
-function cursorOf({ kind, value }: Place): string {
-  return Buffer.from(`${kind === "team" ? "t" : "a"}:${value}`, "utf8").toString("base64url");
+function cursorOf(place: Place): string {
+  const decoded =
+    place.kind === "team"
+      ? `t:${place.team}`
+      : place.kind === "writers"
+        ? `w:${place.team}:${place.after}`
+        : place.kind === "api"
+          ? `a:${place.api}`
+          : `c:${place.api}:${place.after}`;
+  return Buffer.from(decoded, "utf8").toString("base64url");
 }
 
 /** The place a cursor names; none for the first page. A cursor the install did not make is refused as input that fails the schema. */
 function placeOf(cursor: string | undefined): Place | undefined {
   if (cursor === undefined) return undefined;
   const decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  const match = /^([ta]):(.{1,100})$/s.exec(decoded);
-  if (match === null || Buffer.from(decoded, "utf8").toString("base64url") !== cursor) {
-    const message = "The cursor is one that directory named as next.";
-    throw new Refusal("invalid-input", message, { issues: [{ path: ["cursor"], message }] });
+  if (Buffer.from(decoded, "utf8").toString("base64url") === cursor) {
+    for (const [form, place] of PLACES) {
+      const match = form.exec(decoded);
+      if (match !== null) return place(match);
+    }
   }
-  return { kind: match[1] === "t" ? "team" : "api", value: match[2] ?? "" };
+  const message = "The cursor is one that directory named as next.";
+  throw new Refusal("invalid-input", message, { issues: [{ path: ["cursor"], message }] });
 }
 
 /** The columns a team is listed from. */

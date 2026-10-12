@@ -56,7 +56,7 @@ The MCP server SHALL offer these twelve tools:
 
 `claim` and `set_status` SHALL be two separate tools.
 
-Unless its `state` filter names one state, `list_inbox` SHALL return the requests addressed to the caller's teams that are not in a terminal state (`done`, `declined` or `withdrawn`), newest first, 20 a call or as many as the caller asks for up to 50; with the filter, it SHALL return the requests in that one state, a terminal one included. Its REST operation and `tiehall inbox` SHALL behave the same. `directory` SHALL answer in pages, ordered by team key and then by API name: a page SHALL hold at most 50 teams and at most 50 registered APIs, and never more than the 32,000 characters that cap a page of `get_request`, and SHALL name a cursor for the next page while more remain.
+Unless its `state` filter names one state, `list_inbox` SHALL return the requests addressed to the caller's teams that are not in a terminal state (`done`, `declined` or `withdrawn`), newest first, 20 a call or as many as the caller asks for up to 50; with the filter, it SHALL return the requests in that one state, a terminal one included. Its REST operation and `tiehall inbox` SHALL behave the same. `directory` SHALL answer in pages, ordered by team key and then by API name: a page SHALL hold at most 50 teams and at most 50 registered APIs, and never more than the 32,000 characters that cap a page of `get_request`, and SHALL name a cursor for the next page while more remain. When the teams declared as one registered API's consumers would take even a page that begins with that API past the 32,000 characters, the page SHALL end inside that API's list of consumers, ordered by team key, SHALL say that the list goes on in the next page, and SHALL name a cursor from which the next page goes on with the same API and its consumers after the last one listed, so that no consumer is left out; a team whose list of the teams its intake notes' writer belonged to would do the same SHALL be listed across pages the same way. A team or an API that fits on a page that begins with it SHALL NOT be split. The later page SHALL list the rest of the list as it stands when that page is read: a consumer declared between the two pages SHALL be listed there only when its key comes after the last one the earlier page listed, and a consumer removed between them SHALL NOT be listed.
 
 Source: D8; D14; D28 #55, #56; D55 (28), (39); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -97,6 +97,27 @@ Source: D8; D14; D28 #55, #56; D55 (28), (39); design.md, Decisions this change 
 - **THEN** the result lists at most the 50 teams with the lowest keys and a cursor for the next page
 - **AND** a call with that cursor lists the teams that follow
 - **AND** no page holds more than 32,000 characters
+
+#### Scenario: An API whose consumers pass a page
+
+- **WHEN** 600 teams, `LC0001` to `LC0600`, are declared as consumers of the registered API `billing-api`, and an agent acting for a member reads every page of `directory`
+- **THEN** no page holds more than 32,000 characters
+- **AND** the page that begins with `billing-api` ends inside its consumers, says that they go on in the next page and names a cursor
+- **AND** the page that the cursor names goes on with `billing-api` and the consumers that follow the last one listed
+- **AND** the pages together list each of the 600 consumers once
+
+#### Scenario: Consumers declared and removed between pages
+
+- **WHEN** a page of `directory` ends inside the consumers of `billing-api` after team `LC0480`, and before the next page is read, teams `LC0001A` and `LC0480A` are declared as its consumers and `LC0481`'s declaration is removed
+- **THEN** the next page goes on with `billing-api`'s consumers from `LC0480A`
+- **AND** it lists neither `LC0001A` nor `LC0481`
+
+#### Scenario: A team whose notes' writer belonged to more teams than a page holds
+
+- **WHEN** the admin who last wrote team LCW's intake notes belonged to 600 teams then, and an agent acting for a member reads every page of `directory`
+- **THEN** no page holds more than 32,000 characters
+- **AND** LCW's notes appear once, on the page that begins with LCW, which says that the teams their writer belonged to go on in the next page
+- **AND** the pages together list each of those 600 teams once as a team LCW's notes' writer belonged to
 
 ### Requirement: Reading a request by key or URL, in pages
 
