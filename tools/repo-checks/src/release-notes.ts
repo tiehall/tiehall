@@ -3,6 +3,7 @@ import { compareVersions, MINIMUM_PLUGIN_VERSION, MINIMUM_SKILL_VERSION } from "
 import { releaseNotes as apiChangesSection, type WaitingApiChanges } from "./api-changelog.ts";
 import { documentedCommand, INSTALL_DOCS } from "./docs-commands.ts";
 import { checkMarketplace, type ListedPlugin } from "./marketplace.ts";
+import { RELEASE_AGE_LABEL, type ReleaseAgeException } from "./release-age.ts";
 import { RELEASE_FILES, RELEASE_NOTES_ASSET } from "./release-files.ts";
 import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 
@@ -19,9 +20,12 @@ import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 // flags the contract steps the release adds, after which the way back is the
 // backup taken before the upgrade (self-host-install: Upgrades apply
 // migrations before the app starts; self-host-install: Migrations expand,
-// then contract); and the notes end with the release's API changes, the same
-// entries as the changelog page of an install running it (public-api: The
-// changelog page and the release notes).
+// then contract); they list the exceptions to the 7-day release age the
+// release carries, each version an advisory names as fixed that it takes
+// before it is 7 days old (self-host-install: Release pipeline integrity;
+// decisions-from-groups-15-28, D55 (86)); and the notes end with the
+// release's API changes, the same entries as the changelog page of an install
+// running it (public-api: The changelog page and the release notes).
 //
 // Each release is also a release of the client pieces that the repository
 // itself serves rather than npm (public-api: Client pieces are built from
@@ -114,6 +118,8 @@ export interface ReleaseNotesInput {
   contractSteps: readonly ContractStep[];
   /** The releases up to this one that must not be skipped. */
   noSkip: readonly NoSkipRelease[];
+  /** The exceptions to the release age the release carries, as tools/repo-checks/release-age-exceptions.json records them; none unless given. */
+  releaseAgeExceptions?: readonly ReleaseAgeException[];
 }
 
 /** A Markdown block of shell commands. */
@@ -122,7 +128,7 @@ function commands(...lines: string[]): string {
 }
 
 /** The release's notes, in Markdown. */
-export function renderReleaseNotes({ root, version, image, repository, commit, plugin, api, contractSteps, noSkip }: ReleaseNotesInput): string {
+export function renderReleaseNotes({ root, version, image, repository, commit, plugin, api, contractSteps, noSkip, releaseAgeExceptions = [] }: ReleaseNotesInput): string {
   const web = repository.replace(/\/+$/, "");
   const name = repositoryName(web);
   const tag = `v${version}`;
@@ -169,9 +175,23 @@ export function renderReleaseNotes({ root, version, image, repository, commit, p
     ["```", `TIEHALL_IMAGE=${reference}`, "```"].join("\n"),
     commands(documentedCommand(root, "upgrade-pull-up")),
     ...clientPieces(name, web, tag, parseReleaseCommit(commit), plugin ?? releasePlugin(root)),
+    ...releaseAgeSection(releaseAgeExceptions),
     apiChangesSection(api, version).trimEnd(),
   ];
   return `${sections.join("\n\n")}\n`;
+}
+
+/** What the notes say about the exceptions to the 7-day release age the release carries. */
+function releaseAgeSection(exceptions: readonly ReleaseAgeException[]): string[] {
+  if (exceptions.length === 0) return ["## Exceptions to the release age", "This release takes no dependency younger than the 7-day release age."];
+  return [
+    "## Exceptions to the release age",
+    "Tiehall takes only dependency versions published at least 7 days ago. To fix a vulnerability the image scan found, this release takes " +
+      `these versions sooner, each the one its advisory names as fixed, through a reviewed pull request with the \`${RELEASE_AGE_LABEL}\` label:`,
+    exceptions
+      .map(({ package: name, version, advisory, agedOn }) => `- \`${name}\` ${version}, the version advisory ${advisory} names as fixed, taken before it turns 7 days old on ${agedOn}`)
+      .join("\n"),
+  ];
 }
 
 /** The marketplace and the plugin it lists, as the repository at this root holds them; it throws when the marketplace check fails. */

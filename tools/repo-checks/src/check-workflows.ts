@@ -4,8 +4,11 @@
 // secret that .github/workflow-policy.json does not list, when a job that holds
 // a write permission runs a step that is not first-party (a third-party action,
 // or a script that runs a package manager or a container), when CI installs
-// without the frozen lockfile or with npm install scripts, or when pnpm would
-// run install scripts outside the allowlist in pnpm-workspace.yaml.
+// without the frozen lockfile or with npm install scripts, when pnpm would
+// run install scripts outside the allowlist in pnpm-workspace.yaml, or when
+// pnpm-workspace.yaml excludes a version from the 7-day release age that
+// tools/repo-checks/release-age-exceptions.json does not record as a reviewed
+// exception, or one whose day has passed (release-age.ts).
 // Usage: node tools/repo-checks/src/check-workflows.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";

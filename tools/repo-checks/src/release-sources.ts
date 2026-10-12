@@ -5,6 +5,7 @@ import { finalVersionOf, parseChangelog, type ChangelogRelease } from "@tiehall/
 import { compareVersions, isVersion } from "@tiehall/core";
 import type { WaitingApiChanges } from "./api-changelog.ts";
 import { packetNoticeProblems } from "./packet-compat.ts";
+import { releaseAgeExceptions, type ReleaseAgeException } from "./release-age.ts";
 
 // What a release's notes say besides its image (public-api: The changelog page
 // and the release notes; self-host-install: Migrations expand, then contract;
@@ -58,6 +59,8 @@ export interface ReleaseSources {
   api: ChangelogRelease | WaitingApiChanges;
   contractSteps: ContractStep[];
   noSkip: NoSkipRelease[];
+  /** The exceptions to the 7-day release age the release carries. */
+  releaseAgeExceptions: ReleaseAgeException[];
 }
 
 interface Journal {
@@ -187,5 +190,7 @@ export function releaseSources(root: string, version: string, previous: string |
     api: recordedApiChanges(root, version, previous, date),
     contractSteps: newContractSteps(root, version, previous),
     noSkip: noSkipReleases(root).filter((entry) => compareVersions(entry.version, version) <= 0),
+    // The exceptions in force at the release, which pnpm check:workflows holds to its exclusions (release-age.ts).
+    releaseAgeExceptions: releaseAgeExceptions(root),
   };
 }

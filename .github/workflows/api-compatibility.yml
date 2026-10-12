@@ -4,9 +4,11 @@ name: API compatibility
 # (public-api: Notice before a breaking change is enforced in CI; public-api:
 # The `api-breaking` label for urgent security fixes; public-api: MCP tools
 # follow the same compatibility rules; handoff-packet: Breaking packet changes
-# before publication). It lives apart from ci.yml because it
-# also runs when a label is added or removed, so adding the api-breaking label
-# runs the checks again without a new push.
+# before publication), and the label of an exception to the release age
+# (self-host-install: Release pipeline integrity). It lives apart from ci.yml
+# because it also runs when a label is added or removed, so adding the
+# api-breaking or the release-age-exception label runs the checks again
+# without a new push.
 
 on:
   pull_request:
@@ -53,6 +55,16 @@ jobs:
       # breaking to openapi/changelog.json and bumps info.version. The labels
       # come from the event, through the environment, never into the script.
       - run: node tools/repo-checks/src/check-api-compat.ts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+      # An exclusion from the 7-day release age, which takes the version an
+      # advisory names as fixed before it is 7 days old, passes only on a pull
+      # request with the release-age-exception label; pnpm check:workflows
+      # checks the exclusion's record in tools/repo-checks/release-age-exceptions.json
+      # and its day. The labels come from the event, through the environment,
+      # never into the script.
+      - run: node tools/repo-checks/src/check-release-age-label.ts
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

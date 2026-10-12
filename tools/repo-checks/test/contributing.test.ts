@@ -59,6 +59,24 @@ describe("CONTRIBUTING.md", () => {
     }
   });
 
+  // self-host-install: Release pipeline integrity; decisions-from-groups-15-28, D55 (86).
+  it("says how a security fix takes a version younger than the 7-day release age: its exclusion, its record and its label", () => {
+    const text = part("Building and testing");
+    for (const phrase of [
+      "fixable HIGH or CRITICAL finding",
+      "exactly the version the advisory names as fixed",
+      "never automatically",
+      "`<package>@<version>` to `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`",
+      "tools/repo-checks/release-age-exceptions.json",
+      "the day the version turns 7 days old",
+      "`release-age-exception` label",
+      "pnpm check:workflows",
+      "The release notes list the exceptions",
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+  });
+
   it("says that tests come first, and how a test written ahead of its task is committed", () => {
     const text = part("Tests first");
     for (const phrase of ["failing test", "`it.fails`", "`it.todo`", "timeout"]) expect(text, phrase).toContain(phrase);

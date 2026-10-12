@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { releaseAgeViolations } from "./release-age.ts";
 
 // The rules of self-host-install: Release pipeline integrity that can be read
 // from the repository: how workflows reference actions, which token
@@ -43,6 +44,7 @@ export type Rule =
   | "unlisted-secret"
   | "unsafe-install"
   | "install-scripts"
+  | "release-age"
   | "third-party-in-write-job";
 
 export interface Violation {
@@ -91,7 +93,8 @@ export function loadPolicy(root: string): Policy {
   return { writePermissions, secrets };
 }
 
-export function checkWorkflows(root: string, policy: Policy = loadPolicy(root)): Violation[] {
+/** Checks the repository at this root; an exception to the release age is judged on this UTC day (YYYY-MM-DD), today unless given. */
+export function checkWorkflows(root: string, policy: Policy = loadPolicy(root), today: string = new Date().toISOString().slice(0, 10)): Violation[] {
   const violations: Violation[] = [];
   for (const [file, workflow] of workflows(root)) {
     violations.push(...checkWorkflowPermissions(file, workflow["permissions"]));
@@ -101,6 +104,8 @@ export function checkWorkflows(root: string, policy: Policy = loadPolicy(root)):
     }
   }
   violations.push(...checkInstallScriptSettings(root));
+  // An exclusion from the 7-day release age is a reviewed, recorded and dated exception (release-age.ts).
+  violations.push(...releaseAgeViolations(root, today));
   // Stable: violations of one job stay in the order they appear in the file.
   return violations.sort((a, b) => a.file.localeCompare(b.file) || (a.job ?? "").localeCompare(b.job ?? ""));
 }

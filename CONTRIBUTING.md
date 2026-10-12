@@ -54,6 +54,8 @@ The web UI's assets, in `packages/commands/assets/`, are named in every page by 
 
 Dependencies are pinned to exact versions, and the lockfile is committed. pnpm resolves only versions published at least 7 days ago (`minimumReleaseAge` in [`pnpm-workspace.yaml`](pnpm-workspace.yaml)), the same age Renovate waits for, and Renovate's updates are never merged automatically. A dependency's install script runs only when `allowBuilds` in that file lists it.
 
+A security fix is the one exception to the 7 days. When the image scan reports a fixable HIGH or CRITICAL finding in an npm package and the fixed version is younger than 7 days, a pull request may take exactly the version the advisory names as fixed, after review and never automatically. It adds `<package>@<version>` to `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`, records the exception in [`tools/repo-checks/release-age-exceptions.json`](tools/repo-checks/release-age-exceptions.json) with the package, the version, the advisory, the label and the day the version turns 7 days old, and carries the `release-age-exception` label, which the API compatibility workflow requires of a pull request that adds an exclusion. `pnpm check:workflows` fails an exclusion that names more than one exact version, one the list does not record, and one whose day has passed, so a later pull request removes the exclusion and its record once the version is 7 days old. The release notes list the exceptions a release carries.
+
 ## Tests first
 
 Every change starts with a failing test: write the test, see it fail for the reason you expect, then make it pass. Each task of the plan says how it is verified, by a test, a command or an observable result, and a task is checked off only when that verification passes.
