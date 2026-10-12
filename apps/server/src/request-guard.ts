@@ -374,10 +374,10 @@ const NOTHING_HELD = Buffer.alloc(0);
  * keeps none of the chunks: Node hands over each chunk as an object of its
  * own, of some 200 bytes of heap however few bytes it carries, so a body
  * kept chunk by chunk and sent a byte per chunk took some 200 times the
- * memory the cap counts for it. The buffer doubles when it is full, so each
- * byte is copied a few times at most, and is never more than twice the bytes
- * that have arrived, nor more than the most the body may hold: its declared
- * length, or else its limit.
+ * memory the cap counts for it. The buffer doubles when it is full, so the
+ * bytes copied come to less than three times the body's in all; it is never
+ * more than twice the bytes that have arrived, nor more than the most the
+ * body may hold: its declared length, or else its limit.
  */
 function holdBody(
   request: IncomingMessage,
