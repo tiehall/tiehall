@@ -211,4 +211,51 @@ describe("a linked pull request's merge", () => {
       await install.owner.query("DELETE FROM team_members WHERE user_id = $1 AND team_id = $2", [alice, team["FE"]]);
     }
   });
+
+  // The requester side linking a pull request first does not keep the target side's link of it from counting
+  // (design.md, Risks: the target team can link the same PR): the target side's link of it answers with the same
+  // link, which then counts, and is recorded as their link.
+  it.each([
+    ["Bob, the claimant", () => bob],
+    ["Dave, another member of the target team", () => dave],
+  ])("closes the request when %s links a pull request the requester side linked first", async (_who, linker) => {
+    number += 1;
+    const url = `https://github.com/acme/web/pull/${number}`;
+    const first = await link(alice, url);
+    const again = await link(linker(), url);
+    expect(again.status).toBe(200);
+    expect(again.body.pullRequest).toEqual(first.body.pullRequest);
+    expect((await stored()).links).toBe(1);
+    const { rows } = await install.owner.query(
+      "SELECT actor_user_id FROM events WHERE type = 'request.pull_request_linked' AND data->>'requestId' = $1 ORDER BY number",
+      [requestId],
+    );
+    expect(rows).toEqual([{ actor_user_id: alice }, { actor_user_id: linker() }]);
+
+    expect(await merges(number)).toEqual([key]);
+  });
+
+  it("closes nothing when someone outside the target side links again a pull request the requester side linked", async () => {
+    number += 1;
+    const url = `https://github.com/acme/web/pull/${number}`;
+    expect((await link(alice, url)).status).toBe(200);
+    expect((await link(carol, url)).status).toBe(200);
+    expect((await stored()).events.filter((type) => type === "request.pull_request_linked")).toHaveLength(1);
+
+    expect(await merges(number)).toEqual([]);
+  });
+
+  // A link made before Tiehall recorded its side (migration 0098) counts when its linker is the claimant or a member
+  // of the target team at the merge (design.md, Technical decisions: T9).
+  it.each([
+    ["Bob, the claimant", true, () => bob],
+    ["Dave, another member of the target team", true, () => dave],
+    ["Alice, of the requester side", false, () => alice],
+  ])("for a link by %s made before its side was recorded, closes the request: %s", async (_who, closes, linker) => {
+    number += 1;
+    expect((await link(linker(), `https://github.com/acme/web/pull/${number}`)).status).toBe(200);
+    await install.owner.query("UPDATE pull_request_links SET target_side = NULL WHERE request_id = $1 AND number = $2", [requestId, number]);
+
+    expect(await merges(number)).toEqual(closes ? [key] : []);
+  });
 });

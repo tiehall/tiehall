@@ -117,6 +117,23 @@ describe("linking a pull request that had already merged", () => {
     expect(await stateOf(request.id)).toBe("in_progress");
   });
 
+  // The requester side linking it first does not keep the target team's link of it from making the proposal; the
+  // link it has answers, and stays one that its merge, which came before the target team's link, does not count.
+  it("as a member of the target team, after the requester linked it, creates a done proposal with the same link", async () => {
+    const request = await feRequest();
+    const { url, number } = await pullRequest();
+    expect((await link(alice, request.key, url)).status).toBe(200);
+
+    const answer = await link(bob, request.key, url);
+
+    expect(answer.status).toBe(202);
+    expect(answer.body.proposal).toMatchObject({ kind: "done", state: "pending", accountableHuman: { id: bob }, request: { key: request.key } });
+    expect(await stateOf(request.id)).toBe("in_progress");
+    expect(await linksOf(request.id)).toEqual([{ number }]);
+    const { rows } = await install.owner.query("SELECT actor_user_id, target_side FROM pull_request_links WHERE request_id = $1", [request.id]);
+    expect(rows).toEqual([{ actor_user_id: alice, target_side: false }]);
+  });
+
   it("to an open request, only links it", async () => {
     const request = await feRequest("open");
     const { url, number } = await pullRequest();
