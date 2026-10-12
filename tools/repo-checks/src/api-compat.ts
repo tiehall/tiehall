@@ -31,7 +31,10 @@ import { runOnDocuments } from "./oasdiff.ts";
 //
 // The api-breaking label (public-api: The `api-breaking` label for urgent
 // security fixes) lets a pull request make a breaking change without the
-// notice, which is allowed only for an urgent security fix, and only when the
+// notice, which is allowed only for an urgent security fix and, before
+// Tiehall's first release, for a break of a beta operation that an approved
+// OpenSpec change names (decisions-from-groups-15-28: design.md, Decisions
+// this change rests on: D55 (47)), which review decides, and only when the
 // pull request also adds a changelog entry of kind breaking to
 // openapi/changelog.json and bumps info.version. The breaking change is still
 // reported; without all three, the check fails as it does on any breaking

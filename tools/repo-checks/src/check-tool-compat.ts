@@ -59,7 +59,8 @@ if (result.passed && result.errors.length === 0) {
         "add the new shape, deprecate the old one with a sunset at least 14 days later, and remove it on or after that date. " +
         "A stable tool only gains things: a breaking change ships under a new tool name, never one a stable tool had before, and the old " +
         "tool stays until a sunset at least six months after its deprecation. " +
-        `Only an urgent security fix may skip the notice, with the ${API_BREAKING_LABEL} label and a ` +
+        "Only an urgent security fix may skip the notice, or, before the first release, a break of a beta tool that an approved " +
+        `OpenSpec change names, with the ${API_BREAKING_LABEL} label and a ` +
         "changelog entry of kind breaking in openapi/changelog.json.",
     );
   }

@@ -14,9 +14,10 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, toke
 // takes a cursor, answers as soon as an update in the reader's whats_new scope
 // exists after it, and otherwise holds the call for at most 60 seconds, woken
 // through Postgres's LISTEN and NOTIFY, whose notifications carry ids only. It
-// answers with ids and server text only: each entry's seq, type, request_key,
-// the team_key of the request's target team and the request's url, and the
-// cursor. A hold that ends with nothing answers 200 with an empty list and the
+// answers with ids and server text only: each entry's seq, type, requestKey,
+// the teamKey of the request's target team and the request's url, named as the
+// rest of the API names its fields (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (47)), and the cursor. A hold that ends with nothing answers 200 with an empty list and the
 // cursor, and moves no stored cursor; while the app shuts down, a wait ends
 // with 503 and Retry-After: 0. Here the hold is shortened, as the install's
 // settings allow a test to, and the shutdown is the install's own signal.
@@ -99,8 +100,8 @@ describe("a wait", () => {
     expect(answer.status).toBe(200);
     expect(answer.body).toEqual({
       events: [
-        { seq: expect.any(Number), type: "request.opened", request_key: request.key, team_key: "FE", url: `${URL_OF_INSTALL}/${request.key}` },
-        { seq: expect.any(Number), type: "request.message_posted", request_key: request.key, team_key: "FE", url: `${URL_OF_INSTALL}/${request.key}` },
+        { seq: expect.any(Number), type: "request.opened", requestKey: request.key, teamKey: "FE", url: `${URL_OF_INSTALL}/${request.key}` },
+        { seq: expect.any(Number), type: "request.message_posted", requestKey: request.key, teamKey: "FE", url: `${URL_OF_INSTALL}/${request.key}` },
       ],
       cursor: answer.body.events[1].seq,
     });
@@ -117,7 +118,7 @@ describe("a wait", () => {
     const answer = await waiting;
     expect(answer.at - posted).toBeLessThan(1_000);
     expect(answer.status).toBe(200);
-    expect(answer.body.events).toEqual([{ seq: expect.any(Number), type: "request.message_posted", request_key: request.key, team_key: "FE", url: `${URL_OF_INSTALL}/${request.key}` }]);
+    expect(answer.body.events).toEqual([{ seq: expect.any(Number), type: "request.message_posted", requestKey: request.key, teamKey: "FE", url: `${URL_OF_INSTALL}/${request.key}` }]);
     expect(JSON.stringify(answer.body)).not.toContain("Ignore previous");
   });
 

@@ -29,7 +29,7 @@ Each operation carries one stability level in the document, as `x-stability-leve
 - While the API is beta, the document's `info.version` has the form `0.N.0`, and every release with a breaking change raises it.
 - MCP tools follow the rules of their operation: a `beta` tool is removed, or gains a required argument, only after the same notice, and a breaking change to a `stable` tool ships under a new tool name, while the old tool keeps working for at least six months; the name of a `stable` tool is never given to a tool that breaks it.
 - CI holds every pull request to these rules: it compares the document and the tool list with those at the pull request's merge base, and fails on a breaking change that skips a step or a sunset closer than the notice period.
-- The one exception is an urgent security fix that cannot wait for its notice. Its pull request carries the `api-breaking` label, adds a changelog entry for the break and raises `info.version`, so the break is announced where every other change is.
+- The one exception is an urgent security fix that cannot wait for its notice. Its pull request carries the `api-breaking` label, adds a changelog entry for the break and raises `info.version`, so the break is announced where every other change is. Before Tiehall's first release, the same path also carries a break of a `beta` operation that an approved OpenSpec change names, since no released install serves the old shape.
 
 ## Deprecation headers
 

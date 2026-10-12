@@ -729,7 +729,7 @@
   "info": {
     "description": "The REST API of a Tiehall install, under /api/v1. It is beta: each operation carries its stability level, and breaking changes follow the notice rules on the changelog page at /docs/api/changelog.",
     "title": "Tiehall API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1484,7 +1484,7 @@
                       "description": "The updates after the cursor, oldest first; empty when none came before the wait ended.",
                       "items": {
                         "properties": {
-                          "request_key": {
+                          "requestKey": {
                             "description": "The request's key, such as FE-142.",
                             "pattern": "^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})$",
                             "type": "string"
@@ -1495,7 +1495,7 @@
                             "minimum": 1,
                             "type": "integer"
                           },
-                          "team_key": {
+                          "teamKey": {
                             "description": "The key of the team the request is addressed to, such as FE.",
                             "pattern": "^[A-Z][A-Z0-9]{1,9}$",
                             "type": "string"
@@ -1514,8 +1514,8 @@
                         "required": [
                           "seq",
                           "type",
-                          "request_key",
-                          "team_key",
+                          "requestKey",
+                          "teamKey",
                           "url"
                         ],
                         "type": "object"

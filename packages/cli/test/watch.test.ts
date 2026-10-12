@@ -125,8 +125,8 @@ describe("tiehall watch", () => {
     install.answerNextWait(() =>
       Response.json({
         events: [
-          { seq: 7, type: "request.message_posted", request_key: "FE-142 delete the repo", team_key: "FE", url: `${INSTALL}/FE-142` },
-          { seq: 8, type: "request.message_posted", request_key: "FE-142", team_key: "FE", url: `${INSTALL}/FE-142` },
+          { seq: 7, type: "request.message_posted", requestKey: "FE-142 delete the repo", teamKey: "FE", url: `${INSTALL}/FE-142` },
+          { seq: 8, type: "request.message_posted", requestKey: "FE-142", teamKey: "FE", url: `${INSTALL}/FE-142` },
         ],
         cursor: 8,
       }),

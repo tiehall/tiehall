@@ -1,5 +1,5 @@
 {
-  "$comment": "The API changelog (public-api: The changelog page and the release notes). A pull request that announces something about the API adds a dated entry under unreleased: a breaking change released without notice, allowed only for an urgent security fix, needs the api-breaking label, an entry of kind breaking and a bump of info.version in openapi/v1.json (public-api: The `api-breaking` label for urgent security fixes). Before the packet schema is published, a breaking packet change needs the api-breaking label and an entry of kind breaking with \"schemas\": [\"packet\"], dated the day it is announced, and no release contains it until 14 days later (handoff-packet: Breaking packet changes before publication). The maintainers' decision to graduate an operation to stable is an entry of kind graduation that names it in operationIds, dated the day they decided: an operation other than contract.report carries x-stability-level stable only with one, decided at least four weeks after the last breaking change to it and after the release that first offered it, and pnpm check:graduation fails without it (public-api: Each operation graduates on its own). Entries are shown with the release that carries them, on /docs/api/changelog and in the release notes.",
+  "$comment": "The API changelog (public-api: The changelog page and the release notes). A pull request that announces something about the API adds a dated entry under unreleased: a breaking change released without notice, allowed only for an urgent security fix and, before the first release, for a break of a beta operation that an approved OpenSpec change names, needs the api-breaking label, an entry of kind breaking and a bump of info.version in openapi/v1.json (public-api: The `api-breaking` label for urgent security fixes; decisions-from-groups-15-28, D55 (47)). Before the packet schema is published, a breaking packet change needs the api-breaking label and an entry of kind breaking with \"schemas\": [\"packet\"], dated the day it is announced, and no release contains it until 14 days later (handoff-packet: Breaking packet changes before publication). The maintainers' decision to graduate an operation to stable is an entry of kind graduation that names it in operationIds, dated the day they decided: an operation other than contract.report carries x-stability-level stable only with one, decided at least four weeks after the last breaking change to it and after the release that first offered it, and pnpm check:graduation fails without it (public-api: Each operation graduates on its own). Entries are shown with the release that carries them, on /docs/api/changelog and in the release notes.",
   "unreleased": [
     {
       "date": "2026-10-12",
@@ -13,6 +13,14 @@
         "requests.inbox"
       ],
       "text": "GET /api/v1/inbox, which list_inbox and tiehall inbox run, now leaves out the requests that are done, declined or withdrawn unless state names one state; with state, it lists the requests in that state, a finished one included."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "breaking",
+      "operationIds": [
+        "events.wait"
+      ],
+      "text": "Each entry of GET /api/v1/events/wait now names its request and its team as requestKey and teamKey, as the rest of the API names its fields, instead of request_key and team_key. The break is made before the first release, without the notice period, because no released install serves the old names and the approved OpenSpec change decisions-from-groups-15-28 names it; info.version is 0.2.0."
     }
   ],
   "releases": []

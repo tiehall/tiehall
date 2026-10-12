@@ -86,12 +86,16 @@ export const readUpdates = defineCommand({
  * what anyone wrote, since it can reach a model unasked through the Claude
  * Code hooks (agent-safety: Notices that can reach a model carry only server
  * text). The reader then pulls the content with whats_new and get_request.
+ * Its fields are named as the rest of the API names them, requestKey and
+ * teamKey, a rename made before the first release on the api-breaking label's
+ * path (decisions-from-groups-15-28: design.md, Decisions this change rests
+ * on: D55 (47)).
  */
 export const waitEntry = z.object({
   seq: z.number().int().min(1).meta({ description: "The update's number, which whats_new acknowledges." }),
   type: z.string().regex(EVENT_TYPE_NAME).meta({ description: "The update's type, such as request.message_posted." }),
-  request_key: requestKeyOutput.meta({ description: "The request's key, such as FE-142." }),
-  team_key: z.string().regex(TEAM_KEY).meta({ description: "The key of the team the request is addressed to, such as FE." }),
+  requestKey: requestKeyOutput.meta({ description: "The request's key, such as FE-142." }),
+  teamKey: z.string().regex(TEAM_KEY).meta({ description: "The key of the team the request is addressed to, such as FE." }),
   url: z.string().regex(REQUEST_URL).meta({ description: "The request's URL on the install." }),
 });
 

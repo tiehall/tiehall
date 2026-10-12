@@ -59,7 +59,8 @@ if (result.passed && result.errors.length === 0) {
     console.error(
       "A beta operation changes in three steps: add the new shape, deprecate the old one with an x-sunset at least 14 days later " +
         "(180 for a stable one), and remove it on or after that date; every breaking change bumps info.version. " +
-        `Only an urgent security fix may skip the notice, with the ${API_BREAKING_LABEL} label, a changelog entry of kind breaking ` +
+        "Only an urgent security fix may skip the notice, or, before the first release, a break of a beta operation that an approved " +
+        `OpenSpec change names, with the ${API_BREAKING_LABEL} label, a changelog entry of kind breaking ` +
         "in openapi/changelog.json and a bump of info.version.",
     );
   }

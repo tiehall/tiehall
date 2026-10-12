@@ -159,7 +159,7 @@ export function stubInstall(clock: ManualClock, url = INSTALL): StubInstall {
   let next = 100;
   let tokens = 1;
 
-  const entry = ({ seq, type, key, team }: StubUpdate) => ({ seq, type, request_key: key, team_key: team, url: `${url}/${key}` });
+  const entry = ({ seq, type, key, team }: StubUpdate) => ({ seq, type, requestKey: key, teamKey: team, url: `${url}/${key}` });
   const after = (cursor: number) => updates.filter(({ seq }) => seq > cursor).slice(0, 50);
 
   /** The wait: at once when an update waits after the cursor; otherwise held until one is posted, the hold ends or the call is aborted. */

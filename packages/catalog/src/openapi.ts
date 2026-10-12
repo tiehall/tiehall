@@ -53,7 +53,7 @@ import { proposalAnswer } from "./proposals.ts";
 // operation gains a breaking shape under /api/v2 and keeps its earlier shape.
 
 /** The API's version while it is beta: 0.N.0, bumped with every breaking change (D28 #27). */
-export const API_VERSION = "0.1.0";
+export const API_VERSION = "0.2.0";
 
 const BETA_VERSION = /^0\.(0|[1-9]\d*)\.0$/;
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);

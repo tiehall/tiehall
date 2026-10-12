@@ -135,8 +135,8 @@ async function hookInputOf(environment: CliEnvironment): Promise<HookInput> {
 interface WaitEntry {
   seq?: unknown;
   type?: unknown;
-  request_key?: unknown;
-  team_key?: unknown;
+  requestKey?: unknown;
+  teamKey?: unknown;
   url?: unknown;
 }
 
@@ -150,11 +150,11 @@ export function noticesOf(installUrl: string, entries: readonly WaitEntry[]): { 
   const notices: { seq: number; notice: Notice }[] = [];
   for (const entry of entries) {
     try {
-      if (typeof entry.seq !== "number" || typeof entry.type !== "string" || typeof entry.request_key !== "string" || typeof entry.team_key !== "string") continue;
-      const key = noticeKey(entry.request_key);
+      if (typeof entry.seq !== "number" || typeof entry.type !== "string" || typeof entry.requestKey !== "string" || typeof entry.teamKey !== "string") continue;
+      const key = noticeKey(entry.requestKey);
       const url = noticeUrl(installUrl, key);
       if (entry.url !== url) continue;
-      notices.push({ seq: entry.seq, notice: { key, eventType: noticeEventType(entry.type), team: noticeTeam(entry.team_key), url } });
+      notices.push({ seq: entry.seq, notice: { key, eventType: noticeEventType(entry.type), team: noticeTeam(entry.teamKey), url } });
     } catch {
       continue;
     }
@@ -378,8 +378,8 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
     const entries = (page.events as UpdateEntry[]).map(({ number, type, request }) => ({
       seq: number,
       type,
-      request_key: request?.key,
-      team_key: request?.targetTeam?.key,
+      requestKey: request?.key,
+      teamKey: request?.targetTeam?.key,
       url: request?.url,
     }));
     const onPage = await announceFresh(configDirOf(environment.env), session, noticesOf(session.url, entries));

@@ -1113,11 +1113,11 @@ export interface operations {
                         /** @description The updates after the cursor, oldest first; empty when none came before the wait ended. */
                         events: {
                             /** @description The request's key, such as FE-142. */
-                            request_key: string;
+                            requestKey: string;
                             /** @description The update's number, which whats_new acknowledges. */
                             seq: number;
                             /** @description The key of the team the request is addressed to, such as FE. */
-                            team_key: string;
+                            teamKey: string;
                             /** @description The update's type, such as request.message_posted. */
                             type: string;
                             /** @description The request's URL on the install. */

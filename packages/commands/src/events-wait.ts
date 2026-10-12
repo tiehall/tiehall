@@ -90,7 +90,7 @@ async function waitStep({ cursor: given }: { cursor?: number | undefined }, cont
       });
       if (found.length > 0) {
         return {
-          events: found.map(({ number, type, request }) => ({ seq: number, type, request_key: request.key, team_key: request.targetTeam.key, url: request.url })),
+          events: found.map(({ number, type, request }) => ({ seq: number, type, requestKey: request.key, teamKey: request.targetTeam.key, url: request.url })),
           cursor: found.at(-1)?.number ?? cursor,
         };
       }

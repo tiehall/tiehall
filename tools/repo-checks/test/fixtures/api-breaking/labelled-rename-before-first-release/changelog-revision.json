@@ -1,0 +1,13 @@
+{
+  "unreleased": [
+    {
+      "date": "2026-10-12",
+      "kind": "breaking",
+      "text": "Each entry of GET /api/v1/events/wait names its request and team as requestKey and teamKey, as the rest of the API names its fields, instead of request_key and team_key: a break before the first release that an approved OpenSpec change names.",
+      "operationIds": [
+        "events.wait"
+      ]
+    }
+  ],
+  "releases": []
+}

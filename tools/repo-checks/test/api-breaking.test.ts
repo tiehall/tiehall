@@ -7,10 +7,14 @@ import { oasdiff } from "../src/oasdiff.ts";
 // security fixes; public-api: The API version number while the API is beta;
 // design.md, Design rules: Public API). A breaking change to a beta or stable
 // operation before its notice has run is allowed only for an urgent security
-// fix: the pull request carries the api-breaking label, adds a changelog
+// fix, and, before Tiehall's first release, for a break of a beta operation
+// that an OpenSpec change the maintainers approved names
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (47)): the pull request carries the api-breaking label, adds a changelog
 // entry of kind "breaking" to openapi/changelog.json and bumps info.version.
 // Without all three the compatibility check fails as it does on any breaking
-// change.
+// change. Which of the two cases a labelled pull request is, its review
+// decides.
 //
 // Each fixture pull request names its labels and a document pair of the
 // api-compat fixtures, and holds openapi/changelog.json at its merge base and
@@ -74,6 +78,15 @@ describe("a pull request with the api-breaking label", () => {
     const result = await check("labelled-removal-before-sunset");
     expect(result.passed).toBe(true);
     expect(result.errors.some(({ id }) => /removed-before-sunset$/.test(id))).toBe(true);
+  });
+
+  // D55 (47): before the first release, the wait entries' request_key and team_key become requestKey and teamKey,
+  // a break of a beta operation that this change names, on the label's path.
+  it("passes the rename of the wait entries' fields before the first release, with a breaking entry and the version bumped", async () => {
+    const result = await check("labelled-rename-before-first-release");
+    expect(result).toMatchObject({ passed: true, labelled: true, problems: [] });
+    expect(result.errors.map(({ id }) => id)).toContain("response-required-property-removed");
+    expect((await check("labelled-rename-before-first-release")).errors.every(({ operationId }) => operationId === "events.wait")).toBe(true);
   });
 
   it("passes a pull request without a breaking change, with nothing to allow", async () => {
