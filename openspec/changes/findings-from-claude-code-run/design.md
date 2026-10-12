@@ -176,7 +176,7 @@ No install exists yet, so nothing on a server migrates. On users' machines, `fol
 
 ## Decisions to approve
 
-Answer "all as recommended", or name a number to change.
+**Approved by the maintainer on 2026-10-12:** every item below, with its recommended option, as written here. Item (4) narrows `decisions-from-groups-15-28`'s item 43, approved the same day, and governs where both are built; this change's task 1.3 is built with that change's task 1.35.
 
 1. A PostToolUse hook makes a session's project folder follow each request its `get_request`, `open_request`, `post_message`, `claim`, `set_status`, `link_pr`, `propose` and `attach_contract_changes` calls name or open, silently and without calling the install.
 2. An update on a followed request is announced once in each folder that follows it and in no other session; one on a request no folder follows once for the user and install, as built; `tiehall watch` keeps the mark of the user and install.
