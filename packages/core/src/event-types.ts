@@ -306,6 +306,34 @@ export const memberRoleChanged = defineEventType({
 });
 
 /**
+ * An admin added a person to a team (teams-and-roles: Teams; activity-log:
+ * Which actions are security events; decisions-from-groups-15-28, D55 (82)).
+ * It names the team and the person; its provenance names the admin.
+ */
+export const teamMemberAdded = defineEventType({
+  type: "team.member_added",
+  class: "security",
+  fields: {
+    teamId: { kind: "id", of: "team" },
+    userId: { kind: "id", of: "user" },
+  },
+});
+
+/**
+ * An admin removed a person from a team (teams-and-roles: Teams; activity-log:
+ * Which actions are security events; decisions-from-groups-15-28, D55 (82)).
+ * It names the team and the person; its provenance names the admin.
+ */
+export const teamMemberRemoved = defineEventType({
+  type: "team.member_removed",
+  class: "security",
+  fields: {
+    teamId: { kind: "id", of: "team" },
+    userId: { kind: "id", of: "user" },
+  },
+});
+
+/**
  * A member was removed from the install (teams-and-roles: Removing a member;
  * sign-in: Leaving the GitHub organization ends access; activity-log: Which
  * actions are security events). It names the member, and whether an admin
@@ -837,6 +865,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   proposalUndone,
   proposalEnded,
   memberRoleChanged,
+  teamMemberAdded,
+  teamMemberRemoved,
   memberRemoved,
   memberJoined,
   inviteCreated,

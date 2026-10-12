@@ -92,6 +92,27 @@
       ]
     },
     {
+      "item": "a person added to a team or removed from a team, naming the admin, the person and the team;",
+      "actions": [
+        {
+          "action": "a person added to a team",
+          "event": "team.member_added",
+          "test": {
+            "file": "packages/commands/test/teams.test.ts",
+            "case": "adding a person is a security event naming the admin, the person and the team, with no confirmation step, and adding them again records nothing"
+          }
+        },
+        {
+          "action": "a person removed from a team",
+          "event": "team.member_removed",
+          "test": {
+            "file": "packages/commands/test/teams.test.ts",
+            "case": "removing a person is a security event naming the admin, the person and the team, and removing them again records nothing"
+          }
+        }
+      ]
+    },
+    {
       "item": "a change of the sign-in policy;",
       "actions": [
         {

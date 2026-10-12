@@ -178,8 +178,8 @@ describe("the admin pages", { timeout: 180_000 }, () => {
     await page.goto(`${url}/admin/sign-in-policy`);
     await expect(page.getByText("The install's sign-in policy is invited people only.").count()).resolves.toBe(1);
 
-    // After setup's own events, the invite, Lee's joining and sign-in, the role change and the sign-in policy are
-    // security events; creating the team and adding Lee to it are not.
+    // After setup's own events, the invite, Lee's joining and sign-in, adding Lee to the team (decisions-from-groups-15-28,
+    // D55 (82)), the role change and the sign-in policy are security events; creating the team is not.
     const { rows: events } = await server.owner.query<{ type: string }>("SELECT type FROM events WHERE class = 'security' ORDER BY number");
     expect(events.map(({ type }) => type)).toEqual([
       "setup.completed",
@@ -188,6 +188,7 @@ describe("the admin pages", { timeout: 180_000 }, () => {
       "invite.created",
       "member.joined",
       "sign_in.completed",
+      "team.member_added",
       "member.role_changed",
       "settings.sign_in_policy_changed",
     ]);

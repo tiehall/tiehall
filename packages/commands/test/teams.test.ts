@@ -15,7 +15,10 @@ import { addUser } from "./support/members.ts";
 // members. A team's name is 1 to 100 characters once its leading and trailing
 // blanks are removed, and any other gets 400 (design.md, Decisions: D45 (2)).
 // Who belongs to a team is never taken from GitHub teams or any other outside
-// source.
+// source. Adding a person to a team and removing one are security events,
+// written in the change's own transaction, which name the admin, the person
+// and the team, and need no confirmation step (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (82)).
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -157,6 +160,83 @@ describe("an admin", () => {
       expect(await submit(ada, commandId, input), commandId).toMatchObject({ ok: false, problem: { status: 404 } });
     }
     expect(await allTeams()).toEqual(before);
+  });
+});
+
+describe("a change to who belongs to a team", () => {
+  /** The events after this number, as the activity log holds them: type, class, who caused them and what they name. */
+  async function eventsAfter(number: number) {
+    const { rows } = await install.owner.query(
+      "SELECT type, class, actor_kind, actor_user_id, data FROM events WHERE number > $1 ORDER BY number",
+      [number],
+    );
+    return rows;
+  }
+
+  async function lastEvent(): Promise<number> {
+    const { rows } = await install.owner.query<{ n: number }>("SELECT coalesce(max(number), 0)::int AS n FROM events");
+    return rows[0]?.n ?? 0;
+  }
+
+  it("adding a person is a security event naming the admin, the person and the team, with no confirmation step, and adding them again records nothing", async () => {
+    const team = await createTeam("SEC1", "Security one");
+    const sam = await addUser(install.owner, { login: "sam-sec" });
+    const before = await lastEvent();
+
+    // The web UI's form alone, with no review page and no confirmation nonce.
+    expect(await submit(ada, "teams.add_member", { teamId: team.id, userId: sam })).toMatchObject({ ok: true });
+    expect((await submit(ada, "teams.add_member", { teamId: team.id, userId: sam })).ok).toBe(true);
+
+    expect(await eventsAfter(before)).toEqual([
+      { type: "team.member_added", class: "security", actor_kind: "web_session", actor_user_id: ada.userId, data: { teamId: team.id, userId: sam } },
+    ]);
+    expect(await teamsOf(sam)).toEqual(["SEC1"]);
+  });
+
+  it("removing a person is a security event naming the admin, the person and the team, and removing them again records nothing", async () => {
+    const team = await createTeam("SEC2", "Security two");
+    const uma = await addUser(install.owner, { login: "uma-sec" });
+    await submit(ada, "teams.add_member", { teamId: team.id, userId: uma });
+    const before = await lastEvent();
+
+    expect(await submit(ada, "teams.remove_member", { teamId: team.id, userId: uma })).toMatchObject({ ok: true });
+    expect((await submit(ada, "teams.remove_member", { teamId: team.id, userId: uma })).ok).toBe(true);
+
+    expect(await eventsAfter(before)).toEqual([
+      { type: "team.member_removed", class: "security", actor_kind: "web_session", actor_user_id: ada.userId, data: { teamId: team.id, userId: uma } },
+    ]);
+    expect(await teamsOf(uma)).toEqual([]);
+  });
+
+  it("appends no event when the change fails, as its write does not commit, and the team is as it was", async () => {
+    const team = await createTeam("SEC3", "Security three");
+    const vic = await addUser(install.owner, { login: "vic-sec" });
+    await submit(ada, "teams.add_member", { teamId: team.id, userId: vic });
+    // The database refuses any change to who belongs to SEC3 as its transaction commits, after the change and its event.
+    await install.owner.query(`
+      CREATE OR REPLACE FUNCTION probe_refuse_team_change() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF coalesce(NEW.team_id, OLD.team_id) = '${team.id}' THEN RAISE EXCEPTION 'probe: the team change could not be written'; END IF;
+        RETURN NULL;
+      END $$;
+      CREATE CONSTRAINT TRIGGER probe_refuse_team_change AFTER INSERT OR DELETE ON team_members
+        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION probe_refuse_team_change();
+    `);
+    try {
+      const wes = await addUser(install.owner, { login: "wes-sec" });
+      const before = await lastEvent();
+      for (const [commandId, userId] of [
+        ["teams.add_member", wes],
+        ["teams.remove_member", vic],
+      ] as const) {
+        expect((await submit(ada, commandId, { teamId: team.id, userId })).ok, commandId).toBe(false);
+      }
+      expect(await eventsAfter(before)).toEqual([]);
+      expect(await teamsOf(wes)).toEqual([]);
+      expect(await teamsOf(vic)).toEqual(["SEC3"]);
+    } finally {
+      await install.owner.query("DROP TRIGGER probe_refuse_team_change ON team_members; DROP FUNCTION probe_refuse_team_change()");
+    }
   });
 });
 

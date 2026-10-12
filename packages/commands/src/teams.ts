@@ -1,5 +1,5 @@
 import { addTeamMember, changeTeamKey, createTeam, listTeams, removeTeamMember, renameTeam, setTeamIntake, type IntakeField } from "@tiehall/catalog";
-import { Refusal } from "@tiehall/core";
+import { Refusal, teamMemberAdded, teamMemberRemoved } from "@tiehall/core";
 import { teamKeyAliases, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { defineHandler, type Handlers } from "./execute.ts";
@@ -12,9 +12,15 @@ import type { OrgContext } from "./with-org.ts";
 // for an admin, in the web UI: they are admin actions, which no agent surface
 // offers and no job or GitHub event runs, so who belongs to a team is only
 // ever what an admin set in Tiehall. A user can belong to several teams and a team may have no members.
-// Team changes are not security events (design.md, Readings to confirm with
-// the founder: R21) and change no request, so they write their change in the
-// call's transaction without an event.
+// Adding a person to a team and removing one are security events, which name
+// the admin, the person and the team, written in the call's transaction with
+// the change, and need no confirmation step (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (82)); adding a person who is
+// in the team already, or removing one who is not, changes nothing and records
+// nothing. The other team changes, creating and renaming teams, their keys
+// and their intake settings, are not security events (design.md, Readings to
+// confirm with the founder: R21) and change no request, so they write their
+// change in the call's transaction without an event.
 //
 // Every key is unique in the install, counting the keys teams had before a
 // rename: a team's old key stays its alias, so no other team can take it, and
@@ -159,16 +165,24 @@ export const TEAM_HANDLERS: Handlers = {
   [addTeamMember.id]: defineHandler(addTeamMember, async ({ teamId, userId }, context) => {
     await teamOf(context, teamId);
     if ((await memberOf(context, userId)) === undefined) throw new Refusal("record-not-found", "That person is not a member of the install.");
-    // Adding someone who is already in the team changes nothing.
-    await context.tx.insert(teamMembers).values({ orgId: context.orgId, teamId, userId }).onConflictDoNothing();
+    // Adding someone who is already in the team changes nothing, and records nothing.
+    const added = await context.tx
+      .insert(teamMembers)
+      .values({ orgId: context.orgId, teamId, userId })
+      .onConflictDoNothing()
+      .returning({ userId: teamMembers.userId });
+    if (added.length > 0) await context.write((writer) => writer.record(teamMemberAdded, { teamId, userId }));
     return { teamId, userId };
   }),
 
   [removeTeamMember.id]: defineHandler(removeTeamMember, async ({ teamId, userId }, context) => {
     await teamOf(context, teamId);
-    await context.tx
+    const removed = await context.tx
       .delete(teamMembers)
-      .where(and(eq(teamMembers.orgId, context.orgId), eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
+      .where(and(eq(teamMembers.orgId, context.orgId), eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+      .returning({ userId: teamMembers.userId });
+    // Removing someone who is not in the team changes nothing, and records nothing.
+    if (removed.length > 0) await context.write((writer) => writer.record(teamMemberRemoved, { teamId, userId }));
     return { teamId, userId };
   }),
 };
