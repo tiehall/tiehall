@@ -38,6 +38,14 @@
         "events.acknowledge"
       ],
       "text": "GET /api/v1/events and POST /api/v1/events/acknowledge are no longer offered: they read and acknowledged every domain event of the install, outside the scope of whats_new, on the cursor each client shares with it. Read and acknowledge your updates with POST /api/v1/updates, which whats_new and tiehall updates run, and wait for them with GET /api/v1/events/wait. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "note",
+      "operationIds": [
+        "directory.get"
+      ],
+      "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A team's intake notes hold at most 4,000 characters."
     }
   ],
   "releases": []

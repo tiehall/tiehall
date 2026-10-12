@@ -1,10 +1,11 @@
-import { getPacket, getRequest, listRequestProposals, readDirectory, requestActivity, whoami } from "@tiehall/catalog";
+import { getPacket, getRequest, listRequestProposals, requestActivity, whoami } from "@tiehall/catalog";
 import type { ProblemDetails } from "@tiehall/core";
 import type { z } from "zod";
 import type { PacketRevisionView } from "./packet-revisions.ts";
 import type { ProposalView } from "./proposals.ts";
 import type { MessageView, RequestView } from "./request-views.ts";
 import type { WebCommands, WebResult } from "./web-commands.ts";
+import { wholeDirectory } from "./directory-pages.ts";
 
 // What the web UI's page of a request shows (agent-surfaces: Negotiated
 // request URLs; agent-safety: The needs_human flag is visible and reaches the
@@ -56,7 +57,8 @@ export async function readRequestPage(read: PageRead, key: string, request?: Req
   // The key is quoted, so the source-citation check does not take the name and its colon for a citation of the capability.
   const { "proposals": proposals } = await read<{ "proposals": ProposalView[] }>(listRequestProposals.id, { key: found.key });
   const { user, teams } = await read<RequestPageViewer>(whoami.id, {});
-  const directory = await read<{ teams: { key: string; untrusted: { name: string } }[] }>(readDirectory.id, {});
+  // Every page of directory: the page lists every team of the install.
+  const directory = await wholeDirectory<{ key: string; untrusted: { name: string } }, unknown>(read);
   const activity = await read<RequestActivityView>(requestActivity.id, { key: found.key });
   return {
     request: found,

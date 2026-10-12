@@ -1,0 +1,2 @@
+ALTER TABLE "teams" DROP CONSTRAINT "teams_intake_notes_length";--> statement-breakpoint
+ALTER TABLE "teams" ADD CONSTRAINT "teams_intake_notes_length" CHECK (char_length("teams"."intake_notes") <= 4000);

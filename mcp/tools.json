@@ -2484,9 +2484,15 @@
       "stability": "beta"
     },
     {
-      "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers.",
+      "description": "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page.",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "cursor": {
+            "description": "The next page's cursor, as the previous page named it in next; the first page without it.",
+            "pattern": "^[A-Za-z0-9_-]{1,400}$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "name": "directory",
@@ -2561,6 +2567,18 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_-]{1,400}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cursor of the next page, which you pass as cursor; null on the last page."
           },
           "teams": {
             "items": {
@@ -2649,7 +2667,8 @@
         },
         "required": [
           "teams",
-          "apis"
+          "apis",
+          "next"
         ],
         "type": "object"
       },

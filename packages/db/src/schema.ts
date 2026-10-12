@@ -1428,7 +1428,7 @@ export const teams = pgTable(
     uniqueIndex("teams_key").on(table.orgId, table.key),
     check("teams_key_format", sql`${table.key} ~ '^[A-Z][A-Z0-9]{1,9}$'`),
     check("teams_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 100`),
-    check("teams_intake_notes_length", sql`char_length(${table.intakeNotes}) <= 20000`),
+    check("teams_intake_notes_length", sql`char_length(${table.intakeNotes}) <= 4000`),
     check(
       "teams_required_fields_known",
       sql`${table.requiredFields} <@ ARRAY['acceptance_criteria', 'code_refs', 'links', 'due_date']::text[] AND cardinality(${table.requiredFields}) <= 4`,

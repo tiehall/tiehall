@@ -5,6 +5,7 @@ import { defineCatalog } from "../src/catalog.ts";
 import { defineCommand } from "../src/command.ts";
 import { CATALOG } from "../src/commands.ts";
 import { API_NAME } from "../src/apis.ts";
+import { DIRECTORY_CURSOR } from "../src/directory.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
 import { proposalAnswer } from "../src/proposals.ts";
 import { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "../src/pull-requests.ts";
@@ -37,6 +38,8 @@ const IDENTIFIERS: readonly RegExp[] = [
   SEMANTIC_VERSION,
   // A registered API's name, such as payments-api, which contract.report answers with: lower-case letters, digits, dots, hyphens and underscores.
   API_NAME,
+  // A directory page's cursor, which only the install makes, in base64url (decisions-from-groups-15-28, D55 (39)).
+  DIRECTORY_CURSOR,
 ];
 const patterns = new Set(IDENTIFIERS.map(({ source }) => source));
 const problemsOf = (schema: z.ZodType) => outputSchemaProblems(schema, patterns).map(({ path }) => path);

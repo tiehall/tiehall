@@ -20,6 +20,12 @@ import { INSTALL_URL, user } from "./schemas.ts";
 // under `untrusted`, and the packet fields it requires, and the registered APIs, each with its provider team and the teams declared
 // as its consumers (contract-changes: Teams declare the APIs they consume), and
 // its name, which an admin wrote, under `untrusted`; an unregistered API is not listed.
+// directory answers in pages, ordered by team key and then by API name: a page
+// holds at most 50 teams and at most 50 registered APIs, never more than the
+// 32,000 characters that cap a page of get_request, its text and its
+// structured content together, and names the cursor of the next page while
+// more remain (agent-surfaces: The MCP tools; decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (39)).
 // teams.get reads one team as directory lists it, by its key or an earlier
 // key, which is what the team's intake page shows, and the JSON of that page
 // is its body (agent-surfaces: Team intake pages). Every member may read them,
@@ -94,12 +100,28 @@ const directoryApi = z.object({
   untrusted: z.object({ name: z.string() }),
 });
 
+/** The most teams, and the most registered APIs, that a page of directory holds. */
+export const DIRECTORY_PAGE_ITEMS = 50;
+
+/** A cursor of directory: a page's place, which only the install makes and reads. */
+export const DIRECTORY_CURSOR = /^[A-Za-z0-9_-]{1,400}$/;
+
 export const readDirectory = defineCommand({
   id: "directory.get",
   summary:
-    "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers.",
-  input: z.object({}),
-  output: z.object({ teams: z.array(directoryTeam), apis: z.array(directoryApi) }),
+    "List the install's teams, each with its key, which open_request addresses it by, and its name, and the registered APIs, each with its provider team and the teams declared as its consumers, a page at a time: teams by key, then APIs by name, at most 50 of each a page.",
+  input: z.object({
+    cursor: z
+      .string()
+      .regex(DIRECTORY_CURSOR, "A cursor is one that directory named as next.")
+      .optional()
+      .meta({ description: "The next page's cursor, as the previous page named it in next; the first page without it." }),
+  }),
+  output: z.object({
+    teams: z.array(directoryTeam),
+    apis: z.array(directoryApi),
+    next: z.string().regex(DIRECTORY_CURSOR).nullable().meta({ description: "The cursor of the next page, which you pass as cursor; null on the last page." }),
+  }),
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,

@@ -1,9 +1,10 @@
-import { createRequest, PACKET_SCHEMA_VERSION, readDirectory, webShell, whoami, type IntakeField } from "@tiehall/catalog";
+import { createRequest, PACKET_SCHEMA_VERSION, webShell, whoami, type IntakeField } from "@tiehall/catalog";
 import { Refusal, type RefusalIssue } from "@tiehall/core";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
 import { escapeHtml, htmlPage, PAGE_HEADERS } from "./html.ts";
 import type { PageShell, ShellMember } from "./shell.ts";
 import { createPageRoute, htmlAnswer, seeOther, type PageRoute, type PageRouteOptions } from "./web-pages.ts";
+import { wholeDirectory } from "./directory-pages.ts";
 
 // The web form that opens a request, at /requests/new (requests: A request is
 // addressed to a team of the install; requests: The requester picks the
@@ -361,7 +362,7 @@ export function createNewRequestRoute(options: PageRouteOptions): PageRoute {
     path: NEW_REQUEST_PATH,
     name: "new request",
     async get(query, { read, csrf, shell }) {
-      const { teams } = await read<{ teams: DirectoryTeam[] }>(readDirectory.id, {});
+      const { teams } = await wholeDirectory<DirectoryTeam, unknown>(read);
       const { teams: mine } = await read<{ teams: { key: string }[] }>(whoami.id, {});
       const chosen = query.get("team") ?? undefined;
       return htmlAnswer(newRequestPage(teams, mine.map(({ key }) => key), chosen, csrf, shell));
@@ -374,7 +375,7 @@ export function createNewRequestRoute(options: PageRouteOptions): PageRoute {
         // A form the operation refuses for its input comes back with what was typed, the refusal at its top and each
         // refused field named beside it (web-ui: Pages are accessible); any other refusal is the refusal's page.
         if (!(error instanceof Refusal) || error.reason !== "invalid-input") throw error;
-        const { teams } = await read<{ teams: DirectoryTeam[] }>(readDirectory.id, {});
+        const { teams } = await wholeDirectory<DirectoryTeam, unknown>(read);
         const { teams: mine } = await read<{ teams: { key: string }[] }>(whoami.id, {});
         const member = await read<ShellMember>(webShell.id, {});
         const shell: PageShell = { form: "app", member, path: NEW_REQUEST_PATH, csrf };

@@ -561,7 +561,12 @@ export interface DirectoryJson {
     untrusted: { name: string; intakeNotes?: string };
   }[];
   apis: { id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } }[];
+  /** The cursor of the next page, while more teams or APIs remain; null, or absent, on the last page. */
+  next?: string | null;
 }
+
+/** A cursor of directory, which only the install makes. */
+const DIRECTORY_CURSOR = /^[A-Za-z0-9_-]{1,400}$/;
 
 /** "FE", "FE and QA", or "BE, FE and QA". */
 function listed(keys: readonly string[]): string {
@@ -640,9 +645,11 @@ export function teamIntakeText(team: TeamIntakeJson, reader: Reader): AgentText[
  */
 export function directoryText(directory: DirectoryJson, reader: Reader): AgentText[] {
   const keys = directory.teams.map(({ key }) => checked(key, TEAM_KEY, "team key"));
-  const texts: AgentText[] = [
-    { origin: "tiehall", text: keys.length === 0 ? "The install has no team yet." : `The install has ${keys.length} team${keys.length === 1 ? "" : "s"}: ${listed(keys)}.` },
-  ];
+  const next = directory.next === undefined || directory.next === null ? undefined : checked(directory.next, DIRECTORY_CURSOR, "cursor");
+  // A page lists teams by key, then APIs by name (decisions-from-groups-15-28, D55 (39)): a page with no team and no API is the whole of an empty install.
+  const texts: AgentText[] = [];
+  if (keys.length > 0) texts.push({ origin: "tiehall", text: `This page lists ${keys.length} team${keys.length === 1 ? "" : "s"}: ${listed(keys)}.` });
+  else if (directory.apis.length === 0) texts.push({ origin: "tiehall", text: "The install has no team yet." });
   for (const team of directory.teams) {
     const key = checked(team.key, TEAM_KEY, "team key");
     texts.push({ origin: "tiehall", text: `Team ${key} is named:` });
@@ -655,7 +662,8 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
     const required = team.requiredFields ?? [];
     if (required.length > 0) texts.push({ origin: "tiehall", text: `Team ${key} requires ${requiredFieldsText(required)}.` });
   }
-  if (directory.apis.length === 0) {
+  // APIs come after every team, so a last page without one means that no API is registered.
+  if (directory.apis.length === 0 && next === undefined) {
     texts.push({ origin: "tiehall", text: "No API is registered yet." });
   }
   for (const api of directory.apis) {
@@ -668,6 +676,7 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
     });
     texts.push({ origin: originOf(api.provider, reader), text: api.untrusted.name });
   }
+  if (next !== undefined) texts.push({ origin: "tiehall", text: `More teams or APIs follow: call directory with cursor "${next}" for the next page.` });
   return texts;
 }
 

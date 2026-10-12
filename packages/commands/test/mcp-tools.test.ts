@@ -3,7 +3,7 @@ import { CATALOG } from "@tiehall/catalog";
 import { MINIMUM_SKILL_VERSION } from "@tiehall/core";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
-import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
+import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, resultSize, textOf, type McpPerson, type ProtocolVersion } from "./support/mcp.ts";
 import { addInstallation } from "./support/apis.ts";
 import { openRequestInTheWebUi, packetOf, sessionOf } from "./support/requests.ts";
 
@@ -446,5 +446,67 @@ describe.each(PROTOCOL_VERSIONS)("open_request, on protocol version %s", (versio
     const problem = problemOf(result);
     expect(problem.type).toBe(`${PROBLEM}forbidden`);
     expect(problem.status).toBe(403);
+  });
+});
+
+// agent-surfaces: The MCP tools; decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (39).
+// directory answers in pages, ordered by team key and then by API name: a page holds at most 50 teams and at most
+// 50 registered APIs, and never more than the 32,000 characters that cap a page of get_request, its text and its
+// structured content together, and names a cursor for the next page while more remain.
+describe.each(PROTOCOL_VERSIONS)("directory's pages, on protocol version %s", (version) => {
+  it("answers 120 teams and 60 APIs in pages of at most 50 teams, 50 APIs and 32,000 characters, ordered by key and name, with a cursor while more remain", async () => {
+    const { owner } = harness.install;
+    const added = Array.from({ length: 120 }, (_, index) => `PG${String(index).padStart(3, "0")}`);
+    const ids: string[] = [];
+    for (const key of added) {
+      const { rows } = await owner.query<{ id: string }>("INSERT INTO teams (org_id, key, name) SELECT id, $1, $1 FROM orgs RETURNING id", [key]);
+      ids.push(rows[0]?.id ?? "");
+    }
+    // The first 30 teams' notes fill pages by their characters before they reach 50 teams; the rest have none.
+    await owner.query("UPDATE teams SET intake_notes = repeat('File one request per screen. ', 130) WHERE key = ANY($1)", [added.slice(0, 30)]);
+    const apiNames = Array.from({ length: 60 }, (_, index) => `pg-api-${String(index).padStart(2, "0")}`);
+    await owner.query(
+      `INSERT INTO apis (org_id, name, provider_team_id, repository_id, repository_owner_id, repository_full_name, registered_by)
+       SELECT o.id, n.name, $2, 9000 + n.ordinality, 9000, 'acme/' || n.name, $3 FROM orgs o, unnest($1::text[]) WITH ORDINALITY AS n(name, ordinality)`,
+      [apiNames, ids[0], erin.userId],
+    );
+    try {
+      const { rows: all } = await owner.query<{ key: string }>("SELECT key FROM teams ORDER BY key");
+      const teams: string[] = [];
+      const apis: string[] = [];
+      const pages: { teams: number; apis: number; size: number }[] = [];
+      let cursor: string | undefined;
+      for (;;) {
+        const result = await call(dana, version, "directory", cursor === undefined ? {} : { cursor });
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        const page = result.structuredContent as { teams: { key: string }[]; apis: { untrusted: { name: string } }[]; next: string | null };
+        teams.push(...page.teams.map(({ key }) => key));
+        apis.push(...page.apis.map(({ untrusted }) => untrusted.name));
+        pages.push({ teams: page.teams.length, apis: page.apis.length, size: resultSize(result) });
+        if (page.next === null) {
+          expect(textOf(result)).not.toContain("cursor");
+          break;
+        }
+        expect(textOf(result)).toContain(`call directory with cursor "${page.next}"`);
+        cursor = page.next;
+        expect(pages.length).toBeLessThan(40);
+      }
+      expect(teams).toEqual(all.map(({ key }) => key));
+      expect(apis).toEqual(apiNames);
+      for (const page of pages) {
+        expect(page.teams).toBeLessThanOrEqual(50);
+        expect(page.apis).toBeLessThanOrEqual(50);
+        expect(page.size).toBeLessThanOrEqual(32_000);
+      }
+      // Notes bound the first pages by their characters, and the count bounds the later ones.
+      expect(pages[0]?.teams).toBeLessThan(50);
+      expect(pages.some(({ teams: count }) => count === 50)).toBe(true);
+      expect(pages.some(({ apis: count }) => count === 50)).toBe(true);
+      // A cursor the install did not make is refused as input that fails the schema.
+      expect(problemOf(await call(dana, version, "directory", { cursor: "not a cursor!" }))).toMatchObject({ status: 400 });
+    } finally {
+      await owner.query("DELETE FROM apis WHERE name = ANY($1)", [apiNames]);
+      await owner.query("DELETE FROM teams WHERE key = ANY($1)", [added]);
+    }
   });
 });

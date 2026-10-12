@@ -50,8 +50,15 @@ export const requiredFields = z
   .refine((fields) => new Set(fields).size === fields.length, "Name each field once.")
   .meta({ description: "The packet fields the team requires: any of acceptance_criteria, code_refs, links and due_date." });
 
-/** How a team wants requests filed, as an admin writes it: up to 20,000 characters, or nothing. */
-export const intakeNotes = z.string().max(20_000);
+/**
+ * How a team wants requests filed, as an admin writes it: up to 4,000
+ * characters, or nothing, so that directory, which lists every team's notes,
+ * stays readable as a tool's output (agent-surfaces: Admins set a team's
+ * intake notes and required fields; decisions-from-groups-15-28: design.md,
+ * Decisions this change rests on: D55 (39)).
+ */
+export const INTAKE_NOTES_MAX = 4_000;
+export const intakeNotes = z.string().max(INTAKE_NOTES_MAX);
 
 /** A team's intake settings: its notes, under untrusted, since an admin wrote them, and the fields it requires. */
 export const teamIntake = z.object({

@@ -189,6 +189,7 @@ const RENDERING_FILES: Readonly<Record<string, string>> = {
   "packages/commands/src/mcp.ts": "every tool's result, through TOOL_TEXTS, whose paths output-path-coverage.test.ts in packages/commands checks",
   "packages/commands/src/request-urls.ts": "the markdown of request URLs and intake pages, through requestWithThreadText and teamIntakeText",
   "packages/commands/src/request-pages.ts": "the size of a page as agents read it, through requestPageText",
+  "packages/commands/src/directory.ts": "the size of a page of directory as agents read it, through directoryText",
   "packages/cli/src/output.ts":
     "every command's output, through RENDERERS, and contract diff's, through contractDiffText and contractDiffFailureText, whose paths output-path-coverage.test.ts in packages/cli checks",
 };

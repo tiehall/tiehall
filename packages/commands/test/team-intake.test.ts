@@ -113,9 +113,21 @@ describe("a team's intake settings", () => {
     for (const fields of [["need"], ["title"], ["links", "links"], ["contract"]]) {
       expect((await postIntake(ada, fe, "", fields)).status, fields.join()).toBe(400);
     }
-    expect((await postIntake(ada, fe, "x".repeat(20_001), [])).status).toBe(400);
     expect(await intakeOf(fe)).toEqual({ intake_notes: NOTES, required_fields: ["links"] });
-    expect((await postIntake(ada, fe, "x".repeat(20_000), [])).status).toBe(303);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (39): notes of up to 4,000
+  // characters, so that directory, which lists them, stays readable as a tool's output.
+  it("takes notes of 4,000 characters, and refuses 4,001 with 400 and changes nothing", async () => {
+    expect((await postIntake(ada, fe, NOTES, ["links"])).status).toBe(303);
+    expect((await postIntake(ada, fe, "x".repeat(4_001), [])).status).toBe(400);
+    const result = await install.web(ada).write("teams.set_intake", { teamId: fe, notes: "x".repeat(4_001), requiredFields: [] }, install.fromThePage(ada));
+    expect(result).toMatchObject({ ok: false, problem: { status: 400, type: "https://tiehall.com/problems/invalid-input" } });
+    expect(await intakeOf(fe)).toEqual({ intake_notes: NOTES, required_fields: ["links"] });
+    expect((await postIntake(ada, fe, "x".repeat(4_000), [])).status).toBe(303);
+    expect((await intakeOf(fe)).intake_notes).toHaveLength(4_000);
+    // The database holds the same bound.
+    await expect(install.owner.query("UPDATE teams SET intake_notes = $2 WHERE id = $1", [fe, "x".repeat(4_001)])).rejects.toThrow(/teams_intake_notes_length/);
   });
 
   it("gets 404 for a team the install does not have", async () => {
