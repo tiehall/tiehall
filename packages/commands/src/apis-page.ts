@@ -102,7 +102,7 @@ function apisPage(apis: readonly RegisteredApi[], teams: readonly ListedTeam[], 
       apis.length === 0
         ? '      <p class="empty">No API is registered.</p>'
         : [
-            '      <p class="hint">Unregistering an API needs no confirmation: it then takes no more reports, the teams\' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew.</p>',
+            '      <p class="hint">Unregistering an API needs no confirmation: it then takes no more reports, the teams\' declarations that they consume it route nothing, and the requests its reports opened stay as they are. Registering it again binds it anew: for the same provider team and repository, it keeps the teams\' declarations; for another, it is a new API, which the teams declare again.</p>',
             '      <p class="hint">Each API\'s WARN switch says where its potentially breaking (WARN-level) changes go: off, the default, to the daily WARN digests of the teams that consume it; on, they open requests as breaking changes do. An admin or a member of the provider team flips it.</p>',
             '      <div class="table-box">',
             "      <table>",

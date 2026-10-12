@@ -191,7 +191,7 @@ const TOPICS: Topic[] = [
     topic: "APIs",
     page: "docs/contract-changes.md",
     heading: "Registering an API",
-    says: ["`/admin/apis`", "provider team", "repository", "confirmation step", "workflow"],
+    says: ["`/admin/apis`", "provider team", "repository", "confirmation step", "workflow", "it is a new API, which the consuming teams declare again"],
   },
   {
     topic: "the consumer map",

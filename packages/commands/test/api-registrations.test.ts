@@ -159,6 +159,22 @@ describe("registering an API", () => {
     expect(await stored()).toEqual([]);
   });
 
+  it("reviews, for an unregistered API's name, whether the teams' declarations carry over (decisions-from-groups-15-28, D55 (56))", async () => {
+    expect((await install.confirm(ada, REGISTER, { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
+    const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'payments-api'");
+    await install.execute("apis.unregister", ada, { api: rows[0]?.id });
+
+    const same = await (await reviewPage(ada, { name: "payments-api", team: pay, repository: "acme/payments" })).text();
+    expect(same).toContain(
+      "payments-api was registered before, for PAY and acme/payments, and then unregistered: registering it again for the same team and repository keeps the teams&#39; declarations that they consume it, and its WARN switch.",
+    );
+    const moved = await (await reviewPage(ada, { name: "payments-api", team: pay, repository: "acme/web" })).text();
+    expect(moved).toContain(
+      "payments-api was registered before, for PAY and acme/payments, and then unregistered: registering it for another team or repository makes it a new API, so the teams&#39; declarations that they consumed it do not carry over, they declare it again, and its WARN switch starts off.",
+    );
+    expect(await stored()).toEqual([expect.objectContaining({ name: "payments-api", repository: "acme/payments" })]);
+  });
+
   it.each([
     ["no connected installation covers", "acme/billing"],
     ["only an installation nobody connected covers", "acme-labs/tools"],

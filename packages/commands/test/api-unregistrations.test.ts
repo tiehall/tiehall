@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createApisRoute, reportableApi, withOrg, type CiCaller, type WebSessionCaller } from "../src/index.ts";
+import { consumersOf, createApisRoute, reportableApi, withOrg, type CiCaller, type WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -16,12 +16,18 @@ import { addTeam, joinTeams, openRequest, sessionOf, tokenOf } from "./support/r
 // not registered to the caller's repository is. The requests that name it
 // stay as they are. A member's attempt gets 403 and changes nothing. Each
 // unregistration is a security event. Registering the API again is how its
-// provider team, repository or workflow changes.
+// provider team, repository or workflow changes: registered again with the
+// same repository and provider team, it keeps the teams' declarations that
+// they consume it; with another repository or another provider team, it is a
+// new API, to which none of them carries over (decisions-from-groups-15-28,
+// D55 (56)).
 
 let install: TestInstall;
 let ada: WebSessionCaller;
 let dana: WebSessionCaller;
 let danaId: string;
+/** Ayşe, a member of FE, which consumes payments-api. */
+let ayse: WebSessionCaller;
 let pay: string;
 let fe: string;
 let acmeId: number;
@@ -42,6 +48,9 @@ beforeAll(async () => {
   pay = await addTeam(install.owner, "PAY");
   fe = await addTeam(install.owner, "FE");
   await joinTeams(install.owner, danaId, pay);
+  const ayseId = await addUser(install.owner, { role: "member", login: "ayse" });
+  ayse = sessionOf(ayseId);
+  await joinTeams(install.owner, ayseId, fe);
   ({ accountId: acmeId } = await addInstallation(install.owner, {
     account: "acme",
     repositories: [
@@ -58,6 +67,7 @@ afterAll(async () => {
 let paymentsApi: string;
 
 beforeEach(async () => {
+  await install.owner.query("DELETE FROM api_consumers");
   await install.owner.query("DELETE FROM apis");
   expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
   const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'payments-api'");
@@ -92,6 +102,11 @@ function pageForm(caller: WebSessionCaller, fields: Record<string, string>): Pro
       body: new URLSearchParams({ ...fields, csrf: install.fromThePage(caller).csrfToken ?? "" }).toString(),
     }),
   );
+}
+
+/** The keys of the teams whose declarations route the API's changes, as contract-change routing reads them. */
+function routedTo(api: string): Promise<string[]> {
+  return withOrg(install.db, async (context) => (await consumersOf(context, api)).map(({ key }) => key), { readOnly: true });
 }
 
 /** The API a report from this CI run may report for, by its name; a refusal otherwise. */
@@ -194,12 +209,76 @@ describe("unregistering an API", () => {
 
     expect(again.status).toBe(200);
     expect(await listed()).toEqual(["payments-api"]);
-    // The same API, so the teams' declarations that it consumes route again; a report from its old repository is refused.
+    // Bound anew under its name; a report from its old repository is refused.
     expect(await eventsSince(from)).toEqual([
       { type: "api.registered", class: "security", actor_kind: "web_session", actor_user_id: ada.userId, data: { apiId: paymentsApi, providerTeamId: fe } },
     ]);
     await expect(reportFor(paymentsRun(), "payments-api")).rejects.toMatchObject({ status: 403 });
     const webRun: CiCaller = { kind: "ci", repositoryId: "7002", repositoryOwnerId: String(acmeId), jobWorkflowRef: "acme/web/.github/workflows/contract.yml@refs/heads/main" };
     await expect(reportFor(webRun, "payments-api")).resolves.toMatchObject({ id: paymentsApi });
+  });
+});
+
+describe("registering an unregistered API's name again (decisions-from-groups-15-28, D55 (56))", () => {
+  /** FE declares that it consumes payments-api, PAY turns its WARN switch on, and an admin unregisters it. */
+  beforeEach(async () => {
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+    await install.execute("apis.set_warn_switch", dana, { api: paymentsApi, on: true });
+    expect(await routedTo(paymentsApi)).toEqual(["FE"]);
+    await install.execute("apis.unregister", ada, { api: paymentsApi });
+    expect(await routedTo(paymentsApi)).toEqual([]);
+  });
+
+  /** FE's declaration of payments-api as FE's page lists it, or null when FE has none. */
+  async function feDeclaration(): Promise<unknown> {
+    const { apis } = (await install.execute("apis.list_for_team", ayse, { team: "FE" }, { readOnly: true })) as {
+      apis: { id: string; declaration: unknown }[];
+    };
+    return apis.find(({ id }) => id === paymentsApi)?.declaration ?? null;
+  }
+
+  async function warnSwitch(): Promise<boolean> {
+    const { rows } = await install.owner.query<{ on: boolean }>("SELECT warn_opens_requests AS on FROM apis WHERE id = $1", [paymentsApi]);
+    return rows[0]?.on ?? false;
+  }
+
+  it("keeps the declarations, and the WARN switch, with the same repository and provider team", async () => {
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
+
+    expect(await routedTo(paymentsApi)).toEqual(["FE"]);
+    expect(await feDeclaration()).toMatchObject({ declaredBy: { login: "ayse" } });
+    expect(await warnSwitch()).toBe(true);
+  });
+
+  it("keeps them when only the workflow changes, and the repository's name is written in another case", async () => {
+    const workflow = "acme/payments/.github/workflows/contract.yml@refs/heads/main";
+    expect(
+      (await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "ACME/Payments", jobWorkflowRef: workflow })).status,
+    ).toBe(200);
+
+    expect(await routedTo(paymentsApi)).toEqual(["FE"]);
+  });
+
+  it.each([
+    ["another repository", () => ({ team: pay, repository: "acme/web" })],
+    ["another provider team", () => ({ team: fe, repository: "acme/payments" })],
+  ])("makes it a new API with %s, to which no declaration carries over, with the WARN switch off", async (_case, binding) => {
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", ...binding() })).status).toBe(200);
+
+    expect(await routedTo(paymentsApi)).toEqual([]);
+    expect(await feDeclaration()).toBeNull();
+    expect(await warnSwitch()).toBe(false);
+    // FE declares it again, as a consuming team of the new API does.
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+    expect(await routedTo(paymentsApi)).toEqual(["FE"]);
+  });
+
+  it("brings no declaration back when a moved API is moved back to where it was", async () => {
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/web" })).status).toBe(200);
+    await install.execute("apis.unregister", ada, { api: paymentsApi });
+
+    expect((await install.confirm(ada, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
+
+    expect(await routedTo(paymentsApi)).toEqual([]);
   });
 });

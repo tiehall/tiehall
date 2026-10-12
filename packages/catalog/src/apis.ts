@@ -26,7 +26,9 @@ import { API_NAME, user } from "./schemas.ts";
 // that teams consume it route nothing, while the requests its reports opened
 // stay as they are. Registering it again, by its name, is how its provider
 // team, repository or workflow changes: the API keeps its id, and the teams'
-// declarations route again.
+// declarations route again only when its provider team and repository are the
+// ones it had; otherwise it is a new API, which the teams declare again
+// (decisions-from-groups-15-28, D55 (56)).
 
 export { API_NAME } from "./schemas.ts";
 

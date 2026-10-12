@@ -1,6 +1,6 @@
 import { listApis, registerApi, setWarnSwitch, unregisterApi, type registeredApi } from "@tiehall/catalog";
 import { apiRegistered, apiUnregistered, Refusal } from "@tiehall/core";
-import { apis, githubCoveredRepositories, githubInstallations, teams, users } from "@tiehall/db";
+import { apiConsumers, apis, githubCoveredRepositories, githubInstallations, teams, users } from "@tiehall/db";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { CiCaller } from "./caller.ts";
@@ -43,10 +43,16 @@ import type { OrgContext } from "./with-org.ts";
 // Readings to confirm with the founder: R19): an admin unregisters an API
 // with no confirmation step, which marks it unregistered and appends its
 // security event; an API that is unregistered already changes nothing and
-// records nothing. A name keeps naming the same API: registering an
-// unregistered API's name again binds that API anew, with its provider team,
-// repository and workflow, so the declarations that teams consume it route
-// again, and the requests its reports opened keep naming it.
+// records nothing. Registering an unregistered API's name again binds that
+// API anew, with its provider team, repository and workflow, and the requests
+// its reports opened keep naming it. Only when its repository, by GitHub's id,
+// and its provider team are the ones it had does it keep the declarations that
+// teams consume it, and its WARN switch; otherwise it is a new API
+// (decisions-from-groups-15-28, D55 (56)): the earlier declarations are
+// removed with the registration, so the consuming teams declare it again, and
+// its WARN switch starts off, as a new API's does. Teams declared that they
+// consume an API one team serves from one repository; a registration that
+// moves the name must not route another codebase's changes to them.
 //
 // Which API a CI run may report for (contract-changes: Admins register APIs,
 // each bound to one repository; agent-access: CI authenticates with GitHub
@@ -98,13 +104,37 @@ async function teamKeyOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, teamId
   return row?.key;
 }
 
-/** The API with this name, registered or unregistered; undefined when no API has it. */
-async function apiNamed({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, name: string): Promise<{ id: string; registered: boolean } | undefined> {
-  const [row] = await tx
-    .select({ id: apis.id, unregisteredAt: apis.unregisteredAt })
+/** The API with this name, registered or unregistered, with its last binding; undefined when no API has it. */
+async function apiNamed(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  name: string,
+  options: { lock?: boolean } = {},
+): Promise<{ id: string; registered: boolean; providerTeamId: string; teamKey: string; repositoryId: number; repository: string } | undefined> {
+  const query = tx
+    .select({
+      id: apis.id,
+      unregisteredAt: apis.unregisteredAt,
+      providerTeamId: apis.providerTeamId,
+      teamKey: teams.key,
+      repositoryId: apis.repositoryId,
+      repository: apis.repositoryFullName,
+    })
     .from(apis)
+    .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
     .where(and(eq(apis.orgId, orgId), eq(apis.name, name)));
-  return row === undefined ? undefined : { id: row.id, registered: row.unregisteredAt === null };
+  const [row] = options.lock === true ? await query.for("update", { of: apis }) : await query;
+  if (row === undefined) return undefined;
+  const { unregisteredAt, ...binding } = row;
+  return { ...binding, registered: unregisteredAt === null };
+}
+
+/**
+ * Whether registering an unregistered API anew, for this team and this
+ * repository, keeps it the same API, with the declarations that teams consume
+ * it: only when both are the ones it had.
+ */
+function keepsTheApi(previous: { providerTeamId: string; repositoryId: number }, team: string, repository: CoveredRepository): boolean {
+  return previous.providerTeamId === team && previous.repositoryId === repository.repositoryId;
 }
 
 /**
@@ -187,6 +217,10 @@ export const API_HANDLERS: Handlers = {
     if ((await apiNamed(context, name))?.registered === true) throw taken();
     const id = await context.write(async (writer) => {
       if (context.caller.kind !== "web_session") throw new Error("Only a web session registers an API.");
+      // The unregistered API of this name, held until the registration commits, which decides whether it stays the same API.
+      const previous = await apiNamed(writer, name, { lock: true });
+      if (previous?.registered === true) throw taken();
+      const anew = previous !== undefined && !keepsTheApi(previous, team, covered);
       const binding = {
         providerTeamId: team,
         repositoryId: covered.repositoryId,
@@ -197,6 +231,8 @@ export const API_HANDLERS: Handlers = {
         registeredByUserId: context.caller.userId,
         unregisteredAt: null,
         unregisteredByUserId: null,
+        // A new API's WARN switch starts off.
+        ...(anew ? { warnOpensRequests: false } : {}),
       };
       // A new name is a new API; an unregistered API's name binds that API anew. A registered one keeps its binding.
       const [row] = await writer.tx
@@ -206,6 +242,8 @@ export const API_HANDLERS: Handlers = {
         .returning({ id: apis.id });
       // Another registration took the name since it was read.
       if (row === undefined) throw taken();
+      // Bound to another team or repository, it is a new API, to which the earlier declarations do not carry over.
+      if (anew) await writer.tx.delete(apiConsumers).where(and(eq(apiConsumers.orgId, writer.orgId), eq(apiConsumers.apiId, row.id)));
       await writer.record(apiRegistered, { apiId: row.id, providerTeamId: team });
       return row.id;
     });
@@ -325,7 +363,15 @@ export const API_REVIEWS: Readonly<Record<string, ReviewHandler>> = {
         { text: `Register the API ${name} for the team ${key}, bound to the GitHub repository ${covered.fullName}.` },
         ...(named === undefined
           ? []
-          : [{ text: `${name} was registered before and then unregistered: registering it again binds it anew, and the teams' declarations that they consume it route again.` }]),
+          : [
+              {
+                text:
+                  `${name} was registered before, for ${named.teamKey} and ${named.repository}, and then unregistered: ` +
+                  (keepsTheApi(named, team, covered)
+                    ? "registering it again for the same team and repository keeps the teams' declarations that they consume it, and its WARN switch."
+                    : "registering it for another team or repository makes it a new API, so the teams' declarations that they consumed it do not carry over, they declare it again, and its WARN switch starts off."),
+              },
+            ]),
         {
           text:
             jobWorkflowRef === undefined
