@@ -199,7 +199,8 @@ export function hallPageHtml(state: HallState, narrowing: { team?: string; agent
     '        <div class="hall-actions">',
     filterHtml(state, narrowing),
     '          <button type="button" class="secondary" id="pause-motion" aria-pressed="false" hidden>Pause motion</button>',
-    `          <a class="button" href="${NEW_REQUEST_LINK.href}">Open a request</a>`,
+    // An outline: the top bar's New request, gold as a page's main action, leads to the same form (D59 (2); D61 (2)).
+    `          <a class="button secondary" href="${NEW_REQUEST_LINK.href}">Open a request</a>`,
     "        </div>",
     "      </div>",
     '      <section class="hall-section at-work-section" aria-labelledby="at-work-heading">',

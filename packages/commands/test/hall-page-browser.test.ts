@@ -16,7 +16,9 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // feed, the teams and the lines between them as they stood when it was served,
 // says that it updates only with scripts on, shows no Pause motion button and
 // keeps no place for a map, and runs no animation 5.5 seconds after it loads;
-// its background is the dark ground whether the browser prefers dark or light;
+// its background is the dark ground whether the browser prefers dark or light,
+// and its one gold action is the top bar's New request, the toolbar's Open a
+// request, which leads to the same form, being an outline (D59 (2), D61 (2));
 // and at 320 and 390 CSS pixels, with scripts on and off, it scrolls no page
 // sideways, even with a team named in the 100 characters a team's name may
 // have in its Team filter. The web app runs as the image runs it, and Pia
@@ -136,6 +138,38 @@ describe("the live hall's theme", () => {
     await expect(page.locator("body").evaluate((body) => body.ownerDocument.defaultView?.getComputedStyle(body).color)).resolves.toBe("rgb(233, 237, 245)");
     await context.close();
   });
+
+  // Gold marks a page's main action (D59 (2)); on the hall that is the top bar's New request (D61 (2)), so the
+  // toolbar's Open a request, a second way to the same form, is an outline.
+  it.each(["dark", "light"] as const)(
+    "keeps gold for one action in a browser that prefers %s: the top bar's New request is gold, and the toolbar's Open a request an outline",
+    { timeout: 120_000 },
+    async (colorScheme) => {
+      const context = await signedIn({ colorScheme });
+      const page = await context.newPage();
+      page.setDefaultTimeout(15_000);
+      await page.goto(`${web.url}/hall`);
+      await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
+      /** The fill, the edge and the words of the element this selector finds. */
+      const look = async (selector: string) =>
+        (await page.evaluate(
+          `(() => { const style = getComputedStyle(document.querySelector(${JSON.stringify(selector)})); return [style.backgroundColor, style.borderTopColor, style.color]; })()`,
+        )) as [string, string, string];
+      await expect(page.locator("header .topbar-end > a.button").textContent()).resolves.toBe("New request");
+      await expect(look("header .topbar-end > a.button")).resolves.toEqual(["rgb(227, 179, 65)", "rgb(227, 179, 65)", "rgb(10, 20, 40)"]);
+      const open = page.locator('.hall-actions > a[href="/requests/new"]');
+      await expect(open.textContent()).resolves.toBe("Open a request");
+      await expect(open.isVisible()).resolves.toBe(true);
+      // The outline of the hall: its panel's fill, the edge of a field or outline button and the hall's ink.
+      await expect(look('.hall-actions > a[href="/requests/new"]')).resolves.toEqual(["rgb(14, 26, 51)", "rgb(101, 116, 156)", "rgb(233, 237, 245)"]);
+      // No other action of the page is gold.
+      const gold = await page.evaluate(
+        '[...document.querySelectorAll("main a, main button")].filter((element) => getComputedStyle(element).backgroundColor === "rgb(227, 179, 65)").map((element) => element.textContent.trim())',
+      );
+      expect(gold).toEqual([]);
+      await context.close();
+    },
+  );
 });
 
 /** PAY's name: as short as the seed gives it, or in the 100 characters a team's name may have, which the Team filter lists. */

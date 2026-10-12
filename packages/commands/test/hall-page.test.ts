@@ -148,7 +148,8 @@ describe("the live hall's page", () => {
     expect(form).toContain('<label for="hall-agents">Agents only</label>');
     expect(form).toContain('<button type="submit" class="secondary">Show</button>');
     expect(main).toContain('<button type="button" class="secondary" id="pause-motion" aria-pressed="false" hidden>Pause motion</button>');
-    expect(main).toContain('<a class="button" href="/requests/new">Open a request</a>');
+    // An outline: the top bar's gold New request leads to the same form, and gold marks a page's one main action.
+    expect(main).toContain('<a class="button secondary" href="/requests/new">Open a request</a>');
   });
 
   it("lists the people and agents at work, with the login, the client, the request's key and title, what they did last and when", async () => {
