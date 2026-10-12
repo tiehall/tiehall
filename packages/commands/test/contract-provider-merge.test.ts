@@ -169,6 +169,45 @@ describe("a provider pull request that merges", () => {
     expect(await read(mobile!.key)).toMatchObject({ state: "done", providerChange: { status: "merged" } });
   });
 
+  // contract-changes: Merging the provider PR marks the change shipped, "The merge adds a system message, not a revision"
+  // (decisions-from-groups-15-28, D55 (71)).
+  it("adds one system message, in Tiehall's words, to each request of the change set that has not ended, and no packet revision", async () => {
+    const number = await reportedPullRequest();
+    const [fe, mobile] = await requestsOf(number);
+    await install.execute("requests.claim", sessionOf(bob), { key: fe!.key });
+    await install.execute("requests.set_status", sessionOf(bob), { key: fe!.key, state: "in_progress" });
+    // MOBILE's request has ended before the merge.
+    await install.execute("requests.claim", sessionOf(erin), { key: mobile!.key });
+    const done = (await install.execute("requests.set_status", sessionOf(erin), { key: mobile!.key, state: "done" })) as { proposal: { id: string } };
+    expect((await install.confirm(sessionOf(erin), "proposals.confirm", { proposal: done.proposal.id })).status).toBe(200);
+    const threadOf = async (requestId: string) =>
+      (
+        await install.owner.query<{ actor_kind: string; surface: string | null; actor_user_id: string | null; body: string }>(
+          `SELECT m.actor_kind, m.surface, m.actor_user_id, v.body FROM messages m JOIN message_versions v ON v.message_id = m.id AND v.version = 1
+            WHERE m.request_id = $1 ORDER BY m.number`,
+          [requestId],
+        )
+      ).rows;
+    const mobileThread = await threadOf(mobile!.id);
+
+    await stub.mergePullRequest("acme/payments", number, { by: "deniz" });
+    await deliver(number, "closed");
+    await deliver(number, "closed");
+
+    const thread = await threadOf(fe!.id);
+    expect(thread).toHaveLength(1);
+    expect(thread[0]).toMatchObject({ actor_kind: "system", surface: "github", actor_user_id: null });
+    expect(thread[0]?.body).toContain(`The provider pull request acme/payments#${number} merged, so the change it makes has shipped.`);
+    expect(thread[0]?.body).toContain(`${fe!.key} stays in_progress`);
+    expect(await threadOf(mobile!.id)).toEqual(mobileThread);
+    // The packet keeps its revision, and the provider status the last report gave.
+    const { rows } = await install.owner.query<{ number: number; status: string }>(
+      "SELECT number, packet -> 'untrusted' -> 'contract' ->> 'provider_status' AS status FROM packet_revisions WHERE request_id = $1 ORDER BY number",
+      [fe!.id],
+    );
+    expect(rows).toEqual([{ number: 1, status: "open" }]);
+  });
+
   it("leaves a request that no report opened without a provider change", async () => {
     const opened = await callApi(install, tokenOf(bob), "POST", "/api/v1/requests", {
       targetTeam: "MOBILE",

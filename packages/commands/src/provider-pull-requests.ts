@@ -33,7 +33,11 @@ import type { RequestRow } from "./request-views.ts";
 // (request-views.ts), and none moves to done: each consumer closes its own
 // request with its own pull request (contract-changes: Merging the provider
 // PR marks the change shipped; contract-changes: Consumers close requests
-// with their own PR).
+// with their own PR). Each of its requests that has not ended also gets one
+// system message, in Tiehall's words, that the provider pull request merged
+// and the change shipped, since the consumer reads the thread; its packet
+// keeps the revision and the provider status the last report gave
+// (decisions-from-groups-15-28, D55 (71)).
 //
 // Closed without merging. Each change set that is not marked closed yet is
 // marked so, and each of its requests, the latest one to each team, is
@@ -73,6 +77,11 @@ export function closeText(pr: string, request: ChangeSetRequest, withdrawn: bool
   if (withdrawn) return `${closed} Nobody had claimed ${request.key}, so Tiehall withdrew ${request.key}. If ${pr} is reopened, the next contract report opens a new request.`;
   if (isTerminalState(request.state)) return `${closed} ${request.key} is ${request.state}, so it stays as it is.`;
   return `${closed} ${request.key} is claimed, so Tiehall leaves it as it is.`;
+}
+
+/** What the merge says on a request of its change set that has not ended, in Tiehall's words. */
+export function shippedText(pr: string, request: { key: string; state: string }): string {
+  return `The provider pull request ${pr} merged, so the change it makes has shipped. ${request.key} stays ${request.state} until its team's own pull request closes it.`;
 }
 
 /** The API's repository of each change set, for the notices. */
@@ -176,8 +185,22 @@ async function applyMerge(context: HandlerContext, changeSets: readonly Provider
     .where(and(eq(contractChangeRequests.orgId, orgId), inArray(contractChangeRequests.changeSetId, ids)))
     .orderBy(asc(contractChangeRequests.requestId));
   if (shipped.length === 0) return;
+  // The request of each change set to each team, with its key, for the messages; a team's earlier, replaced request has ended.
+  const latest: { changeSet: ProviderChangeSet; request: ChangeSetRequest }[] = [];
+  for (const changeSet of merging) for (const request of await requestsOfChangeSet(context, changeSet.id)) latest.push({ changeSet, request });
   await context.write(async (writer) => {
+    // Every lock before the first event: the rows of the requests it adds a message to, in the order of their ids.
+    latest.sort((a, b) => (a.request.requestId < b.request.requestId ? -1 : 1));
+    const messaged: { pr: string; key: string; requestId: string; state: string }[] = [];
+    for (const { changeSet, request } of latest) {
+      const { state } = await lifecycleOf(writer, await lockRequestById(writer, request.requestId));
+      if (!isTerminalState(state)) messaged.push({ pr: `${changeSet.repositoryFullName}#${changeSet.pullRequestNumber}`, key: request.key, requestId: request.requestId, state });
+    }
     for (const { requestId } of shipped) await writer.record(requestProviderChangeShipped, { requestId });
+    for (const { pr, key, requestId, state } of messaged) {
+      await writer.changesRequest(requestId);
+      await addSystemMessage(writer, requestId, shippedText(pr, { key, state }));
+    }
   });
 }
 

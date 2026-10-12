@@ -360,6 +360,7 @@ const OTHERS: Record<string, Case> = {
   },
   "contract-routing.ts titleOf": { renders: [() => contractRouting.titleOf(SECTION)] },
   "contract-routing.ts packetOf": { renders: [() => JSON.stringify(contractRouting.packetOf(SECTION, REQUEST.targetTeam))] },
+  "provider-pull-requests.ts shippedText": { renders: [() => providerPullRequests.shippedText("acme/payments#310", { key: REQUEST.key, state: REQUEST.state })] },
   "provider-pull-requests.ts closeText": {
     renders: [
       ...[true, false].map((withdrawn) => () =>
@@ -383,7 +384,7 @@ const OTHERS: Record<string, Case> = {
 };
 
 /** The builders of system messages: the third argument of every call to addSystemMessage must be a call of one of these. */
-const SYSTEM_MESSAGE_BUILDERS = new Set(["mergedText", "mirrorClosedText", "flipNoticeText", "updateText", "closeText"]);
+const SYSTEM_MESSAGE_BUILDERS = new Set(["mergedText", "mirrorClosedText", "flipNoticeText", "updateText", "closeText", "shippedText"]);
 
 /** Where code outside the template modules may cast a value to an email's server text, and why. */
 const SERVER_TEXT_CASTS: Record<string, string> = {
