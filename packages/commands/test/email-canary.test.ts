@@ -139,7 +139,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
     return text.includes("on its undo page") ? email.RECEIPT_WITH_UNDO.id : email.RECEIPT.id;
   }
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9}-\d+ request\.message_posted \(team [A-Z][A-Z0-9]{1,9}\)$/.test(subject)) return email.QUESTION_NOTICE.id;
-  if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.DIGEST.id;
+  if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2}(?: to \d{4}-\d{2}-\d{2})? \(UTC\)$/.test(subject)) return email.DIGEST.id;
   if (/^Tiehall: your personal access token expires on \d{4}-\d{2}-\d{2}$/.test(subject)) return email.PERSONAL_ACCESS_TOKEN_REMINDER.id;
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9} is asked to re-confirm an API it consumes$/.test(subject)) return email.RECONFIRMATION_REQUEST.id;
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9}'s WARN digest of \d{4}-\d{2}-\d{2} \(UTC\)$/.test(subject)) return email.WARN_DIGEST.id;

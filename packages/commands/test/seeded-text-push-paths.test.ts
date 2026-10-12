@@ -51,6 +51,13 @@ import { openRequestInTheWebUi } from "./support/requests.ts";
 /** How long a wait holds here, instead of 60 seconds. */
 const HOLD_MS = 1_500;
 
+/** The fixed words of the hooks' output, which hold no one's text: the digest's heading and its last line, and the waiter's reminder. */
+const DIGEST_HEADING = "Tiehall: updates on your requests are waiting. Read them with whats_new, or run tiehall updates, and acknowledge what you have handled.";
+const DIGEST_MORE = "More updates wait after these: whats_new reads them all.";
+const REMINDER_HEADING = "Tiehall: news on your requests. Read it with whats_new, or run tiehall updates, and acknowledge what you have handled.";
+/** A line of the hooks' output for an update: its request key, its event type, its team and its request's URL. */
+const NOTICE_LINE = new RegExp(`^[A-Z][A-Z0-9]{1,9}-\\d+ [a-z_]+(?:\\.[a-z_]+)+ \\(team [A-Z][A-Z0-9]{1,9}\\) ${URL_OF_INSTALL.replace(/[.:/]/g, "\\$&")}/[A-Z][A-Z0-9]{1,9}-\\d+$`);
+
 /** The tag that marks the seeded text: each entry's own tag is this, a hyphen and its index. */
 const TAG = `seed${randomBytes(5).toString("hex")}`;
 const seedOf = (index: number) => `${TAG}-${index}`;
@@ -261,6 +268,9 @@ describe("the seeded text", () => {
     }
     for (const { key } of seededRequests) expect(printed).toContain(`${key} request.message_edited (team FE)`);
     expectNoSeededText(printed, "the SessionStart digests");
+    // Each line is an update's identifiers or Tiehall's fixed words (decisions-from-groups-15-28: design.md, Decisions
+    // this change rests on: D55 (48)).
+    for (const line of printed.split("\n").filter((each) => each !== "")) expect([DIGEST_HEADING, DIGEST_MORE].includes(line) || NOTICE_LINE.test(line), line).toBe(true);
   });
 
   it("is in none of the lines the Stop-hook waiter wakes Claude with, for a message of each entry", async () => {
@@ -271,6 +281,7 @@ describe("the seeded text", () => {
     expect(run.stdout).toBe("");
     expect(run.stderr.split("\n").filter((line) => line.includes(`${open.key} request.message_posted (team FE)`))).toHaveLength(CORPUS.length);
     expectNoSeededText(run.stderr, "the waiter's output");
+    for (const line of run.stderr.split("\n").filter((each) => each !== "")) expect(line === REMINDER_HEADING || NOTICE_LINE.test(line), line).toBe(true);
   }, 60_000);
 
   it("is in none of the lines tiehall watch prints, for a message of each entry", async () => {
@@ -322,7 +333,7 @@ describe("the seeded text", () => {
     expect(kinds(/^Tiehall: [A-Z][A-Z0-9]{1,9}-\d+ request\.message_posted \(team FE\)$/)).toBe(CORPUS.length);
     expect(kinds(/^Tiehall: a proposal on [A-Z][A-Z0-9]{1,9}-\d+ waits for your confirmation$/)).toBe(CORPUS.length);
     expect(kinds(/^Tiehall: receipt for your confirmation on [A-Z][A-Z0-9]{1,9}-\d+$/)).toBe(CORPUS.length);
-    expect(kinds(/^Tiehall: your updates of \d{4}-\d{2}-\d{2} \(UTC\)$/)).toBeGreaterThan(0);
+    expect(kinds(/^Tiehall: your updates of \d{4}-\d{2}-\d{2}(?: to \d{4}-\d{2}-\d{2})? \(UTC\)$/)).toBeGreaterThan(0);
     expect(kinds(/^Tiehall: FE's WARN digest of \d{4}-\d{2}-\d{2} \(UTC\)$/)).toBe(1);
     for (const { subject, text } of sent) {
       expectNoSeededText(subject, `the subject "${subject}"`);

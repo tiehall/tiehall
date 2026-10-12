@@ -34,9 +34,17 @@ import { addTeam, callApi, joinTeams, openRequest, openRequestInTheWebUi, sendAp
 // Without SMTP, nothing is sent. The digest holds only Tiehall's words and the
 // requests' keys, teams and URLs, nothing anyone wrote.
 //
+// A digest covers every UTC day that ended since the last digest the user was
+// sent, at most the 7 latest, so a worker that was stopped catches up with one
+// email, whose subject names the first and last day of the updates it lists;
+// a user gets at most one digest a UTC day (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (48); design.md, Technical
+// decisions: T7).
+//
 // Events carry the database's time, so each digest here covers the UTC day on
-// which the test made its events, and runs just after that day ends; each test
-// has requesters of its own, since each user gets one digest per day.
+// which the test made its events, and runs just after that day ends, unless a
+// test moves its events to other days; each test has requesters of its own,
+// since each user gets one digest per day.
 
 let install: TestInstall;
 let sink: SmtpSink;
@@ -58,6 +66,8 @@ beforeAll(async () => {
     ["joe", be],
     ["max", be],
     ["zoe", be],
+    ["kai", be],
+    ["lia", be],
     ["dana", fe],
     ["bob", fe],
     ["eve", ops],
@@ -281,6 +291,65 @@ describe("the user's own events", () => {
     expect(ended).toEqual([expect.stringContaining("ended without taking effect: rejected"), expect.stringContaining("ended without taking effect: expired")]);
     expect(text).not.toContain("proposal.created");
     expect(text).not.toContain("proposal.confirmed");
+  });
+});
+
+// requester-loop: Email for people, only when SMTP is set, "The digest catches up after a stopped worker" and "The
+// digest goes back at most 7 days"; agent-safety: Notices that can reach a model carry only server text, "A digest's
+// subject names its days". The tests move their updates to the days they need, and run the job on the clock they give.
+describe("a digest after a stopped worker", () => {
+  /** Opens a request as the user's agent, then has Bob comment on it once for each of these times, which the comments are moved to. */
+  async function commentsAt(login: string, times: readonly string[]): Promise<string> {
+    const request = await openRequest(install, tokenOf(id(login)), { targetTeam: "FE" });
+    for (const time of times) {
+      const message = await post("bob", request.key, { kind: "comment", body: INJECTION });
+      // As the owner, past the append-only trigger.
+      await install.owner.query("BEGIN; SET LOCAL session_replication_role = replica");
+      await install.owner.query("UPDATE events SET occurred_at = $1 WHERE data->>'messageId' = $2", [new Date(time), message]);
+      await install.owner.query("COMMIT");
+    }
+    return request.key;
+  }
+
+  /** Records that the user's last digest covered this day, as a run of the job before the worker stopped did. */
+  async function lastDigestCovered(login: string, day: string): Promise<void> {
+    await install.owner.query("INSERT INTO email_digests (org_id, user_id, day, sent_at, updates) SELECT org_id, id, $2, $3, 1 FROM users WHERE id = $1", [id(login), day, new Date(`${day}T23:59:00Z`)]);
+  }
+
+  const digestsTo = (login: string) => emailsTo(login).filter(({ subject }) => subject.startsWith("Tiehall: your updates of "));
+
+  it("sends one digest that covers every day since the last one, whose subject names them, and no second one that UTC day", async () => {
+    await lastDigestCovered("kai", "2026-11-02");
+    const key = await commentsAt("kai", ["2026-11-03T10:00:00Z", "2026-11-04T16:30:00Z"]);
+    await runJob(emailDigests, new Date("2026-11-05T00:05:00Z"));
+    const [digest, ...others] = digestsTo("kai");
+    expect(others).toEqual([]);
+    expect(digest?.subject).toBe("Tiehall: your updates of 2026-11-03 to 2026-11-04 (UTC)");
+    expect(digest?.text).toContain(`${key} (team FE): ${URL_OF_INSTALL}/${key}`);
+    expect(digest?.text).toContain("- 2026-11-03 10:00 request.message_posted: a comment was posted");
+    expect(digest?.text).toContain("- 2026-11-04 16:30 request.message_posted: a comment was posted");
+    expect(digest?.text).not.toContain("Ignore previous");
+    // The job runs every hour: the rest of that UTC day sends Kai nothing more.
+    for (const time of ["2026-11-05T01:05:00Z", "2026-11-05T23:05:00Z"]) await runJob(emailDigests, new Date(time));
+    expect(digestsTo("kai")).toHaveLength(1);
+    const { rows } = await install.owner.query<{ first: string; last: string }>(
+      "SELECT first_day::text AS first, day::text AS last FROM email_digests WHERE user_id = $1 AND day > '2026-11-02'",
+      [id("kai")],
+    );
+    expect(rows).toEqual([{ first: "2026-11-03", last: "2026-11-04" }]);
+  });
+
+  it("goes back at most 7 days", async () => {
+    await lastDigestCovered("lia", "2026-11-01");
+    await commentsAt("lia", ["2026-11-12T10:00:00Z", "2026-11-13T09:00:00Z", "2026-11-19T18:00:00Z"]);
+    await runJob(emailDigests, new Date("2026-11-20T00:05:00Z"));
+    const [digest, ...others] = digestsTo("lia");
+    expect(others).toEqual([]);
+    expect(digest?.subject).toBe("Tiehall: your updates of 2026-11-13 to 2026-11-19 (UTC)");
+    expect(digest?.text).toContain("- 2026-11-13 09:00 request.message_posted");
+    expect(digest?.text).toContain("- 2026-11-19 18:00 request.message_posted");
+    expect(digest?.text).not.toContain("2026-11-12");
+    expect(digest?.text).toContain("2 updates");
   });
 });
 

@@ -132,7 +132,8 @@ const EMAIL: Record<string, Case> = {
   installLink: { renders: [link, () => email.installLink(INSTALL), () => email.installLink(INSTALL, `/confirm/${REQUEST.proposalId}`)] },
   serverTime: { renders: [() => email.serverTime(REQUEST.expiresAt)] },
   serverDay: { renders: [() => email.serverDay(REQUEST.expiresAt)] },
-  updateTime: { renders: [() => email.updateTime(REQUEST.occurredAt)] },
+  serverDays: { renders: [() => email.serverDays(REQUEST.expiresAt, REQUEST.expiresAt), () => email.serverDays(new Date(REQUEST.occurredAt), REQUEST.expiresAt)] },
+  updateTime: { renders: [() => email.updateTime(REQUEST.occurredAt), () => email.updateTime(REQUEST.occurredAt, { withDay: true })] },
   dayCount: { renders: [() => email.dayCount(1), () => email.dayCount(14)] },
   commitmentPhrase: { renders: notices.COMMITMENT_KINDS.map((kind) => () => email.commitmentPhrase(kind)) },
   PROPOSAL_NOTICE: {
@@ -167,15 +168,15 @@ const EMAIL: Record<string, Case> = {
   },
   digestText: {
     renders: [
-      () => email.digestText({ day: email.serverDay(REQUEST.expiresAt), byRequest: digestRequests(), more: 0, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
-      () => email.digestText({ day: email.serverDay(REQUEST.expiresAt), byRequest: digestRequests(), more: 3, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
+      () => email.digestText({ days: email.serverDays(REQUEST.expiresAt, REQUEST.expiresAt), byRequest: digestRequests(), more: 0, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
+      () => email.digestText({ days: email.serverDays(new Date(REQUEST.occurredAt), REQUEST.expiresAt), byRequest: digestRequests(), more: 3, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
     ],
   },
   DIGEST: {
     renders: [
       emailOf(email.DIGEST, () => ({
-        day: email.serverDay(REQUEST.expiresAt),
-        text: email.digestText({ day: email.serverDay(REQUEST.expiresAt), byRequest: digestRequests(), more: 1, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
+        days: email.serverDays(new Date(REQUEST.occurredAt), REQUEST.expiresAt),
+        text: email.digestText({ days: email.serverDays(new Date(REQUEST.occurredAt), REQUEST.expiresAt), byRequest: digestRequests(), more: 1, inbox: email.installLink(INSTALL, "/inbox"), settings: email.installLink(INSTALL, "/settings/email") }),
       })),
     ],
   },

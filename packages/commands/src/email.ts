@@ -64,10 +64,26 @@ export function serverDay(time: Date): ServerText {
   return time.toISOString().slice(0, 10) as ServerText;
 }
 
-/** The UTC hour and minute of a time Tiehall recorded, given as an ISO 8601 time, such as when an update of a digest happened: HH:MM. */
-export function updateTime(time: string): ServerText {
+/**
+ * The UTC days from one time Tiehall recorded to another, such as the days a
+ * digest covers: YYYY-MM-DD when both fall on one day, else the first and the
+ * last, as YYYY-MM-DD to YYYY-MM-DD.
+ */
+export function serverDays(first: Date, last: Date): ServerText {
+  const [from, until] = [serverDay(first), serverDay(last)];
+  if (until < from) throw new TypeError("A span of days ends no earlier than it starts.");
+  return (from === until ? from : `${from} to ${until}`) as ServerText;
+}
+
+/**
+ * The UTC hour and minute of a time Tiehall recorded, given as an ISO 8601
+ * time, such as when an update of a digest happened: HH:MM, or YYYY-MM-DD
+ * HH:MM with its day, as a digest that covers more than one day writes it.
+ */
+export function updateTime(time: string, { withDay = false }: { withDay?: boolean } = {}): ServerText {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(time) || Number.isNaN(new Date(time).getTime())) throw new TypeError("An update's time is an ISO 8601 time.");
-  return new Date(time).toISOString().slice(11, 16) as ServerText;
+  const written = new Date(time).toISOString();
+  return (withDay ? `${written.slice(0, 10)} ${written.slice(11, 16)}` : written.slice(11, 16)) as ServerText;
 }
 
 /** A whole number of days Tiehall counted, such as "14 days" or "1 day". */
@@ -173,13 +189,14 @@ export const DIGEST_UPDATES = 200;
 
 /**
  * The text of a daily digest (requester-loop: Email for people, only when
- * SMTP is set): the day's updates by request, each request by its key, target
- * team and URL, and each update by its time, its type and what it says, all
- * in Tiehall's words; nothing anyone wrote.
+ * SMTP is set): the updates of the days it covers by request, each request by
+ * its key, target team and URL, and each update by its time, with its day when
+ * the digest covers more than one, its type and what it says, all in
+ * Tiehall's words; nothing anyone wrote.
  */
-export function digestText({ day, byRequest, more, inbox, settings }: { day: ServerText; byRequest: readonly DigestRequest[]; more: number; inbox: ServerText; settings: ServerText }): ServerText {
+export function digestText({ days, byRequest, more, inbox, settings }: { days: ServerText; byRequest: readonly DigestRequest[]; more: number; inbox: ServerText; settings: ServerText }): ServerText {
   const total = byRequest.reduce((sum, { updates }) => sum + updates.length, 0) + more;
-  const lines = [`Your updates in Tiehall on ${day} (UTC), ${total === 1 ? "1 update" : `${total} updates`}, by request:`, ""];
+  const lines = [`Your updates in Tiehall of ${days} (UTC), ${total === 1 ? "1 update" : `${total} updates`}, by request:`, ""];
   for (const request of byRequest) {
     lines.push(`${request.key} (team ${request.team}): ${request.url}`);
     for (const { at, type, said } of request.updates) lines.push(`- ${at} ${type}: ${said}`);
@@ -195,10 +212,10 @@ export function digestText({ day, byRequest, more, inbox, settings }: { day: Ser
   return lines.join("\n") as ServerText;
 }
 
-/** The daily digest email, whose subject names only the day it covers. */
-export const DIGEST: EmailTemplate<{ day: ServerText; text: ServerText }> = {
+/** The daily digest email, whose subject names only the days of the updates it lists, the first and the last. */
+export const DIGEST: EmailTemplate<{ days: ServerText; text: ServerText }> = {
   id: "email.digest",
-  subject: ({ day }) => `Tiehall: your updates of ${day} (UTC)`,
+  subject: ({ days }) => `Tiehall: your updates of ${days} (UTC)`,
   text: ({ text }) => text,
 };
 

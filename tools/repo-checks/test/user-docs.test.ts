@@ -117,7 +117,17 @@ const TOPICS: Topic[] = [
     topic: "email",
     page: "docs/requester-loop.md",
     heading: "Email",
-    says: ["SMTP", "right away", "daily digest", "`/settings/email`", "cannot turn off", "primary verified email address"],
+    says: [
+      "SMTP",
+      "right away",
+      "daily digest",
+      "`/settings/email`",
+      "cannot turn off",
+      "primary verified email address",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (48).
+      "at most the 7 latest",
+      "Tiehall's own fixed words",
+    ],
   },
   {
     topic: "teams, roles, invites and the sign-in policy",

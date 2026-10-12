@@ -2309,8 +2309,11 @@ export const questionNotices = pgTable(
 
 // The daily digests sent by email (requester-loop: Email for people, only
 // when SMTP is set; design.md, Self-hosting decisions: S10). One row per user
-// and UTC day whose digest went out, with how many updates it held, so each
-// day's digest is sent at most once.
+// and digest that went out, keyed by the last UTC day it covers, with the
+// first and how many updates it held, so each user gets at most one digest a
+// UTC day, and the next covers the days after the user's latest
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (48); design.md, Technical decisions: T7).
 export const emailDigests = pgTable(
   "email_digests",
   {
@@ -2318,8 +2321,10 @@ export const emailDigests = pgTable(
       .notNull()
       .references(() => orgs.id),
     userId: uuid("user_id").notNull(),
-    /** The UTC day the digest covers. */
+    /** The last UTC day the digest covers. */
     day: date("day").notNull(),
+    /** The first UTC day the digest covers; none on a digest recorded before digests covered more than one day, which covered `day` alone. */
+    firstDay: date("first_day"),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
     /** How many updates the digest held. */
     updates: integer("updates").notNull(),
@@ -2332,6 +2337,7 @@ export const emailDigests = pgTable(
       foreignColumns: [users.orgId, users.id],
     }),
     check("email_digests_updates_positive", sql`${table.updates} > 0`),
+    check("email_digests_first_day_not_after_day", sql`${table.firstDay} IS NULL OR ${table.firstDay} <= ${table.day}`),
   ],
 );
 

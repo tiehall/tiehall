@@ -1,0 +1,2 @@
+ALTER TABLE "email_digests" ADD COLUMN "first_day" date;--> statement-breakpoint
+ALTER TABLE "email_digests" ADD CONSTRAINT "email_digests_first_day_not_after_day" CHECK ("email_digests"."first_day" IS NULL OR "email_digests"."first_day" <= "email_digests"."day");

@@ -1,5 +1,5 @@
 import { emailDigests as digestRecords, members, questionNotices, users } from "@tiehall/db";
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, max } from "drizzle-orm";
 import {
   DIGEST,
   DIGEST_UPDATES,
@@ -8,6 +8,7 @@ import {
   installLink,
   requestKey,
   serverDay,
+  serverDays,
   teamKey,
   updateSaid,
   updateTime,
@@ -24,43 +25,75 @@ import type { WorkerJob } from "./worker.ts";
 // agent-safety: The needs_human flag is visible and reaches the people on the
 // request; design.md, Decisions this change rests on: D28 #61; D29 (6);
 // design.md, Self-hosting decisions: S10; design.md, Readings to confirm with
-// the founder: R16). Every hour, the worker looks at the UTC day that ended
-// last. Each member with the digest on and an address, whose digest for that
-// day has not gone out yet, gets one email that gathers their updates of that
-// day, those whats_new returns, from the needs_human events to how proposals
-// ended: every update except a question that was emailed to them at once, and
-// except every event of their own, what they did in the web UI included
-// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
-// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)). The
-// email goes to the primary verified address of their GitHub account, and the
-// worker records that it went in the transaction that sends it, so each day's
-// digest goes out at most once: a record already there sends nothing, a send
-// that fails leaves no record, so the job sends it when it runs again, and a
-// run that cannot reach the database once the email went out has recorded it
-// already; a day with nothing in it sends nothing. Its subject names the day, and its
-// text only Tiehall's words and each request's key, target team and URL,
-// nothing anyone wrote. Without SMTP, nothing is sent, and a day whose digest
-// could not go out then still goes out within the hour SMTP is set.
+// the founder: R16). Every hour, the worker looks at the UTC days that ended
+// since each member's last digest, at most the 7 latest, so a worker that was
+// stopped catches up with one email (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (48); design.md, Technical decisions:
+// T7). Each member with the digest on and an address, whose days since their
+// last digest include the one that ended last, gets one email that gathers
+// their updates of those days, those whats_new returns, from the needs_human
+// events to how proposals ended: every update except a question that was
+// emailed to them at once, and except every event of their own, what they did
+// in the web UI included (decisions-from-groups-15-28: design.md, Decisions
+// this change rests on: D55 (43); findings-from-claude-code-run: design.md,
+// Findings: F2 (4)). The email goes to the primary verified address of their
+// GitHub account, and the worker records that it went, with the first and the
+// last day it covers, in the transaction that sends it, so a user gets at most
+// one digest a UTC day: a record already there for the day that ended last
+// sends nothing, a send that fails leaves no record, so the job sends it when
+// it runs again, and a run that cannot reach the database once the email went
+// out has recorded it already; days with nothing in them send nothing, and
+// stay for the next digest to cover. Its subject names the days of the
+// updates it lists, the first and the last, and its text only Tiehall's words
+// and each request's key, target team and URL, nothing anyone wrote. Without
+// SMTP, nothing is sent, and the days whose digest could not go out then still
+// go out within the hour SMTP is set.
+
+/** How many of the latest ended UTC days a digest covers at most. */
+export const DIGEST_DAYS = 7;
+
+const DAY_MS = 24 * 3_600_000;
 
 /** The day before a time's UTC day, which ended last, from its start to its end. */
 function lastEndedDay(now: Date): { day: string; from: Date; until: Date } {
   const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const from = new Date(until.getTime() - 24 * 3_600_000);
+  const from = new Date(until.getTime() - DAY_MS);
   return { day: from.toISOString().slice(0, 10), from, until };
 }
 
-/** A digest to send: to whom, and what it says. */
+/**
+ * The start of the first day a user's next digest covers: the day after the
+ * last day their latest digest covered, or the first of the 7 latest ended
+ * days, whichever is later; the end of the day that ended last when they have
+ * a digest for it already.
+ */
+function coverageStart(lastCovered: string | null, until: Date): Date {
+  const earliest = new Date(until.getTime() - DIGEST_DAYS * DAY_MS);
+  if (lastCovered === null) return earliest;
+  const after = new Date(Date.parse(`${lastCovered}T00:00:00Z`) + DAY_MS);
+  return after > earliest ? after : earliest;
+}
+
+/** A digest to send: to whom, what it says, and the first day it covers. */
 interface Digest {
   userId: string;
   email: string;
-  /** The day's updates, by request. */
+  /** The first UTC day it covers, YYYY-MM-DD. */
+  firstDay: string;
+  /** The days of the updates it lists, the first and the last. */
+  days: ReturnType<typeof serverDays>;
+  /** Its updates, by request. */
   byRequest: DigestRequest[];
   more: number;
   updates: number;
 }
 
-/** The digests of the day to send now: one per member with the digest on and an address, not sent yet, that has updates. */
-async function digestsOf(context: OrgContext, { day, from, until, installUrl }: { day: string; from: Date; until: Date; installUrl: string }): Promise<Digest[]> {
+/**
+ * The digests to send now: one per member with the digest on and an address,
+ * with none yet for the day that ended last, that has updates in the days
+ * since their last digest, at most the 7 latest.
+ */
+async function digestsOf(context: OrgContext, { until, installUrl }: { until: Date; installUrl: string }): Promise<Digest[]> {
   const { tx, orgId } = context;
   const recipients = await tx
     .select({ userId: users.id, email: users.email })
@@ -68,14 +101,21 @@ async function digestsOf(context: OrgContext, { day, from, until, installUrl }: 
     .innerJoin(members, and(eq(members.orgId, users.orgId), eq(members.userId, users.id)))
     .where(and(eq(users.orgId, orgId), eq(users.digestEnabled, true), isNotNull(users.email)))
     .orderBy(asc(users.id));
-  const sent = new Set(
-    (await tx.select({ userId: digestRecords.userId }).from(digestRecords).where(and(eq(digestRecords.orgId, orgId), eq(digestRecords.day, day)))).map(
-      ({ userId }) => userId,
-    ),
+  const lastCovered = new Map(
+    (
+      await tx
+        .select({ userId: digestRecords.userId, day: max(digestRecords.day) })
+        .from(digestRecords)
+        .where(eq(digestRecords.orgId, orgId))
+        .groupBy(digestRecords.userId)
+    ).map(({ userId, day }) => [userId, day]),
   );
   const digests: Digest[] = [];
   for (const { userId, email } of recipients) {
-    if (email === null || sent.has(userId)) continue;
+    if (email === null) continue;
+    const from = coverageStart(lastCovered.get(userId) ?? null, until);
+    // The day that ended last is covered already.
+    if (from >= until) continue;
     const { events, more } = await updatesBetween(context, { userId, scope: "whats_new", readers: "people", from, until, limit: 5_000 });
     // A question emailed to the user as it came is not repeated.
     const messageIds = events.map(({ data }) => data["messageId"]).filter((id): id is string => typeof id === "string");
@@ -92,6 +132,10 @@ async function digestsOf(context: OrgContext, { day, from, until, installUrl }: 
     const kept = events.filter(({ type, data }) => !(type === "request.message_posted" && emailed.has(String(data["messageId"]))));
     if (kept.length === 0) continue;
     const listed = kept.slice(0, DIGEST_UPDATES);
+    const [first, last] = [kept[0]?.occurredAt ?? from, kept.at(-1)?.occurredAt ?? from];
+    const days = serverDays(first, last);
+    // Over more than one day, each update's time names its day.
+    const withDay = serverDay(first) !== serverDay(last);
     const page = await updatesPageOf(context, { events: listed, more: false, cursor: 0, installUrl });
     const byRequest = new Map<string, DigestRequest & { updates: DigestRequest["updates"][number][] }>();
     for (const update of page.events) {
@@ -105,10 +149,10 @@ async function digestsOf(context: OrgContext, { day, from, until, installUrl }: 
         };
         byRequest.set(update.request.id, request);
       }
-      request.updates.push({ at: updateTime(update.occurredAt), type: eventTypeText(update.type), said: updateSaid(update) });
+      request.updates.push({ at: updateTime(update.occurredAt, { withDay }), type: eventTypeText(update.type), said: updateSaid(update) });
     }
     const beyond = kept.length - listed.length + (more ? 1 : 0);
-    digests.push({ userId, email, byRequest: [...byRequest.values()], more: beyond, updates: kept.length });
+    digests.push({ userId, email, firstDay: from.toISOString().slice(0, 10), days, byRequest: [...byRequest.values()], more: beyond, updates: kept.length });
   }
   return digests;
 }
@@ -124,30 +168,29 @@ export const emailDigests: WorkerJob<Record<string, never>> = {
   schedule: "5 * * * *",
   async handle(_job, { database, now, mailer, installUrl }) {
     if (mailer === undefined || !mailer.configured || installUrl === undefined) return;
-    const { day, from, until } = lastEndedDay(now());
+    const { day, until } = lastEndedDay(now());
     let digests: Digest[];
     try {
-      digests = await withOrg(database, (context) => digestsOf(context, { day, from, until, installUrl }), { readOnly: true });
+      digests = await withOrg(database, (context) => digestsOf(context, { until, installUrl }), { readOnly: true });
     } catch (error) {
       // Before setup there is no org, and so nobody to email.
       if (error instanceof SetupRequiredError) return;
       throw error;
     }
     for (const digest of digests) {
-      const dayText = serverDay(from);
-      const { userId, updates } = digest;
+      const { userId, updates, firstDay, days } = digest;
       await withOrg(database, async ({ tx, orgId }) => {
         const recorded = await tx
           .insert(digestRecords)
-          .values({ orgId, userId, day, sentAt: now(), updates })
+          .values({ orgId, userId, day, firstDay, sentAt: now(), updates })
           .onConflictDoNothing()
           .returning({ userId: digestRecords.userId });
         // Another run recorded it first, and sends it.
         if (recorded.length === 0) return;
         await mailer.send(digest.email, DIGEST, {
-          day: dayText,
+          days,
           text: digestText({
-            day: dayText,
+            days,
             byRequest: digest.byRequest,
             more: digest.more,
             inbox: installLink(installUrl, INBOX_PATH),
