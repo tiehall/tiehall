@@ -255,6 +255,7 @@ Each item below states its rule, why it wins, the alternatives that lost, and wh
   - **Rule.** `whats_new`, `tiehall updates`, the wait endpoint, the Claude Code hooks and the email digest leave out every event whose accountable human is the user themself, what they or their agents did; the request stays in their scope, so other people's events on it still reach them. The web inbox's update feed, which uses the same scope, leaves them out too.
   - **Why.** Today the Stop-hook waiter wakes Claude for its own writes, and the digest lists what the reader did; neither is news to them.
   - **Alternatives.** *Including them, as built:* every write of an agent wakes its own session. *Leaving the web inbox's feed as it is:* two scopes for one family of readers.
+  - **Narrowed** by item (4) of `findings-from-claude-code-run`, approved on 2026-10-12, which governs where both are built: `whats_new`, `tiehall updates`, the wait endpoint and the hooks leave out only what the user's agents did, and keep what the user did in the web UI, such as the confirmation of their agent's proposal, which "Proposal outcomes reach the proposing agent" needs to reach that agent; the web inbox's update feed and the digest leave out every event of the user, as above.
 - **D55 (44). A new reader starts where the web inbox is, and the hooks follow the furthest reader** [LOOP-02]. *The code and the spec change.*
   - **Rule.** A reader that has no cursor yet, such as a new MCP client of the user or the CLI's first login, starts at the user's web inbox cursor, not at 0. The hooks read the user's updates after the furthest of the cursors of the user's CLI and MCP clients on that install, so an acknowledgement through `whats_new` also quiets them; they still acknowledge nothing.
   - **Why.** Today a first install and each login replay the user's whole history, 50 at a time, and acknowledgements made through `whats_new` never reach the hooks, which keep announcing what the agent has handled.
@@ -685,7 +686,7 @@ This change is archived after `add-tiehall-oss-v1`, whose requirements it modifi
 40. An intake page under an old key answers 307, and its 401 names the MCP tool `directory`.
 41. A team's required fields also refuse a reassignment proposal into it and a packet revision that drops one, with contract reports exempt, and while a reassignment is pending a revision is held to the required fields of both teams.
 42. Other methods on a request URL get 404 `route-not-found`, a `POST` keeps its method across the 307 and gets a one-off `ETag`, and encoded unreserved characters name the same URL.
-43. The user's own events are left out of `whats_new`, `tiehall updates`, the wait endpoint, the hooks, the digest and the web inbox's update feed.
+43. The user's own events are left out of `whats_new`, `tiehall updates`, the wait endpoint, the hooks, the digest and the web inbox's update feed. Narrowed by item (4) of `findings-from-claude-code-run`: the first four keep what the user did in the web UI.
 44. A new reader starts at the user's web inbox cursor, and the hooks read after the furthest cursor of the user's CLI and MCP clients.
 45. A request stays in a user's updates once they have acted on it in any recorded way.
 46. Of a request to a user's team, only its opening and a reassignment into the team reach the user through the team.
