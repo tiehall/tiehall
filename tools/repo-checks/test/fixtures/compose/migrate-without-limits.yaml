@@ -1,0 +1,5 @@
+# Breaks the policy: the migrate step has no memory limit, and its process limit is unlimited.
+services:
+  migrate:
+    mem_limit: !reset null
+    pids_limit: -1

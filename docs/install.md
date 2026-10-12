@@ -49,6 +49,8 @@ docker compose up -d
 
 The app then answers on `127.0.0.1:3000` of the host, for a reverse proxy in front of it, or for your browser on a trial install at `http://localhost:3000`.
 
+`compose.yaml` limits the memory and the number of processes of Tiehall's own containers: the app to 2 GiB and 512 processes, and the `migrate` step to 512 MiB and 128 processes, several times what each uses. You may change these values, `mem_limit` and `pids_limit` of the `app` and `migrate` services in `compose.yaml`, for example to give a large install more memory; keep a limit on each.
+
 On a trial URL, `http://localhost` with or without a port, the browser sends the install's cookies, the setup session's and the web session's, to every server on `localhost`, whatever its port, and lets any of them set or overwrite those cookies: a browser keeps cookies by host, not by port, and over plain HTTP nothing keeps them to the install. A dev server or any other local service you open in the same browser could act with your session, or replace it. So run a trial in a browser profile that visits no other local server. An install that anyone else uses runs on HTTPS, with the `caddy` profile or your own reverse proxy.
 
 ### TLS with the caddy profile

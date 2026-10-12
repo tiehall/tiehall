@@ -12,7 +12,9 @@ import { OWNER_SENTINEL, roleOf, type ComposeModel, type ComposeService } from "
 //   owner credentials and looks for them in every other service;
 // - confined: migrate and the app run as a non-root user, on a read-only root
 //   filesystem with a tmpfs /tmp, with every capability dropped, none added,
-//   not privileged, and with no-new-privileges.
+//   not privileged, and with no-new-privileges; and each has a memory limit and
+//   a process limit (decisions-from-groups-15-28, D55 (55)), whose values an
+//   operator may change but not remove.
 
 export type PolicyRule = "ports" | "owner-secrets" | "confined";
 
@@ -120,6 +122,9 @@ function confinementProblems(definition: ComposeService): string[] {
   if (!securityOptions.some((option) => /^no-new-privileges(:true|=true)?$/.test(option))) {
     problems.push("can gain privileges (security_opt: no-new-privileges:true)");
   }
+  // Compose writes mem_limit in bytes; 0, as -1 for pids_limit, means no limit.
+  if (!(Number(definition["mem_limit"] ?? 0) > 0)) problems.push("has no memory limit (mem_limit)");
+  if (!(Number(definition["pids_limit"] ?? 0) > 0)) problems.push("has no process limit (pids_limit)");
   return problems;
 }
 

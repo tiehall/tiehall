@@ -140,6 +140,12 @@ describe("the install docs", () => {
 
   // A database on another host is reached over the network, so its connections use TLS that checks the server: the
   // example's URLs ask for it, and the docs say what it needs.
+  it("name the containers' memory and process limits as values an operator may change (decisions-from-groups-15-28, D55 (55))", () => {
+    const start = section("Start the install").replace(/\s+/g, " ");
+    expect(start).toContain("the app to 2 GiB and 512 processes, and the `migrate` step to 512 MiB and 128 processes");
+    expect(start).toContain("You may change these values, `mem_limit` and `pids_limit` of the `app` and `migrate` services in `compose.yaml`");
+  });
+
   it("connect to an external Postgres over TLS that checks the server's certificate and host name", () => {
     const external = (section("Start the install").split("### An external Postgres")[1] ?? "").split("\n## ")[0] ?? "";
     const urls = [...external.matchAll(/^TIEHALL_DATABASE_(?:OWNER|APP)_URL=(\S+)$/gm)].map(([, url]) => url ?? "");

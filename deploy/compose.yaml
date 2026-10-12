@@ -20,7 +20,9 @@ name: tiehall
 # How Tiehall's own containers run (self-host-install: Tiehall's containers
 # are confined): as the image's unprivileged user, on a read-only root
 # filesystem with a memory-backed /tmp, with no capabilities and no way to
-# gain privileges.
+# gain privileges. Each service below also limits its memory and its number of
+# processes, several times what it uses; you may change those values, but keep
+# a limit on each.
 x-confined: &confined
   user: "1000:1000"
   read_only: true
@@ -57,6 +59,8 @@ services:
   # Postgres, the two URLs name its owner and its app role.
   migrate:
     <<: *confined
+    mem_limit: 512m
+    pids_limit: 128
     image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE in .env to the Tiehall image, pinned by digest}
     command: [migrate]
     environment:
@@ -77,6 +81,8 @@ services:
   # port is published on 127.0.0.1 unless TIEHALL_HTTP_BIND says otherwise.
   app:
     <<: *confined
+    mem_limit: 2g
+    pids_limit: 512
     image: ${TIEHALL_IMAGE:?Set TIEHALL_IMAGE in .env to the Tiehall image, pinned by digest}
     command: [all]
     environment:

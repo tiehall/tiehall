@@ -3,7 +3,8 @@
 // database owner's credentials; self-host-install: `TIEHALL_URL` and TLS):
 // Postgres publishes no port, the app only one on 127.0.0.1 and only the
 // caddy profile 80 and 443; only migrate receives the database owner's
-// credentials; migrate and the app run confined. It reads each stack the way
+// credentials; migrate and the app run confined, each with a memory limit and
+// a process limit. It reads each stack the way
 // Docker Compose runs it, with Caddy's profile on and stand-ins for the
 // owner's credentials. By default it checks deploy/compose.yaml.
 // Usage: node tools/repo-checks/src/check-compose.ts [--stack file1,file2,...]...
@@ -39,7 +40,7 @@ for (const files of stacks.length > 0 ? stacks : DEFAULT_STACKS) {
   if (violations.length === 0) {
     console.log(
       `${label}: Postgres publishes no port, the app one port on 127.0.0.1 and only the caddy profile 80 and 443; ` +
-        "only migrate receives the database owner's credentials; migrate and app run confined.",
+        "only migrate receives the database owner's credentials; migrate and app run confined, with memory and process limits.",
     );
   }
   for (const { service, rule, detail } of violations) console.error(`${label}: ${service}: [${rule}] ${detail}`);
@@ -50,7 +51,8 @@ if (failed) {
   console.error(
     "\nPostgres and migrate publish no port, the app publishes only on 127.0.0.1, and only the caddy profile " +
       "publishes 80 and 443. Only migrate may receive the database owner's credentials. migrate and the app run " +
-      "as a non-root user, read-only, with a tmpfs /tmp, no capabilities and no-new-privileges.",
+      "as a non-root user, read-only, with a tmpfs /tmp, no capabilities and no-new-privileges, and each has a memory " +
+      "limit and a process limit.",
   );
   process.exitCode = 1;
 }

@@ -1,0 +1,5 @@
+# Breaks the policy: the app has no memory limit and no process limit.
+services:
+  app:
+    mem_limit: !reset null
+    pids_limit: !reset null

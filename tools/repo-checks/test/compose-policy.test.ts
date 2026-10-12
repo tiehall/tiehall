@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { composeConfig } from "../src/compose.ts";
 
 // The CI Compose policy check (tasks 2.9, 3.1 and 5.4; self-host-install:
 // Tiehall's containers are confined; self-host-install: Only the migrate step
@@ -72,13 +74,37 @@ describe("the Compose policy check", () => {
     ]);
   });
 
+  it("fails an app or a migrate step without its memory limit or its process limit (decisions-from-groups-15-28, D55 (55))", () => {
+    expect(violations("app-without-limits")).toEqual([
+      "app: [confined] has no memory limit (mem_limit)",
+      "app: [confined] has no process limit (pids_limit)",
+    ]);
+    expect(violations("migrate-without-limits")).toEqual([
+      "migrate: [confined] has no memory limit (mem_limit)",
+      "migrate: [confined] has no process limit (pids_limit)",
+    ]);
+  });
+
   it("passes the real self-host file, the only stack it checks by default", () => {
     const run = check();
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout.trim().split("\n")).toEqual([
       "deploy/compose.yaml: Postgres publishes no port, the app one port on 127.0.0.1 and only the caddy profile 80 and 443; " +
-        "only migrate receives the database owner's credentials; migrate and app run confined.",
+        "only migrate receives the database owner's credentials; migrate and app run confined, with memory and process limits.",
     ]);
+  });
+});
+
+describe("the release Compose file's limits", () => {
+  it("give the app 2 GiB and 512 processes, and the migrate step 512 MiB and 128", () => {
+    const { model, stderr } = composeConfig([join(repoRoot, selfHost)], { profiles: ["caddy"] });
+    expect(model, stderr).toBeDefined();
+    const limits = (service: string) => {
+      const definition = model?.services[service] ?? {};
+      return { memory: Number(definition["mem_limit"]), processes: definition["pids_limit"] };
+    };
+    expect(limits("app")).toEqual({ memory: 2 * 1024 ** 3, processes: 512 });
+    expect(limits("migrate")).toEqual({ memory: 512 * 1024 ** 2, processes: 128 });
   });
 });
