@@ -44,7 +44,7 @@ const DIFF_OPTIONS: Readonly<Record<string, string>> = {
   "--head": "The ref that makes the changes; HEAD unless given.",
   "--attach": "The key of a request to attach the classified changes to, as the contract section of its packet, such as FE-142.",
   "--if-match": "With --attach: the revision of the request's packet you expect to be current, as tiehall get shows it.",
-  "--pull-request": "The number of the provider pull request that makes the changes, which the contract section names; without it, the section names no pull request.",
+  "--pull-request": "The number of the provider pull request that makes the changes, which the contract section names; without it, the section names no pull request, which a contract-change request's packet does not take.",
   "--repository": "The pull request's repository, such as acme/payments; the one of the git remote origin unless given.",
 };
 

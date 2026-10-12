@@ -133,7 +133,8 @@ export const reportContractChanges = defineCommand({
 // developer runs `tiehall contract diff` on their own machine and attaches the
 // classified result to a request as the contract section of its packet, which
 // may name no provider pull request and no provider status, since the two refs
-// may be in no pull request yet (decisions-from-groups-15-28, D55 (63)). It
+// may be in no pull request yet (decisions-from-groups-15-28, D55 (63)), but
+// for a contract-change request's, which names both, or 400. It
 // needs the contracts:report scope, and follows the rules of packet changes:
 // only the requester side attaches; the call names the revision it expects,
 // which REST takes from If-Match, and a missing or stale one is refused as

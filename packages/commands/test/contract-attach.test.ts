@@ -201,6 +201,61 @@ describe("attaching a classified diff over REST", () => {
     expect(read.status).toBe(200);
   });
 
+  // A contract-change request's packet keeps its provider PR and status (handoff-packet: Packet fields; scenario "A
+  // contract-change packet keeps its PR"; decisions-from-groups-15-28, D55 (63)): a section attached to one that
+  // names neither is refused with 400, as a proposal too, and the revision stays. Agents of one user open at most 20
+  // requests within an hour, so these share a request where they can.
+  describe("to a contract-change request", () => {
+    /** A request to FE whose packet a report has made a contract-change one at revision 2, naming its provider PR. */
+    async function contractChange(): Promise<{ id: string; key: string }> {
+      const request = await openToFe();
+      await harness.install.owner.query(
+        `INSERT INTO packet_revisions (org_id, request_id, number, packet, actor_kind, surface)
+           SELECT org_id, request_id, 2, jsonb_set(jsonb_set(packet::jsonb, '{kind}', '"contract_change"'), '{untrusted,contract}', $2::jsonb)::json, 'system', 'github'
+             FROM packet_revisions WHERE request_id = $1 AND number = 1`,
+        [request.id, JSON.stringify(CONTRACT)],
+      );
+      return request;
+    }
+    const { provider_pr: _pr, provider_status: _status, ...withoutPullRequest } = CONTRACT;
+    /** The unclaimed contract-change request the refusals share, which none of them changes. */
+    let unclaimed: { id: string; key: string };
+
+    beforeAll(async () => {
+      unclaimed = await contractChange();
+    });
+
+    it.each([
+      ["no provider PR and no provider status", withoutPullRequest, ["provider_pr", "provider_status"]],
+      ["no provider PR", { ...withoutPullRequest, provider_status: "open" }, ["provider_pr"]],
+      ["no provider status", { ...withoutPullRequest, provider_pr: CONTRACT.provider_pr }, ["provider_status"]],
+    ])("refuses a section that names %s with 400, and adds no revision", async (_what, contract, missing) => {
+      const answer = await attachOverRest(deniz.token, unclaimed.key, { "if-match": '"2"' }, contract);
+
+      expect(answer.status).toBe(400);
+      expect(answer.body).toMatchObject({ type: `${PROBLEM}invalid-input`, status: 400 });
+      expect(answer.body.errors.map(({ path }: { path: string[] }) => path)).toEqual(missing.map((field) => ["contract", field]));
+      expect((await packetNow(unclaimed.key)).revision).toBe(2);
+    });
+
+    it("refuses one with no provider PR on a claimed request with 400 too, and proposes nothing, while one with its PR is proposed", async () => {
+      const request = await contractChange();
+      expect((await harness.api("POST", `/api/v1/requests/${request.key}/claim`, { authorization: `Bearer ${mehmet.token}` })).status).toBe(200);
+
+      const refused = await attachOverRest(deniz.token, request.key, { "if-match": '"2"' }, withoutPullRequest);
+
+      expect(refused.status).toBe(400);
+      expect(refused.body.type).toBe(`${PROBLEM}invalid-input`);
+      expect(await proposalCount(request.id)).toBe(0);
+      expect((await packetNow(request.key)).revision).toBe(2);
+
+      const proposed = await attachOverRest(deniz.token, request.key, { "if-match": '"2"' }, { ...CONTRACT, changes: changesOf("warning") });
+
+      expect(proposed.status).toBe(202);
+      expect(proposed.body.proposal).toMatchObject({ kind: "scope", state: "pending" });
+    });
+  });
+
   it("refuses a contract section that fails the packet's schema with 400", async () => {
     const request = await openToFe();
 
