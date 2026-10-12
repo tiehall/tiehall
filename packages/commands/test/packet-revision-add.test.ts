@@ -256,9 +256,11 @@ describe("what a revision may change", () => {
 // without the characters the agent view strips, such as the carriage returns of a web form's line breaks, which a
 // browser sends as CR LF, and the web UI shows the stored text, whose line breaks a browser sends back as CR LF; a
 // packet read and sent back with one more link changes only the links, so on a claimed request it is a revision at
-// once and not a scope proposal, and the stored need keeps what was written. Any other new value is stored as it was
-// sent: an edit that adds only characters the agent view strips, such as the zero-width non-joiner of a Persian word,
-// is a change, which on a claimed request is a scope proposal.
+// once and not a scope proposal, and the stored need keeps what was written. The web form's resend is the stored text
+// with each of its line breaks as CR LF, and nothing else. A lone CR is no line break, as in the agent view, which
+// removes it. Any other new value is stored as it was sent: an edit that adds only characters the agent view strips,
+// such as the zero-width non-joiner of a Persian word, the CR of a CR LF line break aside, is a change, which on a
+// claimed request is a scope proposal.
 describe("a packet sent back as it was read", () => {
   const written = "First line.\r\nSecond line.";
   const read = "First line.\nSecond line.";
@@ -358,6 +360,44 @@ describe("a packet sent back as it was read", () => {
     expect((await addRevision(alice, opened.key, packetWith({ extensions: extensions(3) }), '"1"')).status).toBe(200);
     const { rows } = await install.owner.query("SELECT packet->'untrusted'->'extensions' AS extensions FROM packet_revisions WHERE request_id = $1 ORDER BY number", [opened.id]);
     expect(rows.map(({ extensions }) => extensions)).toEqual([extensions(2), extensions(3)]);
+  });
+
+  // A lone CR is no line break: the agent view removes it and makes no line break of it, so a line break an agent
+  // adds where a lone CR is stored, which it could not see, is its own edit (decisions-from-groups-15-28, T5).
+  it("stores a line break that an agent adds where a lone CR is stored, which it reads as nothing", async () => {
+    const lone = "First line.\rSecond line.";
+    // Written as a line feed, or as CR LF, the line break is stored as it was sent.
+    for (const sent of ["First line.\nSecond line.", "First line.\r\nSecond line."]) {
+      const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: lone }) });
+      expect((await readPacket(alice, opened.key)).body.packet.untrusted.need).toBe("First line.Second line.");
+      expect((await addRevision(alice, opened.key, packetWith({ need: sent }), '"1"')).status).toBe(200);
+      expect(await storedNeeds(opened.id)).toEqual([lone, sent]);
+    }
+  });
+
+  it("makes a line break that an agent adds where a lone CR is stored a proposal on a claimed request", async () => {
+    const opened = await claimedWith("First line.\rSecond line.");
+    const answer = await addRevision(alice, opened.key, packetWith({ need: "First line.\nSecond line." }), '"1"');
+    expect(answer.status).toBe(202);
+    expect(answer.body).toMatchObject({ proposal: { kind: "scope", state: "pending" } });
+  });
+
+  // A lone CR sent in place of a line break removes the line break agents read, so it is a change too.
+  it("stores a lone CR sent where the stored need has a line break", async () => {
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: read }) });
+    expect((await addRevision(alice, opened.key, packetWith({ need: "First line.\rSecond line." }), '"1"')).status).toBe(200);
+    expect(await storedNeeds(opened.id)).toEqual([read, "First line.\rSecond line."]);
+  });
+
+  // The web form sends back the stored text with each of its line breaks as CR LF, and only that is its resend.
+  it("keeps a need whose line breaks the web form sends back as CR LF, the stored ones mixed", async () => {
+    const mixed = "First line.\r\nSecond line.\nThird line.";
+    const opened = await claimedWith(mixed);
+    expect(await changeInTheWebUi(opened.key, { need: "First line.\r\nSecond line.\r\nThird line.", links: "https://wiki.example.com/more" })).toEqual({
+      ok: true,
+      action: "change_packet",
+    });
+    expect(await storedNeeds(opened.id)).toEqual([mixed, mixed]);
   });
 
   it("still makes a change to the need that agents can read a proposal on a claimed request", async () => {

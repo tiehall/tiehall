@@ -34,16 +34,23 @@ import { assertRevisionKeepsRequiredFields, pendingReassignmentTeams, REQUIRED_F
 // revision has, or one that the team of a pending reassignment of the request
 // requires, is refused with 400 and creates nothing, and the reassignment
 // stays pending (decisions-from-groups-15-28: design.md, Decisions this change
-// rests on: D55 (41); required-fields.ts). A field whose new value is its current value
-// as it was read is no change and keeps its stored text: the value as agents
-// read it, without the characters the agent view strips, or the value with its
-// line breaks written another way, as a browser sends back the stored text a
-// form shows with CR LF. So a packet read and sent back changes only what its
-// sender changed. Any other value is stored as it was sent, so an edit that
-// adds only characters the agent view strips is a change (agent-safety:
-// Invisible characters are stripped from the agent view; handoff-packet: Open
-// objects, strict server; decisions-from-groups-15-28: design.md, Decisions
-// this change rests on: D55 (36); its design.md, Technical decisions: T5).
+// rests on: D55 (41); required-fields.ts).
+//
+// A field whose new value is its current value as it was read is no change
+// and keeps its stored text, and only such a value: the value as agents read
+// it, without the characters the agent view strips, with any of its line
+// breaks written as CR LF; or the stored value as the web UI's form shows it,
+// with each of its line breaks, LF or CR LF, written as CR LF, as a browser
+// sends a text area back. So a packet read and sent back changes only what its
+// sender changed. A lone CR is no line break, as in the agent view, which
+// removes it and makes no line break of it: a line break sent where a lone CR
+// is stored, which agents read as nothing, and a lone CR sent where a line
+// break is, are changes. Any other value is stored as it was sent, so an edit
+// that adds only characters the agent view strips, the CR of a CR LF line
+// break aside, is a change (agent-safety: Invisible characters are stripped
+// from the agent view; handoff-packet: Open objects, strict server;
+// decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (36); its design.md, Technical decisions: T5).
 //
 // What changed since revision N (handoff-packet: What changed since revision
 // N): the fields that differ between revision N and the current revision, and
@@ -131,23 +138,35 @@ function keptAsRead(current: Packet, packet: Packet): Packet {
 }
 
 /**
- * Whether a value sent is the stored one as it was read: with its line breaks
- * as line feeds, it is the stored value as agents read it, or the stored value
- * with its line breaks as line feeds. Any other value is not, such as one
- * that adds to the stored value only characters the agent view strips.
+ * Whether a value sent is the stored one as it was read: with its CR LF line
+ * breaks as line feeds, it is the stored value as agents read it; or it is the
+ * stored value with each of its line breaks written as CR LF, as the web UI's
+ * form sends it back. A lone CR is no line break in either: the agent view
+ * removes it, so one sent is never the value agents read, and one stored is
+ * nothing to them, not a line break. Any other value is not the stored one,
+ * such as one that adds to it only characters the agent view strips.
  */
 function readAs(value: unknown, stored: unknown): boolean {
-  const sent = withLineFeeds(value);
-  return sameJson(sent, agentJson(stored)) || sameJson(sent, withLineFeeds(stored));
+  return sameJson(withLineFeeds(value), agentJson(stored)) || sameJson(value, withCrLf(stored));
 }
 
-/** A JSON value with every line break of its strings, CR LF or a lone CR, written as a line feed; keys stay as they are. */
+/** A JSON value with each CR LF line break of its strings written as a line feed; a lone CR, which is no line break, stays, and keys stay as they are. */
 function withLineFeeds(value: unknown): unknown {
-  if (typeof value === "string") return value.replace(/\r\n?/g, "\n");
-  if (Array.isArray(value)) return value.map(withLineFeeds);
+  return eachString(value, (text) => text.replace(/\r\n/g, "\n"));
+}
+
+/** A JSON value with each line break of its strings, a line feed or CR LF, written as CR LF; a lone CR, which is no line break, stays, and keys stay as they are. */
+function withCrLf(value: unknown): unknown {
+  return eachString(value, (text) => text.replace(/\r?\n/g, "\r\n"));
+}
+
+/** A JSON value with each of its strings written anew; keys stay as they are. */
+function eachString(value: unknown, write: (text: string) => string): unknown {
+  if (typeof value === "string") return write(value);
+  if (Array.isArray(value)) return value.map((item) => eachString(item, write));
   if (value === null || typeof value !== "object") return value;
   // fromEntries defines each key as the object's own, so a key such as __proto__ in extensions stays a key.
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withLineFeeds(item)]));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, eachString(item, write)]));
 }
 
 /** The team a request is addressed to, by its id and its current key. */
