@@ -1,17 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_CLIENT_ID, createInboxRoute, INBOX_PATH, type WebSessionCaller } from "../src/index.ts";
+import { CLI_CLIENT_ID, createInboxRoute, expireProposals, INBOX_PATH, type WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, openRequestInTheWebUi, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
 
 // The web inbox's update feed (requester-loop: The web inbox; requester-loop:
 // The pull readers; requester-loop: What whats_new covers; design.md,
 // Decisions this change rests on: D28 #62; D29 (5); design.md, Design rules:
 // Requester loop). The feed lists the user's updates after the web inbox's own
 // cursor, from the whats_new scope plus the events on the requests whose
-// requesting team is one of the user's teams, and is acknowledged like any
-// pull reader: acknowledging it moves only the web inbox's cursor, never the
+// requesting team is one of the user's teams, without any event of the user's
+// own, what they did in the web UI or through their agents
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)), and is
+// acknowledged like any pull reader: acknowledging it moves only the web inbox's cursor, never the
 // cursor of the user's MCP client or CLI, and theirs never move it. The page
 // at /inbox shows the feed with each update in Tiehall's words, a link to its
 // request and the request's title as text, and a form that acknowledges the
@@ -171,5 +174,85 @@ describe("the web inbox page", () => {
     const { status, html } = await page(undefined);
     expect(status).toBe(303);
     expect(html).toBe("");
+  });
+});
+
+// requester-loop: What whats_new covers, "The user's confirmation in the web UI reaches their agent" and "The user's
+// answer in the web UI reaches their agent's readers"; requester-loop: Proposal outcomes reach the proposing agent, "A
+// withdrawal through the agent is not news to it", "The accountable human's own rejection reaches their agent only"
+// and "The other side's rejection reaches the web inbox" (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (43); findings-from-claude-code-run: design.md, Findings: F2 (4); design.md, Technical
+// decisions: T3). The feed, which people read, leaves out every event whose accountable human is the user, what they
+// did in the web UI included; another person's event on the same request, and a proposal's ending that another person
+// or the system made, are listed. These run last in the file: each first acknowledges the feed up to the install's
+// last event, and the last one's expiry ends every proposal still pending.
+describe("the user's own events", () => {
+  /** Acknowledges the user's feed up to the install's last event, so the next reads list only what comes after. */
+  async function caughtUp(session: WebSessionCaller): Promise<void> {
+    const { rows } = await install.owner.query<{ last: string }>("SELECT coalesce(max(number), 0) AS last FROM events");
+    const acknowledged = await install.web(session).write("inbox.updates", { acknowledge: Number(rows[0]?.last ?? 0) }, install.fromThePage(session));
+    if (!acknowledged.ok) throw new Error(`inbox.updates answered ${JSON.stringify(acknowledged.problem)}`);
+  }
+
+  /** The updates on the request in the feed, by their type and, for a message, the message's id. */
+  async function onRequest(session: WebSessionCaller, requestId: string): Promise<string[]> {
+    return (await feed(session)).events
+      .filter(({ data }) => data["requestId"] === requestId)
+      .map(({ type, data }) => (typeof data["messageId"] === "string" ? `${type}:${data["messageId"]}` : type));
+  }
+
+  async function post(caller: Parameters<typeof callApi>[1], key: string, message: Record<string, unknown>): Promise<string> {
+    const answer = await callApi(install, caller, "POST", `/api/v1/requests/${key}/messages`, message);
+    if (answer.status !== 200) throw new Error(`messages.post answered ${answer.status}: ${JSON.stringify(answer.body)}`);
+    return answer.body.message.id;
+  }
+
+  async function postInTheWebUi(session: WebSessionCaller, key: string, message: Record<string, unknown>): Promise<string> {
+    const result = await install.web(session).write<{ message: { id: string } }>("messages.post", { key, ...message }, install.fromThePage(session));
+    if (!result.ok) throw new Error(`messages.post answered ${JSON.stringify(result.problem)}`);
+    return result.output.message.id;
+  }
+
+  it("leaves out every event of the user, what they did in the web UI and through their agents, and lists another person's on the same request", async () => {
+    await caughtUp(lee);
+    const request = await openRequestInTheWebUi<{ id: string; key: string }>(install, lee.userId, { targetTeam: "OPS" });
+    await post(tokenOf(lee.userId), request.key, { kind: "comment", body: "The keys of staging only." });
+    expect((await callApi(install, tokenOf(oli.userId), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    const question = await post(tokenOf(oli.userId), request.key, { kind: "question", body: "Which region?" });
+    await postInTheWebUi(lee, request.key, { kind: "answer", body: "eu-west-1.", questionId: question });
+    expect(await onRequest(lee, request.id)).toEqual(["request.claimed", `request.message_posted:${question}`]);
+  });
+
+  it("leaves out how the user confirmed or ended a proposal, in the web UI or through their agent, and lists how the other side or the system ended one", async () => {
+    const request = await openRequest<{ id: string; key: string }>(install, tokenOf(lee.userId), { targetTeam: "FE" });
+    await caughtUp(dana);
+    const proposeDueDate = async (): Promise<string> => {
+      const answer = await sendApi(install, tokenOf(dana.userId), "POST", "/api/v1/proposals", { body: { kind: "due_date", key: request.key, dueDate: "2026-12-15" }, headers: { "if-match": '"1"' } });
+      if (answer.status !== 202) throw new Error(`proposals.propose answered ${answer.status}: ${JSON.stringify(answer.body)}`);
+      return answer.body.proposal.id;
+    };
+    const confirm = async (session: WebSessionCaller, proposal: string) => expect((await install.confirm(session, "proposals.confirm", { proposal })).status).toBe(200);
+    const reject = async (session: WebSessionCaller, proposal: string) =>
+      expect(await install.web(session).write("proposals.reject", { proposal }, install.fromThePage(session))).toMatchObject({ ok: true });
+    const withdrawn = await proposeDueDate();
+    expect((await callApi(install, tokenOf(dana.userId), "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: withdrawn })).status).toBe(200);
+    const decline = await callApi(install, tokenOf(dana.userId), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
+    expect(decline.status).toBe(202);
+    const rejectedByDana: string = decline.body.proposal.id;
+    await reject(dana, rejectedByDana);
+    const rejectedByLee = await proposeDueDate();
+    await confirm(dana, rejectedByLee);
+    await reject(lee, rejectedByLee);
+    const expired = await proposeDueDate();
+    await confirm(dana, expired);
+    await expireProposals.handle(
+      { id: "expire", queue: expireProposals.type.queue, data: {}, signal: new AbortController().signal },
+      { database: install.db, now: () => new Date(Date.now() + 8 * 24 * 3_600_000) },
+    );
+    const proposals = (await feed(dana)).events.filter(({ data }) => typeof data["proposalId"] === "string");
+    expect(proposals.map(({ type, data }) => [type, data["proposalId"], data["how"]])).toEqual([
+      ["proposal.ended", rejectedByLee, "rejected"],
+      ["proposal.ended", expired, "expired"],
+    ]);
   });
 });

@@ -82,7 +82,20 @@ const TOPICS: Topic[] = [
     topic: "the requester loop",
     page: "docs/requester-loop.md",
     heading: "Pull is the contract",
-    says: ["`whats_new`", "`tiehall updates`", "`/inbox`", "acknowledge", "`GET /api/v1/events/wait`", "60 seconds"],
+    says: [
+      "`whats_new`",
+      "`tiehall updates`",
+      "`/inbox`",
+      "acknowledge",
+      "`GET /api/v1/events/wait`",
+      "60 seconds",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (43); findings-from-claude-code-run:
+      // design.md, Findings: F2 (4).
+      "What you did yourself is not news to you",
+      "leave out what any of your agents did",
+      "keep what you did in the web UI",
+      "the web inbox's feed and the daily digest leave out everything you did",
+    ],
   },
   {
     topic: "the requester loop",

@@ -66,7 +66,7 @@ export const updatesInput = z.object({
 export const readUpdates = defineCommand({
   id: "updates.read",
   summary:
-    "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
+    "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first, without what any agent of yours did; what you did in the web UI is in them. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
   input: updatesInput,
   output: updatesPage,
   method: "POST",
@@ -128,13 +128,15 @@ export const waitForEvents = defineCommand({
  * The update feed of the web inbox (requester-loop: The web inbox;
  * requester-loop: What whats_new covers; design.md, Decisions this change
  * rests on: D29 (5)): whats_new's scope, plus the events on the requests
- * whose requesting team is one of the user's teams, read with the web inbox's
- * own cursor. Only the web UI reads it.
+ * whose requesting team is one of the user's teams, without any event of the
+ * user's own (decisions-from-groups-15-28: design.md, Decisions this change
+ * rests on: D55 (43); findings-from-claude-code-run: design.md, Findings: F2
+ * (4)), read with the web inbox's own cursor. Only the web UI reads it.
  */
 export const readInboxUpdates = defineCommand({
   id: "inbox.updates",
   summary:
-    "The update feed of your web inbox: the updates whats_new returns, plus those on the requests your teams requested, after the web inbox's own cursor, oldest first; pass the number of the last update you handled to acknowledge it first.",
+    "The update feed of your web inbox: the updates whats_new returns, plus those on the requests your teams requested, without anything you did yourself, after the web inbox's own cursor, oldest first; pass the number of the last update you handled to acknowledge it first.",
   input: updatesInput,
   output: updatesPage,
   scopes: [],

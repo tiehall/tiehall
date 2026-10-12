@@ -25,12 +25,36 @@ import type { OrgContext } from "./with-org.ts";
 //   request whose requesting team is one of the user's teams.
 // Events on every other request stay out, though every member may open those
 // requests. Security events are never updates, an admin's included: only
-// domain events are read. Reading moves nothing; the reader acknowledges an
-// update by its number, which moves its own cursor, one per user and client
+// domain events are read. Nor is what the user did themself news to them
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43), as findings-from-claude-code-run narrows it: design.md, Findings: F2
+// (4); design.md, Technical decisions: T3), and who reads decides which of it
+// stays out:
+// - the agents' readers, whats_new, `tiehall updates`, and the wait and the
+//   hooks that read through them, leave out every event that one of the
+//   user's agents made, recorded with the actor kind agent and the user as its
+//   accountable human, through MCP, the CLI or a personal access token, so
+//   that no agent is told of what it or another agent of its user did; what
+//   the user did in the web UI, such as their confirmation of their agent's
+//   proposal or an answer to a question, stays news to their agents;
+// - the readers people read, the web inbox's update feed and the daily digest,
+//   leave out every event whose accountable human is the user, what they did
+//   in the web UI included.
+// The request stays in the user's scope either way, so another person's event
+// on it, and one the system made, such as a proposal's expiry, still reaches
+// them. Reading moves nothing; the reader acknowledges an update by its
+// number, which moves its own cursor, one per user and client
 // (event-reads.ts), up to it and never back, and the next read follows it.
 
 /** Whose updates a reader serves: whats_new's, or the web inbox's update feed's, which adds the user's teams' requests. */
 export type UpdateScope = "whats_new" | "web_inbox";
+
+/**
+ * Who reads the updates, which decides which of the user's own events stay
+ * out: the agents' readers leave out what the user's agents did, and the
+ * readers people read every event of the user.
+ */
+export type UpdateReaders = "agents" | "people";
 
 /** How many updates a page holds, unless the reader asks for fewer. */
 export const UPDATES_PAGE_SIZE = 25;
@@ -72,15 +96,23 @@ function requestsOf(orgId: string, userId: string, scope: UpdateScope): SQL {
       SELECT r.id::text FROM requests r WHERE r.org_id = ${orgId} AND r.requesting_team_id::text IN (${teamsOf(orgId, userId)})`;
 }
 
-/** The condition that the event `e` is one of the user's updates in the scope. */
-function inScope(orgId: string, userId: string, scope: UpdateScope): SQL {
+/** The condition that the event `e` is not the user's own, as these readers count the user's own. */
+function notOwn(userId: string, readers: UpdateReaders): SQL {
+  return readers === "agents"
+    ? sql`(e.actor_kind <> 'agent' OR e.actor_user_id IS DISTINCT FROM ${userId})`
+    : sql`e.actor_user_id IS DISTINCT FROM ${userId}`;
+}
+
+/** The condition that the event `e` is one of the user's updates in the scope, for these readers. */
+function inScope(orgId: string, userId: string, scope: UpdateScope, readers: UpdateReaders): SQL {
   const teams = teamsOf(orgId, userId);
   return sql`e.org_id = ${orgId} AND e.class = 'domain'
        AND (
          e.data->>'requestId' IN (${requestsOf(orgId, userId, scope)})
          OR (e.type = 'request.opened' AND e.data->>'targetTeamId' IN (${teams}))
          OR (e.type = 'request.reassigned' AND e.data->>'teamId' IN (${teams}))
-       )`;
+       )
+       AND ${notOwn(userId, readers)}`;
 }
 
 /** Reads the events that meet a condition, oldest first, at most `limit` of them, and whether more follow. */
@@ -103,19 +135,19 @@ async function scopedEvents({ tx }: OrgContext, where: SQL, limit: number): Prom
 /** The user's updates after a number, oldest first, at most `limit` of them, and whether more follow. */
 export async function updatesAfter(
   context: OrgContext,
-  { userId, scope, after, limit }: { userId: string; scope: UpdateScope; after: number; limit: number },
+  { userId, scope, readers, after, limit }: { userId: string; scope: UpdateScope; readers: UpdateReaders; after: number; limit: number },
 ): Promise<{ events: ScopedEvent[]; more: boolean }> {
-  return scopedEvents(context, sql`${inScope(context.orgId, userId, scope)} AND e.number > ${after}`, limit);
+  return scopedEvents(context, sql`${inScope(context.orgId, userId, scope, readers)} AND e.number > ${after}`, limit);
 }
 
 /** The user's updates that happened from one time until another, oldest first, at most `limit` of them, and whether more follow. */
 export async function updatesBetween(
   context: OrgContext,
-  { userId, scope, from, until, limit }: { userId: string; scope: UpdateScope; from: Date; until: Date; limit: number },
+  { userId, scope, readers, from, until, limit }: { userId: string; scope: UpdateScope; readers: UpdateReaders; from: Date; until: Date; limit: number },
 ): Promise<{ events: ScopedEvent[]; more: boolean }> {
   return scopedEvents(
     context,
-    sql`${inScope(context.orgId, userId, scope)} AND e.occurred_at >= ${from.toISOString()}::timestamptz AND e.occurred_at < ${until.toISOString()}::timestamptz`,
+    sql`${inScope(context.orgId, userId, scope, readers)} AND e.occurred_at >= ${from.toISOString()}::timestamptz AND e.occurred_at < ${until.toISOString()}::timestamptz`,
     limit,
   );
 }
@@ -152,11 +184,13 @@ export async function updatesPageOf(
 
 /**
  * A pull reader's answer for the caller's client: its cursor moved up to
- * `acknowledge` first, when given, then the updates in the scope after it.
+ * `acknowledge` first, when given, then the updates in the scope after it,
+ * for these readers.
  */
 export async function readUpdatesFor(
   context: HandlerContext,
   scope: UpdateScope,
+  readers: UpdateReaders,
   { acknowledge, limit }: { acknowledge?: number | undefined; limit?: number | undefined },
 ): Promise<UpdatesPage> {
   const userId = actingUserOf(context);
@@ -164,12 +198,14 @@ export async function readUpdatesFor(
   const cursor = acknowledge === undefined ? await cursorOf(context, userId, reader) : await acknowledgeUpTo(context, userId, reader, acknowledge);
   const installUrl = context.url;
   if (installUrl === undefined) throw new Error("The pull readers name each request's URL, so they run only where the install's URL is known.");
-  const { events, more } = await updatesAfter(context, { userId, scope, after: cursor, limit: limit ?? UPDATES_PAGE_SIZE });
+  const { events, more } = await updatesAfter(context, { userId, scope, readers, after: cursor, limit: limit ?? UPDATES_PAGE_SIZE });
   return updatesPageOf(context, { events, more, cursor, installUrl });
 }
 
 export const UPDATE_HANDLERS: Handlers = {
-  [readUpdates.id]: defineHandler(readUpdates, (input, context) => readUpdatesFor(context, "whats_new", input)),
-  // The web UI reads as the web session, whose client is the web inbox, so it reads and moves the web inbox's own cursor.
-  [readInboxUpdates.id]: defineHandler(readInboxUpdates, (input, context) => readUpdatesFor(context, "web_inbox", input)),
+  // whats_new and `tiehall updates`, which the hooks read too, are the agents' reader.
+  [readUpdates.id]: defineHandler(readUpdates, (input, context) => readUpdatesFor(context, "whats_new", "agents", input)),
+  // The web UI reads as the web session, whose client is the web inbox, so it reads and moves the web inbox's own
+  // cursor; people read it.
+  [readInboxUpdates.id]: defineHandler(readInboxUpdates, (input, context) => readUpdatesFor(context, "web_inbox", "people", input)),
 };

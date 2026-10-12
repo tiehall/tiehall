@@ -672,7 +672,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
   {
     "command": "updates",
     "operationId": "updates.read",
-    "summary": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
+    "summary": "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first, without what any agent of yours did; what you did in the web UI is in them. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
     "method": "POST",
     "path": "/api/v1/updates",
     "stability": "beta",

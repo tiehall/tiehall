@@ -14,7 +14,10 @@ import { updatesAfter, updatesPageOf } from "./updates.ts";
 // #59; design.md, Technical decisions: T15). It takes a cursor, the reader's
 // own unless the call names one, and answers as soon as an update in the
 // user's whats_new scope comes after it, the one the wait's reader, such as
-// the Claude Code hooks through the CLI, pulls next: each entry is the
+// the Claude Code hooks through the CLI, pulls next, so a write of one of the
+// user's agents ends no wait, and what the user did in the web UI does
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)): each entry is the
 // update's seq and type, its request's key, the key of the request's target
 // team and the request's URL, ids and Tiehall's own text only, and the cursor
 // is the last entry's seq. Otherwise it holds the call at most 60 seconds and
@@ -85,7 +88,7 @@ async function waitStep({ cursor: given }: { cursor?: number | undefined }, cont
     const wake = wakeups?.next();
     try {
       const found = await context.read(async (read) => {
-        const { events } = await updatesAfter(read, { userId, scope: "whats_new", after: cursor, limit: WAIT_ENTRIES });
+        const { events } = await updatesAfter(read, { userId, scope: "whats_new", readers: "agents", after: cursor, limit: WAIT_ENTRIES });
         return (await updatesPageOf(read, { events, more: false, cursor, installUrl })).events;
       });
       if (found.length > 0) {

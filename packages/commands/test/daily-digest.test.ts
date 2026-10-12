@@ -7,6 +7,7 @@ import {
   emailDigests,
   emailQuestion,
   emailReceipts,
+  expireProposals,
   notifyWaitingProposals,
   openMailer,
   type Mailer,
@@ -14,7 +15,7 @@ import {
 } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, openRequest, openRequestInTheWebUi, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
 
 // The daily digest (requester-loop: Email for people, only when SMTP is set;
 // agent-safety: The needs_human flag is visible and reaches the people on the
@@ -24,7 +25,10 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // emailed right away, the needs_human events included, is gathered into one
 // digest email per UTC day, sent once that day has ended, to the primary
 // verified address of the user's GitHub account; a question already emailed
-// to the person it was asked of is left out. Users turn the digest off in
+// to the person it was asked of is left out, and so is every event of the
+// user's own, what they did in the web UI or through their agents
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)). Users turn the digest off in
 // their email settings in the web UI, where no setting stops transactional
 // email: proposal notices, receipts and the questions asked of them still come.
 // Without SMTP, nothing is sent. The digest holds only Tiehall's words and the
@@ -43,6 +47,8 @@ beforeAll(async () => {
   install = await startTestInstall();
   const be = await addTeam(install.owner, "BE");
   const fe = await addTeam(install.owner, "FE");
+  // Eve is alone in OPS, so that no other test's request reaches Eve's digest of the day.
+  const ops = await addTeam(install.owner, "OPS");
   for (const [login, team] of [
     ["sam", be],
     ["lee", be],
@@ -50,8 +56,11 @@ beforeAll(async () => {
     ["ann", be],
     ["ned", be],
     ["joe", be],
+    ["max", be],
+    ["zoe", be],
     ["dana", fe],
     ["bob", fe],
+    ["eve", ops],
   ] as const) {
     person[login] = await addUser(install.owner, { login });
     await joinTeams(install.owner, person[login] ?? "", team);
@@ -199,6 +208,79 @@ describe("with SMTP set", () => {
     const { day, after } = await dayOf(request.id);
     await runJob(emailDigests, after);
     expect(emailsTo("ann").map(({ subject }) => subject)).not.toContain(digestSubject(day));
+  });
+});
+
+// requester-loop: Email for people, only when SMTP is set; requester-loop: What whats_new covers, "The user's answer in
+// the web UI reaches their agent's readers"; requester-loop: Proposal outcomes reach the proposing agent
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4); design.md, Technical decisions: T3). The digest,
+// which people read, leaves out every event whose accountable human is the user, what they did in the web UI
+// included, and lists another person's events and the endings of proposals that another person or the system made.
+describe("the user's own events", () => {
+  async function postInTheWebUi(login: string, key: string, message: Record<string, unknown>): Promise<string> {
+    const session = sessionOf(id(login));
+    const result = await install.web(session).write<{ message: { id: string } }>("messages.post", { key, ...message }, install.fromThePage(session));
+    if (!result.ok) throw new Error(`messages.post answered ${JSON.stringify(result.problem)}`);
+    return result.output.message.id;
+  }
+
+  /** The text of the user's digest of the day, which must have been sent. */
+  function digestTo(login: string, day: string): string {
+    const digest = emailsTo(login).find(({ subject }) => subject === digestSubject(day));
+    if (digest === undefined) throw new Error(`${login} got no digest of ${day}.`);
+    return digest.text;
+  }
+
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  it("leaves out every event of the user, what they did in the web UI and through their agents, and lists another person's on the same request", async () => {
+    const request = await openRequest(install, tokenOf(id("max")), { targetTeam: "FE" });
+    expect((await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    await post("max", request.key, { kind: "comment", body: INJECTION });
+    await postInTheWebUi("max", request.key, { kind: "comment", body: INJECTION });
+    await post("dana", request.key, { kind: "comment", body: INJECTION });
+    await runImmediateEmails();
+    const { day, after } = await dayOf(request.id);
+    await runJob(emailDigests, after);
+    const text = digestTo("max", day);
+    expect(text).toContain("request.claimed: it was claimed");
+    expect(count(text, "a comment was posted")).toBe(1);
+    expect(text).not.toContain("request.opened");
+    expect(text).toContain("2 updates");
+  });
+
+  it("leaves out how the user confirmed or ended a proposal, and lists how the other side or the system ended one", async () => {
+    const request = await openRequestInTheWebUi<{ id: string; key: string }>(install, id("zoe"), { targetTeam: "OPS" });
+    const proposeDueDate = async (): Promise<string> => {
+      const answer = await sendApi(install, tokenOf(id("eve")), "POST", "/api/v1/proposals", { body: { kind: "due_date", key: request.key, dueDate: "2026-12-15" }, headers: { "if-match": '"1"' } });
+      if (answer.status !== 202) throw new Error(`proposals.propose answered ${answer.status}: ${JSON.stringify(answer.body)}`);
+      return answer.body.proposal.id;
+    };
+    const confirm = async (login: string, proposal: string) => expect((await install.confirm(sessionOf(id(login)), "proposals.confirm", { proposal })).status).toBe(200);
+    const reject = async (login: string, proposal: string) => {
+      const session = sessionOf(id(login));
+      expect(await install.web(session).write("proposals.reject", { proposal }, install.fromThePage(session))).toMatchObject({ ok: true });
+    };
+    const withdrawn = await proposeDueDate();
+    expect((await callApi(install, tokenOf(id("eve")), "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: withdrawn })).status).toBe(200);
+    const decline = await callApi(install, tokenOf(id("eve")), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
+    expect(decline.status).toBe(202);
+    await reject("eve", decline.body.proposal.id);
+    const rejectedByZoe = await proposeDueDate();
+    await confirm("eve", rejectedByZoe);
+    await reject("zoe", rejectedByZoe);
+    const expired = await proposeDueDate();
+    await confirm("eve", expired);
+    await runJob(expireProposals, new Date(Date.now() + 8 * 24 * 3_600_000));
+    await runImmediateEmails();
+    const { day, after } = await dayOf(request.id);
+    await runJob(emailDigests, after);
+    const text = digestTo("eve", day);
+    const ended = text.split("\n").filter((line) => line.includes("ended without taking effect"));
+    expect(ended).toEqual([expect.stringContaining("ended without taking effect: rejected"), expect.stringContaining("ended without taking effect: expired")]);
+    expect(text).not.toContain("proposal.created");
+    expect(text).not.toContain("proposal.confirmed");
   });
 });
 

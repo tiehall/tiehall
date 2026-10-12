@@ -5,7 +5,7 @@ import { WAIT_HANDLERS } from "../src/events-wait.ts";
 import { CLI_CLIENT_ID, WAIT_HOLD_MS, type Caller, type PrepareContext } from "../src/index.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
-import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
+import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, openRequestInTheWebUi, sessionOf, tokenOf } from "./support/requests.ts";
 
 // The long-poll wait endpoint (requester-loop: The long-poll wait endpoint;
 // requests: Readers get only domain events they may see; self-host-install: A
@@ -92,7 +92,8 @@ describe("a wait", () => {
   // requester-loop: The long-poll wait endpoint, "An update is already waiting".
   it("answers at once when an update in the user's scope already waits after the cursor, with ids and server text only", async () => {
     const cursor = await lastNumber();
-    const request = await openRequest(install, tokenOf(id("sam")), { targetTeam: "FE", title: QUESTION });
+    // Sam opens it in the web UI: a write of Sam's agent would be no update of Sam's.
+    const request = await openRequestInTheWebUi(install, id("sam"), { targetTeam: "FE", title: QUESTION });
     await post("dana", request.key, QUESTION);
     const started = Date.now();
     const answer = await wait(cliOf("sam"), cursor);
@@ -119,6 +120,46 @@ describe("a wait", () => {
     expect(answer.at - posted).toBeLessThan(1_000);
     expect(answer.status).toBe(200);
     expect(answer.body.events).toEqual([{ seq: expect.any(Number), type: "request.message_posted", requestKey: request.key, teamKey: "FE", url: `${URL_OF_INSTALL}/${request.key}` }]);
+    expect(JSON.stringify(answer.body)).not.toContain("Ignore previous");
+  });
+
+  // requester-loop: The long-poll wait endpoint, "The user's own write does not end a wait"
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (43); findings-from-claude-code-run:
+  // design.md, Findings: F2 (4)).
+  it("is not woken by a write of one of the user's agents on a request the user claimed, and holds until it times out", async () => {
+    const request = await openRequest(install, tokenOf(id("sam")), { targetTeam: "FE" });
+    expect((await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    const cursor = await lastNumber();
+    const started = Date.now();
+    const waiting = wait(cliOf("dana"), cursor);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const comment = await callApi(install, oauthTokenOf(id("dana"), "https://agent.example/client.json", "mcp"), "POST", `/api/v1/requests/${request.key}/messages`, {
+      kind: "comment",
+      body: "Looking into it.",
+    });
+    expect(comment.status).toBe(200);
+    const answer = await waiting;
+    expect(answer.at - started).toBeGreaterThanOrEqual(HOLD_MS - 50);
+    expect(answer).toMatchObject({ status: 200, body: { events: [], cursor } });
+  });
+
+  // requester-loop: What whats_new covers, "The user's answer in the web UI reaches their agent's readers"
+  // (findings-from-claude-code-run: design.md, Findings: F2 (4)).
+  it("is woken by what the user did in the web UI, such as their answer to a question on a request they opened", async () => {
+    const request = await openRequestInTheWebUi(install, id("sam"), { targetTeam: "FE" });
+    const asked = await callApi(install, tokenOf(id("dana")), "POST", `/api/v1/requests/${request.key}/messages`, { kind: "question", body: QUESTION, blocking: true });
+    expect(asked.status).toBe(200);
+    const waiting = wait(cliOf("sam"), await lastNumber());
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const session = sessionOf(id("sam"));
+    const answered = await install.web(session).write("messages.post", { key: request.key, kind: "answer", body: QUESTION, questionId: asked.body.message.id }, install.fromThePage(session));
+    expect(answered.ok).toBe(true);
+    const answer = await waiting;
+    expect(answer.status).toBe(200);
+    // The answer, and the state change back from needs_info that it made.
+    expect(answer.body.events).toEqual(
+      ["request.message_posted", "request.state_changed"].map((type) => ({ seq: expect.any(Number), type, requestKey: request.key, teamKey: "FE", url: `${URL_OF_INSTALL}/${request.key}` })),
+    );
     expect(JSON.stringify(answer.body)).not.toContain("Ignore previous");
   });
 

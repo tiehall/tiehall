@@ -18,7 +18,12 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sendApi, sessio
 // they confirmed it and it waited for the other side. With SMTP set, no email
 // is sent for an ending right away: the email jobs the worker runs each minute,
 // the proposal notices and the receipts, send nothing about it, and the
-// accountable human learns of it by pull.
+// accountable human learns of it by pull. The proposal's creation, which the
+// user's own agent made, is never news to the user's agents
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)), while
+// what the user did in the web UI, such as a confirmation or a withdrawal
+// there, is.
 
 let install: TestInstall;
 let clock = new Date("2026-10-01T09:00:00Z");
@@ -127,7 +132,7 @@ it("a confirmed decline reaches the proposing user's whats_new, and only its rec
   expect(emailsTo("dana")).toEqual([`Tiehall: a proposal on ${request.key} waits for your confirmation`]);
   await confirm("dana", proposal);
   await runEmailJobs();
-  expect(await outcomesIn("dana", proposal)).toEqual(["proposal.created", "confirmed:accountable_human:true"]);
+  expect(await outcomesIn("dana", proposal)).toEqual(["confirmed:accountable_human:true"]);
   expect(emailsTo("dana")).toEqual([
     `Tiehall: a proposal on ${request.key} waits for your confirmation`,
     `Tiehall: receipt for your confirmation on ${request.key}`,
@@ -141,7 +146,7 @@ it("both confirmations of a two-sided due date reach the proposing user's whats_
   const proposal = await proposeDueDate("dana", request.key);
   await confirm("dana", proposal);
   await confirm("sam", proposal);
-  expect(await outcomesIn("dana", proposal)).toEqual(["proposal.created", "confirmed:accountable_human:false", "confirmed:other_side:true"]);
+  expect(await outcomesIn("dana", proposal)).toEqual(["confirmed:accountable_human:false", "confirmed:other_side:true"]);
 });
 
 describe("an ending", () => {
@@ -157,7 +162,7 @@ describe("an ending", () => {
     await inTheWebUi("sam", "proposals.reject", { proposal });
     at("2026-10-03T10:01:00Z");
     await runEmailJobs();
-    expect(await outcomesIn("dana", proposal)).toEqual(["proposal.created", "confirmed:accountable_human:false", "ended:rejected"]);
+    expect(await outcomesIn("dana", proposal)).toEqual(["confirmed:accountable_human:false", "ended:rejected"]);
     expect(sink.messages.length).toBe(before);
   });
 
@@ -182,7 +187,7 @@ describe("an ending", () => {
     );
     at("2026-10-08T09:01:00Z");
     await runEmailJobs();
-    expect(await outcomesIn("alice", proposal)).toEqual(["proposal.created", "confirmed:accountable_human:false", "ended:expired"]);
+    expect(await outcomesIn("alice", proposal)).toEqual(["confirmed:accountable_human:false", "ended:expired"]);
     expect(emailsTo("alice")).toEqual(toAlice);
     expect(sink.messages.length).toBe(before);
   });
@@ -198,8 +203,8 @@ describe("an ending", () => {
     const decline = await callApi(install, tokenOf(id("bob")), "POST", `/api/v1/requests/${request.key}/status`, { state: "declined" });
     await confirm("bob", decline.body.proposal.id);
     await runEmailJobs();
-    expect(await outcomesIn("dana", withdrawn)).toEqual(["proposal.created", "ended:withdrawn"]);
-    expect(await outcomesIn("sam", cancelled)).toEqual(["proposal.created", "ended:cancelled"]);
+    expect(await outcomesIn("dana", withdrawn)).toEqual(["ended:withdrawn"]);
+    expect(await outcomesIn("sam", cancelled)).toEqual(["ended:cancelled"]);
     // The decline's own notice and receipt go to Bob, who confirmed it; nothing is emailed about the endings.
     expect(sink.messages.slice(before).map(({ to }) => to.join(","))).toEqual(sink.messages.slice(before).map(() => "bob@acme.example"));
   });

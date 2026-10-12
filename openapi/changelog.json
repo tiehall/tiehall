@@ -46,6 +46,15 @@
         "directory.get"
       ],
       "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A registered API whose consumers would take even a page that begins with it past the 32,000 characters goes on from one page to the next: the page ends inside its consumers, where the API carries continuedOnNextPage, and the next page begins with the same API, carrying continuedFromPreviousPage, and the consumers after the last one listed, so none is left out; a team whose intakeNotesWrittenBy would do the same goes on the same way. A team's intake notes hold at most 4,000 characters."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "note",
+      "operationIds": [
+        "updates.read",
+        "events.wait"
+      ],
+      "text": "POST /api/v1/updates, which whats_new and tiehall updates run, and GET /api/v1/events/wait now leave out every event that one of your own agents made, through MCP, the CLI or a personal access token, so an agent is never told of what it or another agent of yours did. What you did in the web UI, such as confirming your agent's proposal or answering a question, is still in them."
     }
   ],
   "releases": []

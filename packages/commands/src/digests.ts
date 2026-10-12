@@ -28,7 +28,10 @@ import type { WorkerJob } from "./worker.ts";
 // last. Each member with the digest on and an address, whose digest for that
 // day has not gone out yet, gets one email that gathers their updates of that
 // day, those whats_new returns, from the needs_human events to how proposals
-// ended: every update except a question that was emailed to them at once. The
+// ended: every update except a question that was emailed to them at once, and
+// except every event of their own, what they did in the web UI included
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)). The
 // email goes to the primary verified address of their GitHub account, and the
 // worker records that it went in the transaction that sends it, so each day's
 // digest goes out at most once: a record already there sends nothing, a send
@@ -73,7 +76,7 @@ async function digestsOf(context: OrgContext, { day, from, until, installUrl }: 
   const digests: Digest[] = [];
   for (const { userId, email } of recipients) {
     if (email === null || sent.has(userId)) continue;
-    const { events, more } = await updatesBetween(context, { userId, scope: "whats_new", from, until, limit: 5_000 });
+    const { events, more } = await updatesBetween(context, { userId, scope: "whats_new", readers: "people", from, until, limit: 5_000 });
     // A question emailed to the user as it came is not repeated.
     const messageIds = events.map(({ data }) => data["messageId"]).filter((id): id is string => typeof id === "string");
     const emailed = new Set(

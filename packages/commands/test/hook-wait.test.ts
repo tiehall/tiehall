@@ -14,7 +14,11 @@ import { openRequestInTheWebUi } from "./support/requests.ts";
 // shortened here, as the install's settings allow a test to. The waiter wakes
 // Claude, with code 2, for a question on a request its user opened, with only
 // the key, the event type, the team and the URL, and a question on a request
-// its user has no part in does not wake it.
+// its user has no part in does not wake it. Nor does a write of one of its
+// user's agents, while what its user did in the web UI, such as an answer to
+// a question, wakes it (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (43); findings-from-claude-code-run: design.md,
+// Findings: F2 (4)).
 
 /** How long a wait holds here, instead of 60 seconds. */
 const HOLD_MS = 1_500;
@@ -43,10 +47,11 @@ afterAll(async () => {
   await harness?.close();
 });
 
-/** Posts a question as the person, in the web UI. */
-async function ask(person: McpPerson, key: string, body = QUESTION): Promise<void> {
-  const result = await harness.install.web(person.session).write("messages.post", { key, kind: "question", body }, harness.install.fromThePage(person.session));
+/** Posts a question as the person, in the web UI; returns its id. */
+async function ask(person: McpPerson, key: string, body = QUESTION): Promise<string> {
+  const result = await harness.install.web(person.session).write<{ message: { id: string } }>("messages.post", { key, kind: "question", body }, harness.install.fromThePage(person.session));
   if (!result.ok) throw new Error(`messages.post answered ${JSON.stringify(result.problem)}`);
+  return result.output.message.id;
 }
 
 /** Starts `tiehall hook wait` on Sam's machine, as the Stop hook runs it at the end of a turn of this session. */
@@ -106,5 +111,30 @@ describe("tiehall hook wait", () => {
     expect(run.stderr).not.toContain("Ignore previous");
     // It kept waiting through the holds that ended empty, one call after the other.
     expect(waited() - calls).toBeGreaterThanOrEqual(2);
+  }, 60_000);
+
+  // requester-loop: The long-poll wait endpoint, "The user's own write does not end a wait"; requester-loop: What
+  // whats_new covers, "The user's answer in the web UI reaches their agent's readers".
+  it("is not woken by a write of its user's agent, and wakes for its user's answer in the web UI", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    const question = await ask(dana, request.key);
+    await acknowledgeEverything(samCli);
+    const calls = waited();
+    const ended = waiter("session-own-write");
+    let exited = false;
+    void ended.then(() => (exited = true));
+    await untilWaited(calls + 1);
+    // Sam's agent comments through MCP, with Sam's token.
+    const comment = await harness.api("POST", `/api/v1/requests/${request.key}/messages`, { authorization: `Bearer ${sam.token}` }, { kind: "comment", body: "Looking at it." });
+    expect(comment.status).toBe(200);
+    // Two holds pass: a wake-up for that comment would have ended the wait by now.
+    await realSleep(HOLD_MS * 2);
+    expect(exited).toBe(false);
+    const answered = await harness.install.web(sam.session).write("messages.post", { key: request.key, kind: "answer", body: "The last two versions.", questionId: question }, harness.install.fromThePage(sam.session));
+    expect(answered.ok).toBe(true);
+    const run = await ended;
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain(`${request.key} request.message_posted (team FE) ${URL_OF_INSTALL}/${request.key}\n`);
+    expect(run.stderr.split("\n").filter((line) => line !== "")).toHaveLength(2);
   }, 60_000);
 });
