@@ -1,5 +1,5 @@
 import { listApis, registerApi, setWarnSwitch, unregisterApi, type registeredApi } from "@tiehall/catalog";
-import { apiRegistered, apiUnregistered, Refusal } from "@tiehall/core";
+import { apiConsumerRemoved, apiRegistered, apiUnregistered, Refusal } from "@tiehall/core";
 import { apiConsumers, apis, githubCoveredRepositories, githubInstallations, teams, users } from "@tiehall/db";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
@@ -54,7 +54,8 @@ import type { OrgContext } from "./with-org.ts";
 // and its provider team are the ones it had does it keep the declarations that
 // teams consume it, and its WARN switch; otherwise it is a new API
 // (decisions-from-groups-15-28, D55 (56)): the earlier declarations are
-// removed with the registration, so the consuming teams declare it again, and
+// removed with the registration, each removal a domain event the admin made
+// (D55 (60)), so the consuming teams declare it again, and
 // its WARN switch starts off, as a new API's does. Teams declared that they
 // consume an API one team serves from one repository; a registration that
 // moves the name must not route another codebase's changes to them.
@@ -253,9 +254,18 @@ export const API_HANDLERS: Handlers = {
         .returning({ id: apis.id });
       // Another registration took the name since it was read.
       if (row === undefined) throw taken();
-      // Bound to another team or repository, it is a new API, to which the earlier declarations do not carry over.
-      if (anew) await writer.tx.delete(apiConsumers).where(and(eq(apiConsumers.orgId, writer.orgId), eq(apiConsumers.apiId, row.id)));
+      // Bound to another team or repository, it is a new API, to which the earlier declarations do not carry over;
+      // each removal is a change to the consumer map, which the admin made (D55 (60)).
+      const dropped = anew
+        ? await writer.tx
+            .delete(apiConsumers)
+            .where(and(eq(apiConsumers.orgId, writer.orgId), eq(apiConsumers.apiId, row.id)))
+            .returning({ teamId: apiConsumers.teamId })
+        : [];
       await writer.record(apiRegistered, { apiId: row.id, providerTeamId: team });
+      for (const { teamId } of dropped.sort((a, b) => a.teamId.localeCompare(b.teamId))) {
+        await writer.record(apiConsumerRemoved, { apiId: row.id, teamId });
+      }
       return row.id;
     });
     const [api] = await registeredApis(context, id);

@@ -197,7 +197,7 @@ const TOPICS: Topic[] = [
     topic: "the consumer map",
     page: "docs/contract-changes.md",
     heading: "The consumer map",
-    says: ["`/teams/apis`", "90 days", "stale", "WARN"],
+    says: ["`/teams/apis`", "90 days", "stale", "WARN", "recorded in the activity log"],
   },
   {
     topic: "the Action with its runner notes and SHA pinning",

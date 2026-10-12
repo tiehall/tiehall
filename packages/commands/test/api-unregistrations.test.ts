@@ -261,8 +261,15 @@ describe("registering an unregistered API's name again (decisions-from-groups-15
     ["another repository", () => ({ team: pay, repository: "acme/web" })],
     ["another provider team", () => ({ team: fe, repository: "acme/payments" })],
   ])("makes it a new API with %s, to which no declaration carries over, with the WARN switch off", async (_case, binding) => {
+    const from = await lastEvent();
+
     expect((await install.confirm(ada, "apis.register", { name: "payments-api", ...binding() })).status).toBe(200);
 
+    // The removed declaration is a change to the consumer map, which the admin's registration made (D55 (60)).
+    expect(await eventsSince(from)).toEqual([
+      { type: "api.registered", class: "security", actor_kind: "web_session", actor_user_id: ada.userId, data: { apiId: paymentsApi, providerTeamId: binding().team } },
+      { type: "api.consumer_removed", class: "domain", actor_kind: "web_session", actor_user_id: ada.userId, data: { apiId: paymentsApi, teamId: fe } },
+    ]);
     expect(await routedTo(paymentsApi)).toEqual([]);
     expect(await feDeclaration()).toBeNull();
     expect(await warnSwitch()).toBe(false);

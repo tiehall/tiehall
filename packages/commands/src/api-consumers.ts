@@ -1,5 +1,5 @@
 import { declareConsumer, listTeamApis, reconfirmConsumer, removeConsumer, type consumerDeclaration } from "@tiehall/catalog";
-import { Refusal } from "@tiehall/core";
+import { apiConsumerDeclared, apiConsumerReconfirmed, apiConsumerRemoved, Refusal } from "@tiehall/core";
 import { apiConsumerReconfirmationEmails, apiConsumers, apis, members, teamMembers, teams, users } from "@tiehall/db";
 import { and, asc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
@@ -20,9 +20,15 @@ import type { WorkerJob } from "./worker.ts";
 // up, so they learn nothing of it. A team that does not exist gets 404, as
 // does an API; an unregistered API takes no declaration (409). A declaration
 // records who made it and when, which is also when it was last confirmed;
-// made again, it changes nothing. Declarations change no request, so they
-// record no event; the activity log does not hold team changes in v1
-// (design.md, Readings to confirm with the founder: R21).
+// made again, it changes nothing. Declaring, removing and re-confirming each
+// append a domain event in the change's transaction, naming the API and the
+// team, with the member who acted as its provenance, which the activity log
+// shows (decisions-from-groups-15-28, D55 (60)): contract changes route by the
+// map, so who changed it, and when, should be answerable. They change nothing
+// about who may do what, so they are no security events, and they concern no
+// request, so no reader of the requester loop serves them. A declaration made
+// again, or the removal of one the team does not have, changes nothing and
+// appends nothing.
 //
 // Routing reads the declarations alone (consumersOf): the teams that declared
 // they consume an API, while it is registered, and no other team, whatever
@@ -144,11 +150,13 @@ export const API_CONSUMER_HANDLERS: Handlers = {
     if (found === undefined) throw new Refusal("record-not-found", "There is no such API.");
     if (found.unregisteredAt !== null) throw new Refusal("conflict", `${found.name} is not registered, so no team can declare that it consumes it.`);
     const now = context.now();
-    // A declaration made again keeps its declarer and its times.
-    await context.tx
+    // A declaration made again keeps its declarer and its times, and appends nothing.
+    const declared = await context.tx
       .insert(apiConsumers)
       .values({ orgId: context.orgId, apiId: api, teamId: own.id, declaredByUserId: actingUserOf(context), declaredAt: now, lastConfirmedAt: now })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ apiId: apiConsumers.apiId });
+    if (declared.length > 0) await context.write((writer) => writer.record(apiConsumerDeclared, { apiId: api, teamId: own.id }));
     const declaration = await declarationOf(context, api, own.id);
     if (declaration === undefined) throw new Error("A declaration was not stored.");
     return { declaration: { ...declaration, api: { id: api, name: found.name }, team: own } };
@@ -156,7 +164,11 @@ export const API_CONSUMER_HANDLERS: Handlers = {
 
   [removeConsumer.id]: defineHandler(removeConsumer, async ({ api, team }, context) => {
     const own = await ownTeam(context, team, "remove the declarations of");
-    await context.tx.delete(apiConsumers).where(and(eq(apiConsumers.orgId, context.orgId), eq(apiConsumers.apiId, api), eq(apiConsumers.teamId, own.id)));
+    const removed = await context.tx
+      .delete(apiConsumers)
+      .where(and(eq(apiConsumers.orgId, context.orgId), eq(apiConsumers.apiId, api), eq(apiConsumers.teamId, own.id)))
+      .returning({ apiId: apiConsumers.apiId });
+    if (removed.length > 0) await context.write((writer) => writer.record(apiConsumerRemoved, { apiId: api, teamId: own.id }));
     return { api, team: own.id, declared: false as const };
   }),
 
@@ -173,6 +185,7 @@ export const API_CONSUMER_HANDLERS: Handlers = {
       .where(and(eq(apiConsumers.orgId, context.orgId), eq(apiConsumers.apiId, api), eq(apiConsumers.teamId, own.id)))
       .returning({ apiId: apiConsumers.apiId });
     if (found === undefined || updated.length === 0) throw new Refusal("record-not-found", `${own.key} has no such declaration.`);
+    await context.write((writer) => writer.record(apiConsumerReconfirmed, { apiId: api, teamId: own.id }));
     const declaration = await declarationOf(context, api, own.id);
     if (declaration === undefined) throw new Error("A re-confirmed declaration was not found.");
     return { declaration: { ...declaration, api: { id: api, name: found.name }, team: own } };

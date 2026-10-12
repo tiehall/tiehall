@@ -753,6 +753,53 @@ export const apiUnregistered = defineEventType({
 });
 
 /**
+ * A team declared that it consumes a registered API (contract-changes: Teams
+ * declare the APIs they consume; activity-log: The activity log holds domain
+ * events and security events; decisions-from-groups-15-28, D55 (60)). A change
+ * to the consumer map, which contract changes route by, and no security event:
+ * it changes nothing about who may do what. It names the API and the team; its
+ * provenance names the member who declared it. It concerns no request, so no
+ * reader of the requester loop serves it; the activity log shows it.
+ */
+export const apiConsumerDeclared = defineEventType({
+  type: "api.consumer_declared",
+  class: "domain",
+  fields: {
+    apiId: { kind: "id", of: "api" },
+    teamId: { kind: "id", of: "team" },
+  },
+});
+
+/**
+ * A team's declaration that it consumes an API was removed, by a member of the
+ * team, or by the admin whose registration moved the API to another provider
+ * team or repository, to which no declaration carries over (D55 (56), (60)).
+ * It names the API and the team; its provenance names who removed it.
+ */
+export const apiConsumerRemoved = defineEventType({
+  type: "api.consumer_removed",
+  class: "domain",
+  fields: {
+    apiId: { kind: "id", of: "api" },
+    teamId: { kind: "id", of: "team" },
+  },
+});
+
+/**
+ * A member of a team re-confirmed that the team still consumes an API
+ * (contract-changes: Declarations are re-confirmed every 90 days; D55 (60)).
+ * It names the API and the team; its provenance names the member.
+ */
+export const apiConsumerReconfirmed = defineEventType({
+  type: "api.consumer_reconfirmed",
+  class: "domain",
+  fields: {
+    apiId: { kind: "id", of: "api" },
+    teamId: { kind: "id", of: "team" },
+  },
+});
+
+/**
  * An admin confirmed, with the confirmation step, that a provider pull
  * request's breaking changes reach consumer teams beyond the 10 it reaches
  * without an admin (agent-safety: One PR reaches at most 10 consumer teams
@@ -817,5 +864,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   personalAccessTokenRevoked,
   apiRegistered,
   apiUnregistered,
+  apiConsumerDeclared,
+  apiConsumerRemoved,
+  apiConsumerReconfirmed,
   contractFanOutConfirmed,
 ];

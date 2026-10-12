@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { CATALOG } from "@tiehall/catalog";
+import { CATALOG, OPENAPI_JSON, toolSnapshot } from "@tiehall/catalog";
 import { consumersOf, createTeamApisRoute, withOrg, type WebSessionCaller } from "../src/index.ts";
 import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
@@ -15,7 +15,11 @@ import { addTeam, joinTeams, sessionOf } from "./support/requests.ts";
 // confirmed; anyone who is not a member of that team, an admin included, gets
 // 403 and changes nothing. Any member of the team removes the team's
 // declaration, after which contract changes to the API no longer route to the
-// team. Routing reads the declarations alone, of registered APIs.
+// team. Routing reads the declarations alone, of registered APIs. Declaring,
+// removing and re-confirming each append a domain event in the change's
+// transaction, naming the team, the API and who acted, and a change refused,
+// or one that changes nothing, appends none (decisions-from-groups-15-28,
+// D55 (60)).
 
 let install: TestInstall;
 let ada: WebSessionCaller;
@@ -74,6 +78,18 @@ async function declarations(): Promise<{ api: string; team: string; declared_by:
        FROM api_consumers c JOIN apis a ON a.org_id = c.org_id AND a.id = c.api_id JOIN teams t ON t.org_id = c.org_id AND t.id = c.team_id
       ORDER BY a.name, t.key`,
   );
+  return rows;
+}
+
+/** The last event's number. */
+async function lastEvent(): Promise<number> {
+  const { rows } = await install.owner.query("SELECT coalesce(max(number), 0)::int AS n FROM events");
+  return rows[0].n;
+}
+
+/** The events after that number. */
+async function eventsSince(number: number): Promise<Record<string, unknown>[]> {
+  const { rows } = await install.owner.query("SELECT type, class, actor_kind, actor_user_id, data FROM events WHERE number > $1 ORDER BY number", [number]);
   return rows;
 }
 
@@ -150,8 +166,61 @@ describe("a team's declaration that it consumes an API", () => {
     expect(await routedTo(paymentsApi)).toEqual(["FE"]);
   });
 
-  it("is offered on no agent surface: declarations are made in the web UI", () => {
-    for (const id of ["apis.declare_consumer", "apis.remove_consumer", "apis.list_for_team"]) expect(CATALOG.get(id)?.surfaces, id).toEqual([]);
+  it("is offered on no agent surface: declarations are made, removed and re-confirmed in the web UI", () => {
+    const ids = ["apis.declare_consumer", "apis.remove_consumer", "apis.reconfirm_consumer", "apis.list_for_team"];
+    for (const id of ids) expect(CATALOG.get(id)?.surfaces, id).toEqual([]);
+    const document = JSON.parse(OPENAPI_JSON) as { paths: Record<string, Record<string, { operationId?: string; "x-tiehall-cli"?: { command: string }[] }>> };
+    const operations = Object.values(document.paths).flatMap((path) => Object.values(path));
+    expect(operations.map(({ operationId }) => operationId).filter((id) => ids.includes(id ?? ""))).toEqual([]);
+    const commands = operations.flatMap((operation) => operation["x-tiehall-cli"] ?? []).map(({ command }) => command);
+    expect(commands.filter((command) => /consum|declar/.test(command))).toEqual([]);
+    expect(toolSnapshot(CATALOG).map(({ name }) => name).filter((name) => /consum|declar/.test(name))).toEqual([]);
+  });
+});
+
+describe("changes to the consumer map (decisions-from-groups-15-28, D55 (60))", () => {
+  it("append a domain event for a declaration, naming the team, the API and the member who declared", async () => {
+    const from = await lastEvent();
+
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+
+    expect(await eventsSince(from)).toEqual([
+      { type: "api.consumer_declared", class: "domain", actor_kind: "web_session", actor_user_id: ayse.userId, data: { apiId: paymentsApi, teamId: fe } },
+    ]);
+  });
+
+  it("append a domain event for a removal, naming the member who removed it", async () => {
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+    const from = await lastEvent();
+
+    await install.execute("apis.remove_consumer", mehmet, { api: paymentsApi, team: fe });
+
+    expect(await eventsSince(from)).toEqual([
+      { type: "api.consumer_removed", class: "domain", actor_kind: "web_session", actor_user_id: mehmet.userId, data: { apiId: paymentsApi, teamId: fe } },
+    ]);
+  });
+
+  it("append nothing for a declaration made again, or the removal of one the team does not have", async () => {
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+    const from = await lastEvent();
+
+    await install.execute("apis.declare_consumer", mehmet, { api: paymentsApi, team: fe });
+    await install.execute("apis.remove_consumer", mehmet, { api: billingApi, team: fe });
+
+    expect(await eventsSince(from)).toEqual([]);
+  });
+
+  it("append nothing for a change refused with 403, 404 or 409", async () => {
+    await install.execute("apis.declare_consumer", ayse, { api: paymentsApi, team: fe });
+    await install.execute("apis.unregister", ada, { api: billingApi });
+    const from = await lastEvent();
+
+    await expect(install.execute("apis.declare_consumer", zeynep, { api: paymentsApi, team: fe })).rejects.toMatchObject({ status: 403 });
+    await expect(install.execute("apis.remove_consumer", zeynep, { api: paymentsApi, team: fe })).rejects.toMatchObject({ status: 403 });
+    await expect(install.execute("apis.declare_consumer", ayse, { api: mobile, team: fe })).rejects.toMatchObject({ status: 404 });
+    await expect(install.execute("apis.declare_consumer", ayse, { api: billingApi, team: fe })).rejects.toMatchObject({ status: 409 });
+
+    expect(await eventsSince(from)).toEqual([]);
   });
 });
 

@@ -99,11 +99,19 @@ describe("the event type check", () => {
       'Request posted: the type is not a dotted lower-case name, such as "request.message_posted".',
       "Request posted: the class is audit; an event is in the domain class or the security class.",
     ]);
-    expect(checkEventType({ type: "request.claimed", class: "domain", fields: { userId: { kind: "id", of: "user" } } }))
-      .toEqual([
-        'request.claimed: a domain event records a change to a request, so it declares "requestId", the id of ' +
-          "a request.",
-      ]);
+    const NAMES_NO_REQUEST =
+      'a domain event records a change to a request, so it declares "requestId", the id of a request, or a change ' +
+      'to the consumer map, so it declares "apiId" and "teamId", the ids of an API and a team.';
+    expect(checkEventType({ type: "request.claimed", class: "domain", fields: { userId: { kind: "id", of: "user" } } })).toEqual([
+      `request.claimed: ${NAMES_NO_REQUEST}`,
+    ]);
+    // A change to the consumer map names its API and its team, and no request (decisions-from-groups-15-28, D55 (60)).
+    expect(
+      checkEventType({ type: "api.consumer_declared", class: "domain", fields: { apiId: { kind: "id", of: "api" }, teamId: { kind: "id", of: "team" } } }),
+    ).toEqual([]);
+    expect(checkEventType({ type: "api.consumer_declared", class: "domain", fields: { apiId: { kind: "id", of: "api" } } })).toEqual([
+      `api.consumer_declared: ${NAMES_NO_REQUEST}`,
+    ]);
     expect(
       checkEventType({
         type: "member.role_changed",

@@ -1,7 +1,7 @@
 import { acknowledgeEvents, readEvents } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import { events, eventSequence, readCursors } from "@tiehall/db";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, sql } from "drizzle-orm";
 import type { Caller } from "./caller.ts";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
@@ -39,10 +39,11 @@ import type { OrgContext } from "./with-org.ts";
 //
 // Readers get only domain events they may see (requests: Readers get only
 // domain events they may see; activity-log: Security events are shown to
-// admins only): a domain event is a change to a request, and every member sees
-// every request, so a reader gets every domain event; a security event, such
-// as a role change, reaches no reader, not even an admin's, and a cursor passes
-// over it. Someone who is no longer a member gets 403 and nothing, from the
+// admins only): every member sees every request, so a reader gets every
+// domain event on a request; a security event, such as a role change, reaches
+// no reader, not even an admin's, and neither does a change to the consumer
+// map, which concerns no request (decisions-from-groups-15-28, D55 (60)); a
+// cursor passes over both. Someone who is no longer a member gets 403 and nothing, from the
 // membership re-check that runs before anything is read.
 
 /** Which of a user's clients a caller reads as. */
@@ -131,7 +132,7 @@ export const EVENT_READ_HANDLERS: Handlers = {
     const rows = await context.tx
       .select({ number: events.number, type: events.type, occurredAt: events.occurredAt, data: events.data })
       .from(events)
-      .where(and(eq(events.orgId, context.orgId), eq(events.class, "domain"), gt(events.number, cursor)))
+      .where(and(eq(events.orgId, context.orgId), eq(events.class, "domain"), isNotNull(sql`${events.data} ->> 'requestId'`), gt(events.number, cursor)))
       .orderBy(asc(events.number))
       .limit(limit ?? 100);
     return {

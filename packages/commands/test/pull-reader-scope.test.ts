@@ -3,6 +3,7 @@ import { startGitHubStub, type GitHubStub } from "@tiehall/testing/github";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expireProposals, type CiCaller } from "../src/index.ts";
 import { changesOf, CONTRACT_WORKFLOW, providerOnStub, reportOf, runDueUpdates } from "./support/contract.ts";
+import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sendApi, sessionOf, tokenOf } from "./support/requests.ts";
@@ -277,6 +278,34 @@ describe("whats_new (task 19.2)", () => {
       await post("dana", request?.key ?? "", { kind: "question", body: "Does amount move to amount_minor?", blocking: true });
       expect(on(await whatsNew("deniz"), request?.id ?? "")).toContain("request.message_posted:question");
     });
+  });
+});
+
+describe("changes to the consumer map (decisions-from-groups-15-28, D55 (60))", () => {
+  // contract-changes: Teams declare the APIs they consume, "Changes to the map are in the activity log": they concern no
+  // request, so no reader of the requester loop serves them.
+  it("reach no reader: not the web UI's event read, whats_new or the web inbox's update feed, of the team's members or anyone else", async () => {
+    const ada = await addUser(install.owner, { role: "admin", login: "ada" });
+    await addInstallation(install.owner, { account: "acme-ledger", repositories: [{ fullName: "acme-ledger/ledger", id: 7301 }] });
+    const registered = await install.confirm(sessionOf(ada), "apis.register", { name: "ledger-api", team: team["BE"], repository: "acme-ledger/ledger" });
+    expect(registered.status, await registered.clone().text()).toBe(200);
+    const api = (await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'ledger-api'")).rows[0]?.id ?? "";
+    // Dana declares that FE consumes ledger-api, Bob re-confirms it and Erin removes it.
+    await install.execute("apis.declare_consumer", sessionOf(id("dana")), { api, team: team["FE"] });
+    await install.execute("apis.reconfirm_consumer", sessionOf(id("bob")), { api, team: team["FE"] });
+    await install.execute("apis.remove_consumer", sessionOf(id("erin")), { api, team: team["FE"] });
+    const { rows } = await install.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM events WHERE type LIKE 'api.consumer_%'");
+    expect(rows[0]?.n).toBe(3);
+    const ofTheMap = (updates: readonly { type: string }[]) => updates.filter(({ type }) => type.startsWith("api.consumer_"));
+
+    for (const login of ["dana", "bob", "erin", "sam", "oli"]) {
+      // The web UI's event read moves no cursor, so it comes first; the web inbox's feed, which moves the web UI's, last.
+      const read = await install.web(sessionOf(id(login))).read<{ events: { type: string }[] }>("events.read", { limit: 500 });
+      expect(read.ok, login).toBe(true);
+      expect(read.ok ? ofTheMap(read.output.events) : [], login).toEqual([]);
+      expect(ofTheMap(await whatsNew(login)), login).toEqual([]);
+      expect(ofTheMap(await webInbox(login)), login).toEqual([]);
+    }
   });
 });
 

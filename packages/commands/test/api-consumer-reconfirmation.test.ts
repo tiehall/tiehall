@@ -113,6 +113,18 @@ function emailsTo(address: string, since: number): string[] {
     .map((data) => /^Subject: (.*)$/m.exec(data)?.[1] ?? "");
 }
 
+/** The last event's number. */
+async function lastEvent(): Promise<number> {
+  const { rows } = await install.owner.query("SELECT coalesce(max(number), 0)::int AS n FROM events");
+  return rows[0].n;
+}
+
+/** The events after that number. */
+async function eventsSince(number: number): Promise<Record<string, unknown>[]> {
+  const { rows } = await install.owner.query("SELECT type, class, actor_kind, actor_user_id, data FROM events WHERE number > $1 ORDER BY number", [number]);
+  return rows;
+}
+
 /** FE's declaration for payments-api, as stored. */
 async function feDeclaration(): Promise<{ declared_by: string; declared_at: Date; last_confirmed_at: Date; stale: boolean; requested: boolean }> {
   const { rows } = await install.owner.query(
@@ -189,7 +201,20 @@ describe("a declaration last confirmed on 2026-10-01, with SMTP set", () => {
     expect(await requestsOf(mehmet)).toEqual([]);
   });
 
+  it("re-confirmed appends a domain event naming the team, the API and the member who re-confirmed it (decisions-from-groups-15-28, D55 (60))", async () => {
+    await runJobAt("2026-12-30T00:11:00Z");
+    clock = new Date("2026-12-31T09:00:00Z");
+    const from = await lastEvent();
+
+    await install.execute("apis.reconfirm_consumer", mehmet, { api: paymentsApi, team: fe });
+
+    expect(await eventsSince(from)).toEqual([
+      { type: "api.consumer_reconfirmed", class: "domain", actor_kind: "web_session", actor_user_id: mehmet.userId, data: { apiId: paymentsApi, teamId: fe } },
+    ]);
+  });
+
   it("is refused re-confirmation with 403 for a member of another team, and an admin in no team, and its confirmation time stays", async () => {
+    const from = await lastEvent();
     await runJobAt("2026-12-30T00:11:00Z");
     clock = new Date("2026-12-31T09:00:00Z");
 
@@ -198,6 +223,8 @@ describe("a declaration last confirmed on 2026-10-01, with SMTP set", () => {
 
     expect((await feDeclaration()).last_confirmed_at.toISOString()).toBe("2026-10-01T10:00:00.000Z");
     expect(await requestsOf(ayse)).toHaveLength(1);
+    // A refused re-confirmation appends no event, and neither does the daily job's request to re-confirm.
+    expect(await eventsSince(from)).toEqual([]);
   });
 
   it("left unconfirmed is not stale on 2027-01-28, is marked stale on 2027-01-29, and keeps routing on 2027-02-01", async () => {

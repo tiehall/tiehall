@@ -3,8 +3,13 @@
 // events; design.md, Design rules: Requests and events, Technical decisions:
 // T5 and Self-hosting decisions: S14). Every committed change appends an event
 // in its own transaction. An event is in the domain class, a change to a
-// request, or the security class, an action the activity log records for
-// admins. It has a type, the fields its type declares, who caused it and when.
+// request or to the consumer map, or the security class, an action the
+// activity log records for admins. It has a type, the fields its type
+// declares, who caused it and when.
+//
+// A domain event names the request it changes, or, for a change to the
+// consumer map, the API and the team it concerns (decisions-from-groups-15-28,
+// D55 (60)).
 //
 // Events carry ids, never bodies: a message event names the message, and a
 // reader fetches its text through a read. They also never name a person or a
@@ -174,9 +179,16 @@ export function checkEventType(declared: DeclaredEventType): string[] {
   if (!(EVENT_CLASSES as readonly string[]).includes(declared.class)) {
     problem(`the class is ${declared.class}; an event is in the domain class or the security class.`);
   }
-  const requestId = declared.fields["requestId"];
-  if (declared.class === "domain" && (requestId?.kind !== "id" || requestId.of !== "request" || requestId.optional)) {
-    problem('a domain event records a change to a request, so it declares "requestId", the id of a request.');
+  // A domain event is a change to a request, or to the consumer map, which names no request (decisions-from-groups-15-28, D55 (60)).
+  const names = (name: string, of: RecordKind) => {
+    const field = declared.fields[name];
+    return field?.kind === "id" && field.of === of && field.optional !== true;
+  };
+  if (declared.class === "domain" && !names("requestId", "request") && !(names("apiId", "api") && names("teamId", "team"))) {
+    problem(
+      'a domain event records a change to a request, so it declares "requestId", the id of a request, or a change to the ' +
+        'consumer map, so it declares "apiId" and "teamId", the ids of an API and a team.',
+    );
   }
   for (const [name, field] of Object.entries(declared.fields)) {
     if (!FIELD_NAME.test(name)) {

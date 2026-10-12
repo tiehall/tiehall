@@ -10,7 +10,7 @@ The install then takes a report for the API only from a CI run in that repositor
 
 ## The consumer map
 
-Each team declares the registered APIs it consumes, on its page in the web UI, `/teams/apis`; any member of the team can declare an API or remove the team's declaration, and nobody else can. Tiehall routes contract changes only by these declarations.
+Each team declares the registered APIs it consumes, on its page in the web UI, `/teams/apis`; any member of the team can declare an API or remove the team's declaration, and nobody else can. Tiehall routes contract changes only by these declarations. Every declaration, removal and re-confirmation is recorded in the activity log, with who made it, so an admin can tell why a team started or stopped getting requests.
 
 Because the map is kept by hand, it can go stale, so Tiehall asks the team to re-confirm each declaration 90 days after it was last confirmed: the request waits in the standing list of each member's web inbox, and goes by email once when the install sends email. Any member of the team re-confirms it there. A declaration left unconfirmed 30 more days is marked stale until someone re-confirms it, and keeps routing meanwhile.
 

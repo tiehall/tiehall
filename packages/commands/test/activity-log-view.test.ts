@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OPENAPI_JSON } from "@tiehall/catalog";
 import { startGitHubStub, type GitHubStub, type StubUser } from "@tiehall/testing/github";
 import { ACTIVITY_LOG_PATH, createActivityLogRoute, pruneSecurityEventOrigins, type WebSessionCaller } from "../src/index.ts";
+import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -333,5 +334,35 @@ describe("a refused sign-in in the admin view", () => {
       "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sign_in_refusals' ORDER BY column_name",
     );
     expect(rows.map(({ column_name }) => column_name)).toEqual(["github_account_id", "github_login", "id", "org_id", "refused_at"]);
+  });
+});
+
+describe("changes to the consumer map in the admin view (decisions-from-groups-15-28, D55 (60))", () => {
+  it("are domain events that name the team, the API and who declared, removed or re-confirmed it", async () => {
+    const pay = await addTeam(install.owner, "PAY");
+    const { rows } = await install.owner.query<{ id: string }>("SELECT id FROM teams WHERE key = 'FE'");
+    const fe = rows[0]?.id ?? "";
+    await joinTeams(install.owner, lee, fe);
+    await addInstallation(install.owner, { account: "acme", repositories: [{ fullName: "acme/payments", id: 7001 }] });
+    expect((await install.confirm(pia, "apis.register", { name: "payments-api", team: pay, repository: "acme/payments" })).status).toBe(200);
+    const api = (await install.owner.query<{ id: string }>("SELECT id FROM apis WHERE name = 'payments-api'")).rows[0]?.id ?? "";
+    // Bob declares that FE consumes payments-api, Lee re-confirms it, and Bob removes it.
+    await install.execute("apis.declare_consumer", sessionOf(bob), { api, team: fe });
+    await install.execute("apis.reconfirm_consumer", sessionOf(lee), { api, team: fe });
+    await install.execute("apis.remove_consumer", sessionOf(bob), { api, team: fe });
+
+    const events = (await eventsOf(pia, { limit: 3 })).reverse();
+
+    expect(events.map(({ type }) => type)).toEqual(["api.consumer_declared", "api.consumer_reconfirmed", "api.consumer_removed"]);
+    const actors = [bob, lee, bob];
+    for (const [index, event] of events.entries()) {
+      expect(event).toMatchObject({
+        class: "domain",
+        data: { apiId: api, teamId: fe },
+        actor: { kind: "web_session", user: { id: actors[index] }, surface: "web" },
+      });
+      expect(event).not.toHaveProperty("request");
+    }
+    expect((await eventsOf(pia, { type: "api.consumer_removed", actorUserId: bob })).map(({ type }) => type)).toEqual(["api.consumer_removed"]);
   });
 });
