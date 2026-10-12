@@ -176,7 +176,7 @@ export interface GitHubStub {
   reopenPullRequest(repo: string, number: number, input: { by: string }, options?: DeliveryOptions): Promise<StubPullRequest>;
   pullRequest(repo: string, number: number): StubPullRequest;
   issue(repo: string, number: number): StubIssue;
-  closeIssue(repo: string, number: number, input: { by: string; reason?: "completed" | "not_planned" }, options?: DeliveryOptions): Promise<StubIssue>;
+  closeIssue(repo: string, number: number, input: { by: string; reason?: "completed" | "not_planned" | "duplicate" }, options?: DeliveryOptions): Promise<StubIssue>;
   reopenIssue(repo: string, number: number, input: { by: string }, options?: DeliveryOptions): Promise<StubIssue>;
   assignIssue(repo: string, number: number, input: { by: string; assignees: string[] }, options?: DeliveryOptions): Promise<StubIssue>;
 

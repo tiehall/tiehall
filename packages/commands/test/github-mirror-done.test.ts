@@ -18,9 +18,11 @@ import { addTeam, joinTeams, openRequestInTheWebUi, sessionOf } from "./support/
 // member, who confirms it in the web UI, when the request's state allows
 // done; a close on an open request, by someone outside the target team, by an
 // account that is no member's, or by a member who was removed since, only
-// adds a notice. A close as not planned is no "Done": it is recorded, and adds
-// nothing else. The GitHub stub plays GitHub: Ayşe and Deniz are members of
-// FE, Alice of BE, and Omar's GitHub account is no member's.
+// adds a notice. A close as not planned, or as a duplicate
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (74)), is no "Done": it is recorded, and adds nothing else. The GitHub
+// stub plays GitHub: Ayşe and Deniz are members of FE, Alice of BE, and
+// Omar's GitHub account is no member's.
 
 let install: TestInstall;
 let stub: GitHubStub;
@@ -77,7 +79,7 @@ async function mirroredRequest(state: "open" | "in_progress" = "in_progress"): P
 }
 
 /** Someone closes the mirror issue on GitHub, and the worker processes GitHub's delivery of it. */
-async function closedOnGitHub(number: number, by: string, reason: "completed" | "not_planned" = "completed"): Promise<void> {
+async function closedOnGitHub(number: number, by: string, reason: "completed" | "not_planned" | "duplicate" = "completed"): Promise<void> {
   const from = stub.deliveries(provider.app).length;
   await stub.closeIssue("acme/fe-intake", number, { by, reason });
   await stub.settled();
@@ -254,5 +256,16 @@ describe("with the setting on", () => {
     expect(await noticesOf(request.id)).toEqual([]);
     expect(await stateOf(request.id)).toBe("in_progress");
     expect(await closesOf(request.id)).toEqual([{ change: "closed", reason: "not_planned", actor_kind: "integration", surface: "github", actor_user_id: ayse }]);
+  });
+
+  it("a close as a duplicate is no Done either: it is recorded with the surface github, and adds no proposal and no notice", async () => {
+    const request = await mirroredRequest();
+
+    await closedOnGitHub(request.number, "ayse", "duplicate");
+
+    expect(await proposalsOf(request.id)).toEqual([]);
+    expect(await noticesOf(request.id)).toEqual([]);
+    expect(await stateOf(request.id)).toBe("in_progress");
+    expect(await closesOf(request.id)).toEqual([{ change: "closed", reason: "duplicate", actor_kind: "integration", surface: "github", actor_user_id: ayse }]);
   });
 });

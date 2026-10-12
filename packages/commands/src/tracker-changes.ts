@@ -53,7 +53,9 @@ import type { RequestRow } from "./request-views.ts";
 // that a webhook delivery and a later read both show is recorded once.
 //
 // A tracker "Done": a close the tracker does not mark as not planned (on
-// GitHub, every close but one with the state_reason not_planned). It never
+// GitHub, every close but one with the state_reason not_planned or duplicate,
+// which is no work done either: decisions-from-groups-15-28, design.md,
+// Decisions this change rests on: D55 (74)). It never
 // moves the request to done. When its team's mapping has the setting for
 // tracker "Done" proposals on, which is off until an admin turns it on, the
 // mirror is the one that the mapping of the request's target team made, for
@@ -65,8 +67,8 @@ import type { RequestRow } from "./request-views.ts";
 // member, who confirms it in the web UI as any proposal: a commitment, so the
 // command answers with the proposal. Otherwise, a tracker "Done" adds only a
 // notice to the request's thread, in Tiehall's words, recorded as the
-// system's, from the tracker. A close as not planned is recorded, and adds
-// nothing else. A member who was removed since acts for nobody (execute()),
+// system's, from the tracker. A close as not planned, or as a duplicate, is
+// recorded, and adds nothing else. A member who was removed since acts for nobody (execute()),
 // so their close adds only the notice.
 
 /** What Tiehall knows a mirror issue showed before it read anything back: open, as Tiehall made it, and assigned to nobody. */
@@ -94,9 +96,9 @@ function sameKnown(a: IssueState, b: IssueState): boolean {
   );
 }
 
-/** Whether a change is a tracker "Done": a close the tracker does not mark as not planned. */
+/** Whether a change is a tracker "Done": a close the tracker does not mark as not planned, or on GitHub as a duplicate. */
 function isTrackerDone(change: TrackerChange): boolean {
-  return change.kind === "closed" && change.reason !== "not_planned";
+  return change.kind === "closed" && change.reason !== "not_planned" && change.reason !== "duplicate";
 }
 
 /**

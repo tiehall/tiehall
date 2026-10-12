@@ -147,7 +147,7 @@ export interface StubIssue {
   title: string;
   body: string | null;
   state: "open" | "closed";
-  stateReason: "completed" | "not_planned" | "reopened" | null;
+  stateReason: "completed" | "not_planned" | "duplicate" | "reopened" | null;
   labels: string[];
   assigneeIds: number[];
   readonly author: Author;

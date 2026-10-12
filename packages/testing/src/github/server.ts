@@ -1068,10 +1068,14 @@ export function createHandlers(context: ServerContext): StubHandlers {
             if (issue.kind === "issue") {
               const reason = body["state_reason"];
               issue.stateReason =
-                state === "open" ? "reopened" : reason === "not_planned" || reason === "completed" ? reason : "completed";
+                state === "open" ? "reopened" : reason === "not_planned" || reason === "completed" || reason === "duplicate" ? reason : "completed";
             }
             actions.push(state === "closed" ? "closed" : "reopened");
-          } else if (issue.kind === "issue" && issue.state === "closed" && (body["state_reason"] === "not_planned" || body["state_reason"] === "completed")) {
+          } else if (
+            issue.kind === "issue" &&
+            issue.state === "closed" &&
+            (body["state_reason"] === "not_planned" || body["state_reason"] === "completed" || body["state_reason"] === "duplicate")
+          ) {
             issue.stateReason = body["state_reason"];
           }
           issue.updatedAt = world.timestamp();
