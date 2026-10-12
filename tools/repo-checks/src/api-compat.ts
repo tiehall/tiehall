@@ -17,6 +17,18 @@ import { runOnDocuments } from "./oasdiff.ts";
 // optional response field as breaking. It runs with external $refs off and in
 // a folder of its own, so no configuration file of the repository changes it.
 //
+// A stable operation only gains things (public-api: Notice before a breaking
+// change is enforced in CI; decisions-from-groups-15-28: design.md, Decisions
+// this change rests on: D55 (30)), so the check also fails on a finding that
+// removes, from an operation that is stable at the merge base, a part a client
+// sends or reads, though oasdiff rates it a warning or information: an
+// optional input parameter or property, an optional property or header of a
+// response, a response status, or the operation's id. oasdiff's changelog,
+// which lists findings of every level, names them (REMOVALS). A beta
+// operation keeps failing on error-level findings alone, and the removal of a
+// stable operation on or after the sunset of its deprecation stays
+// sanctioned.
+//
 // The api-breaking label (public-api: The `api-breaking` label for urgent
 // security fixes) lets a pull request make a breaking change without the
 // notice, which is allowed only for an urgent security fix, and only when the
@@ -44,6 +56,61 @@ export interface CompatResult {
 }
 
 const ERROR = 3;
+
+/**
+ * The ids of oasdiff's findings below error level that remove, from an
+ * operation, a part a client sends or reads: an optional input parameter or
+ * property, an optional response property or header, a response status, or
+ * the operation's id. A stable operation fails on each of them.
+ */
+export const REMOVALS: ReadonlySet<string> = new Set([
+  "request-parameter-removed",
+  "request-property-removed",
+  "response-optional-property-removed",
+  "optional-response-header-removed",
+  "response-non-success-status-removed",
+  "api-operation-id-removed",
+]);
+
+/** The stability level of each operation of an OpenAPI document, as JSON text, by its operation id; alpha when it names none. */
+function levelsOf(document: string): Map<string, string> {
+  const levels = new Map<string, string>();
+  const paths = (JSON.parse(document) as { paths?: Record<string, Record<string, unknown>> }).paths ?? {};
+  for (const item of Object.values(paths)) {
+    for (const operation of Object.values(item ?? {})) {
+      if (typeof operation !== "object" || operation === null) continue;
+      const { operationId, "x-stability-level": level } = operation as { operationId?: unknown; "x-stability-level"?: unknown };
+      if (typeof operationId === "string") levels.set(operationId, typeof level === "string" ? level : "alpha");
+    }
+  }
+  return levels;
+}
+
+/**
+ * The findings that remove something from an operation that is stable in the
+ * base, though oasdiff rates them below error level, raised to errors: a
+ * stable operation only gains things. Both documents are JSON text.
+ */
+export async function stableRemovals(base: string, revision: string): Promise<Finding[]> {
+  const levels = levelsOf(base);
+  if (![...levels.values()].includes("stable")) return [];
+  const run = await runOnDocuments(["changelog", "--format=json"], base, revision);
+  let findings: Finding[];
+  try {
+    findings = JSON.parse(run.stdout) as Finding[];
+  } catch {
+    throw new Error(`oasdiff could not compare the documents (exit ${run.status}): ${run.stderr.trim()}`);
+  }
+  return findings
+    .filter(({ id, level, operationId }) => level < ERROR && REMOVALS.has(id) && operationId !== undefined && levels.get(operationId) === "stable")
+    .map(({ id, text, operationId, path }) => ({
+      id,
+      level: ERROR,
+      text: `${text}, which fails because a stable operation only gains things: its breaking change ships as a new operation, or a new tool name`,
+      ...(operationId === undefined ? {} : { operationId }),
+      ...(path === undefined ? {} : { path }),
+    }));
+}
 
 /** Compares a revision of the OpenAPI document with its base, both as JSON text. */
 export async function compareDocuments(base: string, revision: string): Promise<CompatResult> {
@@ -73,6 +140,7 @@ export async function compareDocuments(base: string, revision: string): Promise<
     ...(operationId === undefined ? {} : { operationId }),
     ...(path === undefined ? {} : { path }),
   }));
+  errors.push(...(await stableRemovals(base, revision)));
   return { passed: errors.length === 0, errors };
 }
 

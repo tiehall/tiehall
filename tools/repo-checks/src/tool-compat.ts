@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addedEntries, API_BREAKING_LABEL, parseChangelog, type Changelog } from "@tiehall/catalog/changelog";
-import { DEPRECATION_DAYS, type CompatResult, type Finding } from "./api-compat.ts";
+import { DEPRECATION_DAYS, stableRemovals, type CompatResult, type Finding } from "./api-compat.ts";
 import { runOnDocuments } from "./oasdiff.ts";
 
 // MCP tools follow the same compatibility rules (public-api: MCP tools follow
@@ -20,9 +20,12 @@ import { runOnDocuments } from "./oasdiff.ts";
 //   field, only on or after the sunset of a deprecation announced at least 14
 //   days ahead, as its operation would be;
 // - a stable tool only gains things: any breaking change fails, deprecated or
-//   not, so the new behavior ships under a new tool name, and the old tool is
-//   removed only on or after a sunset announced at least 180 days ahead, which
-//   the six months below make longer;
+//   not, and so does the loss of an optional argument or an optional output
+//   field, which oasdiff rates a warning or information (stableRemovals of
+//   api-compat.ts; decisions-from-groups-15-28: design.md, Decisions this
+//   change rests on: D55 (30)), so the new behavior ships under a new tool
+//   name, and the old tool is removed only on or after a sunset announced at
+//   least 180 days ahead, which the six months below make longer;
 // - an alpha tool changes freely, and a tool's level never goes down.
 // A breaking change to the tool of a stable operation adds a new tool name
 // and keeps the old tool for at least six months, so the check also holds a
@@ -146,7 +149,7 @@ export async function compareToolSnapshots(
 ): Promise<CompatResult> {
   const baseTools = parseSnapshot(base);
   const revisionTools = parseSnapshot(revision);
-  const found = await oasdiffErrors(toolsDocument(baseTools), toolsDocument(revisionTools));
+  const found = await breakingErrors(toolsDocument(baseTools), toolsDocument(revisionTools));
   // A sunset oasdiff already finds too close is reported once, in its words.
   const tooClose = new Set(found.filter(({ id }) => SUNSET_FINDINGS.has(id)).map(({ operationId }) => operationId));
   const own = await stableToolErrors(baseTools, revisionTools, options.history ?? [], options.today ?? new Date().toISOString().slice(0, 10));
@@ -156,6 +159,11 @@ export async function compareToolSnapshots(
 
 /** oasdiff's findings of a sunset closer than the notice period. */
 const SUNSET_FINDINGS = new Set(["api-sunset-date-too-small", "api-sunset-date-changed-too-small"]);
+
+/** What breaks between two tool documents: oasdiff's error-level findings, and anything a stable tool loses. */
+async function breakingErrors(base: string, revision: string): Promise<Finding[]> {
+  return [...(await oasdiffErrors(base, revision)), ...(await stableRemovals(base, revision))];
+}
 
 /** oasdiff's error-level findings between two tool documents. */
 async function oasdiffErrors(base: string, revision: string): Promise<Finding[]> {
@@ -239,7 +247,7 @@ async function stableToolErrors(base: readonly SnapshotTool[], revision: readonl
     const earlier = newestEarlier(history, tool.name);
     if (earlier === undefined || earlier.tool.stability !== "stable") continue;
     const { deprecated: _old, ...old } = earlier.tool;
-    const breaks = await oasdiffErrors(toolsDocument([old]), toolsDocument([tool]));
+    const breaks = await breakingErrors(toolsDocument([old]), toolsDocument([tool]));
     if (breaks.length > 0) {
       error(
         tool.name,

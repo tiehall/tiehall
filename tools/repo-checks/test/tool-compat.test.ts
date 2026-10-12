@@ -130,6 +130,26 @@ describe("the tool compatibility check", () => {
     }
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (30): the tool of a stable operation
+  // only gains things, so losing an optional argument or an optional output field fails, though oasdiff rates it a
+  // warning or information; a beta tool may lose them.
+  it("fails a stable tool that loses an optional argument or an optional output field, and lets a beta tool lose them", async () => {
+    const lost: [Partial<Tool>, string][] = [
+      [{ inputSchema: input({ key: { type: "string" } }, ["key"]) }, "request-property-removed"],
+      [{ outputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } }, "response-optional-property-removed"],
+    ];
+    const optionalState = { outputSchema: { type: "object", properties: { id: { type: "string" }, state: { type: "string" } }, required: ["id"] } };
+    for (const [change, id] of lost) {
+      const stable = tool("attach_contract_changes", { stability: "stable", ...optionalState });
+      const result = await checkToolPullRequest(pullRequest([stable], [{ ...stable, ...change }]));
+      expect(result.passed, id).toBe(false);
+      expect(ids(result), id).toEqual([`attach_contract_changes ${id}`]);
+      expect(result.errors[0]?.text).toContain("a stable operation only gains things");
+      const beta = tool("attach_contract_changes", optionalState);
+      expect(await checkToolPullRequest(pullRequest([beta], [{ ...beta, ...change }])), id).toMatchObject({ passed: true, errors: [] });
+    }
+  });
+
   it("lets an alpha tool change freely, and any tool gain an optional argument, an output field, new words or a new tool", async () => {
     expect((await checkToolPullRequest(pullRequest([tool("claim", { stability: "alpha" })], []))).passed).toBe(true);
     const gained = tool("claim", {
@@ -217,6 +237,12 @@ describe("the tool compatibility check", () => {
     expect(ids(reused)).toEqual(["claim stable-tool-name-reused"]);
     expect(reused.errors[0]?.text).toContain("c0ffee0");
     expect(reused.errors[0]?.text).toContain("request-property-became-required");
+    // Losing an optional argument breaks a stable tool too (decisions-from-groups-15-28, D55 (30)).
+    const narrowed = await checkToolPullRequest(
+      pullRequest([tool("get_request")], [tool("get_request"), tool("claim", { stability: "stable", inputSchema: input({ key: { type: "string" } }, ["key"]) })], { history }),
+    );
+    expect(ids(narrowed)).toEqual(["claim stable-tool-name-reused"]);
+    expect(narrowed.errors[0]?.text).toContain("request-property-removed");
     // The same tool back again breaks nothing, and neither does the name of a tool that was only ever beta.
     const restored = await checkToolPullRequest(pullRequest([tool("get_request")], [tool("get_request"), tool("claim", { stability: "stable" })], { history }));
     expect(restored).toMatchObject({ passed: true, errors: [] });

@@ -110,6 +110,25 @@ describe("the compatibility check", () => {
     expect(await compare("new-optional-response-field")).toEqual({ passed: true, errors: [] });
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (30): a stable operation only gains
+  // things, so a change that removes something from it fails even where oasdiff rates it a warning or information,
+  // while a beta operation keeps failing on error-level findings alone.
+  it("fails the removal of an optional input property, an optional parameter or a response property of a stable operation", async () => {
+    const result = await compare("stable-optional-removals");
+    expect(result.passed).toBe(false);
+    expect(ids(result)).toEqual(["request-parameter-removed", "request-property-removed", "response-optional-property-removed"]);
+    expect(result.errors.every(({ operationId, level }) => operationId === "contract.report" && level === 3)).toBe(true);
+    expect(result.errors.every(({ text }) => text.includes("a stable operation only gains things"))).toBe(true);
+  });
+
+  it("passes the same removals from a beta operation, with the version bumped", async () => {
+    expect(await compare("beta-optional-removals")).toEqual({ passed: true, errors: [] });
+  });
+
+  it("passes the removal of a stable operation once the sunset of its deprecation has come", async () => {
+    expect(await compare("stable-removed-after-sunset")).toEqual({ passed: true, errors: [] });
+  });
+
   it("passes the committed document compared with itself", async () => {
     const committed = readFileSync(new URL("../../../openapi/v1.json", import.meta.url), "utf8");
     expect(await compareDocuments(committed, committed)).toEqual({ passed: true, errors: [] });
