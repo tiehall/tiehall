@@ -849,6 +849,8 @@ export interface operations {
             query?: {
                 /** @description The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given. */
                 cursor?: number;
+                /** @description Whose cursor to wait after when no cursor is given: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks wait after. */
+                readAfter?: "own_cursor" | "furthest_cursor";
             };
             header?: never;
             path?: never;
@@ -5168,6 +5170,11 @@ export interface operations {
                     acknowledge?: number;
                     /** @description How many updates to return, 1 to 50; 25 unless given. */
                     limit?: number;
+                    /**
+                     * @description Whose cursor to read after: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks read after, so that what any of them acknowledged is not announced again. A read after the furthest cursor moves no cursor, so it takes no acknowledge.
+                     * @enum {string}
+                     */
+                    readAfter?: "own_cursor" | "furthest_cursor";
                 };
             };
         };

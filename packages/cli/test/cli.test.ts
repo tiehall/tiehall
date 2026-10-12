@@ -185,7 +185,7 @@ describe("the hook commands, as Claude Code runs them", () => {
       await new Promise((resolve) => claude.on("exit", resolve));
       const pid = Number(printed);
       expect(pid).toBeGreaterThan(0);
-      expect(waits).toEqual(["/api/v1/events/wait"]);
+      expect(waits).toEqual(["/api/v1/events/wait?readAfter=furthest_cursor"]);
       const until = Date.now() + 30_000;
       while (Date.now() < until && runs(pid)) await new Promise((resolve) => setTimeout(resolve, 100));
       expect(runs(pid)).toBe(false);

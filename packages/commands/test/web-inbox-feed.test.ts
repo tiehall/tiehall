@@ -108,20 +108,27 @@ describe("the update feed", () => {
 
   it("is acknowledged with the web inbox's own cursor, which moves no cursor of the user's agents, and theirs never move it", async () => {
     const request = await questionFromOps();
+    // Kim's CLI and an MCP client of Kim's read once first, so that each has a cursor of its own: a reader with none
+    // yet would start at the web inbox's (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+    // D55 (44)).
+    const agents = [CLI_CLIENT_ID, `https://agent.example/${randomUUID()}.json`];
+    for (const client of agents) expect((await callApi(install, oauthTokenOf(kim.userId, client, "api"), "POST", "/api/v1/updates", { limit: 50 })).body.cursor).toBe(0);
     const before = await feed(kim);
     const last = before.events.at(-1)?.number ?? 0;
     expect(before.events.some(({ data }) => data["requestId"] === request.id)).toBe(true);
     const session = kim;
     const acknowledged = await install.web(session).write<{ cursor: number; events: Update[] }>("inbox.updates", { acknowledge: last }, install.fromThePage(session));
     expect(acknowledged).toMatchObject({ ok: true, output: { cursor: last, events: [] } });
-    // Kim's CLI and an MCP client of Kim's still read the question.
-    for (const client of [CLI_CLIENT_ID, `https://agent.example/${randomUUID()}.json`]) {
+    // Kim's CLI and the MCP client of Kim's are where they were.
+    for (const client of agents) {
       const answer = await callApi(install, oauthTokenOf(kim.userId, client, "api"), "POST", "/api/v1/updates", { limit: 50 });
       expect(answer.status).toBe(200);
       expect(answer.body.cursor).toBe(0);
     }
-    const { rows } = await install.owner.query<{ reader: string; acknowledged: string }>("SELECT reader, acknowledged FROM read_cursors WHERE user_id = $1", [kim.userId]);
-    expect(rows).toEqual([{ reader: "web", acknowledged: String(last) }]);
+    const { rows } = await install.owner.query<{ reader: string; acknowledged: string }>("SELECT reader, acknowledged FROM read_cursors WHERE user_id = $1 ORDER BY reader", [kim.userId]);
+    expect(rows).toEqual(
+      [...agents.map((client) => ({ reader: `oauth:${client}`, acknowledged: "0" })), { reader: "web", acknowledged: String(last) }].sort((a, b) => a.reader.localeCompare(b.reader)),
+    );
     // Acknowledging through the CLI moves the CLI's cursor alone.
     const later = await questionFromOps();
     const cli = oauthTokenOf(kim.userId, CLI_CLIENT_ID, "cli");

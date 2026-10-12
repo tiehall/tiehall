@@ -81,7 +81,7 @@ describe("the waiter", () => {
     const next = waiter();
     await install.untilHolding();
     const answered = install.calls.filter(({ path }) => path === "/api/v1/events/wait").slice(-2);
-    expect(answered.map(({ query }) => query)).toEqual([{}, { cursor: String(question.seq) }]);
+    expect(answered.map(({ query }) => query)).toEqual([{ readAfter: "furthest_cursor" }, { cursor: String(question.seq) }]);
     await clock.advance(5 * MINUTE);
     expect(next.ended()).toBe(false);
     install.post({ type: "request.claimed", key: "FE-142", team: "FE" });
@@ -107,7 +107,7 @@ describe("the waiter", () => {
     install.cursor = question.seq + 1;
     const wait = waiter();
     await install.untilHolding();
-    expect(install.calls.filter(({ path }) => path === "/api/v1/events/wait").map(({ query }) => query)).toEqual([{}]);
+    expect(install.calls.filter(({ path }) => path === "/api/v1/events/wait").map(({ query }) => query)).toEqual([{ readAfter: "furthest_cursor" }]);
     install.post({ type: "request.status_changed", key: "FE-142", team: "FE" });
     expect((await wait.done).stderr).toContain("FE-142 request.status_changed (team FE)");
   });

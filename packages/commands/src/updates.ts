@@ -2,7 +2,8 @@ import { readInboxUpdates, readUpdates, type update, type updatesPage } from "@t
 import { requests } from "@tiehall/db";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
-import { acknowledgeUpTo, cursorOf, readerOf } from "./event-reads.ts";
+import { Refusal } from "@tiehall/core";
+import { acknowledgeUpTo, furthestAgentCursorOf, openCursor, readerOf } from "./event-reads.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { actingUserOf } from "./request-changes.ts";
 import { requestViews, type RequestView } from "./request-views.ts";
@@ -185,17 +186,31 @@ export async function updatesPageOf(
 /**
  * A pull reader's answer for the caller's client: its cursor moved up to
  * `acknowledge` first, when given, then the updates in the scope after it,
- * for these readers.
+ * for these readers. Read after the furthest cursor of the user's agent
+ * clients instead, as the hooks read, it moves and creates no cursor, so it
+ * takes no acknowledgement.
  */
 export async function readUpdatesFor(
   context: HandlerContext,
   scope: UpdateScope,
   readers: UpdateReaders,
-  { acknowledge, limit }: { acknowledge?: number | undefined; limit?: number | undefined },
+  {
+    acknowledge,
+    limit,
+    readAfter,
+  }: { acknowledge?: number | undefined; limit?: number | undefined; readAfter?: "own_cursor" | "furthest_cursor" | undefined },
 ): Promise<UpdatesPage> {
   const userId = actingUserOf(context);
   const reader = readerOf(context.caller);
-  const cursor = acknowledge === undefined ? await cursorOf(context, userId, reader) : await acknowledgeUpTo(context, userId, reader, acknowledge);
+  if (readAfter === "furthest_cursor" && acknowledge !== undefined) {
+    throw new Refusal("invalid-input", "A read after the furthest cursor moves no cursor, so it takes no acknowledge: acknowledge with a read of your own cursor.");
+  }
+  const cursor =
+    readAfter === "furthest_cursor"
+      ? await furthestAgentCursorOf(context, userId)
+      : acknowledge === undefined
+        ? await openCursor(context, userId, reader)
+        : await acknowledgeUpTo(context, userId, reader, acknowledge);
   const installUrl = context.url;
   if (installUrl === undefined) throw new Error("The pull readers name each request's URL, so they run only where the install's URL is known.");
   const { events, more } = await updatesAfter(context, { userId, scope, readers, after: cursor, limit: limit ?? UPDATES_PAGE_SIZE });

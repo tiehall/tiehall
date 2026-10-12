@@ -3,6 +3,7 @@ import { Refusal } from "@tiehall/core";
 import { events, eventSequence, readCursors } from "@tiehall/db";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { Caller } from "./caller.ts";
+import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { actingUserOf } from "./request-changes.ts";
 import type { OrgContext } from "./with-org.ts";
@@ -21,6 +22,20 @@ import type { OrgContext } from "./with-org.ts";
 // acknowledged. events.acknowledge moves the reader's cursor up to an event
 // that exists, and never back. Neither is a change to a request, so neither
 // records an event.
+//
+// A reader that has no cursor yet, such as a new MCP client of the user or
+// the CLI's first login, starts at the user's web inbox cursor, not at the
+// first event, so that it does not replay what the user has seen there
+// (requests: Read cursors move only on acknowledgement;
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (44); design.md, Technical decisions: T6): its cursor is created at that
+// value when it first reads, and keeps its place from then on, wherever the
+// web inbox goes, and an acknowledgement that creates it creates it no lower.
+// The web inbox itself starts at the first event. The Claude Code hooks read
+// after the furthest cursor of the user's agent clients instead of their own,
+// so that what the agent acknowledged through whats_new is not announced
+// again; the CLI's own place, when it has none yet, is the web inbox's, as
+// above.
 //
 // Readers get only domain events they may see (requests: Readers get only
 // domain events they may see; activity-log: Security events are shown to
@@ -44,13 +59,59 @@ export function readerOf(caller: Caller): string {
   }
 }
 
-/** The reader's cursor: the number of the last event it acknowledged, 0 before the first. */
-export async function cursorOf({ tx, orgId }: OrgContext, userId: string, reader: string): Promise<number> {
+/** The web inbox's reader, whose cursor every other reader of the user starts at. */
+const WEB_READER = "web";
+
+/** The CLI's reader, which the hooks read as. */
+const CLI_READER = `oauth:${CLI_CLIENT_ID}`;
+
+/** The reader's stored cursor, if it has one. */
+async function storedCursorOf({ tx, orgId }: OrgContext, userId: string, reader: string): Promise<number | undefined> {
   const [row] = await tx
     .select({ acknowledged: readCursors.acknowledged })
     .from(readCursors)
     .where(and(eq(readCursors.orgId, orgId), eq(readCursors.userId, userId), eq(readCursors.reader, reader)));
-  return row?.acknowledged ?? 0;
+  return row?.acknowledged;
+}
+
+/**
+ * The reader's cursor: the number of the last event it acknowledged; for a
+ * reader with no cursor yet, where it starts, the web inbox's cursor, or 0 for
+ * the web inbox itself. Reading it creates nothing, so it reads in a read-only
+ * transaction too, as the wait does.
+ */
+export async function cursorOf(context: OrgContext, userId: string, reader: string): Promise<number> {
+  const stored = await storedCursorOf(context, userId, reader);
+  if (stored !== undefined) return stored;
+  return reader === WEB_READER ? 0 : ((await storedCursorOf(context, userId, WEB_READER)) ?? 0);
+}
+
+/**
+ * The reader's cursor, created where cursorOf() says it starts when the reader
+ * has none yet, so that it keeps that place: reading without acknowledging
+ * returns the same updates again, wherever the web inbox goes meanwhile.
+ */
+export async function openCursor(context: OrgContext, userId: string, reader: string): Promise<number> {
+  const stored = await storedCursorOf(context, userId, reader);
+  if (stored !== undefined || reader === WEB_READER) return stored ?? 0;
+  const start = await cursorOf(context, userId, reader);
+  await context.tx.insert(readCursors).values({ orgId: context.orgId, userId, reader, acknowledged: start }).onConflictDoNothing();
+  return (await storedCursorOf(context, userId, reader)) ?? start;
+}
+
+/**
+ * The furthest cursor of the user's agent clients, the CLI's and every other
+ * reader's but the web inbox's, which the hooks read after; the CLI's counts
+ * from where it starts when it has no cursor yet.
+ */
+export async function furthestAgentCursorOf(context: OrgContext, userId: string): Promise<number> {
+  const rows = await context.tx
+    .select({ reader: readCursors.reader, acknowledged: readCursors.acknowledged })
+    .from(readCursors)
+    .where(and(eq(readCursors.orgId, context.orgId), eq(readCursors.userId, userId)));
+  const agents = rows.filter(({ reader }) => reader !== WEB_READER).map(({ acknowledged }) => acknowledged);
+  const cli = rows.some(({ reader }) => reader === CLI_READER) ? [] : [await cursorOf(context, userId, CLI_READER)];
+  return Math.max(0, ...agents, ...cli);
 }
 
 /** The number of the install's last event; 0 before the first. */
@@ -92,17 +153,19 @@ export const EVENT_READ_HANDLERS: Handlers = {
 
 /**
  * Moves the reader's cursor up to an event that exists, and never back;
- * returns the cursor. A number no event has yet is refused with 404 and moves
+ * returns the cursor. A reader with no cursor yet has it created no lower than
+ * where it starts. A number no event has yet is refused with 404 and moves
  * nothing.
  */
 export async function acknowledgeUpTo(context: OrgContext, userId: string, reader: string, upTo: number): Promise<number> {
   if (upTo > (await lastEventNumber(context))) throw new Refusal("record-not-found", "There is no event with that number yet.");
+  const start = await cursorOf(context, userId, reader);
   const [row] = await context.tx
     .insert(readCursors)
-    .values({ orgId: context.orgId, userId, reader, acknowledged: upTo })
+    .values({ orgId: context.orgId, userId, reader, acknowledged: Math.max(upTo, start) })
     .onConflictDoUpdate({
       target: [readCursors.orgId, readCursors.userId, readCursors.reader],
-      set: { acknowledged: sql`greatest(${readCursors.acknowledged}, excluded.acknowledged)`, updatedAt: sql`now()` },
+      set: { acknowledged: sql`greatest(${readCursors.acknowledged}, ${upTo})`, updatedAt: sql`now()` },
     })
     .returning({ acknowledged: readCursors.acknowledged });
   return row?.acknowledged ?? upTo;

@@ -15,9 +15,12 @@ import { openRequestInTheWebUi } from "./support/requests.ts";
 // exited with code 2 for a third, none of the user's read cursors has moved:
 // `tiehall updates` still lists all three, and the agent's next whats_new
 // includes the one that woke Claude. The agent acknowledges through whats_new
-// or `tiehall updates`; once `tiehall updates` has acknowledged them, the
-// hooks, which read with the CLI client's cursor, follow it, on another
-// machine of the user's too, whose mark of the news announced is its own.
+// or `tiehall updates`; once either has acknowledged them, the hooks, which
+// read after the furthest cursor of the user's CLI and MCP clients, follow
+// it, on another machine of the user's too, whose mark of the news announced
+// is its own, while `tiehall updates` keeps the CLI's own place
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (44); design.md, Technical decisions: T6).
 
 const HOLD_MS = 1_500;
 
@@ -135,5 +138,45 @@ describe("the hooks", () => {
     expect(woken.code).toBe(2);
     expect(woken.stderr.split("\n").filter((line) => line.startsWith(request.key))).toHaveLength(1);
     expect(waitCalls(desktop) - calls).toBeLessThanOrEqual(2);
+  }, 60_000);
+
+  // requester-loop: The hooks read with the CLI's cursor and acknowledge nothing, "The hooks follow an acknowledgement
+  // through whats_new".
+  it("follow an acknowledgement through whats_new: the digest and the waiter skip it, tiehall updates still lists it, and no cursor moves", async () => {
+    const request = await openRequestInTheWebUi<{ key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "BE" });
+    await acknowledgeEverything(laptop);
+    await ask(request.key);
+    await ask(request.key);
+    const questions = await listed(laptop, request.key);
+    expect(questions).toHaveLength(2);
+    // Sam's agent acknowledges the first question through whats_new.
+    const client = await connectMcp(harness, { token: sam.token, version: MODERN });
+    try {
+      const acknowledged = await client.callTool({ name: "whats_new", arguments: { limit: 1, acknowledge: questions[0] } });
+      expect(acknowledged.isError).not.toBe(true);
+    } finally {
+      await client.close();
+    }
+    const before = await cursors();
+    // A new machine of Sam's, whose mark holds nothing: its digest lists the second question alone.
+    const phone = await signedInCli(harness, sam);
+    try {
+      const printed = await digest(phone, "session-phone");
+      expect(printed.stdout.split("\n").filter((line) => line.startsWith(request.key))).toHaveLength(1);
+      // Its waiter waits past both, and wakes for the next question alone.
+      const calls = waitCalls(phone);
+      const waiting = phone.run(["hook", "wait"], hook("Stop", "session-phone"));
+      await untilWaited(phone, calls + 1);
+      await realSleep(HOLD_MS / 2);
+      await ask(request.key);
+      const woken = await waiting;
+      expect(woken.code).toBe(2);
+      expect(woken.stderr.split("\n").filter((line) => line.startsWith(request.key))).toHaveLength(1);
+      // No read cursor of Sam's has moved, and `tiehall updates`, on the CLI's own cursor, still lists both questions.
+      expect(await cursors()).toEqual(before);
+      expect((await listed(phone, request.key)).slice(0, 2)).toEqual(questions);
+    } finally {
+      phone.close();
+    }
   }, 60_000);
 });

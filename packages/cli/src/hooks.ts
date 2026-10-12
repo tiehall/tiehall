@@ -16,21 +16,29 @@ import { acquireSessionLock, releaseSessionLock } from "./session-lock.ts";
 // launcher passes as --install, and Claude Code's input on their standard
 // input names the session.
 //
+// Both read the user's updates after the furthest cursor of the user's CLI and
+// MCP clients, which the install finds, rather than the CLI client's own, so
+// that what the agent acknowledged through whats_new is not announced again,
+// and neither moves a cursor (requester-loop: The hooks read with the CLI's
+// cursor and acknowledge nothing; decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (44); design.md, Technical decisions:
+// T6).
+//
 // `tiehall hook session-start`, which the SessionStart hook runs, prints a
 // digest that is added to Claude's context: a line of Tiehall's words and one
-// line per update after the CLI client's cursor that has not been announced,
-// the request key, the event type, the team and the request URL, read without
+// line per update after that cursor that has not been announced, the request
+// key, the event type, the team and the request URL, read without
 // acknowledging anything; it prints nothing when nothing is new. The digest
 // and the waiter share the mark of the news announced (announced.ts): neither
 // announces an update the mark holds, and each adds to it what it announces.
-// The agent acknowledges through whats_new, whose cursor is its own, so the
-// CLI client's cursor can stay behind more announced updates than the
-// digest's page holds; then the digest reads past the mark with the wait
-// endpoint, as the waiter does, without holding the session's start.
+// The agent acknowledges through whats_new only what it has handled, so the
+// cursor can stay behind more announced updates than the digest's page holds;
+// then the digest reads past the mark with the wait endpoint, as the waiter
+// does, without holding the session's start.
 //
 // `tiehall hook wait`, which the Stop hook runs with asyncRewake at the end
 // of every turn, waits for news on the user's requests. It long-polls the wait
-// endpoint, GET /api/v1/events/wait, with the CLI client's cursor, and then
+// endpoint, GET /api/v1/events/wait, after that cursor, and then
 // past what the mark holds, calling again after an empty answer, and after a 503 while the install restarts,
 // within a cap of 30 minutes from when it started, which the CLI enforces.
 // When news the mark does not hold comes, it exits with code 2 and writes a
@@ -178,8 +186,18 @@ function retryAfterMs(answer: Answer): number | undefined {
   return Number(value.trim()) * 1000;
 }
 
-/** One call to the wait endpoint, after this cursor, or the client's own when none is given; given up when `stop` aborts. */
-export async function waitOnce(environment: CliEnvironment, session: Session, cursor: number | undefined, stop: AbortSignal): Promise<Waited> {
+/**
+ * One call to the wait endpoint, after this cursor, or, when none is given,
+ * the client's own, or the furthest of the user's agent clients' as the hooks
+ * wait; given up when `stop` aborts.
+ */
+export async function waitOnce(
+  environment: CliEnvironment,
+  session: Session,
+  cursor: number | undefined,
+  stop: AbortSignal,
+  readAfter: "own_cursor" | "furthest_cursor" = "own_cursor",
+): Promise<Waited> {
   if (stop.aborted) return { kind: "stopped" };
   const call = new AbortController();
   const onStop = () => call.abort();
@@ -189,7 +207,14 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
     // A refresh of the access token is given up only when the waiter stops, such as at its cap, not when one call runs long.
     // The call ends when its own signal aborts, whatever its request's signal does (abortable()).
     const answer = await abortable(
-      session.send((client) => client.GET("/api/v1/events/wait", { params: { query: cursor === undefined ? {} : { cursor } }, signal: call.signal }), stop),
+      session.send(
+        (client) =>
+          client.GET("/api/v1/events/wait", {
+            params: { query: cursor !== undefined ? { cursor } : readAfter === "furthest_cursor" ? { readAfter } : {} },
+            signal: call.signal,
+          }),
+        stop,
+      ),
       call.signal,
     );
     if (answer.ok) {
@@ -212,9 +237,9 @@ export async function waitOnce(environment: CliEnvironment, session: Session, cu
 }
 
 /**
- * Waits for news on the user's requests after the CLI client's cursor, until
- * `stop` aborts: the notices of the first answer that has any, or none once
- * it stops or the install refuses it.
+ * Waits for news on the user's requests after the furthest cursor of the
+ * user's agent clients, until `stop` aborts: the notices of the first answer
+ * that has any, or none once it stops or the install refuses it.
  */
 async function waitForNews(environment: CliEnvironment, session: Session, stop: AbortSignal): Promise<{ seq: number; notice: Notice }[]> {
   const sleep = sleepOf(environment);
@@ -222,7 +247,7 @@ async function waitForNews(environment: CliEnvironment, session: Session, stop: 
   let cursor: number | undefined;
   let failures = 0;
   while (!stop.aborted) {
-    const waited = await waitOnce(environment, session, cursor, stop);
+    const waited = await waitOnce(environment, session, cursor, stop, "furthest_cursor");
     switch (waited.kind) {
       case "answered": {
         failures = 0;
@@ -361,8 +386,8 @@ async function newsPastTheMark(environment: CliEnvironment, session: Session, st
 
 /**
  * `tiehall hook session-start`: prints the digest of the updates after the
- * CLI client's cursor that have not been announced, read without
- * acknowledging anything, or nothing; 0 whatever happens.
+ * furthest cursor of the user's agent clients that have not been announced,
+ * read without acknowledging anything, or nothing; 0 whatever happens.
  */
 export async function hookSessionStart(environment: CliEnvironment, install: string | undefined): Promise<number> {
   const stop = new AbortController();
@@ -371,7 +396,7 @@ export async function hookSessionStart(environment: CliEnvironment, install: str
     const login = chooseLogin(configDirOf(environment.env), { install });
     const session = sessionFor(environment, login);
     void sleepOf(environment)(DIGEST_READ_MS, stop.signal).then(() => stop.abort());
-    const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT }, signal: stop.signal }), stop.signal);
+    const answer = await session.send((client) => client.POST("/api/v1/updates", { body: { limit: DIGEST_LIMIT, readAfter: "furthest_cursor" }, signal: stop.signal }), stop.signal);
     if (!answer.ok) return 0;
     const page = answer.body as { events?: unknown; more?: unknown } | undefined;
     if (!Array.isArray(page?.events)) return 0;

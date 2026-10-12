@@ -206,6 +206,22 @@ describe("a wait", () => {
     expect(answer).toMatchObject({ status: 200, body: { events: [], cursor: last } });
   });
 
+  // requester-loop: The hooks read with the CLI's cursor and acknowledge nothing (decisions-from-groups-15-28:
+  // design.md, Decisions this change rests on: D55 (44); design.md, Technical decisions: T6).
+  it("waits after the furthest cursor of the user's agent clients when asked to, and moves and creates no cursor", async () => {
+    const mcp = oauthTokenOf(id("sam"), "https://agent.example/client.json", "mcp");
+    const last = await lastNumber();
+    expect((await callApi(install, mcp, "POST", "/api/v1/updates", { acknowledge: last })).status).toBe(200);
+    const { rows: before } = await install.owner.query("SELECT reader, acknowledged FROM read_cursors WHERE user_id = $1 ORDER BY reader", [id("sam")]);
+    const hooks = oauthTokenOf(id("sam"), CLI_CLIENT_ID, "cli");
+    const answer = await install
+      .api(hooks)(new Request(`${URL_OF_INSTALL}/api/v1/events/wait?readAfter=furthest_cursor`))
+      .then(async (response) => ({ status: response.status, body: await response.json() }));
+    expect(answer).toEqual({ status: 200, body: { events: [], cursor: last } });
+    const { rows: after } = await install.owner.query("SELECT reader, acknowledged FROM read_cursors WHERE user_id = $1 ORDER BY reader", [id("sam")]);
+    expect(after).toEqual(before);
+  });
+
   it("refuses a cursor that is not a whole number from 0 with 400", async () => {
     for (const cursor of ["-1", "x"]) {
       const response = await install.api(cliOf("sam"))(new Request(`${URL_OF_INSTALL}/api/v1/events/wait?cursor=${cursor}`));

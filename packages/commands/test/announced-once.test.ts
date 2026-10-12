@@ -128,10 +128,12 @@ describe("news the waiter announced", () => {
   }, 60_000);
 });
 
-// requester-loop: Claude Code SessionStart digest; requester-loop: News is announced once. The agent acknowledges
-// through whats_new, whose cursor is its own, so the CLI client's cursor stays behind every update the hooks
+// requester-loop: Claude Code SessionStart digest; requester-loop: News is announced once. The hooks acknowledge
+// nothing, so until the agent acknowledges what it handled, the cursor they read after stays behind every update they
 // announced; once more of them wait after it than the digest's page of 50 holds, the next session's digest still
-// lists the updates that were never announced.
+// lists the updates that were never announced. (An acknowledgement through whats_new would quiet the hooks: they read
+// after the furthest cursor of the user's CLI and MCP clients, decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (44).)
 describe("a digest behind more announced updates than a page holds", () => {
   it("lists, in the next session, the updates the first session's digest had no room for", async () => {
     await acknowledgeEverything(samCli);
@@ -143,16 +145,11 @@ describe("a digest behind more announced updates than a page holds", () => {
     const first = await samCli.run(["hook", "session-start"], hook("SessionStart", "session-page-1"));
     expect(entries(first.stdout)).toHaveLength(50);
     expect(first.stdout).toContain("More updates wait after these");
-    // The agent reads and acknowledges every update through whats_new, which leaves the CLI's cursor where it was.
+    // The agent reads the updates through whats_new and acknowledges none of them yet.
     const client = await connectMcp(harness, { token: sam.token, version: MODERN });
     try {
-      let args: Record<string, unknown> = { limit: 50 };
-      for (;;) {
-        const read = await client.callTool({ name: "whats_new", arguments: args });
-        const events = (read.structuredContent as { events: { number: number }[] }).events;
-        if (events.length === 0) break;
-        args = { limit: 50, acknowledge: Math.max(...events.map(({ number }) => number)) };
-      }
+      const read = await client.callTool({ name: "whats_new", arguments: { limit: 50 } });
+      expect((read.structuredContent as { events: unknown[] }).events).toHaveLength(50);
     } finally {
       await client.close();
     }

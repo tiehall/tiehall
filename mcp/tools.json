@@ -10564,6 +10564,14 @@
             "maximum": 50,
             "minimum": 1,
             "type": "integer"
+          },
+          "readAfter": {
+            "description": "Whose cursor to read after: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks read after, so that what any of them acknowledged is not announced again. A read after the furthest cursor moves no cursor, so it takes no acknowledge.",
+            "enum": [
+              "own_cursor",
+              "furthest_cursor"
+            ],
+            "type": "string"
           }
         },
         "type": "object"

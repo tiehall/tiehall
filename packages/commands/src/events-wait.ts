@@ -2,7 +2,7 @@ import { waitForEvents, type waitEntry } from "@tiehall/catalog";
 import { Refusal } from "@tiehall/core";
 import type { z } from "zod";
 import { actsForUser, type Caller } from "./caller.ts";
-import { cursorOf, readerOf } from "./event-reads.ts";
+import { cursorOf, furthestAgentCursorOf, readerOf } from "./event-reads.ts";
 import { definePreparedHandler, type Handlers, type PrepareContext } from "./execute.ts";
 import { shutdownSignal } from "./shutdown.ts";
 import { updatesAfter, updatesPageOf } from "./updates.ts";
@@ -10,19 +10,21 @@ import { updatesAfter, updatesPageOf } from "./updates.ts";
 // The long-poll wait endpoint, GET /api/v1/events/wait (requester-loop: The
 // long-poll wait endpoint; requester-loop: What whats_new covers; requests:
 // Readers get only domain events they may see; self-host-install: A restart
-// stops the app gracefully; design.md, Decisions this change rests on: D28
-// #59; design.md, Technical decisions: T15). It takes a cursor, the reader's
-// own unless the call names one, and answers as soon as an update in the
-// user's whats_new scope comes after it, the one the wait's reader, such as
-// the Claude Code hooks through the CLI, pulls next, so a write of one of the
-// user's agents ends no wait, and what the user did in the web UI does
-// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
-// (43); findings-from-claude-code-run: design.md, Findings: F2 (4)): each entry is the
-// update's seq and type, its request's key, the key of the request's target
-// team and the request's URL, ids and Tiehall's own text only, and the cursor
-// is the last entry's seq. Otherwise it holds the call at most 60 seconds and
-// answers 200 with an empty list and the cursor it was given. It moves no
-// cursor.
+// stops the app gracefully; design.md, Decisions this change rests on: D28 #59;
+// design.md, Technical decisions: T15). It takes a cursor, the reader's own
+// unless the call names one, or the furthest of the user's agent clients' when
+// the call asks for it, as the hooks' waiter does (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (44)), and answers as soon as
+// an update in the user's whats_new scope comes after it, the one the wait's
+// reader, such as the Claude Code hooks through the CLI, pulls next, so a write
+// of one of the user's agents ends no wait, and what the user did in the web UI
+// does (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (43); findings-from-claude-code-run: design.md, Findings: F2 (4)): each
+// entry is the update's seq and type, its request's key, the key of the
+// request's target team and the request's URL, ids and Tiehall's own text only,
+// and the cursor is the last entry's seq. Otherwise it holds the call at most
+// 60 seconds and answers 200 with an empty list and the cursor it was given. It
+// moves no cursor.
 //
 // It holds the call in the step execute() runs before the call's transaction,
 // so no connection or transaction is held while it waits: it reads in short
@@ -74,13 +76,18 @@ export function held(woken: Promise<void> | undefined, ms: number, shutdown: Abo
 }
 
 /** Waits, outside any transaction, until an update in the user's scope comes after the cursor, the hold ends or the app shuts down. */
-async function waitStep({ cursor: given }: { cursor?: number | undefined }, context: PrepareContext): Promise<WaitAnswer> {
+async function waitStep(
+  { cursor: given, readAfter }: { cursor?: number | undefined; readAfter?: "own_cursor" | "furthest_cursor" | undefined },
+  context: PrepareContext,
+): Promise<WaitAnswer> {
   const shutdown = context.waits?.shutdown ?? shutdownSignal();
   if (shutdown.aborted) throw shuttingDown();
   const installUrl = context.url;
   if (installUrl === undefined) throw new Error("The wait names each request's URL, so it runs only where the install's URL is known.");
   const userId = userOf(context.caller);
-  const cursor = given ?? (await context.read((read) => cursorOf(read, userId, readerOf(context.caller))));
+  const cursor =
+    given ??
+    (await context.read((read) => (readAfter === "furthest_cursor" ? furthestAgentCursorOf(read, userId) : cursorOf(read, userId, readerOf(context.caller)))));
   const deadline = Date.now() + (context.waits?.holdMs ?? WAIT_HOLD_MS);
   const wakeups = context.waits?.wakeups;
   await wakeups?.ready();

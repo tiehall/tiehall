@@ -699,6 +699,19 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
         "description": "How many updates to return, 1 to 50; 25 unless given."
       },
       {
+        "name": "readAfter",
+        "in": "body",
+        "types": [
+          "string"
+        ],
+        "values": [
+          "own_cursor",
+          "furthest_cursor"
+        ],
+        "required": false,
+        "description": "Whose cursor to read after: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks read after, so that what any of them acknowledged is not announced again. A read after the furthest cursor moves no cursor, so it takes no acknowledge."
+      },
+      {
         "name": "Idempotency-Key",
         "in": "header",
         "types": [

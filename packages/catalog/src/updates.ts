@@ -22,6 +22,13 @@ import { INSTALL_URL } from "./schemas.ts";
 // whats_new, which is also `tiehall updates`, covers the requests the user
 // opened, claimed or is accountable for, and the new requests addressed to
 // the user's teams.
+//
+// A reader may read after the furthest cursor of the user's agent clients
+// instead of its own, as the Claude Code hooks do, so that what the agent
+// acknowledged through whats_new is not announced again; such a read
+// acknowledges nothing (requester-loop: The hooks read with the CLI's cursor
+// and acknowledge nothing; decisions-from-groups-15-28: design.md, Decisions
+// this change rests on: D55 (44); design.md, Technical decisions: T6).
 
 /** A request's URL on the install: the install's URL, a slash and the request's key, such as https://tiehall.example.com/FE-142. */
 export const REQUEST_URL = new RegExp(`${INSTALL_URL.source.slice(0, -1)}/${REQUEST_KEY.source.slice(1, -1)}$`);
@@ -63,11 +70,20 @@ export const updatesInput = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().meta({ description: "How many updates to return, 1 to 50; 25 unless given." }),
 });
 
+/** Whose cursor a read follows: the client's own, or the furthest of the user's agent clients', which the hooks read after. */
+export const readAfter = z
+  .enum(["own_cursor", "furthest_cursor"])
+  .optional()
+  .meta({
+    description:
+      "Whose cursor to read after: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks read after, so that what any of them acknowledged is not announced again. A read after the furthest cursor moves no cursor, so it takes no acknowledge.",
+  });
+
 export const readUpdates = defineCommand({
   id: "updates.read",
   summary:
     "Read your updates: the events after your cursor on the requests you opened, claimed or are accountable for, and the new requests addressed to your teams, oldest first, without what any agent of yours did; what you did in the web UI is in them. Nothing moves until you acknowledge: pass the number of the last update you handled, and the updates you get follow it. Each of your clients keeps its own place.",
-  input: updatesInput,
+  input: updatesInput.extend({ readAfter }),
   output: updatesPage,
   method: "POST",
   path: "/api/v1/updates",
@@ -110,6 +126,10 @@ export const waitForEvents = defineCommand({
       .min(0)
       .optional()
       .meta({ description: "The number of the last update you know of; the wait answers with the updates after it. Your client's cursor unless given." }),
+    readAfter: readAfter.meta({
+      description:
+        "Whose cursor to wait after when no cursor is given: own_cursor, this client's, unless given; or furthest_cursor, the furthest of the cursors of your CLI and your other agent clients, which the Claude Code hooks wait after.",
+    }),
   }),
   output: z.object({
     events: z.array(waitEntry).meta({ description: "The updates after the cursor, oldest first; empty when none came before the wait ended." }),

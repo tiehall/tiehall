@@ -22,7 +22,8 @@ import {
 // that can reach a model carry only server text; design.md, Technical
 // decisions: T15). The plugin's SessionStart hook runs it, and what it prints
 // is added to Claude's context: one entry per update on the user's requests
-// that is new, read with the CLI client's cursor, each with only the request
+// that is new, read after the furthest cursor of the user's CLI and MCP
+// clients, each with only the request
 // key, the event type, the team and the request URL, after a line of
 // Tiehall's words. It prints nothing when nothing is new, and nothing at all
 // when it cannot read, and it acknowledges nothing. These tests run it against
@@ -64,14 +65,24 @@ describe("the digest", () => {
     expect(printed.stdout).not.toContain("Ignore previous");
   });
 
-  it("reads with the CLI client's cursor, without acknowledging anything", async () => {
+  it("reads after the furthest cursor of the user's agents, without acknowledging anything", async () => {
     install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
     install.cursor = 7;
     await digest();
     const reads = install.calls.filter(({ path }) => path === "/api/v1/updates");
     expect(reads).toHaveLength(1);
-    expect(reads[0]?.body).toEqual({ limit: 50 });
+    expect(reads[0]?.body).toEqual({ limit: 50, readAfter: "furthest_cursor" });
     expect(install.cursor).toBe(7);
+  });
+
+  // requester-loop: The hooks read with the CLI's cursor and acknowledge nothing, "The hooks follow an acknowledgement
+  // through whats_new" (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44)).
+  it("does not list an update an MCP client of the user's acknowledged through whats_new", async () => {
+    const first = install.post({ type: "request.message_posted", key: "FE-142", team: "FE" });
+    install.post({ type: "request.message_posted", key: "FE-143", team: "FE" });
+    install.furthest = first.seq;
+    expect((await digest()).stdout).toBe(`${HEADING}\nFE-143 request.message_posted (team FE) ${INSTALL}/FE-143\n`);
+    expect(install.cursor).toBe(0);
   });
 
   // requester-loop: The hooks read with the CLI's cursor and acknowledge nothing, "The hooks follow the CLI's cursor".

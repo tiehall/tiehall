@@ -70,7 +70,8 @@ const TOPICS: Topic[] = [
     topic: "the plugin and skill",
     page: "docs/claude-code-plugin.md",
     heading: "The hooks",
-    says: ["SessionStart", "Stop", "`asyncRewake`", "30 minutes", "exit code 2", "`tiehall watch`", "acknowledge"],
+    // The last: decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44).
+    says: ["SessionStart", "Stop", "`asyncRewake`", "30 minutes", "exit code 2", "`tiehall watch`", "acknowledge", "the hooks no longer announce it"],
   },
   {
     topic: "PATs and bot users",
@@ -95,6 +96,8 @@ const TOPICS: Topic[] = [
       "leave out what any of your agents did",
       "keep what you did in the web UI",
       "the web inbox's feed and the daily digest leave out everything you did",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44).
+      "starts where your web inbox is",
     ],
   },
   {

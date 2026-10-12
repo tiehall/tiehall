@@ -162,6 +162,6 @@ describe("with a tiehall command older than the install's minimum", () => {
   it("ends the waiter without code 2, without a word, and without calling again", async () => {
     calls.length = 0;
     expect(await launch("wait", `${real}:/usr/bin:/bin`, { TIEHALL_URL: url, TIEHALL_CONFIG_DIR: configDir })).toEqual({ code: 0, stdout: "", stderr: "" });
-    expect(calls).toEqual(["GET /api/v1/events/wait"]);
+    expect(calls).toEqual(["GET /api/v1/events/wait?readAfter=furthest_cursor"]);
   });
 });
