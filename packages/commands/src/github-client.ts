@@ -145,20 +145,40 @@ export function statusOfCall(error: unknown): number | undefined {
 }
 
 /**
+ * Whether GitHub refused a call for one of its rate limits: with 429, or with
+ * a 403 that says so, as GitHub answers a call over its primary rate limit,
+ * with no requests left (x-ratelimit-remaining: 0), and one over a secondary
+ * rate limit, with a Retry-After header or a message that names the rate
+ * limit. Any other 403, such as GitHub's for an installation it suspended, is
+ * no rate limit.
+ */
+function rateLimited(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const response = (error as { response?: { headers?: Record<string, unknown>; data?: unknown } }).response;
+  const headers = response?.headers ?? {};
+  if (String(headers["x-ratelimit-remaining"]) === "0" || headers["retry-after"] !== undefined) return true;
+  const message = (response?.data as { message?: unknown } | undefined)?.message;
+  return typeof message === "string" && /rate limit/i.test(message);
+}
+
+/**
  * Whether GitHub failed a call, rather than answering it with a refusal of
  * its own (sign-in: Who may sign in; decisions-from-groups-15-28: design.md,
  * Decisions this change rests on: D55 (7)): it gave no answer within the
  * client's wait, an answer the call cannot use, a server error (5xx) or a
- * rate-limit refusal (429), to the call or to the request for an installation
- * token made before it. Any other 4xx, such as GitHub's 403 for an
- * installation it suspended, is GitHub's own answer. It looks through a
- * GitHubUnavailableError to the error it wraps.
+ * rate-limit refusal (429, or a 403 that GitHub sends for a rate limit), to
+ * the call or to the request for an installation token made before it. Any
+ * other 4xx, such as GitHub's 403 for an installation it suspended, is
+ * GitHub's own answer. It looks through a GitHubUnavailableError to the error
+ * it wraps.
  */
 export function gitHubFailedCall(error: unknown): boolean {
   const cause = error instanceof GitHubUnavailableError && error.cause !== undefined ? error.cause : error;
   if ((cause as { response?: unknown } | undefined)?.response === undefined) return true;
   const status = statusOf(cause);
-  return status === undefined || status === 429 || status >= 500;
+  return status === undefined || status >= 500 || rateLimited(cause);
 }
 
 /**

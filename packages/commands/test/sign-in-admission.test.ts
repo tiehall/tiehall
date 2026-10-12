@@ -196,6 +196,38 @@ describe("a failed membership lookup", () => {
     );
   });
 
+  // GitHub refuses a call over its primary rate limit with 403 or 429 and no requests left, and one over a secondary
+  // rate limit with 403 or 429, a message that says so and often a Retry-After header: each is GitHub failing the
+  // lookup, not an answer about the account.
+  it.each([
+    ["429", 429, { "x-ratelimit-remaining": "0" }, "API rate limit exceeded for installation ID 1."],
+    ["403 with no requests left", 403, { "x-ratelimit-remaining": "0" }, "API rate limit exceeded for installation ID 1."],
+    ["403 with a Retry-After header", 403, { "x-ratelimit-remaining": "4999", "retry-after": "60" }, "Please wait a few minutes before you try again."],
+    ["403 for a secondary rate limit", 403, { "x-ratelimit-remaining": "4999" }, "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."],
+  ])("answers 502 when GitHub refuses the lookup for its rate limit, with %s", async (_name, status, headers, message) => {
+    const failing = await failingLookups(
+      /^\/orgs\/[^/]+\/members/,
+      async () => new Response(JSON.stringify({ message, documentation_url: "https://docs.github.com/rest" }), { status, headers: { "content-type": "application/json", ...headers } }),
+    );
+    const from = await lastEvent();
+    await expectUnavailable(await failing.signIn("lou-acme"), "lou-acme", from);
+  });
+
+  it("refuses with 403, as before, when GitHub answers the lookup with a 403 of its own that is no rate limit", async () => {
+    // Liv is a member of acme, whose refused sign-in is kept on record.
+    accounts.set("liv-acme", stub.addUser({ login: "liv-acme" }));
+    await stub.addMember("acme", "liv-acme");
+    const refusing = await failingLookups(
+      /^\/orgs\/[^/]+\/members/,
+      async () =>
+        new Response(JSON.stringify({ message: "Resource not accessible by integration", documentation_url: "https://docs.github.com/rest" }), {
+          status: 403,
+          headers: { "content-type": "application/json", "x-ratelimit-remaining": "4999" },
+        }),
+    );
+    await expectRefused(await refusing.signIn("liv-acme"), "liv-acme");
+  });
+
   it("answers 502 when GitHub does not answer the lookup within the client's wait, lowered here", async () => {
     const failing = await failingLookups(
       /^\/orgs\/[^/]+\/members/,
