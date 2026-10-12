@@ -7,6 +7,7 @@ import { defineCatalog, defineCommand } from "@tiehall/catalog";
 import { PROBLEM_TYPE_BASE, Refusal } from "@tiehall/core";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
 import {
+  bodiesBusy,
   createExecute,
   createLogger,
   createRestHandler,
@@ -24,12 +25,13 @@ import { addTeam, joinTeams, packetOf, tokenOf } from "./support/requests.ts";
 // The rows of the error model that REST reaches now (public-api: One error
 // model for Tiehall's own refusals; public-api: Errors are RFC 9457 problem
 // details), through the real route and execute(): both 404 rows, 400, 403 for
-// a removed member, 409, 429 with Retry-After, 502 integration-unavailable and
-// 503 setup-required, and 413 for a body over the size limit, through the real
-// catalog. The 503 with
-// Retry-After: 0 that a call gets while the app shuts down is the web role's,
-// tested in apps/server, as are the web role's own 413 answers. Later tasks add
-// a test for each row they make reachable.
+// a removed member, 409, 429 with Retry-After, 502 integration-unavailable,
+// 503 setup-required and 503 busy, and 413 for a body over the size limit,
+// through the real catalog. The 503 with Retry-After: 0 that a call gets while
+// the app shuts down is the web role's, tested in apps/server, as are the web
+// role's own 413 answers and its 503 busy for a body beyond what one process
+// receives at once; the probe here answers that refusal as REST answers it.
+// Later tasks add a test for each row they make reachable.
 
 const migrationsFolder = fileURLToPath(new URL("../../db/migrations/", import.meta.url));
 const INSTALL = "https://tiehall.example.com";
@@ -69,6 +71,19 @@ const catalog = defineCatalog([
     output: z.object({}),
     method: "POST",
     path: "/api/v1/probes/{key}/messages",
+    scopes: ["requests:write"],
+    commitment: false,
+    confirm: false,
+    surfaces: ["rest"],
+    stability: "alpha",
+  }),
+  defineCommand({
+    id: "probes.upload",
+    summary: "Send a probe body while the process already receives as many bodies as it holds at once.",
+    input: z.object({ key: z.string(), body: z.string() }),
+    output: z.object({}),
+    method: "POST",
+    path: "/api/v1/probes/{key}/uploads",
     scopes: ["requests:write"],
     commitment: false,
     confirm: false,
@@ -124,6 +139,9 @@ beforeAll(async () => {
       },
       "probes.post": async () => {
         throw new Refusal("rate-limited", "This token has made 60 writes in the last minute.", { retryAfterSeconds: 17 });
+      },
+      "probes.upload": async () => {
+        throw bodiesBusy();
       },
       "probes.link": async () => {
         throw new Refusal("integration-unavailable", "GitHub did not answer the read of the pull request within 10 seconds, so nothing changed.");
@@ -215,6 +233,16 @@ describe("once the install has its org", () => {
       status: 502,
       detail: "GitHub did not answer the read of the pull request within 10 seconds, so nothing changed.",
     });
+  });
+
+  // public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (5)). The web role's request guard refuses a body that would take the bodies one process receives
+  // at once past 64 MiB, before any route; the probe gives REST the same refusal.
+  it("answers a body beyond what one process receives at once with 503 busy and Retry-After: 5", async () => {
+    const { status, retryAfter, problem } = await send("POST", "/api/v1/probes/FE-142/uploads", { body: "x" });
+    expect(status).toBe(503);
+    expect(retryAfter).toBe("5");
+    expect(problem).toMatchObject({ type: `${PROBLEM_TYPE_BASE}busy`, title: "Too busy", status: 503, retryAfter: 5 });
   });
 
   it("answers an exceeded limit with 429 and Retry-After", async () => {

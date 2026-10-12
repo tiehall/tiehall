@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type pg from "pg";
 import type { GitHubStub, StubApp, StubDelivery } from "@tiehall/testing/github";
-import { createGitHubWebhookRoute, createInstallGitHub, storeGitHubApp, type InstallGitHub, type SecretBox } from "../../src/index.ts";
+import { httpProblem } from "@tiehall/core";
+import { bodiesBusy, createGitHubWebhookRoute, createInstallGitHub, storeGitHubApp, type InstallGitHub, type SecretBox } from "../../src/index.ts";
 import type { TestInstall } from "./install.ts";
 
 // The install's GitHub App for the tests of what Tiehall does with GitHub: an
@@ -65,6 +66,12 @@ export async function storeDelivery(install: TestInstall, delivery: StubDelivery
 export interface WebhookServer {
   /** The hook URL to give the stub's App, on loopback, where the stub delivers. */
   url: string;
+  /**
+   * While true, every delivery is answered as the web role's request guard answers a body beyond what one process
+   * receives at once: 503 busy, with Retry-After, before its body is read (public-api: Request bodies have a size
+   * limit). False unless a test sets it.
+   */
+  busy: boolean;
   close(): Promise<void>;
 }
 
@@ -81,7 +88,14 @@ export async function serveWebhooks(install: TestInstall, secrets: () => SecretB
     jobs: { send: async (_tx, queue, data) => void install.sentJobs.push({ queue, data }) },
     logger: install.logger,
   });
+  let busy = false;
   const server = createServer((incoming, outgoing) => {
+    if (busy) {
+      const { status, headers, body } = httpProblem(bodiesBusy());
+      outgoing.writeHead(status, { ...headers, connection: "close" });
+      outgoing.end(JSON.stringify(body));
+      return;
+    }
     const chunks: Buffer[] = [];
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
     incoming.on("end", () => {
@@ -102,6 +116,12 @@ export async function serveWebhooks(install: TestInstall, secrets: () => SecretB
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/webhooks/github`,
+    get busy() {
+      return busy;
+    },
+    set busy(value) {
+      busy = value;
+    },
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();

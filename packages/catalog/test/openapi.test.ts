@@ -350,6 +350,19 @@ describe("the size limit on request bodies in the document", () => {
     expect(operation("/api/v1/requests/{key}", "get").responses["413"]).toBeUndefined();
   });
 
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (5); Technical decisions: T1. Besides
+  // its own limit, a body is refused with 503 busy and Retry-After when one web process is already receiving as many
+  // bodies as it holds at once, so every operation that takes a body names busy under its 503, and one without a
+  // body does not.
+  it("names busy, with Retry-After, under the 503 of an operation that takes a body, and not under one without", () => {
+    for (const path of ["/api/v1/requests", "/api/v1/contract/reports"]) {
+      const response = operation(path, "post").responses["503"];
+      expect(response?.["description"], path).toEqual(expect.stringContaining("(busy)"));
+      expect(response?.["headers"], path).toMatchObject({ "Retry-After": expect.anything() });
+    }
+    expect(operation("/api/v1/requests/{key}", "get").responses["503"]?.["description"]).not.toEqual(expect.stringContaining("busy"));
+  });
+
   it("lists 413 on every operation of the real catalog whose method takes a body, and on no other", () => {
     const real = openApiDocument(CATALOG) as Json & { paths: Record<string, Record<string, { responses: Record<string, Json> }>> };
     const methods = Object.entries(real.paths).flatMap(([path, operations]) => Object.entries(operations).map(([method, described]) => ({ path, method, described })));

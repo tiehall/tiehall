@@ -166,6 +166,26 @@ describe("the redelivery of failed GitHub deliveries", () => {
     expect(rows[0]?.count).toBe(1);
   });
 
+  // public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change rests
+  // on: D55 (5)). A delivery that arrives while one web process already receives as many bodies as it holds at once
+  // is answered 503 busy before it is read; GitHub logs it as a failed delivery, so the next run asks for it again.
+  it("asks GitHub again for a delivery refused with 503 busy, which is then stored and processed once", async () => {
+    hooks.busy = true;
+    await stub.openPullRequest("acme/web", { title: "Fix the header", head: "fix-header", author: "omar" });
+    await stub.settled();
+    hooks.busy = false;
+    const refused = stub.deliveries(app).at(-1)!;
+    expect(refused).toMatchObject({ event: "pull_request", redelivery: false, statusCode: 503 });
+    expect(JSON.parse(String(refused.response.payload))).toMatchObject({ type: "https://tiehall.com/problems/busy", status: 503 });
+    expect(await storedDeliveries()).not.toContain(refused.guid);
+
+    await redeliver();
+
+    expect(asked()).toEqual([refused.id]);
+    expect(await storedDeliveries()).toContain(refused.guid);
+    expect(await processSentJobs()).toEqual([refused.guid]);
+  });
+
   it("does not ask for a delivery made before the App's credentials were stored, such as the ping sent when the App was created", async () => {
     const ping = stub.deliveries(app)[0]!;
     expect(ping).toMatchObject({ event: "ping" });

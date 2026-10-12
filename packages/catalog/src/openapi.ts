@@ -30,7 +30,9 @@ import { proposalAnswer } from "./proposals.ts";
 //   proposal a call that makes one creates instead, and its errors as RFC
 //   9457 problems; an operation whose method takes a body also lists 413,
 //   described with the limit on its body, 2 MiB or 16 MiB for
-//   contract.report (public-api: Request bodies have a size limit);
+//   contract.report, and names busy under its 503, for a body beyond what
+//   one web process receives at once (public-api: Request bodies have a size
+//   limit);
 // - x-tiehall-cli with the CLI's commands, on each operation the CLI offers,
 //   from which the CLI builds its request commands (design.md, Self-hosting
 //   decisions: S16): each command's name, the input fields it takes as
@@ -77,7 +79,7 @@ const problem = z
       .array(z.object({ path: z.array(z.union([z.string(), z.number()])), message: z.string() }))
       .optional()
       .meta({ description: "For input that fails the schema: where it fails, at most the first 100 places." }),
-    retryAfter: z.number().int().optional().meta({ description: "For a limit or a shutdown: the seconds to wait, as Retry-After says." }),
+    retryAfter: z.number().int().optional().meta({ description: "For a limit, a shutdown or a busy process: the seconds to wait, as Retry-After says." }),
   })
   .meta({ id: "Problem", description: "An RFC 9457 problem details object." });
 
@@ -131,6 +133,15 @@ const ERRORS: Readonly<Record<string, string>> = {
   "404": "There is no such operation, or the record the call names does not exist.",
   "429": "A limit is exceeded; retry after the time Retry-After gives.",
   "503": "Setup is not complete, or Tiehall is shutting down.",
+};
+/**
+ * The 503 of an operation that takes a body, which can also be refused when
+ * one web process is already receiving as many request bodies as it holds at
+ * once (public-api: Request bodies have a size limit; decisions-from-groups-15-28:
+ * design.md, Technical decisions: T1).
+ */
+const BODY_ERRORS: Readonly<Record<string, string>> = {
+  "503": "Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives.",
 };
 const WRITE_ERRORS: Readonly<Record<string, string>> = { "409": "The request's state does not allow this action." };
 const POST_ERRORS: Readonly<Record<string, string>> = { "422": "The Idempotency-Key was sent with a different body in the last 24 hours." };
@@ -290,7 +301,7 @@ function responsesOf(shape: RestShape): ZodOpenApiResponsesObject {
     ...ERRORS,
     ...(method === "GET" ? {} : WRITE_ERRORS),
     ...(method === "POST" ? POST_ERRORS : {}),
-    ...(BODY_METHODS.has(method) ? { "413": payloadTooLargeOf(definition) } : {}),
+    ...(BODY_METHODS.has(method) ? { ...BODY_ERRORS, "413": payloadTooLargeOf(definition) } : {}),
     ...(definition.ifMatch === undefined ? {} : IF_MATCH_ERRORS),
     ...(definition.id === CONTRACT_REPORT_ID ? CI_ERRORS : {}),
     ...(GITHUB_READ_ERRORS[definition.id] ?? {}),

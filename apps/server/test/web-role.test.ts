@@ -728,6 +728,217 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
   });
 });
 
+// public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (5); Technical decisions: T1). Besides each body's own limit, one web process holds at most 64 MiB of request
+// bodies being received at once: a declared length is reserved when the head arrives, and a body sent in chunks
+// counts its bytes as they arrive. A body that would take the bytes being received past the cap is answered at once
+// with 503 busy and Retry-After, before its body is read past the cap, and the app never sees it; a body over its own
+// limit still gets 413 first; and the bytes of a body are released once it has been read, refused or abandoned.
+describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE, () => {
+  const MiB = 1024 * 1024;
+  const BUSY = "https://tiehall.com/problems/busy";
+
+  interface Answer {
+    status: number;
+    headers: IncomingHttpHeaders;
+    body: string;
+  }
+
+  function collect(response: http.IncomingMessage): Promise<Answer> {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (body += chunk));
+      response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body }));
+      response.on("error", reject);
+    });
+  }
+
+  /** The answer of a 503 for the cap, after checking that it is the error model's busy. */
+  function expectBusy(answer: Answer): void {
+    expect(answer.status).toBe(503);
+    expect(answer.headers["content-type"]).toBe("application/problem+json");
+    expect(answer.headers["retry-after"]).toBe("5");
+    expect(answer.headers["connection"]).toBe("close");
+    expect(JSON.parse(answer.body)).toMatchObject({ type: BUSY, title: "Too busy", status: 503, retryAfter: 5 });
+  }
+
+  /** How many calls of this method and path the server has the head of, as LOG_HEADS=on prints them. */
+  function heads(web: Running, call: string): number {
+    return logEntries(web.output()).filter(({ msg }) => msg === `fixture: the server has the head of ${call}`).length;
+  }
+
+  /**
+   * Starts a POST that declares a body of this many bytes, sends 1 KiB of it, and holds the rest back, as a slow
+   * client does; it waits until the server has the call's head, so the guard has reserved what it declares.
+   */
+  async function holdOpen(web: Running, path: string, bytes: number): Promise<http.ClientRequest> {
+    const before = heads(web, `POST ${path}`);
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path,
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": String(bytes) },
+    });
+    request.on("error", () => {});
+    request.write(Buffer.alloc(1024, " "));
+    await until(`the server to have the head of POST ${path}`, () => heads(web, `POST ${path}`) > before);
+    return request;
+  }
+
+  /** Sends only the head of a POST that declares a body of this many bytes, and returns the answer it gets. */
+  async function declare(web: Running, path: string, bytes: number, headers: Record<string, string> = {}): Promise<Answer> {
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path,
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": String(bytes), ...headers },
+    });
+    try {
+      const answered = new Promise<Answer>((resolve, reject) => {
+        request.on("response", (response) => void collect(response).then(resolve, reject));
+        request.on("error", reject);
+      });
+      // Only the request line and the headers leave: the body is never written.
+      request.flushHeaders();
+      return await answered;
+    } finally {
+      request.destroy();
+    }
+  }
+
+  /** Ends the held calls as clients that give up do, and waits until the server has closed their connections. */
+  async function abandon(web: Running, held: http.ClientRequest[]): Promise<void> {
+    const closed = (): number => web.stdout().split("fixture: a connection closed after reading").length - 1;
+    const before = closed();
+    for (const request of held) request.destroy();
+    await until("the held connections to close", () => closed() >= before + held.length);
+  }
+
+  it("answers a body declared past 64 MiB of bodies being received with 503 busy before any byte is read, and not once the others end", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on", LOG_CONNECTIONS: "on" });
+    const held = [await holdOpen(web, "/webhooks/github", 25 * MiB), await holdOpen(web, "/webhooks/github", 25 * MiB)];
+    try {
+      expectBusy(await declare(web, "/api/v1/contract-reports", 15 * MiB));
+      expect(web.output()).not.toContain("fixture: /api/v1/contract-reports");
+
+      await abandon(web, held);
+      const after = await declare(web, "/api/v1/contract-reports", 15 * MiB);
+      // The call reaches the app, which answers it as the setup gate does before setup is complete.
+      expect(after.status).toBe(503);
+      expect(JSON.parse(after.body)).toMatchObject({ type: "https://tiehall.com/problems/setup-required" });
+      expect(web.output()).toContain("fixture: /api/v1/contract-reports answered 503 without reading the body");
+    } finally {
+      for (const request of held) request.destroy();
+    }
+  });
+
+  it("answers a body sent in chunks with 503 busy at the byte past the cap, before the client has finished, and reads no further", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on", LOG_CONNECTIONS: "on" });
+    const held = [await holdOpen(web, "/webhooks/github", 25 * MiB), await holdOpen(web, "/webhooks/github", 25 * MiB)];
+    const planned = 32 * MiB;
+    const chunk = Buffer.alloc(64 * 1024, " ");
+    let written = 0;
+    // No content-length: the body goes in chunks, with no declared length, to contract.report, whose own limit is 16 MiB;
+    // the client means to send twice that, and the cap stops it first.
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path: "/api/v1/contract-reports",
+      agent: false,
+      headers: { "content-type": "application/json" },
+    });
+    let answer: Answer & { writtenBefore: number };
+    try {
+      answer = await new Promise((resolve, reject) => {
+        let answered = false;
+        request.on("response", (response) => {
+          answered = true;
+          const writtenBefore = written;
+          void collect(response).then((collected) => resolve({ ...collected, writtenBefore }), reject);
+        });
+        request.on("error", (error) => {
+          if (!answered) reject(error);
+        });
+        const send = (): void => {
+          while (!answered && written < planned) {
+            written += chunk.length;
+            if (!request.write(chunk)) {
+              request.once("drain", send);
+              return;
+            }
+          }
+          if (!answered) request.end();
+        };
+        send();
+      });
+    } finally {
+      request.destroy();
+    }
+    expectBusy(answer);
+    // 50 MiB are held, so the body passes the 64 MiB at its 14th MiB, before the 16 MiB of its own limit.
+    expect(answer.writtenBefore).toBeGreaterThan(14 * MiB);
+    expect(answer.writtenBefore).toBeLessThan(planned);
+    // The app got none of the body, and the refused connection, the first to close, read no more than the one socket
+    // read, of at most 64 KiB, that held the byte past the cap, besides the request's head and the chunks' framing.
+    const closed = /^fixture: a connection closed after reading (\d+) bytes$/;
+    await until("the refused connection to close", () => logEntries(web.stdout()).some(({ msg }) => closed.test(String(msg))));
+    const bytesRead = Number(closed.exec(String(logEntries(web.stdout()).find(({ msg }) => closed.test(String(msg)))?.["msg"]))?.[1]);
+    expect(bytesRead).toBeGreaterThan(14 * MiB);
+    expect(bytesRead).toBeLessThanOrEqual(14 * MiB + 128 * 1024);
+    expect(web.output()).not.toContain("fixture: /api/v1/contract-reports");
+    for (const holder of held) holder.destroy();
+  });
+
+  it("answers a body over its own limit with 413 and not 503, whatever the bodies being received hold", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on" });
+    const held = [
+      await holdOpen(web, "/webhooks/github", 25 * MiB),
+      await holdOpen(web, "/webhooks/github", 25 * MiB),
+      await holdOpen(web, "/webhooks/github", 10 * MiB),
+    ];
+    try {
+      const answer = await declare(web, "/api/v1/requests", 3 * MiB);
+      expect(answer.status).toBe(413);
+      expect(JSON.parse(answer.body)).toMatchObject({ type: "https://tiehall.com/problems/payload-too-large", status: 413 });
+      // 60 MiB are held, so a body of 4 MiB fits, and is passed on.
+      const within = await declare(web, "/api/v1/contract-reports", 4 * MiB);
+      expect(JSON.parse(within.body)).toMatchObject({ type: "https://tiehall.com/problems/setup-required" });
+    } finally {
+      for (const request of held) request.destroy();
+    }
+  });
+
+  it("answers /mcp with the HTTP status 503 busy, not with a tool result in a 200, and a browser's form with the refusal as a page", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on" });
+    const held = [
+      await holdOpen(web, "/webhooks/github", 25 * MiB),
+      await holdOpen(web, "/webhooks/github", 25 * MiB),
+      await holdOpen(web, "/webhooks/github", 13 * MiB),
+    ];
+    try {
+      expectBusy(await declare(web, "/mcp", 2 * MiB, { accept: "application/json, text/event-stream" }));
+      expect(web.output()).not.toContain("fixture: /mcp");
+
+      const page = await declare(web, "/admin/invites", 2 * MiB, { "content-type": "application/x-www-form-urlencoded", accept: BROWSER });
+      expect(page.status).toBe(503);
+      expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+      expect(page.headers["retry-after"]).toBe("5");
+      expect(page.body).toContain("<h1>Too busy</h1>");
+      expect(page.body).toContain(`<code>${BUSY}</code>`);
+      expect(page.body).toContain('<a class="button" href="/admin/invites">');
+      expect(web.output()).not.toContain("fixture: /admin/invites");
+    } finally {
+      for (const request of held) request.destroy();
+    }
+  });
+});
+
 // self-host-install: The setup code guards the setup screen. While setup is incomplete, each start prints a new
 // setup code to the log, where `docker compose logs app` shows it, and stores only its hash, which replaces the
 // previous one.

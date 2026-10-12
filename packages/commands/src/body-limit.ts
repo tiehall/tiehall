@@ -27,8 +27,65 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 //   reads a byte of the body, and otherwise counts the bytes it reads, not a
 //   declared length, and at the first byte past the limit cancels the stream
 //   and refuses, so a body over the limit is never held whole.
+//
+// Besides each body's own limit, one web process holds at most 64 MiB of
+// request bodies being received at once (public-api: Request bodies have a
+// size limit; decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (5); Technical decisions: T1). The process-wide counter here,
+// bodiesInFlight, keeps the bytes the web role's request guard has let in and
+// not yet seen read, refused or abandoned: the guard reserves a declared
+// length when a request's head arrives and each chunk of a body sent in chunks
+// as it arrives, refuses with the error model's busy, 503 with Retry-After,
+// a body that would take the bytes past the cap, and releases what a body
+// reserved once it is done with.
 
 export { BODY_LIMIT, CONTRACT_REPORT_BODY_LIMIT, MIB };
+
+/** The most bytes of request bodies one web process receives at once: 64 MiB, 67,108,864 bytes. */
+export const BODIES_IN_FLIGHT_CAP = 64 * MIB;
+
+/** The bytes of request bodies a process is receiving, under a cap. */
+export interface BodiesInFlight {
+  /** The cap, in bytes. */
+  readonly cap: number;
+  /** The bytes reserved now. */
+  readonly held: number;
+  /** Reserves these bytes, unless they would take the bytes held past the cap: then it reserves nothing and says so. */
+  reserve(bytes: number): boolean;
+  /** Releases bytes reserved before. */
+  release(bytes: number): void;
+}
+
+/** A counter of the bytes of request bodies being received, under this cap. */
+export function createBodiesInFlight(cap: number = BODIES_IN_FLIGHT_CAP): BodiesInFlight {
+  let held = 0;
+  return {
+    cap,
+    get held() {
+      return held;
+    },
+    reserve(bytes) {
+      if (bytes <= 0) return true;
+      if (held + bytes > cap) return false;
+      held += bytes;
+      return true;
+    },
+    release(bytes) {
+      held = Math.max(0, held - Math.max(0, bytes));
+    },
+  };
+}
+
+/** The process's one counter, which the web role's request guard consults for every body. */
+export const bodiesInFlight: BodiesInFlight = createBodiesInFlight();
+
+/** The refusal of a body that would take the bytes being received past the cap: the error model's busy, 503 with Retry-After. */
+export function bodiesBusy(): Refusal {
+  return new Refusal(
+    "busy",
+    `Tiehall is receiving as many request bodies as it holds at once, ${BODIES_IN_FLIGHT_CAP / MIB} MiB, so this body was not read and nothing ran. Retry after the time Retry-After gives.`,
+  );
+}
 
 /** The most bytes a GitHub webhook delivery may carry: 25 MiB, 26,214,400 bytes, at least GitHub's own 25 MB. */
 export const GITHUB_WEBHOOK_BODY_LIMIT = 25 * MIB;

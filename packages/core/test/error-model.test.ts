@@ -14,6 +14,7 @@ const TABLE: Record<RefusalReason, number> = {
   "record-not-found": 404,
   "setup-required": 503,
   "shutting-down": 503,
+  busy: 503,
   "invalid-input": 400,
   "outside-settings": 400,
   "upgrade-required": 400,
@@ -130,6 +131,23 @@ describe("the error model", () => {
       title: "Request body too large",
       status: 413,
       detail: "The request body is larger than 2 MiB.",
+    });
+  });
+
+  // public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (5); Technical decisions: T1). One web process holds at most 64 MiB of bodies being received at
+  // once; a body that would take it past that cap is refused with 503 busy, which always says to retry in 5
+  // seconds, since the bodies in flight are read within moments.
+  it("answers a body beyond what one process receives at once with 503 busy and Retry-After: 5", () => {
+    const { status, headers, body } = httpProblem(new Refusal("busy", "Tiehall is receiving as many request bodies as it holds at once."));
+    expect(status).toBe(503);
+    expect(headers).toEqual({ "content-type": "application/problem+json", "cache-control": "no-store", "retry-after": "5" });
+    expect(body).toEqual({
+      type: `${PROBLEM_TYPE_BASE}busy`,
+      title: "Too busy",
+      status: 503,
+      detail: "Tiehall is receiving as many request bodies as it holds at once.",
+      retryAfter: 5,
     });
   });
 

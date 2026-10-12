@@ -34,7 +34,7 @@
             "type": "array"
           },
           "retryAfter": {
-            "description": "For a limit or a shutdown: the seconds to wait, as Retry-After says.",
+            "description": "For a limit, a shutdown or a busy process: the seconds to wait, as Retry-After says.",
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
@@ -230,7 +230,7 @@
                 }
               }
             },
-            "description": "Setup is not complete, or Tiehall is shutting down.",
+            "description": "Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives.",
             "headers": {
               "Retry-After": {
                 "description": "The seconds to wait before retrying.",

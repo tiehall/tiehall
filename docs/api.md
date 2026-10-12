@@ -8,7 +8,7 @@ Every install serves a REST API under `/api/v1`, for the tools and services a co
 - **The major version is in the path.** Every operation lives under `/api/v1/`, and each operation's `operationId`, such as `requests.create`, is its id everywhere.
 - **Commitments answer 202.** An operation that is a commitment, such as setting a due date or declining a request, applies nothing: it answers `202 Accepted` with the proposal it made, which states the confirmations it needs and has and when it expires. People confirm it in the web UI; the answer never holds the URL where they do.
 - **Packet revisions use `ETag` and `If-Match`.** Reading a request's packet gives the current revision's `ETag`. Adding a revision needs `If-Match` with that value: without it the answer is 428, and with a value that is no longer current, 412, and nothing is added.
-- **Bodies have a size limit:** 2 MiB, or 16 MiB for `contract.report`. A larger body is refused with 413 before it is read.
+- **Bodies have a size limit:** 2 MiB, or 16 MiB for `contract.report`. A larger body is refused with 413 before it is read. Each of the install's web processes also receives at most 64 MiB of bodies at once: a body that does not fit is refused with 503 `busy` and `Retry-After`, before it is read, and the same call succeeds once you retry after that time.
 - **The CLI states its version** in the `Tiehall-CLI-Version` header, and an install refuses a CLI older than the oldest it supports with `upgrade-required`, which says how to upgrade. `contract.report` keeps a floor of its own, because companies' CI runs a pinned CLI, and that floor rises only with at least 180 days' notice in the changelog.
 
 ## Stability levels
@@ -59,7 +59,7 @@ When Tiehall refuses a call for one of its own reasons, it answers with an RFC 9
 - `errors`, for input that fails the schema: each place it fails, by its path and what is wrong, never the value itself, at most 100 of them.
 - `retryAfter`, with the `Retry-After` header, when waiting helps.
 
-The MCP tools refuse in the same cases, with a tool error: a tool result with `isError` set, whose content is the same problem. Three refusals on `/mcp` are HTTP statuses instead: a refused request state of a retried call, a missing, invalid or insufficient token, and a body over the size limit. A browser that calls a page of the web UI gets a page that says the same. When more than one reason applies, a body over the limit is refused first, a path that serves no operation answers 404 whoever calls it, and a removed member gets 403 before any record is looked up, so they never learn whether one exists.
+The MCP tools refuse in the same cases, with a tool error: a tool result with `isError` set, whose content is the same problem. Four refusals on `/mcp` are HTTP statuses instead: a refused request state of a retried call, a missing, invalid or insufficient token, a body over the size limit, and a body refused as `busy`. A browser that calls a page of the web UI gets a page that says the same. When more than one reason applies, a body over the limit is refused first, then a body refused as `busy`, a path that serves no operation answers 404 whoever calls it, and a removed member gets 403 before any record is looked up, so they never learn whether one exists.
 
 | Problem type | Status | When |
 | --- | --- | --- |
@@ -67,6 +67,7 @@ The MCP tools refuse in the same cases, with a tool error: a tool result with `i
 | `record-not-found` | 404 | The request, team, proposal or GitHub account the path or the input names does not exist. |
 | `setup-required` | 503 | The install's setup is not complete. |
 | `shutting-down` | 503 | The app is shutting down, for example for an upgrade; it carries `Retry-After: 0`. |
+| `busy` | 503 | The web process is already receiving as many request bodies as it holds at once, 64 MiB, and this body would not fit; it was not read, and it carries `Retry-After: 5`. |
 | `invalid-input` | 400 | The input fails the operation's input schema. |
 | `outside-settings` | 400 | A value is outside what the install's settings allow, such as a token lifetime above the admin's maximum. |
 | `upgrade-required` | 400 | The CLI is older than the oldest version the install supports. |

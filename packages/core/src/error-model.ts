@@ -17,7 +17,7 @@
 // It identifies the kind of refusal and is the same on every install; like the
 // packet schema's $id, no install fetches it and it need not resolve. Where
 // the spec names a type (setup-required, needs-human, upgrade-required,
-// payload-too-large, integration-unavailable), that name ends the URI.
+// payload-too-large, busy, integration-unavailable), that name ends the URI.
 
 /** Where every problem type's URI starts. */
 export const PROBLEM_TYPE_BASE = "https://tiehall.com/problems/";
@@ -41,6 +41,14 @@ export const REFUSAL_REASONS = {
   "setup-required": { status: 503, title: "Setup is not complete" },
   /** The app is shutting down, for example for an upgrade. */
   "shutting-down": { status: 503, title: "Tiehall is shutting down", retryAfter: 0 },
+  /**
+   * One web process is already receiving as many request bodies as it holds
+   * at once, and the request's body would take it past that cap. It always
+   * says to retry in 5 seconds, since the bodies being received are read
+   * within moments (decisions-from-groups-15-28: design.md, Technical
+   * decisions: T1).
+   */
+  busy: { status: 503, title: "Too busy", retryAfter: 5 },
   /** The input fails the operation's input schema. */
   "invalid-input": { status: 400, title: "Invalid input" },
   /** A value is outside what the install's settings allow. */

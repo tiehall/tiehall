@@ -26,6 +26,13 @@
         "test": { "file": "apps/server/test/web-role.test.ts", "case": "answers a call during shutdown with 503, Retry-After: 0 and a problem, lets the call in flight finish, and exits 0" }
       }
     },
+    "busy": {
+      "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers a body beyond what one process receives at once with 503 busy and Retry-After: 5" },
+      "mcp": {
+        "not": "A body beyond what one web process receives at once is refused before any route, /mcp's included, with the HTTP status 503 and Retry-After, not a tool error, as the error model says.",
+        "test": { "file": "apps/server/test/web-role.test.ts", "case": "answers /mcp with the HTTP status 503 busy, not with a tool result in a 200, and a browser's form with the refusal as a page" }
+      }
+    },
     "invalid-input": {
       "rest": { "file": "packages/commands/test/error-model.test.ts", "case": "answers input that fails the schema with 400 invalid-input" },
       "mcp": { "file": "packages/commands/test/mcp-get-request.test.ts", "case": "refuses what is neither a key nor a URL as input that fails the schema" }

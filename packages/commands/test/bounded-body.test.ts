@@ -3,9 +3,13 @@ import { z } from "zod";
 import { CATALOG, defineCatalog, defineCommand } from "@tiehall/catalog";
 import { httpProblem, PROBLEM_TYPE_BASE, Refusal } from "@tiehall/core";
 import {
+  BODIES_IN_FLIGHT_CAP,
+  bodiesBusy,
+  bodiesInFlight,
   BODY_LIMIT,
   bodyLimitFor,
   CONTRACT_REPORT_BODY_LIMIT,
+  createBodiesInFlight,
   GITHUB_WEBHOOK_BODY_LIMIT,
   payloadTooLarge,
   readBoundedBody,
@@ -97,6 +101,42 @@ describe("the refusal", () => {
     expect(headers["retry-after"]).toBeUndefined();
     expect(body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}payload-too-large`, status: 413, detail: expect.stringContaining("2 MiB") });
     expect(payloadTooLarge(CONTRACT_REPORT_BODY_LIMIT).message).toContain("16 MiB");
+  });
+});
+
+// public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (5); Technical decisions: T1). One web process holds at most 64 MiB of bodies being received at once, in one
+// counter that the web role's request guard reserves from as bodies arrive and releases to once each is done with.
+describe("the cap on bodies being received at once", () => {
+  it("is 64 MiB, in one counter for the process", () => {
+    expect(BODIES_IN_FLIGHT_CAP).toBe(67_108_864);
+    expect(bodiesInFlight.cap).toBe(BODIES_IN_FLIGHT_CAP);
+  });
+
+  it("reserves up to the cap and not a byte past it, and takes what is released again", () => {
+    const bodies = createBodiesInFlight();
+    expect(bodies.reserve(GITHUB_WEBHOOK_BODY_LIMIT)).toBe(true);
+    expect(bodies.reserve(GITHUB_WEBHOOK_BODY_LIMIT)).toBe(true);
+    expect(bodies.reserve(15 * MiB)).toBe(false);
+    expect(bodies.held).toBe(50 * MiB);
+    expect(bodies.reserve(14 * MiB)).toBe(true);
+    expect(bodies.held).toBe(BODIES_IN_FLIGHT_CAP);
+    expect(bodies.reserve(1)).toBe(false);
+    // An empty body takes nothing, so it is never refused.
+    expect(bodies.reserve(0)).toBe(true);
+    bodies.release(GITHUB_WEBHOOK_BODY_LIMIT);
+    bodies.release(GITHUB_WEBHOOK_BODY_LIMIT);
+    expect(bodies.reserve(15 * MiB)).toBe(true);
+    expect(bodies.held).toBe(29 * MiB);
+  });
+
+  it("refuses with the error model's busy, 503 with Retry-After: 5, whose detail names the cap", () => {
+    const refusal = bodiesBusy();
+    expect(refusal.reason).toBe("busy");
+    const { status, headers, body } = httpProblem(refusal);
+    expect(status).toBe(503);
+    expect(headers["retry-after"]).toBe("5");
+    expect(body).toMatchObject({ type: `${PROBLEM_TYPE_BASE}busy`, status: 503, retryAfter: 5, detail: expect.stringContaining("64 MiB") });
   });
 });
 

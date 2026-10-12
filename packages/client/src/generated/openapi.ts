@@ -675,7 +675,7 @@ export interface components {
                 message: string;
                 path: (string | number)[];
             }[];
-            /** @description For a limit or a shutdown: the seconds to wait, as Retry-After says. */
+            /** @description For a limit, a shutdown or a busy process: the seconds to wait, as Retry-After says. */
             retryAfter?: number;
             /** @description The HTTP status. */
             status: number;
@@ -865,7 +865,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -1076,7 +1076,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -1606,7 +1606,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -1950,7 +1950,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -2453,7 +2453,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -2895,7 +2895,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -3277,7 +3277,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -3522,7 +3522,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -3969,7 +3969,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -4356,7 +4356,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -4665,7 +4665,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -4949,7 +4949,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
@@ -5499,7 +5499,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Setup is not complete, or Tiehall is shutting down. */
+            /** @description Setup is not complete, or Tiehall is shutting down, or one web process is already receiving as many request bodies as it holds at once (busy): the body was not read and nothing ran; retry after the time Retry-After gives. */
             503: {
                 headers: {
                     /** @description The seconds to wait before retrying. */
