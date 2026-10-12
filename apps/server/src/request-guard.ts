@@ -52,11 +52,13 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 //
 // Methods no route takes (agent-surfaces: Negotiated request URLs; public-api:
 // One error model for Tiehall's own refusals; decisions-from-groups-15-28:
-// design.md, Decisions this change rests on: D55 (42)): a call with a method
-// the Fetch standard forbids, such as TRACE, never reaches the app, which
-// could not build its Request and would answer 500; the guard answers it, on
-// every path, with the error model's 404 route-not-found, once the body limit
-// and a shutdown have had their say.
+// design.md, Decisions this change rests on: D55 (42)): a call with TRACE, a
+// method the Fetch standard forbids, never reaches the app, which could not
+// build its Request and would answer 500; the guard answers it, on every path,
+// with the error model's 404 route-not-found, once the body limit and a
+// shutdown have had their say. It is the only such method that reaches the
+// guard: Node's parser refuses TRACK itself, with a bare 400, and hands
+// CONNECT to the server's connect event, never to a request listener.
 //
 // Refusals to browsers (public-api: One error model for Tiehall's own
 // refusals; github-layer-hardening: design.md, Decisions this change rests on:
@@ -118,8 +120,13 @@ const SHUTTING_DOWN = httpProblem(
 );
 const SHUTTING_DOWN_BODY = JSON.stringify(SHUTTING_DOWN.body);
 
-/** The methods the Fetch standard forbids, which Next.js cannot build a Request of, so no route takes them. */
-const FORBIDDEN_METHODS = new Set(["CONNECT", "TRACE", "TRACK"]);
+/**
+ * The methods the Fetch standard forbids that reach the guard, which Next.js
+ * cannot build a Request of, so no route takes them: TRACE alone, since Node's
+ * parser refuses TRACK with a bare 400 and hands CONNECT to the server's
+ * connect event.
+ */
+const FORBIDDEN_METHODS = new Set(["TRACE"]);
 /** The answer to a call with one of them: the error model's 404 for a route the surface does not offer. */
 const NO_ROUTE = httpProblem(new Refusal("route-not-found", "No route here takes this method."));
 const NO_ROUTE_BODY = JSON.stringify(NO_ROUTE.body);
