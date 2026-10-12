@@ -33,7 +33,9 @@ import { assertWebWrite, csrfTokenFor } from "./web-writes.ts";
 // which checks and consumes the nonce in the action's own transaction. A
 // request that fails a check, or carries no valid nonce, gets 403 and changes
 // nothing, so the session and the CSRF token alone never apply an action. An
-// applied action answers with a "Confirmed" page, or, for a command listed
+// applied action gives the person who confirmed it a receipt, in its own
+// transaction (requests: Receipts; confirmation-step.ts), and answers with a
+// "Confirmed" page, or, for a command listed
 // under downloads, such as the activity log's export, with the file made from
 // its output (activity-log: Exporting the activity log), or, for one listed
 // under redirects, such as an agent client's approval, by sending the browser
@@ -239,9 +241,13 @@ export function createConfirmRoute(options: ConfirmRouteOptions): ConfirmRoute {
       const value = form.sealed(name);
       if (value !== undefined) sealed[name] = value;
     }
+    const confirmation = nonce === null || nonce === "" ? undefined : nonce;
+    // The receipt the action gives the person, in its own transaction, once it took effect (confirmation-step.ts).
+    const receipt = refusal === undefined ? await options.step.receipt(commandId, caller, input, confirmation) : undefined;
     const output = await options.write.execute(commandId, caller, input, {
       ...(refusal === undefined ? {} : { refusal }),
-      ...(nonce === null || nonce === "" ? {} : { confirmation: { nonce } }),
+      ...(confirmation === undefined ? {} : { confirmation: { nonce: confirmation } }),
+      ...(receipt === undefined ? {} : { around: receipt }),
       sealed,
       origin,
     });

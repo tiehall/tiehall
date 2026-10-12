@@ -337,6 +337,43 @@ export const RECEIPT_WITH_UNDO: EmailTemplate<{ key: ServerText; sentence: Serve
 };
 
 /**
+ * What a person confirmed on the review page of an action other than a
+ * proposal's, as its receipt keeps it (requests: Receipts;
+ * decisions-from-groups-15-28: design.md, Technical decisions: T11): the
+ * page's title and its lines, in Tiehall's words, each quote of text Tiehall
+ * did not write left out, so it holds no secret, no key and no token's value,
+ * which no review page shows.
+ */
+export interface ActionReceiptFacts {
+  title: string;
+  lines: readonly string[];
+}
+
+/** An action's title, as a review page names it, such as "Change a member's role": Tiehall's own fixed words. */
+export function actionTitle(title: string): ServerText {
+  if (!/^[A-Z][A-Za-z0-9' .,-]{0,99}$/.test(title)) throw new TypeError("An action's title is a few of Tiehall's words on one line.");
+  return title as ServerText;
+}
+
+/**
+ * The sentence of an action's receipt: the action, then what its review page
+ * said, in Tiehall's words, each of its lines ending as a sentence ends, such
+ * as a line of a list of scopes.
+ */
+export function actionReceiptSentence({ title, lines }: ActionReceiptFacts): ServerText {
+  const sentences = lines.map((line) => line.trim()).filter((line) => line !== "").map((line) => (/[.:!?)]$/.test(line) ? line : `${line}.`));
+  const said = sentences.length === 0 ? "" : ` Its review page said: ${sentences.join(" ")}`;
+  return `You confirmed: ${actionTitle(title)}.${said}` as ServerText;
+}
+
+/** The email of an action's receipt: its sentence, under a subject that names the action in Tiehall's words. */
+export const ACTION_RECEIPT: EmailTemplate<{ title: ServerText; sentence: ServerText }> = {
+  id: "email.action_receipt",
+  subject: ({ title }) => `Tiehall: receipt for your confirmation: ${title}`,
+  text: ({ sentence }) => [sentence, "", "It is also listed in the standing list of your web inbox.", ""].join("\n"),
+};
+
+/**
  * The sentence of a reminder that a personal access token expires soon
  * (agent-access: PAT owners are reminded before expiry), in Tiehall's words:
  * when the token was created and when it expires, never its label or value.

@@ -95,7 +95,7 @@ type ProposalView = z.input<typeof proposal>;
 /** What the standing list holds, as inbox.standing_list reads it. */
 interface StandingList {
   waiting: ProposalView[];
-  receipts: { id: string; text: string; undoUntil: string | null; proposal: ProposalView }[];
+  receipts: { id: string; text: string; undoUntil: string | null; proposal: ProposalView | null }[];
   reminders: { id: string; text: string }[];
   warnDigests: {
     team: { id: string; key: string };
@@ -220,8 +220,9 @@ function standingSections(list: StandingList, csrf: string, now: string): string
       : [
           '        <ul class="receipts" id="receipts">',
           ...list.receipts.map(({ text, undoUntil, proposal: view }) => {
+            // Only a commitment's receipt has an undo page; an action's receipt has no proposal.
             const undo =
-              undoUntil === null
+              undoUntil === null || view === null
                 ? ""
                 : ` <a class="button secondary" href="/confirm/${escapeHtml(view.id)}/undo">Undo · <time datetime="${escapeHtml(undoUntil)}">${escapeHtml(leftWords(undoUntil, now))}</time></a>`;
             return `          <li class="receipt">${RECEIPT_MARK}<p>${escapeHtml(text)}</p>${undo}</li>`;

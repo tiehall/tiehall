@@ -31,7 +31,8 @@ import { addTeam, callApi, joinTeams, openRequest, sendApi, sessionOf, tokenOf }
 // a proposed packet change, every kind of message and an edit, and the label
 // of a personal access token. Then every kind of email Tiehall sends goes
 // out, through the jobs and functions that send it, against the SMTP test
-// server: proposal notices, receipts with and without an undo page, question
+// server: proposal notices, receipts with and without an undo page, the
+// receipt of a confirmed action, a token labeled with the canary, question
 // notices, the daily digest, the reminders that a personal access token
 // expires soon, the request to re-confirm a team's declaration that it consumes
 // an API, whose team and API are named with the canary where their names
@@ -138,6 +139,7 @@ function templateOf({ subject, text }: { subject: string; text: string }): strin
   if (/^Tiehall: receipt for your confirmation on [A-Z][A-Z0-9]{1,9}-\d+$/.test(subject)) {
     return text.includes("on its undo page") ? email.RECEIPT_WITH_UNDO.id : email.RECEIPT.id;
   }
+  if (/^Tiehall: receipt for your confirmation: [A-Z][A-Za-z0-9' .,-]+$/.test(subject)) return email.ACTION_RECEIPT.id;
   if (/^Tiehall: [A-Z][A-Z0-9]{1,9}-\d+ request\.message_posted \(team [A-Z][A-Z0-9]{1,9}\)$/.test(subject)) return email.QUESTION_NOTICE.id;
   if (/^Tiehall: your updates of \d{4}-\d{2}-\d{2}(?: to \d{4}-\d{2}-\d{2})? \(UTC\)$/.test(subject)) return email.DIGEST.id;
   if (/^Tiehall: your personal access token expires on \d{4}-\d{2}-\d{2}$/.test(subject)) return email.PERSONAL_ACCESS_TOKEN_REMINDER.id;
@@ -187,8 +189,9 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     await runImmediateEmails();
     expect((await install.confirm(sessionOf(id("bob")), "proposals.confirm", { proposal: decline.proposal.id })).status).toBe(200);
     await runImmediateEmails();
-    // A personal access token labeled with the canary, reminded of 14 days before it expires.
+    // A personal access token labeled with the canary, reminded of 14 days before it expires; its receipt goes at once.
     expect((await install.confirm(sessionOf(id("bob")), "personal_access_tokens.create", { name: CANARY.slice(0, 100), scopes: ["requests:read"], expiresInDays: 15 })).status).toBe(200);
+    await runImmediateEmails();
     await runJob(remindPersonalAccessTokenOwners, new Date(Date.now() + 36 * 3_600_000));
     // The daily digest of the day these events happened on, once it has ended.
     const { rows } = await install.owner.query<{ at: Date }>("SELECT min(occurred_at) AS at FROM events WHERE data->>'requestId' = $1", [request.id]);
@@ -278,6 +281,7 @@ describe("every email Tiehall sends, about records full of a canary", () => {
     expect([...new Set(sent)].sort()).toEqual(templates());
     expect(templates()).toEqual(
       [
+        "email.action_receipt",
         "email.contract_fan_out_alert",
         "email.digest",
         "email.github_installation_alert",

@@ -8,8 +8,9 @@ import { teamRef } from "./requests.ts";
 // the person has acknowledged anything in their update feed: every proposal
 // that waits for a confirmation they may give now, decided at the moment of
 // the read, so it follows claims, releases, removals and team changes at once,
-// the receipts of their confirmations, each with its sentence in Tiehall's
-// words (requests: Receipts), and the reminders that their personal access
+// the receipts of their confirmations, of a proposal or of any other action
+// the confirmation step guards, each with its sentence in Tiehall's words
+// (requests: Receipts; decisions-from-groups-15-28, D55 (81)), and the reminders that their personal access
 // tokens expire soon, while each token may still be used (agent-access: PAT
 // owners are reminded before expiry), and the requests to re-confirm the
 // declarations of their teams that they consume an API, while each waits
@@ -31,13 +32,17 @@ export const standingList = defineCommand({
     receipts: z.array(
       z.object({
         id: z.uuid(),
-        kind: z.enum(["waits_for_other_side", "took_effect", "undone"]),
+        /** confirmed for the receipt of an action other than a proposal's, such as a role change (decisions-from-groups-15-28, D55 (81)). */
+        kind: z.enum(["waits_for_other_side", "took_effect", "undone", "confirmed"]),
         /** What the receipt says, in Tiehall's words. */
         text: z.string(),
         /** For the receipt that says a due date, a scope change, a reassignment or a decline took effect: until when its undo page, /confirm/{proposal}/undo, undoes it. */
         undoUntil: z.iso.datetime().nullable(),
         createdAt: z.iso.datetime(),
-        proposal,
+        /** The proposal a commitment's receipt is about; null for an action's receipt. */
+        proposal: proposal.nullable(),
+        /** The action an action's receipt is about: its command, such as members.change_role, and its title, as its review page named it; null for a commitment's receipt. */
+        action: z.object({ id: z.string(), title: z.string() }).nullable(),
       }),
     ),
     reminders: z.array(

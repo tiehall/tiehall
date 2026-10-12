@@ -2351,10 +2351,14 @@ export const emailDigests = pgTable(
 // Receipts (requests: Receipts; requester-loop: The web inbox). One row per
 // receipt a person gets for a confirmation: that they confirmed a commitment
 // that now waits for the other side, or that it took effect with their
-// confirmation. Its words come from the proposal as it is when it is read, so a
-// receipt that says a proposal waits shows how it ended once it ends. It is
-// listed in the standing list of the person's web inbox and, with SMTP set,
-// emailed once.
+// confirmation, or that they confirmed another action the confirmation step
+// guards, such as a role change (decisions-from-groups-15-28: design.md,
+// Technical decisions: T11). A commitment's receipt names its proposal, and
+// its words come from the proposal as it is when it is read, so a receipt that
+// says a proposal waits shows how it ended once it ends. An action's receipt,
+// of the kind `confirmed`, names the action's command and keeps what its review
+// page said, in Tiehall's words. It is listed in the standing list of the
+// person's web inbox and, with SMTP set, emailed once.
 export const receipts = pgTable(
   "receipts",
   {
@@ -2363,8 +2367,17 @@ export const receipts = pgTable(
       .references(() => orgs.id),
     id: uuid("id").notNull().defaultRandom(),
     userId: uuid("user_id").notNull(),
-    proposalId: uuid("proposal_id").notNull(),
+    /** The proposal a commitment's receipt is about; null for an action's receipt. */
+    proposalId: uuid("proposal_id"),
     kind: text("kind").notNull(),
+    /** The command an action's receipt is about, such as members.change_role; null for a commitment's receipt. */
+    action: text("action"),
+    /**
+     * What the action's review page said, as the receipt keeps it: its title
+     * and its lines, in Tiehall's words, with each quote of text Tiehall did
+     * not write left out; null for a commitment's receipt.
+     */
+    review: jsonb("review"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     /** When it was emailed; none until it is, and never without SMTP. */
     emailedAt: timestamp("emailed_at", { withTimezone: true }),
@@ -2382,7 +2395,12 @@ export const receipts = pgTable(
       columns: [table.orgId, table.proposalId],
       foreignColumns: [proposals.orgId, proposals.id],
     }),
-    check("receipts_kind_known", sql`${table.kind} IN ('waits_for_other_side', 'took_effect', 'undone')`),
+    check("receipts_kind_known", sql`${table.kind} IN ('waits_for_other_side', 'took_effect', 'undone', 'confirmed')`),
+    // A commitment's receipt names its proposal, and an action's its command and what its review page said.
+    check(
+      "receipts_subject_known",
+      sql`CASE WHEN ${table.kind} = 'confirmed' THEN ${table.proposalId} IS NULL AND ${table.action} IS NOT NULL AND ${table.review} IS NOT NULL ELSE ${table.proposalId} IS NOT NULL AND ${table.action} IS NULL AND ${table.review} IS NULL END`,
+    ),
   ],
 );
 

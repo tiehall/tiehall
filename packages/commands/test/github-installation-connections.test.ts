@@ -64,7 +64,7 @@ afterEach(async () => {
   await stub.close();
   await install.owner.query(
     `DELETE FROM github_covered_repositories; DELETE FROM github_connected_installations; DELETE FROM github_installations;
-     DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM members; DELETE FROM sign_in_accounts; DELETE FROM users`,
+     DELETE FROM integration_secrets; DELETE FROM github_app; DELETE FROM receipts; DELETE FROM members; DELETE FROM sign_in_accounts; DELETE FROM users`,
   );
 });
 

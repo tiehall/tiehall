@@ -88,18 +88,20 @@ describe("the security and trust docs", () => {
     expect(text).not.toContain("every change to who may do what");
   });
 
-  it("say which confirmations give a receipt, and where the others show: receipts are for commitments and undos only (requests: Receipts)", () => {
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (81).
+  it("say that every confirmation gives a receipt, which holds no secret, and where the others also show (requests: Receipts)", () => {
     const text = flat(page, "What the confirmation step does not prove");
     for (const phrase of [
-      "Every confirmation of a commitment, and every undo, gets a receipt in the web inbox",
-      "The other confirmations give no receipt",
-      "is recorded as a security event in the activity log",
+      "Every confirmation gets a receipt in the web inbox, and by email when the install sends email",
+      "a new personal access token, an approved agent client or the CLI, a role change or an invite",
+      "never holds a secret, a key or a token's value",
+      "are also recorded as security events in the activity log",
       "is also listed on your page `/tokens`",
     ]) {
       expect(text, phrase).toContain(phrase);
     }
-    // A receipt is given for a proposal's confirmation and an undo, never for a new token, a role change or an invite.
-    expect(text).not.toContain("Every confirmation gets a receipt");
+    expect(text).not.toContain("The other confirmations give no receipt");
+    expect(flat(readFileSync(join(root, "docs/requester-loop.md"), "utf8"), "Commitments and the confirmation step")).toContain("Every confirmation gets a receipt.");
   });
 
   it("state that the activity log is not tamper-evident, who can change it, and that a tamper-evident log is planned", () => {

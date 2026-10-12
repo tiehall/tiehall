@@ -1,10 +1,11 @@
-import type { Catalog, SealedField } from "@tiehall/catalog";
+import { confirmProposal, undoCommitment, type Catalog, type SealedField } from "@tiehall/catalog";
 import { Refusal, type Review } from "@tiehall/core";
 import type { WebSessionCaller } from "./caller.ts";
 import type { ConfirmationNonces } from "./confirmations.ts";
 import { issuesOf } from "./input-issues.ts";
 import type { InstallGitHub } from "./install-github.ts";
 import { assertRoleAllows, type Member } from "./members.ts";
+import { giveActionReceipt } from "./receipts.ts";
 import { withOrg, type OrgContext } from "./with-org.ts";
 import type { Store } from "./write.ts";
 
@@ -40,6 +41,23 @@ import type { Store } from "./write.ts";
 // in read-only transactions of its own and call GitHub; then reviews in its
 // read-only transaction with what the step returned. A step that fails, such
 // as when GitHub does not answer, refuses the page.
+//
+// The receipt of a confirmed action (requests: Receipts;
+// decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (81); Technical decisions: T11). Every action confirmed on its review
+// page gives the person who confirmed it a receipt, in the review page's own
+// words: the confirm route runs the action through execute() with what
+// receipt() gives, which, in the action's own transaction, reads the action's
+// review again before the action changes anything, as its page showed it,
+// runs the action, and once it took effect appends the receipt
+// (receipts.ts), so an action that is refused or fails leaves none. A
+// review's step before its transaction, such as an invite's look-up on
+// GitHub, runs first, outside any transaction, as for the page. A proposal's
+// confirmation and an undo give their receipts themselves, which say what the
+// commitment did (proposal-confirmations.ts, proposal-undo.ts).
+
+/** The commands whose handlers give their own receipts: a proposal's confirmation and the undo of a commitment. */
+const OWN_RECEIPTS: ReadonlySet<string> = new Set([confirmProposal.id, undoCommitment.id]);
 
 /** What a review reads with: the call's read-only transaction, the install's org and the signed-in user. */
 export interface ReviewContext extends OrgContext {
@@ -119,7 +137,12 @@ export interface ConfirmationStepServices {
   confirmations: ConfirmationNonces;
   /** The install's GitHub App, which a review's step before its transaction may ask. */
   github?: InstallGitHub;
+  /** The clock a receipt is dated by; the system clock unless a test controls it. */
+  now?: () => Date;
 }
+
+/** Runs around an action in its own transaction, as execute()'s `around` does. */
+export type AroundAction = (context: OrgContext, run: () => Promise<unknown>) => Promise<unknown>;
 
 export interface ConfirmationStep {
   /**
@@ -132,6 +155,16 @@ export interface ConfirmationStep {
   needsConfirmation(commandId: string): boolean;
   /** The values a command's review page asks the person to enter in its form, such as a secret; none for most. */
   sealedFields(commandId: string): readonly SealedField[];
+  /**
+   * What gives the person who confirms this action its receipt, for
+   * execute()'s `around`: in the action's transaction, it reads the action's
+   * review before the action runs, and appends the receipt once the action
+   * took effect. Undefined for a command whose handler gives its own receipts,
+   * and for a call execute() refuses before it runs anything, such as input
+   * that fails its schema, or, for an action whose review asks GitHub first,
+   * a nonce that is not valid for it, so a refused call asks GitHub nothing.
+   */
+  receipt(commandId: string, caller: WebSessionCaller, input: unknown, nonce: string | undefined): Promise<AroundAction | undefined>;
 }
 
 /** A command with no review page: an unknown one, or one that needs no confirmation step. */
@@ -149,6 +182,46 @@ export function createConfirmationStep(services: ConfirmationStepServices): Conf
   if (missing.length > 0 || extra.length > 0) throw new Error([...missing, ...extra].join("\n"));
 
   return {
+    async receipt(commandId, caller, input, nonce) {
+      const definition = catalog.get(commandId);
+      const handler = reviews[commandId];
+      if (definition === undefined || !definition.confirm || handler === undefined || OWN_RECEIPTS.has(commandId)) return undefined;
+      if (caller.kind !== "web_session") return undefined;
+      // execute() refuses input that fails its schema before anything runs, so there is nothing to give a receipt for.
+      const parsed = definition.input.safeParse(input);
+      if (!parsed.success) return undefined;
+      // The review's step before its transaction, as for the page, for a member whose role allows the action and whose
+      // nonce is valid for it: execute() refuses any other call before it runs anything.
+      let prepared: unknown;
+      if (handler.prepare !== undefined) {
+        const allowed = await withOrg(
+          services.store.database,
+          async (context) => {
+            assertRoleAllows(definition, context.member);
+            const subject = await confirmationSubjectOf(services.subjects, commandId, parsed.data, context);
+            const claim = { nonce: nonce ?? "", userId: caller.userId, sessionId: caller.sessionId, commandId, input: subject };
+            const valid = nonce !== undefined && (await (services.confirmations.check?.(context, claim) ?? true));
+            return valid ? { member: context.member } : undefined;
+          },
+          { readOnly: true, forUser: caller.userId },
+        );
+        if (allowed === undefined) return undefined;
+        const { member } = allowed;
+        prepared = await handler.prepare(parsed.data, {
+          caller,
+          member,
+          github: services.github,
+          read: (read) => withOrg(services.store.database, read, { readOnly: true }),
+        });
+      }
+      return async (context, run) => {
+        // What the review page said, as the action's transaction reads it before the action changes anything.
+        const review = await handler(parsed.data, { ...context, caller, prepared });
+        const output = await run();
+        await giveActionReceipt(context, { userId: caller.userId, action: commandId, review, at: services.now?.() ?? new Date() });
+        return output;
+      };
+    },
     needsConfirmation: (commandId) => confirmIds.includes(commandId),
     sealedFields: (commandId) => (confirmIds.includes(commandId) ? (catalog.get(commandId)?.sealed ?? []) : []),
     async review(commandId, caller, input, refusal) {

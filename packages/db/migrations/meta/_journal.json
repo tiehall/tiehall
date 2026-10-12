@@ -722,6 +722,13 @@
       "when": 1791829766283,
       "tag": "0102_mark_a_mirror_issue_gone",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791831667105,
+      "tag": "0103_give_a_receipt_for_every_confirmation",
+      "breakpoints": true
     }
   ]
 }

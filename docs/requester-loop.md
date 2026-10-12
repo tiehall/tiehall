@@ -21,7 +21,7 @@ In Claude Code, the plugin's hooks show what is new when a session starts and wa
 Your web inbox, at `/inbox`, has two parts. The update feed holds your updates, as above, said in the install's own words with a link to each request, and a form that acknowledges what the page shows. The standing list holds what stays until it is dealt with, whatever you acknowledged:
 
 - each proposal that waits for a confirmation you may give, with a link to its confirm page and a form that rejects it;
-- the receipts of your confirmations and undos, each with its undo link while the commitment can still be undone;
+- the receipts of your confirmations and undos, of every confirmation you give, each commitment's with its undo link while it can still be undone;
 - the reminders that your personal access tokens expire soon;
 - for each of your teams, its daily digest of potentially breaking API changes, until you dismiss it or for 7 days, and its requests to re-confirm the APIs it consumes, as [Contract changes](contract-changes.md#the-consumer-map) describes.
 

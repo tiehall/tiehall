@@ -193,6 +193,21 @@ const EMAIL: Record<string, Case> = {
     ],
   },
   RECEIPT: { renders: [emailOf(email.RECEIPT, () => ({ key: key(), sentence: email.receiptSentence({ kind: "took_effect", commitment: "decline", key: REQUEST.key, state: "applied" }) }))] },
+  actionTitle: { renders: [() => email.actionTitle("Change a member's role")] },
+  actionReceiptSentence: {
+    renders: [
+      () => email.actionReceiptSentence({ title: "Change a member's role", lines: ["Change the role of the member lee-dev from member to admin.", "It asks to:", "requests:read: read the install's requests"] }),
+      () => email.actionReceiptSentence({ title: "Export the activity log", lines: [] }),
+    ],
+  },
+  ACTION_RECEIPT: {
+    renders: [
+      emailOf(email.ACTION_RECEIPT, () => ({
+        title: email.actionTitle("Change a member's role"),
+        sentence: email.actionReceiptSentence({ title: "Change a member's role", lines: ["Change the role of the member lee-dev from member to admin."] }),
+      })),
+    ],
+  },
   RECEIPT_WITH_UNDO: {
     renders: [
       emailOf(email.RECEIPT_WITH_UNDO, () => ({

@@ -1,7 +1,20 @@
-import { undoUntil, type CommitmentKind } from "@tiehall/core";
+import { undoUntil, type CommitmentKind, type Review, type TextOrigin } from "@tiehall/core";
 import { appliedCommitments, receipts, users } from "@tiehall/db";
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
-import { installLink, RECEIPT, RECEIPT_WITH_UNDO, receiptSentence, requestKey, serverTime, type ReceiptFacts, type ServerText } from "./email.ts";
+import {
+  ACTION_RECEIPT,
+  actionReceiptSentence,
+  actionTitle,
+  installLink,
+  RECEIPT,
+  RECEIPT_WITH_UNDO,
+  receiptSentence,
+  requestKey,
+  serverTime,
+  type ActionReceiptFacts,
+  type ReceiptFacts,
+  type ServerText,
+} from "./email.ts";
 import { defineJobType } from "./jobs.ts";
 import { proposalView, type ProposalView } from "./proposals.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
@@ -19,10 +32,21 @@ import type { Writer } from "./write.ts";
 // how the proposal ended once it has. Receipts are listed in the standing list
 // of the person's web inbox, and, with SMTP set, a worker job emails each once,
 // whatever the person's digest setting, because receipts are transactional.
+//
+// Every other action the confirmation step guards gives the person who
+// confirmed it a receipt of the kind `confirmed` too, in the action's own
+// transaction (decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (81); Technical decisions: T11): it names the action's
+// command and keeps what the action's review page said, its title and its
+// lines in Tiehall's words, each quote of text Tiehall did not write, such as
+// a token's label or a client's name, left out (confirmation-step.ts). A
+// review page shows no secret, no key and no token's value, so no receipt
+// holds one. The receipt of a role change or of a member's removal goes to the
+// person who confirmed it alone, as every receipt does.
 
-export type ReceiptKind = "waits_for_other_side" | "took_effect" | "undone";
+export type ReceiptKind = "waits_for_other_side" | "took_effect" | "undone" | "confirmed";
 
-/** A receipt as the standing list shows it: its sentence, until when it can be undone, and the proposal it is about. */
+/** A receipt as the standing list shows it: its sentence, until when it can be undone, and the proposal or the action it is about. */
 export interface ReceiptView {
   id: string;
   kind: ReceiptKind;
@@ -30,7 +54,10 @@ export interface ReceiptView {
   /** For the receipt that says a reversible commitment took effect, until when its undo page undoes it; otherwise null. */
   undoUntil: string | null;
   createdAt: string;
-  proposal: ProposalView;
+  /** The proposal a commitment's receipt is about; null for an action's receipt. */
+  proposal: ProposalView | null;
+  /** The action an action's receipt is about: its command and its title, as its review page named it; null for a commitment's receipt. */
+  action: { id: string; title: string } | null;
 }
 
 /** What an undo record says about a commitment: when it took effect, and who undid it, if anyone. */
@@ -56,8 +83,35 @@ export async function giveReceipts(
   }
 }
 
+/** What a quote of text Tiehall did not write becomes in an action's receipt: a line in Tiehall's words that says where it was. */
+const QUOTE_LEFT_OUT: Readonly<Record<TextOrigin, string>> = {
+  "same team": "(The review page quoted text a member of your team wrote here; the receipt leaves it out.)",
+  "other team": "(The review page quoted text another team wrote here; the receipt leaves it out.)",
+  external: "(The review page quoted text from outside Tiehall here; the receipt leaves it out.)",
+};
+
+/** What an action's receipt keeps of its review page: the title and the lines in Tiehall's words, each quote left out. */
+export function receiptReviewOf(review: Review): ActionReceiptFacts {
+  return { title: review.title, lines: review.lines.map((line) => ("quote" in line ? QUOTE_LEFT_OUT[line.origin] : line.text)) };
+}
+
+/**
+ * Gives the person who confirmed an action other than a proposal's its
+ * receipt, in the action's transaction: the action's command and what its
+ * review page said.
+ */
+export async function giveActionReceipt(
+  { tx, orgId }: Pick<OrgContext, "tx" | "orgId">,
+  receipt: { userId: string; action: string; review: Review; at: Date },
+): Promise<void> {
+  const kept = receiptReviewOf(receipt.review);
+  // The sentence is made when the receipt is read; making it now refuses a review it could not be made from.
+  actionReceiptSentence(kept);
+  await tx.insert(receipts).values({ orgId, userId: receipt.userId, kind: "confirmed", action: receipt.action, review: kept, createdAt: receipt.at });
+}
+
 /** A receipt's facts from its proposal as it is now. */
-function factsOf(kind: ReceiptKind, proposal: ProposalView, applied?: { undoneBy: string | null; undoneByBot: boolean | null }): ReceiptFacts {
+function factsOf(kind: Exclude<ReceiptKind, "confirmed">, proposal: ProposalView, applied?: { undoneBy: string | null; undoneByBot: boolean | null }): ReceiptFacts {
   const undoneBy = applied?.undoneBy;
   return {
     kind,
@@ -79,9 +133,23 @@ export async function receiptViews(context: OrgContext, userId: string): Promise
     .orderBy(asc(receipts.createdAt), asc(receipts.id));
   const views: ReceiptView[] = [];
   for (const row of rows) {
-    const proposal = await proposalView(context, row.proposalId);
     const kind = row.kind as ReceiptKind;
+    if (row.proposalId === null) {
+      const kept = row.review as ActionReceiptFacts;
+      views.push({
+        id: row.id,
+        kind,
+        text: actionReceiptSentence(kept),
+        undoUntil: null,
+        createdAt: row.createdAt.toISOString(),
+        proposal: null,
+        action: { id: row.action ?? "", title: kept.title },
+      });
+      continue;
+    }
+    const proposal = await proposalView(context, row.proposalId);
     const applied = await appliedOf(context, row.proposalId);
+    const commitment = kind as Exclude<ReceiptKind, "confirmed">;
     // The receipt that says a commitment took effect links its undo page while it can be undone.
     const until =
       kind === "took_effect" && applied !== undefined
@@ -90,10 +158,11 @@ export async function receiptViews(context: OrgContext, userId: string): Promise
     views.push({
       id: row.id,
       kind,
-      text: receiptSentence(factsOf(kind, proposal, applied)),
+      text: receiptSentence(factsOf(commitment, proposal, applied)),
       undoUntil: until === undefined ? null : until.toISOString(),
       createdAt: row.createdAt.toISOString(),
       proposal,
+      action: null,
     });
   }
   return views;
@@ -110,19 +179,27 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
   schedule: "* * * * *",
   async handle(_job, { database, now, mailer, installUrl }) {
     if (mailer === undefined || !mailer.configured || installUrl === undefined) return;
-    let unsent: { id: string; email: string; proposalId: string; key: ServerText; sentence: ServerText; undoUntil: Date | undefined }[];
+    let unsent: (
+      | { id: string; email: string; proposalId: string; key: ServerText; sentence: ServerText; undoUntil: Date | undefined }
+      | { id: string; email: string; title: ServerText; sentence: ServerText }
+    )[];
     try {
       unsent = await withOrg(
         database,
         async (context) => {
           const rows = await context.tx
-            .select({ id: receipts.id, kind: receipts.kind, proposalId: receipts.proposalId, email: users.email })
+            .select({ id: receipts.id, kind: receipts.kind, proposalId: receipts.proposalId, review: receipts.review, email: users.email })
             .from(receipts)
             .innerJoin(users, and(eq(users.orgId, receipts.orgId), eq(users.id, receipts.userId)))
             .where(and(eq(receipts.orgId, context.orgId), isNull(receipts.emailedAt), isNotNull(users.email)))
             .orderBy(asc(receipts.createdAt), asc(receipts.id));
-          const found = [];
+          const found: typeof unsent = [];
           for (const row of rows) {
+            if (row.proposalId === null) {
+              const kept = row.review as ActionReceiptFacts;
+              found.push({ id: row.id, email: row.email ?? "", title: actionTitle(kept.title), sentence: actionReceiptSentence(kept) });
+              continue;
+            }
             const proposal = await proposalView(context, row.proposalId);
             const applied = await appliedOf(context, row.proposalId);
             const kind = row.kind as ReceiptKind;
@@ -135,7 +212,7 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
                   ? undoUntil({ kind: proposal.kind as CommitmentKind, appliedAt: applied.appliedAt, undone: applied.undoneBy !== null })
                   : undefined,
               key: requestKey(proposal.request.key),
-              sentence: receiptSentence(factsOf(row.kind as ReceiptKind, proposal, applied)),
+              sentence: receiptSentence(factsOf(row.kind as Exclude<ReceiptKind, "confirmed">, proposal, applied)),
             });
           }
           return found;
@@ -148,8 +225,10 @@ export const emailReceipts: WorkerJob<Record<string, never>> = {
       throw error;
     }
     for (const receipt of unsent) {
-      // The receipt that says a reversible commitment took effect links its undo page while it can be undone.
-      if (receipt.undoUntil !== undefined && receipt.undoUntil.getTime() > now().getTime()) {
+      if ("title" in receipt) {
+        await mailer.send(receipt.email, ACTION_RECEIPT, { title: receipt.title, sentence: receipt.sentence });
+      } else if (receipt.undoUntil !== undefined && receipt.undoUntil.getTime() > now().getTime()) {
+        // The receipt that says a reversible commitment took effect links its undo page while it can be undone.
         await mailer.send(receipt.email, RECEIPT_WITH_UNDO, {
           key: receipt.key,
           sentence: receipt.sentence,

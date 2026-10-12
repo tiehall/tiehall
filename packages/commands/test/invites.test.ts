@@ -232,7 +232,8 @@ describe("the invite form's username", () => {
     expect((await invite(install, ada, "uma-dev")).status).toBe(200);
     const calls = stub.received.slice(from);
     expect(calls.filter(({ path }) => path === "/users/uma-dev").map(({ token }) => token?.kind)).toEqual(["installation"]);
-    expect(calls.filter(({ path }) => path === `/user/${idOf("uma-dev")}`).map(({ token }) => token?.kind)).toEqual(["installation", "installation"]);
+    // On the review page, then at the confirmation for the review its receipt keeps (decisions-from-groups-15-28, D55 (81)), and by the confirmation itself.
+    expect(calls.filter(({ path }) => path === `/user/${idOf("uma-dev")}`).map(({ token }) => token?.kind)).toEqual(["installation", "installation", "installation"]);
   });
 
   it("is looked up by an admin only, and on no agent surface: a member gets 403, and a token gets 404, even an admin's", async () => {

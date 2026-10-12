@@ -184,7 +184,7 @@ export async function startTestInstall(
     waits: { wakeups, ...options.wait },
     ...(options.now === undefined ? {} : { now: options.now }),
   });
-  const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github });
+  const step = createConfirmationStep({ catalog: CATALOG, reviews: REVIEWS, store, confirmations, subjects, github, ...(options.now === undefined ? {} : { now: options.now }) });
   const confirmRouteFor = (session: (request: Request) => Promise<WebSessionCaller | undefined>, url = URL_OF_INSTALL) =>
     createConfirmRoute({
       step,
