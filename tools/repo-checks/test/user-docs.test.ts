@@ -70,7 +70,8 @@ const TOPICS: Topic[] = [
     topic: "the plugin and skill",
     page: "docs/claude-code-plugin.md",
     heading: "The hooks",
-    // The last two: decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (44), (52).
+    // The hooks' cursor and the upgrade line: decisions-from-groups-15-28: design.md, Decisions this change rests on:
+    // D55 (44), (52).
     says: [
       "SessionStart",
       "Stop",
@@ -81,6 +82,10 @@ const TOPICS: Topic[] = [
       "acknowledge",
       "the hooks no longer announce it",
       "prints one line that asks you to run `npm install --global tiehall@latest`",
+      // findings-from-claude-code-run: design.md, Findings: F1 (3).
+      "runs its hooks in every Claude Code session of yours on the machine",
+      "the Claude desktop app's Code tab",
+      "only in that project's sessions",
     ],
   },
   {
