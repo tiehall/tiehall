@@ -157,11 +157,12 @@ describe("the changes it computes", () => {
     expect(run.summary).toContain(`compared ${SPEC} at ${branchPoint.slice(0, 7)}, where new-payment-fields branched off main, with new-payment-fields (${head.slice(0, 7)})`);
   });
 
-  it("fails the step when the head commit has no document at the path the spec input names", async () => {
+  it("reports nothing, failing open with a warning, when the head commit has no document at the path the spec input names", async () => {
     const run = await runActionWith(scratch, { inputs: { spec: "openapi/billing.yaml" } });
-    expect(run.code).toBe(1);
+    expect(run.code).toBe(0);
     expect(run.reports).toEqual([]);
-    expect(run.stdout).toMatch(/^::error title=Document not found::/m);
+    expect(run.stdout).toMatch(/^::warning title=Document not found::/m);
+    expect(run.summary).toContain("no report was sent");
   });
 });
 
@@ -225,11 +226,11 @@ describe("the check", () => {
     expect(run.code).toBe(0);
   });
 
-  it("refuses a fail-on-breaking that is neither true nor false", async () => {
+  it("refuses a fail-on-breaking that is neither true nor false, failing open with a warning", async () => {
     const run = await runActionWith(scratch, { inputs: { "fail-on-breaking": "sometimes" } });
-    expect(run.code).toBe(1);
+    expect(run.code).toBe(0);
     expect(run.reports).toEqual([]);
-    expect(run.stdout).toMatch(/^::error title=Input not valid::The input fail-on-breaking is true or false/m);
+    expect(run.stdout).toMatch(/^::warning title=Input not valid::The input fail-on-breaking is true or false/m);
   });
 });
 

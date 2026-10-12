@@ -17,7 +17,8 @@ import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputErr
 // registered API and its OpenAPI document in the repository, it:
 // 1. installs the pinned oasdiff, whose release archive it checks against its
 //    pinned SHA-256 before it extracts or runs anything from it: a binary that
-//    is not the pinned one never runs, and the step fails without a report;
+//    is not the pinned one never runs, and the step fails without a report,
+//    the one failure that fails the step;
 // 2. reads the document with git, from the checkout, at the pull request's
 //    head commit and at the commit it branched off its base branch, the merge
 //    base of its base and head commits, so the changes are the pull request's
@@ -26,22 +27,37 @@ import { annotation, appendSummary, booleanInputOf, codeBlock, inputOf, InputErr
 // 3. runs oasdiff there on the two documents: `oasdiff breaking`, the
 //    breaking changes as text, for the job summary, and `oasdiff changelog
 //    --format json`, every classified change with its level, for the report;
-//    external $refs are off, so oasdiff reads and fetches nothing else;
+//    external $refs are off, so oasdiff reads and fetches nothing else, and a
+//    document that holds one is not compared;
 // 4. reports the changelog with the pinned tiehall CLI, `npx tiehall@<pin>
 //    contract report`, which sends the API, the pull request, the refs and
 //    SHAs, the engine and the classified changes, never a document. It fails
 //    open (contract-changes: The Action fails open): a report Tiehall does not
 //    take, for whatever reason, is said in a warning and the job summary and
-//    never fails the step, and an install that asks for a newer CLI gets a
-//    warning that says how to upgrade;
+//    never fails the step; a report the install refuses with 400 or 413, which
+//    the next run would send alike, says that no consuming team was told; and
+//    an install that asks for a newer CLI gets a warning that says how to
+//    upgrade;
 // 5. says what it found and reported in the job summary and its outputs, and,
 //    when Tiehall answers that the provider team alone requests the changes,
 //    because the pull request's author is no member of the install, says so in
 //    one comment on the pull request, which later runs update (comment.ts);
 // 6. fails the step for ERR-level changes only when the workflow sets
 //    fail-on-breaking.
+// Every other failure fails open too (decisions-from-groups-15-28, D55 (62);
+// its design.md, Technical decisions: T14): a download of the engine that the
+// runner's network blocks, a document with external $refs, a pull request that
+// deletes the document, an input the Action cannot use, or any other fault
+// before the report ends the job successfully, with a warning annotation and
+// a job summary that say what happened and that no diff was computed or
+// nothing was reported, and fail-on-breaking never fails the check for a diff
+// that was not computed. Only an engine whose checksum is not the pinned one
+// fails the step, since it may be a tampered binary.
 // It uploads no document anywhere: the documents stay in the runner's
 // temporary folder, which it removes, and oasdiff never runs with --open.
+
+/** The most changes one report holds, as contract.report takes them; the install refuses more with 400. */
+const REPORT_CHANGES_MAX = 1000;
 
 /** The pull_request event types the Action reports on. */
 export const REPORTED_TYPES: readonly string[] = ["opened", "synchronize", "reopened", "ready_for_review"];
@@ -82,7 +98,11 @@ interface PullRequestEvent {
   head: { ref: string; sha: string };
 }
 
-/** A failure that ends the step with an error annotation: the workflow's setup, the engine, or its documents. */
+/**
+ * A failure that ends the run with no report: the workflow's setup, the
+ * engine, or its documents. The Action fails open on it, with a warning
+ * annotation, unless it is the engine's checksum (ChecksumMismatch).
+ */
 class StepError extends Error {
   override name = "StepError";
   readonly title: string;
@@ -91,6 +111,20 @@ class StepError extends Error {
     this.title = title;
   }
 }
+
+/** A downloaded engine whose checksum is not the pinned one: the one failure that fails the step, having run nothing. */
+class ChecksumMismatch extends StepError {
+  override name = "ChecksumMismatch";
+}
+
+/** What a run that ends with no report adds, so the pull request's author knows that nobody was told. */
+const NOTHING_REPORTED = "No diff was computed and no report was sent, so no consuming team was told of this pull request's changes. The check is not failed for it.";
+
+/** What a report the install refused adds, since the next run would send the same report. */
+const NOBODY_TOLD = "No consuming team was told of this pull request's changes. The check is not failed for it.";
+
+/** Text that ends as a sentence, with a full stop unless it ends with one already. */
+const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 /** The classified changes of oasdiff's changelog, as their levels: 3 is ERR, 2 WARN and 1 INFO. */
 interface Counts {
@@ -256,8 +290,14 @@ interface Requester {
   team: string;
 }
 
-/** How a report went: Tiehall took it, as the report with this id, or it did not, and why; or it asks for a newer CLI. */
-type Delivery = { delivered: true; id: string; requester?: Requester } | { delivered: false; reason: string; upgrade?: string };
+/**
+ * How a report went: Tiehall took it, as the report with this id, or it did
+ * not, and why; it asks for a newer CLI; or it refused the report itself, as
+ * too large (413) or with another 400, which the next run would meet again.
+ */
+type Delivery =
+  | { delivered: true; id: string; requester?: Requester }
+  | { delivered: false; reason: string; upgrade?: string; refused?: "too-large" | "invalid" };
 
 /** The requester Tiehall's answer names, when it names one as it should. */
 function requesterOf(answer: Record<string, unknown>): Requester | undefined {
@@ -305,25 +345,38 @@ async function report(runtime: ActionRuntime, workspace: string, args: readonly 
   if (answer !== undefined && typeof answer["type"] === "string") {
     const detail = problemLine(answer);
     if (answer["type"].endsWith("/upgrade-required")) return { delivered: false, reason: detail, upgrade: detail };
+    if (answer["type"].endsWith("/payload-too-large") || answer["status"] === 413) return { delivered: false, reason: detail, refused: "too-large" };
+    if (answer["status"] === 400) return { delivered: false, reason: detail, refused: "invalid" };
     return { delivered: false, reason: `Tiehall answered ${detail}.` };
   }
   const said = result.stderr.trim().split("\n").filter((line) => line.trim() !== "").at(-1) ?? "";
+  // An answer that is no problem, such as the page of a proxy in front of the install, which the CLI names by its HTTP status.
+  if (/\bwith HTTP 413\b/.test(said)) return { delivered: false, reason: "HTTP 413, with no problem the CLI can show", refused: "too-large" };
   return { delivered: false, reason: said === "" ? `the tiehall CLI exited with ${String(result.status)}.` : said };
 }
 
-/** Runs the Action once; returns the step's exit code, 0 when it succeeds. */
+/**
+ * Runs the Action once; returns the step's exit code, 0 when it succeeds. It
+ * fails open on every failure but a checksum mismatch (contract-changes: The
+ * Action fails open): the run ends with a warning annotation and a job
+ * summary that say what happened, and the step succeeds.
+ */
 export async function runAction(runtime: ActionRuntime): Promise<number> {
   const { env } = runtime;
   try {
     return await runSteps(runtime);
   } catch (error) {
-    if (error instanceof StepError || error instanceof InputError) {
-      const title = error instanceof StepError ? error.title : "Input not valid";
-      runtime.stdout(annotation("error", title, error.message));
+    if (error instanceof ChecksumMismatch) {
+      runtime.stdout(annotation("error", error.title, error.message));
       appendSummary(env, `## Tiehall contract check\n\n${error.message}\n`);
       return 1;
     }
-    throw error;
+    const title = error instanceof StepError ? error.title : error instanceof InputError ? "Input not valid" : "Contract check not run";
+    const message = error instanceof StepError || error instanceof InputError ? error.message : `The contract check stopped: ${(error as Error).message}`;
+    const said = `${sentence(message)} ${NOTHING_REPORTED}`;
+    runtime.stdout(annotation("warning", title, said));
+    appendSummary(env, `## Tiehall contract check\n\n${said}\n`);
+    return 0;
   }
 }
 
@@ -353,9 +406,9 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     try {
       oasdiff = await installOasdiff({ directory: join(temporary, "oasdiff"), fetch: (request) => runtime.fetch(request), platform: runtime.platform, arch: runtime.arch });
     } catch (error) {
-      if (error instanceof ChecksumError) throw new StepError("oasdiff not verified", `${error.message} The contract check did not run and reported nothing.`);
+      if (error instanceof ChecksumError) throw new ChecksumMismatch("oasdiff not verified", `${error.message} The contract check did not run and reported nothing.`);
       if (error instanceof UnsupportedPlatformError) throw new StepError("oasdiff not available", error.message);
-      throw new StepError("oasdiff not installed", `The pinned oasdiff ${OASDIFF.version} could not be downloaded: ${(error as Error).message}`);
+      throw new StepError("Diff engine not downloaded", `The pinned oasdiff ${OASDIFF.version} could not be downloaded from GitHub: ${(error as Error).message}`);
     }
 
     // 2. The document at the commit the pull request branched off and at its head commit, in a folder of their own.
@@ -363,11 +416,14 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     mkdirSync(documents, { recursive: true });
     const extension = [".json", ".yaml", ".yml"].includes(extname(spec).toLowerCase()) ? extname(spec).toLowerCase() : ".yaml";
     const head = await documentAt(runtime, workspace, event.head.sha, spec);
+    const mergeBase = await mergeBaseOf(runtime, workspace, event.base.sha, event.head.sha);
+    const base = await documentAt(runtime, workspace, mergeBase, spec);
+    if (head === undefined && base !== undefined) {
+      throw new StepError("Document deleted", `Pull request #${event.number} deletes ${spec}, so there is no version of it at its head commit ${short(event.head.sha)} to compare.`);
+    }
     if (head === undefined) {
       throw new StepError("Document not found", `The pull request's head commit ${short(event.head.sha)} has no ${spec}; the input spec names the API's OpenAPI document in the repository.`);
     }
-    const mergeBase = await mergeBaseOf(runtime, workspace, event.base.sha, event.head.sha);
-    const base = await documentAt(runtime, workspace, mergeBase, spec);
 
     // 3. The breaking changes and the changelog, from the pinned engine alone.
     let breaking = "";
@@ -378,7 +434,14 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
       const run = async (args: string[]) => {
         const result = await runtime.exec(oasdiff, args, { cwd: documents, env: toolEnv(env) });
         if (result.status !== 0) {
-          throw new StepError("oasdiff failed", `oasdiff ${args[0] ?? ""} could not compare the two versions of ${spec}: ${result.stderr.trim() || `it exited with ${String(result.status)}`}`);
+          const said = result.stderr.trim();
+          if (/external reference/i.test(said)) {
+            throw new StepError(
+              "External $refs not followed",
+              `${spec} holds external $refs, which the contract Action does not follow, so oasdiff could not compare its two versions. oasdiff said: ${sentence(said)} Name, in the input spec, a document whose $refs all point inside it.`,
+            );
+          }
+          throw new StepError("oasdiff failed", `oasdiff ${args[0] ?? ""} could not compare the two versions of ${spec}: ${said || `it exited with ${String(result.status)}`}`);
         }
         return result.stdout;
       };
@@ -421,6 +484,16 @@ async function runSteps(runtime: ActionRuntime): Promise<number> {
     let reported: string[];
     if (delivery.delivered) {
       reported = [`Reported to Tiehall at ${install}, as report ${delivery.id}.`];
+    } else if (delivery.refused === "too-large") {
+      const why = `Tiehall at ${install} refused the report as too large: ${sentence(delivery.reason)} ${NOBODY_TOLD}`;
+      runtime.stdout(annotation("warning", "Report too large", why));
+      reported = [why];
+    } else if (delivery.refused === "invalid") {
+      const total = counts.errors + counts.warnings + counts.infos;
+      const many = total > REPORT_CHANGES_MAX ? ` The pull request makes ${total} changes, and one report takes at most 1,000.` : "";
+      const why = `Tiehall at ${install} refused the report: ${sentence(delivery.reason)}${many} ${NOBODY_TOLD}`;
+      runtime.stdout(annotation("warning", "Report refused", why));
+      reported = [why];
     } else if (delivery.upgrade !== undefined) {
       const upgrade = `Tiehall at ${install} needs a newer tiehall CLI than this release of the contract Action pins (${CLI_PIN.version}), so it did not take the report. Pin a newer release of the contract Action in this workflow: its README shows the commit SHA and release to pin. The check is not failed for it.`;
       runtime.stdout(annotation("warning", "Tiehall needs a newer contract Action", upgrade));

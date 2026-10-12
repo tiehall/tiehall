@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAction, type ExecResult } from "../../src/action.ts";
@@ -78,6 +78,35 @@ export function repositoryOf(scratch: string, pair: OasdiffFixturePair | "added"
   return repository;
 }
 
+/**
+ * A checkout of the test's own: its base commit holds the base document at
+ * openapi/payments.yaml, or nothing when it is undefined, and its head commit
+ * the head document, or nothing, as a pull request that deletes it has.
+ */
+export function repositoryHolding(scratch: string, label: string, documents: { base: string | undefined; head: string | undefined }): Repository {
+  const path = mkdtempSync(join(scratch, `repository-${label}-`));
+  git(path, "init", "--quiet", "--initial-branch=main");
+  git(path, "config", "user.name", "Provider CI");
+  git(path, "config", "user.email", "ci@acme.example");
+  writeFileSync(join(path, "README.md"), "The payments service.\n");
+  mkdirSync(join(path, "openapi"));
+  const write = (document: string | undefined) => {
+    if (document === undefined) rmSync(join(path, SPEC), { force: true });
+    else writeFileSync(join(path, SPEC), document);
+  };
+  write(documents.base);
+  git(path, "add", "--all");
+  git(path, "commit", "--quiet", "--message", "The base");
+  const base = git(path, "rev-parse", "HEAD");
+  git(path, "checkout", "--quiet", "-b", "new-payment-fields");
+  write(documents.head);
+  writeFileSync(join(path, "README.md"), "The payments service, which takes payments.\n");
+  git(path, "add", "--all");
+  git(path, "commit", "--quiet", "--message", "The pull request");
+  const head = git(path, "rev-parse", "HEAD");
+  return { path, base, head };
+}
+
 /** A report the Action handed the CLI: its arguments and the changelog file it named. */
 export interface HandedReport {
   args: readonly string[];
@@ -109,6 +138,8 @@ export interface RunOptions {
   npx?: Npx;
   /** Bytes served in place of the pinned oasdiff release archive, such as a tampered one. */
   archive?: Uint8Array;
+  /** The download of the release archive fails, as on a runner whose network blocks GitHub's downloads. */
+  downloadBlocked?: boolean;
   /** Fetches other than GitHub's release downloads; refused unless given. */
   fetch?: (request: Request) => Promise<Response>;
   /** Variables the runner sets besides the ones this runner sets. */
@@ -204,6 +235,7 @@ export async function runActionWith(scratch: string, options: RunOptions = {}): 
     async fetch(request) {
       fetched.push(request.url);
       if (request.url.startsWith("https://github.com/oasdiff/oasdiff/releases/download/")) {
+        if (options.downloadBlocked === true) throw new TypeError("fetch failed");
         return new Response(options.archive ?? (await releaseFile(request.url)));
       }
       if (options.fetch !== undefined) return options.fetch(request);

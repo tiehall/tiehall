@@ -54,15 +54,17 @@ describe("the install-url input", () => {
     ["a URL with a path", "https://tiehall.example.com/api"],
     ["a URL with credentials", "https://ci:secret@tiehall.example.com"],
     ["no URL", "not a url"],
-  ])("refuses %s before it downloads or reports anything", async (_case, install) => {
+  ])("refuses %s before it downloads or reports anything, failing open with a warning", async (_case, install) => {
     const calls: CliCall[] = [];
     const run = await runActionWith(scratch, { inputs: { "install-url": install }, npx: cliStandIn(calls) });
-    expect(run.code).toBe(1);
+    // Only a diff engine whose checksum is not the pinned one fails the step (contract-changes: The Action fails open; D55 (62)).
+    expect(run.code).toBe(0);
     expect(run.fetched).toEqual([]);
     expect(run.reports).toEqual([]);
     expect(calls).toEqual([]);
-    expect(run.stdout).toMatch(/^::error title=Input not valid::The input install-url/m);
+    expect(run.stdout).toMatch(/^::warning title=Input not valid::The input install-url/m);
     expect(run.stdout).not.toContain("secret");
+    expect(run.summary).not.toContain("secret");
   });
 
   it("takes http://localhost, with or without a port, for a trial install on the runner's machine", async () => {
