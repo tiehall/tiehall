@@ -38,7 +38,10 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // answers it, so the shutdown waits for a body still arriving as for any call
 // in flight: a call whose head arrived before the shutdown started goes on to
 // the app once its body is complete, and a new one gets its 503, or its 413,
-// rather than a closed connection.
+// rather than a closed connection: at once when its request declares a
+// length, since no byte of a body within its limit could change that answer,
+// and once its body is complete when it comes in chunks, whose size is known
+// only then.
 //
 // Request bodies (public-api: Request bodies have a size limit;
 // request-body-limit's design.md, Technical decisions: T2): the guard applies
@@ -213,6 +216,9 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
     if (declared !== undefined && declared > limit) return refuseBody(request, response, limit, origin);
     // A request that declares an empty body, or neither a length nor chunks, has no body.
     if (declared === 0 || (declared === undefined && request.headers["transfer-encoding"] === undefined)) return serve();
+    // A new call during a shutdown that declares a length within its limit gets its 503 at once: no byte of its body
+    // could change that answer.
+    if (newDuringShutdown && declared !== undefined) return serve();
     // Every other body, declared or in chunks, reserves its bytes as they arrive, and nothing before.
     let reserved = 0;
     const release = whenDone(request, response, () => bodies.release(reserved));

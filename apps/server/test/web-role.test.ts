@@ -501,6 +501,53 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
     expect(await web.exited).toBe(0);
   });
 
+  // self-host-install: A restart stops the app gracefully. A new call whose request declares a length within its
+  // limit gets the shutdown's 503 at once, before any byte of its body is read or held: no byte of it could change
+  // that answer, and holding it until its body arrived would keep the shutdown waiting for a client that may never
+  // send it, and end with its connection closed rather than answered.
+  it("answers a new call that declares a body within its limit with 503 at once while the role shuts down, before any byte of the body is sent", async () => {
+    const web = await startWebRole({ SLOW_MS: "3000", DRAIN_TIMEOUT_MS: "8000" });
+    let slowDone = false;
+    const slow = fetch(`http://127.0.0.1:${web.port}/slow`).then(async (response) => {
+      const text = await response.text();
+      slowDone = true;
+      return text;
+    });
+    await until("the slow call to start", () => web.output().includes("fixture: slow call started"));
+    web.child.kill("SIGTERM");
+    await until("the role to start stopping", () => web.output().includes("web: stopping"));
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path: "/api/v1/requests",
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": "100" },
+    });
+    try {
+      const answered = new Promise<Answer>((resolve, reject) => {
+        request.on("response", (response) => void collect(response).then(resolve, reject));
+        request.on("error", reject);
+      });
+      // Only the request line and the headers leave: the body is never written.
+      request.flushHeaders();
+      const answer = await answered;
+      // The answer came while the call in flight still ran.
+      expect(slowDone).toBe(false);
+      expect(answer.status).toBe(503);
+      expect(answer.headers["retry-after"]).toBe("0");
+      expect(answer.headers["content-type"]).toBe("application/problem+json");
+      expect(JSON.parse(answer.body)).toMatchObject({ type: "https://tiehall.com/problems/shutting-down", status: 503 });
+    } finally {
+      request.destroy();
+    }
+    expect(await slow).toBe("slow call done");
+    expect(await web.exited).toBe(0);
+    // The role stopped once the call in flight had finished, and cut no call off.
+    expect(logEntries(web.output()).map(({ msg }) => msg)).toContain("web: stopped");
+    expect(web.output()).not.toContain("fixture: /api/v1/requests");
+  });
+
   // self-host-install: A restart stops the app gracefully. The guard holds a body sent in chunks until it is
   // complete, so the call counts as in flight from the moment its head arrives: a shutdown waits for its body as
   // for any call in flight, and never closes its connection while the body is still arriving.
