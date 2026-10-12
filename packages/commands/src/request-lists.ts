@@ -12,7 +12,9 @@ import { createPageRoute, htmlAnswer, type PageRoute, type PageRouteOptions } fr
 // request; agent-surfaces: The MCP tools; design.md, Decisions this change
 // rests on: D28 #3, #56). A member finds three lists there:
 // - the requests addressed to their teams, the default, as list_inbox reads
-//   them;
+//   them, so those not finished unless a state is chosen
+//   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (28));
 // - the requests they opened, from any of their teams, which an internal read
 //   lists for the web UI and no agent surface offers;
 // - every request of the install, as /api/v1 lists them, since every member
@@ -38,7 +40,7 @@ export const REQUEST_LIST_PAGE_SIZE = 25;
 
 /** The three lists, by the value of the `list` query parameter; the first is the default. */
 const LISTS = {
-  mine: { title: "Addressed to your teams", commandId: listInbox.id, empty: "No request is addressed to your teams." },
+  mine: { title: "Addressed to your teams", commandId: listInbox.id, empty: "No unfinished request is addressed to your teams." },
   opened: { title: "Opened by you", commandId: listOpenedRequests.id, empty: "You have opened no request." },
   all: { title: "All requests", commandId: listRequests.id, empty: "The install has no request yet." },
 } as const;
@@ -118,7 +120,8 @@ function listsNav(shown: ListName): string {
 /** The form that narrows the list to one state, which a GET submits: it changes nothing. */
 function stateForm({ list, state }: ListQuery): string {
   const options = [
-    `<option value=""${state === undefined ? " selected" : ""}>Any state</option>`,
+    // The list addressed to the member's teams reads list_inbox, which without a state leaves out finished requests.
+    `<option value=""${state === undefined ? " selected" : ""}>${list === "mine" ? "Not finished" : "Any state"}</option>`,
     ...REQUEST_STATES.map((each) => `<option value="${each}"${each === state ? " selected" : ""}>${escapeHtml(STATE_WORDS[each])}</option>`),
   ].join("");
   return [

@@ -102,7 +102,7 @@ describe("the web UI's request lists", () => {
     expect(keysOf(all.html)).toEqual(["FE-2", "BE-1", "FE-1"]);
     const mine = await open(dave);
     expect(keysOf(mine.html)).toEqual([]);
-    expect(mine.html).toContain("No request is addressed to your teams.");
+    expect(mine.html).toContain("No unfinished request is addressed to your teams.");
     const opened = await open(dave, "?list=opened");
     expect(keysOf(opened.html)).toEqual([]);
     expect(opened.html).toContain("You have opened no request.");
@@ -129,6 +129,23 @@ describe("the web UI's request lists", () => {
       expect(rowOf(html, "FE-2")).not.toContain("Waits for a person");
     } finally {
       await install.owner.query("UPDATE requests SET needs_human = false WHERE title = 'Expose the settings API'");
+    }
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (28): the list addressed to the
+  // member's teams reads list_inbox, which leaves out finished requests unless a state names one.
+  it("leaves finished requests out of the list addressed to the member's teams unless a state names one, and says so", async () => {
+    await install.owner.query("UPDATE requests SET state = 'done' WHERE title = 'Fix the footer'");
+    try {
+      const mine = await open(bob);
+      expect(keysOf(mine.html)).toEqual(["FE-1"]);
+      expect(mine.html).toContain('<option value="" selected>Not finished</option>');
+      expect(keysOf((await open(bob, "?state=done")).html)).toEqual(["FE-2"]);
+      const all = await open(bob, "?list=all");
+      expect(keysOf(all.html)).toEqual(["FE-2", "BE-1", "FE-1"]);
+      expect(all.html).toContain('<option value="" selected>Any state</option>');
+    } finally {
+      await install.owner.query("UPDATE requests SET state = 'open' WHERE title = 'Fix the footer'");
     }
   });
 

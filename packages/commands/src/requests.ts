@@ -10,10 +10,10 @@ import {
   type IntakeField,
   type Packet,
 } from "@tiehall/catalog";
-import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted, type RefusalIssue } from "@tiehall/core";
+import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted, TERMINAL_STATES, type RefusalIssue } from "@tiehall/core";
 import { requests, teams } from "@tiehall/db";
 import { requiredFieldsText } from "@tiehall/packet/tool-text";
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
 import { insertPacketRevision } from "./packet-revisions.ts";
@@ -50,12 +50,15 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // has not ended.
 //
 // The inbox (agent-surfaces: The MCP tools; design.md, Decisions this change
-// rests on: D28 #56): list_inbox lists the requests addressed to the caller's
-// teams, newest first, in every state unless it names one; a member of no team
-// has none. The web UI's request lists read it too, beside every request of
-// the install and the requests the caller's user opened, newest first, which
-// an internal read lists for them and no agent surface offers (requests: Every
-// member sees every request).
+// rests on: D28 #56; decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (28)): list_inbox lists the requests addressed to the
+// caller's teams, newest first, 20 a call and at most 50; unless it names one
+// state, a terminal one included, it leaves out the requests that are done,
+// declined or withdrawn, since an inbox is what waits for someone; a member of
+// no team has none. The web UI's request lists read it too, beside every
+// request of the install and the requests the caller's user opened, newest
+// first, which an internal read lists for them and no agent surface offers
+// (requests: Every member sees every request).
 //
 // Opening a request: it is addressed to one team of the install, and a team
 // the install does not have gets 404. The requester picks the team they open
@@ -207,7 +210,7 @@ export const REQUEST_HANDLERS: Handlers = {
     return { "requests": await requestViews(context, rows) };
   }),
 
-  // The inbox of an agent's user: the requests addressed to any of the user's teams, newest first.
+  // The inbox of an agent's user: the requests addressed to any of the user's teams, newest first, unfinished unless a state is named.
   [listInbox.id]: defineHandler(listInbox, async ({ state, limit, offset }, context) => {
     const mine = await teamsOfMember(context, actingUserOf(context));
     if (mine.length === 0) return { "requests": [] };
@@ -218,7 +221,7 @@ export const REQUEST_HANDLERS: Handlers = {
         mine.map(({ id }) => id),
       ),
     ];
-    if (state !== undefined) where.push(eq(requests.state, state));
+    where.push(state === undefined ? notInArray(requests.state, [...TERMINAL_STATES]) : eq(requests.state, state));
     const rows = await context.tx
       .select()
       .from(requests)

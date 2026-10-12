@@ -20,7 +20,7 @@ The MCP tools are:
 | `whoami` | Says who the connection acts for, their teams and the install, and warns when the Tiehall skill in use is older than the install supports. |
 | `directory` | Lists the install's teams and the registered APIs with their consuming teams. |
 | `open_request` | Opens a request to a team, with its packet. |
-| `list_inbox` | Lists the requests addressed to your teams. |
+| `list_inbox` | Lists the requests addressed to your teams that are not finished, newest first; `state` lists the ones in one state, such as `done`. |
 | `whats_new` | Reads your updates, and acknowledges the ones you handled. |
 | `get_request` | Reads a request, by key or URL, with its packet and thread, in pages. |
 | `post_message` | Posts a comment, a question or an answer in a request's thread. |

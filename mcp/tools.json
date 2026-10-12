@@ -4760,7 +4760,7 @@
       "stability": "beta"
     },
     {
-      "description": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+      "description": "List the requests addressed to your teams that are not finished, newest first: those not done, declined or withdrawn, unless state names one state, a finished one included; a member of no team has none.",
       "inputSchema": {
         "properties": {
           "limit": {
@@ -4776,7 +4776,7 @@
             "type": "integer"
           },
           "state": {
-            "description": "Only the requests in this state.",
+            "description": "Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn.",
             "enum": [
               "open",
               "claimed",

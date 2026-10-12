@@ -5,6 +5,14 @@
       "date": "2026-10-12",
       "kind": "note",
       "text": "Every operation that takes a body may answer 503 with the new problem type busy and Retry-After: 5, when the web process is already receiving as many request bodies as it holds at once, 64 MiB. The body was not read and nothing ran, so the same call can be sent again after that time."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "note",
+      "operationIds": [
+        "requests.inbox"
+      ],
+      "text": "GET /api/v1/inbox, which list_inbox and tiehall inbox run, now leaves out the requests that are done, declined or withdrawn unless state names one state; with state, it lists the requests in that state, a finished one included."
     }
   ],
   "releases": []

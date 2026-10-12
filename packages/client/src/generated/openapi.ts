@@ -77,7 +77,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none. */
+        /** List the requests addressed to your teams that are not finished, newest first: those not done, declined or withdrawn, unless state names one state, a finished one included; a member of no team has none. */
         get: operations["requests.inbox"];
         put?: never;
         post?: never;
@@ -1193,7 +1193,7 @@ export interface operations {
                 limit?: number;
                 /** @description How many of the newest requests to skip; 0 unless given. */
                 offset?: number;
-                /** @description Only the requests in this state. */
+                /** @description Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn. */
                 state?: "open" | "claimed" | "in_progress" | "needs_info" | "done" | "declined" | "withdrawn";
             };
             header?: never;

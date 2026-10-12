@@ -69,6 +69,34 @@ describe("the inbox on /api/v1", () => {
     expect(keys).toContain(toFe.key);
     expect(keys).not.toContain(toOps.key);
   });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (28): without a state, the inbox
+  // leaves out done, declined and withdrawn requests, 20 a call and at most 50; with one, it lists that state's.
+  it("leaves out done, declined and withdrawn requests unless the state names one, 20 a call and at most 50", async () => {
+    const opened: { id: string; key: string }[] = [];
+    for (let index = 0; index < 22; index += 1) opened.push(await openToFe());
+    const ended: Record<string, string> = {};
+    for (const state of ["done", "declined", "withdrawn"]) {
+      const request = await openToFe();
+      await harness.install.owner.query("UPDATE requests SET state = $2 WHERE id = $1", [request.id, state]);
+      ended[state] = request.key;
+    }
+    const firstPage = await api<{ "requests": { key: string; state: string }[] }>(dana, "GET", "/api/v1/inbox");
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body["requests"].map(({ key }) => key)).toEqual(opened.slice(-20).reverse().map(({ key }) => key));
+    const most = await api<{ "requests": { key: string; state: string }[] }>(dana, "GET", "/api/v1/inbox?limit=50");
+    expect(most.body["requests"].length).toBeGreaterThan(20);
+    for (const { key, state } of most.body["requests"]) {
+      expect(["done", "declined", "withdrawn"], key).not.toContain(state);
+    }
+    const tooMany = await api(dana, "GET", "/api/v1/inbox?limit=51");
+    expect(tooMany).toMatchObject({ status: 400, body: { type: `${PROBLEM}invalid-input` } });
+    for (const [state, key] of Object.entries(ended)) {
+      const inState = await api<{ "requests": { key: string; state: string }[] }>(dana, "GET", `/api/v1/inbox?state=${state}`);
+      expect(inState.body["requests"].map(({ key: each }) => each)).toContain(key);
+      expect(inState.body["requests"].every(({ state: each }) => each === state)).toBe(true);
+    }
+  });
 });
 
 describe("a request's pages on /api/v1", () => {

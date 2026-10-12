@@ -184,9 +184,12 @@ export const listRequests = defineCommand({
 export const listInbox = defineCommand({
   id: "requests.inbox",
   summary:
-    "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+    "List the requests addressed to your teams that are not finished, newest first: those not done, declined or withdrawn, unless state names one state, a finished one included; a member of no team has none.",
   input: z.object({
-    state: z.enum(REQUEST_STATES).optional().meta({ description: "Only the requests in this state." }),
+    state: z
+      .enum(REQUEST_STATES)
+      .optional()
+      .meta({ description: "Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn." }),
     limit: z.coerce.number().int().min(1).max(50).optional().meta({ description: "How many requests to return, 1 to 50; 20 unless given." }),
     offset: z.coerce.number().int().min(0).optional().meta({ description: "How many of the newest requests to skip; 0 unless given." }),
   }),

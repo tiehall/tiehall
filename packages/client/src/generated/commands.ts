@@ -294,7 +294,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
   {
     "command": "inbox",
     "operationId": "requests.inbox",
-    "summary": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+    "summary": "List the requests addressed to your teams that are not finished, newest first: those not done, declined or withdrawn, unless state names one state, a finished one included; a member of no team has none.",
     "method": "GET",
     "path": "/api/v1/inbox",
     "stability": "beta",
@@ -318,7 +318,7 @@ export const COMMAND_TABLE: readonly CommandEntry[] = [
           "withdrawn"
         ],
         "required": false,
-        "description": "Only the requests in this state."
+        "description": "Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn."
       },
       {
         "name": "limit",

@@ -1630,11 +1630,11 @@
         "operationId": "requests.inbox",
         "parameters": [
           {
-            "description": "Only the requests in this state.",
+            "description": "Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn.",
             "in": "query",
             "name": "state",
             "schema": {
-              "description": "Only the requests in this state.",
+              "description": "Only the requests in this state, such as done; without it, only the requests that are not done, declined or withdrawn.",
               "enum": [
                 "open",
                 "claimed",
@@ -2020,7 +2020,7 @@
             ]
           }
         ],
-        "summary": "List the requests addressed to your teams, newest first, optionally only those in one state; a member of no team has none.",
+        "summary": "List the requests addressed to your teams that are not finished, newest first: those not done, declined or withdrawn, unless state names one state, a finished one included; a member of no team has none.",
         "x-stability-level": "beta",
         "x-tiehall-cli": {
           "commands": [

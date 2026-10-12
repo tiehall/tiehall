@@ -320,6 +320,46 @@ describe.each(PROTOCOL_VERSIONS)("list_inbox, on protocol version %s", (version)
     // The key is quoted, so the source-citation check does not take the name and its colon for a citation.
     expect(result.structuredContent).toMatchObject({ "requests": [] });
   });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (28): an inbox is what waits for
+  // someone, so without a state filter list_inbox leaves out the requests in a terminal state, newest first, 20 a
+  // call and at most 50; the filter names one state, a terminal one included.
+  it("leaves out done, declined and withdrawn requests unless the state filter names one, 20 a call and at most 50", async () => {
+    const opened: { id: string; key: string }[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      opened.push(await openRequestInTheWebUi<{ id: string; key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA", title: `Unfinished ${index}` }));
+    }
+    // The three newest end, one in each terminal state, so a list of every state would start with them.
+    const ended: Record<string, string> = {};
+    for (const state of ["done", "declined", "withdrawn"]) {
+      const request = await openRequestInTheWebUi<{ id: string; key: string }>(harness.install, sam.userId, { targetTeam: "FE", requestingTeam: "QA", title: `Ended ${state}` });
+      await harness.install.owner.query("UPDATE requests SET state = $2 WHERE id = $1", [request.id, state]);
+      ended[state] = request.key;
+    }
+    const listedNow = async (args: Record<string, unknown>) => {
+      const result = await call(dana, version, "list_inbox", args);
+      expect(result.isError).not.toBe(true);
+      return (result.structuredContent as { "requests": { key: string; state: string }[] })["requests"];
+    };
+    const firstPage = await listedNow({});
+    expect(firstPage).toHaveLength(20);
+    expect(firstPage.map(({ key }) => key)).toEqual(opened.slice(-20).reverse().map(({ key }) => key));
+    const most = await listedNow({ limit: 50 });
+    expect(most.length).toBeGreaterThan(20);
+    expect(most.length).toBeLessThanOrEqual(50);
+    for (const { key, state } of most) {
+      expect(["done", "declined", "withdrawn"], key).not.toContain(state);
+      expect(Object.values(ended)).not.toContain(key);
+    }
+    const tooMany = await call(dana, version, "list_inbox", { limit: 51 });
+    expect(tooMany.isError).toBe(true);
+    for (const [state, key] of Object.entries(ended)) {
+      const inState = await listedNow({ state });
+      expect(inState.map(({ key: each }) => each)).toContain(key);
+      expect(inState.every(({ state: each }) => each === state)).toBe(true);
+    }
+    await harness.install.owner.query("UPDATE requests SET state = 'withdrawn' WHERE id = ANY($1)", [opened.map(({ id }) => id)]);
+  });
 });
 
 // requester-loop: The pull readers; requester-loop: What whats_new covers; agent-surfaces: The MCP tools.
