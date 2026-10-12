@@ -160,13 +160,13 @@ describe("mirroring on open", () => {
 // before it (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (75)).
 describe("a mapping removed, and one made later", () => {
   beforeAll(async () => {
-    for (const key of ["WEB", "APP"]) {
+    for (const key of ["WEB", "APP", "NEWS", "SHOP", "MAIL", "HELP"]) {
       teams[key] = await addTeam(install.owner, key);
       await joinTeams(install.owner, ayse.userId, teams[key]!);
     }
   });
 
-  it("stops every write to the mirror issues the removed mapping made", async () => {
+  it("writes nothing to the issues of a removed mapping for their request's later state changes and questions", async () => {
     await install.execute("mirrors.map_repository", ada, { teamId: teams["WEB"], repository: "acme/mobile-intake" });
     const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "WEB" });
     await install.execute("requests.claim", ayse, { key: request.key });
@@ -211,6 +211,60 @@ describe("a mapping removed, and one made later", () => {
     await runSentMirrorJobs();
 
     expect(tracker.issues).toEqual([]);
+  });
+
+  // An expected failure, as the one above: on a team that mirrors on open, the job counts the request's opening, whenever
+  // it was, so a request opened before the mapping gets its issue once a later write, such as a question, wakes its job.
+  it.fails("makes no issue for a request opened before it, on a team that mirrors on open, when a later write wakes the request's mirror job", async () => {
+    const before = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "NEWS" });
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["NEWS"], repository: "acme/mobile-intake" });
+    await install.execute("mirrors.set_mirror_on_open", ada, { teamId: teams["NEWS"], on: true });
+    install.sentJobs.splice(0);
+
+    await install.execute("messages.post", ayse, { key: before.key, kind: "question", body: "Which screens?" });
+    await runSentMirrorJobs();
+
+    expect(tracker.issues).toEqual([]);
+  });
+
+  // An expected failure: the job leaves behind every mirror issue of the request in another team or under another key,
+  // whether a mapping still names its place or not, so the issue of a removed mapping gets the reassignment's notice and
+  // is closed.
+  it.fails("writes nothing to the issues of a removed mapping when their request is then reassigned", async () => {
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["SHOP"], repository: "acme/fe-intake" });
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "SHOP" });
+    await install.execute("requests.claim", ayse, { key: request.key });
+    await sync(request.id);
+    expect(tracker.issues).toHaveLength(1);
+    const before = { writes: [...tracker.writes], issue: structuredClone(tracker.issues[0]) };
+
+    await install.execute("mirrors.remove_mapping", ada, { teamId: teams["SHOP"] });
+    const proposed = (await install.execute("proposals.propose", ayse, { kind: "reassign", key: request.key, team: "HELP" })) as { proposal: { id: string } };
+    expect((await install.confirm(ayse, "proposals.confirm", { proposal: proposed.proposal.id })).status).toBe(200);
+    await sync(request.id);
+
+    expect(tracker.writes).toEqual(before.writes);
+    expect(tracker.issues).toEqual([before.issue]);
+  });
+
+  // An expected failure: the job finds a request's issue by its team, tracker, place and key, not by the mapping that
+  // made it, so a new mapping to the place a removed one named takes the removed mapping's issue over.
+  it.fails("writes nothing to the issues of a removed mapping once the team maps the same place again", async () => {
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["MAIL"], repository: "acme/fe-intake" });
+    const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: "MAIL" });
+    await install.execute("requests.claim", ayse, { key: request.key });
+    await sync(request.id);
+    expect(tracker.issues).toHaveLength(1);
+    const before = { writes: [...tracker.writes], issue: structuredClone(tracker.issues[0]) };
+
+    await install.execute("mirrors.remove_mapping", ada, { teamId: teams["MAIL"] });
+    await install.execute("mirrors.map_repository", ada, { teamId: teams["MAIL"], repository: "acme/fe-intake" });
+    install.sentJobs.splice(0);
+    await install.execute("messages.post", ayse, { key: request.key, kind: "question", body: "Which screens?" });
+    await runSentMirrorJobs();
+
+    expect(tracker.writes).toEqual(before.writes);
+    expect(tracker.issues).toEqual([before.issue]);
   });
 
   it("makes no issue for a request that ended before it, even on a team that mirrors on open", async () => {
