@@ -37,7 +37,8 @@ import type { WorkerJob } from "./worker.ts";
 // a name of 1 to 100 characters and at most 10 redirect URIs of at most 2,048
 // characters each (D55 (25)), is refused with 400 invalid_client_metadata,
 // never a 500, and still counts. A metadata document is held to the same
-// bounds, and its URL to 1,024 characters (authorization-server.ts).
+// bounds, and its URL to 1,024 characters of printable ASCII, as RFC 3986
+// writes a URL (authorization-server.ts).
 //
 // A registered client that has never completed an authorization, so that no
 // grant and no token of it exists, is removed 7 days after it registered, by a
@@ -66,6 +67,21 @@ export const CLIENT_REDIRECT_URIS_MAX = 10;
 export const CLIENT_REDIRECT_URI_MAX_LENGTH = 2048;
 /** How long a client id that is a metadata document's URL is, at most, in characters. */
 export const CLIENT_ID_URL_MAX_LENGTH = 1024;
+
+/** The characters a URL is written with (RFC 3986): printable ASCII, with no space, every other character percent-encoded. */
+const URL_CHARACTERS = /^[\x21-\x7e]*$/;
+
+/**
+ * Whether a client id that is a metadata document's URL is within its bounds:
+ * written as RFC 3986 writes a URL, in printable ASCII with no space, and of
+ * at most 1,024 characters, which are then 1,024 bytes. A client id written
+ * with other characters could take up to four times as many bytes of the
+ * database's own bounds on what a client's id is written into, however few
+ * its characters (D55 (25)).
+ */
+export function clientIdUrlWithinBounds(url: string): boolean {
+  return url.length <= CLIENT_ID_URL_MAX_LENGTH && URL_CHARACTERS.test(url);
+}
 
 /** The prefix an IPv6 client is counted by. */
 const IPV6_PREFIX_LENGTH = 64;

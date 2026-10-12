@@ -6,7 +6,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt, signJWT } from "better-auth/plugins";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { SCOPES } from "@tiehall/catalog";
-import { CLIENT_ID_URL_MAX_LENGTH, clientMetadataBoundsProblem, holdsNul } from "./agent-clients.ts";
+import { clientIdUrlWithinBounds, clientMetadataBoundsProblem, holdsNul } from "./agent-clients.ts";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
 import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
@@ -39,8 +39,10 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   URL exactly, and a document whose texts hold a NUL character, which no
 //   text Tiehall stores may hold, or that breaks the bounds of a client's
 //   metadata (agent-clients.ts), is refused with invalid_client like one the
-//   plugin cannot read; so is a URL of more than 1,024 characters, which is
-//   not fetched (decisions-from-groups-15-28: design.md, Decisions this change
+//   plugin cannot read; so is a URL of more than 1,024 characters, or one
+//   not written in printable ASCII with no space, as RFC 3986 writes a URL,
+//   whose characters could take up to four times as many bytes, which is not
+//   fetched (decisions-from-groups-15-28: design.md, Decisions this change
 //   rests on: D55 (25)). At most 60 documents a minute are fetched from one
 //   host, on whatever port its URL names, and an authorization request that
 //   cannot be checked because its host's limit is used up gets 429 with
@@ -293,9 +295,10 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
     // The one limit agent-access names: 60 fetches a minute from one host, which the plugin would count per origin, a
     // host and a port, so a client could name another port for each fetch. It is counted per host just before each
     // fetch, and the plugin's own limits are set out of reach.
-    // A client_id URL longer than 1,024 characters is refused with invalid_client before anything is fetched or counted.
+    // A client_id URL longer than 1,024 characters, or not written in printable ASCII, is refused with invalid_client
+    // before anything is fetched or counted.
     isMetadataDocumentUrlAllowed: (url) => {
-      if ([...url].length > CLIENT_ID_URL_MAX_LENGTH) return false;
+      if (!clientIdUrlWithinBounds(url)) return false;
       countFetch(url);
       return true;
     },

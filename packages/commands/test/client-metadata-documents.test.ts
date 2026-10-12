@@ -64,6 +64,10 @@ beforeAll(async () => {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Vendor\u0000agent" }));
     }
     if (request.url === "/oauth/moved.json") return response.writeHead(302, { location: "https://vendor.example/oauth/client.json" }).end();
+    // A document that gives its client_id as its URL was written before it was percent-encoded.
+    if (request.url?.startsWith("/oauth/written/") === true) {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(decodeURI(url)));
+    }
     if (request.url === "/oauth/long-name.json") {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "a".repeat(101) }));
     }
@@ -184,6 +188,35 @@ describe("the bounds of a client identified by its metadata document", () => {
     expect(fetched).toEqual([]);
     expect(connections).toEqual([]);
     expect(await clientRow(clientId)).toBeUndefined();
+  });
+
+  // A URL is written in printable ASCII, with no space or control character (RFC 3986), any other character
+  // percent-encoded, so its 1,024 characters are 1,024 bytes: a client_id written otherwise, which could take up to
+  // four times as many bytes of the database's bounds, is refused before anything is fetched, however few its
+  // characters.
+  it("refuses a client_id URL written with a space, a control character or characters outside ASCII with invalid_client, fetching nothing", async () => {
+    const start = "https://vendor.example/oauth/written/";
+    const room = 1024 - start.length - ".json".length;
+    // Characters drawn from a range of this size, starting here, in an order that does not repeat, as a name's might.
+    const drawn = (first: number, size: number) => Array.from({ length: room }, (_, index) => String.fromCodePoint(first + ((index * 7919) % size))).join("");
+    const threeBytes = `${start}${drawn(0x4e00, 20_000)}.json`;
+    const fourBytes = `${start}${drawn(0x20000, 40_000)}.json`;
+    for (const clientId of [threeBytes, fourBytes]) expect([...clientId]).toHaveLength(1024);
+    for (const clientId of [`${start}tab\t.json`, `${start}a b.json`, threeBytes, fourBytes, `${start}caf\u{E9}.json`]) {
+      const answer = await authorizeAs(clientId);
+      expect(answer.status, clientId).toBe(400);
+      expect(((await answer.json()) as { error?: string }).error, clientId).toBe("invalid_client");
+      expect(await clientRow(clientId), clientId).toBeUndefined();
+    }
+    expect(fetched).toEqual([]);
+    expect(connections).toEqual([]);
+    // A URL percent-encoded is written in ASCII, and identifies its client.
+    const encoded = encodeURI("https://vendor.example/oauth/caf\u{E9}.json");
+    expect(encoded).toBe("https://vendor.example/oauth/caf%C3%A9.json");
+    const answer = await authorizeAs(encoded);
+    expect(answer.status).toBe(302);
+    expect(new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL).pathname).toBe("/consent");
+    expect(await clientRow(encoded)).toEqual({ client_discovery_id: "cimd", name: "Vendor agent" });
   });
 
   it("refuses a document whose name has 101 characters, or that lists 11 redirect URIs, with invalid_client and no consent screen", async () => {
