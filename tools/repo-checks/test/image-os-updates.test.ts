@@ -206,4 +206,16 @@ describe("the repository's Dockerfile", () => {
   it("applies the operating system's security updates in its runtime stage", () => {
     expect(osUpdateProblems(read("Dockerfile"))).toEqual([]);
   });
+
+  // The updates come from Debian's signed archives for the base image's release, its security archive and its stable
+  // updates, which the base image's own apt sources name (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (85)): no step of the runtime stage changes those sources, or lets apt take an archive unsigned.
+  it("takes the updates from the archives the base image names, signed: its runtime stage changes no apt source", () => {
+    const all = instructions(read("Dockerfile"));
+    const runtime = all.slice(all.map(({ keyword }) => keyword).lastIndexOf("FROM") + 1);
+    expect(runtime.some(({ keyword, args }) => keyword === "RUN" && /apt-get upgrade/.test(args))).toBe(true);
+    for (const { line, args } of runtime) {
+      expect(args, `line ${line}`).not.toMatch(/sources\.list|debian\.sources|Dir::Etc|trusted=yes|allow-unauthenticated|AllowInsecureRepositories|AllowDowngradeToInsecureRepositories|--allow-insecure/i);
+    }
+  });
 });

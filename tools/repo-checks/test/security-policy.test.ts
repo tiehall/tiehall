@@ -49,6 +49,26 @@ describe("SECURITY.md", () => {
     expect(links(section(policy, "Which releases get fixes") ?? "").map(({ target }) => target)).toContain("docs/install.md#upgrade");
   });
 
+  // The terms the policy was written with (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+  // (84)): one private channel, fixes in the latest release, credit unless the reporter declines it, and no promise of a
+  // response time, which a small team could not keep.
+  it("keeps its terms: one private channel, the latest release fixed, credit unless declined, and no response time", () => {
+    const reporting = part("Reporting a vulnerability");
+    expect(reporting).toContain("through GitHub's private vulnerability reporting");
+    expect(reporting).toContain("Do not report a vulnerability in a public issue, a pull request, a discussion or anywhere else in public.");
+    // The reporting form is the one way it names to report.
+    expect(links(section(policy, "Reporting a vulnerability") ?? "").map(({ target }) => target)).toEqual([`${repository}/security/advisories/new`]);
+
+    const releases = part("Which releases get fixes");
+    expect(releases).toContain("Until its first release, fixes go to the `main` branch.");
+    expect(releases).toContain("A security fix comes in a new patch release of the latest release. Earlier releases are not patched");
+
+    expect(part("What happens after a report")).toContain("credits you unless you ask not to be named");
+
+    expect(policy).not.toMatch(/\b\d+\s*(?:business\s+)?(?:hours?|days?|weeks?|months?)\b/i);
+    expect(policy).not.toMatch(/response times?|\bSLA\b|\bwithin\b/i);
+  });
+
   it("has links that all resolve, and the README and the contributors' guide link it", () => {
     expect(linkProblems(root, "SECURITY.md")).toEqual([]);
     for (const file of ["README.md", "CONTRIBUTING.md"]) {
