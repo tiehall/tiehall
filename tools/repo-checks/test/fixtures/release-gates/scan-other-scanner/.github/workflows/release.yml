@@ -1,0 +1,46 @@
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: node tools/read-release-tag.ts
+      - run: pnpm release:check-stability
+  build:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - run: docker build --tag tiehall:release .
+  image:
+    needs: [prepare, build]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/checks.yml
+  scan:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      TRIVY_IMAGE: ghcr.io/acme/scanner:0.9.0@sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+    steps:
+      - run: echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image.tar" | sha256sum --check --strict
+      - run: |
+          docker run --rm --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" \
+            "$TRIVY_IMAGE" image --input /image.tar \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+  release:
+    needs: [prepare, build, image, scan]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - run: docker push ghcr.io/acme/tiehall:1.3.0
+      - if: always()
+        run: docker logout ghcr.io

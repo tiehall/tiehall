@@ -1,15 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { gateSites, publishingAfterFailure, publishingAfterSkip, publishingJobs, RELEASE_GATES, releaseGateProblems } from "../src/release-gates.ts";
+import { gateSites, publishingAfterFailure, publishingAfterSkip, publishingJobs, RELEASE_GATES, releaseGateProblems, scanProblems } from "../src/release-gates.ts";
 
 // The release's gates (self-host-install: Upgrades apply migrations before the
-// app starts; public-api: Each operation carries a stability level): the
-// fresh-install, upgrade, backup-and-restore, polling-mode and egress tests
-// and the release check of stability levels each stop the release when they
-// fail. Each test below makes a gate fail, or a condition skip it, in the real
-// release workflow and in fixture workflows, and works out which jobs that
-// push or publish would still run, as GitHub runs a workflow.
+// app starts; public-api: Each operation carries a stability level;
+// self-host-install: Release pipeline integrity; design.md, Technical
+// decisions: T13, R-d): the fresh-install, upgrade, backup-and-restore,
+// polling-mode and egress tests, the release check of stability levels and the
+// vulnerability scan each stop the release when they fail. Each test below
+// makes a gate fail, or a condition skip it, in the real release workflow and
+// in fixture workflows, and works out which jobs that push or publish would
+// still run, as GitHub runs a workflow. The vulnerability scan must also run
+// as the Build workflow's scan runs: the same scanner, with the same rules.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/release-gates/${name}/`, import.meta.url));
@@ -18,7 +21,7 @@ const check = (folder: string) => spawnSync(process.execPath, [script, folder], 
 const gate = (name: string) => RELEASE_GATES.find((each) => each.name === name)!;
 
 describe("the release's gates", () => {
-  it("are the fresh-install, upgrade, backup-and-restore, polling-mode and egress tests and the release check of stability levels", () => {
+  it("are the fresh-install, upgrade, backup-and-restore, polling-mode and egress tests, the release check of stability levels and the vulnerability scan", () => {
     expect(RELEASE_GATES.map(({ name }) => name)).toEqual([
       "the fresh-install test",
       "the upgrade test",
@@ -26,6 +29,7 @@ describe("the release's gates", () => {
       "the polling-mode test",
       "the egress test",
       "the release check of stability levels",
+      "the vulnerability scan",
     ]);
   });
 
@@ -39,7 +43,7 @@ describe("the release's gates", () => {
     expect(releaseGateProblems(root)).toEqual([]);
   });
 
-  it("run on the release's own image, through the image checks, and the release check before the image is built", () => {
+  it("run on the release's own image, through the image checks and the scan, and the release check before the image is built", () => {
     const sites = Object.fromEntries(RELEASE_GATES.map((each) => [each.name, gateSites(root, each).map(({ file, job }) => `${file}#${job}`)]));
     expect(sites).toEqual({
       "the fresh-install test": ["image-checks.yml#fresh-install-test"],
@@ -48,6 +52,7 @@ describe("the release's gates", () => {
       "the polling-mode test": ["image-checks.yml#polling-test"],
       "the egress test": ["image-checks.yml#egress-test"],
       "the release check of stability levels": ["release.yml#prepare"],
+      "the vulnerability scan": ["release.yml#scan"],
     });
   });
 
@@ -64,19 +69,20 @@ describe("the release's gates", () => {
   it("are refused by the check when the job that publishes runs whatever they did", () => {
     const run = check(fixture("release-always"));
     expect(run.status).toBe(1);
-    expect(releaseGateProblems(fixture("release-always"))).toHaveLength(6);
+    expect(releaseGateProblems(fixture("release-always"))).toHaveLength(7);
     expect(run.stderr).toContain("When the polling-mode test fails in checks.yml#polling, step 2, the release still runs release.yml#release, which can push or publish.");
     expect(run.stderr).toContain("When the release check of stability levels fails in release.yml#prepare, step 2, the release still runs release.yml#release");
+    expect(run.stderr).toContain("When the vulnerability scan fails in release.yml#scan, step 2, the release still runs release.yml#release, which can push or publish.");
   });
 
-  it("are refused when the job that publishes does not wait for the image checks, or waits through a job that runs whatever they did", () => {
+  it("are refused when the job that publishes does not wait for the image checks or the scan, or waits through a job that runs whatever they did", () => {
     const failing = (name: string) => releaseGateProblems(fixture(name)).map((problem) => / fails in ([^,]+),/.exec(problem)?.[1]);
     const tests = ["checks.yml#fresh-install", "checks.yml#upgrade", "checks.yml#backup", "checks.yml#polling", "checks.yml#egress"];
     // The release check still stops it: the job that publishes needs the job that runs the check.
-    expect(failing("release-not-needing-checks")).toEqual(tests);
+    expect(failing("release-not-needing-checks")).toEqual([...tests, "release.yml#scan"]);
     expect(publishingAfterFailure(fixture("release-not-needing-checks"), gateSites(fixture("release-not-needing-checks"), gate("the release check of stability levels"))[0]!)).toEqual([]);
     // A job between them that runs unless the run was cancelled lets every failure through.
-    expect(failing("always-in-between")).toEqual([...tests, "release.yml#prepare"]);
+    expect(failing("always-in-between")).toEqual([...tests, "release.yml#prepare", "release.yml#scan"]);
   });
 
   it("are refused when a failing test may continue on error, for its job or its step, or when a condition may skip it", () => {
@@ -98,6 +104,7 @@ describe("the release's gates", () => {
       "the polling-mode test": true,
       "the egress test": true,
       "the release check of stability levels": false,
+      "the vulnerability scan": false,
     });
     expect(releaseGateProblems(fixture("script-goes-on"))).toEqual([
       "When the fresh-install test fails in checks.yml#fresh-install, step 2, the release still runs release.yml#release, which can push or publish.",
@@ -151,6 +158,7 @@ describe("the release's gates", () => {
       "checks.yml#egress-escaped-space-before": true,
       "release.yml#prepare": true,
       "release.yml#stability": false,
+      "release.yml#scan": false,
     });
     const problems = releaseGateProblems(fixture("script-swallowed"));
     expect(problems).toHaveLength(26);
@@ -182,10 +190,41 @@ describe("the release's gates", () => {
     expect(releaseGateProblems(fixture("missing-gates"))).toEqual([
       "the polling-mode test runs in no step of release.yml or of a workflow it calls.",
       "the release check of stability levels runs in no step of release.yml or of a workflow it calls.",
+      "the vulnerability scan runs in no step of release.yml or of a workflow it calls.",
     ]);
     expect(releaseGateProblems(fixture("publish-before-gates"))).toEqual([
       "When the release check of stability levels fails in release.yml#release, step 2, the release still runs release.yml#release, which can push or publish.",
     ]);
+  });
+
+  // design.md, Technical decisions: T13, R-d. The release's scan is the Build workflow's scan, on the release's own image.
+  it("hold the vulnerability scan to the Build workflow's scan: the same command, with the same scanner, read over its lines", () => {
+    // The gated fixture's release scans with one command carried over three lines, its Build workflow with one line.
+    expect(gateSites(fixture("gated"), gate("the vulnerability scan")).map(({ file, job, step }) => `${file}#${job}, step ${step + 1}`)).toEqual(["release.yml#scan, step 2"]);
+    expect(scanProblems(fixture("gated"))).toEqual([]);
+    expect(scanProblems(root)).toEqual([]);
+    // A release without a scan has nothing to compare; the gate's own check reports it missing.
+    expect(scanProblems(fixture("missing-gates"))).toEqual([]);
+  });
+
+  it("are refused when the release's scan runs other rules or another scanner than the Build workflow's, or the Build workflow runs none", () => {
+    expect(releaseGateProblems(fixture("scan-other-rules"))).toEqual([
+      "The vulnerability scan in release.yml#scan, step 2, runs `docker run --rm --volume \"$RUNNER_TEMP/image.tar:/image.tar:ro\" \"$TRIVY_IMAGE\" image --input /image.tar " +
+        "--scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1`, not the Build workflow's scan in build.yml#scan, " +
+        "`docker run --rm --volume \"$RUNNER_TEMP/image.tar:/image.tar:ro\" \"$TRIVY_IMAGE\" image --input /image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1`.",
+    ]);
+    expect(releaseGateProblems(fixture("scan-other-scanner"))).toEqual([
+      `The vulnerability scan in release.yml#scan, step 2, gives TRIVY_IMAGE the value ghcr.io/acme/scanner:0.9.0@sha256:${"cd".repeat(32)}, ` +
+        `and the Build workflow's scan in build.yml#scan the value ghcr.io/acme/scanner:1.0.0@sha256:${"ab".repeat(32)}.`,
+    ]);
+    expect(releaseGateProblems(fixture("scan-without-build"))).toEqual([
+      "The vulnerability scan in release.yml#scan, step 2, has no scan to match: the Build workflow, build.yml, runs no vulnerability scan.",
+    ]);
+    for (const name of ["scan-other-rules", "scan-other-scanner", "scan-without-build"]) {
+      const run = check(fixture(name));
+      expect(run.status, name).toBe(1);
+      expect(run.stderr, name).toContain("the Build workflow's scanner and rules");
+    }
   });
 
   it("passes on the real tree, as CI runs it", () => {
@@ -193,5 +232,6 @@ describe("the release's gates", () => {
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("the fresh-install test runs in image-checks.yml#fresh-install-test; when it fails, no job that pushes or publishes runs.");
+    expect(run.stdout).toContain("the vulnerability scan runs in release.yml#scan; when it fails, no job that pushes or publishes runs.");
   });
 });

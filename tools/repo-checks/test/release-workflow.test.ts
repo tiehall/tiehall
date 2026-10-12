@@ -18,7 +18,10 @@ import { checkWorkflows } from "../src/workflows.ts";
 // third-party action or any package's code: the notes, whose script needs the
 // repository's dependencies, are written between them in a job that can write
 // nothing. The SBOM comes from the third-party scanner in a job with no
-// permissions.
+// permissions, and so does the vulnerability scan, the Build workflow's scan
+// on the release's own image, whose finding of a fixable HIGH or CRITICAL
+// vulnerability stops the release before anything is pushed (design.md,
+// Technical decisions: T13, R-d).
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -95,7 +98,7 @@ describe("the release workflow", () => {
     expect(needs(image)).toEqual(["prepare", "build"]);
     expect(image.with).toEqual({ "image-artifact": "image", "previous-base": "${{ github.sha }}^" });
     expect(image.permissions).toEqual({ contents: "read", packages: "read" });
-    expect(needs(workflow.jobs["push"] as Job)).toEqual(["prepare", "build", "sbom", "image"]);
+    expect(needs(workflow.jobs["push"] as Job)).toEqual(["prepare", "build", "sbom", "scan", "image"]);
     expect(needs(workflow.jobs["release"] as Job)).toEqual(expect.arrayContaining(["push"]));
     // The image checks load the saved image and take the previous image from the base the release gives.
     const checks = parse(readFileSync(join(root, ".github/workflows/image-checks.yml"), "utf8")) as Workflow & { on: { workflow_call: { inputs: Record<string, unknown> } } };
@@ -146,6 +149,30 @@ describe("the release workflow", () => {
     for (const option of ["--network none", "--read-only", "--cap-drop ALL", "--security-opt no-new-privileges", "--input /image.tar", "--output /sbom/sbom.spdx.json"]) expect(script, option).toContain(option);
     expect(steps(job).find(({ uses }) => uses?.startsWith("actions/download-artifact@"))?.with).toMatchObject({ name: "image" });
     expect(steps(job).find(({ uses }) => uses?.startsWith("actions/upload-artifact@"))?.with).toMatchObject({ name: "sbom", "if-no-files-found": "error" });
+  });
+
+  it("scans the release's own image as the Build workflow scans each build of main, in a job with no permissions, before anything is pushed", () => {
+    const [id, job] = jobRunning(/--scanners vuln/);
+    expect(id).toBe("scan");
+    expect(needs(job)).toEqual(["build"]);
+    expect(job.permissions).toEqual({});
+    expect(JSON.stringify(job)).not.toMatch(/secrets\./);
+    // The same scanner, pinned by the same digest, and the same command: fixable HIGH and CRITICAL vulnerabilities fail it.
+    expect(job.env?.["TRIVY_IMAGE"]).toBe(build.jobs["scan"]?.env?.["TRIVY_IMAGE"]);
+    const command = (each: Job | undefined) =>
+      runs(each).replace(/\\\n\s*/g, " ").split("\n").find((line) => line.includes("--scanners vuln"))?.trim().replace(/\s+/g, " ");
+    expect(command(job)).toBe(command(build.jobs["scan"]));
+    expect(command(job)).toContain("--scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1");
+    // It scans the saved image only once its digest matches the build job's, which no other job can change.
+    const scanSteps = steps(job);
+    const download = scanSteps.findIndex(({ uses }) => uses?.startsWith("actions/download-artifact@"));
+    expect(scanSteps[download]?.with).toEqual({ name: "image", path: "${{ runner.temp }}" });
+    const check = scanSteps.findIndex(({ run }) => run?.trim() === 'echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image.tar" | sha256sum --check --strict');
+    expect(check).toBeGreaterThan(download);
+    expect(check).toBeLessThan(scanSteps.findIndex(({ run }) => run?.includes("--scanners vuln")));
+    expect(scanSteps[check]?.env).toEqual({ ARCHIVE_SHA256: "${{ needs.build.outputs.archive-sha256 }}" });
+    // The job that pushes needs it, and the job that publishes needs that one.
+    expect(needs(workflow.jobs["push"] as Job)).toContain("scan");
   });
 
   it("pushes the image once, in the push job, by digest and tagged with its version", () => {

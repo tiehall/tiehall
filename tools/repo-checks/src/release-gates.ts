@@ -3,12 +3,19 @@ import { join } from "node:path";
 import { parse } from "yaml";
 
 // The release's gates (self-host-install: Upgrades apply migrations before the
-// app starts; public-api: Each operation carries a stability level; design.md,
-// Technical decisions: T13 and T17). A release is published only after the
+// app starts; public-api: Each operation carries a stability level;
+// self-host-install: Release pipeline integrity; design.md, Technical
+// decisions: T13 and T17). A release is published only after the
 // fresh-install, upgrade, backup-and-restore, polling-mode and egress tests
-// have passed on its image, and after the release check of stability levels
-// has passed on its documents: a failure in any of them stops the release
-// before anything is pushed or published.
+// and the vulnerability scan have passed on its image, and after the release
+// check of stability levels has passed on its documents: a failure in any of
+// them stops the release before anything is pushed or published. The scan is
+// the Build workflow's scan of each build of main, run on the release's own
+// image (design.md, Technical decisions: T13, R-d): the check also holds it
+// to the same command, read as the shell reads it, and to the same values of
+// the variables it names, such as the scanner's image, pinned by digest, so a
+// fixable HIGH or CRITICAL vulnerability stops the release as it fails the
+// Build workflow.
 //
 // The check reads the release workflow and the workflows of this repository
 // it calls, finds each step that runs a gate, and works out, as GitHub runs a
@@ -69,7 +76,15 @@ export const RELEASE_GATES: readonly Gate[] = [
   { name: "the polling-mode test", command: /\bpnpm test:install\b[^\n]*\bpolling\b/ },
   { name: "the egress test", command: /\bpnpm test:install\b[^\n]*\begress\b/ },
   { name: "the release check of stability levels", command: /\bpnpm release:check-stability\b/ },
+  // A container that runs a vulnerability scan, such as the pinned scanner's image subcommand with --scanners vuln.
+  { name: "the vulnerability scan", command: /\bdocker run\b.*\s--scanners[\s=]+vuln\b/ },
 ];
+
+/** The release's vulnerability scan, which runs as the Build workflow's scan runs. */
+const VULNERABILITY_SCAN = RELEASE_GATES.find(({ name }) => name === "the vulnerability scan") as Gate;
+
+/** The Build workflow, in .github/workflows, whose scan of each build of main the release's scan repeats. */
+export const BUILD_WORKFLOW = "build.yml";
 
 /** The release workflow, in .github/workflows. */
 export const RELEASE_WORKFLOW = "release.yml";
@@ -283,17 +298,77 @@ function shellOf(step: Mapping, job: Mapping, workflow: Mapping): unknown {
   return step["shell"] ?? defaultShell(job) ?? defaultShell(workflow);
 }
 
-/** The steps that run a gate, in the release workflow and the local workflows it calls. */
-export function gateSites(root: string, gate: Gate): Site[] {
-  return reachable(root, RELEASE_WORKFLOW).flatMap((file) => {
+/** A script as the shell reads its lines: each line continuation, a backslash at the end of a line, read as a space. */
+function joinLines(script: string): string {
+  return script.replace(/\\\r?\n/g, " ");
+}
+
+/** The steps that run a gate in these workflow files, with the scripts they run. */
+function sitesIn(root: string, files: readonly string[], gate: Gate): { site: Site; script: string; step: Mapping; job: Mapping; workflow: Mapping }[] {
+  return files.flatMap((file) => {
     const workflow = workflowOf(root, file);
     return [...jobsOf(root, file)].flatMap(([job, definition]) =>
       stepsOf(definition).flatMap((step, index) => {
         const script = step["run"];
-        if (typeof script !== "string" || !gate.command.test(script)) return [];
-        return [{ file, job, step: index, goesOn: goesOn(script, shellOf(step, definition, workflow), gate) }];
+        if (typeof script !== "string" || !gate.command.test(joinLines(script))) return [];
+        const site = { file, job, step: index, goesOn: goesOn(script, shellOf(step, definition, workflow), gate) };
+        return [{ site, script, step, job: definition, workflow }];
       }),
     );
+  });
+}
+
+/** The steps that run a gate, in the release workflow and the local workflows it calls. */
+export function gateSites(root: string, gate: Gate): Site[] {
+  return sitesIn(root, reachable(root, RELEASE_WORKFLOW), gate).map(({ site }) => site);
+}
+
+/** A vulnerability scan: where it runs, its command as the shell reads it, and the values its step gives the variables the command names. */
+interface Scan {
+  site: Site;
+  command: string;
+  variables: Map<string, string | undefined>;
+}
+
+/** The value of an environment variable for a step: the step's own, else its job's, else its workflow's; undefined when none sets it. */
+function environmentValue(name: string, ...holders: Mapping[]): string | undefined {
+  for (const holder of holders) {
+    const env = holder["env"];
+    if (isMapping(env) && env[name] !== undefined) return String(env[name]);
+  }
+  return undefined;
+}
+
+/** The vulnerability scans that run in these workflow files. */
+function scansIn(root: string, files: readonly string[]): Scan[] {
+  return sitesIn(root, files, VULNERABILITY_SCAN).map(({ site, script, step, job, workflow }) => {
+    const line = joinLines(script).split(/\r?\n/).find((each) => VULNERABILITY_SCAN.command.test(each)) ?? "";
+    const match = VULNERABILITY_SCAN.command.exec(line);
+    const command = line.slice(match?.index ?? 0).trim().replace(/\s+/g, " ");
+    const names = [...command.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map(([, name]) => name as string);
+    return { site, command, variables: new Map(names.map((name) => [name, environmentValue(name, step, job, workflow)])) };
+  });
+}
+
+/**
+ * What keeps the release's vulnerability scan from running as the Build workflow's scan runs, as sentences: another
+ * command, another value of a variable the command names, such as the scanner's image, or no scan in the Build
+ * workflow to match. A release without a scan has nothing to compare, and the gate's own check reports it.
+ */
+export function scanProblems(root: string): string[] {
+  const release = scansIn(root, reachable(root, RELEASE_WORKFLOW));
+  if (release.length === 0) return [];
+  const where = ({ site }: Scan) => `${site.file}#${site.job}, step ${site.step + 1}`;
+  const reference = scansIn(root, [BUILD_WORKFLOW])[0];
+  if (reference === undefined) {
+    return release.map((scan) => `The vulnerability scan in ${where(scan)}, has no scan to match: the Build workflow, ${BUILD_WORKFLOW}, runs no vulnerability scan.`);
+  }
+  const build = `the Build workflow's scan in ${reference.site.file}#${reference.site.job}`;
+  return release.flatMap((scan) => {
+    if (scan.command !== reference.command) return [`The vulnerability scan in ${where(scan)}, runs \`${scan.command}\`, not ${build}, \`${reference.command}\`.`];
+    return [...scan.variables]
+      .filter(([name, value]) => value !== reference.variables.get(name))
+      .map(([name, value]) => `The vulnerability scan in ${where(scan)}, gives ${name} the value ${value ?? "of none"}, and ${build} the value ${reference.variables.get(name) ?? "of none"}.`);
   });
 }
 
@@ -390,5 +465,6 @@ export function releaseGateProblems(root: string): string[] {
       }
     }
   }
+  problems.push(...scanProblems(root));
   return problems;
 }

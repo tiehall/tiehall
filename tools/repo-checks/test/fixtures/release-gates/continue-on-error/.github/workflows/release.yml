@@ -22,8 +22,17 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/checks.yml
+  scan:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      TRIVY_IMAGE: ghcr.io/acme/scanner:1.0.0@sha256:abababababababababababababababababababababababababababababababab
+    steps:
+      - run: echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image.tar" | sha256sum --check --strict
+      - run: docker run --rm --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" "$TRIVY_IMAGE" image --input /image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
   release:
-    needs: [prepare, build, image]
+    needs: [prepare, build, image, scan]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

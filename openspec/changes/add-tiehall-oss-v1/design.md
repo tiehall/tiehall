@@ -697,7 +697,7 @@ This is the first release. There is no earlier Tiehall install, and no data, use
 
 **Rollback.** Before a flagged contract step, set the previous image and run `docker compose up -d`. After one, restore the pre-upgrade backup with the previous image.
 
-**Our release process.** A version tag builds the image once, by digest, with provenance and SBOM attestations; CI runs the fresh-install, upgrade, backup-and-restore, polling and egress tests; the release publishes the image, the Compose file, `.env.example`, the scripts, the notes and the API changelog. npm packages are published from CI with provenance once the npm names are reserved.
+**Our release process.** A version tag builds the image once, by digest, with provenance and SBOM attestations; CI runs the fresh-install, upgrade, backup-and-restore, polling and egress tests and the vulnerability scan (T13, R-d); the release publishes the image, the Compose file, `.env.example`, the scripts, the notes and the API changelog. npm packages are published from CI with provenance once the npm names are reserved.
 
 **Public contracts after a release.** Breaking API changes are never rolled back: they go through the deprecation path, and the `api-breaking` label is only for urgent security fixes.
 

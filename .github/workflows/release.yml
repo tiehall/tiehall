@@ -40,13 +40,22 @@ name: Release
 # app starts; public-api: Each operation carries a stability level): the
 # release check of stability levels runs before anything is built, and the
 # image checks, the fresh-install, upgrade, backup-and-restore, polling-mode
-# and egress tests among them, run on the release's own image; the push job
-# needs every one of them and the release job needs the push job, so a
-# failure in any stops both. `pnpm check:release-gates` checks that a failure
-# in each gate does.
+# and egress tests among them, and the vulnerability scan run on the release's
+# own image; the push job needs every one of them and the release job needs
+# the push job, so a failure in any stops both. `pnpm check:release-gates`
+# checks that a failure in each gate does, and that the scan runs as the Build
+# workflow's scan does.
 # The SBOM comes from the third-party scanner, pinned by digest, in a job of its
 # own with no permissions, no secrets and no network, which reads only the saved
-# image.
+# image. The vulnerability scan is the Build workflow's scan (design.md,
+# Technical decisions: T13, R-d): the same scanner, pinned by the same digest,
+# with the same rules, so a fixable HIGH or CRITICAL vulnerability in the image
+# stops the release. It runs in a job of its own with no permissions and no
+# secrets, which reads only the saved image and has the network the scanner
+# needs for its vulnerability database. The way out of a finding is its fix, or
+# for Node's binary or an npm package whose fixed version is younger than the
+# 7-day release age, the reviewed exception of D55 (86) in the OpenSpec change
+# decisions-from-groups-15-28.
 
 on:
   push:
@@ -187,6 +196,39 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The Build workflow's scan, on the release's own image: a fixable HIGH or CRITICAL vulnerability stops the release.
+  scan:
+    name: Scan the image
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The scanner is third-party code: no token permissions and no secrets, and it reads only the saved image.
+    permissions: {}
+    env:
+      # Third-party, pinned by digest, the same as the Build workflow's scan; Renovate proposes new digests after the
+      # 7-day release age.
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+    steps:
+      # Where the Build workflow's scan saves the image it pulled, so the scan below is its command word for word.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Check the saved image against the build job's digest
+        env:
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+        run: echo "$ARCHIVE_SHA256  $RUNNER_TEMP/image.tar" | sha256sum --check --strict
+      # As the Build workflow's scan runs it: the scanner gets only the saved image, no token, no Docker socket, no
+      # checkout, a read-only root filesystem and no capabilities, and runs as the runner's user, who owns the saved
+      # image; it has the network, for its vulnerability database.
+      - name: Scan for fixable high and critical vulnerabilities
+        run: |
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" \
+            --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" \
+            "$TRIVY_IMAGE" image --input /image.tar --cache-dir /tmp/trivy \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+
   # The image tests, the self-host boot test and the operator tests, on the release's own image: the fresh install,
   # the end-to-end "It works" test, the egress and polling-mode tests, backup and restore, and the upgrade from the
   # previous release's image, the newest final release the tagged commit's parent holds, or before the first release
@@ -204,7 +246,7 @@ jobs:
 
   push:
     name: Push and attest the image
-    needs: [prepare, build, sbom, image]
+    needs: [prepare, build, sbom, scan, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

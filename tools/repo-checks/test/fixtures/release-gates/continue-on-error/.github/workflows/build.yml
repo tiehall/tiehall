@@ -1,0 +1,14 @@
+on:
+  push:
+    branches: [main]
+permissions: {}
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: read
+    env:
+      TRIVY_IMAGE: ghcr.io/acme/scanner:1.0.0@sha256:abababababababababababababababababababababababababababababababab
+    steps:
+      - run: docker save "$IMAGE" --output "$RUNNER_TEMP/image.tar"
+      - run: docker run --rm --volume "$RUNNER_TEMP/image.tar:/image.tar:ro" "$TRIVY_IMAGE" image --input /image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
