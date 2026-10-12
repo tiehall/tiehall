@@ -197,6 +197,11 @@ describe("registering an API", () => {
     // digits, dots, hyphens and underscores, the form in which contract reports name APIs.
     ["a name with one upper-case letter", { name: "payments-Api", repository: "acme/payments" }],
     ["a name of 101 characters", { name: "a".repeat(101), repository: "acme/payments" }],
+    // The maintainer's answer of 2026-10-12: a name starts with a letter or a digit, as the OpenAPI document and the MCP
+    // tool snapshot publish its pattern.
+    ["a name that starts with a hyphen", { name: "-payments", repository: "acme/payments" }],
+    ["a name that starts with a dot", { name: ".payments", repository: "acme/payments" }],
+    ["a name that starts with an underscore", { name: "_payments", repository: "acme/payments" }],
     ["a repository that is not owner/name", { name: "payments-api", repository: "payments" }],
     ["a workflow that is not a job_workflow_ref", { name: "payments-api", repository: "acme/payments", jobWorkflowRef: "contract.yml" }],
   ])("is refused with 400 for %s", async (_case, input) => {
@@ -210,16 +215,6 @@ describe("registering an API", () => {
     expect((await install.confirm(ada, REGISTER, { name, team: pay, repository: "acme/payments" })).status).toBe(200);
     expect(await stored()).toEqual([expect.objectContaining({ name, repository: "acme/payments" })]);
   });
-
-  // Expected failures: D55 (59) and contract-changes allow a name of any of those characters, and the code, as the
-  // OpenAPI document and the MCP tool snapshot publish its pattern, wants a letter or digit first. No task of
-  // decisions-from-groups-15-28 changes either; the maintainer decides which one gives way (task 1.14's note).
-  for (const name of ["-payments", ".payments", "_payments"]) {
-    it.fails(`takes a name that starts with ${name[0]}, such as ${name}`, async () => {
-      expect((await install.confirm(ada, REGISTER, { name, team: pay, repository: "acme/payments" })).status).toBe(200);
-      expect(await stored()).toEqual([expect.objectContaining({ name, repository: "acme/payments" })]);
-    });
-  }
 
   it("is refused with 403 without a valid confirmation, and registers nothing", async () => {
     const from = await lastEvent();
