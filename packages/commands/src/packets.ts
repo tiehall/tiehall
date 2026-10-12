@@ -33,13 +33,16 @@ import { assertRevisionKeepsRequiredFields, REQUIRED_FIELD_CHECKS, type Requirin
 // or proposed, that drops a field the request's team requires and the current
 // revision has is refused with 400 and creates nothing
 // (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-// D55 (41); required-fields.ts). A field whose new value reads, as agents
-// read it, the same as its current value is no change and keeps its stored
-// text, so an agent that sends back the packet it read, without the
-// characters the agent view strips, changes only what it changed
-// (agent-safety: Invisible characters are stripped from the agent view;
-// decisions-from-groups-15-28: design.md, Decisions this change rests on:
-// D55 (36)).
+// D55 (41); required-fields.ts). A field whose new value is its current value
+// as it was read is no change and keeps its stored text: the value as agents
+// read it, without the characters the agent view strips, or the value with its
+// line breaks written another way, as a browser sends back the stored text a
+// form shows with CR LF. So a packet read and sent back changes only what its
+// sender changed. Any other value is stored as it was sent, so an edit that
+// adds only characters the agent view strips is a change (agent-safety:
+// Invisible characters are stripped from the agent view; handoff-packet: Open
+// objects, strict server; decisions-from-groups-15-28: design.md, Decisions
+// this change rests on: D55 (36); its design.md, Technical decisions: T5).
 //
 // What changed since revision N (handoff-packet: What changed since revision
 // N): the fields that differ between revision N and the current revision, and
@@ -107,19 +110,37 @@ export async function revisePacket(
 
 /**
  * The packet a change makes, with each field under untrusted whose new value
- * reads, as agents read it, the same as its current value kept as it is
- * stored: such a value is no change, so a packet read and sent back changes
- * only what its sender changed, and the stored text keeps the characters the
- * agent view strips, such as the carriage returns of a web form's line breaks.
+ * is its current value as it was read kept as it is stored: such a value is no
+ * change, so a packet read and sent back changes only what its sender changed,
+ * and the stored text keeps what was written, such as the carriage returns of
+ * a web form's line breaks, which the agent view strips.
  */
 function keptAsRead(current: Packet, packet: Packet): Packet {
   const before: Readonly<Record<string, unknown>> = current.untrusted;
   const untrusted = Object.fromEntries(
-    Object.entries(packet.untrusted).map(([field, value]) =>
-      Object.hasOwn(before, field) && sameJson(agentJson(value), agentJson(before[field])) ? [field, before[field]] : [field, value],
-    ),
+    Object.entries(packet.untrusted).map(([field, value]) => (Object.hasOwn(before, field) && readAs(value, before[field]) ? [field, before[field]] : [field, value])),
   );
   return { ...packet, untrusted } as Packet;
+}
+
+/**
+ * Whether a value sent is the stored one as it was read: with its line breaks
+ * as line feeds, it is the stored value as agents read it, or the stored value
+ * with its line breaks as line feeds. Any other value is not, such as one
+ * that adds to the stored value only characters the agent view strips.
+ */
+function readAs(value: unknown, stored: unknown): boolean {
+  const sent = withLineFeeds(value);
+  return sameJson(sent, agentJson(stored)) || sameJson(sent, withLineFeeds(stored));
+}
+
+/** A JSON value with every line break of its strings, CR LF or a lone CR, written as a line feed; keys stay as they are. */
+function withLineFeeds(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(/\r\n?/g, "\n");
+  if (Array.isArray(value)) return value.map(withLineFeeds);
+  if (value === null || typeof value !== "object") return value;
+  // fromEntries defines each key as the object's own, so a key such as __proto__ in extensions stays a key.
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withLineFeeds(item)]));
 }
 
 /** The team a request is addressed to, by its id and its current key. */

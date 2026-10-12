@@ -250,28 +250,55 @@ describe("what a revision may change", () => {
   });
 });
 
-// A field a revision gives as it reads, as agents read it, the same as the current one is no change, and keeps its
-// stored text (agent-safety: Invisible characters are stripped from the agent view; handoff-packet: Packet changes
-// that are commitments; decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (36)). Agents read
-// a packet without the characters the agent view strips, such as the carriage returns of a web form's line breaks,
-// which a browser sends as CR LF; a packet read and sent back with one more link changes only the links, so on a
-// claimed request it is a revision at once and not a scope proposal, and the stored need keeps its line breaks.
+// A field a revision gives as it was read is no change, and keeps its stored text (agent-safety: Invisible characters
+// are stripped from the agent view; handoff-packet: Packet changes that are commitments; decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (36); its design.md, Technical decisions: T5). Agents read a packet
+// without the characters the agent view strips, such as the carriage returns of a web form's line breaks, which a
+// browser sends as CR LF, and the web UI shows the stored text, whose line breaks a browser sends back as CR LF; a
+// packet read and sent back with one more link changes only the links, so on a claimed request it is a revision at
+// once and not a scope proposal, and the stored need keeps what was written. Any other new value is stored as it was
+// sent: an edit that adds only characters the agent view strips, such as the zero-width non-joiner of a Persian word,
+// is a change, which on a claimed request is a scope proposal.
 describe("a packet sent back as it was read", () => {
   const written = "First line.\r\nSecond line.";
   const read = "First line.\nSecond line.";
+  // A Persian need without, then with, the zero-width non-joiner (U+200C) inside its first word, which the agent view strips.
+  const unjoined = "\u0645\u06CC\u062E\u0648\u0627\u0647\u0645 \u06CC\u06A9 \u062D\u0627\u0644\u062A \u062A\u0627\u0631\u06CC\u06A9";
+  const joined = "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645 \u06CC\u06A9 \u062D\u0627\u0644\u062A \u062A\u0627\u0631\u06CC\u06A9";
 
   async function storedNeeds(requestId: string): Promise<unknown[]> {
     const { rows } = await install.owner.query("SELECT packet->'untrusted'->>'need' AS need FROM packet_revisions WHERE request_id = $1 ORDER BY number", [requestId]);
     return rows.map(({ need }) => need);
   }
 
-  it("adds a revision at once for a link added to a claimed request whose need the web form wrote with CR LF", async () => {
-    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: written }) });
+  /** Opens a request to FE as Alice with this need, and claims it as Bob. */
+  async function claimedWith(need: string): Promise<{ id: string; key: string }> {
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need }) });
     expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
-    const current = await readPacket(alice, opened.key);
-    expect(current.body.packet.untrusted.need).toBe(read);
+    return opened;
+  }
+
+  /** Changes the packet as Alice through the request page's form, with these of its fields, at revision 1. */
+  function changeInTheWebUi(key: string, fields: Record<string, string>) {
+    const session = sessionOf(alice);
+    const web = install.web(session);
+    return runRequestPageAction(new URLSearchParams({ action: "change_packet", key, revision: "1", ...fields }), {
+      read: (commandId, input) => web.read(commandId, input),
+      write: (commandId, input) => web.write(commandId, input, install.fromThePage(session)),
+    });
+  }
+
+  /** Reads the packet as Alice and sends it back with one more link. */
+  async function sendBackWithALink(key: string) {
+    const current = await readPacket(alice, key);
     const packet = { ...current.body.packet, untrusted: { ...current.body.packet.untrusted, links: [{ url: "https://wiki.example.com/more" }] } };
-    const answer = await addRevision(alice, opened.key, packet, current.headers.get("etag") ?? "");
+    return { current, answer: await addRevision(alice, key, packet, current.headers.get("etag") ?? "") };
+  }
+
+  it("adds a revision at once for a link added to a claimed request whose need the web form wrote with CR LF", async () => {
+    const opened = await claimedWith(written);
+    const { current, answer } = await sendBackWithALink(opened.key);
+    expect(current.body.packet.untrusted.need).toBe(read);
     expect(answer.status).toBe(200);
     expect(answer.body).toMatchObject({ revision: 2 });
     expect(await storedNeeds(opened.id)).toEqual([written, written]);
@@ -279,31 +306,62 @@ describe("a packet sent back as it was read", () => {
     expect(changes.body.changedFields).toEqual(["links"]);
   });
 
+  it("adds a revision at once for a link added to a claimed request whose need holds a character the agent view strips", async () => {
+    const stored = `${joined}\r\nSecond line.`;
+    const opened = await claimedWith(stored);
+    const { current, answer } = await sendBackWithALink(opened.key);
+    expect(current.body.packet.untrusted.need).toBe(`${unjoined}\nSecond line.`);
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({ revision: 2 });
+    expect(await storedNeeds(opened.id)).toEqual([stored, stored]);
+  });
+
   it("adds a revision at once for a link added in the web UI to a claimed request whose need an agent wrote with LF", async () => {
-    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: read }) });
-    expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
-    const session = sessionOf(alice);
-    const web = install.web(session);
-    const fields = new URLSearchParams({ action: "change_packet", key: opened.key, revision: "1", need: written, links: "https://wiki.example.com/more" });
-    const state = await runRequestPageAction(fields, {
-      read: (commandId, input) => web.read(commandId, input),
-      write: (commandId, input) => web.write(commandId, input, install.fromThePage(session)),
-    });
-    expect(state).toEqual({ ok: true, action: "change_packet" });
+    const opened = await claimedWith(read);
+    expect(await changeInTheWebUi(opened.key, { need: written, links: "https://wiki.example.com/more" })).toEqual({ ok: true, action: "change_packet" });
     expect(await storedNeeds(opened.id)).toEqual([read, read]);
   });
 
-  it("keeps the stored need when a revision adds to it only characters the agent view strips", async () => {
-    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: read }) });
-    expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
-    const answer = await addRevision(alice, opened.key, packetWith({ need: `First​ line.\r\nSecond line.\u{E0041}`, links: [{ url: "https://wiki.example.com/more" }] }), '"1"');
+  it("adds a revision at once for a link added in the web UI to a claimed request whose need holds a character the agent view strips", async () => {
+    const stored = `${joined}\nSecond line.`;
+    const opened = await claimedWith(stored);
+    expect(await changeInTheWebUi(opened.key, { need: `${joined}\r\nSecond line.`, links: "https://wiki.example.com/more" })).toEqual({ ok: true, action: "change_packet" });
+    expect(await storedNeeds(opened.id)).toEqual([stored, stored]);
+  });
+
+  it("stores a need to which a revision adds only a character the agent view strips", async () => {
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: unjoined }) });
+    const answer = await addRevision(alice, opened.key, packetWith({ need: joined }), '"1"');
     expect(answer.status).toBe(200);
-    expect(await storedNeeds(opened.id)).toEqual([read, read]);
+    expect(answer.body).toMatchObject({ revision: 2 });
+    expect(await storedNeeds(opened.id)).toEqual([unjoined, joined]);
+  });
+
+  it("makes a need to which a revision adds only a character the agent view strips a proposal on a claimed request", async () => {
+    const opened = await claimedWith(unjoined);
+    const answer = await addRevision(alice, opened.key, packetWith({ need: joined }), '"1"');
+    expect(answer.status).toBe(202);
+    expect(answer.body).toMatchObject({ proposal: { kind: "scope", state: "pending" } });
+    const { rows } = await install.owner.query("SELECT change->'packet'->'untrusted'->>'need' AS need FROM proposals WHERE request_id = $1", [opened.id]);
+    expect(rows).toEqual([{ need: joined }]);
+  });
+
+  it("makes a need to which the web UI adds only a character the agent view strips a proposal on a claimed request", async () => {
+    const opened = await claimedWith(unjoined);
+    expect(await changeInTheWebUi(opened.key, { need: joined })).toEqual({ ok: true, action: "change_packet", proposal: { id: expect.any(String) } });
+    expect(await storedNeeds(opened.id)).toEqual([unjoined]);
+  });
+
+  it("stores an extension's new value under a key that differs from another only by a character the agent view strips", async () => {
+    const extensions = (value: number) => ({ "com.acme.tool": { ab: 1, "a\u200Bb": value } });
+    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ extensions: extensions(2) }) });
+    expect((await addRevision(alice, opened.key, packetWith({ extensions: extensions(3) }), '"1"')).status).toBe(200);
+    const { rows } = await install.owner.query("SELECT packet->'untrusted'->'extensions' AS extensions FROM packet_revisions WHERE request_id = $1 ORDER BY number", [opened.id]);
+    expect(rows.map(({ extensions }) => extensions)).toEqual([extensions(2), extensions(3)]);
   });
 
   it("still makes a change to the need that agents can read a proposal on a claimed request", async () => {
-    const opened = await openRequestInTheWebUi(install, alice, { targetTeam: "FE", packet: packetWith({ need: written }) });
-    expect((await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${opened.key}/claim`)).status).toBe(200);
+    const opened = await claimedWith(written);
     const answer = await addRevision(alice, opened.key, packetWith({ need: "First line.\nA different second line." }), '"1"');
     expect(answer.status).toBe(202);
     expect(answer.body).toMatchObject({ proposal: { kind: "scope", state: "pending" } });
