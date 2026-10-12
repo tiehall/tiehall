@@ -1734,8 +1734,13 @@ textarea[aria-invalid="true"] {
   gap: 0 16px;
 }
 
+/* From and To shrink to their share of the line, however long the team names their selects list: a select is as
+   wide as its longest option, and a team's name may have 100 characters, so a field as wide as its select would run
+   out of the form's panel and, on a tablet, widen the page (web-ui: Pages work at phone width; design.md, Design: The
+   page families). Each select is as wide as its field and cuts a longer name short; its list shows the name whole. */
 .from-to .field {
   flex: 1 1 180px;
+  min-width: 0;
 }
 
 .from-to .field > select {

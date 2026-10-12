@@ -16,9 +16,12 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // lists, the form that opens a request and a team's intake page scroll no
 // page sideways, the lists show each request as a card, and every control is
 // at least 24 by 24 CSS pixels, apart from links inside a sentence or a block
-// of text; the keyboard reaches the form's every field and button in the
-// order the page reads, each with a focus ring at least 2 CSS pixels wide; a
-// lamp of the timeline takes its state's lamp color; a refused field's edge
+// of text; the form that opens a request keeps its fields inside its panel,
+// and the page from scrolling sideways, at every width with the teams named
+// in the 100 characters a team's name may have; the keyboard reaches the
+// form's every field and button in the order the page reads, each with a
+// focus ring at least 2 CSS pixels wide; a lamp of the timeline takes its
+// state's lamp color; a refused field's edge
 // takes the danger ink; and no animation still runs 5.5 seconds after the page
 // of a request loads whose agent is at work.
 
@@ -123,6 +126,44 @@ describe("the form that opens a request on a wide screen", () => {
     expect(Math.abs(sides.left - sides.right)).toBeLessThanOrEqual(2);
     await context.close();
   });
+});
+
+/** What of the form that opens a request lies outside the form's panel, from side to side, as sentences. Plain JavaScript, as a string. */
+const OUTSIDE_THE_FORM = `() => {
+  const panel = document.querySelector("main form.form-panel").getBoundingClientRect();
+  const problems = [];
+  for (const element of document.querySelectorAll("main form.form-panel .field, main form.form-panel label, main form.form-panel select, main form.form-panel input:not([type=hidden]), main form.form-panel textarea, main form.form-panel button")) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width > 0 && (rect.left < panel.left - 0.5 || rect.right > panel.right + 0.5)) problems.push(element.tagName.toLowerCase() + (element.id ? "#" + element.id : "") + " runs from " + Math.round(rect.left) + " to " + Math.round(rect.right) + " CSS pixels, outside the panel's " + Math.round(panel.left) + " to " + Math.round(panel.right));
+  }
+  return problems;
+}`;
+
+describe("the form that opens a request, with the teams named at length", () => {
+  // A team's name may have 100 characters, which the From and To selects list beside the team's key.
+  const LONGEST = "Developer Experience, Platform Engineering, Build Infrastructure, Release Tooling and Internal Tools";
+
+  it.each([1280, 1024, 768, 320])(
+    "keeps the From and To selects and every other field inside the form's panel at %i CSS pixels, and scrolls no page sideways",
+    { timeout: 120_000 },
+    async (width) => {
+      const { rows } = await install.owner.query<{ id: string; name: string }>("SELECT id, name FROM teams");
+      await install.owner.query("UPDATE teams SET name = $1", [LONGEST]);
+      try {
+        const context = await signedIn(width);
+        const page = await context.newPage();
+        page.setDefaultTimeout(15_000);
+        await page.goto(`${web.url}/requests/new?team=FE`);
+        await page.getByRole("heading", { level: 1 }).waitFor();
+        await expect(page.locator("#targetTeam option", { hasText: LONGEST }).count()).resolves.toBe(3);
+        expect(await page.evaluate(`(${OUTSIDE_THE_FORM})()`)).toEqual([]);
+        expect(await phoneWidthProblems(page)).toEqual([]);
+        await context.close();
+      } finally {
+        for (const { id, name } of rows) await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [id, name]);
+      }
+    },
+  );
 });
 
 describe("the form that opens a request, with the keyboard", () => {
