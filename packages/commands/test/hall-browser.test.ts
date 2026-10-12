@@ -15,26 +15,27 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // The live hall in a browser, its script running (web-ui: The live hall;
 // web-ui: The live hall's reads and its long-poll; web-ui: The live hall with
 // many teams and on a phone; web-ui: Motion, and reduced motion; web-ui: What
-// the live hall shows of the people and agents at work; agent-safety: The web
-// UI renders no raw HTML and no remote images; requester-loop: No push paths
-// other than the hooks; design.md, Design: The live hall; D57 (6), (11), (12),
-// (13)), against the web app as the image runs it and an install whose people
-// and agents act meanwhile. The script makes the page live, shows Pause motion
-// and holds a wait, so an agent's blocking question reaches the feed and the
-// team's count within 2 seconds; the toolbar and the map's place, or on a phone
-// the lists, are laid out from the first frame the page paints, before the
-// script runs, so the page coming alive moves none of them, whatever the
-// widths of the system's font and the length of the team names; the map draws
-// a node per team, a line per pair, at most 12 people and agents at work and
-// at most 8 dots, each an SVG circle moved through its cx and cy; Pause motion
-// stops every animation and starts them again, and reduced motion starts with
-// it pressed; a hidden page holds no wait and catches up once shown; a restart
-// shows Reconnecting and then Live; an ended session shows Signed out; 60
-// events while the page is held back make it read its state again; 20 teams
-// keep apart, and above 20 the others share a node; a phone gets lists and no
-// map; names and titles stay text; and a minute of updates breaks no policy
-// and leaves no style attribute. Pages are hidden by telling them so, as a
-// browser does when its tab goes to the back.
+// the live hall shows of the people and agents at work; web-ui: Pages work at
+// phone width; agent-safety: The web UI renders no raw HTML and no remote
+// images; requester-loop: No push paths other than the hooks; design.md,
+// Design: The live hall; D57 (6), (7), (11), (12), (13)), against the web app
+// as the image runs it and an install whose people and agents act meanwhile.
+// The script makes the page live, shows Pause motion and holds a wait, so an
+// agent's blocking question reaches the feed and the team's count within 2
+// seconds; the toolbar and the map's place, or on a phone the lists, are laid
+// out from the first frame the page paints, before the script runs, so the
+// page coming alive moves none of them, and the page scrolls no sideways,
+// whatever the widths of the system's font and the length of the team names;
+// the map draws a node per team, a line per pair, at most 12 people and agents
+// at work and at most 8 dots, each an SVG circle moved through its cx and cy;
+// Pause motion stops every animation and starts them again, and reduced motion
+// starts with it pressed; a hidden page holds no wait and catches up once
+// shown; a restart shows Reconnecting and then Live; an ended session shows
+// Signed out; 60 events while the page is held back make it read its state
+// again; 20 teams keep apart, and above 20 the others share a node; a phone
+// gets lists and no map; names and titles stay text; and a minute of updates
+// breaks no policy and leaves no style attribute. Pages are hidden by telling
+// them so, as a browser does when its tab goes to the back.
 
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 const MARKUP_CLIENT = randomUUID();
@@ -431,11 +432,17 @@ const TOOLBAR_LAYOUT = `() => {
 }`;
 
 /**
+ * How wide the page is laid out against its viewport: the root's scroll width and its client width, which are the same
+ * while the page scrolls no sideways (web-ui: Pages work at phone width). Plain JavaScript, as a string.
+ */
+const PAGE_WIDTH = `() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]`;
+
+/**
  * Records, in the page, the layout of the first frame the browser paints of the live hall: at the first animation
- * frame in which the map's place is in the page, the stage's layout, the toolbar's, the page's background, whether the
- * hall's script had run by then, and the font faces the page declares. A browser runs a page's animation frames only
- * once its stylesheet has loaded, each right before it paints, so that frame is the first look of the hall the page
- * shows. Plain JavaScript, as a string.
+ * frame in which the map's place is in the page, the stage's layout, the toolbar's, the page's width against its
+ * viewport, the page's background, whether the hall's script had run by then, and the font faces the page declares. A
+ * browser runs a page's animation frames only once its stylesheet has loaded, each right before it paints, so that
+ * frame is the first look of the hall the page shows. Plain JavaScript, as a string.
  */
 const FIRST_FRAME = `(() => {
   if (location.pathname !== "/hall") return;
@@ -450,6 +457,7 @@ const FIRST_FRAME = `(() => {
       faces: document.fonts.size,
       layout: (${STAGE_LAYOUT})(),
       toolbar: (${TOOLBAR_LAYOUT})(),
+      width: (${PAGE_WIDTH})(),
     };
   };
   requestAnimationFrame(frame);
@@ -482,7 +490,7 @@ const TEAM_NAMES = {
 // words, however long the team names in its filter and however wide its font sets them, so the map's place, and on a
 // phone, which has no map, the lists below the toolbar, stay where the first frame put them, although the live lamp's
 // words before the script runs, "Not live: updates need JavaScript", are wider than "Live", and Pause motion shows only
-// once the script runs.
+// once the script runs; and the page scrolls no sideways, however long a team's name makes the Team filter's options.
 describe("the live hall's first frame", () => {
   const cases = [
     [1280, 800],
@@ -542,6 +550,7 @@ describe("the live hall's first frame", () => {
         faces: number;
         layout: { map: number[]; feed: number[] | null; columns: string };
         toolbar: Record<string, number[]>;
+        width: number[];
       };
       release();
       await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
@@ -549,6 +558,7 @@ describe("the live hall's first frame", () => {
       await page.locator("#pause-motion").waitFor();
       const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
       const toolbar = (await page.evaluate(`(${TOOLBAR_LAYOUT})()`)) as Record<string, number[]>;
+      const [scrollWidth = 0, clientWidth = 0] = (await page.evaluate(`(${PAGE_WIDTH})()`)) as number[];
       expect(first.live).toBe(false);
       expect(first.background).toBe("rgb(7, 16, 38)");
       // The page declares no font face and loads no font: its text is in the system's own font from the first frame on.
@@ -567,6 +577,9 @@ describe("the live hall's first frame", () => {
       // The toolbar's title and actions keep their boxes as the page comes alive, so it breaks into the same lines
       // before the script runs and after, whatever widths the font and the team names give them.
       expect(first.toolbar).toEqual(toolbar);
+      // The page scrolls no sideways before the script runs or after, however long a team's name in the Team filter.
+      expect((first.width[0] ?? 0) - (first.width[1] ?? 0), "how far the first frame scrolls sideways").toBe(0);
+      expect(scrollWidth - clientWidth, "how far the live page scrolls sideways").toBe(0);
     } finally {
       await context.close();
     }

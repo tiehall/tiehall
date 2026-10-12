@@ -17,8 +17,10 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // says that it updates only with scripts on, shows no Pause motion button and
 // keeps no place for a map, and runs no animation 5.5 seconds after it loads;
 // its background is the dark ground whether the browser prefers dark or light;
-// and at 320 CSS pixels it scrolls no page sideways. The web app runs as the
-// image runs it, and Pia signs in with GitHub through the stub.
+// and at 320 and 390 CSS pixels, with scripts on and off, it scrolls no page
+// sideways, even with a team named in the 100 characters a team's name may
+// have in its Team filter. The web app runs as the image runs it, and Pia
+// signs in with GitHub through the stub.
 
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 
@@ -27,12 +29,12 @@ let stub: GitHubStub;
 let web: WebApp;
 let browser: Browser;
 let session = "";
+const team: Record<string, string> = {};
 
 beforeAll(async () => {
   install = await startTestInstall();
   stub = await startGitHubStub();
   stub.addOrg({ login: "acme" });
-  const team: Record<string, string> = {};
   for (const [key, name] of [
     ["BE", "Backend"],
     ["FE", "Frontend"],
@@ -136,15 +138,42 @@ describe("the live hall's theme", () => {
   });
 });
 
-describe("the live hall at 320 CSS pixels", () => {
-  it("scrolls no page sideways, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high", { timeout: 120_000 }, async () => {
-    const context = await signedIn({ width: 320, height: 640 });
-    const page = await context.newPage();
-    page.setDefaultTimeout(15_000);
-    await page.goto(`${web.url}/hall`);
-    await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
-    expect(await phoneWidthProblems(page)).toEqual([]);
-    expect(await phoneHeightProblems(page)).toEqual([]);
-    await context.close();
+/** PAY's name: as short as the seed gives it, or in the 100 characters a team's name may have, which the Team filter lists. */
+const PAY_NAMES = {
+  "a short team name": "Payments",
+  "a team's longest name": "Developer Experience, Platform Engineering, Build Infrastructure, Release Tooling and Internal Tools",
+} as const;
+
+describe("the live hall at a phone's width", () => {
+  const cases = [
+    [320, 640],
+    [390, 844],
+  ].flatMap(([width, height]) =>
+    Object.keys(PAY_NAMES).flatMap((name) => [true, false].map((scripts) => [width ?? 0, height ?? 0, name as keyof typeof PAY_NAMES, scripts ? "on" : "off"] as const)),
+  );
+
+  afterAll(async () => {
+    await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["PAY"], PAY_NAMES["a short team name"]]);
   });
+
+  it.each(cases)(
+    "at %i by %i, with %s, scripts %s: scrolls no page sideways, every control is at least 24 by 24 CSS pixels, and every button, field and navigation item at least 44 high",
+    { timeout: 120_000 },
+    async (width, height, name, scripts) => {
+      await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["PAY"], PAY_NAMES[name]]);
+      const context = await signedIn({ width, height, javaScriptEnabled: scripts === "on" });
+      try {
+        const page = await context.newPage();
+        page.setDefaultTimeout(15_000);
+        await page.goto(`${web.url}/hall`);
+        await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
+        await expect(page.locator("#hall-team option", { hasText: PAY_NAMES[name] }).count()).resolves.toBe(1);
+        if (scripts === "on") await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
+        expect(await phoneWidthProblems(page)).toEqual([]);
+        expect(await phoneHeightProblems(page)).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    },
+  );
 });

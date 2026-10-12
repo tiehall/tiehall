@@ -2759,7 +2759,14 @@ textarea[aria-invalid="true"] {
   margin: 0;
 }
 
+/* The Team filter's select is as wide as its longest option up to 16em, a team's key and a name of about twenty
+   characters, and on a phone as wide as its line (below): a team's name may have 100 characters, and a select as wide
+   as its longest option would widen the toolbar past the page, which would then scroll sideways (web-ui: Pages work at
+   phone width; design.md, Design: The live hall). A longer name is cut short in the closed select and shown whole in
+   the list of its options. */
 .hall-filter select {
+  min-width: 0;
+  max-width: 16em;
   min-height: 40px;
   padding-top: 6px;
   padding-bottom: 6px;
@@ -3690,6 +3697,7 @@ textarea[aria-invalid="true"] {
   .hall-filter select {
     flex: 1 1 140px;
     width: auto;
+    max-width: 100%;
   }
 
   .hall-actions > .button,
