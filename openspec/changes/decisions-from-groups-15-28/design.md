@@ -518,7 +518,7 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 
 #### T2. A removed webhook
 
-- **Choice.** `readDeliveryLog` in `packages/commands/src/github-delivery-log.ts` tells a 404 apart from an empty log; `redeliverFailedDeliveries` in `github-redelivery.ts` and the mode check in `github-mode.ts` move GitHub to polling, in the write that sets `webhook_given_up_at`, when a webhook secret is stored, with the cause `webhook_removed` added to `packages/core/src/event-types.ts`. The banner and the email are D50 (15)'s.
+- **Choice.** `readDeliveryLog` in `packages/commands/src/github-delivery-log.ts` tells a 404 apart from an empty log; `redeliverFailedDeliveries` in `github-redelivery.ts` and the mode check in `github-mode.ts` move GitHub to polling, in the write that sets `webhook_given_up_at`, when a webhook secret is stored, with the cause `webhook_removed` added to `packages/core/src/event-types.ts`. The banner and the email are D50 (15)'s, shown and sent as for a given-up delivery, except for the sentences that say what happened and what to do: D50 (15)'s say that Tiehall gave a delivery up after asking GitHub 5 times, which would be untrue here, so these say that GitHub holds no webhook for the App any more and that an admin adds it again in the App's settings, with the secret Tiehall stores, before switching back to webhook mode. A column the migration `0096_record_a_removed_github_webhook.sql` adds, `github_app.webhook_removed`, records which of the two raised the banner: the write that moves GitHub to polling sets it, and every write that sets or clears `webhook_given_up_at` otherwise clears it.
 - **Why.** The redelivery job reads the log every 10 minutes in webhook mode already.
 
 #### T3. The sign-in's look-up failure
@@ -601,7 +601,7 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 
 ### Where the specs leave room
 
-- The wording of fixed lines and pages: the refusal page of item (7), the hooks' upgrade line of item (52), the system message of item (71) and the receipts of item (81), as long as each says what its rule names.
+- The wording of fixed lines and pages: the sentences of the webhook banner and email that name a removed webhook in item (6) (T2), the refusal page of item (7), the hooks' upgrade line of item (52), the system message of item (71) and the receipts of item (81), as long as each says what its rule names.
 - The order of a `directory` page beyond team key and API name, and how its cursor is encoded.
 - How a member dismisses a WARN digest in the web UI.
 - The title of the `busy` row and its `Retry-After` value, which T1 sets at 5 seconds.
@@ -621,7 +621,7 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 
 ## Migration Plan
 
-No install exists yet, so no data is migrated in place. The code changes are in tasks.md, with migrations for receipts of confirmed actions (T11), a mirror's gone state (T10), the mapping each mirror keeps and the event number each mapping keeps (T17), workflow bindings without their ref (T8), the last day a digest covered (T7), and the bounds of a token's label, a team's intake notes and agent clients' metadata. Public contracts change: the error model gains `busy`; `/mcp` refuses a foreign `Origin`; `list_inbox` changes its default; `proposals.propose` answers a withdrawal with 200; the wait entry's fields are renamed; `events.read` and `events.acknowledge` leave `/api/v1`; `requests.get` gains `untrusted.api` and deprecates `providerChange.api`; the packet schema gains URL patterns and optional provider fields. Each regenerates the OpenAPI document, the MCP tool snapshot or the packet schema, with its changelog entry.
+No install exists yet, so no data is migrated in place. The code changes are in tasks.md, with migrations for whether the banner about GitHub's webhook was raised by a removed webhook (T2), receipts of confirmed actions (T11), a mirror's gone state (T10), the mapping each mirror keeps and the event number each mapping keeps (T17), workflow bindings without their ref (T8), the last day a digest covered (T7), and the bounds of a token's label, a team's intake notes and agent clients' metadata. Public contracts change: the error model gains `busy`; `/mcp` refuses a foreign `Origin`; `list_inbox` changes its default; `proposals.propose` answers a withdrawal with 200; the wait entry's fields are renamed; `events.read` and `events.acknowledge` leave `/api/v1`; `requests.get` gains `untrusted.api` and deprecates `providerChange.api`; the packet schema gains URL patterns and optional provider fields. Each regenerates the OpenAPI document, the MCP tool snapshot or the packet schema, with its changelog entry.
 
 This change is archived after `add-tiehall-oss-v1`, whose requirements it modifies, and after `spec-catch-up`, `request-body-limit`, `github-app-reachability`, `github-layer-hardening` and `image-os-security-updates`, whose texts of the same requirements it starts from. Archiving in that order keeps every change's sentences.
 
