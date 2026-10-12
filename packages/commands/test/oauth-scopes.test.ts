@@ -41,6 +41,11 @@ function locationOf(answer: Response): URL {
   return new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
 }
 
+/** The claims a signed access token carries, read without checking its signature. */
+function claimsOf(token: string): { scope: string } & Record<string, unknown> {
+  return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as { scope: string } & Record<string, unknown>;
+}
+
 /** How many messages the request with this key, FE and its number, holds. */
 async function messagesOn(key: string): Promise<number> {
   const { rows } = await harness.install.owner.query(
@@ -149,8 +154,8 @@ describe("the scopes the install offers", () => {
     expect(exchanged.status).toBe(200);
     expect(exchanged.body["scope"]).toBe("requests:read");
     expect(exchanged.body["refresh_token"]).toBeTypeOf("string");
-    const claims = JSON.parse(Buffer.from(String(exchanged.body["access_token"]).split(".")[1] ?? "", "base64url").toString("utf8")) as { scope: string };
-    expect(claims.scope.split(" ").filter((scope) => scope.includes(":"))).toEqual(["requests:read"]);
+    // offline_access is among none of the token's scopes, the signed token's own scope claim included.
+    expect(claimsOf(String(exchanged.body["access_token"])).scope).toBe("requests:read");
     // The token reads requests and writes none.
     const reads = await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${String(exchanged.body["access_token"])}` });
     expect(reads.status).toBe(200);
@@ -159,6 +164,14 @@ describe("the scopes the install offers", () => {
     expect(refreshed.status).toBe(200);
     expect(refreshed.body["scope"]).toBe("requests:read");
     expect(refreshed.body["refresh_token"]).toBeTypeOf("string");
+    expect(claimsOf(String(refreshed.body["access_token"])).scope).toBe("requests:read");
+    const readsAgain = await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${String(refreshed.body["access_token"])}` });
+    expect(readsAgain.status).toBe(200);
+    // And the refreshed grant still refreshes.
+    const again = await harness.refresh(client, String(refreshed.body["refresh_token"]));
+    expect(again.status).toBe(200);
+    expect(again.body["refresh_token"]).toBeTypeOf("string");
+    expect(claimsOf(String(again.body["access_token"])).scope).toBe("requests:read");
   });
 
   it("gives a request that names only offline_access the default scopes, requests:read and requests:write", async () => {
@@ -170,6 +183,7 @@ describe("the scopes the install offers", () => {
     expect(exchanged.status).toBe(200);
     expect(String(exchanged.body["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
     expect(exchanged.body["refresh_token"]).toBeTypeOf("string");
+    expect(claimsOf(String(exchanged.body["access_token"])).scope.split(" ").sort()).toEqual(["requests:read", "requests:write"]);
   });
 
   it("does not list offline_access in scopes_supported", async () => {

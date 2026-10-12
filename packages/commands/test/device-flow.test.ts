@@ -207,7 +207,8 @@ describe("the CLI", () => {
     expect(polled.body).toMatchObject({ token_type: "Bearer", expires_in: 600, access_token: expect.any(String), refresh_token: expect.any(String) });
     const claims = claimsOf(String(polled.body["access_token"]));
     expect(claims).toMatchObject({ iss: URL_OF_INSTALL, aud: MCP_RESOURCE, sub: ana.userId, azp: CLI_CLIENT_ID });
-    expect(String(claims["scope"]).split(" ").sort()).toEqual(["offline_access", "requests:read", "requests:write"]);
+    // offline_access, which the grant carries for its refresh token, is among none of the token's scopes (D55 (12)).
+    expect(String(claims["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
     const call = await harness.api("GET", "/api/v1/requests", { authorization: `Bearer ${String(polled.body["access_token"])}` });
     expect(call.status).toBe(200);
     // No web session is made for the CLI.
@@ -264,6 +265,7 @@ describe("the CLI", () => {
     const polled = await deviceToken(String(answer.body["device_code"]));
     expect(polled.status).toBe(200);
     expect(String(polled.body["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
+    expect(String(claimsOf(String(polled.body["access_token"]))["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
     expect(polled.body["refresh_token"]).toEqual(expect.any(String));
   });
 

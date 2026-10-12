@@ -3,7 +3,8 @@ import { mcp } from "@better-auth/mcp";
 import { oauthDeviceAuthorization } from "@better-auth/oauth-provider";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { jwt } from "better-auth/plugins";
+import { jwt, signJWT } from "better-auth/plugins";
+import { decodeJwt, decodeProtectedHeader } from "jose";
 import { SCOPES } from "@tiehall/catalog";
 import { CLIENT_ID_URL_MAX_LENGTH, clientMetadataBoundsProblem, holdsNul } from "./agent-clients.ts";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
@@ -54,9 +55,11 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   it. A client that asks for offline_access itself, as clients built for
 //   OpenID-style servers do, is not refused for it: the scope is ignored,
 //   so a request that names it alone gets the default scopes, and the token
-//   endpoint's answer names only the scopes Tiehall offers, never
-//   offline_access (decisions-from-groups-15-28: design.md, Decisions this
-//   change rests on: D55 (12), (13); Technical decisions: T4).
+//   endpoint's answer and the scope claim of the access token it signs name
+//   only the scopes Tiehall offers, never offline_access, which the grant
+//   and its refresh token keep, so that each refresh brings a new one
+//   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (12), (13); Technical decisions: T4).
 // - An authorization request, and the token request that follows it, that
 //   names no resource is completed with the install's one resource,
 //   TIEHALL_URL/mcp, before the server reads it, so its access token's
@@ -176,11 +179,12 @@ export const MEMBERSHIP_CLAIM = "tiehall_membership";
 
 /** The sign-in service's plugins that make it the install's authorization server for agent clients. */
 export function authorizationServerPlugins({ url, orgId, clients = {}, membershipOf }: AuthorizationServerOptions): BetterAuthPlugin[] {
-  const signingKeys = jwt({
+  const signingKeyOptions = {
     jwt: { issuer: url },
     disableSettingJwtHeader: true,
     schema: { jwks: { modelName: MODEL_NAMES.jwks } },
-  });
+  };
+  const signingKeys = jwt(signingKeyOptions);
   const server = mcp({
     resource: mcpResourceOf(url),
     loginPage: AUTHORIZATION_SIGN_IN_PATH,
@@ -225,7 +229,7 @@ export function authorizationServerPlugins({ url, orgId, clients = {}, membershi
     withOrgId(signingKeys, orgId),
     withOrgId(server as unknown as BetterAuthPlugin, orgId),
     withOrgId(deviceFlow as unknown as BetterAuthPlugin, orgId),
-    offeredScopes(mcpResourceOf(url)),
+    offeredScopes(mcpResourceOf(url), signingKeyOptions),
     pkceRefusals(),
   ];
   if (clients.metadataDocuments !== false) plugins.push(metadataDocuments(clients.fetchDocument ?? createOutboundFetcher({ maxRedirects: 0 })));
@@ -336,15 +340,47 @@ function names(value: unknown): boolean {
   return (Array.isArray(value) ? value : [value]).some((each) => typeof each === "string" && each !== "");
 }
 
+/** The signing-key options of the install's jwt() plugin, with which an access token is signed again. */
+type SigningKeyOptions = Parameters<typeof jwt>[0];
+
+/**
+ * The access token the token endpoint issued, with offline_access left out of
+ * its scope claim: signed again, with the key that signed it, every other
+ * claim and its header's type kept. The sign-in library writes every scope of
+ * the grant into the claim, and it issues a refresh token only for a grant
+ * that carries offline_access, so the grant keeps the scope and the token
+ * loses it here. A token that is no JWT, or whose claim does not hold
+ * offline_access, is returned as it is.
+ */
+async function withOfferedScopeClaim(context: Parameters<typeof signJWT>[0], options: SigningKeyOptions, token: string): Promise<string> {
+  let claims: ReturnType<typeof decodeJwt>;
+  let header: ReturnType<typeof decodeProtectedHeader>;
+  try {
+    claims = decodeJwt(token);
+    header = decodeProtectedHeader(token);
+  } catch {
+    return token;
+  }
+  const { scope } = claims;
+  if (typeof scope !== "string" || !scope.split(" ").includes(REFRESH_SCOPE)) return token;
+  return signJWT(context, {
+    options,
+    header: header.typ === undefined ? {} : { typ: header.typ },
+    ...(header.kid === undefined ? {} : { signingKeyId: header.kid }),
+    payload: { ...claims, scope: offeredScopesOf(scope).join(" ") },
+  });
+}
+
 /**
  * Reads every authorization request with the scope scopeReadFor() gives it,
  * and with the install's one resource when it names none; reads the token
  * request of an authorization code or a refresh token that names no resource
  * with that resource too; and answers every token request with the scopes
  * Tiehall offers alone: the offline_access every grant carries for its
- * refresh token is left out of the answer's scope.
+ * refresh token is left out of the answer's scope and of its access token's
+ * scope claim.
  */
-function offeredScopes(resource: string): BetterAuthPlugin {
+function offeredScopes(resource: string, signingKeyOptions: SigningKeyOptions): BetterAuthPlugin {
   return {
     id: "tiehall-offered-scopes",
     hooks: {
@@ -371,9 +407,13 @@ function offeredScopes(resource: string): BetterAuthPlugin {
           handler: createAuthMiddleware(async (context) => {
             const returned = context.context.returned;
             if (typeof returned !== "object" || returned === null || returned instanceof Response || returned instanceof APIError) return;
-            const { scope } = returned as { scope?: unknown };
+            const { scope, access_token: accessToken } = returned as { scope?: unknown; access_token?: unknown };
             if (typeof scope !== "string") return;
-            return context.json({ ...(returned as Record<string, unknown>), scope: offeredScopesOf(scope).join(" ") });
+            return context.json({
+              ...(returned as Record<string, unknown>),
+              scope: offeredScopesOf(scope).join(" "),
+              ...(typeof accessToken === "string" ? { access_token: await withOfferedScopeClaim(context, signingKeyOptions, accessToken) } : {}),
+            });
           }),
         },
       ],
