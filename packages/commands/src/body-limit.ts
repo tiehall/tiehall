@@ -33,10 +33,11 @@ import { WEBHOOKS_GITHUB_PATH } from "./setup-gate.ts";
 // size limit; decisions-from-groups-15-28: design.md, Decisions this change
 // rests on: D55 (5); Technical decisions: T1). The process-wide counter here,
 // bodiesInFlight, keeps the bytes the web role's request guard has let in and
-// not yet seen read, refused or abandoned: the guard reserves a declared
-// length when a request's head arrives and each chunk of a body sent in chunks
-// as it arrives, refuses with the error model's busy, 503 with Retry-After,
-// a body that would take the bytes past the cap, and releases what a body
+// not yet seen read, refused or abandoned: the guard reserves each chunk of a
+// body as it arrives, whether its request declares its length or sends it in
+// chunks, so a declared length holds nothing until its bytes arrive; it
+// refuses with the error model's busy, 503 with Retry-After, a body whose
+// bytes would take the bytes held past the cap, and releases what a body
 // reserved once it is done with.
 
 export { BODY_LIMIT, CONTRACT_REPORT_BODY_LIMIT, MIB };

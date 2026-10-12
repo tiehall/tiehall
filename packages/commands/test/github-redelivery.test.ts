@@ -171,7 +171,7 @@ describe("the redelivery of failed GitHub deliveries", () => {
 
   // public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change rests
   // on: D55 (5)). A delivery that arrives while one web process already receives as many bodies as it holds at once
-  // is answered 503 busy before it is read; GitHub logs it as a failed delivery, so the next run asks for it again.
+  // is answered 503 busy and read no further; GitHub logs it as a failed delivery, so the next run asks for it again.
   it("asks GitHub again for a delivery refused with 503 busy, which is then stored and processed once", async () => {
     hooks.busy = true;
     await stub.openPullRequest("acme/web", { title: "Fix the header", head: "fix-header", author: "omar" });

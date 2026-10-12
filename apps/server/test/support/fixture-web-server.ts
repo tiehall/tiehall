@@ -16,9 +16,13 @@
 // holds a call whose body is still arriving. A request URL, /FE-142 with or without .md or .json, and
 // /members/page answer as Next.js answers a page, with its own Vary. A call with a method the Fetch standard
 // forbids, such as TRACE, gets 500 on every path, as Next.js answers one, and the fixture prints that it did.
+// /bodies-in-flight answers how many bytes of request bodies the request guard holds now, from the process's one
+// counter, so a test knows when the bytes a slow client sent have arrived; LOG_CONNECTIONS=on leaves its connections
+// out, so the lines speak only of the calls a test makes.
 import http from "node:http";
+import type { Socket } from "node:net";
 import process from "node:process";
-import { shutdownSignal } from "@tiehall/commands";
+import { bodiesInFlight, shutdownSignal } from "@tiehall/commands";
 import { httpProblem, Refusal } from "@tiehall/core";
 
 const SETUP_REQUIRED = JSON.stringify({
@@ -48,6 +52,11 @@ const server = http.createServer((request, response) => {
     console.log(`fixture: ${request.method} ${request.url} answered 500, as Next.js does`);
     response.writeHead(500, { "content-type": "text/plain" });
     response.end("Internal Server Error");
+    return;
+  }
+  if (request.url === "/bodies-in-flight") {
+    response.writeHead(200, { "content-type": "text/plain" });
+    response.end(String(bodiesInFlight.held));
     return;
   }
   if (request.url === "/slow") {
@@ -104,8 +113,14 @@ if (process.env["LOG_HEADS"] === "on") {
   server.on("request", (request: http.IncomingMessage) => console.log(`fixture: the server has the head of ${request.method} ${request.url}`));
 }
 if (process.env["LOG_CONNECTIONS"] === "on") {
-  server.on("connection", (socket) => {
-    socket.on("close", () => console.log(`fixture: a connection closed after reading ${socket.bytesRead} bytes`));
+  const probes = new WeakSet<Socket>();
+  server.on("request", (request: http.IncomingMessage) => {
+    if (request.url === "/bodies-in-flight") probes.add(request.socket);
+  });
+  server.on("connection", (socket: Socket) => {
+    socket.on("close", () => {
+      if (!probes.has(socket)) console.log(`fixture: a connection closed after reading ${socket.bytesRead} bytes`);
+    });
   });
 }
 server.listen(Number(process.env["PORT"]), process.env["HOSTNAME"], () => {

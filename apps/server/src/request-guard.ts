@@ -35,10 +35,10 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // `Retry-After: 0` and an RFC 9457 problem (public-api: One error model for
 // Tiehall's own refusals), while the calls already in flight finish. A call
 // counts from the moment its head arrives until its answer is done, whoever
-// answers it, so the shutdown waits for a body still arriving in chunks as for
-// any call in flight: a call whose head arrived before the shutdown started
-// goes on to the app once its body is complete, and a new one gets its 503, or
-// its 413, rather than a closed connection.
+// answers it, so the shutdown waits for a body still arriving as for any call
+// in flight: a call whose head arrived before the shutdown started goes on to
+// the app once its body is complete, and a new one gets its 503, or its 413,
+// rather than a closed connection.
 //
 // Request bodies (public-api: Request bodies have a size limit;
 // request-body-limit's design.md, Technical decisions: T2): the guard applies
@@ -48,13 +48,12 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // 2 MiB, 16 MiB for contract.report, and 25 MiB for a GitHub webhook
 // delivery, from the one module that holds them (bodyLimitFor):
 // - a request that declares a length above its limit is refused at once,
-//   before any byte of its body is read; one that declares a length within
-//   it is passed on as it is, since it cannot carry more than it declares;
-// - a body sent in chunks, with no declared length, is counted as it arrives
-//   and held until it is complete: at the byte past the limit it is refused,
-//   and a complete body within the limit is passed on whole, so the app never
-//   sees part of a body that is over the limit, or answers a call before its
-//   size is known;
+//   before any byte of its body is read;
+// - every other body, whether its request declares its length or sends it in
+//   chunks, is counted as it arrives and held until it is complete: a body
+//   sent in chunks is refused at the byte past the limit, and a complete body
+//   within the limit is passed on whole, so the app never sees part of a body
+//   that is over the limit, or answers a call before its body has arrived;
 // - the refusal is the error model's 413 payload-too-large, whose detail
 //   names the limit, with `Connection: close`. No more of the body is read:
 //   once the answer is sent the connection is ended, and it is closed after
@@ -67,17 +66,21 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // process holds at most 64 MiB of request bodies being received at once, in
 // the one counter of the body limits' module (bodiesInFlight), on every path,
 // since every route that reads a body reads it before it knows who calls:
-// - a request that declares a length within its limit reserves that length
-//   when its head arrives; a body sent in chunks reserves each chunk as it
-//   arrives, while the guard holds it;
-// - a body that would take the bytes reserved past the cap is answered at
-//   once with the error model's 503 busy, `Retry-After: 5` and `Connection:
-//   close`, before any byte of a declared body is read and before a chunked
-//   body is read past the cap, and is read no further, as a body over its
-//   limit is. A body over its own limit still gets its 413 first, and the cap
-//   comes before every other refusal, a shutdown's 503 included;
+// - a body reserves each of its chunks as it arrives, while the guard holds
+//   it, whether its request declares its length or sends it in chunks, so a
+//   request that declares a length and sends nothing holds none of the cap
+//   (the maintainer's answer of 2026-10-12 to the open question "Bodies
+//   declared and not sent": a declared length reserved when the head arrived
+//   let a client that sent nothing hold it until Node's 300-second request
+//   timeout);
+// - a body whose chunk would take the bytes reserved past the cap is answered
+//   at once with the error model's 503 busy, `Retry-After: 5` and
+//   `Connection: close`, and is read no further, as a body over its limit is.
+//   A body over its own limit still gets its 413 first, and the cap comes
+//   before every other refusal, a shutdown's 503 included;
 // - what a body reserved is released once it is done with: read by the app,
-//   refused, or abandoned by its client, or once its answer has gone out.
+//   refused, abandoned by its client, or ended by the server's request
+//   timeout, or once its answer has gone out.
 //
 // Methods no route takes (agent-surfaces: Negotiated request URLs; public-api:
 // One error model for Tiehall's own refusals; decisions-from-groups-15-28:
@@ -202,14 +205,10 @@ export function installRequestGuard(options: RequestGuardOptions): RequestGuard 
     };
     const limit = bodyLimitFor(request.method ?? "GET", pathOf(request.url));
     const declared = declaredLength(request.headers["content-length"]);
-    if (declared !== undefined) {
-      if (declared > limit) return refuseBody(request, response, limit, origin);
-      if (!bodies.reserve(declared)) return refuseBusy(request, response, origin);
-      whenDone(request, response, () => bodies.release(declared));
-      return serve();
-    }
-    // A request with neither a declared length nor chunks has no body.
-    if (request.headers["transfer-encoding"] === undefined) return serve();
+    if (declared !== undefined && declared > limit) return refuseBody(request, response, limit, origin);
+    // A request that declares an empty body, or neither a length nor chunks, has no body.
+    if (declared === 0 || (declared === undefined && request.headers["transfer-encoding"] === undefined)) return serve();
+    // Every other body, declared or in chunks, reserves its bytes as they arrive, and nothing before.
     let reserved = 0;
     const release = whenDone(request, response, () => bodies.release(reserved));
     holdBody(
@@ -348,13 +347,13 @@ function whenDone(request: IncomingMessage, response: ServerResponse, release: (
 }
 
 /**
- * Holds a body sent in chunks until it is complete, counting its bytes as the
- * connection delivers them: past the limit it calls over, and at a chunk that
- * reserve refuses, because it would take the bodies being received past the
- * cap, it calls busy; once the body is complete within the limit it hands the
- * whole body back to the request and calls complete. It takes the chunks
- * where Node puts a request's body, the request's push(), so nothing reads
- * them before the size is known.
+ * Holds a body until it is complete, whether its request declares its length
+ * or sends it in chunks, counting its bytes as the connection delivers them:
+ * past the limit it calls over, and at a chunk that reserve refuses, because
+ * it would take the bodies being received past the cap, it calls busy; once
+ * the body is complete within the limit it hands the whole body back to the
+ * request and calls complete. It takes the chunks where Node puts a request's
+ * body, the request's push(), so nothing reads them before the size is known.
  */
 function holdBody(
   request: IncomingMessage,

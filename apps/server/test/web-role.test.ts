@@ -730,10 +730,12 @@ describe("the web role's limit on request bodies", STARTS_THE_ROLE, () => {
 
 // public-api: Request bodies have a size limit (decisions-from-groups-15-28: design.md, Decisions this change rests on:
 // D55 (5); Technical decisions: T1). Besides each body's own limit, one web process holds at most 64 MiB of request
-// bodies being received at once: a declared length is reserved when the head arrives, and a body sent in chunks
-// counts its bytes as they arrive. A body that would take the bytes being received past the cap is answered at once
-// with 503 busy and Retry-After, before its body is read past the cap, and the app never sees it; a body over its own
-// limit still gets 413 first; and the bytes of a body are released once it has been read, refused or abandoned.
+// bodies being received at once. A body holds the bytes of it that have arrived, whether its request declares its
+// length or sends it in chunks, so a request that declares a length and sends nothing holds none of the cap. A body
+// whose bytes would take the bytes being received past the cap as they arrive is answered at once with 503 busy and
+// Retry-After, is read no further, and the app never sees it; a body over its own limit still gets 413 first; and the
+// bytes of a body are released once it has been read, refused or abandoned (request-guard.test.ts tests each way a
+// body ends, the server's request timeout included).
 describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE, () => {
   const MiB = 1024 * 1024;
   const BUSY = "https://tiehall.com/problems/busy";
@@ -769,11 +771,34 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
   }
 
   /**
-   * Starts a POST that declares a body of this many bytes, sends 1 KiB of it, and holds the rest back, as a slow
-   * client does; it waits until the server has the call's head, so the guard has reserved what it declares.
+   * How many bytes of request bodies the role's request guard holds now, as the fixture's probe reads them, over a
+   * connection of its own that closes after the answer.
    */
-  async function holdOpen(web: Running, path: string, bytes: number): Promise<http.ClientRequest> {
+  async function held(web: Running): Promise<number> {
+    const answer = await new Promise<Answer>((resolve, reject) => {
+      const probe = http.get({ host: "127.0.0.1", port: web.port, path: "/bodies-in-flight", agent: false }, (response) => void collect(response).then(resolve, reject));
+      probe.on("error", reject);
+    });
+    return Number(answer.body);
+  }
+
+  /** Waits until the request guard holds at least this many bytes of request bodies. */
+  async function untilHeld(web: Running, bytes: number): Promise<void> {
+    const deadline = Date.now() + 60_000;
+    while ((await held(web)) < bytes) {
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for the guard to hold ${bytes} bytes`);
+      await sleep(20);
+    }
+  }
+
+  /**
+   * Starts a POST that declares a body of this many bytes, sends all of it but its last KiB, or as many bytes as
+   * given, and holds the rest back, as a slow client does; it waits until the server has the call's head and the
+   * guard holds the bytes sent.
+   */
+  async function holdOpen(web: Running, path: string, bytes: number, sent = bytes - 1024): Promise<http.ClientRequest> {
     const before = heads(web, `POST ${path}`);
+    const bytesBefore = await held(web);
     const request = http.request({
       host: "127.0.0.1",
       port: web.port,
@@ -783,8 +808,10 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
       headers: { "content-type": "application/json", "content-length": String(bytes) },
     });
     request.on("error", () => {});
-    request.write(Buffer.alloc(1024, " "));
+    if (sent === 0) request.flushHeaders();
+    else request.write(Buffer.alloc(sent, " "));
     await until(`the server to have the head of POST ${path}`, () => heads(web, `POST ${path}`) > before);
+    await untilHeld(web, bytesBefore + sent);
     return request;
   }
 
@@ -811,6 +838,50 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
     }
   }
 
+  /**
+   * Sends a POST that declares a body of this many bytes, and the body in 64 KiB pieces until it is all sent or the
+   * call is answered; returns the answer, with how many bytes had been written when it came.
+   */
+  async function send(web: Running, path: string, bytes: number, headers: Record<string, string> = {}): Promise<Answer & { writtenBefore: number }> {
+    const request = http.request({
+      host: "127.0.0.1",
+      port: web.port,
+      method: "POST",
+      path,
+      agent: false,
+      headers: { "content-type": "application/json", "content-length": String(bytes), ...headers },
+    });
+    const piece = Buffer.alloc(64 * 1024, " ");
+    let written = 0;
+    try {
+      return await new Promise((resolve, reject) => {
+        let answered = false;
+        request.on("response", (response) => {
+          answered = true;
+          const writtenBefore = written;
+          void collect(response).then((answer) => resolve({ ...answer, writtenBefore }), reject);
+        });
+        request.on("error", (error) => {
+          if (!answered) reject(error);
+        });
+        const next = (): void => {
+          while (!answered && written < bytes) {
+            const part = piece.subarray(0, Math.min(piece.length, bytes - written));
+            written += part.length;
+            if (!request.write(part)) {
+              request.once("drain", next);
+              return;
+            }
+          }
+          if (!answered) request.end();
+        };
+        next();
+      });
+    } finally {
+      request.destroy();
+    }
+  }
+
   /** Ends the held calls as clients that give up do, and waits until the server has closed their connections. */
   async function abandon(web: Running, held: http.ClientRequest[]): Promise<void> {
     const closed = (): number => web.stdout().split("fixture: a connection closed after reading").length - 1;
@@ -819,19 +890,49 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
     await until("the held connections to close", () => closed() >= before + held.length);
   }
 
-  it("answers a body declared past 64 MiB of bodies being received with 503 busy before any byte is read, and not once the others end", async () => {
+  it("answers a declared body with 503 busy at the bytes that take the bodies received past 64 MiB, and not once the others end", async () => {
     const web = await startWebRole({ LOG_HEADS: "on", LOG_CONNECTIONS: "on" });
     const held = [await holdOpen(web, "/webhooks/github", 25 * MiB), await holdOpen(web, "/webhooks/github", 25 * MiB)];
     try {
-      expectBusy(await declare(web, "/api/v1/contract-reports", 15 * MiB));
+      const busy = await send(web, "/api/v1/contract-reports", 15 * MiB);
+      expectBusy(busy);
+      // 50 MiB less 2 KiB have arrived of the two deliveries, so the report passes the 64 MiB a little after its 14th
+      // MiB has arrived, and not when its head does. The app got none of it, and the refused connection, the first to
+      // close, read no more than the one socket read, of at most 64 KiB, that held the bytes past the cap, besides the
+      // request's head.
+      expect(busy.writtenBefore).toBeGreaterThan(14 * MiB);
+      const closed = /^fixture: a connection closed after reading (\d+) bytes$/;
+      await until("the refused connection to close", () => logEntries(web.stdout()).some(({ msg }) => closed.test(String(msg))));
+      const bytesRead = Number(closed.exec(String(logEntries(web.stdout()).find(({ msg }) => closed.test(String(msg)))?.["msg"]))?.[1]);
+      expect(bytesRead).toBeGreaterThan(14 * MiB);
+      expect(bytesRead).toBeLessThanOrEqual(14 * MiB + 128 * 1024);
       expect(web.output()).not.toContain("fixture: /api/v1/contract-reports");
 
       await abandon(web, held);
-      const after = await declare(web, "/api/v1/contract-reports", 15 * MiB);
+      const after = await send(web, "/api/v1/contract-reports", 15 * MiB);
       // The call reaches the app, which answers it as the setup gate does before setup is complete.
       expect(after.status).toBe(503);
       expect(JSON.parse(after.body)).toMatchObject({ type: "https://tiehall.com/problems/setup-required" });
       expect(web.output()).toContain("fixture: /api/v1/contract-reports answered 503 without reading the body");
+    } finally {
+      for (const request of held) request.destroy();
+    }
+  });
+
+  // decisions-from-groups-15-28: the maintainer's answer of 2026-10-12 to the open question "Bodies declared and not
+  // sent": a declared length is not reserved when the head arrives, so connections that declare bodies and send
+  // nothing hold none of the cap, however large the bodies they declare.
+  it("lets requests that declare 25, 25 and 14 MiB to /webhooks/github and send nothing hold none of the cap, so a delivery is not refused", async () => {
+    const web = await startWebRole({ LOG_HEADS: "on" });
+    const held = [
+      await holdOpen(web, "/webhooks/github", 25 * MiB, 0),
+      await holdOpen(web, "/webhooks/github", 25 * MiB, 0),
+      await holdOpen(web, "/webhooks/github", 14 * MiB, 0),
+    ];
+    try {
+      const delivery = await send(web, "/webhooks/github", 25 * MiB);
+      expect(delivery.status).toBe(200);
+      expect(delivery.body).toBe(`delivery of ${25 * MiB} bytes`);
     } finally {
       for (const request of held) request.destroy();
     }
@@ -865,23 +966,23 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
         request.on("error", (error) => {
           if (!answered) reject(error);
         });
-        const send = (): void => {
+        const next = (): void => {
           while (!answered && written < planned) {
             written += chunk.length;
             if (!request.write(chunk)) {
-              request.once("drain", send);
+              request.once("drain", next);
               return;
             }
           }
           if (!answered) request.end();
         };
-        send();
+        next();
       });
     } finally {
       request.destroy();
     }
     expectBusy(answer);
-    // 50 MiB are held, so the body passes the 64 MiB at its 14th MiB, before the 16 MiB of its own limit.
+    // 50 MiB less 2 KiB are held, so the body passes the 64 MiB at its 14th MiB, before the 16 MiB of its own limit.
     expect(answer.writtenBefore).toBeGreaterThan(14 * MiB);
     expect(answer.writtenBefore).toBeLessThan(planned);
     // The app got none of the body, and the refused connection, the first to close, read no more than the one socket
@@ -906,8 +1007,8 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
       const answer = await declare(web, "/api/v1/requests", 3 * MiB);
       expect(answer.status).toBe(413);
       expect(JSON.parse(answer.body)).toMatchObject({ type: "https://tiehall.com/problems/payload-too-large", status: 413 });
-      // 60 MiB are held, so a body of 4 MiB fits, and is passed on.
-      const within = await declare(web, "/api/v1/contract-reports", 4 * MiB);
+      // 60 MiB less 3 KiB are held, so a body of 4 MiB fits, and is passed on.
+      const within = await send(web, "/api/v1/contract-reports", 4 * MiB);
       expect(JSON.parse(within.body)).toMatchObject({ type: "https://tiehall.com/problems/setup-required" });
     } finally {
       for (const request of held) request.destroy();
@@ -922,10 +1023,10 @@ describe("the web role's cap on bodies being received at once", STARTS_THE_ROLE,
       await holdOpen(web, "/webhooks/github", 13 * MiB),
     ];
     try {
-      expectBusy(await declare(web, "/mcp", 2 * MiB, { accept: "application/json, text/event-stream" }));
+      expectBusy(await send(web, "/mcp", 2 * MiB, { accept: "application/json, text/event-stream" }));
       expect(web.output()).not.toContain("fixture: /mcp");
 
-      const page = await declare(web, "/admin/invites", 2 * MiB, { "content-type": "application/x-www-form-urlencoded", accept: BROWSER });
+      const page = await send(web, "/admin/invites", 2 * MiB, { "content-type": "application/x-www-form-urlencoded", accept: BROWSER });
       expect(page.status).toBe(503);
       expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
       expect(page.headers["retry-after"]).toBe("5");
