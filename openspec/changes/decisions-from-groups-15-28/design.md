@@ -609,6 +609,7 @@ Applied by this change's task 1.60, once the maintainer approves this change; ea
 ## Risks / Trade-offs
 
 - [The cap of item (5) refuses honest large bodies in a burst] → A GitHub delivery refused this way is redelivered, the Action fails open, and an agent retries after the `Retry-After`.
+- [Requests that declare large bodies and send none hold the cap of item (5)] → A declared length is reserved when the head arrives, as item (5) says, and kept until the body is read, refused or abandoned; a client that sends a head and then nothing holds its reservation until the web server's own request timeout, 300 seconds in Node, so three connections that declare 25, 25 and 14 MiB to `/webhooks/github` and send nothing get every other body 503 `busy` for as long as they reconnect. Closing it changes item (5) or adds a number to it, so it waits for the maintainer (Open Questions).
 - [An admin switches back to webhook mode before restoring the webhook] → The next run moves GitHub to polling again, records it and shows the banner again.
 - [Keys matched as written miss a lower-case mention] → People write keys as Tiehall shows them, and a link always works.
 - [Only the target side's links close a request] → The requester side's link is still shown, and the target team can link the same PR.
@@ -628,6 +629,7 @@ This change is archived after `add-tiehall-oss-v1`, whose requirements it modifi
 
 - **IPv6 for the sign-in service's own limits** (D55 (14), (24)). Whether the token, authorization, revocation and sign-in callback limits, and the limit on the CLI's polls, also count an IPv6 client by its /64, as registrations now do; they count each address today.
 - **Settings for the numbers named here** (D55 (5), (48), (55)). Whether an operator may change the cap on bodies in flight, the digest's 7 days or the Compose limits in `.env`; the Compose limits are edited in `compose.yaml`, and no `.env` key is added.
+- **Bodies declared and not sent** (D55 (5)). How a request that declares a body's length and then sends nothing stops holding the cap before the web server's 300-second request timeout (Risks): a deadline for a declared body to arrive, a lowest rate at which it must keep arriving, or reserving a declared body's bytes as they arrive, as a chunked body's are, instead of when its head arrives, which item (5) would then say. A deadline alone only makes such a client reconnect sooner.
 - **Restoring a removed webhook from Tiehall** (D55 (6)). Whether Tiehall could add the webhook back through GitHub's API, which `github-app-reachability`'s Open Question on setting the webhook leaves open.
 - **The security policy's fallback contact** (D55 (84)). Which address it names, once the project has its own organization.
 - **Who else gets a receipt of a trust change** (D55 (81)). Answered at the approval below: the receipt of a role change or a member's removal goes only to the person who confirmed it, as every other receipt does, and no other admin gets one.
