@@ -1393,9 +1393,30 @@
                               {
                                 "properties": {
                                   "api": {
-                                    "description": "The registered API the provider change is to, such as payments-api.",
+                                    "deprecated": true,
+                                    "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                     "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                    "type": "string"
+                                    "type": "string",
+                                    "x-sunset": "2026-11-09"
+                                  },
+                                  "provider": {
+                                    "description": "The team that provides the API, whose text its name is.",
+                                    "properties": {
+                                      "id": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "key"
+                                    ],
+                                    "type": "object"
                                   },
                                   "pullRequest": {
                                     "description": "The provider pull request that makes the change.",
@@ -1444,13 +1465,27 @@
                                       "closed"
                                     ],
                                     "type": "string"
+                                  },
+                                  "untrusted": {
+                                    "properties": {
+                                      "api": {
+                                        "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "api"
+                                    ],
+                                    "type": "object"
                                   }
                                 },
                                 "required": [
                                   "api",
+                                  "provider",
                                   "pullRequest",
                                   "status",
-                                  "shippedAt"
+                                  "shippedAt",
+                                  "untrusted"
                                 ],
                                 "type": "object"
                               },
@@ -2695,9 +2730,30 @@
                                 {
                                   "properties": {
                                     "api": {
-                                      "description": "The registered API the provider change is to, such as payments-api.",
+                                      "deprecated": true,
+                                      "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                       "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                      "type": "string"
+                                      "type": "string",
+                                      "x-sunset": "2026-11-09"
+                                    },
+                                    "provider": {
+                                      "description": "The team that provides the API, whose text its name is.",
+                                      "properties": {
+                                        "id": {
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                          "type": "string"
+                                        },
+                                        "key": {
+                                          "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "key"
+                                      ],
+                                      "type": "object"
                                     },
                                     "pullRequest": {
                                       "description": "The provider pull request that makes the change.",
@@ -2746,13 +2802,27 @@
                                         "closed"
                                       ],
                                       "type": "string"
+                                    },
+                                    "untrusted": {
+                                      "properties": {
+                                        "api": {
+                                          "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "api"
+                                      ],
+                                      "type": "object"
                                     }
                                   },
                                   "required": [
                                     "api",
+                                    "provider",
                                     "pullRequest",
                                     "status",
-                                    "shippedAt"
+                                    "shippedAt",
+                                    "untrusted"
                                   ],
                                   "type": "object"
                                 },
@@ -4527,9 +4597,30 @@
                               {
                                 "properties": {
                                   "api": {
-                                    "description": "The registered API the provider change is to, such as payments-api.",
+                                    "deprecated": true,
+                                    "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                     "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                    "type": "string"
+                                    "type": "string",
+                                    "x-sunset": "2026-11-09"
+                                  },
+                                  "provider": {
+                                    "description": "The team that provides the API, whose text its name is.",
+                                    "properties": {
+                                      "id": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "key"
+                                    ],
+                                    "type": "object"
                                   },
                                   "pullRequest": {
                                     "description": "The provider pull request that makes the change.",
@@ -4578,13 +4669,27 @@
                                       "closed"
                                     ],
                                     "type": "string"
+                                  },
+                                  "untrusted": {
+                                    "properties": {
+                                      "api": {
+                                        "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "api"
+                                    ],
+                                    "type": "object"
                                   }
                                 },
                                 "required": [
                                   "api",
+                                  "provider",
                                   "pullRequest",
                                   "status",
-                                  "shippedAt"
+                                  "shippedAt",
+                                  "untrusted"
                                 ],
                                 "type": "object"
                               },
@@ -4926,9 +5031,30 @@
                         {
                           "properties": {
                             "api": {
-                              "description": "The registered API the provider change is to, such as payments-api.",
+                              "deprecated": true,
+                              "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                               "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                              "type": "string"
+                              "type": "string",
+                              "x-sunset": "2026-11-09"
+                            },
+                            "provider": {
+                              "description": "The team that provides the API, whose text its name is.",
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
                             },
                             "pullRequest": {
                               "description": "The provider pull request that makes the change.",
@@ -4977,13 +5103,27 @@
                                 "closed"
                               ],
                               "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "api": {
+                                  "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "api"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "api",
+                            "provider",
                             "pullRequest",
                             "status",
-                            "shippedAt"
+                            "shippedAt",
+                            "untrusted"
                           ],
                           "type": "object"
                         },
@@ -5927,9 +6067,30 @@
                         {
                           "properties": {
                             "api": {
-                              "description": "The registered API the provider change is to, such as payments-api.",
+                              "deprecated": true,
+                              "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                               "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                              "type": "string"
+                              "type": "string",
+                              "x-sunset": "2026-11-09"
+                            },
+                            "provider": {
+                              "description": "The team that provides the API, whose text its name is.",
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
                             },
                             "pullRequest": {
                               "description": "The provider pull request that makes the change.",
@@ -5978,13 +6139,27 @@
                                 "closed"
                               ],
                               "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "api": {
+                                  "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "api"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "api",
+                            "provider",
                             "pullRequest",
                             "status",
-                            "shippedAt"
+                            "shippedAt",
+                            "untrusted"
                           ],
                           "type": "object"
                         },
@@ -6297,9 +6472,30 @@
                         {
                           "properties": {
                             "api": {
-                              "description": "The registered API the provider change is to, such as payments-api.",
+                              "deprecated": true,
+                              "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                               "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                              "type": "string"
+                              "type": "string",
+                              "x-sunset": "2026-11-09"
+                            },
+                            "provider": {
+                              "description": "The team that provides the API, whose text its name is.",
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
                             },
                             "pullRequest": {
                               "description": "The provider pull request that makes the change.",
@@ -6348,13 +6544,27 @@
                                 "closed"
                               ],
                               "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "api": {
+                                  "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "api"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "api",
+                            "provider",
                             "pullRequest",
                             "status",
-                            "shippedAt"
+                            "shippedAt",
+                            "untrusted"
                           ],
                           "type": "object"
                         },
@@ -6967,9 +7177,30 @@
                             {
                               "properties": {
                                 "api": {
-                                  "description": "The registered API the provider change is to, such as payments-api.",
+                                  "deprecated": true,
+                                  "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                   "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                  "type": "string"
+                                  "type": "string",
+                                  "x-sunset": "2026-11-09"
+                                },
+                                "provider": {
+                                  "description": "The team that provides the API, whose text its name is.",
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
                                 },
                                 "pullRequest": {
                                   "description": "The provider pull request that makes the change.",
@@ -7018,13 +7249,27 @@
                                     "closed"
                                   ],
                                   "type": "string"
+                                },
+                                "untrusted": {
+                                  "properties": {
+                                    "api": {
+                                      "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "api"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
                                 "api",
+                                "provider",
                                 "pullRequest",
                                 "status",
-                                "shippedAt"
+                                "shippedAt",
+                                "untrusted"
                               ],
                               "type": "object"
                             },
@@ -8106,9 +8351,30 @@
                             {
                               "properties": {
                                 "api": {
-                                  "description": "The registered API the provider change is to, such as payments-api.",
+                                  "deprecated": true,
+                                  "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                   "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                  "type": "string"
+                                  "type": "string",
+                                  "x-sunset": "2026-11-09"
+                                },
+                                "provider": {
+                                  "description": "The team that provides the API, whose text its name is.",
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
                                 },
                                 "pullRequest": {
                                   "description": "The provider pull request that makes the change.",
@@ -8157,13 +8423,27 @@
                                     "closed"
                                   ],
                                   "type": "string"
+                                },
+                                "untrusted": {
+                                  "properties": {
+                                    "api": {
+                                      "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "api"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
                                 "api",
+                                "provider",
                                 "pullRequest",
                                 "status",
-                                "shippedAt"
+                                "shippedAt",
+                                "untrusted"
                               ],
                               "type": "object"
                             },
@@ -9812,9 +10092,30 @@
                         {
                           "properties": {
                             "api": {
-                              "description": "The registered API the provider change is to, such as payments-api.",
+                              "deprecated": true,
+                              "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                               "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                              "type": "string"
+                              "type": "string",
+                              "x-sunset": "2026-11-09"
+                            },
+                            "provider": {
+                              "description": "The team that provides the API, whose text its name is.",
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
                             },
                             "pullRequest": {
                               "description": "The provider pull request that makes the change.",
@@ -9863,13 +10164,27 @@
                                 "closed"
                               ],
                               "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "api": {
+                                  "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "api"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "api",
+                            "provider",
                             "pullRequest",
                             "status",
-                            "shippedAt"
+                            "shippedAt",
+                            "untrusted"
                           ],
                           "type": "object"
                         },
@@ -10723,9 +11038,30 @@
                             {
                               "properties": {
                                 "api": {
-                                  "description": "The registered API the provider change is to, such as payments-api.",
+                                  "deprecated": true,
+                                  "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                   "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                  "type": "string"
+                                  "type": "string",
+                                  "x-sunset": "2026-11-09"
+                                },
+                                "provider": {
+                                  "description": "The team that provides the API, whose text its name is.",
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
                                 },
                                 "pullRequest": {
                                   "description": "The provider pull request that makes the change.",
@@ -10774,13 +11110,27 @@
                                     "closed"
                                   ],
                                   "type": "string"
+                                },
+                                "untrusted": {
+                                  "properties": {
+                                    "api": {
+                                      "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "api"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
                                 "api",
+                                "provider",
                                 "pullRequest",
                                 "status",
-                                "shippedAt"
+                                "shippedAt",
+                                "untrusted"
                               ],
                               "type": "object"
                             },
@@ -11595,9 +11945,30 @@
                         {
                           "properties": {
                             "api": {
-                              "description": "The registered API the provider change is to, such as payments-api.",
+                              "deprecated": true,
+                              "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                               "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                              "type": "string"
+                              "type": "string",
+                              "x-sunset": "2026-11-09"
+                            },
+                            "provider": {
+                              "description": "The team that provides the API, whose text its name is.",
+                              "properties": {
+                                "id": {
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "type": "string"
+                                },
+                                "key": {
+                                  "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key"
+                              ],
+                              "type": "object"
                             },
                             "pullRequest": {
                               "description": "The provider pull request that makes the change.",
@@ -11646,13 +12017,27 @@
                                 "closed"
                               ],
                               "type": "string"
+                            },
+                            "untrusted": {
+                              "properties": {
+                                "api": {
+                                  "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "api"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
                             "api",
+                            "provider",
                             "pullRequest",
                             "status",
-                            "shippedAt"
+                            "shippedAt",
+                            "untrusted"
                           ],
                           "type": "object"
                         },
@@ -12847,9 +13232,30 @@
                             {
                               "properties": {
                                 "api": {
-                                  "description": "The registered API the provider change is to, such as payments-api.",
+                                  "deprecated": true,
+                                  "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                   "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                  "type": "string"
+                                  "type": "string",
+                                  "x-sunset": "2026-11-09"
+                                },
+                                "provider": {
+                                  "description": "The team that provides the API, whose text its name is.",
+                                  "properties": {
+                                    "id": {
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                      "type": "string"
+                                    },
+                                    "key": {
+                                      "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "key"
+                                  ],
+                                  "type": "object"
                                 },
                                 "pullRequest": {
                                   "description": "The provider pull request that makes the change.",
@@ -12898,13 +13304,27 @@
                                     "closed"
                                   ],
                                   "type": "string"
+                                },
+                                "untrusted": {
+                                  "properties": {
+                                    "api": {
+                                      "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "api"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
                                 "api",
+                                "provider",
                                 "pullRequest",
                                 "status",
-                                "shippedAt"
+                                "shippedAt",
+                                "untrusted"
                               ],
                               "type": "object"
                             },
@@ -13573,9 +13993,30 @@
                               {
                                 "properties": {
                                   "api": {
-                                    "description": "The registered API the provider change is to, such as payments-api.",
+                                    "deprecated": true,
+                                    "description": "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
                                     "pattern": "^[a-z0-9][a-z0-9\\._-]{0,99}$",
-                                    "type": "string"
+                                    "type": "string",
+                                    "x-sunset": "2026-11-09"
+                                  },
+                                  "provider": {
+                                    "description": "The team that provides the API, whose text its name is.",
+                                    "properties": {
+                                      "id": {
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "pattern": "^[A-Z][A-Z0-9]{1,9}$",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "key"
+                                    ],
+                                    "type": "object"
                                   },
                                   "pullRequest": {
                                     "description": "The provider pull request that makes the change.",
@@ -13624,13 +14065,27 @@
                                       "closed"
                                     ],
                                     "type": "string"
+                                  },
+                                  "untrusted": {
+                                    "properties": {
+                                      "api": {
+                                        "description": "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text.",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "api"
+                                    ],
+                                    "type": "object"
                                   }
                                 },
                                 "required": [
                                   "api",
+                                  "provider",
                                   "pullRequest",
                                   "status",
-                                  "shippedAt"
+                                  "shippedAt",
+                                  "untrusted"
                                 ],
                                 "type": "object"
                               },

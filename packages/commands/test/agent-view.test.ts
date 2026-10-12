@@ -1,3 +1,5 @@
+import { closingMarker, createAgentView, fencePreamble, openingMarker } from "@tiehall/packet/render";
+import { requestText } from "@tiehall/packet/tool-text";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
@@ -9,7 +11,12 @@ import { addTeam, callApi, joinTeams, openRequest, packetOf, tokenOf } from "./s
 // /api/v1 read, so every answer of the REST route leaves out the characters
 // the spec lists, whoever wrote them, while Tiehall keeps what people wrote
 // exactly as they wrote it: a later read by an admin or a person in the web
-// UI, and every revision and version, still hold it.
+// UI, and every revision and version, still hold it. An API's name, which an
+// admin wrote, sits under untrusted in a contract-change request's provider
+// change, beside its provider team, and the agent view fences it as that
+// team's text, with the repository's full name outside the fence
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (80)).
 
 let install: TestInstall;
 let alice: string;
@@ -83,5 +90,41 @@ describe("what agents read on /api/v1", () => {
     expect(replay).toBe(first);
     expect(replay).not.toMatch(INVISIBLE);
     expect(JSON.parse(replay).message.untrusted.body).toBe("On it");
+  });
+});
+
+describe("the provider change of a contract-change request", () => {
+  it("carries the API's name under untrusted, beside its provider team, and the agent view fences it as that team's text, with the repository outside", async () => {
+    const pay = await addTeam(install.owner, "PAY");
+    const opened = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+    // A contract report opened it for payments-api, which PAY provides from acme/payments, in its pull request #310.
+    await install.owner.query(
+      `WITH api AS (
+         INSERT INTO apis (org_id, name, provider_team_id, repository_id, repository_owner_id, repository_full_name, registered_by)
+           SELECT r.org_id, 'payments-api', $2, 4201, 4200, 'acme/payments', $3 FROM requests r WHERE r.id = $1 RETURNING org_id, id
+       ), change_set AS (
+         INSERT INTO contract_change_sets (org_id, api_id, repository_id, pull_request_number) SELECT org_id, id, 4201, 310 FROM api RETURNING org_id, id
+       )
+       INSERT INTO contract_change_requests (org_id, request_id, change_set_id, team_id)
+         SELECT change_set.org_id, r.id, change_set.id, r.target_team_id FROM change_set, requests r WHERE r.id = $1`,
+      [opened.id, pay, alice],
+    );
+
+    const answer = await callApi(install, tokenOf(bob), "GET", `/api/v1/requests/${opened.key}`);
+
+    expect(answer.status).toBe(200);
+    expect(answer.body.providerChange).toEqual({
+      api: "payments-api",
+      provider: { id: pay, key: "PAY" },
+      pullRequest: { repository: "acme/payments", number: 310, url: "https://github.com/acme/payments/pull/310" },
+      status: "open",
+      shippedAt: null,
+      untrusted: { api: "payments-api" },
+    });
+    // What every agent surface renders from it, for Bob of FE: the name in a fence of another team's text, the repository in Tiehall's words.
+    const view = createAgentView();
+    const markdown = view.markdown(requestText(answer.body, { teams: ["FE"] }));
+    expect(markdown).toContain([fencePreamble("other team"), openingMarker(view.nonce, "other team"), "payments-api", closingMarker(view.nonce)].join("\n"));
+    expect(markdown).toContain("It follows the provider change in acme/payments#310 to an API of team PAY, which has not shipped yet: acme/payments#310 is open.");
   });
 });

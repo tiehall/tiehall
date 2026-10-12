@@ -9,7 +9,7 @@ import { DIRECTORY_CURSOR } from "../src/directory.ts";
 import { PACKET_FIELD_NAME } from "../src/packets.ts";
 import { proposalAnswer } from "../src/proposals.ts";
 import { GITHUB_REPOSITORY, PULL_REQUEST_URL } from "../src/pull-requests.ts";
-import { getRequest } from "../src/requests.ts";
+import { getRequest, PROVIDER_CHANGE_API_SUNSET } from "../src/requests.ts";
 import { GITHUB_LOGIN, INSTALL_URL } from "../src/schemas.ts";
 import { REQUEST_URL } from "../src/updates.ts";
 import { agentOutputSchemas, outputSchemaProblems, untrustedFieldProblems } from "../src/untrusted-fields.ts";
@@ -131,5 +131,17 @@ describe("the operations agents read", () => {
     const schema = z.toJSONSchema(getRequest.output, { io: "output" }) as any;
     expect(schema.properties.messages.items.properties.untrusted.properties.body).toMatchObject({ type: "string" });
     expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining(["key", "state", "untrusted"]));
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (80).
+  it("put the API's name of a request's provider change under untrusted, with its provider team outside, and deprecate the name outside it", () => {
+    const schema = z.toJSONSchema(getRequest.output, { io: "output" }) as any;
+    const change = (schema.properties.providerChange.anyOf as any[]).find(({ type }) => type === "object");
+    expect(change.properties.untrusted.properties.api).toMatchObject({ type: "string" });
+    expect(change.required).toEqual(expect.arrayContaining(["provider", "untrusted"]));
+    expect(Object.keys(change.properties.provider.properties)).toEqual(["id", "key"]);
+    // The name outside untrusted stays until its sunset, at least 14 days after it was deprecated on 2026-10-12.
+    expect(change.properties.api).toMatchObject({ deprecated: true, "x-sunset": PROVIDER_CHANGE_API_SUNSET });
+    expect(Date.parse(PROVIDER_CHANGE_API_SUNSET) - Date.parse("2026-10-12")).toBeGreaterThanOrEqual(14 * 24 * 60 * 60 * 1000);
   });
 });

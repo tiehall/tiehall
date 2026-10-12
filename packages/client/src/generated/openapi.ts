@@ -984,8 +984,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -1001,6 +1010,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -1466,8 +1479,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -1483,6 +1505,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -2028,8 +2054,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -2045,6 +2080,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -2183,8 +2222,17 @@ export interface operations {
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
-                            /** @description The registered API the provider change is to, such as payments-api. */
+                            /**
+                             * @deprecated
+                             * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                             */
                             api: string;
+                            /** @description The team that provides the API, whose text its name is. */
+                            provider: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
                             /** @description The provider pull request that makes the change. */
                             pullRequest: {
                                 number: number;
@@ -2200,6 +2248,10 @@ export interface operations {
                              * @enum {string}
                              */
                             status: "open" | "merged" | "closed";
+                            untrusted: {
+                                /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                api: string;
+                            };
                         } | null;
                         requester: {
                             team: {
@@ -2480,8 +2532,17 @@ export interface operations {
                         }[];
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
-                            /** @description The registered API the provider change is to, such as payments-api. */
+                            /**
+                             * @deprecated
+                             * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                             */
                             api: string;
+                            /** @description The team that provides the API, whose text its name is. */
+                            provider: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
                             /** @description The provider pull request that makes the change. */
                             pullRequest: {
                                 number: number;
@@ -2497,6 +2558,10 @@ export interface operations {
                              * @enum {string}
                              */
                             status: "open" | "merged" | "closed";
+                            untrusted: {
+                                /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                api: string;
+                            };
                         } | null;
                         requester: {
                             team: {
@@ -2625,8 +2690,17 @@ export interface operations {
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
-                            /** @description The registered API the provider change is to, such as payments-api. */
+                            /**
+                             * @deprecated
+                             * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                             */
                             api: string;
+                            /** @description The team that provides the API, whose text its name is. */
+                            provider: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
                             /** @description The provider pull request that makes the change. */
                             pullRequest: {
                                 number: number;
@@ -2642,6 +2716,10 @@ export interface operations {
                              * @enum {string}
                              */
                             status: "open" | "merged" | "closed";
+                            untrusted: {
+                                /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                api: string;
+                            };
                         } | null;
                         requester: {
                             team: {
@@ -2886,8 +2964,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -2903,6 +2990,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -3251,8 +3342,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -3268,6 +3368,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -3984,8 +4088,17 @@ export interface operations {
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
-                            /** @description The registered API the provider change is to, such as payments-api. */
+                            /**
+                             * @deprecated
+                             * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                             */
                             api: string;
+                            /** @description The team that provides the API, whose text its name is. */
+                            provider: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
                             /** @description The provider pull request that makes the change. */
                             pullRequest: {
                                 number: number;
@@ -4001,6 +4114,10 @@ export interface operations {
                              * @enum {string}
                              */
                             status: "open" | "merged" | "closed";
+                            untrusted: {
+                                /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                api: string;
+                            };
                         } | null;
                         requester: {
                             team: {
@@ -4283,8 +4400,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -4300,6 +4426,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -4577,8 +4707,17 @@ export interface operations {
                         needsHuman: boolean;
                         /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                         providerChange: {
-                            /** @description The registered API the provider change is to, such as payments-api. */
+                            /**
+                             * @deprecated
+                             * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                             */
                             api: string;
+                            /** @description The team that provides the API, whose text its name is. */
+                            provider: {
+                                /** Format: uuid */
+                                id: string;
+                                key: string;
+                            };
                             /** @description The provider pull request that makes the change. */
                             pullRequest: {
                                 number: number;
@@ -4594,6 +4733,10 @@ export interface operations {
                              * @enum {string}
                              */
                             status: "open" | "merged" | "closed";
+                            untrusted: {
+                                /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                api: string;
+                            };
                         } | null;
                         requester: {
                             team: {
@@ -4942,8 +5085,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -4959,6 +5111,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {
@@ -5233,8 +5389,17 @@ export interface operations {
                             needsHuman: boolean;
                             /** @description For a contract-change request, which a contract report opened, the provider change it follows and whether it shipped; null for any other request. */
                             providerChange: {
-                                /** @description The registered API the provider change is to, such as payments-api. */
+                                /**
+                                 * @deprecated
+                                 * @description Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.
+                                 */
                                 api: string;
+                                /** @description The team that provides the API, whose text its name is. */
+                                provider: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                };
                                 /** @description The provider pull request that makes the change. */
                                 pullRequest: {
                                     number: number;
@@ -5250,6 +5415,10 @@ export interface operations {
                                  * @enum {string}
                                  */
                                 status: "open" | "merged" | "closed";
+                                untrusted: {
+                                    /** @description The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text. */
+                                    api: string;
+                                };
                             } | null;
                             requester: {
                                 team: {

@@ -26,6 +26,7 @@ let provider: StubProvider;
 let clock = new Date("2026-10-09T08:00:00Z");
 let bob: string;
 let erin: string;
+let pay: string;
 
 const ciRun = (): CiCaller => ({ kind: "ci", repositoryId: String(provider.repositoryId), repositoryOwnerId: String(provider.ownerId), jobWorkflowRef: CONTRACT_WORKFLOW });
 
@@ -39,6 +40,7 @@ beforeAll(async () => {
   erin = await addUser(install.owner, { login: "erin" });
   const teams: Record<string, string> = {};
   for (const key of ["PAY", "FE", "MOBILE"]) teams[key] = await addTeam(install.owner, key);
+  pay = teams["PAY"] ?? "";
   await joinTeams(install.owner, deniz, teams["PAY"] ?? "");
   await joinTeams(install.owner, bob, teams["FE"] ?? "");
   await joinTeams(install.owner, erin, teams["MOBILE"] ?? "");
@@ -113,9 +115,11 @@ describe("a provider pull request that merges", () => {
     await install.execute("requests.set_status", sessionOf(bob), { key: fe!.key, state: "in_progress" });
     expect((await read(fe!.key)).providerChange).toEqual({
       api: "payments-api",
+      provider: { id: pay, key: "PAY" },
       pullRequest: { repository: "acme/payments", number, url: `https://github.com/acme/payments/pull/${number}` },
       status: "open",
       shippedAt: null,
+      untrusted: { api: "payments-api" },
     });
 
     const merged = await stub.mergePullRequest("acme/payments", number, { by: "deniz" });
@@ -129,9 +133,11 @@ describe("a provider pull request that merges", () => {
       expect(request.state).toBe(state);
       expect(request.providerChange).toEqual({
         api: "payments-api",
+        provider: { id: pay, key: "PAY" },
         pullRequest: { repository: "acme/payments", number, url: `https://github.com/acme/payments/pull/${number}` },
         status: "merged",
         shippedAt: new Date(merged.mergedAt!).toISOString(),
+        untrusted: { api: "payments-api" },
       });
     }
   });

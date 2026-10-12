@@ -16,9 +16,12 @@ import type { OrgContext } from "./with-org.ts";
 // was answered, its provenance, and its latest version's text under
 // `untrusted`, with the client its poster named themselves by. A request that
 // a contract report opened carries the provider change it follows: the API,
-// the provider pull request, and whether it is open, closed without merging,
-// or merged, which shipped the change (contract-changes: Merging the provider
-// PR marks the change shipped).
+// by its provider team and its name, the provider pull request, and whether it
+// is open, closed without merging, or merged, which shipped the change
+// (contract-changes: Merging the provider PR marks the change shipped). The
+// API's name, which an admin wrote, is its provider team's text, under
+// `untrusted`; the same name outside it is deprecated until its sunset
+// (decisions-from-groups-15-28, D55 (80)).
 
 /** A request as the operations return it. */
 export type RequestView = z.input<typeof request>;
@@ -67,6 +70,8 @@ async function providerChangesOf({ tx, orgId }: OrgContext, requestIds: readonly
           .select({
             requestId: contractChangeRequests.requestId,
             api: apis.name,
+            providerId: teams.id,
+            providerKey: teams.key,
             repository: apis.repositoryFullName,
             number: contractChangeSets.pullRequestNumber,
             closedAt: contractChangeSets.providerClosedAt,
@@ -75,15 +80,18 @@ async function providerChangesOf({ tx, orgId }: OrgContext, requestIds: readonly
           .from(contractChangeRequests)
           .innerJoin(contractChangeSets, and(eq(contractChangeSets.orgId, contractChangeRequests.orgId), eq(contractChangeSets.id, contractChangeRequests.changeSetId)))
           .innerJoin(apis, and(eq(apis.orgId, contractChangeSets.orgId), eq(apis.id, contractChangeSets.apiId)))
+          .innerJoin(teams, and(eq(teams.orgId, apis.orgId), eq(teams.id, apis.providerTeamId)))
           .where(and(eq(contractChangeRequests.orgId, orgId), inArray(contractChangeRequests.requestId, wanted)));
   const byId = new Map(
-    rows.map(({ requestId, api, repository, number, closedAt, mergedAt }) => [
+    rows.map(({ requestId, api, providerId, providerKey, repository, number, closedAt, mergedAt }) => [
       requestId,
       {
         api,
+        provider: { id: providerId, key: providerKey },
         pullRequest: { repository, number, url: `https://github.com/${repository}/pull/${number}` },
         status: mergedAt !== null ? ("merged" as const) : closedAt !== null ? ("closed" as const) : ("open" as const),
         shippedAt: mergedAt === null ? null : mergedAt.toISOString(),
+        untrusted: { api },
       },
     ]),
   );

@@ -72,6 +72,26 @@
         "packet"
       ],
       "text": "Two changes to the packet schema before its publication, on its path for breaking changes. In a request packet's contract section, such as a classified diff a developer attaches by hand with tiehall contract diff or attach_contract_changes, provider_pr and provider_status may be left out, since the two refs may be in no pull request yet, while a contract_change packet, which a contract report opens, still carries both; a reader of a request packet's contract section handles one without them. And every URL field, a link's url and the provider pull request's url, now carries a pattern that admits only http and https URLs, besides the uri format, so a validator that skips formats, as @tiehall/packet's does, refuses a javascript: or data: URL, as Tiehall already did. The approved OpenSpec change decisions-from-groups-15-28 names both; no release contains them before 2026-10-26."
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "note",
+      "operationIds": [
+        "contract.attach_changes",
+        "messages.post",
+        "proposals.propose",
+        "requests.claim",
+        "requests.create",
+        "requests.get",
+        "requests.inbox",
+        "requests.link_pr",
+        "requests.list",
+        "requests.propose",
+        "requests.read",
+        "requests.set_status",
+        "updates.read"
+      ],
+      "text": "The provider change of a contract-change request, in every answer that returns a request, now names the team that provides its API as provider, and carries the API's name, which an admin wrote and so is that team's text, as untrusted.api. providerChange.api, which holds the same name outside untrusted, is deprecated, and is removed on or after its sunset, 2026-11-09: read untrusted.api instead."
     }
   ],
   "releases": []

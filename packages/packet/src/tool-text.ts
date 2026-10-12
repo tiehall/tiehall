@@ -17,8 +17,13 @@
 // the reader's own team's, when the team it was written for is one of the
 // reader's; another team's; or external, for what no team wrote, such as a
 // change GitHub or Jira reported, or a packet revision a contract report
-// added. A system message is Tiehall's own text, written from its templates,
-// and stays outside any fence.
+// added. A registered API's name, which an admin wrote, is its provider
+// team's text, fenced with that team's origin wherever agents read it, the
+// provider change of a contract-change request included, while a repository's
+// full name, whose form GitHub closes as it closes a login, stays in
+// Tiehall's words (decisions-from-groups-15-28, D55 (80)). A system message
+// is Tiehall's own text, written from its templates, and stays outside any
+// fence.
 
 import { proposalText, type ProposalJson } from "./proposals.ts";
 import { agentJson, type AgentText, type FencedOrigin } from "./render.ts";
@@ -57,10 +62,14 @@ export interface RequestJson {
 
 /** The provider change a contract-change request follows, as the operations return it. */
 export interface ProviderChangeJson {
+  /** Deprecated for untrusted.api, which holds the same name. */
   api: string;
+  /** The team that provides the API, whose text its name is. */
+  provider: TeamJson;
   pullRequest: { repository: string; number: number; url: string };
   status: string;
   shippedAt: string | null;
+  untrusted: { api: string };
 }
 
 /** What a page states about a message of the thread: all but its text. */
@@ -146,18 +155,26 @@ export function requestText(request: RequestJson, reader: Reader): AgentText[] {
   if (request.needsHuman === true) {
     lines.push(`${key} waits for a person (needs_human): agents' writes on it are refused until a member posts a message on it or confirms a proposal on it in the web UI.`);
   }
+  const title: AgentText = { origin: originOf(request.requester.team, reader), text: request.untrusted.title };
   const change = request.providerChange;
-  if (change !== undefined && change !== null) lines.push(providerChangeLine(change));
-  lines.push("Its title:");
+  if (change === undefined || change === null) {
+    lines.push("Its title:");
+    return [{ origin: "tiehall", text: lines.join("\n") }, title];
+  }
+  // The API's name is its provider team's text: the pull request, in Tiehall's words, comes before it, and the title after.
+  const { pr, what } = providerChangeFacts(change);
+  const provider = checked(change.provider.key, TEAM_KEY, "team key");
+  lines.push(`It follows the provider change in ${pr} to an API of team ${provider}, which ${what}. The API is named:`);
   return [
     { origin: "tiehall", text: lines.join("\n") },
-    { origin: originOf(request.requester.team, reader), text: request.untrusted.title },
+    { origin: originOf(change.provider, reader), text: change.untrusted.api },
+    { origin: "tiehall", text: "Its title:" },
+    title,
   ];
 }
 
-/** The provider change a contract-change request follows, and what became of it, in Tiehall's words. */
-export function providerChangeLine(change: ProviderChangeJson): string {
-  const api = checked(change.api, API_NAME, "API name");
+/** The provider pull request of a change, and what became of it, in Tiehall's words. */
+function providerChangeFacts(change: ProviderChangeJson): { pr: string; what: string } {
   const pr = `${checked(change.pullRequest.repository, REPOSITORY, "repository")}#${count(change.pullRequest.number, "pull request number")}`;
   const status = checked(change.status, WORD, "provider status");
   const what =
@@ -166,6 +183,18 @@ export function providerChangeLine(change: ProviderChangeJson): string {
       : status === "closed"
         ? `has not shipped: ${pr} closed without merging`
         : `has not shipped yet: ${pr} is open`;
+  return { pr, what };
+}
+
+/**
+ * The provider change a contract-change request follows, and what became of
+ * it, as one line for the web UI's request page, which escapes it; the API's
+ * name, of the form API names take, comes from untrusted.api. Agents read the
+ * change through requestText(), which fences the name.
+ */
+export function providerChangeLine(change: ProviderChangeJson): string {
+  const api = checked(change.untrusted.api, API_NAME, "API name");
+  const { pr, what } = providerChangeFacts(change);
   return `It follows the provider change to ${api} in ${pr}, which ${what}.`;
 }
 

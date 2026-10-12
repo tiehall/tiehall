@@ -31,18 +31,34 @@ export const requestTitle = z
   .max(200)
   .regex(/^[^\u0000-\u001f\u007f]*$/, "A title is one line, without control characters.");
 
-/** A request as the request operations return it. */
+/**
+ * The day on or after which `providerChange.api`, deprecated on 2026-10-12 for
+ * `providerChange.untrusted.api`, may be removed: at least 14 days later, as a
+ * beta operation's notice asks (public-api: Notice before a breaking change is
+ * enforced in CI; decisions-from-groups-15-28: design.md, Decisions this
+ * change rests on: D55 (80)).
+ */
+export const PROVIDER_CHANGE_API_SUNSET = "2026-11-09";
+
 /**
  * The provider change a contract-change request follows: the registered API,
- * the provider pull request, and what became of it, as Tiehall learned it from
- * GitHub (contract-changes: Merging the provider PR marks the change shipped;
- * contract-changes: Requests are withdrawn when the provider PR closes
- * unmerged). The API's name has the form API names take, and the repository
- * and the URL are GitHub's own identifiers, so none of them sits under an
- * untrusted object.
+ * by its provider team and its name, the provider pull request, and what
+ * became of it, as Tiehall learned it from GitHub (contract-changes: Merging
+ * the provider PR marks the change shipped; contract-changes: Requests are
+ * withdrawn when the provider PR closes unmerged). The API's name, which an
+ * admin wrote, is its provider team's text, so it sits under an untrusted
+ * object (agent-safety: User text in JSON sits under untrusted objects;
+ * decisions-from-groups-15-28, D55 (80)); the name outside it is deprecated
+ * until its sunset. The repository and the URL are GitHub's own identifiers,
+ * and stay outside.
  */
 export const providerChange = z.object({
-  api: z.string().regex(API_NAME).meta({ description: "The registered API the provider change is to, such as payments-api." }),
+  api: z.string().regex(API_NAME).meta({
+    description: "Deprecated: read untrusted.api instead. The registered API the provider change is to, such as payments-api.",
+    deprecated: true,
+    "x-sunset": PROVIDER_CHANGE_API_SUNSET,
+  }),
+  provider: teamRef.meta({ description: "The team that provides the API, whose text its name is." }),
   pullRequest: z
     .object({
       repository: z.string().regex(GITHUB_REPOSITORY).meta({ description: "The provider pull request's repository, as owner/name." }),
@@ -54,8 +70,12 @@ export const providerChange = z.object({
     description: "open while the provider pull request is open; closed once it closed without merging; merged once it merged, which shipped the change.",
   }),
   shippedAt: z.iso.datetime().nullable().meta({ description: "When the provider pull request merged, which shipped the change; null until it has." }),
+  untrusted: z.object({
+    api: z.string().meta({ description: "The name of the registered API the provider change is to, such as payments-api, as an admin registered it: its provider team's text." }),
+  }),
 });
 
+/** A request as the request operations return it. */
 export const request = z.object({
   id: z.uuid(),
   /** Its key, such as FE-142, written with its target team's current key. */
