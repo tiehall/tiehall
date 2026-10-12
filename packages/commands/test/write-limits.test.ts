@@ -88,6 +88,12 @@ async function spentOn(day: string): Promise<number> {
   return rows[0]?.writes ?? 0;
 }
 
+/** The number of the install's last event, which a reader may acknowledge up to. */
+async function lastEvent(): Promise<number> {
+  const { rows } = await install.owner.query<{ last: number }>("SELECT max(number)::int AS last FROM events");
+  return rows[0]?.last ?? 0;
+}
+
 const RATE_LIMITED = "https://tiehall.com/problems/rate-limited";
 
 describe("the limit per token", () => {
@@ -139,11 +145,12 @@ describe("the limit per token", () => {
       expect((await comment(token, requests[Math.floor(index / 6)]?.key ?? "")).status, `write ${index + 1}`).toBe(200);
     }
     at(after("11:00:00", 30));
-    for (const path of [`/api/v1/requests/${requests[0]?.key ?? ""}`, "/api/v1/requests", "/api/v1/events?limit=500"]) {
+    for (const path of [`/api/v1/requests/${requests[0]?.key ?? ""}`, "/api/v1/requests"]) {
       expect((await callApi(install, token, "GET", path)).status, path).toBe(200);
     }
-    const events = await callApi(install, token, "GET", "/api/v1/events?limit=500");
-    expect((await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: events.body.events.at(-1).number })).status).toBe(200);
+    // whats_new reads the updates and acknowledges them, which moves a read cursor and is no write.
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { limit: 50 })).status).toBe(200);
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { acknowledge: await lastEvent(), limit: 1 })).status).toBe(200);
     const last = requests[10]?.key ?? "";
     expect((await comment(token, last)).status).toBe(200);
     expect((await comment(token, last)).status).toBe(429);
@@ -177,8 +184,8 @@ describe("the install's daily budget", () => {
     );
     const token = tokenOf(bob);
     expect((await callApi(install, token, "GET", `/api/v1/requests/${key}`)).status).toBe(200);
-    const events = await callApi(install, token, "GET", "/api/v1/events?limit=500");
-    expect((await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: events.body.events.at(-1).number })).status).toBe(200);
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { limit: 50 })).status).toBe(200);
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { acknowledge: await lastEvent(), limit: 1 })).status).toBe(200);
     expect(await spentOn("2026-10-04")).toBe(5_000);
   });
 

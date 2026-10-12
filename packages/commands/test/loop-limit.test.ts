@@ -105,6 +105,12 @@ async function messages(id = requestId): Promise<number> {
   return Number(rows[0]?.count);
 }
 
+/** The number of the install's last event, which a reader may acknowledge up to. */
+async function lastEvent(): Promise<number> {
+  const { rows } = await install.owner.query<{ last: number }>("SELECT max(number)::int AS last FROM events");
+  return rows[0]?.last ?? 0;
+}
+
 /** Flags the request with 7 agent writes between 09:00:00 and 09:04:00. */
 async function flag(): Promise<void> {
   expect(await agentWrites(times("09:00:00", 7, 40))).toEqual([200, 200, 200, 200, 200, 200, 200]);
@@ -188,8 +194,9 @@ describe("counting agent writes", () => {
     for (const path of [`/api/v1/requests/${key}`, `/api/v1/requests/${key}/packet`, "/api/v1/requests"]) {
       expect((await callApi(install, token, "GET", path)).status, path).toBe(200);
     }
-    const read = await callApi(install, token, "GET", "/api/v1/events?limit=500");
-    expect(await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: read.body.events.at(-1).number })).toMatchObject({ status: 200 });
+    // whats_new reads the updates and acknowledges them, which moves a read cursor and is no write.
+    expect(await callApi(install, token, "POST", "/api/v1/updates", { limit: 50 })).toMatchObject({ status: 200 });
+    expect(await callApi(install, token, "POST", "/api/v1/updates", { acknowledge: await lastEvent(), limit: 1 })).toMatchObject({ status: 200 });
     expect(await flagged()).toBe(false);
     expect(await agentWrites(["09:04:00"])).toEqual([200]);
     expect(await flagged()).toBe(true);
@@ -250,7 +257,6 @@ describe("a flagged request", () => {
     // Every write an agent surface offers is here, or is one that writes on no existing request.
     const writesOnNoRequest = {
       "requests.create": "opens a request, which the caps on opened requests limit instead",
-      "events.acknowledge": "moves a read cursor, which is no write on a request",
       "updates.read": "reads the user's updates and moves a read cursor, which is no write on a request",
       "contract.report": "takes a CI run's report, which no agent makes and which changes no request itself",
     };
@@ -379,13 +385,13 @@ describe("a flagged request", () => {
   it("still lets agents read it and acknowledge its events", async () => {
     await flag();
     at("09:05:00");
-    for (const path of [`/api/v1/requests/${key}`, `/api/v1/requests/${key}/packet`, "/api/v1/requests", "/api/v1/events"]) {
+    for (const path of [`/api/v1/requests/${key}`, `/api/v1/requests/${key}/packet`, "/api/v1/requests"]) {
       expect((await callApi(install, tokenOf(bob), "GET", path)).status).toBe(200);
     }
     const token = tokenOf(bob);
-    const read = await callApi(install, token, "GET", "/api/v1/events?limit=500");
-    const last = read.body.events.at(-1).number;
-    expect(await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: last })).toMatchObject({ status: 200, body: { cursor: last } });
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { limit: 50 })).status).toBe(200);
+    const last = await lastEvent();
+    expect(await callApi(install, token, "POST", "/api/v1/updates", { acknowledge: last, limit: 1 })).toMatchObject({ status: 200, body: { cursor: last } });
     // agent-safety: Runaway agent loops flag the request needs_human, "Acknowledging events on a flagged request":
     // whats_new reads the updates on it, page after page, and each acknowledgement moves the cursor past them.
     const reader = tokenOf(alice);

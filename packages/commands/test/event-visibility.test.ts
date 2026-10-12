@@ -11,7 +11,12 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, toke
 // events, the changes to requests, and every member may see every request.
 // Security events, such as a role change, reach no reader, not even an admin's:
 // the activity log shows them to admins. Someone who is no longer a member
-// reads nothing.
+// reads nothing. Agents read through whats_new's REST operation, POST
+// /api/v1/updates, since the raw reads of the event log are internal commands
+// that only the web UI's session runs (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (50)); so the readers here belong to
+// team FE, to which Dana of team BE opens the requests, which makes their
+// openings updates of each.
 
 let install: TestInstall;
 const team: Record<string, string> = {};
@@ -19,6 +24,7 @@ let pia: string;
 let bob: string;
 let lee: string;
 let dana: string;
+let eve: string;
 
 beforeAll(async () => {
   install = await startTestInstall();
@@ -27,7 +33,8 @@ beforeAll(async () => {
   bob = await addUser(install.owner, { login: "bob" });
   lee = await addUser(install.owner, { login: "lee" });
   dana = await addUser(install.owner, { login: "dana" });
-  await joinTeams(install.owner, bob, team["FE"] ?? "");
+  eve = await addUser(install.owner, { login: "eve" });
+  for (const member of [pia, bob, lee, eve]) await joinTeams(install.owner, member, team["FE"] ?? "");
   await joinTeams(install.owner, dana, team["BE"] ?? "");
   // A domain event, a role change that Pia confirms, and another domain event.
   await openRequest(install, tokenOf(dana), { targetTeam: "FE", title: "Before the role change" });
@@ -40,7 +47,7 @@ afterAll(async () => {
 });
 
 async function typesReadBy(caller: Caller): Promise<string[]> {
-  const answer = await callApi(install, caller, "GET", "/api/v1/events");
+  const answer = await callApi(install, caller, "POST", "/api/v1/updates", { limit: 50 });
   expect(answer.status).toBe(200);
   return answer.body.events.map(({ type }: { type: string }) => type);
 }
@@ -67,20 +74,21 @@ describe("a role change", () => {
 
   it("is passed over by a reader that acknowledges past it, whose next read starts after it", async () => {
     const reader = tokenOf(bob);
-    const { events } = (await callApi(install, reader, "GET", "/api/v1/events")).body as { events: { number: number }[] };
-    await callApi(install, reader, "POST", "/api/v1/events/acknowledge", { upTo: events.at(-1)?.number });
+    const { events } = (await callApi(install, reader, "POST", "/api/v1/updates", { limit: 50 })).body as { events: { number: number }[] };
+    // The role change came after the first opening; the last update is the second, past it.
+    await callApi(install, reader, "POST", "/api/v1/updates", { acknowledge: events.at(-1)?.number, limit: 1 });
     expect(await typesReadBy(reader)).toEqual([]);
   });
 });
 
 describe("a removed member", () => {
   it("reads no events: 403, with a token they approved before the removal", async () => {
-    const token = tokenOf(dana);
+    const token = tokenOf(eve);
     expect(await typesReadBy(token)).toEqual(["request.opened", "request.opened"]);
-    expect((await install.confirm(sessionOf(pia), "members.remove", { userId: dana })).status).toBe(200);
-    const answer = await callApi(install, token, "GET", "/api/v1/events");
+    expect((await install.confirm(sessionOf(pia), "members.remove", { userId: eve })).status).toBe(200);
+    const answer = await callApi(install, token, "POST", "/api/v1/updates", { limit: 50 });
     expect(answer).toEqual({ status: 403, body: expect.objectContaining({ type: "https://tiehall.com/problems/removed-member" }) });
     expect(answer.body).not.toHaveProperty("events");
-    expect((await callApi(install, token, "POST", "/api/v1/events/acknowledge", { upTo: 1 })).status).toBe(403);
+    expect((await callApi(install, token, "POST", "/api/v1/updates", { acknowledge: 1, limit: 1 })).status).toBe(403);
   });
 });

@@ -417,6 +417,33 @@ describe("/api/v1/openapi.json", () => {
   });
 });
 
+// requester-loop: The pull readers; decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (50).
+// events.read and events.acknowledge, which read the whole event log and share each client's cursor with whats_new,
+// are internal commands: /api/v1 offers neither, so a valid token's call answers 404 and runs nothing, and the
+// document lists no operation that reads or acknowledges the event log other than whats_new and the wait.
+describe("the raw event reads", () => {
+  const route = () => createRestHandler({ catalog: CATALOG, document: OPENAPI_JSON, execute, authenticate: async () => agent });
+
+  it("are offered on no agent surface: GET /api/v1/events and POST /api/v1/events/acknowledge answer 404 to a valid token", async () => {
+    for (const [method, path, body] of [
+      ["GET", "/api/v1/events", undefined],
+      ["GET", "/api/v1/events?limit=5", undefined],
+      ["POST", "/api/v1/events/acknowledge", JSON.stringify({ upTo: 1 })],
+    ] as const) {
+      const problem = await expectProblem(await route()(call(method, path, { ...(body === undefined ? {} : { body }), headers: { authorization: "Bearer th_pat_reader", "content-type": "application/json" } })), 404);
+      expect(problem, `${method} ${path}`).toMatchObject({ type: "https://tiehall.com/problems/route-not-found" });
+    }
+    expect(calls).toEqual([]);
+    for (const id of ["events.read", "events.acknowledge"]) expect(CATALOG.get(id)?.surfaces, id).toEqual([]);
+  });
+
+  it("are in no operation of the document, which keeps whats_new's and the wait's", () => {
+    const paths = Object.keys((JSON.parse(OPENAPI_JSON) as { paths: Record<string, unknown> }).paths);
+    expect(paths.filter((path) => path.startsWith("/api/v1/events"))).toEqual(["/api/v1/events/wait"]);
+    expect(paths).toContain("/api/v1/updates");
+  });
+});
+
 // OpenAPI matches a literal path before a templated one; so does the route, whatever order the catalog lists them in.
 describe("paths that overlap", () => {
   const define = (id: string, method: "GET" | "POST", path: string, input: z.ZodObject) =>

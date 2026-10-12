@@ -88,19 +88,23 @@ describe("the export", () => {
 });
 
 describe("security events", () => {
+  // The pull reader agents read is whats_new, POST /api/v1/updates; the raw reads of the event log are internal
+  // commands that only the web UI's session runs (decisions-from-groups-15-28: design.md, Decisions this change
+  // rests on: D55 (50)).
   async function typesReadBy(caller: Caller): Promise<string[]> {
-    const answer = await callApi(install, caller, "GET", "/api/v1/events", undefined);
+    const answer = await callApi(install, caller, "POST", "/api/v1/updates", { limit: 50 });
     expect(answer.status).toBe(200);
+    expect(JSON.stringify(answer.body)).not.toMatch(/member\.role_changed|activity_log\.reconciled|"security"/);
     return answer.body.events.map(({ type }: { type: string }) => type);
   }
 
   it.each([
-    ["Pia's agent on REST, an admin's", () => tokenOf(pia.userId)],
-    ["Pia's CLI, an admin's", () => oauthTokenOf(pia.userId, "tiehall-cli", "cli")],
-    ["Bob's agent", () => tokenOf(bob)],
-  ])("reach no pull reader: %s reads the requests' domain events only", async (_name, caller) => {
+    ["Pia's agent on REST, an admin's, who belongs to no team", () => tokenOf(pia.userId), []],
+    ["Pia's CLI, an admin's", () => oauthTokenOf(pia.userId, "tiehall-cli", "cli"), []],
+    ["Bob's agent, to whose team the new request is addressed", () => tokenOf(bob), ["request.opened"]],
+  ])("reach no pull reader: %s reads the requests' domain events only", async (_name, caller, expected) => {
     const types = await typesReadBy(caller());
-    expect(types).toEqual(["request.opened"]);
+    expect(types).toEqual(expected);
     for (const type of types) expect(SECURITY_TYPES).not.toContain(type);
   });
 

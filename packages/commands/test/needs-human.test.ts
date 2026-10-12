@@ -83,9 +83,17 @@ describe("setting the flag", () => {
 
   it("reaches the requester's pull reader", async () => {
     await flag();
-    const read = await callApi(install, oauthTokenOf(alice, "tiehall-cli", "cli"), "GET", "/api/v1/events?limit=500");
-    expect(read.status).toBe(200);
-    expect(read.body.events).toContainEqual(expect.objectContaining({ type: "request.needs_human_flagged", data: { requestId } }));
+    // whats_new, page after page, each acknowledged so the next follows it.
+    const reader = oauthTokenOf(alice, "tiehall-cli", "cli");
+    const read: { type: string; data: Record<string, unknown> }[] = [];
+    let page = await callApi(install, reader, "POST", "/api/v1/updates", { limit: 50 });
+    for (;;) {
+      expect(page.status).toBe(200);
+      read.push(...page.body.events);
+      if (page.body.more !== true) break;
+      page = await callApi(install, reader, "POST", "/api/v1/updates", { acknowledge: page.body.events.at(-1).number, limit: 50 });
+    }
+    expect(read).toContainEqual(expect.objectContaining({ type: "request.needs_human_flagged", data: { requestId } }));
   });
 
   it("is stated by every read of the request, for agents and in the web UI", async () => {

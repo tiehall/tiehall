@@ -1,21 +1,37 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Caller } from "../src/index.ts";
+import type { Caller, WebSessionCaller } from "../src/index.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
 
 // Read cursors move only on acknowledgement (requests: Read cursors move only
-// on acknowledgement; design.md, Design rules: Requests and events). Each user
-// has a read cursor per client: an agent reads the events after its cursor,
-// and the cursor moves only when the reader acknowledges them, so reading
-// without acknowledging returns the same events again. The CLI and an MCP
-// client are two clients, each with its own cursor, whichever endpoint the
-// MCP client's token calls; so is each personal access token and the web UI.
+// on acknowledgement; requester-loop: The pull readers; design.md, Design
+// rules: Requests and events). Each user has a read cursor per client: an
+// agent reads the updates after its cursor, and the cursor moves only when the
+// reader acknowledges them, so reading without acknowledging returns the same
+// updates again. The CLI and an MCP client are two clients, each with its own
+// cursor, whichever endpoint the MCP client's token calls; so is each personal
+// access token and the web UI.
+//
+// The raw reads of the event log, events.read and events.acknowledge, which
+// return every domain event of the install outside the scope of whats_new and
+// share each client's cursor with it, are internal commands that no agent
+// surface offers (decisions-from-groups-15-28: design.md, Decisions this change
+// rests on: D55 (50)): /api/v1/events answers 404 to a valid token. The
+// readers' API is whats_new, whose REST operation, POST /api/v1/updates, the
+// CLI's `tiehall updates` calls too, and the wait; so the agents' cursors are
+// read and moved here through it, and the web UI's through the internal
+// commands, which only a web session runs.
+//
+// Alice of team BE opens two requests to team FE, and Bob of team FE asks
+// three questions on the first: Bob's questions are updates of Alice's, as
+// the requester.
 
 let install: TestInstall;
 const team: Record<string, string> = {};
 let alice: string;
 let bob: string;
+let firstKey: string;
 
 /** An MCP client's id, as its Client ID Metadata Document names it. */
 const MCP_CLIENT = "https://agent.example/client-metadata.json";
@@ -24,6 +40,7 @@ const CLI_CLIENT = "tiehall-cli";
 
 let cli: Caller;
 let mcp: Caller;
+let web: WebSessionCaller;
 
 interface ReadEvent {
   number: number;
@@ -31,6 +48,8 @@ interface ReadEvent {
   occurredAt: string;
   data: Record<string, unknown>;
 }
+
+const question = (body: string) => callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${firstKey}/messages`, { kind: "question", body });
 
 beforeAll(async () => {
   install = await startTestInstall();
@@ -41,32 +60,67 @@ beforeAll(async () => {
   await joinTeams(install.owner, bob, team["FE"] ?? "");
   cli = oauthTokenOf(alice, CLI_CLIENT, "cli");
   mcp = oauthTokenOf(alice, MCP_CLIENT, "api");
-  // Some events to read: two requests opened, and a question on the first.
+  web = sessionOf(alice);
+  // Some updates to read: two requests opened, and three questions on the first.
   const first = await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
+  firstKey = first.key;
   await openRequest(install, tokenOf(alice), { targetTeam: "FE" });
-  await callApi(install, tokenOf(bob), "POST", `/api/v1/requests/${first.key}/messages`, { kind: "question", body: "Which browsers?" });
+  for (const body of ["Which browsers?", "Which themes?", "By when?"]) await question(body);
 });
 
 afterAll(async () => {
   await install.close();
 });
 
-async function read(caller: Caller, query = ""): Promise<{ events: ReadEvent[]; cursor: number }> {
-  const answer = await callApi(install, caller, "GET", `/api/v1/events${query}`);
-  if (answer.status !== 200) throw new Error(`events.read answered ${answer.status}: ${JSON.stringify(answer.body)}`);
+/** A read of the caller's updates through whats_new's REST operation, acknowledging up to a number first when one is given. */
+async function read(caller: Caller, { limit = 50, acknowledge }: { limit?: number; acknowledge?: number } = {}): Promise<{ events: ReadEvent[]; cursor: number }> {
+  const answer = await callApi(install, caller, "POST", "/api/v1/updates", { limit, ...(acknowledge === undefined ? {} : { acknowledge }) });
+  if (answer.status !== 200) throw new Error(`updates.read answered ${answer.status}: ${JSON.stringify(answer.body)}`);
   return answer.body;
 }
 
-const acknowledge = (caller: Caller, upTo: number) => callApi(install, caller, "POST", "/api/v1/events/acknowledge", { upTo });
+const acknowledge = (caller: Caller, upTo: number) => callApi(install, caller, "POST", "/api/v1/updates", { acknowledge: upTo, limit: 1 });
 const numbers = (events: ReadEvent[]) => events.map(({ number }) => number);
+const questions = (events: ReadEvent[]) => events.filter(({ type, data }) => type === "request.message_posted" && data["kind"] === "question");
 
-describe("reading events", () => {
-  it("returns the events after the reader's cursor, oldest first, with their type and the ids they carry", async () => {
+describe("the raw reads of the event log", () => {
+  it("are offered on no agent surface: a valid token's call to /api/v1/events answers 404, and moves nothing", async () => {
+    const before = (await read(cli)).cursor;
+    for (const [method, path, body] of [
+      ["GET", "/api/v1/events", undefined],
+      ["POST", "/api/v1/events/acknowledge", { upTo: 1 }],
+    ] as const) {
+      for (const caller of [cli, mcp, tokenOf(alice)]) {
+        const answer = await callApi(install, caller, method, path, body);
+        expect(answer.status, `${method} ${path}`).toBe(404);
+        expect(answer.body, `${method} ${path}`).toMatchObject({ type: "https://tiehall.com/problems/route-not-found" });
+      }
+    }
+    expect((await read(cli)).cursor).toBe(before);
+  });
+
+  it("are internal commands the web UI's session runs, on the web UI's own cursor", async () => {
+    // Bob's web UI, so that Alice's, where Alice's new readers will start, stays at 0.
+    const bobsWeb = sessionOf(bob);
+    const all = await install.web(bobsWeb).read<{ events: ReadEvent[]; cursor: number }>("events.read", {});
+    expect(all).toMatchObject({ ok: true, output: { cursor: 0 } });
+    const events = all.ok ? all.output.events : [];
+    expect(questions(events)).toHaveLength(3);
+    const upTo = events[0]?.number ?? 0;
+    expect(await install.web(bobsWeb).write("events.acknowledge", { upTo }, install.fromThePage(bobsWeb))).toMatchObject({ ok: true, output: { cursor: upTo } });
+    expect(await install.web(bobsWeb).read("events.read", {})).toMatchObject({ ok: true, output: { cursor: upTo } });
+    // Bob's agents' cursors stay where they were.
+    expect((await read(oauthTokenOf(bob, MCP_CLIENT, "api"))).cursor).toBe(0);
+  });
+});
+
+describe("reading updates", () => {
+  it("returns the updates after the reader's cursor, oldest first, with their type and the ids they carry", async () => {
     const { events, cursor } = await read(cli);
     expect(cursor).toBe(0);
-    expect(events.map(({ type }) => type)).toEqual(["request.opened", "request.opened", "request.message_posted"]);
     expect(numbers(events)).toEqual([...numbers(events)].sort((a, b) => a - b));
-    expect(events[2]).toEqual({
+    expect(questions(events)).toHaveLength(3);
+    expect(questions(events)[0]).toMatchObject({
       number: expect.any(Number),
       type: "request.message_posted",
       occurredAt: expect.any(String),
@@ -74,29 +128,29 @@ describe("reading events", () => {
     });
   });
 
-  it("returns the same events again when the reader has not acknowledged them", async () => {
+  it("returns the same updates again when the reader has not acknowledged them", async () => {
     const first = await read(cli);
     const second = await read(cli);
     expect(second).toEqual(first);
   });
 
-  it("returns at most the number of events asked for", async () => {
+  it("returns at most the number of updates asked for", async () => {
     const all = await read(cli);
-    expect(numbers((await read(cli, "?limit=2")).events)).toEqual(numbers(all.events).slice(0, 2));
-    expect((await callApi(install, cli, "GET", "/api/v1/events?limit=0")).status).toBe(400);
-    expect((await callApi(install, cli, "GET", "/api/v1/events?limit=501")).status).toBe(400);
+    expect(numbers((await read(cli, { limit: 2 })).events)).toEqual(numbers(all.events).slice(0, 2));
+    expect((await callApi(install, cli, "POST", "/api/v1/updates", { limit: 0 })).status).toBe(400);
+    expect((await callApi(install, cli, "POST", "/api/v1/updates", { limit: 51 })).status).toBe(400);
   });
 });
 
 describe("acknowledging", () => {
-  it("up to event N makes the reader's next read start after N", async () => {
-    const [, second] = (await read(cli)).events;
-    const upTo = second?.number ?? 0;
-    expect(await acknowledge(cli, upTo)).toEqual({ status: 200, body: { cursor: upTo } });
+  it("up to update N makes the reader's next read start after N", async () => {
+    const all = (await read(cli)).events;
+    const upTo = all.at(-2)?.number ?? 0;
+    expect(await acknowledge(cli, upTo)).toMatchObject({ status: 200, body: { cursor: upTo } });
     const next = await read(cli);
     expect(next.cursor).toBe(upTo);
     expect(next.events.every(({ number }) => number > upTo)).toBe(true);
-    expect(next.events.map(({ type }) => type)).toEqual(["request.message_posted"]);
+    expect(numbers(next.events)).toEqual(numbers(all).slice(-1));
   });
 
   it("moves only the cursor of the client that acknowledged: the CLI's leaves the MCP client's where it was", async () => {
@@ -104,7 +158,7 @@ describe("acknowledging", () => {
     expect(cliCursor).toBeGreaterThan(0);
     const other = await read(mcp);
     expect(other.cursor).toBe(0);
-    expect(other.events).toHaveLength(3);
+    expect(questions(other.events)).toHaveLength(3);
     // And the MCP client's acknowledgement leaves the CLI's cursor alone.
     const last = other.events.at(-1)?.number ?? 0;
     await acknowledge(mcp, last);
@@ -115,17 +169,16 @@ describe("acknowledging", () => {
   it("keeps a cursor per user, per personal access token and for the web UI", async () => {
     expect((await read(oauthTokenOf(bob, CLI_CLIENT, "cli"))).cursor).toBe(0);
     expect((await read(tokenOf(alice))).cursor).toBe(0);
-    const caller = sessionOf(alice);
-    expect(await install.web(caller).read("events.read", {})).toMatchObject({ ok: true, output: { cursor: 0 } });
+    expect(await install.web(web).read("events.read", {})).toMatchObject({ ok: true, output: { cursor: 0 } });
   });
 
   it("never moves a cursor back", async () => {
     const before = (await read(cli)).cursor;
-    expect(await acknowledge(cli, 1)).toEqual({ status: 200, body: { cursor: before } });
+    expect(await acknowledge(cli, 1)).toMatchObject({ status: 200, body: { cursor: before } });
     expect((await read(cli)).cursor).toBe(before);
   });
 
-  it("gets 404 for an event that does not exist yet, and moves nothing", async () => {
+  it("gets 404 for an update that does not exist yet, and moves nothing", async () => {
     const before = (await read(cli)).cursor;
     const answer = await acknowledge(cli, 1_000_000);
     expect(answer).toEqual({ status: 404, body: expect.objectContaining({ type: "https://tiehall.com/problems/record-not-found" }) });
@@ -133,11 +186,11 @@ describe("acknowledging", () => {
     expect((await acknowledge(cli, -1)).status).toBe(400);
   });
 
-  it("brings new events after the cursor, and only them", async () => {
-    const { cursor } = await read(cli);
+  it("brings new updates after the cursor, and only them", async () => {
     const all = await read(cli);
-    await acknowledge(cli, all.events.at(-1)?.number ?? cursor);
-    await openRequest(install, tokenOf(alice), { targetTeam: "FE", title: "A new one" });
-    expect((await read(cli)).events.map(({ type }) => type)).toEqual(["request.opened"]);
+    await acknowledge(cli, all.events.at(-1)?.number ?? all.cursor);
+    await question("And on mobile?");
+    expect(questions((await read(cli)).events)).toHaveLength(1);
+    expect((await read(cli)).events).toHaveLength(1);
   });
 });

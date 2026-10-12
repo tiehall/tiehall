@@ -11,6 +11,14 @@ import { defineCommand } from "./command.ts";
 // requests, which every member may see; security events reach no reader
 // (requests: Readers get only domain events they may see). The requester
 // loop's readers, whats_new and the wait, build on these (group 19).
+//
+// Both are internal commands that no agent surface offers, and only the web
+// UI's session runs them (requester-loop: The pull readers;
+// decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (50)): they return every domain event of the install, outside the scope
+// of whats_new, and share each client's cursor with it, so reading through one
+// would move the other's place. whats_new, `tiehall updates` and the wait are
+// the readers' API.
 
 /** An event as a reader gets it: its number, its type, when it happened, and the ids and values its type declares. */
 export const eventView = z.object({
@@ -26,34 +34,30 @@ const cursor = z.number().int().min(0).meta({ description: "The number of the la
 export const readEvents = defineCommand({
   id: "events.read",
   summary:
-    "Read the events about requests after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor.",
+    "Read the events about requests after your cursor, oldest first. Reading moves nothing: the same events come back until you acknowledge them. Each of your clients has its own cursor. Offered on no agent surface.",
   input: z.object({
     limit: z.coerce.number().int().min(1).max(500).optional().meta({ description: "How many events to return, 1 to 500; 100 unless given." }),
   }),
   output: z.object({ events: z.array(eventView), cursor }),
-  method: "GET",
-  path: "/api/v1/events",
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
-  stability: "beta",
+  surfaces: [],
+  stability: "alpha",
 });
 
 export const acknowledgeEvents = defineCommand({
   id: "events.acknowledge",
-  summary: "Acknowledge the events up to a number, so that your next read starts after it. A cursor never moves back.",
+  summary: "Acknowledge the events up to a number, so that your next read starts after it. A cursor never moves back. Offered on no agent surface.",
   input: z.object({
     upTo: z.number().int().min(0).meta({ description: "The number of the last event you have handled." }),
   }),
   output: z.object({ cursor }),
-  method: "POST",
-  path: "/api/v1/events/acknowledge",
   scopes: ["requests:read"],
   commitment: false,
   confirm: false,
-  surfaces: ["rest"],
-  stability: "beta",
+  surfaces: [],
+  stability: "alpha",
 });
 
 export const EVENT_COMMANDS = [readEvents, acknowledgeEvents];

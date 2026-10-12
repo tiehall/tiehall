@@ -12,7 +12,11 @@ import type { OrgContext } from "./with-org.ts";
 // bodies; design.md, Design rules: Requests and events). A reader is one of a
 // user's clients: an OAuth client, such as the CLI or an MCP client, by its
 // client id, whichever endpoint its token calls; a personal access token; or
-// the web UI. events.read returns the events after the reader's cursor, oldest
+// the web UI. events.read and events.acknowledge are internal commands that
+// only the web UI's session runs, so their reader is the web UI's; agents read
+// and acknowledge through whats_new and the wait, which share these cursors
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (50)). events.read returns the events after the reader's cursor, oldest
 // first, and moves nothing, so the same events come back until they are
 // acknowledged. events.acknowledge moves the reader's cursor up to an event
 // that exists, and never back. Neither is a change to a request, so neither
