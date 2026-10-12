@@ -97,11 +97,11 @@ import { forwardedClient, type TrustedProxies } from "./trusted-proxies.ts";
 // routes use; every other request, and every call to /api/v1, /mcp and the
 // other API paths, gets the problem. A request negotiates HTML on a request
 // URL by that URL's own rule, and on every other page route when its Accept
-// header names text/html (pageRouteNegotiatesHtml). A refused form's
-// link leads back to the page it was posted from when its Referer names a
-// page on TIEHALL_URL's origin, as a review page's form, whose target lacks
-// the review page's input, needs; the Host header does not decide, since a
-// proxy in front of the install may rewrite it.
+// header names text/html with a quality above 0 (pageRouteNegotiatesHtml). A
+// refused form's link leads back to the page it was posted from when its
+// Referer names a page on TIEHALL_URL's origin, as a review page's form, whose
+// target lacks the review page's input, needs; the Host header does not
+// decide, since a proxy in front of the install may rewrite it.
 //
 // Request URLs (agent-surfaces: Request URL response headers): every answer
 // of a request URL, /<KEY> with or without .md or .json, or of an intake page,

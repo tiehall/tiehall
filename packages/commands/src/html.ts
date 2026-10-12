@@ -306,10 +306,10 @@ ${shellHtml(shell, main)}${footerHtml()}  </body>
 // on: D50 (7); Technical decisions: T5). On the routes that serve the web UI's
 // pages, the setup screen, the review pages and confirmations under
 // /confirm/… and GitHub's return to either sign-in callback, a refusal to a
-// request whose Accept header names text/html, as browsers send, is an HTML
-// page with the refusal's status: its title and detail in Tiehall's own words,
-// escaped, where the input fails its schema, the problem type in the markup,
-// and a link on. Every other request gets the RFC 9457 problem. Either answer
+// request whose Accept header names text/html with a quality above 0, as
+// browsers send (namesHtml), is an HTML page with the refusal's status: its
+// title and detail in Tiehall's own words, escaped, where the input fails its
+// schema, the problem type in the markup, and a link on. Every other request gets the RFC 9457 problem. Either answer
 // has the page headers' content security policy, so it cannot be framed, and
 // keeps the problem's own headers, such as Retry-After. One function decides
 // for every such route, as one function renders every page, and for the web
@@ -335,14 +335,28 @@ export function wayOnFor(reason: RefusalReason, otherwise: WayOn): WayOn {
   return reason === "unauthenticated" || reason === "removed-member" ? TO_SIGN_IN : otherwise;
 }
 
-/** Whether a request negotiates HTML on a page route: its Accept header names text/html, as browsers send. */
+/** Whether a request negotiates HTML on a page route: its Accept header names text/html with a quality above 0, as browsers send. */
 export function acceptsHtml(request: Request): boolean {
   return namesHtml(request.headers.get("accept"));
 }
 
-/** Whether an Accept header names text/html, as browsers send; a request URL negotiates HTML by its own rule (negotiation.ts). */
+/**
+ * Whether an Accept header asks for HTML, as browsers send it: it names
+ * text/html, in any case of letters, in a media range whose quality is above
+ * 0 (public-api: One error model for Tiehall's own refusals;
+ * decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (1)). A range such as `text/html;q=0` says that HTML is not acceptable
+ * (RFC 9110, section 12.4.2), so it does not ask for a page; a range without
+ * a quality, or with one that is not a number, has the quality 1. A request
+ * URL and an intake page negotiate HTML by their own rule (negotiation.ts).
+ */
 export function namesHtml(accept: string | null | undefined): boolean {
-  return (accept ?? "").split(",").some((range) => range.split(";")[0]?.trim().toLowerCase() === "text/html");
+  return (accept ?? "").split(",").some((range) => {
+    const [type, ...parameters] = range.split(";");
+    if (type?.trim().toLowerCase() !== "text/html") return false;
+    const quality = parameters.map((parameter) => parameter.split("=")).find(([name]) => name?.trim().toLowerCase() === "q")?.[1]?.trim();
+    return quality === undefined || quality === "" || !(Number(quality) <= 0);
+  });
 }
 
 /**
@@ -383,7 +397,7 @@ export interface RefusalAnswer {
 
 /**
  * The answer to a refusal on a page route, for a request with this Accept
- * header: the refusal's page when the header names text/html, the problem
+ * header: the refusal's page when the header asks for HTML, the problem
  * otherwise; with the problem's headers, any headers given, such as the
  * cookies a sign-in's answer clears, and the page headers' content security
  * policy. answerRefusal() gives it as a Response; a server that answers before

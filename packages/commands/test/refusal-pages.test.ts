@@ -25,6 +25,7 @@ import {
   TEAMS_PATH,
   type WebSessionCaller,
 } from "../src/index.ts";
+import { namesHtml } from "../src/html.ts";
 import { startTestInstall, URL_OF_INSTALL, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { startSignIn, type SignInHarness } from "./support/sign-in.ts";
@@ -282,12 +283,43 @@ describe("a refusal on a page route", () => {
     }
   });
 
+  // public-api: One error model for Tiehall's own refusals (decisions-from-groups-15-28: design.md, Decisions this
+  // change rests on: D55 (1)). A media range with quality 0 says that HTML is not acceptable (RFC 9110, section
+  // 12.4.2), so a client that names text/html only to refuse it gets the problem, not the page.
+  it.each(CASES)("is the problem for a client whose Accept header names text/html with quality 0: $name", async (testCase) => {
+    const answer = await ask(testCase, "text/html;q=0, application/json");
+    expect(answer.status).toBe(testCase.status);
+    expect(answer.headers.get("content-type")).toBe("application/problem+json");
+    expect(await answer.json()).toMatchObject({ status: testCase.status, type: expect.stringMatching(/^https:\/\/tiehall\.com\/problems\//) });
+  });
+
   it("escapes the refusal's text on the page: an issue of the input's schema is text, not markup", async () => {
     const answer = await ask(CASES.find(({ name }) => name.startsWith("a review page"))!, BROWSER);
     const html = await answer.text();
     // The issues name where the input fails, as the problem's errors do, in text.
     expect(html).toContain("userId");
     expect(html).not.toContain("<script");
+  });
+});
+
+// public-api: One error model for Tiehall's own refusals (decisions-from-groups-15-28: design.md, Decisions this
+// change rests on: D55 (1)). On the page routes other than request URLs and intake pages, a request asks for HTML
+// only when its Accept header names text/html in a media range whose quality is above 0, in any case of letters.
+describe("whether an Accept header asks for HTML", () => {
+  it("is no for text/html with quality 0, however it is written", () => {
+    for (const accept of ["text/html;q=0", "text/html ; q=0.0", "text/html;q=0.000, application/json", "application/json, TEXT/HTML; Q=0"]) {
+      expect(namesHtml(accept), accept).toBe(false);
+    }
+  });
+
+  it("is yes for text/html with a quality above 0, or none, in any case of letters", () => {
+    for (const accept of ["text/html;q=0.1", "TEXT/HTML", "text/html", BROWSER, "application/json;q=0, text/html;level=1;q=0.5", "text/html;q=0.001"]) {
+      expect(namesHtml(accept), accept).toBe(true);
+    }
+  });
+
+  it("is no for a header that does not name text/html, or names it only with quality 0 beside other types", () => {
+    for (const accept of [undefined, null, "", "*/*", "application/json", "text/*", "text/html;q=0, */*"]) expect(namesHtml(accept), String(accept)).toBe(false);
   });
 });
 

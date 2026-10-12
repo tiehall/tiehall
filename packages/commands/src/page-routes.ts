@@ -19,8 +19,8 @@ import { SIGN_IN_PATH, SIGN_OUT_PATH } from "./sign-in.ts";
 // their own negotiation decides (negotiation.ts), so a call without an Accept
 // header, or one that accepts any type, gets a page there, while a call to
 // its .md or .json form gets the problem; on every other page route, a call
-// negotiates HTML when its Accept header names text/html, as browsers send
-// (pageRouteNegotiatesHtml). The page's link leads on as the routes' own refusals do: for the sign-in page and
+// negotiates HTML when its Accept header names text/html with a quality
+// above 0, as browsers send (pageRouteNegotiatesHtml; namesHtml). The page's link leads on as the routes' own refusals do: for the sign-in page and
 // GitHub's return to the sign-in callback, to the sign-in page; for the
 // setup screen and its own sign-in, back to the setup screen; for the sign-out
 // form, back to the home page, whose form it is; and for every other page, to
@@ -85,7 +85,7 @@ function postedFrom(referrer: string | undefined): string | undefined {
  * Whether a refusal of a call to this page route, a path and query, with this
  * Accept header is a page: on a request URL when the call negotiates HTML
  * there, and on every other page route when its Accept header names
- * text/html.
+ * text/html with a quality above 0.
  */
 export function pageRouteNegotiatesHtml(target: string, accept: string | null | undefined): boolean {
   return requestUrlNegotiatesHtml(target, accept) ?? namesHtml(accept);
