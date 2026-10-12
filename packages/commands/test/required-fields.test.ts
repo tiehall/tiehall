@@ -3,7 +3,7 @@ import { createNewRequestRoute, csrfTokenFor, NEW_REQUEST_PATH } from "../src/in
 import { startAgentAccess, type AgentAccessHarness } from "./support/agent-access.ts";
 import { signedInCli, type CliMachine } from "./support/cli.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
-import { connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, type McpPerson } from "./support/mcp.ts";
+import { addTeams, connectMcp, mcpPerson, PROBLEM, problemOf, PROTOCOL_VERSIONS, type McpPerson } from "./support/mcp.ts";
 import { packetOf } from "./support/requests.ts";
 
 // Requests that lack a field their target team requires are refused, on every
@@ -20,13 +20,16 @@ import { packetOf } from "./support/requests.ts";
 
 let harness: AgentAccessHarness;
 let sam: McpPerson;
+let dana: McpPerson;
 let samCli: CliMachine;
 
 beforeAll(async () => {
   harness = await startAgentAccess();
   sam = await mcpPerson(harness, "sam-be", { teams: ["BE"] });
-  await mcpPerson(harness, "dana-fe", { teams: ["FE", "QA"] });
+  dana = await mcpPerson(harness, "dana-fe", { teams: ["FE", "QA"] });
+  await addTeams(harness, "MOB", "OPS");
   await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['acceptance_criteria', 'due_date'] WHERE key = 'FE'");
+  await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['code_refs'] WHERE key = 'MOB'");
   samCli = await signedInCli(harness, sam);
 }, 120_000);
 
@@ -111,5 +114,89 @@ describe("the web form that opens a request", () => {
     expect(html).toContain('<p class="field-error" id="dueDate-error">Team FE requires a due date.</p>');
     expect(html).toContain(`<form class="panel form-panel" method="post" action="${NEW_REQUEST_PATH}">`);
     expect(await requestCount()).toBe(before);
+  });
+});
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (41). A team's required fields hold when
+// a reassignment into it is proposed and when a revision of a request addressed to it is added or proposed: a
+// reassignment into a team whose required fields the packet lacks, and a revision that drops a required field the
+// current revision has, are refused with 400 listing the missing fields, and create nothing; an empty list counts
+// as missing; a revision that lacks a field the current one lacks too is taken. MOB requires code refs.
+describe("required fields on reassignment and revisions", () => {
+  /** A request Sam opens over /api/v1 to this team, with this packet. */
+  async function openTo(team: string, packet: Record<string, unknown>): Promise<{ id: string; key: string }> {
+    const answer = await harness.api("POST", "/api/v1/requests", { authorization: `Bearer ${sam.token}` }, { targetTeam: team, title: "Add a dark mode", packet });
+    expect(answer.status).toBe(200);
+    return (await answer.json()) as { id: string; key: string };
+  }
+
+  async function counts(requestId: string): Promise<{ proposals: number; revisions: number }> {
+    const { rows } = await harness.install.owner.query<{ proposals: number; revisions: number }>(
+      "SELECT (SELECT count(*)::int FROM proposals WHERE request_id = $1) AS proposals, (SELECT count(*)::int FROM packet_revisions WHERE request_id = $1) AS revisions",
+      [requestId],
+    );
+    return rows[0]!;
+  }
+
+  const send = (person: McpPerson, path: string, body: unknown, headers: Record<string, string> = {}) =>
+    harness.api("POST", path, { authorization: `Bearer ${person.token}`, ...headers }, body);
+
+  const FE_PACKET = { ...packetOf(), due_date: "2026-12-01", untrusted: { need: "Add a dark mode to the settings page.", acceptance_criteria: ["It follows the system setting.", "It remembers the choice."] } };
+
+  it("refuses a reassignment proposal into a team whose required fields the packet lacks, naming them, and proposes nothing", async () => {
+    const request = await openTo("QA", packetOf());
+    for (const [path, body] of [
+      ["/api/v1/proposals", { kind: "reassign", key: request.key, team: "MOB" }],
+      [`/api/v1/requests/${request.key}/proposals`, { kind: "reassign", team: "MOB" }],
+    ] as const) {
+      const answer = await send(dana, path, body);
+      expect(answer.status, path).toBe(400);
+      const problem = (await answer.json()) as { type: string; detail: string; errors?: unknown };
+      expect(problem.type).toBe(`${PROBLEM}invalid-input`);
+      expect(problem.detail).toContain("code refs");
+      expect(errorsOf(problem).map(({ message }) => message)).toEqual(["Team MOB requires code refs."]);
+    }
+    const client = await connectMcp(harness, { token: dana.token, version: PROTOCOL_VERSIONS[0] });
+    try {
+      const result = await client.callTool({ name: "propose", arguments: { kind: "reassign", key: request.key, team: "MOB" } });
+      expect(problemOf(result as never)).toMatchObject({ type: `${PROBLEM}invalid-input`, status: 400 });
+    } finally {
+      await client.close();
+    }
+    expect(await counts(request.id)).toEqual({ proposals: 0, revisions: 1 });
+    // Into FE, whose fields the packet has, the reassignment is proposed.
+    const into = await openTo("QA", FE_PACKET);
+    expect((await send(dana, "/api/v1/proposals", { kind: "reassign", key: into.key, team: "FE" })).status).toBe(202);
+  });
+
+  it("refuses a revision that drops a required field the current revision has, an empty list included, and keeps the current revision", async () => {
+    const request = await openTo("FE", FE_PACKET);
+    const emptied = await send(sam, `/api/v1/requests/${request.key}/packet/revisions`, { packet: { ...FE_PACKET, untrusted: { ...FE_PACKET.untrusted, acceptance_criteria: [] } } }, { "if-match": '"1"' });
+    expect(emptied.status).toBe(400);
+    expect(errorsOf((await emptied.json()) as { errors?: unknown }).map(({ message }) => message)).toEqual(["Team FE requires the acceptance criteria."]);
+    // A proposed scope change that drops the due date, and a due date proposed away, are refused the same way.
+    const { due_date: _due, ...undated } = FE_PACKET;
+    const scope = await send(sam, "/api/v1/proposals", { kind: "scope", key: request.key, packet: undated }, { "if-match": '"1"' });
+    expect(scope.status).toBe(400);
+    expect(errorsOf((await scope.json()) as { errors?: unknown }).map(({ message }) => message)).toEqual(["Team FE requires a due date."]);
+    const removed = await send(sam, "/api/v1/proposals", { kind: "due_date", key: request.key, dueDate: null }, { "if-match": '"1"' });
+    expect(removed.status).toBe(400);
+    expect(await counts(request.id)).toEqual({ proposals: 0, revisions: 1 });
+    // A revision that keeps every required field is taken.
+    const kept = await send(sam, `/api/v1/requests/${request.key}/packet/revisions`, { packet: { ...FE_PACKET, untrusted: { ...FE_PACKET.untrusted, need: "Add a dark mode, and a high-contrast one." } } }, { "if-match": '"1"' });
+    expect(kept.status).toBeLessThan(300);
+    expect((await counts(request.id)).revisions).toBe(2);
+  });
+
+  it("takes a revision that lacks a field the current revision lacks too", async () => {
+    const request = await openTo("OPS", packetOf());
+    await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['links'] WHERE key = 'OPS'");
+    try {
+      const answer = await send(sam, `/api/v1/requests/${request.key}/packet/revisions`, { packet: packetOf("Rotate the logs every day.") }, { "if-match": '"1"' });
+      expect(answer.status).toBeLessThan(300);
+      expect((await counts(request.id)).revisions).toBe(2);
+    } finally {
+      await harness.install.owner.query("UPDATE teams SET required_fields = '{}' WHERE key = 'OPS'");
+    }
   });
 });

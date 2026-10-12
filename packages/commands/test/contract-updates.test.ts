@@ -158,6 +158,24 @@ describe("a push that adds a breaking change", () => {
     expect((await requestTo("FE")).state).toBe("claimed");
   });
 
+  // agent-surfaces: Requests missing a team's required fields are refused, "A report's revision is exempt"
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (41)): a team's required fields hold
+  // the revisions people and agents add, never the ones a report adds.
+  it("adds a report's revision to a request whose packet lacks a field its team requires", async () => {
+    await install.owner.query("UPDATE teams SET required_fields = ARRAY['acceptance_criteria', 'code_refs'] WHERE key = 'FE'");
+    try {
+      await pushReports(changesOf("breaking"));
+      const fe = await requestTo("FE");
+      await pushReports(threeBreaking(), "c");
+      expect((await revisionsOf(fe.id)).map(({ number, breaking, actor_kind }) => ({ number, breaking, actor_kind }))).toEqual([
+        { number: 1, breaking: 2, actor_kind: "system" },
+        { number: 2, breaking: 3, actor_kind: "system" },
+      ]);
+    } finally {
+      await install.owner.query("UPDATE teams SET required_fields = '{}' WHERE key = 'FE'");
+    }
+  });
+
   it("posts one system message that states the earlier and the new count of breaking changes, recorded as the system from GitHub", async () => {
     await pushReports(changesOf("breaking"));
     const fe = await requestTo("FE");

@@ -7,17 +7,16 @@ import {
   listRequests,
   proposeCommitment,
   setRequestStatus,
-  type IntakeField,
   type Packet,
 } from "@tiehall/catalog";
-import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted, TERMINAL_STATES, type RefusalIssue } from "@tiehall/core";
-import { requests, teams } from "@tiehall/db";
-import { requiredFieldsText } from "@tiehall/packet/tool-text";
+import { isTerminalState, Refusal, requestClaimed, requestOpened, requestReleased, requestStarted, TERMINAL_STATES } from "@tiehall/core";
+import { requests } from "@tiehall/db";
 import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { teamsOfMember, type MemberTeam } from "./members.ts";
-import { insertPacketRevision } from "./packet-revisions.ts";
+import { insertPacketRevision, packetRevisionOf } from "./packet-revisions.ts";
 import { pendingProposalsOf, type ProposalAnswer } from "./proposals.ts";
+import { assertReassignable, assertRequiredFields } from "./required-fields.ts";
 import { actingUserOf, assertSideAllows, lifecycleOf, lockRequest, saveLifecycle, stampOf, teamActedFor, transition } from "./request-changes.ts";
 import { resolveRequestKey, teamOfKey } from "./request-keys.ts";
 import { takeRequestNumber } from "./request-numbers.ts";
@@ -83,6 +82,9 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // with no item, such as no acceptance criteria, counts as none. Only the
 // requests people and agents open go through requests.create; a contract
 // report opens its requests without it, so they are not held to these fields.
+// A reassignment into a team whose required fields the packet lacks is refused
+// the same way, and proposes nothing (decisions-from-groups-15-28: design.md,
+// Decisions this change rests on: D55 (41); required-fields.ts).
 
 /** What each state set_status names does: start work, release the claim, or propose to decline or to mark done. */
 const STATUS_ACTIONS = { in_progress: "start", open: "release", declined: "decline", done: "mark_done" } as const;
@@ -114,28 +116,6 @@ async function requestingTeamOf(context: HandlerContext, userId: string, named: 
   return only;
 }
 
-/** Where each field a team may require sits in requests.create's input, and whether a packet has it. */
-const REQUIRED_FIELD_CHECKS: Readonly<Record<IntakeField, { path: string[]; has: (packet: Packet) => boolean }>> = {
-  acceptance_criteria: { path: ["packet", "untrusted", "acceptance_criteria"], has: (packet) => (packet.untrusted.acceptance_criteria?.length ?? 0) > 0 },
-  code_refs: { path: ["packet", "untrusted", "code_refs"], has: (packet) => (packet.untrusted.code_refs?.length ?? 0) > 0 },
-  links: { path: ["packet", "untrusted", "links"], has: (packet) => (packet.untrusted.links?.length ?? 0) > 0 },
-  due_date: { path: ["packet", "due_date"], has: (packet) => packet.due_date !== undefined },
-};
-
-/** Refuses a packet that lacks a field the target team requires, with 400 naming each; the team's fields are read in the call's transaction. */
-async function assertRequiredFields({ tx, orgId }: HandlerContext, target: { id: string; key: string }, packet: Packet): Promise<void> {
-  const [row] = await tx
-    .select({ requiredFields: teams.requiredFields })
-    .from(teams)
-    .where(and(eq(teams.orgId, orgId), eq(teams.id, target.id)));
-  const missing = ((row?.requiredFields ?? []) as IntakeField[]).filter((field) => !REQUIRED_FIELD_CHECKS[field].has(packet));
-  if (missing.length === 0) return;
-  const issues: RefusalIssue[] = missing.map((field) => ({ path: REQUIRED_FIELD_CHECKS[field].path, message: `Team ${target.key} requires ${requiredFieldsText([field])}.` }));
-  throw new Refusal("invalid-input", `Team ${target.key} requires ${requiredFieldsText(missing)} of the requests opened to it, which this packet lacks, so nothing was opened.`, {
-    issues,
-  });
-}
-
 /** Proposes withdrawing the request, as its requester side, while its state allows a withdrawal. */
 export async function proposeWithdrawal(context: HandlerContext, key: string): Promise<ProposalAnswer> {
   const userId = actingUserOf(context);
@@ -160,6 +140,8 @@ export async function proposeReassignment(context: HandlerContext, key: string, 
   if (isTerminalState(current.state)) {
     throw new Refusal("conflict", `The request is ${current.state}, which is final, so it is no longer reassigned.`);
   }
+  // The team it would move to holds the request to its required fields (D55 (41)).
+  await assertReassignable(context, team, (await packetRevisionOf(context, row.id)).packet as Packet);
   return context.propose(row, { kind: "reassign", change: { teamId: team.id } });
 }
 

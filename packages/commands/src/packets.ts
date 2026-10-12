@@ -1,10 +1,13 @@
 import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision, type Packet } from "@tiehall/catalog";
 import { changedPacketFields, jsonPatch, packetCommitments, Refusal } from "@tiehall/core";
+import { teams } from "@tiehall/db";
+import { and, eq } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
 import type { ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lockRequest, teamActedFor } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
+import { assertRevisionKeepsRequiredFields, REQUIRED_FIELD_CHECKS, type RequiringTeam } from "./required-fields.ts";
 
 // The packet operations (handoff-packet: Immutable, numbered revisions;
 // handoff-packet: Open objects, strict server; handoff-packet: Packet changes
@@ -25,7 +28,11 @@ import { resolveRequestKey } from "./request-keys.ts";
 // commitment takes effect without the people who confirm it. A change that is
 // both is one proposal, whose second confirmation meets both rules. Any other
 // change is added at once: the revision and its event commit together, with
-// the requester side's team as the team the user acted for.
+// the requester side's team as the team the user acted for. A revision, added
+// or proposed, that drops a field the request's team requires and the current
+// revision has is refused with 400 and creates nothing
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+// D55 (41); required-fields.ts).
 //
 // What changed since revision N (handoff-packet: What changed since revision
 // N): the fields that differ between revision N and the current revision, and
@@ -73,6 +80,10 @@ export async function revisePacket(
     const message = `A revision keeps the packet's kind, which is ${current.packet.kind}.`;
     throw new Refusal("invalid-input", message, { issues: [{ path: ["packet", "kind"], message }] });
   }
+  // A revision, added or proposed, keeps every field the request's team requires that the current revision has (D55 (41)).
+  await assertRevisionKeepsRequiredFields(context, await targetTeamOf(context, row.targetTeamId), current.packet as Packet, packet, (field) =>
+    action === "propose_due_date" && field === "due_date" ? ["dueDate"] : REQUIRED_FIELD_CHECKS[field].path,
+  );
   const commitments = packetCommitments(current.packet, packet, row.claimantUserId !== null);
   if (action === "propose_due_date" && !commitments.includes("due_date")) await assertSideAllows(context, userId, row, "add_revision");
   if (commitments.length > 0) {
@@ -85,6 +96,13 @@ export async function revisePacket(
   }
   const teamId = await teamActedFor(context, userId, row);
   return context.write(async (writer) => packetRevisionOf(writer, row.id, await storePacketRevision(writer, row.id, packet)), { teamId });
+}
+
+/** The team a request is addressed to, by its id and its current key. */
+async function targetTeamOf({ tx, orgId }: HandlerContext, teamId: string): Promise<RequiringTeam> {
+  const [row] = await tx.select({ id: teams.id, key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, teamId)));
+  if (row === undefined) throw new Error("A request is addressed to a team the install does not have.");
+  return row;
 }
 
 export const PACKET_HANDLERS: Handlers = {
