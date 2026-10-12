@@ -32,4 +32,4 @@ The web UI works but has no look: the web role's pages are plain HTML under a po
 - **Dependencies:** none, and no third-party files.
 - **Public contracts:** none; `/api/v1`, the MCP tools and the packet schema are unchanged.
 - **Order:** archived after the other changes in progress; it starts from `github-layer-hardening`'s text of the setup code requirement.
-- **Approval:** approved by the maintainer on 2026-10-12 (D61), with two departures, before any of it was built.
+- **Approval:** approved by the maintainer on 2026-10-12 (D61), with two departures, which tasks 1.16 and 1.17 build.
