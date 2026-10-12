@@ -33,7 +33,10 @@ import type { WorkerJob } from "./worker.ts";
 //   ends in +json, and so does the guard. It refuses a request that would
 //   bind the code to a user in advance, since a code is bound only to the
 //   member who approves it, and a scope that is not one of the three Tiehall
-//   offers, openid and offline_access included, with invalid_scope;
+//   offers, openid included, with invalid_scope; offline_access, which every
+//   grant carries for its refresh token anyway, is ignored, as on the
+//   authorization endpoint (decisions-from-groups-15-28: design.md, Decisions
+//   this change rests on: D55 (12));
 // - a request that names no resource is for the install's MCP resource, so the
 //   CLI's access token always has that resource, TIEHALL_URL/mcp, as its only
 //   audience, and never an OpenID Connect one;
@@ -206,9 +209,9 @@ function valuesOf(fields: URLSearchParams, name: string): string[] {
   return fields.getAll(name).filter((value) => value !== "");
 }
 
-/** The scopes a device code grants: the ones it asked for, or the default, and the refresh scope. */
+/** The scopes a device code grants: the ones it asked for, the refresh scope left out, or the default, and the refresh scope. */
 export function deviceScopeOf(requested: string | null | undefined, refreshScope: string): string {
-  const named = (requested ?? "").split(/\s+/).filter((scope) => scope !== "");
+  const named = [...new Set((requested ?? "").split(/\s+/).filter((scope) => scope !== "" && scope !== refreshScope))];
   return [...(named.length === 0 ? DEFAULT_DEVICE_SCOPES : named), refreshScope].join(" ");
 }
 
@@ -256,7 +259,7 @@ export function cliDeviceFlow(options: CliDeviceFlowOptions): BetterAuthPlugin {
             }
             const scopes = valuesOf(fields, "scope");
             if (scopes.length > 1) throw oauthError("invalid_request", "scope must not be repeated");
-            const named = (scopes[0] ?? "").split(/\s+/).filter((scope) => scope !== "");
+            const named = (scopes[0] ?? "").split(/\s+/).filter((scope) => scope !== "" && scope !== options.refreshScope);
             const notOffered = named.filter((scope) => !(SCOPES as readonly string[]).includes(scope));
             if (notOffered.length > 0) {
               throw oauthError("invalid_scope", `Tiehall offers the scopes ${SCOPES.join(", ")}, and not ${notOffered.join(", ")}.`);

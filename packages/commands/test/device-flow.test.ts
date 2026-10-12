@@ -246,12 +246,25 @@ describe("the CLI", () => {
 
   it("gets invalid_scope for a scope Tiehall does not offer, openid included, and no device code", async () => {
     const before = await deviceCodes();
-    for (const scope of ["openid", "requests:read admin", "offline_access"]) {
+    for (const scope of ["openid", "requests:read admin", "offline_access admin"]) {
       const answer = await deviceCode({ ...CLI_REQUEST, scope });
       expect(answer.status, scope).toBe(400);
       expect(answer.body["error"], scope).toBe("invalid_scope");
     }
     expect(await deviceCodes()).toBe(before);
+  });
+
+  // agent-access: OAuth scopes are coarse (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+  // D55 (12)). offline_access, which every grant carries for its refresh token anyway, is ignored here as on the
+  // authorization endpoint: a request that names it alone gets the default scopes, and the answer names none but those.
+  it("ignores offline_access: a request that names it alone gets requests:read and requests:write, and a refresh token", async () => {
+    const answer = await deviceCode({ ...CLI_REQUEST, scope: "offline_access" });
+    expect(answer.status).toBe(200);
+    await approve(String(answer.body["user_code"]), ana.userId);
+    const polled = await deviceToken(String(answer.body["device_code"]));
+    expect(polled.status).toBe(200);
+    expect(String(polled.body["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
+    expect(polled.body["refresh_token"]).toEqual(expect.any(String));
   });
 
   it("cannot bind its code to a user in advance", async () => {

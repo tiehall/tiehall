@@ -48,8 +48,18 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   requests:read and requests:write. Every grant brings a refresh token,
 //   which the authorization server issues only with offline_access: so the
 //   request each client sends is completed with it before the server reads
-//   it, and a client that asks for offline_access itself is refused like any
-//   other scope Tiehall does not offer.
+//   it. A client that asks for offline_access itself, as clients built for
+//   OpenID-style servers do, is not refused for it: the scope is ignored,
+//   so a request that names it alone gets the default scopes, and the token
+//   endpoint's answer names only the scopes Tiehall offers, never
+//   offline_access (decisions-from-groups-15-28: design.md, Decisions this
+//   change rests on: D55 (12), (13); Technical decisions: T4).
+// - An authorization request, and the token request that follows it, that
+//   names no resource is completed with the install's one resource,
+//   TIEHALL_URL/mcp, before the server reads it, so its access token's
+//   audience is that resource and /mcp and /api/v1 both accept it, as the
+//   device flow's are (agent-access: Authorization requests use PKCE S256,
+//   resource indicators and the iss parameter; D55 (23)).
 // - `oauthDeviceAuthorization()` offers the device authorization grant, which
 //   only the `tiehall` CLI may use (device-flow.ts): its codes expire after 10
 //   minutes, a person approves one on the install's device approval page, and
@@ -212,7 +222,7 @@ export function authorizationServerPlugins({ url, orgId, clients = {}, membershi
     withOrgId(signingKeys, orgId),
     withOrgId(server as unknown as BetterAuthPlugin, orgId),
     withOrgId(deviceFlow as unknown as BetterAuthPlugin, orgId),
-    offeredScopes(),
+    offeredScopes(mcpResourceOf(url)),
     pkceRefusals(),
   ];
   if (clients.metadataDocuments !== false) plugins.push(metadataDocuments(clients.fetchDocument ?? createOutboundFetcher({ maxRedirects: 0 })));
@@ -290,14 +300,16 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
 
 /**
  * The scope an authorization request is read with: the scopes it asks for,
- * or requests:read and requests:write when it names none, with a scope that
- * is not one of the three renamed, so the authorization server refuses it
- * with invalid_scope, and offline_access added, so the grant brings a refresh
- * token.
+ * offline_access left out, or requests:read and requests:write when it names
+ * no other, with a scope that is not one of the three renamed, so the
+ * authorization server refuses it with invalid_scope, and offline_access
+ * added, so the grant brings a refresh token.
  */
 export function scopeReadFor(requested: unknown): string {
-  const named = (Array.isArray(requested) ? requested.join(" ") : typeof requested === "string" ? requested : "").split(" ").filter((scope) => scope !== "");
-  const asked = named.length === 0 ? DEFAULT_SCOPES : named;
+  const named = (Array.isArray(requested) ? requested.join(" ") : typeof requested === "string" ? requested : "")
+    .split(" ")
+    .filter((scope) => scope !== "" && scope !== REFRESH_SCOPE);
+  const asked = named.length === 0 ? DEFAULT_SCOPES : [...new Set(named)];
   return [...asked.map((scope) => ((SCOPES as readonly string[]).includes(scope) ? scope : `${NOT_OFFERED}${scope}`)), REFRESH_SCOPE].join(" ");
 }
 
@@ -306,17 +318,56 @@ export function offeredScopesOf(scope: string): string[] {
   return scope.split(" ").filter((each) => each !== "" && each !== REFRESH_SCOPE);
 }
 
-/** Reads every authorization request with the scope scopeReadFor() gives it. */
-function offeredScopes(): BetterAuthPlugin {
+/** The token endpoint, under the sign-in service's routes at /api/auth. */
+const TOKEN_PATH = "/oauth2/token";
+
+/** The token grants whose requests name the resource of the grant they continue. */
+const RESOURCE_GRANTS = new Set(["authorization_code", "refresh_token"]);
+
+/** Whether a request's field names a value. */
+function names(value: unknown): boolean {
+  return (Array.isArray(value) ? value : [value]).some((each) => typeof each === "string" && each !== "");
+}
+
+/**
+ * Reads every authorization request with the scope scopeReadFor() gives it,
+ * and with the install's one resource when it names none; reads the token
+ * request of an authorization code or a refresh token that names no resource
+ * with that resource too; and answers every token request with the scopes
+ * Tiehall offers alone: the offline_access every grant carries for its
+ * refresh token is left out of the answer's scope.
+ */
+function offeredScopes(resource: string): BetterAuthPlugin {
   return {
     id: "tiehall-offered-scopes",
     hooks: {
       before: [
         {
           matcher: (context) => context.path === "/oauth2/authorize",
-          handler: createAuthMiddleware(async (context) => ({
-            context: { query: { ...(context.query ?? {}), scope: scopeReadFor((context.query as Record<string, unknown> | undefined)?.["scope"]) } },
-          })),
+          handler: createAuthMiddleware(async (context) => {
+            const query = (context.query ?? {}) as Record<string, unknown>;
+            return { context: { query: { ...query, scope: scopeReadFor(query["scope"]), ...(names(query["resource"]) ? {} : { resource }) } } };
+          }),
+        },
+        {
+          matcher: (context) => context.path === TOKEN_PATH,
+          handler: createAuthMiddleware(async (context) => {
+            const body = (context.body ?? {}) as Record<string, unknown>;
+            if (typeof body["grant_type"] !== "string" || !RESOURCE_GRANTS.has(body["grant_type"]) || names(body["resource"])) return undefined;
+            return { context: { body: { ...body, resource } } };
+          }),
+        },
+      ],
+      after: [
+        {
+          matcher: (context) => context.path === TOKEN_PATH,
+          handler: createAuthMiddleware(async (context) => {
+            const returned = context.context.returned;
+            if (typeof returned !== "object" || returned === null || returned instanceof Response || returned instanceof APIError) return;
+            const { scope } = returned as { scope?: unknown };
+            if (typeof scope !== "string") return;
+            return context.json({ ...(returned as Record<string, unknown>), scope: offeredScopesOf(scope).join(" ") });
+          }),
         },
       ],
     },

@@ -87,6 +87,40 @@ describe("an authorization request", () => {
   });
 });
 
+// agent-access: Authorization requests use PKCE S256, resource indicators and the iss parameter
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (23); Technical decisions: T4). An
+// authorization request, and the token request that follows it, that names no resource is for the install's one
+// resource, TIEHALL_URL/mcp: the access token's audience is that resource, so /mcp and /api/v1 both accept it.
+describe("a request that names no resource", () => {
+  it("gets a token whose audience is TIEHALL_URL/mcp, which /api/v1 accepts", async () => {
+    const client = await harness.registerClient();
+    await harness.approve(ana.userId, client.clientId, ["requests:read"]);
+    const pkce = pkcePair();
+    const answer = await harness.authorize(ana.cookie, client, pkce, { resource: undefined, scope: "requests:read" });
+    const code = locationOf(answer).searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    const exchanged = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/api/auth/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: pkce.verifier, client_id: client.clientId, redirect_uri: client.redirectUri }).toString(),
+      }),
+    );
+    expect(exchanged.status).toBe(200);
+    const body = (await exchanged.json()) as { access_token: string; refresh_token?: string };
+    const claims = JSON.parse(Buffer.from(body.access_token.split(".")[1] ?? "", "base64url").toString("utf8")) as { aud: unknown };
+    expect([claims.aud].flat()).toEqual([MCP_RESOURCE]);
+    const inbox = await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${body.access_token}` });
+    expect(inbox.status).toBe(200);
+
+    // A refresh that names no resource keeps it too.
+    const refreshed = await harness.refresh(client, body.refresh_token ?? "");
+    expect(refreshed.status).toBe(200);
+    const again = JSON.parse(Buffer.from(String(refreshed.body["access_token"]).split(".")[1] ?? "", "base64url").toString("utf8")) as { aud: unknown };
+    expect([again.aud].flat()).toEqual([MCP_RESOURCE]);
+  });
+});
+
 describe("the check of an access token", () => {
   let key: KeyObject;
   let kid: string;

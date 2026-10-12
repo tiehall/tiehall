@@ -10,9 +10,9 @@ import { addTeam, joinTeams, openRequestInTheWebUi } from "./support/requests.ts
 // rests on: D28 #48; design.md, Design rules: Agent access). The install
 // offers exactly three scopes, requests:read, requests:write and
 // contracts:report, and no admin scope: an authorization request that asks for
-// any other is refused with invalid_scope, and one that asks for none gets
-// requests:read and requests:write. Every grant brings a refresh token, which
-// no client has to ask for. A token acts only within its scopes: a call to an
+// any other is refused with invalid_scope, except offline_access, which is
+// ignored, and one that asks for none gets requests:read and requests:write.
+// Every grant brings a refresh token, which no client has to ask for. A token acts only within its scopes: a call to an
 // operation that needs a scope the token lacks gets 403 insufficient_scope
 // with the scope it needs, and runs nothing. Every challenge points to the
 // protected resource metadata.
@@ -61,7 +61,7 @@ describe("the scopes the install offers", () => {
     }
   });
 
-  it.each(["requests:read admin", "admin", "offline_access", "requests:read openid"])("refuses an authorization request for %s with invalid_scope, and issues no code", async (scope) => {
+  it.each(["requests:read admin", "admin", "requests:read openid", "admin offline_access"])("refuses an authorization request for %s with invalid_scope, and issues no code", async (scope) => {
     const client = await harness.registerClient();
     await harness.approve(ana.userId, client.clientId, ["requests:read", "requests:write", "contracts:report"]);
     const location = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { scope }));
@@ -117,6 +117,66 @@ describe("the scopes the install offers", () => {
     expect(scopes).not.toContain("contracts:report");
     const { rows } = await harness.install.owner.query("SELECT scopes FROM oauth_consents WHERE user_id = $1 AND client_id = $2", [ana.userId, client.clientId]);
     expect(rows[0]?.scopes).not.toContain("contracts:report");
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (12) and (13); Technical decisions:
+  // T4. Clients built for OpenID-style servers ask for offline_access to get a refresh token, which every grant brings
+  // here anyway: the scope is ignored, never listed in scopes_supported, never shown on the consent screen and never
+  // among the scopes of the token's answer; a request that names it alone gets the default scopes.
+  it("ignores offline_access: requests:read offline_access is approved as requests:read alone, with a refresh token", async () => {
+    const client = await harness.registerClient();
+    const pkce = pkcePair();
+    const consent = locationOf(await harness.authorize(ana.cookie, client, pkce, { scope: "requests:read offline_access" }));
+    expect(consent.pathname).toBe("/consent");
+    const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("requests:read: read the install");
+    expect(html).not.toContain("requests:write");
+    expect(html).not.toContain("offline_access");
+    const confirmed = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve`, {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", accept: "text/html" },
+        body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+      }),
+    );
+    expect(confirmed.status).toBe(303);
+    const answer = await harness.handle(new Request(locationOf(confirmed), { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    const code = locationOf(answer).searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    const exchanged = await harness.exchange(client, code, pkce);
+    expect(exchanged.status).toBe(200);
+    expect(exchanged.body["scope"]).toBe("requests:read");
+    expect(exchanged.body["refresh_token"]).toBeTypeOf("string");
+    const claims = JSON.parse(Buffer.from(String(exchanged.body["access_token"]).split(".")[1] ?? "", "base64url").toString("utf8")) as { scope: string };
+    expect(claims.scope.split(" ").filter((scope) => scope.includes(":"))).toEqual(["requests:read"]);
+    // The token reads requests and writes none.
+    const reads = await harness.api("GET", "/api/v1/inbox", { authorization: `Bearer ${String(exchanged.body["access_token"])}` });
+    expect(reads.status).toBe(200);
+    // A refresh keeps the scopes and brings a new refresh token, which offline_access stays out of.
+    const refreshed = await harness.refresh(client, String(exchanged.body["refresh_token"]));
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body["scope"]).toBe("requests:read");
+    expect(refreshed.body["refresh_token"]).toBeTypeOf("string");
+  });
+
+  it("gives a request that names only offline_access the default scopes, requests:read and requests:write", async () => {
+    const client = await harness.registerClient();
+    await harness.approve(ana.userId, client.clientId, ["requests:read", "requests:write"]);
+    const pkce = pkcePair();
+    const code = locationOf(await harness.authorize(ana.cookie, client, pkce, { scope: "offline_access" })).searchParams.get("code") ?? "";
+    const exchanged = await harness.exchange(client, code, pkce);
+    expect(exchanged.status).toBe(200);
+    expect(String(exchanged.body["scope"]).split(" ").sort()).toEqual(["requests:read", "requests:write"]);
+    expect(exchanged.body["refresh_token"]).toBeTypeOf("string");
+  });
+
+  it("does not list offline_access in scopes_supported", async () => {
+    for (const path of ["/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp"]) {
+      const body = (await (await harness.handle(new Request(`${URL_OF_INSTALL}${path}`))).json()) as { scopes_supported?: string[] };
+      expect(body.scopes_supported, path).not.toContain("offline_access");
+    }
   });
 
   it("gives a refresh token to a client that asks only for the scopes it needs", async () => {
