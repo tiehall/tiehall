@@ -212,7 +212,7 @@ export function digestText({ days, byRequest, more, inbox, settings }: { days: S
   return lines.join("\n") as ServerText;
 }
 
-/** The daily digest email, whose subject names only the days of the updates it lists, the first and the last. */
+/** The daily digest email, whose subject names only the days it covers, the first and the last. */
 export const DIGEST: EmailTemplate<{ days: ServerText; text: ServerText }> = {
   id: "email.digest",
   subject: ({ days }) => `Tiehall: your updates of ${days} (UTC)`,

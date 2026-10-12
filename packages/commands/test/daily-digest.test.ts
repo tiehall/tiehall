@@ -36,15 +36,16 @@ import { addTeam, callApi, joinTeams, openRequest, openRequestInTheWebUi, sendAp
 //
 // A digest covers every UTC day that ended since the last digest the user was
 // sent, at most the 7 latest, so a worker that was stopped catches up with one
-// email, whose subject names the first and last day of the updates it lists;
-// a user gets at most one digest a UTC day (decisions-from-groups-15-28:
-// design.md, Decisions this change rests on: D55 (48); design.md, Technical
-// decisions: T7).
+// email, whose subject names the first and last day it covers, whichever of
+// them its updates fall on; a user gets at most one digest a UTC day
+// (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55
+// (48); design.md, Technical decisions: T7).
 //
-// Events carry the database's time, so each digest here covers the UTC day on
-// which the test made its events, and runs just after that day ends, unless a
-// test moves its events to other days; each test has requesters of its own,
-// since each user gets one digest per day.
+// Events carry the database's time, so each digest here is the user's first,
+// which covers the 7 latest UTC days, the last of them the day on which the
+// test made its events, and runs just after that day ends, unless a test moves
+// its events to other days; each test has requesters of its own, since each
+// user gets one digest per day.
 
 let install: TestInstall;
 let sink: SmtpSink;
@@ -68,6 +69,8 @@ beforeAll(async () => {
     ["zoe", be],
     ["kai", be],
     ["lia", be],
+    ["uma", be],
+    ["ivo", be],
     ["dana", fe],
     ["bob", fe],
     ["eve", ops],
@@ -135,7 +138,8 @@ function emailsTo(login: string): { subject: string; text: string }[] {
     });
 }
 
-const digestSubject = (day: string) => `Tiehall: your updates of ${day} (UTC)`;
+/** The subject of a user's first digest, which covers the 7 latest UTC days that ended, the last of them this one. */
+const digestSubject = (day: string) => `Tiehall: your updates of ${new Date(Date.parse(`${day}T00:00:00Z`) - 6 * 24 * 3_600_000).toISOString().slice(0, 10)} to ${day} (UTC)`;
 
 describe("with SMTP set", () => {
   // requester-loop: Email for people, only when SMTP is set, "A status change goes to the daily digest" and "The
@@ -351,6 +355,39 @@ describe("a digest after a stopped worker", () => {
     expect(digest?.text).toContain("- 2026-11-19 18:00 request.message_posted");
     expect(digest?.text).not.toContain("2026-11-12");
     expect(digest?.text).toContain("2 updates");
+  });
+
+  /** The first and the last day that the user's digests after this day recorded they cover. */
+  async function recordedDays(login: string, after: string): Promise<{ first: string; last: string }[]> {
+    const { rows } = await install.owner.query<{ first: string; last: string }>(
+      "SELECT first_day::text AS first, day::text AS last FROM email_digests WHERE user_id = $1 AND day > $2 ORDER BY day",
+      [id(login), after],
+    );
+    return rows;
+  }
+
+  it("names in its subject every day it covers, and not only the days its updates fall on", async () => {
+    await lastDigestCovered("uma", "2026-11-02");
+    await commentsAt("uma", ["2026-11-04T16:30:00Z"]);
+    await runJob(emailDigests, new Date("2026-11-05T00:05:00Z"));
+    const [digest, ...others] = digestsTo("uma");
+    expect(others).toEqual([]);
+    expect(digest?.subject).toBe("Tiehall: your updates of 2026-11-03 to 2026-11-04 (UTC)");
+    expect(digest?.text).toContain("Your updates in Tiehall of 2026-11-03 to 2026-11-04 (UTC), 1 update, by request:");
+    // Over more than one day, each update's time names its day.
+    expect(digest?.text).toContain("- 2026-11-04 16:30 request.message_posted: a comment was posted");
+    expect(await recordedDays("uma", "2026-11-02")).toEqual([{ first: "2026-11-03", last: "2026-11-04" }]);
+  });
+
+  it("names the 7 latest days when it goes back no further, whichever of them its updates fall on", async () => {
+    await lastDigestCovered("ivo", "2026-11-01");
+    await commentsAt("ivo", ["2026-11-15T12:00:00Z"]);
+    await runJob(emailDigests, new Date("2026-11-20T00:05:00Z"));
+    const [digest, ...others] = digestsTo("ivo");
+    expect(others).toEqual([]);
+    expect(digest?.subject).toBe("Tiehall: your updates of 2026-11-13 to 2026-11-19 (UTC)");
+    expect(digest?.text).toContain("- 2026-11-15 12:00 request.message_posted: a comment was posted");
+    expect(await recordedDays("ivo", "2026-11-01")).toEqual([{ first: "2026-11-13", last: "2026-11-19" }]);
   });
 });
 

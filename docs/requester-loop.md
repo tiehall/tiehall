@@ -45,7 +45,7 @@ What the step cannot prove: An agent that drives your own signed-in browser can 
 The install sends email only when its operator has set the SMTP settings in `.env`; without them, every notice still reaches you through your web inbox. When it sends email:
 
 - A question is emailed right away to the person it is asked of: to the requester when the target team asks, and to the claimant when the requester's side asks. A question the requester's side posts before anyone has claimed the request is asked of no one person, and waits in the digest.
-- Every other update goes into a daily digest, sent at most once a UTC day, after the days it covers have ended. A digest covers the days since your last one, at most the 7 latest, so after the install's worker was stopped one email catches up, and its subject names the first and last day of its updates.
+- Every other update goes into a daily digest, sent at most once a UTC day, after the days it covers have ended. A digest covers the days since your last one, at most the 7 latest, so after the install's worker was stopped one email catches up, and its subject names the first and last day it covers.
 - Proposal notices, which ask for your confirmation, and receipts are sent as they happen.
 - On `/settings/email` you can turn the daily digest off, which also stops your teams' digests of potentially breaking API changes by email. You cannot turn off the email that is about you: proposal notices, receipts and the questions asked of you. When a team is the requester, as it is for contract changes whose author is not a member of the install, its emails go only to the members who turned them on for that team, on the same page.
 - Email goes to the primary verified email address of your GitHub account.

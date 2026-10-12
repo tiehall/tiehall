@@ -139,8 +139,9 @@ const TOPICS: Topic[] = [
       "`/settings/email`",
       "cannot turn off",
       "primary verified email address",
-      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (48).
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (48); design.md, Technical decisions: T7.
       "at most the 7 latest",
+      "first and last day it covers",
       "Tiehall's own fixed words",
     ],
   },

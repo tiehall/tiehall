@@ -43,11 +43,11 @@ import type { WorkerJob } from "./worker.ts";
 // sends nothing, a send that fails leaves no record, so the job sends it when
 // it runs again, and a run that cannot reach the database once the email went
 // out has recorded it already; days with nothing in them send nothing, and
-// stay for the next digest to cover. Its subject names the days of the
-// updates it lists, the first and the last, and its text only Tiehall's words
-// and each request's key, target team and URL, nothing anyone wrote. Without
-// SMTP, nothing is sent, and the days whose digest could not go out then still
-// go out within the hour SMTP is set.
+// stay for the next digest to cover. Its subject names the days it covers,
+// the first and the last, whichever of them its updates fall on, and its text
+// only Tiehall's words and each request's key, target team and URL, nothing
+// anyone wrote. Without SMTP, nothing is sent, and the days whose digest could
+// not go out then still go out within the hour SMTP is set.
 
 /** How many of the latest ended UTC days a digest covers at most. */
 export const DIGEST_DAYS = 7;
@@ -80,7 +80,7 @@ interface Digest {
   email: string;
   /** The first UTC day it covers, YYYY-MM-DD. */
   firstDay: string;
-  /** The days of the updates it lists, the first and the last. */
+  /** The days it covers, the first and the last, as its subject and text name them. */
   days: ReturnType<typeof serverDays>;
   /** Its updates, by request. */
   byRequest: DigestRequest[];
@@ -132,10 +132,11 @@ async function digestsOf(context: OrgContext, { until, installUrl }: { until: Da
     const kept = events.filter(({ type, data }) => !(type === "request.message_posted" && emailed.has(String(data["messageId"]))));
     if (kept.length === 0) continue;
     const listed = kept.slice(0, DIGEST_UPDATES);
-    const [first, last] = [kept[0]?.occurredAt ?? from, kept.at(-1)?.occurredAt ?? from];
-    const days = serverDays(first, last);
+    // From the first day it covers to the day that ended last.
+    const lastDay = new Date(until.getTime() - DAY_MS);
+    const days = serverDays(from, lastDay);
     // Over more than one day, each update's time names its day.
-    const withDay = serverDay(first) !== serverDay(last);
+    const withDay = serverDay(from) !== serverDay(lastDay);
     const page = await updatesPageOf(context, { events: listed, more: false, cursor: 0, installUrl });
     const byRequest = new Map<string, DigestRequest & { updates: DigestRequest["updates"][number][] }>();
     for (const update of page.events) {
@@ -152,7 +153,7 @@ async function digestsOf(context: OrgContext, { until, installUrl }: { until: Da
       request.updates.push({ at: updateTime(update.occurredAt, { withDay }), type: eventTypeText(update.type), said: updateSaid(update) });
     }
     const beyond = kept.length - listed.length + (more ? 1 : 0);
-    digests.push({ userId, email, firstDay: from.toISOString().slice(0, 10), days, byRequest: [...byRequest.values()], more: beyond, updates: kept.length });
+    digests.push({ userId, email, firstDay: serverDay(from), days, byRequest: [...byRequest.values()], more: beyond, updates: kept.length });
   }
   return digests;
 }
