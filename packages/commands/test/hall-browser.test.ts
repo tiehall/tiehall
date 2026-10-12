@@ -21,19 +21,20 @@ import { startWebApp, type WebApp } from "./support/web-app.ts";
 // (13)), against the web app as the image runs it and an install whose people
 // and agents act meanwhile. The script makes the page live, shows Pause motion
 // and holds a wait, so an agent's blocking question reaches the feed and the
-// team's count within 2 seconds; the toolbar and the map's place are laid out
-// from the first frame the page paints, before the script runs, so drawing the
-// map moves neither, whatever the widths of the system's font and the length
-// of the team names; the map draws a node per team, a line per pair, at most
-// 12 people and agents at work and at most 8 dots, each an SVG circle moved
-// through its cx and cy; Pause motion stops every animation and starts them again, and
-// reduced motion starts with it pressed; a hidden page holds no wait and
-// catches up once shown; a restart shows Reconnecting and then Live; an ended
-// session shows Signed out; 60 events while the page is held back make it read
-// its state again; 20 teams keep apart, and above 20 the others share a node;
-// a phone gets lists and no map; names and titles stay text; and a minute of
-// updates breaks no policy and leaves no style attribute. Pages are hidden by
-// telling them so, as a browser does when its tab goes to the back.
+// team's count within 2 seconds; the toolbar and the map's place, or on a phone
+// the lists, are laid out from the first frame the page paints, before the
+// script runs, so the page coming alive moves none of them, whatever the
+// widths of the system's font and the length of the team names; the map draws
+// a node per team, a line per pair, at most 12 people and agents at work and
+// at most 8 dots, each an SVG circle moved through its cx and cy; Pause motion
+// stops every animation and starts them again, and reduced motion starts with
+// it pressed; a hidden page holds no wait and catches up once shown; a restart
+// shows Reconnecting and then Live; an ended session shows Signed out; 60
+// events while the page is held back make it read its state again; 20 teams
+// keep apart, and above 20 the others share a node; a phone gets lists and no
+// map; names and titles stay text; and a minute of updates breaks no policy
+// and leaves no style attribute. Pages are hidden by telling them so, as a
+// browser does when its tab goes to the back.
 
 const EXAMPLE_AGENT = "https://client.example.com/tiehall.json";
 const MARKUP_CLIENT = randomUUID();
@@ -477,10 +478,11 @@ const TEAM_NAMES = {
   "a team's longest name": "Developer Experience, Platform Engineering, Build Infrastructure, Release Tooling and Internal Tools",
 } as const;
 
-// The widths run from a tablet's to a wide screen's: at each, the toolbar above the map keeps the lines it is laid out
-// on whatever its words, however long the team names in its filter and however wide its font sets them, so the map's
-// place stays where the first frame put it, although the live lamp's words before the script runs, "Not live: updates
-// need JavaScript", are wider than "Live", and Pause motion shows only once the script runs.
+// The widths run from a phone's to a wide screen's: at each, the toolbar keeps the lines it is laid out on whatever its
+// words, however long the team names in its filter and however wide its font sets them, so the map's place, and on a
+// phone, which has no map, the lists below the toolbar, stay where the first frame put them, although the live lamp's
+// words before the script runs, "Not live: updates need JavaScript", are wider than "Live", and Pause motion shows only
+// once the script runs.
 describe("the live hall's first frame", () => {
   const cases = [
     [1280, 800],
@@ -488,6 +490,8 @@ describe("the live hall's first frame", () => {
     [1024, 768],
     [960, 720],
     [768, 1024],
+    [390, 844],
+    [320, 640],
   ].flatMap(([width, height]) =>
     Object.keys(TEAM_NAMES).flatMap((names) => Object.keys(TEXT_WIDTHS).map((text) => [width ?? 0, height ?? 0, names as keyof typeof TEAM_NAMES, text as keyof typeof TEXT_WIDTHS] as const)),
   );
@@ -496,7 +500,9 @@ describe("the live hall's first frame", () => {
     await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES["short team names"]]);
   });
 
-  it.each(cases)("lays out the toolbar and the map's place from the first frame the page paints at %i by %i, with %s, in %s, before its script runs, so drawing the map moves neither", { timeout: 120_000 }, async (width, height, names, text) => {
+  it.each(cases)("lays out the toolbar, the map's place and the lists from the first frame the page paints at %i by %i, with %s, in %s, before its script runs, so its coming alive moves none of them", { timeout: 120_000 }, async (width, height, names, text) => {
+    // Under 768 CSS pixels, a phone's width, the script draws no map and the lists are the page.
+    const phone = width < 768;
     await install.owner.query("UPDATE teams SET name = $2 WHERE id = $1", [team["MOB"], TEAM_NAMES[names]]);
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
     // A case that fails closes its browser all the same, so the wait it held does not count against the next case's.
@@ -539,7 +545,7 @@ describe("the live hall's first frame", () => {
       };
       release();
       await page.locator("#live-words", { hasText: /^Live$/ }).waitFor();
-      await page.locator("#hall-map .node").first().waitFor();
+      if (!phone) await page.locator("#hall-map .node").first().waitFor();
       await page.locator("#pause-motion").waitFor();
       const drawn = (await page.evaluate(`(${STAGE_LAYOUT})()`)) as { map: number[]; feed: number[]; columns: string };
       const toolbar = (await page.evaluate(`(${TOOLBAR_LAYOUT})()`)) as Record<string, number[]>;
@@ -549,8 +555,12 @@ describe("the live hall's first frame", () => {
       expect(first.faces).toBe(0);
       await expect(page.evaluate("document.fonts.size")).resolves.toBe(0);
       expect(fonts).toEqual([]);
-      expect(drawn.map[2]).toBeGreaterThan(0);
-      expect(drawn.map[3]).toBeGreaterThan(0);
+      if (phone) {
+        expect(drawn.map).toEqual([0, 0, 0, 0]);
+      } else {
+        expect(drawn.map[2]).toBeGreaterThan(0);
+        expect(drawn.map[3]).toBeGreaterThan(0);
+      }
       expect(first.layout.map).toEqual(drawn.map);
       expect(first.layout.columns).toBe(drawn.columns);
       if (first.layout.feed !== null) expect(first.layout.feed.slice(0, 3)).toEqual(drawn.feed.slice(0, 3));

@@ -94,7 +94,7 @@ describe("the live hall without scripts", () => {
     await page.getByRole("heading", { level: 1, name: "Live hall" }).waitFor();
     for (const name of ["At work", "On the line", "Teams", "Lines between teams"]) await expect(page.getByRole("heading", { name, exact: true }).isVisible(), name).resolves.toBe(true);
     await expect(page.locator("#live-state").getByText("Not live: updates need JavaScript").isVisible()).resolves.toBe(true);
-    // The lamp's unseen copy, which holds its place on a wide screen while a script runs, takes no place without one.
+    // The lamp's unseen copy, which holds its place while a script runs, takes no place without one.
     await expect(page.locator(".live-reserve").isVisible()).resolves.toBe(false);
     await expect(page.locator("#at-work").getByText("ayse's agent · Example Agent (client.example.com)").isVisible()).resolves.toBe(true);
     await expect(page.locator("#feed").getByText("A blocking question was posted").isVisible()).resolves.toBe(true);

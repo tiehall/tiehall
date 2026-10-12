@@ -2726,7 +2726,7 @@ textarea[aria-invalid="true"] {
 }
 
 /* The live lamp's place in the title: the lamp, and an unseen copy of it that says what the lamp says before the script
-   runs, which takes a place only on a wide screen in a browser that runs scripts (below). */
+   runs, which takes a place only in a browser that runs scripts (below). */
 .live-place {
   display: grid;
   align-items: center;
@@ -2806,17 +2806,17 @@ textarea[aria-invalid="true"] {
   }
 }
 
-/* The toolbar above the map's place, in a browser that runs scripts, keeps the lines it is laid out on as the page
-   comes alive, however wide the system's font sets its words and however long the team names in its filter are
-   (web-ui: Text in the system's fonts; design.md, Design: Type, The live hall; D61 (1)): before the script runs, the
-   live lamp says "Not live: updates need JavaScript", wider than "Live", and Pause motion is hidden. A toolbar whose
-   title and actions changed their widths would take one line in one state and two in another, and move the map below
-   it, so neither changes its width. Pause motion keeps its place among the actions from the first frame, unseen,
-   unreached by the keyboard and unread until the script shows it; without scripts it takes no place at all. Below
-   1,200 CSS pixels, the title and the live lamp take one line and the actions the next. From 1,200 CSS pixels the
-   title keeps the lamp's place as wide as its first words, with the unseen copy of the lamp that says them, so the
-   toolbar takes one line where its title and actions fit side by side and two where they do not, before the script
-   runs and after. */
+/* The toolbar, in a browser that runs scripts, keeps the lines it is laid out on as the page comes alive, at every width,
+   however wide the system's font sets its words and however long the team names in its filter are (web-ui: Text in the
+   system's fonts; design.md, Design: Type, The live hall; D61 (1)): before the script runs, the live lamp says "Not
+   live: updates need JavaScript", wider than "Live", and Pause motion is hidden. A toolbar whose title and actions
+   changed their widths would take one line in one state and two in another, and move what is below it, the map or, on
+   a phone, the lists, so neither changes its width. The title keeps the lamp's place as wide as its first words, with
+   the unseen copy of the lamp that says them, and Pause motion keeps its place among the actions, unseen, unreached by
+   the keyboard and unread until the script shows it; without scripts neither takes a place at all. Under 768 CSS
+   pixels the actions take the lines below the title; from 768 to 1,199 the title takes one line and the actions the
+   next; from 1,200 the toolbar takes one line where its title and actions fit side by side and two where they do not;
+   each the same before the script runs and after. */
 @media (scripting: enabled) and (min-width: 768px) and (max-width: 1199px) {
   .hall-title {
     flex-basis: 100%;
@@ -2828,9 +2828,7 @@ textarea[aria-invalid="true"] {
     display: inline-flex !important;
     visibility: hidden;
   }
-}
 
-@media (scripting: enabled) and (min-width: 1200px) {
   .live-place > .live-reserve {
     display: inline-flex;
     visibility: hidden;
