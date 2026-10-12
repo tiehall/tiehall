@@ -1,0 +1,1 @@
+ALTER TABLE "pull_request_links" ADD COLUMN "target_side" boolean;

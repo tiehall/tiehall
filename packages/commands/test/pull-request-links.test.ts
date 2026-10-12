@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { addInstallation } from "./support/apis.ts";
 import { startTestInstall, type TestInstall } from "./support/install.ts";
 import { addUser } from "./support/members.ts";
 import { addTeam, callApi, joinTeams, openRequest, sessionOf, tokenOf } from "./support/requests.ts";
@@ -22,6 +23,10 @@ const team: Record<string, string> = {};
 let alice: string;
 let bob: string;
 let carol: string;
+/** Dave, of FE, the target team, who holds no claim. */
+let dave: string;
+/** acme/web, by GitHub's id, which a connected installation covers, so its merges close requests. */
+const ACME_WEB = { id: 9101, fullName: "acme/web" };
 /** The request each test links to, which Alice of team BE opens to team FE, and Bob of FE claims, before it. */
 let key: string;
 let requestId: string;
@@ -32,9 +37,12 @@ beforeAll(async () => {
   alice = await addUser(install.owner, { login: "alice" });
   bob = await addUser(install.owner, { login: "bob" });
   carol = await addUser(install.owner, { login: "carol" });
+  dave = await addUser(install.owner, { login: "dave" });
   await joinTeams(install.owner, alice, team["BE"] ?? "");
   await joinTeams(install.owner, bob, team["FE"] ?? "");
   await joinTeams(install.owner, carol, team["OPS"] ?? "");
+  await joinTeams(install.owner, dave, team["FE"] ?? "");
+  await addInstallation(install.owner, { account: "acme", repositories: [ACME_WEB] });
 });
 
 afterAll(async () => {
@@ -133,5 +141,74 @@ describe("linking a pull request", () => {
 
   it("refuses a key that names no request with 404", async () => {
     expect((await link(bob, "https://github.com/acme/web/pull/88", "FE-9999")).status).toBe(404);
+  });
+});
+
+// Only the target side's links close on merge (requests: Linked PRs and done on merge; decisions-from-groups-15-28,
+// D55 (67); design.md, Technical decisions: T9): a link made by the request's claimant or a member of its target team
+// counts, and one by anyone else is recorded and shown, and its merge closes nothing. Whose side a link is on is
+// decided when it is made.
+describe("a linked pull request's merge", () => {
+  let number = 500;
+
+  /** The pull request of acme/web merges a few seconds from now, after the link, as GitHub tells it. */
+  async function merges(pullRequest: number): Promise<string[]> {
+    const done = (await install.execute(
+      "requests.close_on_merge",
+      { kind: "integration_event", source: "github" },
+      { repositoryId: ACME_WEB.id, repository: ACME_WEB.fullName, number: pullRequest, mergedAt: new Date(Date.now() + 5_000).toISOString(), mentions: [] },
+    )) as { done: string[] };
+    return done.done;
+  }
+
+  it.each([
+    ["Alice, of the requester side", () => alice],
+    ["Carol, of neither side", () => carol],
+  ])("closes nothing for a link by %s, which is recorded and shown", async (_who, linker) => {
+    number += 1;
+    const answer = await link(linker(), `https://github.com/acme/web/pull/${number}`);
+    expect(answer.status).toBe(200);
+    expect(answer.body.pullRequest).toMatchObject({ repository: "acme/web", number, linkedBy: { id: linker() } });
+    expect((await stored()).events).toContain("request.pull_request_linked");
+
+    expect(await merges(number)).toEqual([]);
+
+    const { rows } = await install.owner.query("SELECT state FROM requests WHERE id = $1", [requestId]);
+    expect(rows[0]?.state).toBe("claimed");
+  });
+
+  it.each([
+    ["Bob, the claimant", () => bob],
+    ["Dave, another member of the target team", () => dave],
+  ])("closes the request for a link by %s", async (_who, linker) => {
+    number += 1;
+    expect((await link(linker(), `https://github.com/acme/web/pull/${number}`)).status).toBe(200);
+
+    expect(await merges(number)).toEqual([key]);
+
+    const { rows } = await install.owner.query("SELECT state FROM requests WHERE id = $1", [requestId]);
+    expect(rows[0]?.state).toBe("done");
+  });
+
+  it("closes the request for a link its claimant made, though they have left the target team since", async () => {
+    number += 1;
+    expect((await link(bob, `https://github.com/acme/web/pull/${number}`)).status).toBe(200);
+    await install.owner.query("DELETE FROM team_members WHERE user_id = $1 AND team_id = $2", [bob, team["FE"]]);
+    try {
+      expect(await merges(number)).toEqual([key]);
+    } finally {
+      await joinTeams(install.owner, bob, team["FE"] ?? "");
+    }
+  });
+
+  it("closes nothing for a link Alice made before she joined the target team", async () => {
+    number += 1;
+    expect((await link(alice, `https://github.com/acme/web/pull/${number}`)).status).toBe(200);
+    await joinTeams(install.owner, alice, team["FE"] ?? "");
+    try {
+      expect(await merges(number)).toEqual([]);
+    } finally {
+      await install.owner.query("DELETE FROM team_members WHERE user_id = $1 AND team_id = $2", [alice, team["FE"]]);
+    }
   });
 });

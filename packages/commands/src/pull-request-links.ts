@@ -25,7 +25,12 @@ import type { OrgContext } from "./with-org.ts";
 //
 // Reading: the spec names no side for linking, as it does for claiming or
 // withdrawing, so any member of the install may link, as any member may read
-// the request; nor does it limit linking by the request's state.
+// the request; nor does it limit linking by the request's state. Only the
+// target side's links close the request on merge, so a link records, when it
+// is made, whether its linker is the request's claimant or a member of its
+// target team (decisions-from-groups-15-28, D55 (67); design.md, Technical
+// decisions: T9): a link by anyone else is recorded and shown, and its merge
+// closes nothing.
 //
 // A pull request is linked to a request once. GitHub names repositories
 // without regard to case, so the link keeps the repository in lower case, and
@@ -160,6 +165,9 @@ export const PULL_REQUEST_LINK_HANDLERS: Handlers = {
     const linked = await linkOf(context, row.id, pullRequest);
     if (linked !== undefined) return { request: await requestView(context, row.id), pullRequest: linked };
     const teamId = await teamActedFor(context, userId, row);
+    // Whose side the link is on, decided as it is made: the claimant's or the target team's, or another.
+    const ofTargetTeam = (await teamsOfMember(context, userId)).some(({ id }) => id === row.targetTeamId);
+    const targetSide = ofTargetTeam || row.claimantUserId === userId;
     const answer = await context.write(async (writer) => {
       await writer.changesRequest(row.id);
       const [created] = await writer.tx
@@ -171,6 +179,7 @@ export const PULL_REQUEST_LINK_HANDLERS: Handlers = {
           repositoryName: pullRequest.name,
           number: pullRequest.number,
           ...stampOf(writer.provenance, teamId),
+          targetSide,
           // By the database's clock, which close on merge compares GitHub's merge times with (close-on-merge.ts).
           linkedAt: sql`now()`,
         })
@@ -184,7 +193,6 @@ export const PULL_REQUEST_LINK_HANDLERS: Handlers = {
     // A pull request that had already merged, linked by a member of the target team while the state allows done: a done proposal too.
     const prepared = context.prepared;
     if (prepared?.mergedAt === undefined || prepared.mergedAt === null) return answer;
-    const ofTargetTeam = (await teamsOfMember(context, userId)).some(({ id }) => id === row.targetTeamId);
     if (!ofTargetTeam || !changeRequest(await lifecycleOf(context, row), { kind: "done" }).ok) return answer;
     // The provider pull request of the request's own change set never counts as one that closes it.
     if (prepared.repositoryId !== undefined && (await isOwnProviderPullRequest(context, row.id, prepared.repositoryId, pullRequest.number))) return answer;

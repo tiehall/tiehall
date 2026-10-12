@@ -1838,6 +1838,13 @@ export const pullRequestLinks = pgTable(
     /** The team the user acted for. */
     teamId: uuid("team_id"),
     linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Whether the linker was the request's claimant or a member of its target
+     * team when they made the link, which only then closes the request on
+     * merge (decisions-from-groups-15-28, D55 (67)); null for a link made
+     * before Tiehall recorded it.
+     */
+    targetSide: boolean("target_side"),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.id] }),

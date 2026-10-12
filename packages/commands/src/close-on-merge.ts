@@ -1,6 +1,6 @@
 import { closeOnMerge, MENTIONS_MAX } from "@tiehall/catalog";
 import { REQUEST_KEY, Refusal, requestStateChanged, type RequestLifecycle } from "@tiehall/core";
-import { contractChangeRequests, contractChangeSets, events, pullRequestLinks, pullRequestMentions, pullRequestMerges } from "@tiehall/db";
+import { contractChangeRequests, contractChangeSets, events, pullRequestLinks, pullRequestMentions, pullRequestMerges, requests, teamMembers } from "@tiehall/db";
 import { and, eq, lte, sql } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { coveringInstallation } from "./github-installations.ts";
@@ -30,10 +30,14 @@ export function mergedText({ pullRequest, key }: { pullRequest: string; key: str
 // the poll found, so a removed person's merge closes the request in nobody's
 // name. The command moves a request to done, as a system action with no
 // proposal and no confirmation, when:
-// - the pull request was linked to it at or before the second it merged, or
-//   mentioned its key in its title, body or branch name before it merged, a
-//   key written with its team's current key, an earlier key of its team, or a
-//   key it had before a confirmed reassignment, in either case;
+// - the pull request was linked to it at or before the second it merged by
+//   the request's claimant or a member of its target team, as the link
+//   recorded when it was made (pull-request-links.ts), or mentioned its key
+//   in its title, body or branch name before it merged, a key written with
+//   its team's current key, an earlier key of its team, or a key it had
+//   before a confirmed reassignment, as written: its team key in upper case
+//   (decisions-from-groups-15-28, D55 (66), (67); design.md, Technical
+//   decisions: T9);
 // - it was claimed at or before the second the pull request merged, and is
 //   claimed still: GitHub gives merge times to the second, so a claim taken in
 //   the second a pull request merged counts as taken before the merge;
@@ -71,25 +75,27 @@ export function mergedText({ pullRequest, key }: { pullRequest: string; key: str
 // processing of the same merge, which a redelivery, a delivery about an edit
 // or the poll brings, changes nothing.
 //
-// Reading: "mentions the key" is read without regard to case, since branch
-// names are often written in lower case, such as fe-142-new-fields; the
-// mention is a request key with no letter or digit right before it and no
-// digit right after it.
+// "Mentions the key" reads the key as written, as Tiehall shows it: the team
+// key in upper case, a hyphen and the number, with no letter or digit right
+// before it or right after it, so a branch such as renovate/node-22, or text
+// such as utf-8, mentions no request (decisions-from-groups-15-28, D55 (66)).
+// A link made before Tiehall recorded its side counts when its linker is the
+// claimant, or a member of the target team, at the merge.
 //
 // The locks follow the lock order (event-sequence.ts): the record of the
 // merge, which a second processing of the same merge waits on and then finds,
 // then the rows of the requests it may close, in the order of their ids, then
 // the pending proposals of those it closes, all before the first event.
 
-/** A request key as a pull request's text may write it, in either case: a team key, a hyphen and a number. */
-const MENTION = /(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-([1-9][0-9]{0,9})(?![0-9])/g;
+/** A request key as a pull request's text writes it: a team key in upper case, a hyphen and a number, not inside a longer word or number. */
+const MENTION = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,9})(?![A-Za-z0-9])/g;
 
-/** The request keys these texts mention, in upper case, each once, in the order they first appear; at most MENTIONS_MAX. */
+/** The request keys these texts mention, as written, each once, in the order they first appear; at most MENTIONS_MAX. */
 export function mentionedKeys(...texts: readonly string[]): string[] {
   const keys: string[] = [];
   for (const text of texts) {
     for (const match of text.matchAll(MENTION)) {
-      const key = `${(match[1] ?? "").toUpperCase()}-${match[2] ?? ""}`;
+      const key = `${match[1] ?? ""}-${match[2] ?? ""}`;
       if (!REQUEST_KEY.test(key) || keys.includes(key)) continue;
       keys.push(key);
       if (keys.length === MENTIONS_MAX) return keys;
@@ -146,12 +152,19 @@ async function closesOnMerge(context: HandlerContext, row: RequestRow, lifecycle
   return Math.floor(claimedAt.getTime() / 1000) * 1000 <= mergedAt.getTime();
 }
 
-/** The ids of the requests the merged pull request may close: linked at or before the second it merged, or mentioned. */
+/**
+ * The ids of the requests the merged pull request may close: linked at or
+ * before the second it merged by the target side, or mentioned. A link counts
+ * when its linker was the request's claimant or a member of its target team
+ * when it was made; one made before Tiehall recorded that, when its linker is
+ * either at the merge.
+ */
 async function candidatesOf(context: HandlerContext, input: { repository: string; number: number; mergedAt: Date; mentions: readonly string[] }): Promise<string[]> {
   const [owner = "", name = ""] = input.repository.toLowerCase().split("/");
   const linked = await context.tx
     .select({ requestId: pullRequestLinks.requestId })
     .from(pullRequestLinks)
+    .innerJoin(requests, and(eq(requests.orgId, pullRequestLinks.orgId), eq(requests.id, pullRequestLinks.requestId)))
     .where(
       and(
         eq(pullRequestLinks.orgId, context.orgId),
@@ -159,6 +172,10 @@ async function candidatesOf(context: HandlerContext, input: { repository: string
         eq(pullRequestLinks.repositoryName, name),
         eq(pullRequestLinks.number, input.number),
         sql`date_trunc('second', ${pullRequestLinks.linkedAt}) <= ${input.mergedAt.toISOString()}::timestamptz`,
+        sql`(${pullRequestLinks.targetSide} OR (${pullRequestLinks.targetSide} IS NULL AND (
+              ${pullRequestLinks.actorUserId} = ${requests.claimantUserId}
+              OR EXISTS (SELECT 1 FROM ${teamMembers} WHERE ${teamMembers.orgId} = ${pullRequestLinks.orgId}
+                           AND ${teamMembers.teamId} = ${requests.targetTeamId} AND ${teamMembers.userId} = ${pullRequestLinks.actorUserId}))))`,
       ),
     );
   const ids = new Set(linked.map(({ requestId }) => requestId));

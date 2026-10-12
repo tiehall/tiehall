@@ -80,7 +80,7 @@ export const MENTIONS_MAX = 50;
 export const closeOnMerge = defineCommand({
   id: "requests.close_on_merge",
   summary:
-    "Move to done the requests a merged pull request closes: those it was linked to, or whose key it mentions in its title, body or branch name, that were claimed before it merged and are claimed, in_progress or needs_info.",
+    "Move to done the requests a merged pull request closes: those its claimant or a member of its target team linked it to, or whose key, as written, it mentions in its title, body or branch name, that were claimed before it merged and are claimed, in_progress or needs_info.",
   input: z.object({
     repositoryId: z.int().min(1).meta({ description: "The pull request's repository, by GitHub's id." }),
     repository: z.string().regex(GITHUB_REPOSITORY).meta({ description: "The pull request's repository, as owner/name." }),

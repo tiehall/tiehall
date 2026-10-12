@@ -174,10 +174,10 @@ describe("a pull request that qualifies", () => {
     expect((await stateOf(request.id)).state).toBe("done");
   });
 
-  it("moves a request whose key is in the title, written in lower case, or in the body, to done, also while it waits on a question", async () => {
+  it("moves a request whose key is in the title or in the body to done, also while it waits on a question", async () => {
     const titled = await feRequest();
     await install.execute("requests.claim", sessionOf(bob), { key: titled.key });
-    await mergedPullRequest("acme/web", { title: `Use the new fields (${titled.key.toLowerCase()})` });
+    await mergedPullRequest("acme/web", { title: `Use the new fields (${titled.key})` });
     expect((await stateOf(titled.id)).state).toBe("done");
 
     const waiting = await feRequest();
@@ -264,6 +264,33 @@ describe("a pull request that qualifies", () => {
 });
 
 describe("a pull request that does not qualify", () => {
+  // Request keys are matched as written: the team key in upper case, a hyphen and the number, not inside a longer word
+  // or number (requests: Linked PRs and done on merge; decisions-from-groups-15-28, D55 (66); design.md, Technical
+  // decisions: T9).
+  it("leaves claimed requests alone whose keys it writes in lower case, such as renovate/node-22 and utf-8, and closes the one it writes as Tiehall does", async () => {
+    // NODE-22 and UTF-8, claimed by Bob, whose teams are named like a package and an encoding.
+    const claimed: Record<string, { key: string; id: string }> = {};
+    for (const [teamKey, number] of [["NODE", 22], ["UTF", 8]] as const) {
+      const teamId = await addTeam(install.owner, teamKey);
+      await joinTeams(install.owner, bob, teamId);
+      await install.owner.query("INSERT INTO request_counters (org_id, team_id, last_number) SELECT org_id, id, $2 FROM teams WHERE id = $1", [teamId, number - 1]);
+      const request = await openRequestInTheWebUi<{ key: string; id: string }>(install, alice, { targetTeam: teamKey });
+      expect(request.key).toBe(`${teamKey}-${number}`);
+      await install.execute("requests.claim", sessionOf(bob), { key: request.key });
+      claimed[teamKey] = request;
+    }
+    const fe = await feRequest();
+    await install.execute("requests.claim", sessionOf(bob), { key: fe.key });
+
+    await mergedPullRequest("acme/web", { title: "Bump node to 22 and read files as utf-8", head: "renovate/node-22", body: `Fixes ${fe.key.toLowerCase()}.` });
+
+    for (const request of [claimed["NODE"], claimed["UTF"], fe]) expect((await stateOf(request?.id ?? "")).state, request?.key).toBe("claimed");
+
+    await mergedPullRequest("acme/web", { body: `Fixes ${fe.key}.` });
+
+    expect((await stateOf(fe.id)).state).toBe("done");
+  });
+
   it("leaves a request whose claim was released before the merge open", async () => {
     const request = await feRequest();
     await install.execute("requests.claim", sessionOf(bob), { key: request.key });
@@ -622,10 +649,12 @@ describe("the keys recorded while a pull request is open", () => {
 });
 
 describe("the request keys a pull request mentions", () => {
-  it("are found in either case, each once, with no letter or digit right before and no digit right after", () => {
-    expect(mentionedKeys("Fix FE-142 and fe-142", "", "fe-143-new-fields")).toEqual(["FE-142", "FE-143"]);
-    expect(mentionedKeys("feature/WEB-7: closes (ops-12).")).toEqual(["WEB-7", "OPS-12"]);
-    expect(mentionedKeys("9FE-142, FE-1420x, FE-0, F-1, FE-")).toEqual(["FE-1420"]);
+  // decisions-from-groups-15-28, D55 (66): as written, the team key in upper case, a hyphen and the number.
+  it("are found only as written, each once, with no letter or digit right before or after", () => {
+    expect(mentionedKeys("Fix FE-142 and fe-142", "", "fe-143-new-fields")).toEqual(["FE-142"]);
+    expect(mentionedKeys("feature/WEB-7: closes (ops-12).", "FE-143-new-fields", "FE-144_fix")).toEqual(["WEB-7", "FE-143", "FE-144"]);
+    expect(mentionedKeys("renovate/node-22", "Read files as utf-8", "Fe-142, fE-142")).toEqual([]);
+    expect(mentionedKeys("9FE-142, FE-1420x, xFE-142, FE-0, F-1, FE-")).toEqual([]);
   });
 
   it("are read up to 50", () => {
