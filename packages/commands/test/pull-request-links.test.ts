@@ -201,7 +201,7 @@ describe("a linked pull request's merge", () => {
     }
   });
 
-  it("closes nothing for a link Alice made before she joined the target team", async () => {
+  it("closes nothing for a link Alice made before they joined the target team", async () => {
     number += 1;
     expect((await link(alice, `https://github.com/acme/web/pull/${number}`)).status).toBe(200);
     await joinTeams(install.owner, alice, team["FE"] ?? "");
