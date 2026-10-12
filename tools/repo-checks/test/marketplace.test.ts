@@ -174,16 +174,33 @@ function entriesUnder(folder: string, prefix = ""): string[] {
 }
 
 /** Runs a hook's command as Claude Code runs it: with sh, from the plugin's copy, with the hook's input on standard input. */
-function runHook(command: string, env: Record<string, string>): Promise<{ code: number | null; stdout: string }> {
+function runHook(
+  command: string,
+  env: Record<string, string>,
+  input = JSON.stringify({ session_id: "session-1", hook_event_name: "SessionStart" }),
+): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn("/bin/sh", ["-c", command], { env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, stdout }));
-    child.stdin.end(JSON.stringify({ session_id: "session-1", hook_event_name: "SessionStart" }));
+    // A hook that exits without reading its input closes the pipe; Claude Code goes on, and so does this.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") reject(error);
+    });
+    child.stdin.end(input);
   });
 }
+
+describe("running a hook as Claude Code runs it", () => {
+  it("takes a hook that exits before it reads its input", async () => {
+    // A hook need not read its input, and on a busy runner it can exit before
+    // the input is written. Input larger than a pipe holds makes that certain.
+    const result = await runHook("exit 0", { PATH: "/usr/bin:/bin" }, "x".repeat(1024 * 1024));
+    expect(result.code).toBe(0);
+  });
+});
 
 describe("installing the plugin from the repository", () => {
   it(
