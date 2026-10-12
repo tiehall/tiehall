@@ -9,7 +9,10 @@ import { addTeam, callApi, joinTeams, oauthTokenOf, openRequest, sessionOf, toke
 // D28 #50, D30 (4)). Setting the flag and clearing it each append a domain
 // event on the request, in the transaction of the write that does it, which
 // the pull readers carry to the people on the request; every read of the
-// request states whether it is flagged.
+// request states whether it is flagged. Tiehall sets the flag, so its event is
+// recorded as the system's, and reaches the requester even when the
+// requester's own agent made the write that set it, which the readers leave
+// out as the requester's own (requester-loop: What whats_new covers).
 
 let clock = new Date("2026-10-01T08:59:00Z");
 const at = (time: string) => {
@@ -45,12 +48,53 @@ beforeEach(async () => {
 
 const comment = (user: string) => callApi(install, tokenOf(user), "POST", `/api/v1/requests/${key}/messages`, { kind: "comment", body: "Any news?" });
 
-/** Seven agent writes between 09:00 and 09:04, which flag the request. */
-async function flag(): Promise<void> {
+/** Seven agent writes between 09:00 and 09:04, by Bob's and Alice's agents in turn, which flag the request; the seventh is by this user's agent. */
+async function flag(seventh = bob): Promise<void> {
+  const other = seventh === bob ? alice : bob;
   for (let index = 0; index < 7; index++) {
     at(`09:0${Math.floor((index * 40) / 60)}:${String((index * 40) % 60).padStart(2, "0")}`);
-    expect((await comment(index % 2 === 0 ? bob : alice)).status).toBe(200);
+    expect((await comment(index % 2 === 0 ? seventh : other)).status).toBe(200);
   }
+}
+
+interface Update {
+  number: number;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+/** Every update a reader holds after its cursor, page after page, each acknowledged so the next follows it. */
+async function readToTheEnd(page: (acknowledge: number | undefined) => Promise<{ events: Update[]; more: boolean }>): Promise<Update[]> {
+  const read: Update[] = [];
+  for (let acknowledge: number | undefined; ; ) {
+    const { events, more } = await page(acknowledge);
+    read.push(...events);
+    if (!more) return read;
+    acknowledge = events.at(-1)?.number;
+  }
+}
+
+/** Every update of Alice's whats_new, as Alice's CLI reads it. */
+function alicesWhatsNew(): Promise<Update[]> {
+  const reader = oauthTokenOf(alice, "tiehall-cli", "cli");
+  return readToTheEnd(async (acknowledge) => {
+    const page = await callApi(install, reader, "POST", "/api/v1/updates", { ...(acknowledge === undefined ? {} : { acknowledge }), limit: 50 });
+    expect(page.status).toBe(200);
+    return page.body;
+  });
+}
+
+/** Every update of Alice's web inbox feed, as the web UI reads it for Alice. */
+function alicesWebInboxFeed(): Promise<Update[]> {
+  const session = sessionOf(alice);
+  return readToTheEnd(async (acknowledge) => {
+    const page =
+      acknowledge === undefined
+        ? await install.web(session).read<{ events: Update[]; more: boolean }>("inbox.updates", { limit: 50 })
+        : await install.web(session).write<{ events: Update[]; more: boolean }>("inbox.updates", { acknowledge, limit: 50 }, install.fromThePage(session));
+    if (!page.ok) throw new Error(`inbox.updates answered ${JSON.stringify(page.problem)}`);
+    return page.output;
+  });
 }
 
 async function eventsOfTheRequest(): Promise<{ number: number; type: string; actor_kind: string }[]> {
@@ -83,17 +127,29 @@ describe("setting the flag", () => {
 
   it("reaches the requester's pull reader", async () => {
     await flag();
-    // whats_new, page after page, each acknowledged so the next follows it.
-    const reader = oauthTokenOf(alice, "tiehall-cli", "cli");
-    const read: { type: string; data: Record<string, unknown> }[] = [];
-    let page = await callApi(install, reader, "POST", "/api/v1/updates", { limit: 50 });
-    for (;;) {
-      expect(page.status).toBe(200);
-      read.push(...page.body.events);
-      if (page.body.more !== true) break;
-      page = await callApi(install, reader, "POST", "/api/v1/updates", { acknowledge: page.body.events.at(-1).number, limit: 50 });
-    }
-    expect(read).toContainEqual(expect.objectContaining({ type: "request.needs_human_flagged", data: { requestId } }));
+    expect(await alicesWhatsNew()).toContainEqual(expect.objectContaining({ type: "request.needs_human_flagged", data: { requestId } }));
+  });
+
+  // agent-safety: The needs_human flag is visible and reaches the people on the request, "The requester learns that a
+  // request needs a human", whichever agent made the seventh write.
+  it("is recorded as the system's, and reaches the requester's readers when the requester's own agent set it", async () => {
+    await flag(alice);
+    // The agents' reader and the reader people read, each of which leaves out Alice's own events: here, the opening
+    // and Alice's agent's four messages.
+    const flagged = expect.objectContaining({ type: "request.needs_human_flagged", data: { requestId } });
+    const whatsNew = await alicesWhatsNew();
+    expect(whatsNew.filter(({ data }) => data["requestId"] === requestId).map(({ type }) => type)).toEqual([
+      "request.message_posted",
+      "request.message_posted",
+      "request.message_posted",
+      "request.needs_human_flagged",
+    ]);
+    expect(await alicesWebInboxFeed()).toContainEqual(flagged);
+    const { rows } = await install.owner.query<{ actor_kind: string; actor_user_id: string | null }>(
+      "SELECT actor_kind, actor_user_id FROM events WHERE type = 'request.needs_human_flagged' AND data->>'requestId' = $1",
+      [requestId],
+    );
+    expect(rows).toEqual([{ actor_kind: "system", actor_user_id: null }]);
   });
 
   it("is stated by every read of the request, for agents and in the web UI", async () => {

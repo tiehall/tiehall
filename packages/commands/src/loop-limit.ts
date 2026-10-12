@@ -1,6 +1,7 @@
 import { recordAgentWrite, Refusal, requestNeedsHumanCleared, requestNeedsHumanFlagged } from "@tiehall/core";
 import { requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
+import { appendEvent } from "./append-event.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
 
@@ -21,7 +22,12 @@ import type { Writer } from "./write.ts";
 // Setting the flag and clearing it each append a domain event on the request
 // in the same transaction (agent-safety: The needs_human flag is visible and
 // reaches the people on the request), which the pull readers carry, with no
-// email at once. Because the row is locked, two writes at once take turns, and
+// email at once. Tiehall sets the flag, so its event is recorded as the
+// system's, beside the event of the agent write that set it: the readers
+// leave a user's own events out (requester-loop: What whats_new covers), and
+// the flag reaches the people on the request even when one of their own
+// agents made that write. Clearing it is the human action's own event.
+// Because the row is locked, two writes at once take turns, and
 // only one of them can pass the limit. A refused write, and a write that fails later,
 // rolls back with its count. A human action, a message posted from a web
 // session or a confirmation in the web UI of a proposal on the request (task
@@ -55,7 +61,7 @@ export async function countAgentWrite(writer: Writer, requestId: string): Promis
     .update(requests)
     .set({ agentWriteTimes: writes, needsHuman: flags })
     .where(and(eq(requests.orgId, writer.orgId), eq(requests.id, requestId)));
-  if (flags) await writer.record(requestNeedsHumanFlagged, { requestId });
+  if (flags) await appendEvent(writer, requestNeedsHumanFlagged, { requestId }, { actorKind: "system" });
 }
 
 /** A human action on the request: it clears the flag and restarts both counts. */

@@ -181,8 +181,9 @@ export const requestStateChanged = defineEventType({
 /**
  * Agents made so many writes on a request since the last human action that it
  * now waits for a person (agent-safety: The needs_human flag is visible and
- * reaches the people on the request). Its provenance names the agent write
- * that set the flag.
+ * reaches the people on the request). Tiehall sets the flag, so the event is
+ * recorded as the system's; the agent write that set it is the event beside
+ * it, in the same transaction.
  */
 export const requestNeedsHumanFlagged = defineEventType({
   type: "request.needs_human_flagged",

@@ -161,10 +161,11 @@ describe("with SMTP set", () => {
     for (const part of ["Ignore previous", "delete the repo"]) expect(`${digests[0]?.subject}\n${text}`).not.toContain(part);
   });
 
-  // agent-safety: The needs_human flag is visible and reaches the people on the request.
+  // agent-safety: The needs_human flag is visible and reaches the people on the request. Tiehall sets the flag, so it
+  // reaches Lee even though Lee's own agent made the seventh write, which set it.
   it("gathers the needs_human flag of a request the user opened into the digest, with no immediate email", async () => {
     const request = await openRequest(install, tokenOf(id("lee")), { targetTeam: "FE" });
-    for (let write = 0; write < 7; write++) await post(write % 2 === 0 ? "bob" : "lee", request.key, { kind: "comment", body: "Any news?" });
+    for (let write = 0; write < 7; write++) await post(write % 2 === 0 ? "lee" : "bob", request.key, { kind: "comment", body: "Any news?" });
     const { rows } = await install.owner.query("SELECT needs_human FROM requests WHERE id = $1", [request.id]);
     expect(rows[0]?.needs_human).toBe(true);
     await runImmediateEmails();
