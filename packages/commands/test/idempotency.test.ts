@@ -98,7 +98,10 @@ beforeAll(async () => {
     `CREATE TABLE probe_requests (
        org_id uuid NOT NULL, id uuid NOT NULL DEFAULT gen_random_uuid(), title text NOT NULL, PRIMARY KEY (org_id, id))`,
   );
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    { migrationsFolder, release: "0.0.0-dev", appRole, alsoKnownTables: ["public.probe_requests"], log: () => {} },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

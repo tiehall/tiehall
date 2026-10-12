@@ -153,7 +153,8 @@ describe("the migration runner", () => {
 
   it("keeps its record of applied migrations away from the app role", async () => {
     const appRole = { name: `tiehall_app_${randomBytes(4).toString("hex")}`, password: randomBytes(16).toString("hex") };
-    await run("ordered", { appRole }).done;
+    // The fixture's migrations make a table the image's own do not.
+    await run("ordered", { appRole, alsoKnownTables: ["public.migration_log"] }).done;
     const url = new URL(database.url);
     url.username = appRole.name;
     url.password = appRole.password;

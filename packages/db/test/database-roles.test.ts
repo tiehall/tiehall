@@ -1,8 +1,20 @@
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "@tiehall/testing/postgres";
-import { EVENT_TABLES, scramSha256Secret, setUpAppRole, type AppRole } from "../src/database-roles.ts";
+import {
+  APPEND_ONLY_TABLES,
+  EVENT_TABLES,
+  IMAGE_SEQUENCES,
+  IMAGE_TABLES,
+  READ_ONLY_TABLES,
+  scramSha256Secret,
+  setUpAppRole,
+  type AppRole,
+  type AppRoleGrants,
+} from "../src/database-roles.ts";
+import { migrate } from "../src/migrate.ts";
 
 // The database roles (self-host-install: Only the migrate step holds the
 // database owner's credentials; design.md, Technical decisions: T4). The
@@ -57,6 +69,37 @@ const FIXTURE_TABLES = `
   INSERT INTO events VALUES (1, 'kept');
 `;
 
+/**
+ * The rights for the fixture's tables, as an image whose migrations made them would set them: `later` is a
+ * table the owner creates in a test below, and `counter` a sequence it creates.
+ */
+const FIXTURE_GRANTS: AppRoleGrants = {
+  schemas: ["public"],
+  knownTables: ["public.things", "public.events", "public.later"],
+  knownSequences: ["public.counter"],
+  appendOnlyTables: ["public.events"],
+};
+
+/** The rights the role holds on a table, by the privileges Postgres names. */
+async function tableRights(client: pg.Client, role: string, table: string): Promise<string[]> {
+  const { rows } = await client.query<{ privilege: string; held: boolean }>(
+    `SELECT privilege, has_table_privilege($1, $2::regclass, privilege) AS held
+       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS privilege`,
+    [role, table],
+  );
+  return rows.filter(({ held }) => held).map(({ privilege }) => privilege);
+}
+
+/** The rights the role holds on a sequence. */
+async function sequenceRights(client: pg.Client, role: string, sequence: string): Promise<string[]> {
+  const { rows } = await client.query<{ privilege: string; held: boolean }>(
+    `SELECT privilege, has_sequence_privilege($1, $2, privilege) AS held
+       FROM unnest(ARRAY['USAGE', 'SELECT', 'UPDATE']) AS privilege`,
+    [role, sequence],
+  );
+  return rows.filter(({ held }) => held).map(({ privilege }) => privilege);
+}
+
 describe("setting up the app role", () => {
   let database: TestDatabase;
   let owner: pg.Client;
@@ -69,7 +112,7 @@ describe("setting up the app role", () => {
     owner = await connect(database.url);
     ownerName = decodeURIComponent(new URL(database.url).username);
     await owner.query(FIXTURE_TABLES);
-    await setUpAppRole(owner, app);
+    await setUpAppRole(owner, app, FIXTURE_GRANTS);
     appClient = await connect(userUrl(database.url, app.name, app.password));
   });
 
@@ -175,7 +218,7 @@ describe("setting up the app role", () => {
   describe("running it again", () => {
     it("updates the app role's password, so only the new one works", async () => {
       const again: AppRole = { name: app.name, password: `new-${randomBytes(12).toString("hex")}` };
-      await setUpAppRole(owner, again);
+      await setUpAppRole(owner, again, FIXTURE_GRANTS);
       const old = new pg.Client({ connectionString: userUrl(database.url, app.name, app.password) });
       await expect(old.connect()).rejects.toThrow(/password authentication failed/);
       await old.end().catch(() => {});
@@ -188,11 +231,44 @@ describe("setting up the app role", () => {
     it("grants the tables the owner created since, and takes back a right the app role should not hold", async () => {
       await owner.query("CREATE TABLE later (id integer PRIMARY KEY)");
       await owner.query(`GRANT UPDATE, DELETE, TRUNCATE ON events TO ${pg.escapeIdentifier(app.name)}`);
-      await setUpAppRole(owner, app);
+      await setUpAppRole(owner, app, FIXTURE_GRANTS);
       await withClient(userUrl(database.url, app.name, app.password), async (client) => {
         await client.query("INSERT INTO later VALUES (1)");
         expect(await failureOf(client, "UPDATE events SET kind = 'rewritten'")).toMatch(/permission denied/);
         expect(await failureOf(client, "TRUNCATE events")).toMatch(/permission denied/);
+      });
+    });
+
+    it("leaves the rights on a table and a sequence it does not know as a newer image set them", async () => {
+      // A newer image made these: one table the app role may only read, one it may not touch, and their sequences.
+      const quoted = pg.escapeIdentifier(app.name);
+      await owner.query(`
+        CREATE TABLE newer_record (id integer PRIMARY KEY, note text);
+        CREATE TABLE newer_secret (id integer PRIMARY KEY);
+        CREATE TABLE newer_rows (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY);
+        CREATE SEQUENCE newer_counter;
+        CREATE SEQUENCE counter;
+        INSERT INTO newer_record VALUES (1, 'kept');
+        GRANT SELECT ON newer_record TO ${quoted};
+        GRANT SELECT, INSERT, UPDATE ON newer_rows TO ${quoted};
+        GRANT UPDATE ON SEQUENCE newer_counter TO ${quoted};
+      `);
+      await setUpAppRole(owner, app, FIXTURE_GRANTS);
+      expect(await tableRights(owner, app.name, "newer_record")).toEqual(["SELECT"]);
+      expect(await tableRights(owner, app.name, "newer_secret")).toEqual([]);
+      expect(await tableRights(owner, app.name, "newer_rows")).toEqual(["SELECT", "INSERT", "UPDATE"]);
+      expect(await sequenceRights(owner, app.name, "newer_counter")).toEqual(["UPDATE"]);
+      expect(await sequenceRights(owner, app.name, "newer_rows_id_seq")).toEqual([]);
+      // The tables and the sequence it knows get their rights from scratch, as before.
+      expect(await tableRights(owner, app.name, "things")).toEqual(["SELECT", "INSERT", "UPDATE", "DELETE"]);
+      expect(await tableRights(owner, app.name, "events")).toEqual(["SELECT", "INSERT"]);
+      expect(await sequenceRights(owner, app.name, "counter")).toEqual(["USAGE", "SELECT"]);
+      await withClient(userUrl(database.url, app.name, app.password), async (client) => {
+        expect((await client.query("SELECT note FROM newer_record")).rows).toEqual([{ note: "kept" }]);
+        expect(await failureOf(client, "INSERT INTO newer_record VALUES (2, 'added')")).toMatch(
+          /permission denied for table newer_record/,
+        );
+        expect(await failureOf(client, "SELECT * FROM newer_secret")).toMatch(/permission denied for table newer_secret/);
       });
     });
   });
@@ -318,12 +394,56 @@ describe("an owner that is not a superuser, as on an external Postgres", () => {
   it("creates the app role and grants it the owner's tables", async () => {
     await withClient(userUrl(database.url, ownerName, ownerPassword), async (owner) => {
       await owner.query(FIXTURE_TABLES);
-      await setUpAppRole(owner, app);
+      await setUpAppRole(owner, app, FIXTURE_GRANTS);
     });
     await withClient(userUrl(database.url, app.name, app.password), async (client) => {
       await client.query("UPDATE things SET note = 'changed'");
       expect(await failureOf(client, "UPDATE events SET kind = 'rewritten'")).toMatch(/permission denied/);
       expect(await failureOf(client, "DROP TABLE things")).toMatch(/must be owner/);
     });
+  });
+});
+
+describe("the tables this image knows", () => {
+  it("are the tables and the sequence its schema defines, and hold every table the rights lists name", () => {
+    expect(IMAGE_TABLES).toContain("public.events");
+    expect(IMAGE_TABLES).toContain("public.backups");
+    expect(IMAGE_TABLES.every((table) => table.startsWith("public."))).toBe(true);
+    expect(IMAGE_SEQUENCES).toEqual(["public.members_token_generation_seq"]);
+    for (const table of [...APPEND_ONLY_TABLES, ...READ_ONLY_TABLES]) expect(IMAGE_TABLES, table).toContain(table);
+  });
+});
+
+describe("the migrate step after a newer release", () => {
+  // self-host-install: Only the migrate step holds the database owner's credentials, "An older image leaves a
+  // newer table's rights alone": release 1.4.0 made a table that the app role may only read, and the operator
+  // went back to 1.3.0, whose migrate step runs on 1.4.0's schema.
+  const migrationsFolder = fileURLToPath(new URL("../migrations/", import.meta.url));
+  let database: TestDatabase;
+  let owner: pg.Client;
+  const appRole: AppRole = { name: uniqueRole("tiehall_app_rollback"), password: randomBytes(16).toString("hex") };
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+    owner = await connect(database.url);
+  });
+
+  afterAll(async () => {
+    await owner.query(`DROP OWNED BY ${pg.escapeIdentifier(appRole.name)}; DROP ROLE ${pg.escapeIdentifier(appRole.name)}`);
+    await owner.end();
+    await database.drop();
+  });
+
+  it("keeps a table it does not know read-only, and sets a known table's rights from scratch", async () => {
+    const quoted = pg.escapeIdentifier(appRole.name);
+    await owner.query(`CREATE TABLE release_archive (id integer PRIMARY KEY); GRANT SELECT ON release_archive TO ${quoted}`);
+    // A right that no image gives, on a known table, and one taken away from another.
+    await owner.query(`GRANT TRUNCATE, UPDATE ON backups TO ${quoted}; REVOKE ALL ON teams FROM ${quoted}`);
+    await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+    expect(await tableRights(owner, appRole.name, "release_archive")).toEqual(["SELECT"]);
+    expect(await tableRights(owner, appRole.name, "backups")).toEqual(["SELECT"]);
+    expect(await tableRights(owner, appRole.name, "teams")).toEqual(["SELECT", "INSERT", "UPDATE", "DELETE"]);
+    expect(await tableRights(owner, appRole.name, "events")).toEqual(["SELECT", "INSERT"]);
   });
 });

@@ -124,7 +124,16 @@ beforeAll(async () => {
   await owner.connect();
   await owner.query("CREATE TABLE probe_users (id uuid PRIMARY KEY, login text NOT NULL)");
   await owner.query("CREATE TABLE probe_proposals (id uuid PRIMARY KEY, request_key text, team_key text, need text)");
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    {
+      migrationsFolder,
+      release: "0.0.0-dev",
+      appRole,
+      alsoKnownTables: ["public.probe_users", "public.probe_proposals"],
+      log: () => {},
+    },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

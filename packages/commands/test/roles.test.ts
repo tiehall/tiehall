@@ -81,7 +81,10 @@ beforeAll(async () => {
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
   await owner.query("CREATE TABLE probe_teams (org_id uuid NOT NULL, id uuid NOT NULL DEFAULT gen_random_uuid(), key text NOT NULL)");
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    { migrationsFolder, release: "0.0.0-dev", appRole, alsoKnownTables: ["public.probe_teams"], log: () => {} },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

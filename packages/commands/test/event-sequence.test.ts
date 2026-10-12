@@ -29,7 +29,16 @@ beforeAll(async () => {
     `CREATE TABLE probe_events (org_id uuid NOT NULL, number bigint NOT NULL, PRIMARY KEY (org_id, number));
      CREATE TABLE probe_serial (id bigserial PRIMARY KEY);`,
   );
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    {
+      migrationsFolder,
+      release: "0.0.0-dev",
+      appRole,
+      alsoKnownTables: ["public.probe_events", "public.probe_serial"],
+      log: () => {},
+    },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

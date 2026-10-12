@@ -188,6 +188,8 @@ A release's migrations only add to the schema, and a contract step, which remove
 docker compose up -d
 ```
 
+The previous image's `migrate` step sets the app's database rights only on the tables its own release knows, so a table that the newer release added keeps the rights that release gave it.
+
 After a contract step has run, the previous image refuses to start: its `migrate` step says that the image is older than the database's schema. The way back is then the backup taken before the upgrade, restored with the previous image: set the previous release's image in `TIEHALL_IMAGE`, and restore the dump you took before the upgrade:
 
 ```sh docs-test=rollback-restore

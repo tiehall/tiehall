@@ -74,7 +74,16 @@ beforeAll(async () => {
        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION probe_refuse_marked();
      CREATE TABLE probe_members (org_id uuid NOT NULL, user_id uuid NOT NULL, role text NOT NULL, PRIMARY KEY (org_id, user_id));`,
   );
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    {
+      migrationsFolder,
+      release: "0.0.0-dev",
+      appRole,
+      alsoKnownTables: ["public.probe_messages", "public.probe_members"],
+      log: () => {},
+    },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

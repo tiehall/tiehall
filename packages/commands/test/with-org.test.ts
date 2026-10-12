@@ -33,7 +33,7 @@ describe("withOrg", () => {
     );
     await migrate(
       { connectionString: database.url },
-      { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} },
+      { migrationsFolder, release: "0.0.0-dev", appRole, alsoKnownTables: ["public.notes"], log: () => {} },
     );
     const url = new URL(database.url);
     url.username = appRole.name;

@@ -102,7 +102,10 @@ beforeAll(async () => {
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
   await owner.query("CREATE TABLE probe_members (user_id uuid PRIMARY KEY, role text NOT NULL)");
-  await migrate({ connectionString: database.url }, { migrationsFolder, release: "0.0.0-dev", appRole, log: () => {} });
+  await migrate(
+    { connectionString: database.url },
+    { migrationsFolder, release: "0.0.0-dev", appRole, alsoKnownTables: ["public.probe_members"], log: () => {} },
+  );
   const url = new URL(database.url);
   url.username = appRole.name;
   url.password = "";

@@ -1,6 +1,6 @@
 import pg from "pg";
 import { withPassword, type DatabaseConnection } from "./connection.ts";
-import { setUpAppRole, TIEHALL_SCHEMA, type AppRole } from "./database-roles.ts";
+import { IMAGE_GRANTS, setUpAppRole, TIEHALL_SCHEMA, type AppRole } from "./database-roles.ts";
 import { MigrationError, readMigrations, type Migration } from "./migration-files.ts";
 
 export { MigrationError } from "./migration-files.ts";
@@ -19,7 +19,8 @@ export { MigrationError } from "./migration-files.ts";
 // - then it runs the steps that install schemas other tools own, such as the
 //   job queue's, still holding the lock;
 // - then it sets up the app role, whose rights follow the tables the
-//   migrations and those steps made.
+//   migrations and those steps made, and only on the tables this image knows,
+//   so a table a newer image made keeps the rights that image gave it.
 // Migrations only move forward; a problem is fixed by a later migration.
 //
 // The schema floor (self-host-install: Migrations expand, then contract): the
@@ -39,6 +40,12 @@ export interface MigrateOptions {
   release: string;
   /** The app role to create or update, with the password from the install's settings. */
   appRole?: AppRole;
+  /**
+   * Tables besides this image's own, as schema.table, whose rights the app
+   * role's set-up sets as it sets an app table's, such as the tables a test
+   * makes for itself; none unless given.
+   */
+  alsoKnownTables?: readonly string[];
   /**
    * Steps run as the owner after the migrations and before the app role is set
    * up, such as installing the job queue's schema, which its library defines.
@@ -104,7 +111,10 @@ export async function migrate(connection: DatabaseConnection, options: MigrateOp
       log(`migrate: applied ${migration.id}${migration.transactional ? "" : ", outside a transaction"}`);
     }
     for (const step of options.afterMigrations ?? []) await step(client, log);
-    if (options.appRole !== undefined) await setUpAppRole(client, options.appRole);
+    if (options.appRole !== undefined) {
+      const knownTables = [...IMAGE_GRANTS.knownTables, ...(options.alsoKnownTables ?? [])];
+      await setUpAppRole(client, options.appRole, { ...IMAGE_GRANTS, knownTables });
+    }
   } finally {
     // Ending the session releases the advisory lock.
     await client.end();

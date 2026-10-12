@@ -1,5 +1,8 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
+import { is } from "drizzle-orm";
+import { getTableConfig, isPgSequence, PgTable } from "drizzle-orm/pg-core";
 import pg from "pg";
+import * as schema from "./schema.ts";
 
 // The database roles (design.md, Technical decisions: T4; self-host-install:
 // Only the migrate step holds the database owner's credentials). The migrate
@@ -10,6 +13,12 @@ import pg from "pg";
 // log is append-only); it changes the data of the app's tables, may only
 // insert into and read the event tables, and may only read the tables that
 // something else writes, such as the record backup.sh keeps.
+//
+// It sets those rights only on the tables and sequences that its own image
+// knows (decisions-from-groups-15-28, design.md, Technical decisions: T13):
+// a table a newer image made keeps the rights the newer image gave it, so
+// going back to an older image never widens the app role's rights, and never
+// takes away a right that a newer process, still running in a rollout, needs.
 
 /** The schema of Tiehall's own tables, which the migrations make. */
 export const TIEHALL_SCHEMA = "public";
@@ -50,6 +59,25 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
  */
 export const READ_ONLY_TABLES: readonly string[] = ["public.backups"];
 
+/**
+ * The tables this image's migrations make, as schema.table: those its Drizzle
+ * schema defines, which drizzle-kit keeps equal to the migrations
+ * (test/schema.test.ts).
+ */
+export const IMAGE_TABLES: readonly string[] = (Object.values(schema) as unknown[])
+  .filter((value) => is(value, PgTable))
+  .map((table) => {
+    const config = getTableConfig(table as PgTable);
+    return `${config.schema ?? TIEHALL_SCHEMA}.${config.name}`;
+  })
+  .sort();
+
+/** The sequences this image's migrations make apart from a table, as schema.sequence. */
+export const IMAGE_SEQUENCES: readonly string[] = (Object.values(schema) as unknown[])
+  .filter(isPgSequence)
+  .map((sequence) => `${sequence.schema ?? TIEHALL_SCHEMA}.${sequence.seqName ?? ""}`)
+  .sort();
+
 export interface AppRole {
   /** The role's name, which is the user in the app's database URL. */
   name: string;
@@ -57,11 +85,36 @@ export interface AppRole {
 }
 
 export interface AppRoleGrants {
+  /** The schemas the app role uses. */
   schemas: readonly string[];
+  /**
+   * The tables of those schemas that this image knows, as schema.table. Their
+   * rights are set from scratch; every other table's are left as they are.
+   */
+  knownTables: readonly string[];
+  /** The sequences this image knows besides those its known tables own, as schema.sequence; none unless given. */
+  knownSequences?: readonly string[];
+  /** The schemas whose every table and sequence this image knows; none unless given. */
+  knownSchemas?: readonly string[];
   appendOnlyTables: readonly string[];
   /** The tables the app role may only read; none unless given. */
   readOnlyTables?: readonly string[];
 }
+
+/**
+ * The rights this image sets. The job queue's schema is known whole: before it
+ * sets up the app role, the migrate step installs or upgrades it to the version
+ * of this image's pg-boss, or refuses to run on a later one, so every table in
+ * it is one this image's pg-boss uses.
+ */
+export const IMAGE_GRANTS: AppRoleGrants = {
+  schemas: APP_SCHEMAS,
+  knownTables: IMAGE_TABLES,
+  knownSequences: IMAGE_SEQUENCES,
+  knownSchemas: [JOB_QUEUE_SCHEMA],
+  appendOnlyTables: APPEND_ONLY_TABLES,
+  readOnlyTables: READ_ONLY_TABLES,
+};
 
 /** A setting of the app role that the migrate step refuses; its message says why, and names no secret. */
 export class DatabaseRoleError extends Error {
@@ -83,15 +136,16 @@ type RoleAttributes = Record<(typeof FORBIDDEN_ATTRIBUTES)[number][0], boolean>;
 
 /**
  * Creates the app role, or updates its password when it exists, and sets its
- * rights to exactly what the app needs, in one transaction on the owner's
- * connection. It runs on every migrate, after the migrations, so the rights
- * follow the tables the migrations created. It refuses a role that is the owner,
- * that can become the owner, or that holds any attribute beyond logging in.
+ * rights on the tables the image knows to exactly what the app needs, in one
+ * transaction on the owner's connection. It runs on every migrate, after the
+ * migrations, so the rights follow the tables the migrations created. It
+ * refuses a role that is the owner, that can become the owner, or that holds
+ * any attribute beyond logging in.
  */
 export async function setUpAppRole(
   owner: Queryable,
   role: AppRole,
-  grants: AppRoleGrants = { schemas: APP_SCHEMAS, appendOnlyTables: APPEND_ONLY_TABLES, readOnlyTables: READ_ONLY_TABLES },
+  grants: AppRoleGrants = IMAGE_GRANTS,
 ): Promise<void> {
   if (role.password === "") throw new DatabaseRoleError("The app role's password is empty.");
   await owner.query("BEGIN");
@@ -143,7 +197,7 @@ async function setUp(owner: Queryable, role: AppRole, grants: AppRoleGrants): Pr
     }
   }
 
-  await owner.query(grantStatements(app, session.database, await tablesOf(owner, grants.schemas), grants));
+  await owner.query(grantStatements(app, session.database, await knownRelationsOf(owner, grants), grants));
 
   const owned = await owner.query<{ object: string }>(
     `SELECT 'table ' || c.oid::regclass::text AS object FROM pg_class c WHERE c.relowner = $1::regrole
@@ -157,37 +211,66 @@ async function setUp(owner: Queryable, role: AppRole, grants: AppRoleGrants): Pr
   }
 }
 
-interface Table {
+interface Relation {
   schema: string;
   name: string;
 }
 
-async function tablesOf(owner: Queryable, schemas: readonly string[]): Promise<{ schemas: string[]; tables: Table[] }> {
-  const present = await owner.query<{ schema: string }>(
-    "SELECT nspname AS schema FROM pg_namespace WHERE nspname = ANY($1::text[]) ORDER BY nspname",
-    [schemas],
-  );
-  const tables = await owner.query<Table>(
-    `SELECT n.nspname AS schema, c.relname AS name
-       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = ANY($1::text[]) AND c.relkind IN ('r', 'p')
-      ORDER BY n.nspname, c.relname`,
-    [schemas],
-  );
-  return { schemas: present.rows.map(({ schema }) => schema), tables: tables.rows };
+interface KnownRelations {
+  schemas: string[];
+  tables: Relation[];
+  sequences: Relation[];
 }
 
 /**
- * The app role's rights, set from scratch on every run: whatever it held
- * before is revoked first, so a right it should no longer have does not linger.
- * No one but the owner may create objects in the database or its schemas, so
- * the app role can never come to own a table. TRUNCATE is never granted: it
- * would bypass the triggers that refuse deletes.
+ * The schemas present, and the tables and sequences in them that the image
+ * knows: a sequence a table owns, as an identity column's does, is known with
+ * its table.
+ */
+async function knownRelationsOf(owner: Queryable, grants: AppRoleGrants): Promise<KnownRelations> {
+  const present = await owner.query<{ schema: string }>(
+    "SELECT nspname AS schema FROM pg_namespace WHERE nspname = ANY($1::text[]) ORDER BY nspname",
+    [grants.schemas],
+  );
+  const relations = await owner.query<Relation & { sequence: boolean; table: string | null }>(
+    `SELECT n.nspname AS schema, c.relname AS name, c.relkind = 'S' AS sequence,
+            (SELECT tn.nspname || '.' || t.relname
+               FROM pg_depend d JOIN pg_class t ON t.oid = d.refobjid JOIN pg_namespace tn ON tn.oid = t.relnamespace
+              WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.refclassid = 'pg_class'::regclass
+                AND d.deptype IN ('a', 'i')
+              LIMIT 1) AS table
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = ANY($1::text[]) AND c.relkind IN ('r', 'p', 'S')
+      ORDER BY n.nspname, c.relname`,
+    [grants.schemas],
+  );
+  const knownSchemas = new Set(grants.knownSchemas ?? []);
+  const knownTables = new Set(grants.knownTables);
+  const knownSequences = new Set(grants.knownSequences ?? []);
+  const rows = relations.rows.filter(({ schema, name, sequence, table }) => {
+    if (knownSchemas.has(schema)) return true;
+    if (!sequence) return knownTables.has(`${schema}.${name}`);
+    return knownSequences.has(`${schema}.${name}`) || (table !== null && knownTables.has(table));
+  });
+  return {
+    schemas: present.rows.map(({ schema }) => schema),
+    tables: rows.filter(({ sequence }) => !sequence).map(({ schema, name }) => ({ schema, name })),
+    sequences: rows.filter(({ sequence }) => sequence).map(({ schema, name }) => ({ schema, name })),
+  };
+}
+
+/**
+ * The app role's rights on the tables and sequences the image knows, set from
+ * scratch on every run: whatever it held before is revoked first, so a right it
+ * should no longer have does not linger. No one but the owner may create
+ * objects in the database or its schemas, so the app role can never come to own
+ * a table. TRUNCATE is never granted: it would bypass the triggers that refuse
+ * deletes.
  */
 function grantStatements(
   app: string,
   database: string,
-  { schemas, tables }: { schemas: string[]; tables: Table[] },
+  { schemas, tables, sequences }: KnownRelations,
   { appendOnlyTables, readOnlyTables = [] }: AppRoleGrants,
 ): string {
   const appendOnly = new Set(appendOnlyTables);
@@ -200,8 +283,13 @@ function grantStatements(
     statements.push(
       `REVOKE CREATE ON SCHEMA ${schema} FROM PUBLIC, ${app}`,
       `GRANT USAGE ON SCHEMA ${schema} TO ${app}`,
-      `REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${app}`,
-      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${app}`,
+    );
+  }
+  for (const { schema, name } of sequences) {
+    const sequence = `${pg.escapeIdentifier(schema)}.${pg.escapeIdentifier(name)}`;
+    statements.push(
+      `REVOKE ALL ON SEQUENCE ${sequence} FROM ${app}`,
+      `GRANT USAGE, SELECT ON SEQUENCE ${sequence} TO ${app}`,
     );
   }
   for (const { schema, name } of tables) {
