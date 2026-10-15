@@ -4,6 +4,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { oauthClientRegistrations, oauthClients, type Database } from "@tiehall/db";
+import { CLI_CLIENT_ID } from "./device-flow.ts";
 import { defineJobType } from "./jobs.ts";
 import { SetupRequiredError, withOrg, type OrgContext } from "./with-org.ts";
 import type { WorkerJob } from "./worker.ts";
@@ -47,8 +48,10 @@ import type { WorkerJob } from "./worker.ts";
 // form that no app opens, and once it has stored the client, the URIs the
 // client sent are written over the stand-ins in the client's row and in the
 // answer, in the transaction that records the registration's client id. A
-// client whose row kept its stand-ins, because the process stopped in between,
-// can send a browser nowhere, and is removed as a client never used.
+// client whose row kept its stand-ins, because the process stopped or that
+// transaction failed in between, can send a browser nowhere, and no record of
+// a registration names it; it is removed 7 days after the sign-in library
+// stored it, as a client never used is.
 //
 // An IPv6 client is counted by its /64, since one host commonly holds a
 // whole /64: every address in one /64 shares the 10 registrations an hour
@@ -67,8 +70,12 @@ import type { WorkerJob } from "./worker.ts";
 // A registered client that has never completed an authorization, so that no
 // grant and no token of it exists, is removed 7 days after it registered, by a
 // job that runs every hour; a later authorization request with its id is
-// refused as an unknown client's. A client identified by its metadata
-// document is not a registered one and is never removed this way.
+// refused as an unknown client's. The job finds a registered client by its own
+// row, so a client that no record of a registration names, because the
+// registration's last step failed, is removed too, 7 days after the sign-in
+// library stored it. A client identified by its metadata document is not a
+// registered one, nor is the CLI's, seeded with its fixed id, and neither is
+// ever removed this way.
 //
 // A registered client's name is its own claim, and every installation of a
 // client registers a new id, so every registered client is unverified; a
@@ -422,7 +429,10 @@ function hostOf(url: string): string | undefined {
 /**
  * Removes, every hour, each registered client that registered 7 days ago or
  * earlier by the worker's clock and has never completed an authorization: no
- * grant, refresh token or access token of it exists. The records of
+ * grant, refresh token or access token of it exists. A registered client is
+ * any but a metadata-document client and the CLI's; it registered when the
+ * record of its registration says, or, when none names it, when the sign-in
+ * library stored it. The records of
  * registration requests that were refused go too once they are an hour old,
  * since they no longer count.
  */
@@ -438,11 +448,15 @@ export const removeUnusedAgentClients: WorkerJob<Record<string, never>> = {
     const cutoff = new Date(now().getTime() - UNUSED_CLIENT_DAYS * DAY_MS);
     try {
       await withOrg(database, async ({ tx, orgId }) => {
+        // A registered client is found by its own row: neither a metadata-document client nor the CLI's. It registered
+        // when the record of its registration says, or, when no record names it, when the sign-in library stored it.
         await tx.execute(sql`
           DELETE FROM oauth_clients c
-           USING oauth_client_registrations r
-           WHERE c.org_id = ${orgId} AND r.org_id = c.org_id AND r.client_id = c.client_id
-             AND r.registered_at <= ${cutoff}
+           WHERE c.org_id = ${orgId} AND c.client_discovery_id IS NULL AND c.client_id <> ${CLI_CLIENT_ID}
+             AND coalesce(
+                   (SELECT min(r.registered_at) FROM oauth_client_registrations r WHERE r.org_id = c.org_id AND r.client_id = c.client_id),
+                   c.created_at
+                 ) <= ${cutoff}
              AND NOT EXISTS (SELECT 1 FROM oauth_consents g WHERE g.org_id = c.org_id AND g.client_id = c.client_id)
              AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens t WHERE t.org_id = c.org_id AND t.client_id = c.client_id)
              AND NOT EXISTS (SELECT 1 FROM oauth_access_tokens a WHERE a.org_id = c.org_id AND a.client_id = c.client_id)`);

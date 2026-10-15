@@ -360,6 +360,63 @@ describe("a native app's own scheme", () => {
     expect(native.status).toBe(201);
     expect(await native.json()).toMatchObject({ application_type: "native", redirect_uris: ["https://agent.vendor.example/callback", CURSOR] });
   });
+
+  // A registration whose last step fails after the sign-in library stored its client, as when the process stops in
+  // between, leaves a client whose row kept the stand-in for its app's scheme, or, for a loopback client, its own
+  // URIs, and no record of the registration that names it (decisions-from-groups-15-28: design.md, Technical
+  // decisions: T4). Such a client was never used, so it is removed 7 days after it registered, as any registered
+  // client never used is; the CLI's client and a metadata-document client are no registered ones and stay. The test
+  // makes the database refuse the step that records the registration's client id.
+  it("left with its stand-in, by a registration whose last step failed, is removed 7 days after it registered, as a loopback client left so is; the CLI's client and a metadata-document client stay", async () => {
+    const clientIds = async () =>
+      (await harness.install.owner.query<{ client_id: string }>("SELECT client_id FROM oauth_clients")).rows.map(({ client_id }) => client_id);
+    const before = new Set(await clientIds());
+    await harness.install.owner.query(`
+      CREATE OR REPLACE FUNCTION probe_refuse_registration_record() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'probe: the registration could not be recorded';
+      END $$;
+      CREATE TRIGGER probe_refuse_registration_record BEFORE UPDATE ON oauth_client_registrations FOR EACH ROW EXECUTE FUNCTION probe_refuse_registration_record();`);
+    let failed: Response[];
+    try {
+      failed = [await registerAsSent(CURSOR_REGISTRATION), await registerAsSent({ ...CURSOR_REGISTRATION, redirect_uris: ["http://127.0.0.1:33418/callback"] })];
+    } finally {
+      await harness.install.owner.query("DROP TRIGGER probe_refuse_registration_record ON oauth_client_registrations; DROP FUNCTION probe_refuse_registration_record()");
+    }
+    expect(failed.map(({ status }) => status)).toEqual([500, 500]);
+
+    const { rows: left } = await harness.install.owner.query<{ client_id: string; redirect_uris: string[]; created_at: Date; recorded: boolean }>(
+      `SELECT client_id, redirect_uris, created_at,
+              EXISTS (SELECT 1 FROM oauth_client_registrations r WHERE r.org_id = c.org_id AND r.client_id = c.client_id) AS recorded
+         FROM oauth_clients c WHERE NOT (client_id = ANY($1)) ORDER BY created_at, client_id`,
+      [[...before]],
+    );
+    expect(left).toHaveLength(2);
+    expect(left.map(({ redirect_uris }) => redirect_uris)).toEqual(
+      expect.arrayContaining([[expect.stringMatching(/^invalid\.tiehall\.redirect:\/[0-9a-f-]{36}$/)], ["http://127.0.0.1:33418/callback"]]),
+    );
+    expect(left.map(({ recorded }) => recorded)).toEqual([false, false]);
+    const registeredAt = left.map(({ created_at }) => created_at.getTime());
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+    // A metadata-document client and the CLI's client, both as old and never used.
+    const metadataClient = "https://left.vendor.example/oauth/client.json";
+    await harness.install.owner.query(
+      `INSERT INTO oauth_clients (org_id, client_id, client_discovery_id, name, redirect_uris, token_endpoint_auth_method, created_at)
+         SELECT id, $1, 'cimd', 'Vendor agent', ARRAY['http://127.0.0.1:53682/callback'], 'none', $2 FROM orgs`,
+      [metadataClient, new Date(Math.min(...registeredAt))],
+    );
+    await harness.install.owner.query("UPDATE oauth_clients SET created_at = $1 WHERE client_id = 'tiehall-cli'", [new Date(Math.min(...registeredAt))]);
+    const leftIds = left.map(({ client_id }) => client_id);
+
+    await runRemoval(new Date(Math.min(...registeredAt) + sevenDays - 60_000).toISOString());
+    expect(await clientIds()).toEqual(expect.arrayContaining(leftIds));
+
+    await runRemoval(new Date(Math.max(...registeredAt) + sevenDays + 60_000).toISOString());
+    const remaining = await clientIds();
+    for (const clientId of leftIds) expect(remaining).not.toContain(clientId);
+    expect(remaining).toEqual(expect.arrayContaining(["tiehall-cli", metadataClient]));
+  });
 });
 
 describe("a registered client", () => {
