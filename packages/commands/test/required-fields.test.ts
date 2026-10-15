@@ -422,3 +422,149 @@ describe("an undo while a reassignment is pending", () => {
     expect(await stateOf(request.id)).toEqual(before);
   });
 });
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (41), as the maintainer answered on
+// 2026-10-12. A reassignment cannot be proposed while a pending packet change of the request, a due date or a scope
+// change waiting for its confirmations, would drop a field that the team it would move to requires: the proposal is
+// refused as a reassignment into a team whose required fields the packet lacks is, with 400 and the problem type
+// invalid-input, whose detail and error name the pending packet change, by its proposal's id, and the field, on every
+// path a reassignment is proposed by, over /api/v1, the MCP tool propose, `tiehall propose` and the web UI's
+// reassignment, and nothing is proposed. A packet change whose 7 days are over holds nothing. MOB requires code refs,
+// SHIP a due date, and QA nothing.
+describe("a reassignment while a packet change is pending", () => {
+  const CODE_REFS = [{ repository: "acme/web", path: "src/settings/theme.ts", ref: "main" }];
+  const CODED = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings page.", code_refs: CODE_REFS } };
+  const UNCODED = { ...packetOf(), untrusted: { need: "Add a dark mode to the settings and profile pages." } };
+  let danaCli: CliMachine;
+
+  beforeAll(async () => {
+    await addTeams(harness, "SHIP");
+    await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['due_date'] WHERE key = 'SHIP'");
+    danaCli = await signedInCli(harness, dana);
+  });
+
+  afterAll(() => danaCli?.close());
+
+  const api = (person: McpPerson, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
+    harness.api(method, path, { authorization: `Bearer ${person.token}`, ...headers }, body);
+
+  /** A request Sam opens over /api/v1 to QA, with this packet. */
+  async function openToQa(packet: Record<string, unknown>): Promise<{ id: string; key: string }> {
+    const answer = await api(sam, "POST", "/api/v1/requests", { targetTeam: "QA", title: "Add a dark mode", packet });
+    expect(answer.status).toBe(200);
+    return (await answer.json()) as { id: string; key: string };
+  }
+
+  /** Sam proposes this packet change of the request, at its first revision; the proposal waits for its confirmations. */
+  async function proposeChange(key: string, change: Record<string, unknown>): Promise<string> {
+    const answer = await api(sam, "POST", "/api/v1/proposals", { key, ...change }, { "if-match": '"1"' });
+    expect(answer.status).toBe(202);
+    return ((await answer.json()) as { proposal: { id: string } }).proposal.id;
+  }
+
+  async function stateOf(requestId: string): Promise<{ revisions: number; proposals: { kind: string; state: string }[] }> {
+    const { rows: revisions } = await harness.install.owner.query<{ count: number }>("SELECT count(*)::int AS count FROM packet_revisions WHERE request_id = $1", [requestId]);
+    const { rows: proposals } = await harness.install.owner.query<{ kind: string; state: string }>("SELECT kind, state FROM proposals WHERE request_id = $1 ORDER BY created_at", [requestId]);
+    return { revisions: revisions[0]?.count ?? 0, proposals };
+  }
+
+  const reassign = (key: string, team: string) => api(dana, "POST", "/api/v1/proposals", { kind: "reassign", key, team });
+
+  it("refuses a reassignment while a pending scope change would drop a field the team requires, naming the change and the field, on every path", async () => {
+    const request = await openToQa(CODED);
+    // Claimed, the request's scope changes only through a proposal.
+    expect((await api(dana, "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    const scope = await proposeChange(request.key, { kind: "scope", packet: UNCODED });
+    const before = await stateOf(request.id);
+    expect(before).toEqual({ revisions: 1, proposals: [{ kind: "scope", state: "pending" }] });
+    const detail = `The pending scope change ${scope} of this request would drop code refs, which team MOB requires of the requests reassigned to it, so nothing was proposed.`;
+    const error = { path: ["team"], message: `Team MOB requires code refs, which the pending scope change ${scope} would drop.` };
+
+    // Over /api/v1, by both of its operations.
+    for (const [path, body] of [
+      ["/api/v1/proposals", { kind: "reassign", key: request.key, team: "MOB" }],
+      [`/api/v1/requests/${request.key}/proposals`, { kind: "reassign", team: "MOB" }],
+    ] as const) {
+      const answer = await api(dana, "POST", path, body);
+      expect(answer.status, path).toBe(400);
+      const problem = (await answer.json()) as { type: string; detail: string; errors?: unknown };
+      expect(problem.type).toBe(`${PROBLEM}invalid-input`);
+      expect(problem.detail).toBe(detail);
+      expect(errorsOf(problem)).toEqual([error]);
+    }
+
+    // Through the MCP tool propose.
+    const client = await connectMcp(harness, { token: dana.token, version: PROTOCOL_VERSIONS[0] });
+    try {
+      const refused = problemOf((await client.callTool({ name: "propose", arguments: { kind: "reassign", key: request.key, team: "MOB" } })) as never);
+      expect(refused).toMatchObject({ type: `${PROBLEM}invalid-input`, status: 400, detail });
+      expect(errorsOf(refused)).toEqual([error]);
+    } finally {
+      await client.close();
+    }
+
+    // Through `tiehall propose`.
+    const run = await danaCli.run(["propose", "reassign", request.key, "--team", "MOB"]);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain(`team: Team MOB requires code refs, which the pending scope change ${scope} would drop.`);
+
+    // Through the web UI's reassignment.
+    const web = harness.install.web(dana.session);
+    const page = await runRequestPageAction(new URLSearchParams({ action: "reassign", key: request.key, team: "MOB" }), {
+      read: (commandId, input) => web.read(commandId, input),
+      write: (commandId, input) => web.write(commandId, input, harness.install.fromThePage(dana.session)),
+    });
+    expect(page).toMatchObject({ ok: false, action: "reassign", problem: { status: 400, detail } });
+
+    // Nothing was proposed, and the scope change still waits for its confirmations.
+    expect(await stateOf(request.id)).toEqual(before);
+    // Once the scope change has ended, withdrawn by Sam, the reassignment is proposed.
+    expect((await api(sam, "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: scope })).status).toBe(200);
+    expect((await reassign(request.key, "MOB")).status).toBe(202);
+  });
+
+  it("refuses a reassignment while a pending due date change would remove the due date the team requires", async () => {
+    const request = await openToQa({ ...packetOf(), due_date: "2026-12-01" });
+    const removal = await proposeChange(request.key, { kind: "due_date", dueDate: null });
+    const answer = await reassign(request.key, "SHIP");
+    expect(answer.status).toBe(400);
+    const problem = (await answer.json()) as { type: string; detail: string; errors?: unknown };
+    expect(problem.detail).toBe(
+      `The pending due date change ${removal} of this request would drop a due date, which team SHIP requires of the requests reassigned to it, so nothing was proposed.`,
+    );
+    expect(errorsOf(problem)).toEqual([{ path: ["team"], message: `Team SHIP requires a due date, which the pending due date change ${removal} would drop.` }]);
+    expect((await stateOf(request.id)).proposals).toEqual([{ kind: "due_date", state: "pending" }]);
+  });
+
+  it("proposes a reassignment while a pending packet change keeps every field the team requires", async () => {
+    const request = await openToQa(CODED);
+    expect((await api(dana, "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    await proposeChange(request.key, { kind: "scope", packet: { ...CODED, untrusted: { ...CODED.untrusted, need: "Add a dark mode everywhere." } } });
+    expect((await reassign(request.key, "MOB")).status).toBe(202);
+    expect((await stateOf(request.id)).proposals).toEqual([
+      { kind: "scope", state: "pending" },
+      { kind: "reassign", state: "pending" },
+    ]);
+  });
+
+  it("holds a reassignment to no packet change whose 7 days are over", async () => {
+    // A proposal never changes what it proposes, so the test stores a copy of the pending scope change made 8 days ago,
+    // which no confirmation can take any more, even before the job that marks it expired has run, and Sam withdraws the
+    // one made now.
+    const request = await openToQa(CODED);
+    expect((await api(dana, "POST", `/api/v1/requests/${request.key}/claim`)).status).toBe(200);
+    const made = await proposeChange(request.key, { kind: "scope", packet: UNCODED });
+    await harness.install.owner.query(
+      `INSERT INTO proposals (org_id, request_id, kind, second_confirmation, accountable_user_id, accountable_side, actor_kind, client, surface, team_id, change, base_revision, state, created_at, expires_at)
+       SELECT org_id, request_id, kind, second_confirmation, accountable_user_id, accountable_side, actor_kind, client, surface, team_id, change, base_revision, 'pending', now() - interval '8 days', now() - interval '1 day'
+       FROM proposals WHERE id = $1`,
+      [made],
+    );
+    expect((await api(sam, "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: made })).status).toBe(200);
+    expect((await stateOf(request.id)).proposals).toEqual([
+      { kind: "scope", state: "pending" },
+      { kind: "scope", state: "withdrawn" },
+    ]);
+    expect((await reassign(request.key, "MOB")).status).toBe(202);
+  });
+});

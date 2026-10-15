@@ -82,9 +82,10 @@ import { capAgentOpenedRequest, recordAgentOpenedRequest } from "./write-limits.
 // with no item, such as no acceptance criteria, counts as none. Only the
 // requests people and agents open go through requests.create; a contract
 // report opens its requests without it, so they are not held to these fields.
-// A reassignment into a team whose required fields the packet lacks is refused
-// the same way, and proposes nothing (decisions-from-groups-15-28: design.md,
-// Decisions this change rests on: D55 (41); required-fields.ts).
+// A reassignment into a team whose required fields the packet lacks, or one of
+// its pending packet changes would drop, is refused the same way, and proposes
+// nothing (decisions-from-groups-15-28: design.md, Decisions this change rests
+// on: D55 (41); required-fields.ts).
 
 /** What each state set_status names does: start work, release the claim, or propose to decline or to mark done. */
 const STATUS_ACTIONS = { in_progress: "start", open: "release", declined: "decline", done: "mark_done" } as const;
@@ -140,8 +141,8 @@ export async function proposeReassignment(context: HandlerContext, key: string, 
   if (isTerminalState(current.state)) {
     throw new Refusal("conflict", `The request is ${current.state}, which is final, so it is no longer reassigned.`);
   }
-  // The team it would move to holds the request to its required fields (D55 (41)).
-  await assertReassignable(context, team, (await packetRevisionOf(context, row.id)).packet as Packet);
+  // The team it would move to holds the request, and its pending packet changes, to its required fields (D55 (41)).
+  await assertReassignable(context, team, row.id, (await packetRevisionOf(context, row.id)).packet as Packet, context.now());
   return context.propose(row, { kind: "reassign", change: { teamId: team.id } });
 }
 

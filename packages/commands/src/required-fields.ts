@@ -15,7 +15,14 @@ import type { OrgContext } from "./with-org.ts";
 // - a request that lacks one is not opened;
 // - a reassignment into a team whose required fields the current packet lacks
 //   is not proposed, since otherwise a team's requirement could be bypassed by
-//   opening a request to another team and reassigning it;
+//   opening a request to another team and reassigning it; nor is one while a
+//   pending packet change of the request, a due date or a scope change that
+//   waits for its confirmations, would drop a field the team requires, as the
+//   maintainer answered on 2026-10-12, since the change, checked when it was
+//   proposed against the team the request was addressed to then, would still
+//   take effect once confirmed; the refusal names the packet change, by its
+//   proposal's id, and the field, and a packet change whose 7 days are over
+//   holds no reassignment, as such a reassignment holds no revision;
 // - a revision that drops a field its team requires, and the current revision
 //   has, is neither added nor proposed; one that lacks a field the current
 //   revision lacks too is taken, so a request opened before its team required
@@ -82,16 +89,52 @@ export async function assertRequiredFields(context: Pick<OrgContext, "tx" | "org
   );
 }
 
-/** Refuses a reassignment into a team whose required fields the request's current packet lacks; the input names the team. */
-export async function assertReassignable(context: Pick<OrgContext, "tx" | "orgId">, team: RequiringTeam, packet: Packet): Promise<void> {
-  const missing = (await requiredFieldsOf(context, team.id)).filter((field) => !REQUIRED_FIELD_CHECKS[field].has(packet));
-  if (missing.length === 0) return;
-  throw missingFields(
-    team,
-    missing,
-    () => ["team"],
-    `Team ${team.key} requires ${requiredFieldsText(missing)} of the requests reassigned to it, which this request's packet lacks, so nothing was proposed.`,
-  );
+/** What a pending packet change is called in a refusal, by its proposal's kind. */
+const PACKET_CHANGES = { due_date: "due date change", scope: "scope change" } as const;
+
+/**
+ * Refuses a reassignment into a team whose required fields the request's
+ * current packet lacks, or one of its pending packet changes would drop; the
+ * input names the team. A packet change whose 7 days are over by the call's
+ * clock, which no confirmation can take any more, holds nothing. The caller
+ * holds the request's row, so none of its proposals changes meanwhile.
+ */
+export async function assertReassignable(context: Pick<OrgContext, "tx" | "orgId">, team: RequiringTeam, requestId: string, packet: Packet, now: Date): Promise<void> {
+  const required = await requiredFieldsOf(context, team.id);
+  const missing = required.filter((field) => !REQUIRED_FIELD_CHECKS[field].has(packet));
+  if (missing.length > 0) {
+    throw missingFields(
+      team,
+      missing,
+      () => ["team"],
+      `Team ${team.key} requires ${requiredFieldsText(missing)} of the requests reassigned to it, which this request's packet lacks, so nothing was proposed.`,
+    );
+  }
+  if (required.length === 0) return;
+  const pending = await context.tx
+    .select({ id: proposals.id, kind: proposals.kind, change: proposals.change })
+    .from(proposals)
+    .where(
+      and(
+        eq(proposals.orgId, context.orgId),
+        eq(proposals.requestId, requestId),
+        inArray(proposals.kind, ["due_date", "scope"]),
+        eq(proposals.state, "pending"),
+        gt(proposals.expiresAt, now),
+      ),
+    )
+    .orderBy(asc(proposals.createdAt), asc(proposals.id));
+  const dropping = pending.flatMap(({ id, kind, change }) => {
+    const fields = required.filter((field) => !REQUIRED_FIELD_CHECKS[field].has((change as { packet: Packet }).packet));
+    return fields.length === 0 ? [] : [{ change: `pending ${PACKET_CHANGES[kind as keyof typeof PACKET_CHANGES]} ${id}`, fields }];
+  });
+  if (dropping.length === 0) return;
+  const drops = dropping.map(({ change, fields }, index) => `${index === 0 ? `The ${change} of this request` : `the ${change}`} would drop ${requiredFieldsText(fields)}`);
+  throw new Refusal("invalid-input", `${drops.join(", and ")}, which team ${team.key} requires of the requests reassigned to it, so nothing was proposed.`, {
+    issues: dropping.flatMap(({ change, fields }) =>
+      fields.map((field) => ({ path: ["team"], message: `Team ${team.key} requires ${requiredFieldsText([field])}, which the ${change} would drop.` })),
+    ),
+  });
 }
 
 /**
