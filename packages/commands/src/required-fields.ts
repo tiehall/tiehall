@@ -27,7 +27,14 @@ import type { OrgContext } from "./with-org.ts";
 //   packet had when the reassignment was proposed. The refusal names the team
 //   whose field the revision drops, and the reassignment stays pending. A
 //   reassignment whose 7 days are over holds nothing, since no confirmation
-//   can take it any more, even before the job marks it expired.
+//   can take it any more, even before the job marks it expired;
+// - an undo of a due date or a scope change, which restores the packet the
+//   change replaced as the next revision, is held as such a revision is, to
+//   the team the request is addressed to and to the team of each pending
+//   reassignment, as the maintainer answered on 2026-10-12, so neither a
+//   pending reassignment nor one confirmed since the change brings a request
+//   to a team without a field it requires; the refusal names the team, its
+//   error names the proposal, and the reassignment stays pending.
 // An empty list, such as no acceptance criteria, counts as missing. Each is
 // refused as input that fails the schema, with 400, naming each missing field
 // in the order the team's intake page lists them, and creates nothing. The
@@ -106,6 +113,49 @@ export async function pendingReassignmentTeams({ tx, orgId }: Pick<OrgContext, "
   return ids.flatMap((id) => rows.filter((row) => row.id === id));
 }
 
+/** The fields a revision drops that a team holding it requires, by team: the request's own, then each pending reassignment's. */
+interface Dropped {
+  team: RequiringTeam;
+  fields: IntakeField[];
+  pending: boolean;
+}
+
+/**
+ * The fields that the request's team, or the team of one of its pending
+ * reassignments, requires, that the current revision has and the next one
+ * lacks, by team, in that order.
+ */
+async function droppedFields(
+  context: Pick<OrgContext, "tx" | "orgId">,
+  team: RequiringTeam,
+  reassignedTo: readonly RequiringTeam[],
+  current: Packet,
+  next: Packet,
+): Promise<Dropped[]> {
+  const holding: { team: RequiringTeam; pending: boolean }[] = [{ team, pending: false }, ...reassignedTo.map((other) => ({ team: other, pending: true }))];
+  const dropped: Dropped[] = [];
+  for (const { team: holder, pending } of holding) {
+    const fields = (await requiredFieldsOf(context, holder.id)).filter((field) => REQUIRED_FIELD_CHECKS[field].has(current) && !REQUIRED_FIELD_CHECKS[field].has(next));
+    if (fields.length > 0) dropped.push({ team: holder, fields, pending });
+  }
+  return dropped;
+}
+
+/** "Team FE requires the acceptance criteria, and team MOB, to which a pending proposal would reassign this request, requires code refs". */
+function requirementsOf(dropped: readonly Dropped[]): string {
+  return dropped
+    .map(
+      ({ team: holder, fields, pending }, index) =>
+        `${index === 0 ? "Team" : "team"} ${holder.key}${pending ? ", to which a pending proposal would reassign this request," : ""} requires ${requiredFieldsText(fields)}`,
+    )
+    .join(", and ");
+}
+
+/** The refusal's errors: each field dropped, at its place in the input, naming the team that requires it. */
+function droppedIssues(dropped: readonly Dropped[], pathOf: (field: IntakeField) => string[]): RefusalIssue[] {
+  return dropped.flatMap(({ team: holder, fields }) => fields.map((field) => ({ path: pathOf(field), message: `Team ${holder.key} requires ${requiredFieldsText([field])}.` })));
+}
+
 /**
  * Refuses a revision that drops a field that the request's team requires, or
  * the team of one of its pending reassignments, and that the current revision
@@ -120,23 +170,43 @@ export async function assertRevisionKeepsRequiredFields(
   next: Packet,
   pathOf: (field: IntakeField) => string[] = (field) => REQUIRED_FIELD_CHECKS[field].path,
 ): Promise<void> {
-  const holding: { team: RequiringTeam; pending: boolean }[] = [{ team, pending: false }, ...reassignedTo.map((other) => ({ team: other, pending: true }))];
-  const dropped: { team: RequiringTeam; fields: IntakeField[]; pending: boolean }[] = [];
-  for (const { team: holder, pending } of holding) {
-    const fields = (await requiredFieldsOf(context, holder.id)).filter((field) => REQUIRED_FIELD_CHECKS[field].has(current) && !REQUIRED_FIELD_CHECKS[field].has(next));
-    if (fields.length > 0) dropped.push({ team: holder, fields, pending });
-  }
+  const dropped = await droppedFields(context, team, reassignedTo, current, next);
   if (dropped.length === 0) return;
-  const issues: RefusalIssue[] = dropped.flatMap(({ team: holder, fields }) =>
-    fields.map((field) => ({ path: pathOf(field), message: `Team ${holder.key} requires ${requiredFieldsText([field])}.` })),
-  );
-  const requirements = dropped.map(
-    ({ team: holder, fields, pending }, index) =>
-      `${index === 0 ? "Team" : "team"} ${holder.key}${pending ? ", to which a pending proposal would reassign this request," : ""} requires ${requiredFieldsText(fields)}`,
-  );
   throw new Refusal(
     "invalid-input",
-    `${requirements.join(", and ")}, which the packet's current revision has and this revision drops, so nothing was added or proposed.`,
-    { issues },
+    `${requirementsOf(dropped)}, which the packet's current revision has and this revision drops, so nothing was added or proposed.`,
+    { issues: droppedIssues(dropped, pathOf) },
   );
+}
+
+/**
+ * Refuses the undo of a packet change whose restored packet, the one the
+ * change replaced, which the undo adds as the next revision, lacks a field
+ * that the request's team requires, or the team of one of its pending
+ * reassignments, and that the current revision has, as a revision is refused
+ * (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+ * D55 (41), as the maintainer answered on 2026-10-12). The undo's input names
+ * only the proposal, so each error names it; the reassignment stays pending.
+ */
+export async function assertUndoKeepsRequiredFields(
+  context: Pick<OrgContext, "tx" | "orgId">,
+  team: RequiringTeam,
+  reassignedTo: readonly RequiringTeam[],
+  current: Packet,
+  restored: Packet,
+): Promise<void> {
+  const dropped = await droppedFields(context, team, reassignedTo, current, restored);
+  if (dropped.length === 0) return;
+  throw new Refusal(
+    "invalid-input",
+    `${requirementsOf(dropped)}, which the packet's current revision has and the revision this undo would restore lacks, so nothing was undone.`,
+    { issues: droppedIssues(dropped, () => ["proposal"]) },
+  );
+}
+
+/** A team of the install as its required fields name it, by its id and its current key. */
+export async function requiringTeamOf({ tx, orgId }: Pick<OrgContext, "tx" | "orgId">, teamId: string): Promise<RequiringTeam> {
+  const [row] = await tx.select({ id: teams.id, key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, teamId)));
+  if (row === undefined) throw new Error("A request is addressed to a team the install does not have.");
+  return row;
 }

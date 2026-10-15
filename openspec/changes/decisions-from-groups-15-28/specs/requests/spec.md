@@ -2,7 +2,7 @@
 
 ## Purpose
 
-States that every confirmation gets a receipt, how close on merge reads keys, links and mentions, and where a new reader's cursor starts. The rest of the capability is unchanged.
+States that every confirmation gets a receipt, that an undo keeps a team's required fields, how close on merge reads keys, links and mentions, and where a new reader's cursor starts. The rest of the capability is unchanged.
 
 ## MODIFIED Requirements
 
@@ -52,6 +52,62 @@ Source: D23; D28 #61; D30 (4); D55 (81); design.md, Decisions this change rests 
 
 - **WHEN** Pia, an admin, changes Lee's role to `admin` and confirms it on the review page
 - **THEN** Pia's web inbox lists a receipt stating that Lee's role was changed to `admin` by Pia's confirmation
+
+### Requirement: The undo window for reversible commitments
+
+Commitments that can be reversed, which are a due date, a scope change, a reassignment and a decline, SHALL get an undo window of 15 minutes that starts when the commitment takes effect, linked from the receipt that states it took effect. Undo SHALL cover only these four commitments. Only a person who confirmed the commitment SHALL be able to undo it, and for a commitment that needed a confirmation from each side, either of the two people who confirmed it MAY undo it alone; anyone else SHALL be refused with 403. An undo SHALL be confirmed in the web UI with the confirmation step, as the agent-safety capability defines; an undo request without a valid confirmation SHALL be refused as that capability defines.
+
+Using undo within the window SHALL restore the state from before the commitment; for a reassignment, that means the old team, the old key and the old tracker mirror, and the new key then redirects to the old one, as the requirement on reassignment defines. Undoing a due date or a scope change SHALL be refused with 409 when the request's current revision is no longer the one the commitment created, such as after a contract report added a revision, so that no later revision is lost. Undoing a due date or a scope change SHALL also be refused, with HTTP 400 and the problem type `invalid-input`, when the packet it would restore, as the next revision, lacks a field that the current revision has and that the team the request is addressed to requires, or, while a reassignment of the request is pending, that the team it would move to requires, as the agent-surfaces capability's requirement on a team's required fields defines; such an undo SHALL restore nothing, and the reassignment SHALL stay pending. After 15 minutes the undo SHALL be refused with 409. An undo and its event SHALL be recorded together or not at all, like a confirmation, with the actor kind `web_session`, and each person who confirmed the commitment SHALL get a receipt for it, as the requirement on receipts defines.
+
+Source: D28 #18, #34; D30 (4); D55 (41); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
+
+#### Scenario: Undo within the window
+
+- **WHEN** Erin confirms declining FE-142, and 10 minutes later uses the undo link in the receipt and confirms the undo in the web UI
+- **THEN** FE-142 returns to the state it had before the decline
+
+#### Scenario: Undo without a confirmation is refused
+
+- **WHEN** Erin confirmed declining FE-142, and 5 minutes later an undo request arrives that carries Erin's session but no confirmation nonce
+- **THEN** the undo is refused with 403
+- **AND** FE-142 stays declined
+
+#### Scenario: Undo after the window
+
+- **WHEN** Erin uses the undo link 16 minutes after confirming the decline of FE-142
+- **THEN** the undo is refused with 409
+- **AND** FE-142 stays declined
+
+#### Scenario: Someone who did not confirm cannot undo
+
+- **WHEN** Erin confirmed declining FE-142, and 5 minutes later Bob, another member of team FE, asks to undo the decline
+- **THEN** the undo is refused with 403
+- **AND** FE-142 stays declined
+
+#### Scenario: Either side undoes a two-sided due date
+
+- **WHEN** Alice, the requester of FE-142, and then Bob, a member of the target team, confirmed a due date of 2026-10-15 for FE-142, which had no due date, and 10 minutes after Bob's confirmation Alice uses the undo link from their receipt and confirms the undo in the web UI
+- **THEN** FE-142 has no due date again
+- **AND** Bob's web inbox lists a receipt stating that the due date 2026-10-15 of FE-142 was undone by Alice
+- **AND** the event log holds an event for the undo, recorded with the actor kind `web_session` and Alice as the user
+
+#### Scenario: An undo after a newer revision is refused
+
+- **WHEN** Alice, the requester of the contract-change request FE-150, and Bob, its claimant, confirmed a scope change on it, which added revision 4, and 5 minutes later a signed contract report adds revision 5, and Alice then uses the undo link and confirms the undo in the web UI
+- **THEN** the undo is refused with 409
+- **AND** revision 5 stays the current revision
+
+#### Scenario: An undo that would drop a required field is refused
+
+- **WHEN** Alice and Bob confirmed a due date for FE-142, which had none, a reassignment of FE-142 to MOBILE, which requires a due date, is pending, and 5 minutes later Alice uses the undo link and confirms the undo in the web UI
+- **THEN** the undo is refused with HTTP 400 and the problem type `invalid-input`, whose detail names MOBILE and its due date
+- **AND** FE-142 keeps its due date
+- **AND** the reassignment of FE-142 to MOBILE stays pending
+
+#### Scenario: Other commitments have no undo
+
+- **WHEN** Alice confirms withdrawing FE-142
+- **THEN** the receipt for the withdrawal carries no undo link
 
 ### Requirement: Linked PRs and done on merge
 

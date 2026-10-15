@@ -339,3 +339,86 @@ describe("required fields while a reassignment is pending", () => {
     expect((await addRevision(lapsed.key, UNCODED)).status).toBe(200);
   });
 });
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (41), as the maintainer answered on
+// 2026-10-12. An undo of a packet change within the undo window, which proposals.undo makes only in the web UI, with
+// the confirmation step, restores the packet the change replaced as the next revision, so it is held as a revision
+// is: to the required fields of the team the request is addressed to and, while a reassignment of the request is
+// pending, of the team it would move to. One that would restore a packet without a field either team requires, and
+// the current revision has, is refused with 400 and the problem type invalid-input, whose detail names the team and
+// the field and whose error names the proposal; nothing is undone, and the reassignment stays pending. QA requires
+// nothing and REL a due date.
+describe("an undo while a reassignment is pending", () => {
+  beforeAll(async () => {
+    await addTeams(harness, "REL");
+    await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['due_date'] WHERE key = 'REL'");
+  });
+
+  const api = (person: McpPerson, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
+    harness.api(method, path, { authorization: `Bearer ${person.token}`, ...headers }, body);
+  const confirm = (person: McpPerson, proposal: string) => harness.install.confirm(person.session, "proposals.confirm", { proposal });
+  const undo = (person: McpPerson, proposal: string, headers: Record<string, string> = {}) => harness.install.confirm(person.session, "proposals.undo", { proposal }, headers);
+
+  async function stateOf(requestId: string): Promise<{ revisions: number; team: string; proposals: { kind: string; state: string }[] }> {
+    const { rows: revisions } = await harness.install.owner.query<{ count: number }>("SELECT count(*)::int AS count FROM packet_revisions WHERE request_id = $1", [requestId]);
+    const { rows: team } = await harness.install.owner.query<{ key: string }>("SELECT t.key FROM requests r JOIN teams t ON t.id = r.target_team_id WHERE r.id = $1", [requestId]);
+    const { rows: proposals } = await harness.install.owner.query<{ kind: string; state: string }>("SELECT kind, state FROM proposals WHERE request_id = $1 ORDER BY created_at", [requestId]);
+    return { revisions: revisions[0]?.count ?? 0, team: team[0]?.key ?? "", proposals };
+  }
+
+  /**
+   * A request Sam opens to QA without a due date, whose due date Sam proposes and Sam and Dana, of QA, confirm; then
+   * Dana proposes to reassign it to REL, which its packet now allows.
+   */
+  async function datedThenReassigned(): Promise<{ id: string; key: string; dueDate: string; reassign: string }> {
+    const opened = await api(sam, "POST", "/api/v1/requests", { targetTeam: "QA", title: "Add a dark mode", packet: packetOf() });
+    expect(opened.status).toBe(200);
+    const request = (await opened.json()) as { id: string; key: string };
+    const proposed = await api(sam, "POST", "/api/v1/proposals", { kind: "due_date", key: request.key, dueDate: "2026-12-01" }, { "if-match": '"1"' });
+    expect(proposed.status).toBe(202);
+    const dueDate = ((await proposed.json()) as { proposal: { id: string } }).proposal.id;
+    expect((await confirm(sam, dueDate)).status).toBe(200);
+    expect((await confirm(dana, dueDate)).status).toBe(200);
+    const reassigned = await api(dana, "POST", "/api/v1/proposals", { kind: "reassign", key: request.key, team: "REL" });
+    expect(reassigned.status).toBe(202);
+    const reassign = ((await reassigned.json()) as { proposal: { id: string } }).proposal.id;
+    return { ...request, dueDate, reassign };
+  }
+
+  it("refuses an undo that would drop a field the team it would move to requires, naming the team, and keeps the reassignment pending", async () => {
+    const request = await datedThenReassigned();
+    const before = await stateOf(request.id);
+    expect(before).toEqual({ revisions: 2, team: "QA", proposals: [{ kind: "due_date", state: "applied" }, { kind: "reassign", state: "pending" }] });
+    const refused = await undo(sam, request.dueDate);
+    expect(refused.status).toBe(400);
+    const problem = (await refused.json()) as { type: string; detail: string; errors?: unknown };
+    expect(problem.type).toBe(`${PROBLEM}invalid-input`);
+    expect(problem.detail).toBe(
+      "Team REL, to which a pending proposal would reassign this request, requires a due date, which the packet's current revision has and the revision this undo would restore lacks, so nothing was undone.",
+    );
+    expect(errorsOf(problem)).toEqual([{ path: ["proposal"], message: "Team REL requires a due date." }]);
+    expect(await stateOf(request.id)).toEqual(before);
+    // A browser gets the refusal as a page.
+    const page = await undo(sam, request.dueDate, { accept: "text/html" });
+    expect(page.status).toBe(400);
+    expect(await page.text()).toContain("Team REL, to which a pending proposal would reassign this request, requires a due date");
+    expect(await stateOf(request.id)).toEqual(before);
+    // Withdrawn by its proposer, the reassignment holds nothing, and the undo is taken.
+    expect((await api(dana, "POST", "/api/v1/proposals", { kind: "withdraw_proposal", proposal: request.reassign })).status).toBe(200);
+    expect((await undo(sam, request.dueDate)).status).toBe(200);
+    expect((await stateOf(request.id)).revisions).toBe(3);
+  });
+
+  it("refuses an undo that would drop a field of the team a confirmed reassignment moved the request to, as a revision is held", async () => {
+    const request = await datedThenReassigned();
+    expect((await confirm(dana, request.reassign)).status).toBe(200);
+    const before = await stateOf(request.id);
+    expect(before).toMatchObject({ revisions: 2, team: "REL" });
+    const refused = await undo(sam, request.dueDate);
+    expect(refused.status).toBe(400);
+    const problem = (await refused.json()) as { type: string; detail: string; errors?: unknown };
+    expect(problem.type).toBe(`${PROBLEM}invalid-input`);
+    expect(problem.detail).toBe("Team REL requires a due date, which the packet's current revision has and the revision this undo would restore lacks, so nothing was undone.");
+    expect(await stateOf(request.id)).toEqual(before);
+  });
+});

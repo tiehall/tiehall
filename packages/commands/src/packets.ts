@@ -1,14 +1,12 @@
 import { addPacketRevision, getPacket, getPacketChanges, getPacketRevision, type Packet } from "@tiehall/catalog";
 import { changedPacketFields, jsonPatch, packetCommitments, Refusal, sameJson } from "@tiehall/core";
-import { teams } from "@tiehall/db";
 import { agentJson } from "@tiehall/packet/render";
-import { and, eq } from "drizzle-orm";
 import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision, type PacketRevisionView } from "./packet-revisions.ts";
 import type { ProposalAnswer } from "./proposals.ts";
 import { actingUserOf, assertSideAllows, lockRequest, teamActedFor } from "./request-changes.ts";
 import { resolveRequestKey } from "./request-keys.ts";
-import { assertRevisionKeepsRequiredFields, pendingReassignmentTeams, REQUIRED_FIELD_CHECKS, type RequiringTeam } from "./required-fields.ts";
+import { assertRevisionKeepsRequiredFields, pendingReassignmentTeams, REQUIRED_FIELD_CHECKS, requiringTeamOf } from "./required-fields.ts";
 
 // The packet operations (handoff-packet: Immutable, numbered revisions;
 // handoff-packet: Open objects, strict server; handoff-packet: Packet changes
@@ -102,7 +100,7 @@ export async function revisePacket(
   // requires, or the team of a pending reassignment of it (D55 (41)).
   await assertRevisionKeepsRequiredFields(
     context,
-    await targetTeamOf(context, row.targetTeamId),
+    await requiringTeamOf(context, row.targetTeamId),
     await pendingReassignmentTeams(context, row.id, context.now()),
     current.packet as Packet,
     packet,
@@ -167,13 +165,6 @@ function eachString(value: unknown, write: (text: string) => string): unknown {
   if (value === null || typeof value !== "object") return value;
   // fromEntries defines each key as the object's own, so a key such as __proto__ in extensions stays a key.
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, eachString(item, write)]));
-}
-
-/** The team a request is addressed to, by its id and its current key. */
-async function targetTeamOf({ tx, orgId }: HandlerContext, teamId: string): Promise<RequiringTeam> {
-  const [row] = await tx.select({ id: teams.id, key: teams.key }).from(teams).where(and(eq(teams.orgId, orgId), eq(teams.id, teamId)));
-  if (row === undefined) throw new Error("A request is addressed to a team the install does not have.");
-  return row;
 }
 
 export const PACKET_HANDLERS: Handlers = {

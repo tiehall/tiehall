@@ -11,11 +11,12 @@ import {
 import { appliedCommitments, proposalConfirmations, receipts, requestFormerKeys, requests } from "@tiehall/db";
 import { and, eq } from "drizzle-orm";
 import type { ReviewHandler } from "./confirmation-step.ts";
-import { defineHandler, type Handlers } from "./execute.ts";
+import { defineHandler, type HandlerContext, type Handlers } from "./execute.ts";
 import { packetRevisionOf, storePacketRevision } from "./packet-revisions.ts";
 import { lockProposalWithRequest, type BeforeCommitment } from "./proposal-confirmations.ts";
 import { proposalView } from "./proposals.ts";
 import { actingUserOf, lifecycleOf, saveLifecycle, teamActedFor } from "./request-changes.ts";
+import { assertUndoKeepsRequiredFields, pendingReassignmentTeams, requiringTeamOf } from "./required-fields.ts";
 import type { RequestRow } from "./request-views.ts";
 import type { OrgContext } from "./with-org.ts";
 import type { Writer } from "./write.ts";
@@ -38,6 +39,13 @@ import type { Writer } from "./write.ts";
 // - the request must still be as the commitment left it: a due date or a scope
 //   change is not undone once a newer revision came (409), so no later
 //   revision is lost;
+// - the earlier packet a due date or a scope change restores is held as a
+//   revision is: one that lacks a field that the request's team requires, or
+//   the team of one of its pending reassignments, and that the current
+//   revision has, is not restored (400, with the problem type invalid-input
+//   naming the team and the field), and the reassignment stays pending
+//   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (41), as the maintainer answered on 2026-10-12; required-fields.ts);
 // - the undo restores what the request had before: the earlier packet, as the
 //   next revision; the state and claim before a decline; the old team, number
 //   and state before a reassignment, whose new key then names the old one;
@@ -74,6 +82,24 @@ async function assertAsLeft(context: OrgContext, kind: CommitmentKind, row: Requ
   }
   if (kind === "decline" && row.state !== "declined") throw new Refusal("conflict", "The request is no longer declined.");
   if (kind === "reassign" && row.targetTeamId !== change.teamId) throw new Refusal("conflict", "The request is no longer with the team this reassignment moved it to.");
+}
+
+/**
+ * Refuses, with 400, the undo of a packet change whose restored packet, which
+ * becomes the next revision, lacks a field that the request's team requires,
+ * or the team of one of its pending reassignments, and that the current
+ * revision has, as such a revision is refused (required-fields.ts).
+ */
+async function assertRestoredKeepsRequiredFields(context: HandlerContext, row: RequestRow, before: BeforeCommitment): Promise<void> {
+  const current = await packetRevisionOf(context, row.id);
+  const restored = await packetRevisionOf(context, row.id, before.revision);
+  await assertUndoKeepsRequiredFields(
+    context,
+    await requiringTeamOf(context, row.targetTeamId),
+    await pendingReassignmentTeams(context, row.id, context.now()),
+    current.packet as Packet,
+    restored.packet as Packet,
+  );
 }
 
 /** Restores what the request had before the commitment. */
@@ -135,6 +161,7 @@ export const PROPOSAL_UNDO_HANDLERS: Handlers = {
     if (!verdict.ok) throw new Refusal(verdict.refusal, verdict.reason);
     if (applied === undefined) throw new Error("A reversible commitment that took effect has its record of what it replaced.");
     await assertAsLeft(context, kind, row, applied.createdRevision, stored.change as { teamId?: string });
+    if (kind === "due_date" || kind === "scope") await assertRestoredKeepsRequiredFields(context, row, applied.before as BeforeCommitment);
     const current = await lifecycleOf(context, row);
     const teamId = await teamActedFor(context, userId, row);
     return context.write(async (writer) => {

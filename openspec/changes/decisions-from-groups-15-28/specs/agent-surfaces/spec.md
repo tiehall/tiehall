@@ -2,7 +2,7 @@
 
 ## Purpose
 
-States the check of `Origin` on `/mcp`, the inbox's default, the paged directory and capped intake notes, how a page of `get_request` is counted, the read-only hint of `whats_new`, the REST operations behind the CLI, the hook commands, how request URLs answer a token that negotiates HTML and other methods, intake pages under old keys, required fields on reassignment and revisions, and what a request state is bound to. The rest of the capability is unchanged.
+States the check of `Origin` on `/mcp`, the inbox's default, the paged directory and capped intake notes, how a page of `get_request` is counted, the read-only hint of `whats_new`, the REST operations behind the CLI, the hook commands, how request URLs answer a token that negotiates HTML and other methods, intake pages under old keys, required fields on reassignment, revisions and undos, and what a request state is bound to. The rest of the capability is unchanged.
 
 ## MODIFIED Requirements
 
@@ -404,7 +404,7 @@ Source: D28 #4, #26, #64; D55 (39); design.md, Decisions this change rests on; d
 
 ### Requirement: Requests missing a team's required fields are refused
 
-`open_request`, `tiehall open` and the web form SHALL refuse a request that lacks a field its target team requires, SHALL list the missing fields in the refusal, and SHALL create nothing. A team's required fields SHALL also hold when a reassignment into the team is proposed and when a packet revision is added to, or proposed for, a request addressed to it: a reassignment proposal into a team whose required fields the current packet lacks, and a revision that drops a field its team requires and the current revision has, SHALL be refused in the same way, listing the missing fields, and SHALL create nothing. An empty list, such as acceptance criteria with no item, SHALL count as missing. While a reassignment of a request is pending, a packet revision added to it or proposed for it SHALL also be held to the required fields of the team the reassignment would move it to: a revision that drops a field that either team requires and the current revision has SHALL be refused in the same way, naming the team whose field it drops, and the reassignment SHALL stay pending. A reassignment whose time for confirmations is over SHALL hold no revision. The requests a contract report opens, and the revisions a report adds, SHALL stay exempt, as the requirement on intake settings defines. The refusal is the one for input that fails the schema: a validation error on the MCP tools and in the web form, and HTTP 400 on `/api/v1`, which `tiehall open` calls, as the public-api capability's error model defines.
+`open_request`, `tiehall open` and the web form SHALL refuse a request that lacks a field its target team requires, SHALL list the missing fields in the refusal, and SHALL create nothing. A team's required fields SHALL also hold when a reassignment into the team is proposed and when a packet revision is added to, or proposed for, a request addressed to it: a reassignment proposal into a team whose required fields the current packet lacks, and a revision that drops a field its team requires and the current revision has, SHALL be refused in the same way, listing the missing fields, and SHALL create nothing. An empty list, such as acceptance criteria with no item, SHALL count as missing. While a reassignment of a request is pending, a packet revision added to it or proposed for it SHALL also be held to the required fields of the team the reassignment would move it to: a revision that drops a field that either team requires and the current revision has SHALL be refused in the same way, naming the team whose field it drops, and the reassignment SHALL stay pending. A reassignment whose time for confirmations is over SHALL hold no revision. An undo of a due date or a scope change within the undo window, which the web UI makes with the confirmation step and which adds the packet the change replaced as the next revision, as the requests capability defines, SHALL be held as such a revision is: an undo that would restore a packet without a field that the team the request is addressed to requires, or, while a reassignment of the request is pending, that the team it would move to requires, and that the current revision has, SHALL be refused with HTTP 400 and the problem type `invalid-input`, whose detail names the team and the field and whose error names the proposal, SHALL undo nothing, and SHALL leave the reassignment pending. The requests a contract report opens, and the revisions a report adds, SHALL stay exempt, as the requirement on intake settings defines. The refusal is the one for input that fails the schema: a validation error on the MCP tools and in the web form, and HTTP 400 on `/api/v1`, which `tiehall open` calls, and on the undo's confirmation step, as the public-api capability's error model defines.
 
 Source: D28 #26; D55 (41); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -451,6 +451,13 @@ Source: D28 #26; D55 (41); design.md, Decisions this change rests on; design.md,
 - **WHEN** FE-142's packet has code refs, a reassignment of FE-142 to MOBILE, which requires them, is pending, and the requester proposes a packet change without code refs through `tiehall propose` or the web UI's packet change
 - **THEN** the change is refused and names MOBILE's code refs as missing
 - **AND** nothing is proposed
+
+#### Scenario: An undo while a reassignment is pending
+
+- **WHEN** MOBILE requires a due date, the due date of FE-142 took effect 5 minutes ago, with Sam's confirmation, a reassignment of FE-142 to MOBILE is pending, and Sam confirms the undo of the due date in the web UI
+- **THEN** the undo is refused with HTTP 400 and the problem type `invalid-input`, whose detail names MOBILE's due date
+- **AND** FE-142's packet keeps its due date
+- **AND** the reassignment of FE-142 to MOBILE stays pending
 
 #### Scenario: A report's revision is exempt
 
