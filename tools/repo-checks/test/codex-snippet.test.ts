@@ -13,16 +13,21 @@ import { describe, expect, it } from "vitest";
 // replaces this test). Until then neither the Claude Code plugin nor
 // Tiehall's documentation offers one: no file of the plugin, and no
 // documentation page, speaks of Codex and of a SessionStart hook together. A
-// Codex agent pulls with whats_new meanwhile, as the skill teaches.
+// Codex agent pulls with whats_new meanwhile, as the skill teaches. The
+// client-matrix log, docs/client-matrix/log.md, offers nothing: it records the
+// maintainers' runs against real clients, Codex's and Claude Code's hooks
+// among them, and will record task 19.21's own run.
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+/** The maintainers' record of their runs against real clients, which offers no snippet. */
+const CLIENT_MATRIX_LOG = "docs/client-matrix/log.md";
 
-/** The committed files of the plugin and of Tiehall's documentation: every Markdown file but the plan's, and the docs pages. */
+/** The committed files of the plugin and of Tiehall's documentation: every Markdown file but the plan's and the client-matrix log, and the docs pages. */
 function offeringFiles(): string[] {
   const listed = execFileSync("git", ["ls-files", "--", "packages/claude-plugin", "*.md", "apps/web/app/docs"], { cwd: repoRoot, encoding: "utf8" });
   return listed
     .split("\n")
-    .filter((file) => file !== "" && !file.startsWith("openspec/") && !file.startsWith(".claude/") && !file.includes("/test/"));
+    .filter((file) => file !== "" && !file.startsWith("openspec/") && !file.startsWith(".claude/") && !file.includes("/test/") && file !== CLIENT_MATRIX_LOG);
 }
 
 const CODEX = /\bcodex\b/i;

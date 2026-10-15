@@ -120,3 +120,79 @@ All three, with F3 of the entry above, are taken up in the OpenSpec change `find
 ### Findings
 
 - F5. Cursor registers through Dynamic Client Registration with the redirect URI `cursor://anysphere.cursor-mcp/oauth/callback`, its app's own scheme, which holds no dot, and names no `application_type`, so the install kept the web type and refused it. The maintainer answered the same day that a native app's own scheme needs no dot, as D55 (15) of the OpenSpec change `decisions-from-groups-15-28` now says, and task 27.5 builds it, tests first: Cursor's registration, as Cursor sends it, is a native client's; an authorization with its redirect URI and PKCE reaches the consent screen, which names the scheme `cursor:` and the whole URI; and the approved client gets its code at that URI and exchanges it. The schemes of the web, those whose addresses a browser shows or runs itself and those that reach a program by an address are still refused.
+
+## 2026-10-15: Codex and Cursor against a local install (task 27.1)
+
+- **Date:** 2026-10-15. The times the install recorded run from 20:47:34 UTC, Codex's approval, to 21:03:38 UTC, a Cursor agent's comment.
+- **Clients:** Codex in the ChatGPT desktop app, Codex Desktop 26.715.72359, with the model 5.6 Terra, since the model its configuration named, `gpt-5.6-sol`, is not allowed on the maintainer's ChatGPT plan. Tiehall was added to `~/.codex/config.toml` as `[mcp_servers.tiehall]` with `url = "http://localhost:3000/mcp"`, and the Tiehall skill was copied from `packages/claude-plugin/skills/tiehall` to `~/.agents/skills/tiehall`, which Codex showed as a "Tiehall" mention. Cursor, the app, whose version was not recorded, with `~/.cursor/mcp.json` holding only the server's `url`, and later a header (step 6).
+- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
+- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `e021cbc9` for both clients; one company with two teams, FE and BE, and one person, the maintainer, a member of both. Since 2026-10-15 22:03 UTC, after this run, the install runs an image with task 27.5, `dc4b5a1e`.
+- **CLI:** `tiehall`, signed in to the install, run by the maintainer's Claude Code session for the requesting side of the run on BE-2; its build was not recorded.
+- **Task:** 27.1 [agent-access: Sign-in is tested on the four main clients; agent-surfaces: Tested MCP clients].
+
+### Steps
+
+1. In the Codex desktop app, started a task in which Codex's first use of Tiehall's tools reached `/mcp`.
+2. Signed Codex in from a terminal with `npx -y @openai/codex mcp login tiehall`, and approved the client in the browser.
+3. Quit the Codex desktop app fully, started it again and opened a new task, in which Codex listed its tools and called `whoami` and `list_inbox`.
+4. A run on two sides: the maintainer's Claude Code session opened BE-2 through the `tiehall` CLI; Codex claimed it, started it and asked a blocking question through MCP; the CLI answered; Codex read the answer.
+5. Started Cursor with the server's `url` alone in `~/.cursor/mcp.json`.
+6. Created a personal access token on `/tokens`, and set `headers.Authorization` in `~/.cursor/mcp.json` to `Bearer` and the token.
+7. A Cursor agent read BE-2 and posted a comment on it.
+
+### Seen
+
+- At Codex's first tool use, `/mcp` answered 401 with the challenge `Bearer resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/mcp", scope="requests:read requests:write"`. The desktop app started no sign-in, so Tiehall's tools stayed unavailable, and the model fell back to the skill's CLI path, which the app's sandbox could not run.
+- `codex mcp login tiehall` signed in through Codex's Client ID Metadata Document, `https://chatgpt.com/oauth/codex/client.json`, with the redirect URI `http://127.0.0.1:<port>/callback` and PKCE with `S256`. It asked for the scope `requests:read requests:write contracts:report`, every value of the install's `scopes_supported`, and the grant was approved with those three and `offline_access`: event 24, `agent_client.approved`, at 20:47:34 UTC. Codex keeps the token in the macOS keychain.
+- The desktop app loaded Tiehall's tools only after the full quit and a new task. It then listed 12 tools, `attach_contract_changes`, `claim`, `directory`, `get_request`, `link_pr`, `list_inbox`, `open_request`, `post_message`, `propose`, `set_status`, `whats_new` and `whoami`, the server's 12 in `mcp/tools.json`; `whoami` and `list_inbox` answered.
+- On BE-2: the maintainer's Claude Code session opened it for team FE through the CLI at 20:52:08 UTC; Codex claimed and started it, and its blocking question, posted through MCP, moved it to `needs_info` at 20:53:53 UTC; the CLI's answer moved it back to `in_progress` at 20:54:18 UTC; and Codex read the answer. The answer was recorded for team BE, not FE: the maintainer, who opened BE-2, was also its claimant through Codex, and a claimant's messages are recorded for the target team (item (7) of the OpenSpec change `findings-from-claude-code-run`).
+- Cursor registered through Dynamic Client Registration with the redirect URI `cursor://anysphere.cursor-mcp/oauth/callback` and no `application_type`, and the install refused it, "web clients require https redirect URIs on non-loopback hosts", as the entry of 2026-10-15 for task 27.5 records (F5).
+- With the personal access token, created at 21:01:54 UTC (event 32), Cursor connected, and its log showed `toolCount` 12. A Cursor agent read BE-2 and posted a comment on it through MCP at 21:03:38 UTC.
+- Cursor also picked up, on its own, the Claude Code plugin's MCP server, as `plugin-tiehall-tiehall`, which failed without `TIEHALL_URL`.
+
+The cells so far, against the server's 12 tools; the protocol version that each client spoke was not recorded:
+
+| Client | Metadata-document fetching | Sign-in path, or the failure | Tools shown |
+| --- | --- | --- | --- |
+| Claude Code | on | Not run in this run; its Client ID Metadata Document, in the entry of 2026-10-11 (task 17.7) | Not recorded |
+| Cursor | on | Dynamic Client Registration refused for its `cursor:` redirect URI (F5, task 27.5); a personal access token instead | 12 of 12, with the token |
+| Codex | on | Its Client ID Metadata Document, through `codex mcp login tiehall`; the desktop app does not start the sign-in (F6) | 12 of 12 |
+| Copilot | on | Not run | Not run |
+| Each of the four | off | Not run | Not run |
+
+### Not exercised
+
+- The protocol versions: no cell recorded the version its client spoke, and none ran on both 2026-07-28 and 2025-11-25.
+- Metadata-document fetching off, `TIEHALL_CLIENT_METADATA_FETCH=off`, under which Codex would register through Dynamic Client Registration.
+- Cursor's sign-in through Dynamic Client Registration on the install with task 27.5, which re-runs this cell.
+- Copilot, and Claude Code in this run.
+- What the consent screen showed for Codex was not recorded.
+- A second person: the maintainer stood on both sides of BE-2, as the entry for task 27.2 below says.
+
+### Findings
+
+- F6. Codex's desktop app does not start a sign-in when `/mcp` answers 401 with its challenge, which is the one agent-access requires: its tools stay unavailable, and the model falls back to the skill's CLI path, which the app's sandbox cannot run. Signing in from a terminal with `npx -y @openai/codex mcp login tiehall`, then quitting the app fully and opening a new task, works. Only the client can fix it; task 27.3 documents the fallback, which no page does yet.
+- F7. Codex asks for every value of `scopes_supported`, past the challenge's `scope`, so its grant holds `contracts:report`, which D55 (13) of the OpenSpec change `decisions-from-groups-15-28` means for a client that asks for it. Taken up as that change's Open Question "Agent clients that ask for every scope".
+- F8. Cursor picks up the Claude Code plugin's MCP server on its own, beside the server of its own configuration, and that connection fails without `TIEHALL_URL`. Item (5) of `findings-from-claude-code-run` gives the plugin the install's URL through Claude Code's own configuration of the plugin, and its task 1.1 checks that only in Claude Code's terminal CLI and the Claude desktop app's Code tab. Not taken up yet: whether Cursor's pick-up belongs there is for the maintainer.
+
+## 2026-10-15: The wake-up and URL-mode elicitation in the same run (task 27.2)
+
+- **Date, Clients, OS, Install and CLI:** as in the entry above.
+- **Task:** 27.2 [agent-surfaces: URL-mode elicitation for MCP clients; requester-loop: Claude Code Stop-hook waiter].
+
+### Steps
+
+1. The run on two sides of BE-2 in the entry above, with the maintainer's Claude Code session on the requesting side.
+
+### Seen
+
+- No wake-up could be shown. The install has one person, so every write on BE-2 was the work of the maintainer's own agents, Codex and Cursor through MCP and Claude Code through the CLI, and D55 (43) of the OpenSpec change `decisions-from-groups-15-28`, narrowed by item (4) of `findings-from-claude-code-run`, leaves what a user's agents did out of that user's updates, which the waiter reads.
+
+### Not exercised
+
+- The live `asyncRewake` wake-up: it needs a question from a second person, or one the maintainer posts in the web UI, which item (4) keeps in the agents' readers, as in the run of 2026-10-11 for task 19.19.
+- URL-mode elicitation: the run recorded no proposal, so no client was offered a review page to open.
+
+### Findings
+
+None.
