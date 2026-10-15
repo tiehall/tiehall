@@ -100,11 +100,11 @@ Nothing to migrate. The next build of `main` carries the updates, and operators 
 
 ## Open Questions
 
-- **Fixable findings outside Debian's archives.** A fix in Node's own binary comes with a new base image, and a fix in an npm package with a lockfile update; both keep the 7-day release age, and the Build stays red until then. Whether such a finding gets a documented, dated exception is open; D53 covers the operating system only.
+- **Fixable findings outside Debian's archives** (settled by `decisions-from-groups-15-28`'s D55 (86): a reviewed exception to the release age for exactly the advisory's fixed version, labelled and recorded in the changelog).
 - **Releases between Debian fixes.** An install gets the updates only with a new release. Whether a Debian security fix alone triggers a patch release is a question for the release process that add-tiehall-oss-v1's group 29 builds.
 
 ## Readings to confirm with the founder
 
 No decision settles the point below. The spec applies the reading, and it can change in review without changing the approach.
 
-- **R1. "From Debian's signed security archive"** (D53). Reading: the step takes every upgrade apt offers from the Debian archives the base image names: the security archive, and the release's stable updates with it, all signed with the same Debian keyring. A security update can depend on a version that only the stable updates carry, and a step limited to the security archive would then hold that security update back; the stable updates are Debian's own reviewed fixes to its stable release. The spec states the rule as D53 words it. Specs: self-host-install.
+- **R1. "From Debian's signed security archive"** (D53). Reading: the step takes every upgrade apt offers from the Debian archives the base image names: the security archive, and the release's stable updates with it, all signed with the same Debian keyring. A security update can depend on a version that only the stable updates carry, and a step limited to the security archive would then hold that security update back; the stable updates are Debian's own reviewed fixes to its stable release. `decisions-from-groups-15-28`'s D55 (85) words the spec as this reading. Specs: self-host-install.
