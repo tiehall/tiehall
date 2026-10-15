@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readAgentClient, removeUnusedAgentClients, withOrg } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
@@ -217,6 +218,147 @@ describe("a registration", () => {
     const answer = await harness.register({ application_type: undefined, redirect_uris: ["https://agent.vendor.example/callback"] });
     expect(answer.status).toBe(201);
     expect(await answer.json()).toMatchObject({ application_type: "web" });
+  });
+});
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+// 2026-10-15, after the install refused Cursor's registration (docs/client-matrix/log.md; task 27.5): a native app's
+// own scheme needs no dot, so Cursor's cursor: and the vscode: of clients built on VS Code count, as reverse-domain
+// schemes do. A redirect URI has an app's own scheme only when it is written in printable ASCII with no space, holds no
+// fragment and no user information, has a scheme that is none of the web's, of those a browser shows or runs itself
+// and of those that reach a program by an address, and has a path, or // with a host and a path, after its scheme.
+// PKCE stays required, and the consent screen names where the sign-in ends: the scheme and the whole URI.
+describe("a native app's own scheme", () => {
+  const CURSOR = "cursor://anysphere.cursor-mcp/oauth/callback";
+  const VSCODE = "vscode://vendor.mcp-client/oauth/callback";
+  // Cursor's registration as its MCP client sends it, with no application_type: Cursor's log names the redirect URI
+  // and the refusal, and the other fields are those an MCP client registers a public client with.
+  const CURSOR_REGISTRATION = {
+    client_name: "Cursor",
+    redirect_uris: [CURSOR],
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+  };
+
+  /** Sends a registration body exactly as written, with none of the harness's fields over it, from an address of its own. */
+  function registerAsSent(body: Record<string, unknown>): Promise<Response> {
+    return harness.handle(
+      new Request(`${URL_OF_INSTALL}/api/auth/oauth2/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": `198.18.${randomInt(256)}.${randomInt(1, 255)}` },
+        body: JSON.stringify(body),
+      }),
+    );
+  }
+
+  async function storedRedirects(clientId: string): Promise<string[]> {
+    const { rows } = await harness.install.owner.query<{ redirect_uris: string[] }>("SELECT redirect_uris FROM oauth_clients WHERE client_id = $1", [clientId]);
+    return rows[0]?.redirect_uris ?? [];
+  }
+
+  const locationOf = (answer: Response) => new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
+  /** A URL without its query: for an app's scheme, whose origin is opaque, its scheme, host and path. */
+  const withoutQuery = (url: URL) => `${url.protocol}//${url.host}${url.pathname}`;
+  const decoded = (html: string) => html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+
+  it("of Cursor's registration, as Cursor sends it with no application_type, is a native client's, which gets a client id and keeps its redirect URI", async () => {
+    at("2026-10-15T20:00:00Z");
+    const answer = await registerAsSent(CURSOR_REGISTRATION);
+    expect(answer.status).toBe(201);
+    const body = (await answer.json()) as { client_id: string };
+    expect(body).toMatchObject({ application_type: "native", redirect_uris: [CURSOR], token_endpoint_auth_method: "none" });
+    expect(await storedRedirects(body.client_id)).toEqual([CURSOR]);
+  });
+
+  it.each([
+    ["Cursor", CURSOR, "cursor:"],
+    ["a client built on VS Code", VSCODE, "vscode:"],
+  ])(
+    "of %s: an authorization with it and PKCE reaches the consent screen, which names the scheme and the whole URI; one without PKCE is refused; the approved client gets its code there",
+    async (name, redirectUri, scheme) => {
+      const registered = await registerAsSent({ ...CURSOR_REGISTRATION, client_name: name, redirect_uris: [redirectUri] });
+      expect(registered.status).toBe(201);
+      const client = { clientId: ((await registered.json()) as { client_id: string }).client_id, redirectUri };
+
+      const consent = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { scope: "requests:read requests:write" }));
+      expect(consent.pathname).toBe("/consent");
+      const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+      expect(page.status).toBe(200);
+      expect(page.headers.get("content-security-policy")).toContain(`form-action 'self' ${scheme};`);
+      const html = decoded(await page.text());
+      expect(html).toContain(`opens ${scheme} addresses, at ${redirectUri}.`);
+      expect(html).not.toContain(`returns to ${new URL(redirectUri).host}`);
+      expect(html).toMatch(/unverified client/i);
+
+      const refused = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { code_challenge: undefined, code_challenge_method: undefined, scope: "requests:read" }));
+      expect(withoutQuery(refused)).toBe(redirectUri);
+      expect(refused.searchParams.get("error")).toBe("invalid_request");
+      expect(refused.searchParams.get("code")).toBeNull();
+
+      await harness.approve(ana.userId, client.clientId, ["requests:read", "requests:write"]);
+      const pkce = pkcePair();
+      const returned = locationOf(await harness.authorize(ana.cookie, client, pkce));
+      expect(withoutQuery(returned)).toBe(redirectUri);
+      expect(returned.searchParams.get("state")).toBe("state-1");
+      expect(returned.searchParams.get("iss")).toBe(URL_OF_INSTALL);
+      const exchanged = await harness.exchange(client, returned.searchParams.get("code") ?? "", pkce);
+      expect(exchanged.status).toBe(200);
+      expect(typeof exchanged.body["access_token"]).toBe("string");
+    },
+  );
+
+  it("needs no dot in the path form, and may stand beside a loopback redirect URI, each kept in its place", async () => {
+    const dotless = await registerAsSent({ ...CURSOR_REGISTRATION, redirect_uris: ["myapp:/oauth/callback"] });
+    expect(dotless.status).toBe(201);
+    expect(await dotless.json()).toMatchObject({ application_type: "native", redirect_uris: ["myapp:/oauth/callback"] });
+    const both = await registerAsSent({ ...CURSOR_REGISTRATION, redirect_uris: ["http://127.0.0.1:33418/callback", CURSOR, VSCODE] });
+    expect(both.status).toBe(201);
+    const body = (await both.json()) as { client_id: string };
+    expect(body).toMatchObject({ application_type: "native", redirect_uris: ["http://127.0.0.1:33418/callback", CURSOR, VSCODE] });
+    expect(await storedRedirects(body.client_id)).toEqual(["http://127.0.0.1:33418/callback", CURSOR, VSCODE]);
+  });
+
+  it.each([
+    // The web's schemes, those whose addresses a browser shows or runs itself, and those that reach a program by an
+    // address, each in the shape an app's scheme has: the list alone refuses them.
+    ...["http", "ws", "wss", "ftp", "file", "vbscript", "data", "blob", "about", "filesystem", "view-source", "mailto", "tel", "sms"].map((scheme) => [
+      `${scheme}://agent.vendor.example/callback`,
+    ]),
+    ["javascript://agent.vendor.example/%0Aalert(1)"],
+    ["JavaScript://agent.vendor.example/%0Aalert(1)"],
+    // Shapes that are no app's own: no path, or no host after //, a path that does not begin with /, another URL
+    // wrapped in the scheme, a fragment, user information, and characters a URL is not written with.
+    ["cursor://anysphere.cursor-mcp"],
+    ["cursor:///oauth/callback"],
+    ["cursor:oauth/callback"],
+    ["mailto:agent@vendor.example"],
+    ["microsoft-edge:https://agent.vendor.example/callback"],
+    [`${CURSOR}#done`],
+    ["cursor://agent@anysphere.cursor-mcp/oauth/callback"],
+    ["cursor://anysphere.cursor-mcp/oauth/call back"],
+    ["cursor://anysphere.cursor-mcp/oauth/callb\u00e4ck"],
+  ])("is never %s: a registration with it, with no type or as native, gets 400 invalid_redirect_uri and no client", async (uri) => {
+    const before = await clientCount();
+    for (const type of [{}, { application_type: "native" }]) {
+      const answer = await registerAsSent({ ...CURSOR_REGISTRATION, ...type, redirect_uris: [uri] });
+      expect(answer.status, JSON.stringify(type)).toBe(400);
+      const body = (await answer.json()) as { error?: string; client_id?: string };
+      expect(body.error, JSON.stringify(type)).toBe("invalid_redirect_uri");
+      expect(body.client_id).toBeUndefined();
+    }
+    expect(await clientCount()).toBe(before);
+  });
+
+  it("beside an https redirect URI keeps the web type, and the registration is refused for the app's scheme; one that names native takes both", async () => {
+    const before = await clientCount();
+    const mixed = await registerAsSent({ ...CURSOR_REGISTRATION, redirect_uris: [CURSOR, "https://agent.vendor.example/callback"] });
+    expect(mixed.status).toBe(400);
+    expect(await mixed.json()).toMatchObject({ error: "invalid_redirect_uri" });
+    expect(await clientCount()).toBe(before);
+    const native = await registerAsSent({ ...CURSOR_REGISTRATION, application_type: "native", redirect_uris: ["https://agent.vendor.example/callback", CURSOR] });
+    expect(native.status).toBe(201);
+    expect(await native.json()).toMatchObject({ application_type: "native", redirect_uris: ["https://agent.vendor.example/callback", CURSOR] });
   });
 });
 

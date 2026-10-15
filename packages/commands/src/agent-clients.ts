@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -23,8 +24,31 @@ import type { WorkerJob } from "./worker.ts";
 // when the oldest of the ten leaves the hour, and gets no client id. A request
 // the authorization server then refuses, such as one with a redirect URI it
 // does not take, still counts. A native client, whose every redirect URI is on
-// its own computer, often does not say it is one; the registration is taken
-// as a native client's then, as the loopback redirect URIs show it is.
+// its own computer or has its app's own scheme, often does not say it is one;
+// the registration is taken as a native client's then, as its redirect URIs
+// show it is.
+//
+// A native app's own scheme needs no dot (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (15), as the maintainer
+// answered on 2026-10-15, after Cursor's registration of
+// cursor://anysphere.cursor-mcp/oauth/callback was refused; Technical
+// decisions: T4): cursor: and vscode: count, as reverse-domain schemes such as
+// com.example.app: do. A redirect URI has an app's own scheme only when it is
+// written in printable ASCII with no space, holds no fragment and no user
+// information, has a scheme that is none of EXCLUDED_SCHEMES, the web's, those
+// whose addresses a browser shows or runs itself and those that reach a
+// program by an address, and has after its scheme's colon a path, as
+// com.example.app:/callback has, or // with a host and a path, as Cursor's has.
+// Each redirect URI of a native registration that is neither http nor https
+// must have an app's own scheme, or the registration is refused with 400
+// invalid_redirect_uri in Tiehall's words. The sign-in library takes only a
+// scheme that holds a dot, written with no host, and judges the registration
+// it is handed: so it is handed, for each app's scheme, a stand-in of that
+// form that no app opens, and once it has stored the client, the URIs the
+// client sent are written over the stand-ins in the client's row and in the
+// answer, in the transaction that records the registration's client id. A
+// client whose row kept its stand-ins, because the process stopped in between,
+// can send a browser nowhere, and is removed as a client never used.
 //
 // An IPv6 client is counted by its /64, since one host commonly holds a
 // whole /64: every address in one /64 shares the 10 registrations an hour
@@ -102,17 +126,84 @@ function clientAddressOf(headers: Headers): string | undefined {
   return address !== undefined && isIP(address) !== 0 ? address : undefined;
 }
 
-/** Whether a redirect URI is on the client's own computer (a loopback address over http) or a native app's own scheme. */
-function isNativeRedirect(uri: unknown): boolean {
+/**
+ * The schemes that are never a native app's own: the web's, those whose
+ * addresses a browser shows or runs itself, and those that reach a program by
+ * an address. An http URI on the client's own computer is a native client's
+ * by the loopback rule, not as an app's scheme.
+ */
+export const EXCLUDED_SCHEMES: ReadonlySet<string> = new Set([
+  "http",
+  "https",
+  "ws",
+  "wss",
+  "ftp",
+  "file",
+  "javascript",
+  "vbscript",
+  "data",
+  "blob",
+  "about",
+  "filesystem",
+  "view-source",
+  "mailto",
+  "tel",
+  "sms",
+]);
+
+/**
+ * Whether a redirect URI has a native app's own scheme: written in printable
+ * ASCII with no space, as a URL is written, with no fragment and no user
+ * information, a scheme none of EXCLUDED_SCHEMES, and, after the scheme's
+ * colon, a path (com.example.app:/callback) or // with a host and a path
+ * (cursor://anysphere.cursor-mcp/oauth/callback).
+ */
+export function isAppSchemeRedirect(uri: unknown): boolean {
+  if (typeof uri !== "string" || !URL_CHARACTERS.test(uri) || uri.includes("#")) return false;
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (EXCLUDED_SCHEMES.has(url.protocol.slice(0, -1)) || url.username !== "" || url.password !== "") return false;
+  const afterScheme = url.href.slice(url.protocol.length);
+  return url.host === "" ? afterScheme.startsWith("/") && !afterScheme.startsWith("//") : url.pathname.startsWith("/");
+}
+
+/** Whether a redirect URI is an http URI on the client's own computer: localhost, 127.0.0.1 or [::1]. */
+function isLoopbackRedirect(uri: unknown): boolean {
   if (typeof uri !== "string") return false;
   try {
     const url = new URL(uri);
-    if (url.protocol === "http:") return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    return url.protocol !== "https:" && /^[a-z][a-z0-9+.-]*\.[a-z0-9+.-]+:$/.test(url.protocol);
+    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   } catch {
     return false;
   }
 }
+
+/** Whether a redirect URI is a native client's: on the client's own computer (a loopback address over http) or with a native app's own scheme. */
+function isNativeRedirect(uri: unknown): boolean {
+  return isLoopbackRedirect(uri) || isAppSchemeRedirect(uri);
+}
+
+/** Whether a redirect URI is an http or an https URI, which the sign-in library judges itself, for a native client as for a web one. */
+function isWebRedirect(uri: unknown): boolean {
+  if (typeof uri !== "string") return false;
+  try {
+    const { protocol } = new URL(uri);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The scheme of the stand-ins the sign-in library is handed for a native
+ * registration's app's schemes: one it takes, a reverse-domain scheme written
+ * with no host, which no app opens.
+ */
+const STAND_IN_SCHEME = "invalid.tiehall.redirect";
 
 /**
  * What breaks the bounds of a client's metadata, registered or in its
@@ -149,13 +240,16 @@ export function holdsNul(value: unknown): boolean {
 }
 
 /**
- * The plugin that limits registrations per client address and hour, and takes
- * a registration whose every redirect URI is native as a native client's.
+ * The plugin that limits registrations per client address and hour, takes a
+ * registration whose every redirect URI is native as a native client's, and
+ * holds a native registration's app's schemes to Tiehall's rule.
  */
 export function clientRegistrations(options: ClientRegistrationOptions): BetterAuthPlugin {
   const now = options.now ?? (() => new Date());
   /** The registration request each call under way was recorded as. */
   const recorded = new WeakMap<object, string>();
+  /** For each call under way whose app's schemes the sign-in library was handed stand-ins for, the redirect URIs the client sent. */
+  const sentRedirects = new WeakMap<object, string[]>();
   return {
     id: "tiehall-client-registrations",
     hooks: {
@@ -220,10 +314,23 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             if (outOfBounds !== undefined) throw new APIError("BAD_REQUEST", { error: "invalid_client_metadata", error_description: outOfBounds });
             // A registration whose every redirect URI is native is a native client's, whether or not it says so.
             const redirects = body["redirect_uris"];
-            if (body["application_type"] === undefined && Array.isArray(redirects) && redirects.length > 0 && redirects.every(isNativeRedirect)) {
-              return { context: { body: { ...body, application_type: "native" } } };
+            const named = body["application_type"];
+            const taken = named === undefined && Array.isArray(redirects) && redirects.length > 0 && redirects.every(isNativeRedirect);
+            if (!(taken || named === "native") || !Array.isArray(redirects)) return undefined;
+            // Each redirect URI of a native client that is neither http nor https has its app's own scheme.
+            const neither = redirects.find((uri) => !isWebRedirect(uri) && !isAppSchemeRedirect(uri));
+            if (neither !== undefined) {
+              throw new APIError("BAD_REQUEST", {
+                error: "invalid_redirect_uri",
+                error_description: `A native client's redirect URI is an http URI on localhost, 127.0.0.1 or [::1], an https URI, or a URI with the app's own scheme: written in printable ASCII with no space, with no fragment and no user information, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof neither === "string" ? neither : "one of its redirect URIs"} is none of these.`,
+              });
             }
-            return undefined;
+            // The sign-in library is handed a stand-in it takes for each app's scheme; the client's own URIs replace them once it is stored.
+            const handed = redirects.map((uri) => (isAppSchemeRedirect(uri) ? `${STAND_IN_SCHEME}:/${randomUUID()}` : uri));
+            const swapped = handed.some((uri, index) => uri !== redirects[index]);
+            if (swapped) sentRedirects.set(request, redirects as string[]);
+            if (!swapped && !taken) return undefined;
+            return { context: { body: { ...body, application_type: "native", redirect_uris: handed } } };
           }),
         },
       ],
@@ -235,14 +342,26 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             const id = request === undefined ? undefined : recorded.get(request);
             if (request === undefined || id === undefined) return;
             recorded.delete(request);
-            const clientId = (context.context.returned as { client_id?: unknown } | undefined)?.client_id;
+            const sent = sentRedirects.get(request);
+            sentRedirects.delete(request);
+            const returned = context.context.returned;
+            const clientId = (returned as { client_id?: unknown } | undefined)?.client_id;
             if (typeof clientId !== "string") return;
-            await withOrg(options.database, ({ tx, orgId }) =>
-              tx
+            await withOrg(options.database, async ({ tx, orgId }) => {
+              await tx
                 .update(oauthClientRegistrations)
                 .set({ clientId })
-                .where(and(eq(oauthClientRegistrations.orgId, orgId), eq(oauthClientRegistrations.id, id))),
-            );
+                .where(and(eq(oauthClientRegistrations.orgId, orgId), eq(oauthClientRegistrations.id, id)));
+              // The redirect URIs the client sent, over the stand-ins the sign-in library stored.
+              if (sent !== undefined) {
+                await tx
+                  .update(oauthClients)
+                  .set({ redirectUris: sent })
+                  .where(and(eq(oauthClients.orgId, orgId), eq(oauthClients.clientId, clientId)));
+              }
+            });
+            if (sent === undefined) return;
+            return context.json({ ...(returned as Record<string, unknown>), redirect_uris: sent });
           }),
         },
       ],

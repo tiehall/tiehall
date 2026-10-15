@@ -93,3 +93,30 @@ The maintainers' record of each run of Tiehall against a real agent client, made
 - F4. A person in both teams has their questions recorded for the requesting side even when they ask as the claimant, as seen by hand earlier on this install. In this run BE-1 had no claimant, and the question was recorded for FE, the requesting team of the person who opened BE-1.
 
 All three, with F3 of the entry above, are taken up in the OpenSpec change `findings-from-claude-code-run`, which nothing builds before the maintainer approves it.
+
+## 2026-10-15: Cursor's sign-in against a local install (task 27.5)
+
+- **Date:** 2026-10-15, at 23:31 and again at 23:33 by the clock of Cursor's MCP log, which does not give its time zone.
+- **Client:** Cursor, its MCP client, with Tiehall added as the remote MCP server `tiehall` over streamable HTTP in Cursor's user settings, which the log names `user-tiehall`. Cursor's version was not recorded.
+- **OS:** the maintainer's machine; the log does not name it.
+- **Install:** the maintainer's local Docker Compose install, its image built from `main` at `e021cbc9`, whose code `0a0738b4`, the next commit, leaves unchanged; its URL is not in the log.
+- **Task:** 27.5 [agent-access: Dynamic Client Registration stays on, limited and unverified; agent-access: The consent screen shows who is asking], a failure on Tiehall's side found ahead of the matrix run of task 27.1, triaged as task 27.3 says.
+
+### Steps
+
+1. Cursor started its MCP client for `tiehall`, at 23:31:50, and again at 23:32:58 and 23:33:24.
+
+### Seen
+
+- At 23:31:50 the log recorded two HTTP exchanges with the install, then "Transient error connecting to streamableHttp server: web clients require https redirect URIs on non-loopback hosts: cursor://anysphere.cursor-mcp/oauth/callback", "Connection failed" and the state `conn=failed`.
+- At 23:33:24 the client's creation ended with `connected=false` and `statusType=error`, with the same error. At 23:33:58 Cursor's own process timed out creating the client again.
+- The error is the install's sign-in library's refusal of a Dynamic Client Registration for its redirect URI, the one a registration gets as a web client's, as one that names no `application_type` is: Cursor registered `cursor://anysphere.cursor-mcp/oauth/callback`, the redirect URI of its own app, and Tiehall took only a scheme that holds a dot as a native app's. The connection ended there, before any authorization request, and Cursor did not connect.
+
+### Not exercised
+
+- The sign-in after the fix: the re-run with Cursor waits until the maintainer's install is updated to a build with task 27.5, and belongs to the matrix run of task 27.1.
+- The protocol version Cursor spoke, a metadata document, `TIEHALL_CLIENT_METADATA_FETCH=off`, and the number of tools Cursor shows: the matrix's cells, task 27.1.
+
+### Findings
+
+- F5. Cursor registers through Dynamic Client Registration with the redirect URI `cursor://anysphere.cursor-mcp/oauth/callback`, its app's own scheme, which holds no dot, and names no `application_type`, so the install kept the web type and refused it. The maintainer answered the same day that a native app's own scheme needs no dot, as D55 (15) of the OpenSpec change `decisions-from-groups-15-28` now says, and task 27.5 builds it, tests first: Cursor's registration, as Cursor sends it, is a native client's; an authorization with its redirect URI and PKCE reaches the consent screen, which names the scheme `cursor:` and the whole URI; and the approved client gets its code at that URI and exchanges it. The schemes of the web, those whose addresses a browser shows or runs itself and those that reach a program by an address are still refused.

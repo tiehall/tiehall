@@ -43,7 +43,19 @@ const TOPICS: Topic[] = [
     topic: "the four agent surfaces",
     page: "docs/agents.md",
     heading: "Signing in",
-    says: ["consent screen", "Client ID Metadata Document", "Dynamic Client Registration", "`TIEHALL_CLIENT_METADATA_FETCH=off`", "`requests:read`", "`/tokens`"],
+    says: [
+      "consent screen",
+      "Client ID Metadata Document",
+      "Dynamic Client Registration",
+      "`TIEHALL_CLIENT_METADATA_FETCH=off`",
+      "`requests:read`",
+      "`/tokens`",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+      // 2026-10-15 (task 27.5).
+      "Cursor and clients built on VS Code sign in through Dynamic Client Registration",
+      "`cursor://anysphere.cursor-mcp/oauth/callback`",
+      "never counts as an app's own",
+    ],
   },
   {
     topic: "the plugin and skill",

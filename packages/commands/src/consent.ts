@@ -21,9 +21,14 @@ import type { OrgContext } from "./with-org.ts";
 // - for a client identified by its Client ID Metadata Document, the verified
 //   host of the document's URL; for a registered client, a warning that it is
 //   unverified;
-// - the host name of the redirect URI the browser returns to, which must be
-//   one the client registered, and a warning when every redirect URI of the
-//   client is on the computer it runs on (localhost);
+// - where the sign-in ends, at a redirect URI the client registered: the host
+//   name the browser returns to, or, for a native app's own scheme, such as
+//   Cursor's cursor://anysphere.cursor-mcp/oauth/callback, the scheme and the
+//   whole URI, whose host is no web host the browser returns to
+//   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
+//   D55 (15), as the maintainer answered on 2026-10-15); and a warning when
+//   every redirect URI of the client is on the computer it runs on
+//   (localhost);
 // - what the client may do for the member: the scopes it asks for, which
 //   are only ones Tiehall offers; a page whose address names anything else,
 //   which the authorization server never sends a browser to, is refused with
@@ -150,16 +155,19 @@ function isLocalhost(uri: string): boolean {
 }
 
 /**
- * Where the browser returns to, as the consent screen names it: the redirect
- * URI's host name, or, for a URI with none, such as a native app's
- * private-use scheme (RFC 8252, 7.1), the app at that scheme.
+ * Where the sign-in ends, as the consent screen says it: for an http or https
+ * redirect URI, the host name the browser returns to; for any other, a native
+ * app's own scheme (RFC 8252, 7.1), the app that opens the scheme's addresses
+ * and the whole URI, as the browser is sent to it, so a host it holds, such as
+ * Cursor's, is never named as a host the browser returns to.
  */
-function returnsTo(uri: string): string {
+function whereItEnds(uri: string): string {
   try {
     const url = new URL(uri);
-    return url.hostname === "" ? `the app at ${url.protocol}` : url.hostname;
+    if (url.protocol === "http:" || url.protocol === "https:") return `your browser returns to ${url.hostname}`;
+    return `your browser hands the sign-in to the app on your computer that opens ${url.protocol} addresses, at ${url.href}`;
   } catch {
-    return uri;
+    return `your browser returns to ${uri}`;
   }
 }
 
@@ -176,7 +184,7 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
       warning: true,
     });
   }
-  lines.push({ text: `After you approve it, your browser returns to ${returnsTo(redirectUri)}.` });
+  lines.push({ text: `After you approve it, ${whereItEnds(redirectUri)}.` });
   if (client.redirectUris.length > 0 && client.redirectUris.every(isLocalhost)) {
     lines.push({
       text: "Every address this client can send you back to is on localhost, the computer it runs on. Continue only if you started this from an agent on your own computer.",
