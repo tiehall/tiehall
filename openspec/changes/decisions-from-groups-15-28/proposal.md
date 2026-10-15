@@ -25,7 +25,7 @@ None.
 
 ### Modified Capabilities
 
-Seventy-eight requirements, each named in its delta under `specs/`: `public-api` (seven), `agent-access` (thirteen), `agent-surfaces` (eleven), `requester-loop` (nine), `requests` (four), `contract-changes` (twelve), `tracker-mirrors` (six), `self-host-install` (five), `agent-safety` (four), `handoff-packet` (one), `activity-log` (three), `sign-in` (one) and `teams-and-roles` (two).
+Seventy-nine requirements, each named in its delta under `specs/`: `public-api` (seven), `agent-access` (fourteen), `agent-surfaces` (eleven), `requester-loop` (nine), `requests` (four), `contract-changes` (twelve), `tracker-mirrors` (six), `self-host-install` (five), `agent-safety` (four), `handoff-packet` (one), `activity-log` (three), `sign-in` (one) and `teams-and-roles` (two).
 
 ## Impact
 

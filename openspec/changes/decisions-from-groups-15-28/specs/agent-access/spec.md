@@ -162,7 +162,7 @@ Source: D28 #43; D55 (25); design.md, Decisions this change rests on; design.md,
 
 ### Requirement: Dynamic Client Registration stays on, limited and unverified
 
-Tiehall SHALL keep Dynamic Client Registration (RFC 7591) on, SHALL accept at most 10 registrations per hour from one IP address, counting an IPv6 client by its /64 prefix so that every address in one /64 shares the limit, and SHALL remove a registered client that has never been used 7 days after it registered. A registration beyond that limit SHALL be refused with HTTP 429 and a `Retry-After` header. Every registration request that reaches the registration endpoint SHALL count toward the limit, including one refused for its metadata. A registration's client name, when it gives one, SHALL have 1 to 100 characters, and a registration SHALL list at most 10 redirect URIs of at most 2,048 characters each; a registration outside these bounds SHALL be refused with 400 and the OAuth error `invalid_client_metadata`, SHALL register nothing and SHALL never be answered with a 500. A registration that names no `application_type`, and whose every redirect URI is an `http` URI on `localhost`, `127.0.0.1` or `[::1]` or a URI whose scheme is a native app's private scheme, one that holds a dot such as `com.example.app:`, SHALL be taken as a native public client's (RFC 8252), so its loopback redirect URIs SHALL be accepted. The IP address SHALL be the client's address as the install sees it, taking forwarded headers only from the proxies the operator names, as the self-host-install capability defines. Because a DCR client's name is self-asserted and each installation of a client registers a new id, Tiehall SHALL treat every DCR client as unverified.
+Tiehall SHALL keep Dynamic Client Registration (RFC 7591) on, SHALL accept at most 10 registrations per hour from one IP address, counting an IPv6 client by its /64 prefix so that every address in one /64 shares the limit, and SHALL remove a registered client that has never been used 7 days after it registered. A registration beyond that limit SHALL be refused with HTTP 429 and a `Retry-After` header. Every registration request that reaches the registration endpoint SHALL count toward the limit, including one refused for its metadata. A registration's client name, when it gives one, SHALL have 1 to 100 characters, and a registration SHALL list at most 10 redirect URIs of at most 2,048 characters each; a registration outside these bounds SHALL be refused with 400 and the OAuth error `invalid_client_metadata`, SHALL register nothing and SHALL never be answered with a 500. A registration that names no `application_type`, and whose every redirect URI is an `http` URI on `localhost`, `127.0.0.1` or `[::1]` or a URI with a native app's own scheme, SHALL be taken as a native public client's (RFC 8252), so its loopback redirect URIs and its app's scheme SHALL be accepted; any other registration SHALL keep the type it names, or the web type, whose redirect URIs must be `https` URIs. A redirect URI SHALL have a native app's own scheme, which needs no dot, such as `cursor:`, `vscode:` or `com.example.app:`, only when it is written in printable ASCII with no space, holds no fragment and no user information, has a scheme that is none of `http`, `https`, `ws`, `wss`, `ftp`, `file`, `javascript`, `vbscript`, `data`, `blob`, `about`, `filesystem`, `view-source`, `mailto`, `tel` and `sms`, and has, after its scheme's colon, a path, as in `com.example.app:/callback`, or `//`, a host and a path, as in `cursor://anysphere.cursor-mcp/oauth/callback`. A registration that names `native` SHALL be refused with 400 and the OAuth error `invalid_redirect_uri`, and SHALL register nothing, when one of its redirect URIs is neither an `http` nor an `https` URI and has no native app's own scheme. The IP address SHALL be the client's address as the install sees it, taking forwarded headers only from the proxies the operator names, as the self-host-install capability defines. Because a DCR client's name is self-asserted and each installation of a client registers a new id, Tiehall SHALL treat every DCR client as unverified.
 
 Source: D28 #43; D55 (15), (16), (24), (25); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -194,6 +194,25 @@ Source: D28 #43; D55 (15), (16), (24), (25); design.md, Decisions this change re
 - **WHEN** a client registers through DCR with no `application_type` and the one redirect URI `http://127.0.0.1:33418/callback`
 - **THEN** Tiehall issues a client id
 - **AND** the client is registered as a native public client
+
+#### Scenario: Cursor's registration is a native client's
+
+- **WHEN** a client registers through DCR with no `application_type` and the one redirect URI `cursor://anysphere.cursor-mcp/oauth/callback`
+- **THEN** Tiehall issues a client id
+- **AND** the client is registered as a native public client with that redirect URI
+- **AND** a signed-in member's authorization request with that redirect URI and a PKCE `S256` challenge reaches the consent screen, while one with no code challenge is refused with the OAuth error `invalid_request`
+
+#### Scenario: The web's and a browser's own schemes are no app's own
+
+- **WHEN** a client registers through DCR, with no `application_type` or with `native`, and the one redirect URI `ws://agent.vendor.example/callback`, `javascript://agent.vendor.example/%0Aalert(1)` or `mailto:agent@vendor.example`
+- **THEN** Tiehall refuses the registration with 400 and the OAuth error `invalid_redirect_uri`
+- **AND** issues no client id
+
+#### Scenario: An app's scheme beside an https redirect URI keeps the web type
+
+- **WHEN** a client registers through DCR with no `application_type` and the redirect URIs `cursor://anysphere.cursor-mcp/oauth/callback` and `https://agent.vendor.example/callback`
+- **THEN** Tiehall takes the registration as a web client's and refuses it with 400 and the OAuth error `invalid_redirect_uri`
+- **AND** issues no client id
 
 #### Scenario: A refused registration still counts
 
@@ -324,6 +343,29 @@ Source: D28 #48; D30 (3); D55 (12), (13); design.md, Decisions this change rests
 - **WHEN** a client sends an authorization request with no `scope`, and the person approves it
 - **THEN** the consent screen showed `requests:read` and `requests:write`
 - **AND** the issued access token carries those two scopes and not `contracts:report`
+
+### Requirement: The consent screen shows who is asking
+
+The consent screen SHALL show the client's name; for a client identified by a Client ID Metadata Document, its verified host; for a DCR client, an "unverified client" warning; and where the sign-in ends: the host name of the redirect URI, or, for a redirect URI with a native app's own scheme, that scheme and the whole URI, without showing the URI's host as a host the browser returns to. It SHALL show a warning when every redirect URI of the client is on localhost. The consent screen SHALL be served only to a signed-in member, as the sign-in capability defines, and SHALL ask for no choice of org, because an install has one org.
+
+Source: D55 (15); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
+
+#### Scenario: The redirect host name is shown
+
+- **WHEN** a client's redirect URI is `https://agent.vendor.example/callback`
+- **THEN** the consent screen shows the host name `agent.vendor.example`
+- **AND** it asks for no choice of org
+
+#### Scenario: Localhost-only redirect URIs are flagged
+
+- **WHEN** every redirect URI of a client is on `localhost`
+- **THEN** the consent screen shows a warning about localhost redirect URIs
+
+#### Scenario: An app's own scheme is shown with its whole URI
+
+- **WHEN** a DCR client's redirect URI is `cursor://anysphere.cursor-mcp/oauth/callback`
+- **THEN** the consent screen shows the scheme `cursor:` and the URI `cursor://anysphere.cursor-mcp/oauth/callback` as where the sign-in ends
+- **AND** it does not show `anysphere.cursor-mcp` as a host the browser returns to
 
 ### Requirement: The CLI signs in through a restricted device flow
 
