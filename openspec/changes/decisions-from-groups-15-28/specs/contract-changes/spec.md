@@ -378,7 +378,7 @@ Source: D23; D55 (68); design.md, Decisions this change rests on; design.md, Rul
 
 ### Requirement: Requests are withdrawn when the provider PR closes unmerged
 
-When Tiehall learns that a provider PR closed without merging, through the GitHub App's events or polling as the tracker-mirrors capability defines, it SHALL withdraw each request for the PR's change sets that is unclaimed, as a system withdrawal that needs no proposal and no confirmation. It SHALL NOT change the state of any claimed request, and SHALL add to each claimed request a notice that the provider PR closed without merging. A request in a terminal state SHALL only get that notice. When the provider PR is reopened, the first of its later reports whose changes open requests SHALL open, under the routing rules of this capability, a new request for each consuming team whose request was withdrawn when the PR closed; requests that stayed claimed SHALL be updated by that report as usual. Tiehall learns of closes and merges only for provider PRs in repositories that a connected installation covers, as the tracker-mirrors capability defines.
+When Tiehall learns that a provider PR closed without merging, through the GitHub App's events or polling as the tracker-mirrors capability defines, it SHALL withdraw each request for the PR's change sets that is unclaimed, as a system withdrawal that needs no proposal and no confirmation. It SHALL NOT change the state of any claimed request, and SHALL add to each claimed request a notice that the provider PR closed without merging. A request in a terminal state SHALL only get that notice. When the provider PR is reopened, the first of its later reports whose changes open requests SHALL open, under the routing rules of this capability, a new request for each consuming team whose request was withdrawn when the PR closed; requests that stayed claimed SHALL be updated by that report as any update is, so that a report whose classified changes equal those of the change set's last update adds nothing to them, as the requirement on updates defines. Tiehall learns of closes and merges only for provider PRs in repositories that a connected installation covers, as the tracker-mirrors capability defines.
 
 Source: D23; D28 #74; D55 (72); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -390,9 +390,9 @@ Source: D23; D28 #74; D55 (72); design.md, Decisions this change rests on; desig
 
 #### Scenario: A reopened PR brings new requests through the next report
 
-- **WHEN** PR #310 closed without merging, which withdrew `FE-142` while `MOBILE-17` stayed `in_progress`, and PR #310 is then reopened and the Action reports its two ERR-level changes
+- **WHEN** PR #310 closed without merging, which withdrew `FE-142` while `MOBILE-17` stayed `in_progress`, and PR #310 is then reopened and the Action reports its two ERR-level changes, the same classified changes as the change set's last update
 - **THEN** FE gets a new request, such as `FE-150`, for the change set, and `FE-142` stays `withdrawn`
-- **AND** `MOBILE-17` gets a new packet revision, and MOBILE gets no second request
+- **AND** `MOBILE-17` gets no new packet revision, no message and no notice, and MOBILE gets no second request
 
 #### Scenario: A close found by polling
 
