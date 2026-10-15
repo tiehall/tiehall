@@ -92,6 +92,14 @@
         "updates.read"
       ],
       "text": "The provider change of a contract-change request, in every answer that returns a request, now names the team that provides its API as provider, and carries the API's name, which an admin wrote and so is that team's text, as untrusted.api. providerChange.api, which holds the same name outside untrusted, is deprecated, and is removed on or after its sunset, 2026-11-09: read untrusted.api instead."
+    },
+    {
+      "date": "2026-10-15",
+      "kind": "breaking",
+      "operationIds": [
+        "directory.get"
+      ],
+      "text": "A team that the MCP tool directory lists across pages, because the teams its intake notes' writer belonged to would pass a page, is now named on each later page by its id and key only, with the rest of intakeNotesWrittenBy and continuedFromPreviousPage: its requiredFields and untrusted, which holds its name and its intake notes, are given once, on the page that begins with it, and are absent from a part that goes on, as they already were from the tool's text. The break is made before the first release, without the notice period, because no released install serves the old shape and the approved OpenSpec change decisions-from-groups-15-28 names it."
     }
   ],
   "releases": []

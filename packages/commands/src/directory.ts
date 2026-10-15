@@ -53,7 +53,10 @@ import type { OrgContext } from "./with-org.ts";
 // the teams that page lists for it (directoryText): as the reader's own team's
 // text only when one of them is the reader's, and as another team's otherwise,
 // as notes whose writer is unknown are, so a long list never makes another
-// team's notes read as the reader's own.
+// team's notes read as the reader's own; a later page names the team by its
+// id and key, with the rest of its list, in its text and its structured
+// content alike, so its name, its notes and its required fields are given
+// once.
 
 export const DIRECTORY_HANDLERS: Handlers = {
   [whoami.id]: defineHandler(whoami, async ({ skillVersion }, context) => {
@@ -145,6 +148,9 @@ export const DIRECTORY_HANDLERS: Handlers = {
 /** A team as directory and teams.get list it. */
 type ListedTeam = ReturnType<typeof listedTeam>;
 
+/** A team as a page of directory lists it: whole, or, going on from the previous page, by its id and key with the rest of its list. */
+type PagedTeam = ListedTeam | Pick<ListedTeam, "id" | "key" | "intakeNotesWrittenBy">;
+
 /** A registered API as directory lists it. */
 interface ListedApi {
   id: string;
@@ -160,7 +166,7 @@ interface Continued {
 }
 
 /** A page of directory, as it answers. */
-type DirectoryPage = DirectoryJson & { teams: (ListedTeam & Continued)[]; apis: (ListedApi & Continued)[]; next: string | null };
+type DirectoryPage = DirectoryJson & { teams: (PagedTeam & Continued)[]; apis: (ListedApi & Continued)[]; next: string | null };
 
 /** A team as a list names it: a team's intakeNotesWrittenBy, or an API's consumers. */
 interface ListedRef {
@@ -183,13 +189,13 @@ interface CandidateOf<Kind extends "team" | "api", Entry> {
   inside(key: string): Place;
 }
 
-type Candidate = CandidateOf<"team", ListedTeam> | CandidateOf<"api", ListedApi>;
+type Candidate = CandidateOf<"team", PagedTeam> | CandidateOf<"api", ListedApi>;
 
 /** The page with this team or API added, whole or in part, naming this place as the next page's, or none after the last. */
 function withEntry(page: DirectoryPage, candidate: Candidate, entry: Candidate["entry"], next: Place | null): DirectoryPage {
   const cursor = next === null ? null : cursorOf(next);
   return candidate.kind === "team"
-    ? { ...page, teams: [...page.teams, entry as ListedTeam & Continued], next: cursor }
+    ? { ...page, teams: [...page.teams, entry as PagedTeam & Continued], next: cursor }
     : { ...page, apis: [...page.apis, entry as ListedApi & Continued], next: cursor };
 }
 
@@ -203,14 +209,20 @@ async function anyApiRegistered(context: OrgContext): Promise<boolean> {
   return row !== undefined;
 }
 
-/** A team as a page may take it, going on from the previous page or not: its list is its intakeNotesWrittenBy. */
+/**
+ * A team as a page may take it, going on from the previous page or not: its
+ * list is its intakeNotesWrittenBy. One that goes on is named by its id and
+ * key, with the rest of its list, since the page that began with it gave its
+ * name, its intake notes and its required fields, which are shown once.
+ */
 function teamCandidate(listed: ListedTeam, goesOn: boolean): Candidate {
   const from: Continued = goesOn ? { continuedFromPreviousPage: true } : {};
+  const shown: PagedTeam = goesOn ? { id: listed.id, key: listed.key, intakeNotesWrittenBy: listed.intakeNotesWrittenBy } : listed;
   return {
     kind: "team",
-    entry: { ...listed, ...from },
+    entry: { ...shown, ...from },
     list: listed.intakeNotesWrittenBy ?? [],
-    cut: (items) => ({ ...listed, intakeNotesWrittenBy: [...items], ...from, continuedOnNextPage: true }),
+    cut: (items) => ({ ...shown, intakeNotesWrittenBy: [...items], ...from, continuedOnNextPage: true }),
     after: { kind: "team", team: listed.key },
     inside: (key) => ({ kind: "writers", team: listed.key, after: key }),
   };

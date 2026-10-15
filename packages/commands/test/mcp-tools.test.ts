@@ -524,7 +524,9 @@ describe("directory's long lists", () => {
   interface PagedTeam {
     id: string;
     key: string;
+    requiredFields?: string[];
     intakeNotesWrittenBy: { id: string; key: string }[] | null;
+    untrusted?: { name: string; intakeNotes: string };
     continuedFromPreviousPage?: boolean;
     continuedOnNextPage?: boolean;
   }
@@ -647,7 +649,13 @@ describe("directory's long lists", () => {
   });
 
   it("ends a page inside the teams a team's intake notes' writer belonged to, and goes on with them on the next", async () => {
-    const pages = await readAll();
+    await harness.install.owner.query("UPDATE teams SET required_fields = ARRAY['links'] WHERE id = $1", [writerTeamId]);
+    let pages: ReadPage[];
+    try {
+      pages = await readAll();
+    } finally {
+      await harness.install.owner.query("UPDATE teams SET required_fields = '{}' WHERE id = $1", [writerTeamId]);
+    }
     const parts = pages.flatMap(({ page }, index) => page.teams.filter(({ id }) => id === writerTeamId).map((team) => ({ team, index })));
     expect(parts.length).toBeGreaterThan(1);
     for (const [at, { team, index }] of parts.entries()) {
@@ -660,8 +668,17 @@ describe("directory's long lists", () => {
         expect(pages[index]!.page.teams.at(-1)?.id).toBe(writerTeamId);
         expect(parts[at + 1]?.index).toBe(index + 1);
       }
-      // The notes are shown once, with the team's first part; a later part says it goes on.
+      // The notes are shown once, with the team's first part, in the text and the structured content alike, as are its
+      // name and required fields; a later part names the team by its id and key, with the rest of the list, and says it
+      // goes on.
       expect(pages[index]!.text.includes("File one request per long list.")).toBe(at === 0);
+      expect(JSON.stringify(pages[index]!.page).includes("File one request per long list.")).toBe(at === 0);
+      if (at === 0) {
+        expect(team.untrusted).toEqual({ name: "Long writers", intakeNotes: "File one request per long list." });
+        expect(team.requiredFields).toEqual(["links"]);
+      } else {
+        expect(Object.keys(team).sort()).toEqual(["continuedFromPreviousPage", ...(last ? [] : ["continuedOnNextPage"]), "id", "intakeNotesWrittenBy", "key"].sort());
+      }
       expect(pages[index]!.page.teams[0]?.id).toBe(writerTeamId);
       if (at === 0) expect(pages[index]!.text).toContain("More of the teams that team LCW's intake notes' writer belonged to follow on the next page.");
       if (at > 0) expect(pages[index]!.text).toContain("Team LCW goes on from the previous page");

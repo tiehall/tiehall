@@ -30,6 +30,6 @@ Seventy-eight requirements, each named in its delta under `specs/`: `public-api`
 ## Impact
 
 - **Code:** about half the items only catch the specs up, and their tasks name or write tests; the rest change built code, tests first, with a few migrations; six items only edit texts.
-- **Public contracts:** the error model gains `busy`; `list_inbox`, `proposals.propose`, the wait entries, `requests.get` and the packet schema change, and `events.read` and `events.acknowledge` leave `/api/v1`, each through its capability's path.
+- **Public contracts:** the error model gains `busy`; `list_inbox`, `directory`, `proposals.propose`, the wait entries, `requests.get` and the packet schema change, and `events.read` and `events.acknowledge` leave `/api/v1`, each through its capability's path.
 - **Order:** archived after `add-tiehall-oss-v1`, `spec-catch-up`, `request-body-limit`, `github-app-reachability`, `github-layer-hardening` and `image-os-security-updates`, whose texts this change starts from.
 - **Approval:** D55 has the maintainer approve this change before any of it is built.

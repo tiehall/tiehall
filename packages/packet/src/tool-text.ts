@@ -589,16 +589,24 @@ interface ContinuedJson {
   continuedOnNextPage?: boolean;
 }
 
+/** A team as its intake page and directory give it whole: its key, its name, its intake notes and the fields it requires. */
+export interface TeamIntakeJson {
+  id: string;
+  key: string;
+  requiredFields?: readonly string[];
+  /** The teams the admin who last wrote the intake notes belonged to then; null for notes from before Tiehall kept them; absent from an install that says nothing of it. */
+  intakeNotesWrittenBy?: readonly TeamJson[] | null;
+  untrusted: { name: string; intakeNotes?: string };
+}
+
 /** The install's teams and registered APIs, as directory returns them. */
 export interface DirectoryJson {
-  teams: ({
-    id: string;
-    key: string;
-    requiredFields?: readonly string[];
-    /** The teams the admin who last wrote the intake notes belonged to then; null for notes from before Tiehall kept them; absent from an install that says nothing of it. */
-    intakeNotesWrittenBy?: readonly TeamJson[] | null;
-    untrusted: { name: string; intakeNotes?: string };
-  } & ContinuedJson)[];
+  /**
+   * Each team whole, or, when it goes on from the previous page, by its id and
+   * key with the rest of its intakeNotesWrittenBy, since that page gave its
+   * name, its intake notes and its required fields (decisions-from-groups-15-28, D55 (39)).
+   */
+  teams: ((Omit<TeamIntakeJson, "untrusted"> & { untrusted?: TeamIntakeJson["untrusted"] }) & ContinuedJson)[];
   apis: ({ id: string; provider: TeamJson; consumers: TeamJson[]; untrusted: { name: string } } & ContinuedJson)[];
   /** The cursor of the next page, while more teams or APIs remain; null, or absent, on the last page. */
   next?: string | null;
@@ -631,9 +639,6 @@ export function requiredFieldsText(fields: readonly string[]): string {
   );
 }
 
-/** A team as its intake page gives it: its key, its name, its intake notes and the fields it requires. */
-export type TeamIntakeJson = DirectoryJson["teams"][number];
-
 /**
  * The origin of a team's intake notes as the reader sees them. Any admin
  * writes them, so they are the reader's own team's text only when the admin
@@ -641,7 +646,7 @@ export type TeamIntakeJson = DirectoryJson["teams"][number];
  * team's otherwise, as they are when Tiehall does not know who wrote them. An
  * install that says nothing of it fences them as the team's own text.
  */
-function intakeNotesOrigin(team: TeamIntakeJson, reader: Reader): FencedOrigin {
+function intakeNotesOrigin(team: Pick<TeamIntakeJson, "key" | "intakeNotesWrittenBy">, reader: Reader): FencedOrigin {
   const writers = team.intakeNotesWrittenBy;
   if (writers === undefined) return originOf(team, reader);
   return writers !== null && writers.some(({ key }) => reader.teams.includes(key)) ? "same team" : "other team";
@@ -700,9 +705,11 @@ export function directoryText(directory: DirectoryJson, reader: Reader): AgentTe
       if (team.continuedOnNextPage === true) texts.push({ origin: "tiehall", text: `More of them follow on the next page.` });
       continue;
     }
+    const { untrusted } = team;
+    if (untrusted === undefined) throw new ToolTextError("A team that does not go on from the previous page has its name.");
     texts.push({ origin: "tiehall", text: `Team ${key} is named:` });
-    texts.push({ origin: originOf(team, reader), text: team.untrusted.name });
-    const notes = team.untrusted.intakeNotes ?? "";
+    texts.push({ origin: originOf(team, reader), text: untrusted.name });
+    const notes = untrusted.intakeNotes ?? "";
     if (notes !== "") {
       texts.push({ origin: "tiehall", text: `Team ${key} says how it wants requests filed, as an admin wrote it:` });
       texts.push({ origin: intakeNotesOrigin(team, reader), text: notes });

@@ -505,7 +505,7 @@ describe("the directory", () => {
     const goesOn = view(
       directoryText(
         {
-          teams: [{ ...FE, requiredFields: [], intakeNotesWrittenBy: [QA], continuedFromPreviousPage: true, untrusted: { name: "Frontend", intakeNotes: notes } }],
+          teams: [{ ...FE, intakeNotesWrittenBy: [QA], continuedFromPreviousPage: true }],
           apis: [
             { id: API, provider: QA, consumers: [FE], continuedFromPreviousPage: true, continuedOnNextPage: true, untrusted: { name: "payments-api" } },
           ],
@@ -520,6 +520,8 @@ describe("the directory", () => {
     expect(goesOn).not.toContain("Frontend");
     expect(goesOn).toContain(`API ${API} of team QA, from the previous page, is also consumed by team FE. More of its consumers follow on the next page.`);
     expect(goesOn).not.toContain("payments-api");
+    // A team listed whole has its name, which only a part that goes on leaves out.
+    expect(() => directoryText({ teams: [{ ...FE, intakeNotesWrittenBy: [QA] }], apis: [] }, { teams: ["FE"] })).toThrow(ToolTextError);
   });
 
   it("lists each registered API with its provider team and the teams declared as its consumers", () => {

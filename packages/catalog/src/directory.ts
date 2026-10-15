@@ -110,15 +110,16 @@ const directoryApi = z.object({
 /**
  * Whether a part of a team or an API that a page of directory lists goes on
  * from the previous page, or in the next one: the list it is cut inside is
- * the team's intakeNotesWrittenBy, or the API's consumers.
+ * the team's intakeNotesWrittenBy, or the API's consumers; `rest` says what
+ * else a part that goes on carries.
  */
-function continued(list: string, entry: string) {
+function continued(list: string, entry: string, rest: string) {
   return {
     continuedFromPreviousPage: z
       .literal(true)
       .optional()
       .meta({
-        description: `Present when the previous page ended inside ${list}: the teams listed here are the ones after the last that page listed, by key, as they stand now, and the rest of the ${entry} is listed again. Absent otherwise.`,
+        description: `Present when the previous page ended inside ${list}: the teams listed here are the ones after the last that page listed, by key, as they stand now, and ${rest}. Absent otherwise.`,
       }),
     continuedOnNextPage: z
       .literal(true)
@@ -147,8 +148,22 @@ export const readDirectory = defineCommand({
       .meta({ description: "The next page's cursor, as the previous page named it in next; the first page without it." }),
   }),
   output: z.object({
-    teams: z.array(directoryTeam.extend(continued("this team's intakeNotesWrittenBy", "team"))),
-    apis: z.array(directoryApi.extend(continued("this API's consumers", "API"))),
+    teams: z.array(
+      directoryTeam
+        .extend({
+          // A team's name, intake notes and required fields are given once, on the page that begins with it
+          // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (39)).
+          requiredFields: directoryTeam.shape.requiredFields.optional().meta({
+            description:
+              "The packet fields the team requires of the requests opened to it: any of acceptance_criteria, code_refs, links and due_date. Absent when the team goes on from the previous page, which gave them.",
+          }),
+          untrusted: directoryTeam.shape.untrusted.optional().meta({
+            description: "The team's name and its intake notes, as admins wrote them. Absent when the team goes on from the previous page, which gave them.",
+          }),
+        })
+        .extend(continued("this team's intakeNotesWrittenBy", "team", "the team is named only by its id and key, since that page gave its name, its intake notes and its required fields")),
+    ),
+    apis: z.array(directoryApi.extend(continued("this API's consumers", "API", "the rest of the API is listed again"))),
     next: z.string().regex(DIRECTORY_CURSOR).nullable().meta({ description: "The cursor of the next page, which you pass as cursor; null on the last page." }),
   }),
   scopes: ["requests:read"],
