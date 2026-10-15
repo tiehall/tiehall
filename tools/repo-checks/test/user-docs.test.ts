@@ -22,6 +22,11 @@ const read = (file: string) => readFileSync(join(root, file), "utf8");
 /** The pages the admin UI links, as packages/commands/src/docs-pages.ts lists them. */
 const linkedFromAdminUi = [...read("packages/commands/src/docs-pages.ts").matchAll(/path: "(docs\/[a-z-]+\.md)"/g)].map((match) => match[1] ?? "");
 
+/** The schemes that are never an app's own, in their order, as EXCLUDED_SCHEMES in packages/commands/src/agent-clients.ts lists them. */
+const excludedSchemes = [...(/export const EXCLUDED_SCHEMES[^=]*= new Set\(\[([^\]]*)\]\)/.exec(read("packages/commands/src/agent-clients.ts"))?.[1] ?? "").matchAll(/"([^"]+)"/g)].map(
+  (match) => match[1] ?? "",
+);
+
 interface Topic {
   /** The topic as the task names it. */
   topic: string;
@@ -54,7 +59,6 @@ const TOPICS: Topic[] = [
       // 2026-10-15 (task 27.5).
       "Cursor and clients built on VS Code sign in through Dynamic Client Registration",
       "`cursor://anysphere.cursor-mcp/oauth/callback`",
-      "never counts as an app's own",
     ],
   },
   {
@@ -273,6 +277,18 @@ describe("the user and admin docs", () => {
     expect(read("docs/github-and-jira.md")).toContain("`/admin/github`");
     // agent-safety: Agent writes are limited per token and budgeted per install: the admin page holds the budget's form.
     expect(read("docs/agents.md").replace(/\s+/g, " ")).toMatch(/agent writes a UTC day for the whole install by default, which an admin can change on the admin page, `\/admin`, under Agent writes/);
+  });
+
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15). The rule keeps out the schemes it
+  // lists, and a scheme that reaches a program by an address but is not listed, such as `webcal:`, passes when it has
+  // an app's shape, so the docs name the list as the code holds it rather than every scheme of a kind.
+  it("name exactly the schemes that never count as an app's own, as the registration step excludes them", () => {
+    expect(excludedSchemes).toContain("mailto");
+    const named = excludedSchemes.map((scheme) => `\`${scheme}:\``);
+    const list = `${named.slice(0, -1).join(", ")} and ${named.at(-1) ?? ""}`;
+    const text = (section(read("docs/agents.md"), "Signing in") ?? "").replace(/\s+/g, " ");
+    expect(text).toContain(`these schemes never count as an app's own: ${list}.`);
+    expect(text).not.toMatch(/reaches a program by an address[^.]*never counts/);
   });
 
   it("point to the Action's own README for its inputs", () => {
