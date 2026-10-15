@@ -46,7 +46,9 @@ import type { OrgContext } from "./with-org.ts";
 // same team or API, marked as going on from the previous page, and the rest
 // of its list as it stands when that page is read, after that key, so no
 // consumer is left out. A team or an API that fits on a page of its own is
-// never split: a page it would take past the cap ends before it. A team's
+// never split: a page it would take past the cap ends before it. The last
+// team or API of the directory is measured as its page answers, with no
+// cursor, so one that fits on that last page is listed there whole. A team's
 // intake notes are shown once, on the page that begins with it, and fenced by
 // the teams that page lists for it (directoryText): as the reader's own team's
 // text only when one of them is the reader's, and as another team's otherwise,
@@ -84,11 +86,14 @@ export const DIRECTORY_HANDLERS: Handlers = {
     const keys = await teamKeysById(context);
     const reader: Reader = { teams: (await teamsOfMember(context, actingUserOf(context))).map(({ key }) => key) };
     let page: DirectoryPage = { teams: [], apis: [], next: null };
-    /** Takes the team or API onto the page whole, or, as the first of the page, as much of its list as fits. */
-    const take = (candidate: Candidate): "taken" | "cut" | "full" => {
+    /**
+     * Takes the team or API onto the page whole, or, as the first of the page, as much of its list as fits. The last
+     * team or API of the directory is measured with no cursor, as the page that takes it answers.
+     */
+    const take = (candidate: Candidate, last: boolean): "taken" | "cut" | "full" => {
       const count = candidate.kind === "team" ? page.teams.length : page.apis.length;
       if (count >= DIRECTORY_PAGE_ITEMS) return "full";
-      const whole = withEntry(page, candidate, candidate.entry, candidate.after);
+      const whole = withEntry(page, candidate, candidate.entry, last ? null : candidate.after);
       const first = page.teams.length + page.apis.length === 0;
       if (pageCharacters(whole, reader) <= PAGE_CHARACTERS || (first && candidate.list.length <= 1)) {
         page = whole;
@@ -110,11 +115,14 @@ export const DIRECTORY_HANDLERS: Handlers = {
       page = part(fits);
       return "cut";
     };
-    // The candidates hold one more than a page takes of each, besides the one it goes on with, which says whether more follow.
+    // The candidates hold one more than a page takes of each, besides the one it goes on with, which says whether more
+    // follow: the last of them is the directory's last team, when no API is registered, or its last API, only when a
+    // page can reach it, since a page that holds 50 of a kind ends before the 51st.
     let more = false;
     if (after?.kind !== "api" && after?.kind !== "consumers") {
-      for (const candidate of await teamCandidates(context, after, keys)) {
-        if (take(candidate) !== "taken") {
+      const candidates = await teamCandidates(context, after, keys);
+      for (const [index, candidate] of candidates.entries()) {
+        if (take(candidate, index === candidates.length - 1 && !(await anyApiRegistered(context))) !== "taken") {
           more = true;
           break;
         }
@@ -122,8 +130,9 @@ export const DIRECTORY_HANDLERS: Handlers = {
     }
     // The APIs come after every team, so a page takes them only once it has taken the last team.
     if (!more) {
-      for (const candidate of await apiCandidates(context, after)) {
-        if (take(candidate) !== "taken") {
+      const candidates = await apiCandidates(context, after);
+      for (const [index, candidate] of candidates.entries()) {
+        if (take(candidate, index === candidates.length - 1) !== "taken") {
           more = true;
           break;
         }
@@ -176,11 +185,22 @@ interface CandidateOf<Kind extends "team" | "api", Entry> {
 
 type Candidate = CandidateOf<"team", ListedTeam> | CandidateOf<"api", ListedApi>;
 
-/** The page with this team or API added, whole or in part, naming this place as the next page's. */
-function withEntry(page: DirectoryPage, candidate: Candidate, entry: Candidate["entry"], next: Place): DirectoryPage {
+/** The page with this team or API added, whole or in part, naming this place as the next page's, or none after the last. */
+function withEntry(page: DirectoryPage, candidate: Candidate, entry: Candidate["entry"], next: Place | null): DirectoryPage {
+  const cursor = next === null ? null : cursorOf(next);
   return candidate.kind === "team"
-    ? { ...page, teams: [...page.teams, entry as ListedTeam & Continued], next: cursorOf(next) }
-    : { ...page, apis: [...page.apis, entry as ListedApi & Continued], next: cursorOf(next) };
+    ? { ...page, teams: [...page.teams, entry as ListedTeam & Continued], next: cursor }
+    : { ...page, apis: [...page.apis, entry as ListedApi & Continued], next: cursor };
+}
+
+/** Whether the install has a registered API, which follows every team. */
+async function anyApiRegistered(context: OrgContext): Promise<boolean> {
+  const [row] = await context.tx
+    .select({ id: apis.id })
+    .from(apis)
+    .where(and(eq(apis.orgId, context.orgId), isNull(apis.unregisteredAt)))
+    .limit(1);
+  return row !== undefined;
 }
 
 /** A team as a page may take it, going on from the previous page or not: its list is its intakeNotesWrittenBy. */

@@ -56,7 +56,7 @@ The MCP server SHALL offer these twelve tools:
 
 `claim` and `set_status` SHALL be two separate tools.
 
-Unless its `state` filter names one state, `list_inbox` SHALL return the requests addressed to the caller's teams that are not in a terminal state (`done`, `declined` or `withdrawn`), newest first, 20 a call or as many as the caller asks for up to 50; with the filter, it SHALL return the requests in that one state, a terminal one included. Its REST operation and `tiehall inbox` SHALL behave the same. `directory` SHALL answer in pages, ordered by team key and then by API name: a page SHALL hold at most 50 teams and at most 50 registered APIs, and never more than the 32,000 characters that cap a page of `get_request`, and SHALL name a cursor for the next page while more remain. When the teams declared as one registered API's consumers would take even a page that begins with that API past the 32,000 characters, the page SHALL end inside that API's list of consumers, ordered by team key, SHALL say that the list goes on in the next page, and SHALL name a cursor from which the next page goes on with the same API and its consumers after the last one listed, so that no consumer is left out; a team whose list of the teams its intake notes' writer belonged to would do the same SHALL be listed across pages the same way. A team or an API that fits on a page that begins with it SHALL NOT be split. The later page SHALL list the rest of the list as it stands when that page is read: a consumer declared between the two pages SHALL be listed there only when its key comes after the last one the earlier page listed, and a consumer removed between them SHALL NOT be listed.
+Unless its `state` filter names one state, `list_inbox` SHALL return the requests addressed to the caller's teams that are not in a terminal state (`done`, `declined` or `withdrawn`), newest first, 20 a call or as many as the caller asks for up to 50; with the filter, it SHALL return the requests in that one state, a terminal one included. Its REST operation and `tiehall inbox` SHALL behave the same. `directory` SHALL answer in pages, ordered by team key and then by API name: a page SHALL hold at most 50 teams and at most 50 registered APIs, and never more than the 32,000 characters that cap a page of `get_request`, and SHALL name a cursor for the next page while more remain. When the teams declared as one registered API's consumers would take even a page that begins with that API past the 32,000 characters, the page SHALL end inside that API's list of consumers, ordered by team key, SHALL say that the list goes on in the next page, and SHALL name a cursor from which the next page goes on with the same API and its consumers after the last one listed, so that no consumer is left out; a team whose list of the teams its intake notes' writer belonged to would do the same SHALL be listed across pages the same way. A team or an API that fits on a page that begins with it SHALL NOT be split; a page is measured as it answers, so the directory's last team or API, which no page follows, fits when it fits on a page that names no cursor. The later page SHALL list the rest of the list as it stands when that page is read: a consumer declared between the two pages SHALL be listed there only when its key comes after the last one the earlier page listed, and a consumer removed between them SHALL NOT be listed.
 
 Source: D8; D14; D28 #55, #56; D55 (28), (39); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -105,6 +105,12 @@ Source: D8; D14; D28 #55, #56; D55 (28), (39); design.md, Decisions this change 
 - **AND** the page that begins with `billing-api` ends inside its consumers, says that they go on in the next page and names a cursor
 - **AND** the page that the cursor names goes on with `billing-api` and the consumers that follow the last one listed
 - **AND** the pages together list each of the 600 consumers once
+
+#### Scenario: The last API fits on the last page
+
+- **WHEN** `billing-api` is the last registered API by name, and its consumers fit on a page that begins with it and names no cursor, but not on one that names a cursor
+- **THEN** the last page of `directory` lists `billing-api` whole, with every consumer
+- **AND** it names no cursor
 
 #### Scenario: Consumers declared and removed between pages
 
