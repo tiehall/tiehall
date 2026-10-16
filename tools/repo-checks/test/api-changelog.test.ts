@@ -33,11 +33,13 @@ describe("recording a release", () => {
     expect(changelog).toBe(fixture("changelog-after.json"));
   });
 
-  // handoff-packet: Breaking packet changes before publication. No release contains a breaking packet change
-  // until 14 days after its changelog notice.
-  it("refuses a release that would contain a breaking packet change before 14 days of notice have passed", async () => {
+  // handoff-packet: Breaking packet changes before publication. Once Tiehall has a release, no later release contains
+  // a breaking packet change until 14 days after its changelog notice.
+  it("refuses a release after the first that would contain a breaking packet change before 14 days of notice have passed", async () => {
+    const earlier = (JSON.parse(fixture("changelog-before.json")) as { releases: unknown[] }).releases;
+    expect(earlier.length).toBeGreaterThan(0);
     const withNotice = (date: string) =>
-      `${JSON.stringify({ unreleased: [{ date, kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }], releases: [] }, null, 2)}\n`;
+      `${JSON.stringify({ unreleased: [{ date, kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }], releases: earlier }, null, 2)}\n`;
     const release = (changelog: string) =>
       recordRelease({ changelog, version: "1.4.0", date: "2026-12-01", previousDocument: fixture("base.json"), document: fixture("revision.json") });
     await expect(release(withNotice("2026-11-20"))).rejects.toThrow(
@@ -45,6 +47,14 @@ describe("recording a release", () => {
     );
     const { release: recorded } = await release(withNotice("2026-11-17"));
     expect(recorded.entries).toEqual([{ date: "2026-11-17", kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }]);
+  });
+
+  // The change first-release-packet-notice: the first release, which no install, published schema or reader precedes,
+  // may contain a breaking packet change announced any day before it.
+  it("records the first release with a breaking packet change announced fewer than 14 days before it", async () => {
+    const changelog = `${JSON.stringify({ unreleased: [{ date: "2026-11-30", kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }], releases: [] }, null, 2)}\n`;
+    const { release } = await recordRelease({ changelog, version: "1.0.0", date: "2026-12-01", document: fixture("revision.json") });
+    expect(release.entries).toEqual([{ date: "2026-11-30", kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." }]);
   });
 
   // design.md, Technical decisions: T13, R-e. A release candidate gets no record of its own: its final version's

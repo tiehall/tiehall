@@ -369,12 +369,12 @@ describe("the checklist for making the repository public", () => {
     expect(gp19).toContain("`gh api repos/tiehall/tiehall/actions/permissions --jq .enabled`");
   });
 
-  it("changes the film's end card when the first release ships, and puts the new encode in the README's player (design.md, D38 (1))", () => {
+  it("cuts the first release as 1.0.0 and keeps the film's end card as it is (design.md, D38 (1); the change first-release-packet-notice)", () => {
     const gp20 = item("GP-20");
+    expect(gp20).toContain("`v1.0.0`");
     expect(gp20).toContain("Coming soon");
-    expect(gp20).toContain("node tools/repo-checks/src/check-film.ts ");
-    expect(gp20).toContain("pull request");
-    expect(gp20).toMatch(/Read back[^\n]*signed out/);
+    expect(gp20).toMatch(/keeps "Coming soon"[^\n]*2026-10-17/);
+    expect(gp20).not.toContain("node tools/repo-checks/src/check-film.ts ");
     expect(item("GP-4")).toContain("GP-20");
   });
 
