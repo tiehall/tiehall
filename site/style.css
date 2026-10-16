@@ -24,8 +24,16 @@
   --button-ink: #0A1428;
   --signal: #E3B341;
   --attention-glow: #E3B34140;
+  /* The live hall's lamps, as the web UI's dark theme draws a request's state on its map (D57). */
+  --lamp-open: #7A849D;
+  --lamp-claimed: #93A9DD;
+  --lamp-in-progress: #6E95F0;
+  --lamp-needs-info: #E3B341;
+  --lamp-done: #8FE9BB;
 
   --duration-fast: 150ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --story: 12s;
   --radius: 8px;
   --radius-card: 12px;
   --page: 1120px;
@@ -187,8 +195,383 @@ p {
   padding: 48px 0 40px;
 }
 
+.hero-grid {
+  display: grid;
+  gap: 32px;
+  align-items: center;
+}
+
 .hero-text {
   max-width: 760px;
+}
+
+/* The hall beside the text (the change landing-page-motion): the live hall of the web UI drawn for the page, six teams'
+   switchboards on a ring and the cords between them. On one cord a request travels from BE to FE, which claims it;
+   FE's question comes back and BE's switchboard glows gold while it waits; the answer follows, and the line turns green
+   when the request is done. Two other cords carry work of their own. Everything moves through the animations below,
+   on one 12-second story, and stops for people who ask for reduced motion. */
+.hall-art {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.hall-cord {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.cord-story {
+  animation: hall-done var(--story) linear infinite;
+}
+
+.hall-flow {
+  fill: none;
+  stroke: var(--lamp-in-progress);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 6 10;
+  opacity: 0.55;
+  animation: hall-flow 1.6s linear infinite;
+}
+
+.flow-b {
+  stroke: var(--lamp-claimed);
+  animation-duration: 2.2s;
+  animation-direction: reverse;
+}
+
+.hall-pulse {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-dasharray: 0.01 200;
+  stroke-dashoffset: 0;
+  opacity: 0;
+}
+
+.pulse-request {
+  stroke: var(--lamp-in-progress);
+  filter: drop-shadow(0 0 6px var(--lamp-in-progress));
+  animation: hall-request var(--story) var(--ease) infinite;
+}
+
+.pulse-question {
+  stroke: var(--lamp-needs-info);
+  filter: drop-shadow(0 0 7px var(--lamp-needs-info));
+  animation: hall-question var(--story) var(--ease) infinite;
+}
+
+.pulse-answer {
+  stroke: var(--lamp-in-progress);
+  filter: drop-shadow(0 0 6px var(--lamp-in-progress));
+  animation: hall-answer var(--story) var(--ease) infinite;
+}
+
+.pulse-ambient {
+  stroke: var(--lamp-claimed);
+  filter: drop-shadow(0 0 5px var(--lamp-claimed));
+  animation: hall-request var(--story) var(--ease) calc(var(--story) / -2) infinite;
+}
+
+/* The other teams' traffic, each cord on a pace of its own, so that the hall never stands still. */
+.pulse-travel {
+  stroke-width: 7;
+  stroke: var(--line);
+  filter: drop-shadow(0 0 4px var(--line));
+  animation: hall-travel 6s var(--ease) infinite;
+}
+
+.travel-1 {
+  stroke: var(--lamp-claimed);
+  animation-duration: 5.5s;
+  animation-delay: -1s;
+}
+
+.travel-2 {
+  stroke: var(--lamp-in-progress);
+  animation-duration: 7s;
+  animation-delay: -3s;
+}
+
+.travel-3 {
+  animation-duration: 6.5s;
+  animation-delay: -4.5s;
+}
+
+.travel-4 {
+  stroke: var(--lamp-claimed);
+  animation-duration: 8s;
+  animation-delay: -2s;
+}
+
+.travel-5 {
+  stroke: var(--lamp-in-progress);
+  animation-duration: 9s;
+  animation-delay: -6s;
+}
+
+.hall-node rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.hall-node text {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+.hall-lamp {
+  fill: var(--lamp-open);
+}
+
+.node-fe .hall-lamp {
+  animation: hall-fe-lamp var(--story) linear infinite;
+}
+
+.node-fe rect {
+  animation: hall-working var(--story) linear infinite;
+}
+
+.node-be rect {
+  animation: hall-asking var(--story) linear infinite;
+}
+
+.node-be .hall-lamp {
+  animation: hall-be-lamp var(--story) linear infinite;
+}
+
+.node-pay .hall-lamp,
+.node-ios .hall-lamp {
+  fill: var(--lamp-in-progress);
+}
+
+.node-ops .hall-lamp {
+  fill: var(--lamp-claimed);
+}
+
+@keyframes hall-flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@keyframes hall-request {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+
+  3% {
+    opacity: 1;
+  }
+
+  20% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+
+  23%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+@keyframes hall-question {
+  0%,
+  30% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+
+  33% {
+    opacity: 1;
+  }
+
+  48% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+@keyframes hall-answer {
+  0%,
+  60% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+
+  63% {
+    opacity: 1;
+  }
+
+  76% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+
+  79%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+@keyframes hall-done {
+  0%,
+  79% {
+    stroke: var(--border);
+    stroke-width: 2;
+  }
+
+  83%,
+  94% {
+    stroke: var(--lamp-done);
+    stroke-width: 3;
+  }
+
+  100% {
+    stroke: var(--border);
+    stroke-width: 2;
+  }
+}
+
+@keyframes hall-fe-lamp {
+  0%,
+  20% {
+    fill: var(--lamp-open);
+  }
+
+  22%,
+  48% {
+    fill: var(--lamp-claimed);
+  }
+
+  50%,
+  80% {
+    fill: var(--lamp-in-progress);
+  }
+
+  83%,
+  96% {
+    fill: var(--lamp-done);
+  }
+
+  100% {
+    fill: var(--lamp-open);
+  }
+}
+
+@keyframes hall-asking {
+  0%,
+  47% {
+    stroke: var(--border);
+    filter: drop-shadow(0 0 0 var(--attention-glow));
+  }
+
+  50%,
+  60% {
+    stroke: var(--lamp-needs-info);
+    filter: drop-shadow(0 0 14px var(--lamp-needs-info));
+  }
+
+  64%,
+  100% {
+    stroke: var(--border);
+    filter: drop-shadow(0 0 0 var(--attention-glow));
+  }
+}
+
+@keyframes hall-working {
+  0%,
+  20% {
+    stroke: var(--border);
+    filter: drop-shadow(0 0 0 var(--lamp-in-progress));
+  }
+
+  24%,
+  46% {
+    stroke: var(--lamp-claimed);
+    filter: drop-shadow(0 0 10px var(--lamp-in-progress));
+  }
+
+  50%,
+  80% {
+    stroke: var(--border);
+    filter: drop-shadow(0 0 0 var(--lamp-in-progress));
+  }
+
+  84%,
+  94% {
+    stroke: var(--lamp-done);
+    filter: drop-shadow(0 0 12px var(--lamp-done));
+  }
+
+  100% {
+    stroke: var(--border);
+    filter: drop-shadow(0 0 0 var(--lamp-done));
+  }
+}
+
+@keyframes hall-travel {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  42% {
+    stroke-dashoffset: -100;
+    opacity: 1;
+  }
+
+  48%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+@keyframes hall-be-lamp {
+  0%,
+  47% {
+    fill: var(--lamp-in-progress);
+  }
+
+  50%,
+  54%,
+  58% {
+    fill: var(--lamp-needs-info);
+  }
+
+  52%,
+  56% {
+    fill: var(--surface);
+  }
+
+  62%,
+  100% {
+    fill: var(--lamp-in-progress);
+  }
 }
 
 h1 {
@@ -389,6 +772,157 @@ h3 {
 
 .steps li {
   counter-increment: step;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-content: start;
+  column-gap: 16px;
+}
+
+.steps li > h3,
+.steps li > p {
+  grid-column: 1 / -1;
+}
+
+.steps li > h3 {
+  margin-top: 14px;
+}
+
+/* Each step's small picture: a packet sent along the line, a question coming back, and the pull request merging,
+   each on a loop of its own. */
+.step-art {
+  width: 112px;
+  height: 46px;
+  overflow: visible;
+}
+
+.step-track,
+.step-branch {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.step-dot {
+  fill: var(--surface-2);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.step-card {
+  fill: var(--lamp-in-progress);
+  transform-box: fill-box;
+  animation: step-send 3s var(--ease) infinite;
+}
+
+.step-dot-busy {
+  stroke: var(--lamp-needs-info);
+}
+
+.step-question rect {
+  fill: var(--lamp-needs-info);
+}
+
+.step-question text {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--button-ink);
+  text-anchor: middle;
+}
+
+.step-question {
+  animation: step-ask 3s var(--ease) infinite;
+}
+
+.step-branch {
+  stroke: var(--lamp-claimed);
+  stroke-dasharray: 60;
+  animation: step-branch 3s var(--ease) infinite;
+}
+
+.step-merge {
+  fill: var(--surface-2);
+  stroke: var(--lamp-done);
+  stroke-width: 2;
+}
+
+.step-check {
+  fill: none;
+  stroke: var(--lamp-done);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  animation: step-check 3s var(--ease) infinite;
+}
+
+@keyframes step-send {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  60% {
+    transform: translateX(36px);
+    opacity: 1;
+  }
+
+  75%,
+  100% {
+    transform: translateX(36px);
+    opacity: 0;
+  }
+}
+
+@keyframes step-ask {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  60% {
+    transform: translateX(-44px);
+    opacity: 1;
+  }
+
+  75%,
+  100% {
+    transform: translateX(-44px);
+    opacity: 0;
+  }
+}
+
+@keyframes step-branch {
+  0% {
+    stroke-dashoffset: 60;
+  }
+
+  50%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes step-check {
+  0%,
+  45% {
+    stroke-dashoffset: 100;
+  }
+
+  70%,
+  100% {
+    stroke-dashoffset: 0;
+  }
 }
 
 .steps li::before {
@@ -522,6 +1056,11 @@ h3 {
     padding-bottom: 96px;
   }
 
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 48px;
+  }
+
   .pair {
     grid-template-columns: 1fr 1fr;
     gap: 64px;
@@ -532,6 +1071,7 @@ h3 {
   *,
   *::before,
   *::after {
+    animation: none !important;
     transition: none !important;
   }
 }
