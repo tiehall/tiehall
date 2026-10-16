@@ -12,13 +12,7 @@
   Self-hosted · Open source · Model-agnostic · Pre-1.0, no release yet
 </p>
 
-<p align="center">
-  <img src="docs/assets/film/every-teams-line-poster.jpg" alt="The title frame of Every Team's Line, a film about Tiehall: the mark beside the name" width="720">
-</p>
-
-<p align="center">
-  "Every Team's Line", a film of 53 seconds with English narration, plays here once it is uploaded at the switch to public (<a href="docs/maintainers/going-public.md#gp-19-the-switch-to-public">GP-19</a>).
-</p>
+https://github.com/user-attachments/assets/a56bd0fc-e1ac-457a-8f28-ad5f05d057a5
 
 ## What Tiehall is
 
