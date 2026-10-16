@@ -46,6 +46,27 @@ async function runRemoval(time: string): Promise<void> {
   );
 }
 
+/** Sends a registration body exactly as written, with none of the harness's fields over it, from an address of its own. */
+function registerAsSent(body: Record<string, unknown>): Promise<Response> {
+  return harness.handle(
+    new Request(`${URL_OF_INSTALL}/api/auth/oauth2/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": `198.18.${randomInt(256)}.${randomInt(1, 255)}` },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+async function storedRedirects(clientId: string): Promise<string[]> {
+  const { rows } = await harness.install.owner.query<{ redirect_uris: string[] }>("SELECT redirect_uris FROM oauth_clients WHERE client_id = $1", [clientId]);
+  return rows[0]?.redirect_uris ?? [];
+}
+
+const locationOf = (answer: Response) => new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
+/** A URL without its query: for an app's scheme, whose origin is opaque, its scheme, host and path. */
+const withoutQuery = (url: URL) => `${url.protocol}//${url.host}${url.pathname}`;
+const decoded = (html: string) => html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+
 describe("registrations from one address", () => {
   it("are at most 10 an hour: the 11th gets 429 with Retry-After and no client id", async () => {
     at("2026-10-01T09:00:00Z");
@@ -241,27 +262,6 @@ describe("a native app's own scheme", () => {
     token_endpoint_auth_method: "none",
   };
 
-  /** Sends a registration body exactly as written, with none of the harness's fields over it, from an address of its own. */
-  function registerAsSent(body: Record<string, unknown>): Promise<Response> {
-    return harness.handle(
-      new Request(`${URL_OF_INSTALL}/api/auth/oauth2/register`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": `198.18.${randomInt(256)}.${randomInt(1, 255)}` },
-        body: JSON.stringify(body),
-      }),
-    );
-  }
-
-  async function storedRedirects(clientId: string): Promise<string[]> {
-    const { rows } = await harness.install.owner.query<{ redirect_uris: string[] }>("SELECT redirect_uris FROM oauth_clients WHERE client_id = $1", [clientId]);
-    return rows[0]?.redirect_uris ?? [];
-  }
-
-  const locationOf = (answer: Response) => new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL);
-  /** A URL without its query: for an app's scheme, whose origin is opaque, its scheme, host and path. */
-  const withoutQuery = (url: URL) => `${url.protocol}//${url.host}${url.pathname}`;
-  const decoded = (html: string) => html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
-
   it("of Cursor's registration, as Cursor sends it with no application_type, is a native client's, which gets a client id and keeps its redirect URI", async () => {
     at("2026-10-15T20:00:00Z");
     const answer = await registerAsSent(CURSOR_REGISTRATION);
@@ -350,15 +350,20 @@ describe("a native app's own scheme", () => {
     expect(await clientCount()).toBe(before);
   });
 
-  it("beside an https redirect URI keeps the web type, and the registration is refused for the app's scheme; one that names native takes both", async () => {
-    const before = await clientCount();
-    const mixed = await registerAsSent({ ...CURSOR_REGISTRATION, redirect_uris: [CURSOR, "https://agent.vendor.example/callback"] });
-    expect(mixed.status).toBe(400);
-    expect(await mixed.json()).toMatchObject({ error: "invalid_redirect_uri" });
-    expect(await clientCount()).toBe(before);
-    const native = await registerAsSent({ ...CURSOR_REGISTRATION, application_type: "native", redirect_uris: ["https://agent.vendor.example/callback", CURSOR] });
-    expect(native.status).toBe(201);
-    expect(await native.json()).toMatchObject({ application_type: "native", redirect_uris: ["https://agent.vendor.example/callback", CURSOR] });
+  // As the maintainer answered on 2026-10-16 (task 27.6): an https redirect URI beside an app's scheme, which RFC 8252,
+  // section 7.2, lets a native app claim, no longer keeps the web type.
+  it("beside an https redirect URI, with or without a loopback one, is a native client's, its URIs kept in their order, as when the registration names native", async () => {
+    for (const [type, redirects] of [
+      [{}, [CURSOR, "https://agent.vendor.example/callback"]],
+      [{}, ["https://agent.vendor.example/callback", CURSOR, "http://127.0.0.1:33418/callback"]],
+      [{ application_type: "native" }, ["https://agent.vendor.example/callback", CURSOR]],
+    ] as const) {
+      const answer = await registerAsSent({ ...CURSOR_REGISTRATION, ...type, redirect_uris: redirects });
+      expect(answer.status, JSON.stringify(redirects)).toBe(201);
+      const body = (await answer.json()) as { client_id: string };
+      expect(body).toMatchObject({ application_type: "native", redirect_uris: redirects });
+      expect(await storedRedirects(body.client_id)).toEqual(redirects);
+    }
   });
 
   // A registration whose last step fails after the sign-in library stored its client, as when the process stops in
@@ -416,6 +421,121 @@ describe("a native app's own scheme", () => {
     const remaining = await clientIds();
     for (const clientId of leftIds) expect(remaining).not.toContain(clientId);
     expect(remaining).toEqual(expect.arrayContaining(["tiehall-cli", metadataClient]));
+  });
+});
+
+// decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+// 2026-10-16, after the install refused Cursor's first registration (docs/client-matrix/log.md; task 27.6): https
+// redirect URIs, which RFC 8252, section 7.2, lets a native app claim, beside loopback URIs or app's schemes leave a
+// registration that names no type a native client's, while https URIs alone keep the web type. A redirect URI that no
+// client may register is refused in Tiehall's words, which name it, not in the sign-in library's, which name the first
+// URI it does not take for a web client, often a loopback one. PKCE stays required, and the consent screen names every
+// place a sign-in of the client may end.
+describe("https redirect URIs beside local ones", () => {
+  const HOSTED = "https://www.cursor.com/agents/mcp/oauth/callback";
+  const LOOPBACK = "http://localhost:8787/callback";
+  // Cursor's first registration as the run of 2026-10-16 saw it, with these redirect URIs in this order and no
+  // application_type; its other fields are those of Cursor's registration in task 27.5's tests above.
+  const CURSOR_FIRST = {
+    client_name: "Cursor",
+    redirect_uris: [HOSTED, LOOPBACK],
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+  };
+
+  it("of Cursor's first registration, as Cursor sends it with no application_type, are a native client's, which gets a client id and keeps both URIs as sent", async () => {
+    at("2026-10-16T08:00:00Z");
+    const answer = await registerAsSent(CURSOR_FIRST);
+    expect(answer.status).toBe(201);
+    const body = (await answer.json()) as { client_id: string };
+    expect(body).toMatchObject({ application_type: "native", redirect_uris: [HOSTED, LOOPBACK], token_endpoint_auth_method: "none" });
+    expect(await storedRedirects(body.client_id)).toEqual([HOSTED, LOOPBACK]);
+  });
+
+  it.each([
+    [HOSTED, "https://www.cursor.com", "www.cursor.com", "localhost"],
+    [LOOPBACK, "http://localhost:8787", "localhost", "www.cursor.com"],
+  ])(
+    "of Cursor's first registration: an authorization to %s with PKCE reaches the consent screen, which names both places; one without PKCE is refused; the approved client gets its code there",
+    async (redirectUri, source, here, other) => {
+      const registered = await registerAsSent(CURSOR_FIRST);
+      expect(registered.status).toBe(201);
+      const client = { clientId: ((await registered.json()) as { client_id: string }).client_id, redirectUri };
+
+      const consent = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { scope: "requests:read requests:write" }));
+      expect(consent.pathname).toBe("/consent");
+      const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+      expect(page.status).toBe(200);
+      expect(page.headers.get("content-security-policy")).toContain(`form-action 'self' ${source};`);
+      const html = decoded(await page.text());
+      expect(html).toContain(`After you approve it, your browser returns to ${here}.`);
+      expect(html).toContain(`where a later sign-in of it may end once you approve it: ${other}.`);
+      expect(html).toMatch(/unverified client/i);
+
+      const refused = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { code_challenge: undefined, code_challenge_method: undefined, scope: "requests:read" }));
+      expect(withoutQuery(refused)).toBe(redirectUri);
+      expect(refused.searchParams.get("error")).toBe("invalid_request");
+      expect(refused.searchParams.get("code")).toBeNull();
+
+      await harness.approve(ana.userId, client.clientId, ["requests:read", "requests:write"]);
+      const pkce = pkcePair();
+      const returned = locationOf(await harness.authorize(ana.cookie, client, pkce));
+      expect(withoutQuery(returned)).toBe(redirectUri);
+      expect(returned.searchParams.get("state")).toBe("state-1");
+      expect(returned.searchParams.get("iss")).toBe(URL_OF_INSTALL);
+      const exchanged = await harness.exchange(client, returned.searchParams.get("code") ?? "", pkce);
+      expect(exchanged.status).toBe(200);
+      expect(typeof exchanged.body["access_token"]).toBe("string");
+    },
+  );
+
+  it("alone keep the web type, as Cursor's second registration, of its hosted callback alone, does", async () => {
+    for (const redirects of [[HOSTED], [HOSTED, "https://agent.vendor.example/callback"]]) {
+      const answer = await registerAsSent({ ...CURSOR_FIRST, redirect_uris: redirects });
+      expect(answer.status, JSON.stringify(redirects)).toBe(201);
+      expect(await answer.json()).toMatchObject({ application_type: "web", redirect_uris: redirects });
+    }
+  });
+
+  it.each([
+    "ws://agent.vendor.example/callback",
+    "mailto:agent@vendor.example",
+    "javascript://agent.vendor.example/%0Aalert(1)",
+    "http://agent.vendor.example/callback",
+    "cursor://anysphere.cursor-mcp/oauth/callback#done",
+    "microsoft-edge:https://agent.vendor.example/callback",
+  ])(
+    "beside them cannot carry %s: the registration, with no type or as native, gets 400 invalid_redirect_uri, whose description names it in Tiehall's words, and no client",
+    async (uri) => {
+      const before = await clientCount();
+      for (const [type, redirects] of [
+        [{}, [HOSTED, uri]],
+        [{}, [HOSTED, LOOPBACK, uri]],
+        [{}, [LOOPBACK, uri, HOSTED]],
+        [{ application_type: "native" }, [HOSTED, LOOPBACK, uri]],
+      ] as const) {
+        const answer = await registerAsSent({ ...CURSOR_FIRST, ...type, redirect_uris: redirects });
+        const label = JSON.stringify([type, redirects]);
+        expect(answer.status, label).toBe(400);
+        const body = (await answer.json()) as { error?: string; error_description?: string; client_id?: string };
+        expect(body.error, label).toBe("invalid_redirect_uri");
+        expect(body.error_description, label).toContain(`; ${uri} is none of these.`);
+        expect(body.error_description, label).not.toContain("web clients require");
+        expect(body.error_description, label).not.toContain(LOOPBACK);
+        expect(body.error_description, label).not.toContain(HOSTED);
+        expect(body.client_id).toBeUndefined();
+      }
+      expect(await clientCount()).toBe(before);
+    },
+  );
+
+  it("still refuse an https URI on localhost, which no client may register, beside a loopback one as alone", async () => {
+    for (const redirects of [["https://localhost/callback", LOOPBACK], ["https://localhost/callback"]]) {
+      const answer = await registerAsSent({ ...CURSOR_FIRST, redirect_uris: redirects });
+      expect(answer.status, JSON.stringify(redirects)).toBe(400);
+      expect(await answer.json()).toMatchObject({ error: "invalid_redirect_uri" });
+    }
   });
 });
 

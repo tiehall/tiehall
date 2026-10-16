@@ -15,8 +15,9 @@ import { CLIENT_REDIRECT_URI, pkcePair, startAgentAccess, type AgentAccessHarnes
 // asking: the name the client gives itself, quoted as text from outside
 // Tiehall; the verified host of a client identified by its metadata document,
 // or a warning that a registered client is unverified; the host name the
-// browser returns to; a warning when every address the client can return to
-// is on the computer it runs on; and what the client may do for the member.
+// browser returns to, with every other place the client registered; a warning
+// when every address the client can return to is on the computer it runs on;
+// and what the client may do for the member.
 // It asks for no choice of org, since the install has one. A browser without
 // a session is sent to sign in first, and comes back; so does one that starts
 // an authorization before it has signed in, which the sign-in page brings
@@ -110,6 +111,31 @@ describe("the consent screen's content", () => {
     expect(cursor).toContain("the app on your computer that opens cursor: addresses, at cursor://anysphere.cursor-mcp/oauth/callback.");
     expect(cursor).not.toContain("returns to anysphere.cursor-mcp");
     expect(cursor).not.toMatch(/returns to \./);
+  });
+
+  // A client may register several places a sign-in of it may end, as Cursor registers its hosted callback beside one on
+  // localhost, and once the person approves it, a later sign-in of it may end at any of them: the screen names each
+  // other place the same way, once, besides where this sign-in ends (decisions-from-groups-15-28: design.md, Decisions
+  // this change rests on: D55 (15), as the maintainer answered on 2026-10-16; task 27.6).
+  it("names every other place the client registered, where a later sign-in of it may end, each once, and none for a client of one place", () => {
+    const HOSTED = "https://www.cursor.com/agents/mcp/oauth/callback";
+    const cursor = { ...REGISTERED.client, redirectUris: [HOSTED, "http://localhost:8787/callback"] };
+    const hosted = textOf({ ...REGISTERED, client: cursor, redirectUri: HOSTED });
+    expect(hosted).toContain("After you approve it, your browser returns to www.cursor.com.");
+    expect(hosted).toContain("It registered other places too, where a later sign-in of it may end once you approve it: localhost.");
+    const loopback = textOf({ ...REGISTERED, client: cursor, redirectUri: "http://localhost:61234/callback" });
+    expect(loopback).toContain("After you approve it, your browser returns to localhost.");
+    expect(loopback).toContain("It registered other places too, where a later sign-in of it may end once you approve it: www.cursor.com.");
+    const many = {
+      ...REGISTERED.client,
+      redirectUris: [HOSTED, "http://localhost:8787/callback", "https://www.cursor.com/elsewhere", "vscode://vendor.mcp-client/oauth/callback", "http://localhost:9000/cb"],
+    };
+    expect(textOf({ ...REGISTERED, client: many, redirectUri: HOSTED })).toContain(
+      "may end once you approve it: localhost; the app on your computer that opens vscode: addresses, at vscode://vendor.mcp-client/oauth/callback.",
+    );
+    expect(textOf(REGISTERED)).not.toContain("other places");
+    const twoPaths = { ...REGISTERED.client, redirectUris: ["https://agent.vendor.example/a", "https://agent.vendor.example/b"] };
+    expect(textOf({ ...REGISTERED, client: twoPaths, redirectUri: "https://agent.vendor.example/a" })).not.toContain("other places");
   });
 
   it("warns when every redirect URI of the client is on localhost, and not when one is not", () => {

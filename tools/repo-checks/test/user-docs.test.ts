@@ -59,6 +59,12 @@ const TOPICS: Topic[] = [
       // 2026-10-15 (task 27.5).
       "Cursor and clients built on VS Code sign in through Dynamic Client Registration",
       "`cursor://anysphere.cursor-mcp/oauth/callback`",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+      // 2026-10-16 (task 27.6).
+      "and the place it will send you back to, with every other place the client registered",
+      "`https://www.cursor.com/agents/mcp/oauth/callback` beside `http://localhost:8787/callback`",
+      "a client that registers only `https:` URIs counts as a web application",
+      "the install refuses it and names that URI",
     ],
   },
   {

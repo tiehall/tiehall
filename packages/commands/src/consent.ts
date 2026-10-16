@@ -26,9 +26,12 @@ import type { OrgContext } from "./with-org.ts";
 //   Cursor's cursor://anysphere.cursor-mcp/oauth/callback, the scheme and the
 //   whole URI, whose host is no web host the browser returns to
 //   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-//   D55 (15), as the maintainer answered on 2026-10-15); and a warning when
-//   every redirect URI of the client is on the computer it runs on
-//   (localhost);
+//   D55 (15), as the maintainer answered on 2026-10-15); every other place the
+//   client registered, named the same way, since once the person approves
+//   the client a later sign-in of it may end at any of them, as Cursor's
+//   first registration has its hosted callback beside one on localhost (D55
+//   (15), as the maintainer answered on 2026-10-16); and a warning when every
+//   redirect URI of the client is on the computer it runs on (localhost);
 // - what the client may do for the member: the scopes it asks for, which
 //   are only ones Tiehall offers; a page whose address names anything else,
 //   which the authorization server never sends a browser to, is refused with
@@ -171,6 +174,22 @@ function whereItEnds(uri: string): string {
   }
 }
 
+/**
+ * A place a sign-in may end, as the consent screen names it among the other
+ * places a client registered: for an http or https redirect URI, the host name
+ * the browser returns to; for a native app's own scheme, the app that opens
+ * the scheme's addresses and the whole URI.
+ */
+function placeOf(uri: string): string {
+  try {
+    const url = new URL(uri);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.hostname;
+    return `the app on your computer that opens ${url.protocol} addresses, at ${url.href}`;
+  } catch {
+    return uri;
+  }
+}
+
 /** The consent screen's content: who is asking and what for, in Tiehall's own words, with the client's own name quoted. */
 export function consentReview({ client, redirectUri, scopes }: ConsentView): Review {
   const lines: ReviewLine[] = [];
@@ -185,6 +204,10 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
     });
   }
   lines.push({ text: `After you approve it, ${whereItEnds(redirectUri)}.` });
+  // Once approved, a later sign-in of the client may end at any place it registered: each other place, once.
+  const here = placeOf(redirectUri);
+  const others = [...new Set(client.redirectUris.map(placeOf))].filter((place) => place !== here);
+  if (others.length > 0) lines.push({ text: `It registered other places too, where a later sign-in of it may end once you approve it: ${others.join("; ")}.` });
   if (client.redirectUris.length > 0 && client.redirectUris.every(isLocalhost)) {
     lines.push({
       text: "Every address this client can send you back to is on localhost, the computer it runs on. Continue only if you started this from an agent on your own computer.",

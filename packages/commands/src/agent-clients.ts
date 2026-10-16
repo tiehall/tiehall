@@ -24,10 +24,20 @@ import type { WorkerJob } from "./worker.ts";
 // eleventh within the hour is refused with 429 and a Retry-After that says
 // when the oldest of the ten leaves the hour, and gets no client id. A request
 // the authorization server then refuses, such as one with a redirect URI it
-// does not take, still counts. A native client, whose every redirect URI is on
-// its own computer or has its app's own scheme, often does not say it is one;
-// the registration is taken as a native client's then, as its redirect URIs
-// show it is.
+// does not take, still counts. A native client, whose redirect URIs are on its
+// own computer or have its app's own scheme, often does not say it is one; the
+// registration is taken as a native client's then, as its redirect URIs show
+// it is, and so it is when https URIs stand beside them, which RFC 8252,
+// section 7.2, lets a native app claim, as Cursor's first registration has its
+// hosted callback beside one on localhost (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (15), as the maintainer
+// answered on 2026-10-16). A registration of https URIs alone keeps the web
+// type. A registration that names no type, or names native, with a redirect
+// URI that is none of an https URI, an http URI on localhost, 127.0.0.1 or
+// [::1], and a URI with an app's own scheme, is refused with 400
+// invalid_redirect_uri in Tiehall's words, which name that URI, before the
+// sign-in library sees it: the library would name the first URI it does not
+// take for a web client, often a loopback one a native client may use.
 //
 // A native app's own scheme needs no dot (decisions-from-groups-15-28:
 // design.md, Decisions this change rests on: D55 (15), as the maintainer
@@ -40,18 +50,17 @@ import type { WorkerJob } from "./worker.ts";
 // whose addresses a browser shows or runs itself and those that reach a
 // program by an address, and has after its scheme's colon a path, as
 // com.example.app:/callback has, or // with a host and a path, as Cursor's has.
-// Each redirect URI of a native registration that is neither http nor https
-// must have an app's own scheme, or the registration is refused with 400
-// invalid_redirect_uri in Tiehall's words. The sign-in library takes only a
-// scheme that holds a dot, written with no host, and judges the registration
-// it is handed: so it is handed, for each app's scheme, a stand-in of that
-// form that no app opens, and once it has stored the client, the URIs the
-// client sent are written over the stand-ins in the client's row and in the
-// answer, in the transaction that records the registration's client id. A
-// client whose row kept its stand-ins, because the process stopped or that
-// transaction failed in between, can send a browser nowhere, and no record of
-// a registration names it; it is removed 7 days after the sign-in library
-// stored it, as a client never used is.
+// The sign-in library takes only a scheme that holds a dot, written with no
+// host, and judges the registration it is handed: so it is handed, for each
+// app's scheme, a stand-in of that form that no app opens, and its https URIs
+// as sent, which it takes for a native client on any host but a loopback one.
+// Once it has stored the client, the URIs the client sent are written over the
+// stand-ins in the client's row and in the answer, in the transaction that
+// records the registration's client id. A client whose row kept its
+// stand-ins, because the process stopped or that transaction failed in
+// between, can send a browser nowhere, and no record of a registration names
+// it; it is removed 7 days after the sign-in library stored it, as a client
+// never used is.
 //
 // An IPv6 client is counted by its /64, since one host commonly holds a
 // whole /64: every address in one /64 shares the 10 registrations an hour
@@ -194,12 +203,15 @@ function isNativeRedirect(uri: unknown): boolean {
   return isLoopbackRedirect(uri) || isAppSchemeRedirect(uri);
 }
 
-/** Whether a redirect URI is an http or an https URI, which the sign-in library judges itself, for a native client as for a web one. */
-function isWebRedirect(uri: unknown): boolean {
+/**
+ * Whether a redirect URI is an https URI, which a web client registers and a
+ * native one may claim (RFC 8252, 7.2), and which the sign-in library judges
+ * itself, for a native client as for a web one.
+ */
+function isHttpsRedirect(uri: unknown): boolean {
   if (typeof uri !== "string") return false;
   try {
-    const { protocol } = new URL(uri);
-    return protocol === "http:" || protocol === "https:";
+    return new URL(uri).protocol === "https:";
   } catch {
     return false;
   }
@@ -248,8 +260,9 @@ export function holdsNul(value: unknown): boolean {
 
 /**
  * The plugin that limits registrations per client address and hour, takes a
- * registration whose every redirect URI is native as a native client's, and
- * holds a native registration's app's schemes to Tiehall's rule.
+ * registration whose redirect URIs are native, with or without https ones, as
+ * a native client's, refuses in Tiehall's words a redirect URI no client may
+ * register, and holds a native registration's app's schemes to Tiehall's rule.
  */
 export function clientRegistrations(options: ClientRegistrationOptions): BetterAuthPlugin {
   const now = options.now ?? (() => new Date());
@@ -319,19 +332,21 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             // A client's metadata is bounded, so no text breaks the database's own bounds later.
             const outOfBounds = clientMetadataBoundsProblem(body);
             if (outOfBounds !== undefined) throw new APIError("BAD_REQUEST", { error: "invalid_client_metadata", error_description: outOfBounds });
-            // A registration whose every redirect URI is native is a native client's, whether or not it says so.
             const redirects = body["redirect_uris"];
             const named = body["application_type"];
-            const taken = named === undefined && Array.isArray(redirects) && redirects.length > 0 && redirects.every(isNativeRedirect);
-            if (!(taken || named === "native") || !Array.isArray(redirects)) return undefined;
-            // Each redirect URI of a native client that is neither http nor https has its app's own scheme.
-            const neither = redirects.find((uri) => !isWebRedirect(uri) && !isAppSchemeRedirect(uri));
-            if (neither !== undefined) {
+            if (!(named === undefined || named === "native") || !Array.isArray(redirects) || redirects.length === 0) return undefined;
+            // A redirect URI that no client may register is refused in Tiehall's words, which name it.
+            const atFault = redirects.find((uri) => !isHttpsRedirect(uri) && !isNativeRedirect(uri));
+            if (atFault !== undefined) {
               throw new APIError("BAD_REQUEST", {
                 error: "invalid_redirect_uri",
-                error_description: `A native client's redirect URI is an http URI on localhost, 127.0.0.1 or [::1], an https URI, or a URI with the app's own scheme: written in printable ASCII with no space, with no fragment and no user information, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof neither === "string" ? neither : "one of its redirect URIs"} is none of these.`,
+                error_description: `Every redirect URI a client registers is an https URI, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with no fragment and no user information, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`,
               });
             }
+            // A registration with a native redirect URI is a native client's, whether or not it says so, and whether or
+            // not https URIs stand beside it; one of https URIs alone keeps the web type.
+            const taken = named === undefined && redirects.some(isNativeRedirect);
+            if (!(taken || named === "native")) return undefined;
             // The sign-in library is handed a stand-in it takes for each app's scheme; the client's own URIs replace them once it is stored.
             const handed = redirects.map((uri) => (isAppSchemeRedirect(uri) ? `${STAND_IN_SCHEME}:/${randomUUID()}` : uri));
             const swapped = handed.some((uri, index) => uri !== redirects[index]);

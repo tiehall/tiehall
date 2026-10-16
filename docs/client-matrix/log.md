@@ -196,3 +196,33 @@ The cells so far, against the server's 12 tools; the protocol version that each 
 ### Findings
 
 None.
+
+## 2026-10-16: Cursor's first registration, an https callback beside a loopback one (task 27.6)
+
+- **Date:** 2026-10-16. Cursor's sign-in on the maintainer's install was in the morning, at a time not recorded; the debugging run's registrations were stored at 07:27 and 07:32 UTC.
+- **Client:** Cursor, the app, with Tiehall as a remote MCP server; its version was not recorded.
+- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
+- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `dc4b5a1e`, with task 27.5; and, for the debugging run, a throwaway install of an image built from the same commit, to which the registrations were sent by hand.
+- **Task:** 27.6 [agent-access: Dynamic Client Registration stays on, limited and unverified; agent-access: The consent screen shows who is asking], a failure on Tiehall's side found while re-running Cursor's cell of task 27.1, triaged as task 27.3 says.
+
+### Steps
+
+1. Started Cursor against the maintainer's install, and signed it in.
+2. A debugging run sent registrations as Cursor's to the throwaway install: `cursor://anysphere.cursor-mcp/oauth/callback` alone, with an authorization request for it; Cursor's hosted callback alone; the hosted callback beside `http://localhost:8787/callback`, and beside `http://127.0.0.1:8787/callback`; the hosted callback with the `cursor:` URI and the loopback one; and the loopback one alone.
+
+### Seen
+
+- Cursor's first registration named the redirect URIs `https://www.cursor.com/agents/mcp/oauth/callback` and `http://localhost:8787/callback`, in that order, and no `application_type`. The install kept it a web client's, as D55 (15) of the OpenSpec change `decisions-from-groups-15-28` then said of a registration with an `https` URI, and answered 400 `{"error":"invalid_redirect_uri","error_description":"web clients require https redirect URIs on non-loopback hosts: http://localhost:8787/callback"}`: the sign-in library's text, which names the loopback URI, one a native client may register, as the URI at fault.
+- Cursor then registered again with its hosted callback alone, which the install took as a web client's, and signed in through it: `www.cursor.com` passed the code on to Cursor's listener on localhost and opened Cursor again through a link to the app.
+- Each of Cursor's sign-ins so spends one refused registration of the 10 that an address may make in an hour.
+- In the debugging run, `cursor://anysphere.cursor-mcp/oauth/callback` alone was taken as a native client's, and an authorization with it and PKCE reached the consent screen, which named `cursor:` and the whole URI, as task 27.5 built it. The hosted callback alone was taken as a web client's, and the loopback one alone as a native client's. The hosted callback beside `http://localhost:8787/callback` or `http://127.0.0.1:8787/callback` was refused with the library's text naming the loopback URI, and beside the `cursor:` URI and the loopback one, naming the `cursor:` URI.
+
+### Not exercised
+
+- Cursor's sign-in with its first registration taken, on a build with task 27.6: the re-run belongs to the matrix run of task 27.1.
+- What the consent screen showed for Cursor's sign-in through its hosted callback was not recorded.
+- The protocol version Cursor spoke, a metadata document, `TIEHALL_CLIENT_METADATA_FETCH=off`, and the number of tools Cursor showed: the matrix's cells, task 27.1.
+
+### Findings
+
+- F9. Cursor's first registration names its hosted `https` callback beside a loopback one, with no `application_type`; the install kept it a web client's and refused it, with the sign-in library's text naming the loopback URI, and Cursor's second registration, of its hosted callback alone, signed it in, at the cost of a refused registration at each sign-in. The maintainer answered the same day that `https` URIs beside loopback URIs or app's schemes, which RFC 8252, section 7.2, lets a native app claim, leave a registration that names no type a native client's, while `https` URIs alone stay a web client's, as D55 (15) now says, and task 27.6 builds it, tests first: Cursor's first registration, as Cursor sends it, is a native client's that keeps both URIs; an authorization with PKCE to either reaches the consent screen, which names both places, and the approved client gets its code at either and exchanges it; and a redirect URI that no client may register, beside an `https` one, is refused in Tiehall's words, which name that URI, instead of the library's.
