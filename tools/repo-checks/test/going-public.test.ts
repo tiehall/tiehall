@@ -140,6 +140,17 @@ describe("the checklist for making the repository public", () => {
     expect(listed.sort()).toEqual(expected.sort());
   });
 
+  it("rewrites a fresh clone, as filter-repo requires, and gives the rewritten clone its remote only to push it", () => {
+    const gp7 = item("GP-7");
+    const rewrite = gp7.indexOf("git filter-repo");
+    expect(rewrite).toBeGreaterThan(-1);
+    // filter-repo refuses a clone whose origin is gone unless forced, which turns off its other checks too, and
+    // removes origin itself after the rewrite.
+    expect(gp7.slice(0, rewrite)).not.toMatch(/\bremote (?:remove|rm) origin\b/);
+    expect(gp7).not.toMatch(/git filter-repo [^\n`]*--force/);
+    expect(item("GP-10")).toContain("git remote add origin https://github.com/tiehall/tiehall.git");
+  });
+
   it("keeps personal data out: the repository's public address only, no mailbox, no local path, no earlier email", () => {
     expect(checklist).toContain("github.com/tiehall/tiehall");
     expect(links(checklist).filter(({ target }) => target.startsWith("mailto:"))).toEqual([]);
