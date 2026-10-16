@@ -279,7 +279,10 @@ p {
   animation: drift-a 20s ease-in-out infinite alternate;
 }
 
+/* Every drawing of the page carries SVG's display="none", which this stylesheet overrides: a visitor whose browser holds
+   an older stylesheet, or none, sees the text alone rather than unstyled shapes. */
 .backdrop {
+  display: block;
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -985,6 +988,7 @@ h3 {
 /* Each step's small picture: a packet sent along the line, a question coming back, and the pull request merging,
    each on a loop of its own. */
 .step-art {
+  display: inline-block;
   width: 112px;
   height: 46px;
   overflow: visible;
