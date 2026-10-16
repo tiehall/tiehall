@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { connect as netConnect, type AddressInfo } from "node:net";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOutboundFetcher, type ConnectTarget } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { CLIENT_REDIRECT_URI, hiddenField, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
@@ -28,8 +28,28 @@ const HOSTS: Readonly<Record<string, string>> = {
   "busy.example": "93.184.215.15",
   "quiet.example": "93.184.215.16",
   "ports.example": "93.184.215.17",
+  "apps.example": "93.184.215.18",
   "internal.vendor.example": "10.0.0.5",
 };
+
+/** Cursor's redirect URI, its app's own scheme, which holds no dot. */
+const CURSOR = "cursor://anysphere.cursor-mcp/oauth/callback";
+
+/**
+ * Redirect URIs that no native client may have, by D55 (15)'s rule: the web's schemes and those that reach a program
+ * by an address, shapes that are no app's own, a fragment, an https URI on a loopback host, and http on another host.
+ */
+const NO_NATIVE_REDIRECTS = [
+  "mailto:agent@vendor.example",
+  "ws://agent.vendor.example/callback",
+  "javascript://agent.vendor.example/%0Aalert(1)",
+  "cursor://anysphere.cursor-mcp",
+  "cursor:oauth/callback",
+  "microsoft-edge:https://agent.vendor.example/callback",
+  `${CURSOR}#done`,
+  "https://localhost/callback",
+  "http://agent.vendor.example/callback",
+];
 
 let server: Server;
 let port: number;
@@ -74,6 +94,22 @@ beforeAll(async () => {
     if (request.url === "/oauth/many-redirects.json") {
       const redirects = Array.from({ length: 11 }, (_, index) => `http://127.0.0.1:${33_400 + index}/callback`);
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: redirects }));
+    }
+    // Documents whose redirect URIs have an app's own scheme, or a URI no native client may have (task 27.9).
+    if (request.url === "/oauth/cursor.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Cursor", redirect_uris: [CURSOR] }));
+    }
+    if (request.url === "/oauth/path-form.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: [CLIENT_REDIRECT_URI, "myapp:/oauth/callback", CURSOR] }));
+    }
+    if (request.url === "/oauth/web-cursor.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { application_type: "web", redirect_uris: [CURSOR] }));
+    }
+    const refused = /^\/oauth\/(none|native)\/(\d+)\.json$/.exec(request.url ?? "");
+    if (refused !== null) {
+      const type = refused[1] === "native" ? { application_type: "native" } : {};
+      const uri = NO_NATIVE_REDIRECTS[Number(refused[2])] ?? "";
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { ...type, redirect_uris: [CLIENT_REDIRECT_URI, uri] }));
     }
     return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url));
   });
@@ -274,6 +310,105 @@ describe("the bounds of a client identified by its metadata document", () => {
     // Its refresh token works too.
     const refreshed = await harness.refresh({ clientId, redirectUri: CLIENT_REDIRECT_URI }, String(exchanged.body["refresh_token"]));
     expect(refreshed.status).toBe(200);
+  });
+});
+
+// agent-access: Clients identified by a Client ID Metadata Document are preferred (decisions-from-groups-15-28:
+// design.md, Decisions this change rests on: D55 (15), as the maintainer answered on 2026-10-16; Technical decisions:
+// T4; task 27.9). A document that names no application_type, or names native, has its redirect URIs held to the rule a
+// native registration's are: an app's own scheme needs no dot, so Cursor's is taken, and a redirect URI no native client
+// may have is refused with invalid_client, in Tiehall's words that name it. The sign-in library is handed a stand-in for
+// each app's scheme, and the client's row holds the URIs the document gives.
+describe("an app's own scheme in a metadata document", () => {
+  /** The redirect URIs the install stored for a client. */
+  async function storedRedirects(clientId: string): Promise<string[] | undefined> {
+    const { rows } = await harness.install.owner.query<{ redirect_uris: string[] }>("SELECT redirect_uris FROM oauth_clients WHERE client_id = $1", [clientId]);
+    return rows[0]?.redirect_uris;
+  }
+
+  it("of Cursor's is taken: the consent screen names the scheme and the whole URI, the approved client gets its code there and exchanges it, and its row holds the URI, fetched again too", async () => {
+    const clientId = "https://apps.example/oauth/cursor.json";
+    const client = { clientId, redirectUri: CURSOR };
+    const started = await harness.authorize(ana.cookie, client, pkcePair(), { scope: "requests:read requests:write" }, { "x-forwarded-for": "198.51.100.90" });
+    expect(started.status).toBe(302);
+    const consent = new URL(started.headers.get("location") ?? "", URL_OF_INSTALL);
+    expect(consent.pathname).toBe("/consent");
+    expect(await storedRedirects(clientId)).toEqual([CURSOR]);
+    const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    const text = html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+    expect(text).toContain(`the app on your computer that opens cursor: addresses, at ${CURSOR}.`);
+    expect(text).toContain("identified by its metadata document on apps.example");
+
+    // Once approved, the client's code reaches its app's scheme, and is exchanged; the document is fetched again.
+    const pkce = pkcePair();
+    const confirmed = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve`, {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", accept: "text/html" },
+        body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+      }),
+    );
+    expect(confirmed.status).toBe(303);
+    await harness.handle(new Request(new URL(confirmed.headers.get("location") ?? "", URL_OF_INSTALL), { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    const returned = new URL((await harness.authorize(ana.cookie, client, pkce, {}, { "x-forwarded-for": "198.51.100.90" })).headers.get("location") ?? "");
+    expect(`${returned.protocol}//${returned.host}${returned.pathname}`).toBe(CURSOR);
+    expect(returned.searchParams.get("iss")).toBe(URL_OF_INSTALL);
+    const exchanged = await harness.exchange(client, returned.searchParams.get("code") ?? "", pkce);
+    expect(exchanged.status).toBe(200);
+    expect(typeof exchanged.body["access_token"]).toBe("string");
+    expect(await storedRedirects(clientId)).toEqual([CURSOR]);
+
+    // An hour on, the library fetches the document again and stores its client again: its row still holds the URI the
+    // document gives, and the client still signs in.
+    expect(fetched.filter((url) => url === clientId)).toHaveLength(1);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 61 * 60_000);
+      const again = pkcePair();
+      const later = new URL((await harness.authorize(ana.cookie, client, again, {}, { "x-forwarded-for": "198.51.100.94" })).headers.get("location") ?? "");
+      expect(`${later.protocol}//${later.host}${later.pathname}`).toBe(CURSOR);
+      expect((await harness.exchange(client, later.searchParams.get("code") ?? "", again)).status).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fetched.filter((url) => url === clientId)).toHaveLength(2);
+    expect(await storedRedirects(clientId)).toEqual([CURSOR]);
+  });
+
+  it("needs no dot in the path form, and stands beside a loopback URI and another app's scheme, each kept in its place", async () => {
+    const clientId = "https://apps.example/oauth/path-form.json";
+    for (const redirectUri of ["myapp:/oauth/callback", CLIENT_REDIRECT_URI, CURSOR]) {
+      const answer = await harness.authorize(ana.cookie, { clientId, redirectUri }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.91" });
+      expect(answer.status, redirectUri).toBe(302);
+      expect(new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL).pathname, redirectUri).toBe("/consent");
+    }
+    expect(await storedRedirects(clientId)).toEqual([CLIENT_REDIRECT_URI, "myapp:/oauth/callback", CURSOR]);
+  });
+
+  it.each(NO_NATIVE_REDIRECTS.map((uri, index) => [uri, index] as const))(
+    "is never %s: a document that gives it, with no type or as native, is refused with invalid_client naming it, and stores no client",
+    async (uri, index) => {
+      for (const type of ["none", "native"]) {
+        const clientId = `https://apps.example/oauth/${type}/${index}.json`;
+        const answer = await harness.authorize(ana.cookie, { clientId, redirectUri: CLIENT_REDIRECT_URI }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.92" });
+        expect(answer.status, type).toBe(400);
+        expect(answer.headers.get("location"), type).toBeNull();
+        const body = (await answer.json()) as { error?: string; error_description?: string };
+        expect(body.error, type).toBe("invalid_client");
+        expect(body.error_description, type).toContain(`; ${uri} is none of these.`);
+        expect(await storedRedirects(clientId), type).toBeUndefined();
+      }
+    },
+  );
+
+  it("keeps the sign-in library's rule for a document that names web: its app's scheme is refused, with no consent screen and no client", async () => {
+    const clientId = "https://apps.example/oauth/web-cursor.json";
+    const answer = await harness.authorize(ana.cookie, { clientId, redirectUri: CURSOR }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.93" });
+    expect(answer.status).toBe(400);
+    expect(answer.headers.get("location")).toBeNull();
+    expect(await storedRedirects(clientId)).toBeUndefined();
   });
 });
 

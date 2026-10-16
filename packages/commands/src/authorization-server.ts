@@ -6,7 +6,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt, signJWT } from "better-auth/plugins";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { SCOPES } from "@tiehall/catalog";
-import { clientIdUrlWithinBounds, clientMetadataBoundsProblem, holdsNul } from "./agent-clients.ts";
+import { clientIdUrlWithinBounds, clientMetadataBoundsProblem, holdsNul, metadataDocumentForLibrary } from "./agent-clients.ts";
 import { DEVICE_APPROVAL_PATH, DEVICE_CODE_LIFETIME_SECONDS } from "./device-flow.ts";
 import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 
@@ -293,12 +293,18 @@ function metadataDocuments(fetchDocument: OutboundFetcher): BetterAuthPlugin {
       // No text Tiehall stores may hold a NUL character, and a client's metadata is bounded: a document that breaks
       // either is refused as the client's, as the plugin refuses a body it cannot read, and no client is stored.
       const parsed = document.status === 200 ? parsedJson(document.body) : undefined;
-      const problem = holdsNul(parsed) ? "The metadata document's texts hold a NUL character." : clientMetadataBoundsProblem(parsed);
+      // A document's redirect URIs follow a native client's rule, with a stand-in the library takes for each app's own
+      // scheme (agent-clients.ts; decisions-from-groups-15-28: D55 (15), as the maintainer answered on 2026-10-16).
+      const handed = metadataDocumentForLibrary(parsed);
+      const problem = holdsNul(parsed)
+        ? "The metadata document's texts hold a NUL character."
+        : (clientMetadataBoundsProblem(parsed) ?? ("refused" in handed ? handed.refused : undefined));
       if (problem !== undefined) {
         const refused = new APIError("BAD_REQUEST", { error: "invalid_client", error_description: problem });
         return new Response(new ReadableStream({ start: (stream) => stream.error(refused) }), { status: 200, headers });
       }
-      return new Response(document.body, { status: document.status, headers });
+      const body = "document" in handed && handed.document !== parsed ? JSON.stringify(handed.document) : document.body;
+      return new Response(body, { status: document.status, headers });
     },
     // The one limit agent-access names: 60 fetches a minute from one host, which the plugin would count per origin, a
     // host and a port, so a client could name another port for each fetch. It is counted per host just before each

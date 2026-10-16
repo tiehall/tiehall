@@ -30,7 +30,7 @@ import {
   type Database,
 } from "@tiehall/db";
 import type { SigningKeys } from "./agent-tokens.ts";
-import { clientRegistrations, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
+import { clientRegistrations, documentRedirectsRestored, REGISTRATION_LIMIT_CODE } from "./agent-clients.ts";
 import { grantChecks } from "./agent-grants.ts";
 import { continuePathOf, isAuthorizationRequest, policyWithFormAction, redirectSourceOf, registeredRedirectIn } from "./consent.ts";
 import {
@@ -466,8 +466,9 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           else if (level !== "debug") logger.info(line);
         },
       },
-      // The device flow's codes are kept as their hashes (device-code-storage.ts).
-      database: deviceCodesHashed(drizzleAdapter(options.database, {
+      // The device flow's codes are kept as their hashes (device-code-storage.ts), and a metadata document's client is
+      // stored with the redirect URIs its document gives, over the stand-ins the library was handed (agent-clients.ts).
+      database: documentRedirectsRestored(deviceCodesHashed(drizzleAdapter(options.database, {
         provider: "pg",
         schema: {
           users,
@@ -484,7 +485,7 @@ export function createSignInService(options: SignInServiceOptions): SignInServic
           oauthClientAssertions,
           oauthDeviceCodes,
         },
-      })),
+      }))),
       advanced: {
         // The library's origin and CSRF checks, on everywhere: left unset, the library turns both off by itself when
         // NODE_ENV is test or TEST is set, so the tests would not run the checks production runs.

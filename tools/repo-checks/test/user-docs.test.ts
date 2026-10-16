@@ -64,6 +64,9 @@ const TOPICS: Topic[] = [
       // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
       // 2026-10-16 (task 27.8).
       "When the sign-in returns to a program on your computer, at an `http:` URI on localhost or at an app's own scheme, the consent screen warns you",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+      // 2026-10-16 (task 27.9).
+      "A client's metadata document is held to the same rule as a registration",
       "`cursor://anysphere.cursor-mcp/oauth/callback`",
       // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
       // 2026-10-16 (task 27.6).

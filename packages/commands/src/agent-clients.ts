@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
+import type { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { oauthClientRegistrations, oauthClients, type Database } from "@tiehall/db";
 import { CLI_CLIENT_ID } from "./device-flow.ts";
@@ -64,6 +65,21 @@ import type { WorkerJob } from "./worker.ts";
 // between, can send a browser nowhere, and no record of a registration names
 // it; it is removed 7 days after the sign-in library stored it, as a client
 // never used is.
+//
+// A client identified by its Client ID Metadata Document is held to the same
+// rule when its document names no type, or names native (D55 (15), as the
+// maintainer answered on 2026-10-16; Technical decisions: T4): the fetcher of
+// documents (authorization-server.ts) refuses a document with a redirect URI
+// no such registration may hold, with invalid_client in Tiehall's words that
+// name it, and hands the library the document with a stand-in for each app's
+// scheme, made from a hash of the URI. The library stores the client itself
+// while it resolves the document during an authorization, and checks the
+// request's redirect URI against what it stored in the same request, so the
+// database adapter writes, in the library's own write of the client's row,
+// the URI each stand-in stands for over it (documentRedirectsRestored()); the
+// process keeps the latest 10,000 stand-ins it made, as many URIs as the
+// library's 1,000 documents of 10 redirect URIs each can hold, and a stand-in
+// is only ever written over with a URI that passed the rule.
 //
 // An IPv6 client is counted by its /64, since one host commonly holds a
 // whole /64: every address in one /64 shares the 10 registrations an hour
@@ -244,6 +260,95 @@ function isHttpsRedirect(uri: unknown): boolean {
 const STAND_IN_SCHEME = "invalid.tiehall.redirect";
 
 /**
+ * The rule a native client's redirect URIs follow, in Tiehall's words, with
+ * the URI at fault named: what a client registers, or what its metadata
+ * document gives.
+ */
+function redirectRuleBroken(whose: string, atFault: unknown): string {
+  return `Every redirect URI ${whose} holds no fragment and no user information, and is an https URI on a host other than localhost and the loopback addresses of 127.0.0.0/8 and ::1, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`;
+}
+
+/** How many of the stand-ins made for metadata documents the process keeps, the latest: the library's 1,000 documents of 10 redirect URIs each. */
+export const DOCUMENT_STAND_INS_KEPT = 10_000;
+
+/** The stand-ins handed to the sign-in library for metadata documents' app's schemes, each with the URI it stands for, the oldest first. */
+const documentStandIns = new Map<string, string>();
+
+/**
+ * The stand-in of a metadata document's redirect URI with an app's own
+ * scheme: the stand-in scheme with a hash of the URI, so the same URI always
+ * gets the same stand-in, which the process keeps as one of its latest.
+ */
+function documentStandInFor(uri: string): string {
+  const standIn = `${STAND_IN_SCHEME}:/${createHash("sha256").update(uri, "utf8").digest("base64url").slice(0, 22)}`;
+  documentStandIns.delete(standIn);
+  documentStandIns.set(standIn, uri);
+  for (const oldest of documentStandIns.keys()) {
+    if (documentStandIns.size <= DOCUMENT_STAND_INS_KEPT) break;
+    documentStandIns.delete(oldest);
+  }
+  return standIn;
+}
+
+/**
+ * A Client ID Metadata Document as the sign-in library is to read it: one
+ * that names no type, or names native, is refused, in Tiehall's words, when a
+ * redirect URI it gives is one no native client may have, and is handed on
+ * with a stand-in for each app's own scheme, which the library takes only
+ * with a dot and no host; any other document is handed on as it is.
+ */
+export function metadataDocumentForLibrary(metadata: unknown): { refused: string } | { document: unknown } {
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return { document: metadata };
+  const document = metadata as Record<string, unknown>;
+  const named = document["application_type"];
+  const redirects = document["redirect_uris"];
+  if (!(named === undefined || named === "native") || !Array.isArray(redirects)) return { document };
+  const atFault = redirects.find((uri) => !isHttpsRedirect(uri) && !isNativeRedirect(uri));
+  if (atFault !== undefined) return { refused: redirectRuleBroken("a client's metadata document gives", atFault) };
+  if (!redirects.some(isAppSchemeRedirect)) return { document };
+  return { document: { ...document, redirect_uris: redirects.map((uri) => (isAppSchemeRedirect(uri) ? documentStandInFor(uri as string) : uri)) } };
+}
+
+type AdapterInstance = ReturnType<typeof drizzleAdapter>;
+type Adapter = ReturnType<AdapterInstance>;
+type TransactionAdapter = Parameters<Parameters<Adapter["transaction"]>[0]>[0];
+
+/** The sign-in library's model of agent clients, by the names it gives the adapter: its own, and the table's it is told. */
+const CLIENT_MODELS: ReadonlySet<string> = new Set(["oauthClient", "oauthClients"]);
+
+/** A client's row to write, with each stand-in made for a metadata document written over with the URI it stands for. */
+function withDocumentRedirects<T>(data: T): T {
+  if (typeof data !== "object" || data === null) return data;
+  const redirects = (data as Record<string, unknown>)["redirectUris"];
+  if (!Array.isArray(redirects) || !redirects.some((uri) => typeof uri === "string" && documentStandIns.has(uri))) return data;
+  return { ...data, redirectUris: redirects.map((uri) => (typeof uri === "string" ? (documentStandIns.get(uri) ?? uri) : uri)) };
+}
+
+/** The adapter, or a transaction's, writing a metadata document's redirect URIs over the stand-ins it was handed. */
+function restoringDocumentRedirects<A extends TransactionAdapter>(adapter: A): A {
+  const ours = (model: string) => CLIENT_MODELS.has(model);
+  return {
+    ...adapter,
+    create: (data) => adapter.create(ours(data.model) ? { ...data, data: withDocumentRedirects(data.data) } : data),
+    update: (data) => adapter.update(ours(data.model) ? { ...data, update: withDocumentRedirects(data.update) } : data),
+    updateMany: (data) => adapter.updateMany(ours(data.model) ? { ...data, update: withDocumentRedirects(data.update) } : data),
+  } as A;
+}
+
+/**
+ * The database adapter, writing over the stand-ins of a metadata document's
+ * app's schemes, in the sign-in library's own write of its client's row, the
+ * URIs the document gives, so the row, and the client the library goes on
+ * with, hold them (D55 (15); T4).
+ */
+export function documentRedirectsRestored(instance: AdapterInstance): AdapterInstance {
+  return (options) => {
+    const adapter = instance(options);
+    return { ...restoringDocumentRedirects(adapter), transaction: (callback) => adapter.transaction((trx) => callback(restoringDocumentRedirects(trx))) };
+  };
+}
+
+/**
  * What breaks the bounds of a client's metadata, registered or in its
  * document, in Tiehall's words, or undefined when nothing does: a name of 1
  * to 100 characters, when it gives one, and at most 10 redirect URIs of at
@@ -356,12 +461,7 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             if (!(named === undefined || named === "native") || !Array.isArray(redirects) || redirects.length === 0) return undefined;
             // A redirect URI that no client may register is refused in Tiehall's words, which name it.
             const atFault = redirects.find((uri) => !isHttpsRedirect(uri) && !isNativeRedirect(uri));
-            if (atFault !== undefined) {
-              throw new APIError("BAD_REQUEST", {
-                error: "invalid_redirect_uri",
-                error_description: `Every redirect URI a client registers holds no fragment and no user information, and is an https URI on a host other than localhost and the loopback addresses of 127.0.0.0/8 and ::1, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`,
-              });
-            }
+            if (atFault !== undefined) throw new APIError("BAD_REQUEST", { error: "invalid_redirect_uri", error_description: redirectRuleBroken("a client registers", atFault) });
             // A registration with a native redirect URI is a native client's, whether or not it says so, and whether or
             // not https URIs stand beside it; one of https URIs alone keeps the web type.
             const taken = named === undefined && redirects.some(isNativeRedirect);
