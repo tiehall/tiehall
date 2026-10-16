@@ -8,14 +8,15 @@ The maintainers' record of each run of Tiehall against a real agent client, made
 - First its fields: **Date**, with times in UTC; **Client**, with its version and how it was started; **OS**; **Install**, with its URL, the commit its image was built from, and its people and teams; **CLI**, when the run used it; and **Task**, with the requirements the task names.
 - Then four sections: **Steps**, what was done, in order; **Seen**, what the client and the install showed, quoted where the exact text matters, with the numbers of the events the install recorded; **Not exercised**, each check of the task the run did not make; and **Findings**, each with where it is taken up, a task of the plan or an OpenSpec change.
 - Only what was observed goes in. Text that people wrote on a request is not copied here; request keys, event numbers and types, and Tiehall's own words are.
+- Nothing personal goes in: say "the maintainer's machine" and "a test install", and give no user or machine name, home folder's path, email address, account plan or identifier of anyone's own accounts and installs.
 - A run of the matrix itself (group 27 of the plan) adds a table with a result in every cell: the client, the protocol version, the sign-in path that worked or the failure, and the number of tools the client showed against the server's count.
 
 ## 2026-10-11: The Claude Code plugin against a local install (task 17.7)
 
 - **Date:** 2026-10-11, from 20:49 to 20:59 UTC.
 - **Client:** Claude Code 2.1.296, the interactive CLI in a terminal, with the model Fable 5.1, started in the folder of another project, not this repository, with `TIEHALL_URL=http://localhost:3000` exported from the shell's startup file. For one observation, also a session of the Claude desktop app's Code tab on the same machine, whose version was not recorded.
-- **OS:** macOS 27.0.1 (Darwin 27.0.0), the maintainer's Mac.
-- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at commit `54d4139`; one company with two teams, FE and BE, and one person, the maintainer, a member of both.
+- **OS:** macOS 27.0.1 (Darwin 27.0.0), on the maintainer's machine.
+- **Install:** a test install with Docker Compose on the maintainer's machine, at the trial URL `http://localhost:3000`, its image built from `main` at commit `54d4139`; one company with two teams, FE and BE, and one person, the maintainer, a member of both.
 - **CLI:** `tiehall` from the same commit, built with `pnpm --filter tiehall build` and installed with `npm install -g` from `packages/cli` (an npm link), signed in with `tiehall login http://localhost:3000` through the device flow: the code was approved on `/device`, whose page said the CLI was signed in, and the install recorded security event 20, `agent_client.approved`, for the CLI's client, `tiehall-cli`, at 20:47:45 UTC. Before `54d4139` the same login failed with "refused the CLI's sign-in"; commits `dd6804e` to `54d4139` (task 15.12, the token endpoint's limit) fixed it.
 - **Task:** 17.7 [agent-surfaces: The Claude Code plugin].
 
@@ -50,7 +51,7 @@ The maintainers' record of each run of Tiehall against a real agent client, made
 
 - **Date:** 2026-10-11, from 20:50 to about 21:05 UTC.
 - **Client:** Claude Code 2.1.296, the interactive CLI in a terminal, with the model Fable 5.1, as in the entry above. The plugin, version 0.2.0, was installed from the marketplace file at user scope, so its hooks ran in every Claude Code session of the maintainer on the machine, the Claude desktop app's Code tab included.
-- **OS:** macOS 27.0.1 (Darwin 27.0.0), the maintainer's Mac.
+- **OS:** macOS 27.0.1 (Darwin 27.0.0), on the maintainer's machine.
 - **Install:** as in the entry above: `http://localhost:3000`, built from `54d4139`, with the teams FE and BE and one person, the maintainer, a member of both.
 - **CLI:** as in the entry above, signed in to the install; the plugin's launcher ran it with `--install http://localhost:3000`.
 - **Task:** 19.19 [requester-loop: Claude Code Stop-hook waiter; requester-loop: News is announced once; requester-loop: Claude Code SessionStart digest], which also gives task 19.20 the live wake-up it waits for.
@@ -99,7 +100,7 @@ All three, with F3 of the entry above, are taken up in the OpenSpec change `find
 - **Date:** 2026-10-15, at 23:31 and again at 23:33 by the clock of Cursor's MCP log, which does not give its time zone.
 - **Client:** Cursor, its MCP client, with Tiehall added as the remote MCP server `tiehall` over streamable HTTP in Cursor's user settings, which the log names `user-tiehall`. Cursor's version was not recorded.
 - **OS:** the maintainer's machine; the log does not name it.
-- **Install:** the maintainer's local Docker Compose install, its image built from `main` at `e021cbc9`, whose code `0a0738b4`, the next commit, leaves unchanged; its URL is not in the log.
+- **Install:** a test install with Docker Compose on the maintainer's machine, its image built from `main` at `e021cbc9`, whose code `0a0738b4`, the next commit, leaves unchanged; its URL is not in the log.
 - **Task:** 27.5 [agent-access: Dynamic Client Registration stays on, limited and unverified; agent-access: The consent screen shows who is asking], a failure on Tiehall's side found ahead of the matrix run of task 27.1, triaged as task 27.3 says.
 
 ### Steps
@@ -114,7 +115,7 @@ All three, with F3 of the entry above, are taken up in the OpenSpec change `find
 
 ### Not exercised
 
-- The sign-in after the fix: the re-run with Cursor waits until the maintainer's install is updated to a build with task 27.5, and belongs to the matrix run of task 27.1.
+- The sign-in after the fix: the re-run with Cursor waits until the test install is updated to a build with task 27.5, and belongs to the matrix run of task 27.1.
 - The protocol version Cursor spoke, a metadata document, `TIEHALL_CLIENT_METADATA_FETCH=off`, and the number of tools Cursor shows: the matrix's cells, task 27.1.
 
 ### Findings
@@ -124,9 +125,9 @@ All three, with F3 of the entry above, are taken up in the OpenSpec change `find
 ## 2026-10-15: Codex and Cursor against a local install (task 27.1)
 
 - **Date:** 2026-10-15. The times the install recorded run from 20:47:34 UTC, Codex's approval, to 21:03:38 UTC, a Cursor agent's comment.
-- **Clients:** Codex in the ChatGPT desktop app, Codex Desktop 26.715.72359, with the model 5.6 Terra, since the model its configuration named, `gpt-5.6-sol`, is not allowed on the maintainer's ChatGPT plan. Tiehall was added to `~/.codex/config.toml` as `[mcp_servers.tiehall]` with `url = "http://localhost:3000/mcp"`, and the Tiehall skill was copied from `packages/claude-plugin/skills/tiehall` to `~/.agents/skills/tiehall`, which Codex showed as a "Tiehall" mention. Cursor, the app, whose version was not recorded, with `~/.cursor/mcp.json` holding only the server's `url`, and later a header (step 6).
-- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
-- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `e021cbc9` for both clients; one company with two teams, FE and BE, and one person, the maintainer, a member of both. Since 2026-10-15 22:03 UTC, after this run, the install runs an image with task 27.5, `dc4b5a1e`.
+- **Clients:** Codex in the ChatGPT desktop app, Codex Desktop 26.715.72359, with the model 5.6 Terra, since the model its configuration named, `gpt-5.6-sol`, is not allowed on the ChatGPT plan the run used. Tiehall was added to `~/.codex/config.toml` as `[mcp_servers.tiehall]` with `url = "http://localhost:3000/mcp"`, and the Tiehall skill was copied from `packages/claude-plugin/skills/tiehall` to `~/.agents/skills/tiehall`, which Codex showed as a "Tiehall" mention. Cursor, the app, whose version was not recorded, with `~/.cursor/mcp.json` holding only the server's `url`, and later a header (step 6).
+- **OS:** macOS, on the maintainer's machine; its version was not recorded.
+- **Install:** a test install with Docker Compose on the maintainer's machine, at the trial URL `http://localhost:3000`, its image built from `main` at `e021cbc9` for both clients; one company with two teams, FE and BE, and one person, the maintainer, a member of both. Since 2026-10-15 22:03 UTC, after this run, the install runs an image with task 27.5, `dc4b5a1e`.
 - **CLI:** `tiehall`, signed in to the install, run by the maintainer's Claude Code session for the requesting side of the run on BE-2; its build was not recorded.
 - **Task:** 27.1 [agent-access: Sign-in is tested on the four main clients; agent-surfaces: Tested MCP clients].
 
@@ -199,15 +200,15 @@ None.
 
 ## 2026-10-16: Cursor's first registration, an https callback beside a loopback one (task 27.6)
 
-- **Date:** 2026-10-16. Cursor's sign-in on the maintainer's install was in the morning, at a time not recorded; the debugging run's registrations were stored at 07:27 and 07:32 UTC.
+- **Date:** 2026-10-16. Cursor's sign-in on the test install was in the morning, at a time not recorded; the debugging run's registrations were stored at 07:27 and 07:32 UTC.
 - **Client:** Cursor, the app, with Tiehall as a remote MCP server; its version was not recorded.
-- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
-- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `dc4b5a1e`, with task 27.5; and, for the debugging run, a throwaway install of an image built from the same commit, to which the registrations were sent by hand.
+- **OS:** macOS, on the maintainer's machine; its version was not recorded.
+- **Install:** a test install with Docker Compose on the maintainer's machine, at the trial URL `http://localhost:3000`, its image built from `main` at `dc4b5a1e`, with task 27.5; and, for the debugging run, a throwaway install of an image built from the same commit, to which the registrations were sent by hand.
 - **Task:** 27.6 [agent-access: Dynamic Client Registration stays on, limited and unverified; agent-access: The consent screen shows who is asking], a failure on Tiehall's side found while re-running Cursor's cell of task 27.1, triaged as task 27.3 says.
 
 ### Steps
 
-1. Started Cursor against the maintainer's install, and signed it in.
+1. Started Cursor against the test install, and signed it in.
 2. A debugging run sent registrations as Cursor's to the throwaway install: `cursor://anysphere.cursor-mcp/oauth/callback` alone, with an authorization request for it; Cursor's hosted callback alone; the hosted callback beside `http://localhost:8787/callback`, and beside `http://127.0.0.1:8787/callback`; the hosted callback with the `cursor:` URI and the loopback one; and the loopback one alone.
 
 ### Seen
@@ -231,8 +232,8 @@ None.
 
 - **Date:** 2026-10-16. The maintainer signed Cursor out of `tiehall` and back in at about 10:47 UTC; the install recorded the run's registrations and approvals from 10:47:08 to 10:47:41 UTC.
 - **Client:** Cursor, the app, with Tiehall as the remote MCP server of its user settings, which its log names `user-tiehall`, and the Claude Code plugin's MCP server, which Cursor loads on its own, named `plugin-tiehall-tiehall`; Cursor's version was not recorded.
-- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
-- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `1820fea2`, with tasks 27.5 and 27.6; its people and teams were not recorded for this run.
+- **OS:** macOS, on the maintainer's machine; its version was not recorded.
+- **Install:** a test install with Docker Compose on the maintainer's machine, at the trial URL `http://localhost:3000`, its image built from `main` at `1820fea2`, with tasks 27.5 and 27.6; its people and teams were not recorded for this run.
 - **Task:** 27.1 [agent-access: Sign-in is tested on the four main clients; agent-surfaces: Tested MCP clients], Cursor's cell, re-run once the install had task 27.6.
 
 ### Steps

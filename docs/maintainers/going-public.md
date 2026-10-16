@@ -17,7 +17,7 @@ The public repository holds only the paths that the allowlist allows, and `priva
 
 ### GP-2 Nothing personal or secret in the tree
 
-- A file beside the checkout, `../personal.txt`, kept outside the repository and never committed, lists one per line what names the maintainer: each of their own email addresses, any name of theirs other than the public author's, and the user name of every machine the repository was worked on. A home folder's path carries that user name, and so does an agent's scratch folder, which writes the path with dashes, as `-Users-<user name>-`.
+- A file beside the checkout, `../personal.txt`, kept outside the repository and never committed, lists one per line what names the maintainer: each of their own email addresses, any name of theirs other than the public author's, the user name and the name of every machine the repository was worked on, the names of their other projects, and the identifiers of their own installs and GitHub Apps, such as the id, name, slug, client id and installation id of the spikes' App. A home folder's path carries that user name, and so does an agent's scratch folder, which writes the path with dashes, as `-Users-<user name>-`.
 - No file names any of them, or a real person's home folder. From the checkout, the commands below print nothing but the home folders of the made-up people that specs and tests use as examples: the first finds each line of `../personal.txt`, the second any home folder's path, written with slashes or with dashes. The scan of GP-7 reads the history the same way, binary files included.
 
   ```sh docs-test=tree-personal-data
@@ -31,6 +31,7 @@ The public repository holds only the paths that the allowlist allows, and `priva
 - Evidence: the default source link in [`packages/commands/src/running-version.ts`](../../packages/commands/src/running-version.ts), and [`tools/repo-checks/test/security-policy.test.ts`](../../tools/repo-checks/test/security-policy.test.ts), which finds no email address in `SECURITY.md` and its reporting form at the repository the source link names.
 - Evidence: [`tools/repo-checks/test/repository-address.test.ts`](../../tools/repo-checks/test/repository-address.test.ts), which finds every GitHub address of the repository, `uses:` line of the contract Action and marketplace command in the tree naming `tiehall/tiehall` or a placeholder owner (task 30.7).
 - Evidence: this page's own check, [`tools/repo-checks/test/going-public.test.ts`](../../tools/repo-checks/test/going-public.test.ts), which runs the commands above on a scratch repository and finds each line of `personal.txt` and each home folder's path in it.
+- Evidence: [`tools/repo-checks/test/personal-data.test.ts`](../../tools/repo-checks/test/personal-data.test.ts), which finds in every tracked file no home folder's path but the made-up people's, no email address but placeholders', GitHub's own and the public author's no-reply one, and the maintainer's GitHub user name only in that address, and finds that the [client-matrix log](../client-matrix/log.md) names the maintainer's machine and installs only as "the maintainer's machine" and "a test install", as its rules say (task 30.8).
 
 ### GP-3 The license files
 
