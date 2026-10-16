@@ -185,6 +185,33 @@ describe("the checklist for making the repository public", () => {
     expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
   });
 
+  it("allows squash merges alone on the new repository, with a linear history, and reads both back (design.md, D38 (5))", () => {
+    const gp14 = item("GP-14");
+    expect(gp14).toContain("gh api -X PATCH repos/tiehall/tiehall -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false");
+    expect(gp14).toContain("`gh api repos/tiehall/tiehall --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge}'`");
+    expect(gp14).toContain("required_linear_history");
+    expect(gp14).toMatch(/linear: \.required_linear_history\.enabled/);
+    expect(item("GP-9")).toContain("GP-14");
+  });
+
+  it("requires two-factor authentication and stops members creating public repositories at the switch, reading both back (design.md, D38 (6))", () => {
+    const gp17 = item("GP-17");
+    expect(gp17).toMatch(/at the switch/);
+    // GitHub removes every member without two-factor authentication once the organization requires it: list them first.
+    expect(gp17).toContain("orgs/tiehall/members?filter=2fa_disabled");
+    expect(gp17).toContain("gh api -X PATCH orgs/tiehall -F members_can_create_public_repositories=false");
+    expect(gp17).toMatch(/Read back: `gh api orgs\/tiehall --jq '\{two_factor_requirement_enabled, default_repository_permission, members_can_create_public_repositories\}'` gives `\{"two_factor_requirement_enabled":true,/);
+  });
+
+  it("sets the new repository up again: its homepage, its workflow permissions and the image package's Actions access (design.md, D38 (3))", () => {
+    expect(item("GP-11")).toContain("--homepage https://tiehall.com");
+    expect(item("GP-15")).toMatch(/new repository \(GP-10\)/);
+    const gp16 = item("GP-16");
+    expect(gp16).toContain("Manage Actions access");
+    expect(gp16).toContain("`tiehall/tiehall` the Write role");
+    expect(gp16).toContain("The image's package after the move to a new repository");
+  });
+
   it("reads back every change it makes on GitHub", () => {
     // A step that changes GitHub, its repositories or its organization says how to read the result back.
     const changes = /`gh repo (?:create|rename|archive|edit)\b|`gh api -X (?:PUT|PATCH|POST|DELETE)\b/;
