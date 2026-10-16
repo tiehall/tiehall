@@ -58,6 +58,9 @@ const TOPICS: Topic[] = [
       // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
       // 2026-10-15 (task 27.5).
       "Cursor and clients built on VS Code sign in through Dynamic Client Registration",
+      // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (13), as the maintainer answered on
+      // 2026-10-16 (task 27.7).
+      "The install's metadata lists only `requests:read` and `requests:write`, the scopes an agent asks for",
       "`cursor://anysphere.cursor-mcp/oauth/callback`",
       // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
       // 2026-10-16 (task 27.6).

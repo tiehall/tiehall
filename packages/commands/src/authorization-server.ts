@@ -61,7 +61,14 @@ import { createOutboundFetcher, type OutboundFetcher } from "./outbound.ts";
 //   only the scopes Tiehall offers, never offline_access, which the grant
 //   and its refresh token keep, so that each refresh brings a new one
 //   (decisions-from-groups-15-28: design.md, Decisions this change rests on:
-//   D55 (12), (13); Technical decisions: T4).
+//   D55 (12), (13); Technical decisions: T4). Where an agent client learns
+//   which scopes to ask for, the install names only requests:read and
+//   requests:write: the scopes_supported of the protected resource metadata
+//   and of the authorization server metadata list those two, so a client that
+//   asks for every listed scope, as Codex did, gets no contracts:report. The
+//   scope stays offered to a request that names it, the CLI's included, and
+//   a registration's answer still names it among the client's scopes (D55
+//   (13), as the maintainer answered on 2026-10-16).
 // - An authorization request, and the token request that follows it, that
 //   names no resource is completed with the install's one resource,
 //   TIEHALL_URL/mcp, before the server reads it, so its access token's
@@ -192,7 +199,8 @@ export function authorizationServerPlugins({ url, orgId, clients = {}, membershi
     loginPage: AUTHORIZATION_SIGN_IN_PATH,
     consentPage: CONSENT_PATH,
     scopes: [...SCOPES, REFRESH_SCOPE],
-    advertisedMetadata: { scopes_supported: [...SCOPES] },
+    // Both metadata documents, the protected resource's and the authorization server's, list the scopes an agent asks for.
+    advertisedMetadata: { scopes_supported: [...DEFAULT_SCOPES] },
     clientRegistrationDefaultScopes: [...SCOPES, REFRESH_SCOPE],
     accessTokenExpiresIn: ACCESS_TOKEN_LIFETIME_SECONDS,
     grantTypes: ["authorization_code", "refresh_token"],

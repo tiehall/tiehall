@@ -59,11 +59,60 @@ async function messagesOn(key: string): Promise<number> {
 }
 
 describe("the scopes the install offers", () => {
-  it("are exactly requests:read, requests:write and contracts:report, in both metadata documents", async () => {
+  // decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (13), as the maintainer answered on
+  // 2026-10-16 (task 27.7). An agent client asks for the scopes it learns from the install: MCP's authorization rules
+  // have it ask for the challenge's scope and, when it has none, for the protected resource's scopes_supported, and
+  // Codex asked for every value listed, so its grant held contracts:report (the client-matrix log, 2026-10-15, F7). Both
+  // metadata documents list only the two scopes an agent needs; contracts:report stays offered to a client that names it.
+  it("are named as requests:read and requests:write alone in both metadata documents, where an agent client learns the scopes to ask for", async () => {
     for (const path of ["/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp"]) {
       const body = (await (await harness.handle(new Request(`${URL_OF_INSTALL}${path}`))).json()) as { scopes_supported?: string[] };
-      expect(body.scopes_supported, path).toEqual(["requests:read", "requests:write", "contracts:report"]);
+      expect(body.scopes_supported, path).toEqual(["requests:read", "requests:write"]);
     }
+  });
+
+  it("still grant contracts:report to a request that names it, as Codex's did, once the person approves the consent screen that shows it", async () => {
+    const client = await harness.registerClient();
+    const pkce = pkcePair();
+    const consent = locationOf(await harness.authorize(ana.cookie, client, pkce, { scope: "requests:read requests:write contracts:report" }));
+    expect(consent.pathname).toBe("/consent");
+    const html = await (await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }))).text();
+    expect(html).toContain("contracts:report: attach classified contract changes to a request");
+    const confirmed = await harness.handle(
+      new Request(`${URL_OF_INSTALL}/confirm/agent_clients.approve`, {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "application/x-www-form-urlencoded", origin: URL_OF_INSTALL, "sec-fetch-site": "same-origin", accept: "text/html" },
+        body: new URLSearchParams({ input: hiddenField(html, "input"), nonce: hiddenField(html, "nonce"), csrf: hiddenField(html, "csrf") }).toString(),
+      }),
+    );
+    expect(confirmed.status).toBe(303);
+    const back = await harness.handle(new Request(locationOf(confirmed), { headers: { cookie: ana.cookie, accept: "text/html" } }));
+    const exchanged = await harness.exchange(client, locationOf(back).searchParams.get("code") ?? "", pkce);
+    expect(exchanged.status).toBe(200);
+    const token = String(exchanged.body["access_token"]);
+    expect(claimsOf(token).scope.split(" ").sort()).toEqual(["contracts:report", "requests:read", "requests:write"]);
+    // Attaching contract changes needs the scope: this token passes that check, while one without it is refused with
+    // 403 insufficient_scope naming it, from which a client can sign in again with it.
+    const attach = (accessToken: string) => harness.api("POST", `/api/v1/requests/${fe142}/contract-changes`, { authorization: `Bearer ${accessToken}`, "if-match": '"1"' }, { contract: {} });
+    const withScope = await attach(token);
+    expect(withScope.status).not.toBe(403);
+    expect(withScope.headers.get("www-authenticate") ?? "").not.toContain("insufficient_scope");
+    const { accessToken: without } = await harness.tokens(ana, ["requests:read", "requests:write"]);
+    const refused = await attach(without);
+    expect(refused.status).toBe(403);
+    expect(refused.headers.get("www-authenticate")).toBe(`Bearer error="insufficient_scope", scope="contracts:report", resource_metadata="${METADATA}"`);
+  });
+
+  it("still name contracts:report in a registration's answer, among the scopes the client may ask for", async () => {
+    const answer = await harness.register();
+    expect(answer.status).toBe(201);
+    const { scope } = (await answer.json()) as { scope?: string };
+    expect((scope ?? "").split(" ")).toEqual(expect.arrayContaining(["requests:read", "requests:write", "contracts:report"]));
+  });
+
+  it("still grant the CLI the three scopes it asks for, contracts:report included, for tiehall contract diff --attach", async () => {
+    const { accessToken } = await harness.signInCli(ana, ["requests:read", "requests:write", "contracts:report"]);
+    expect(claimsOf(accessToken).scope.split(" ").sort()).toEqual(["contracts:report", "requests:read", "requests:write"]);
   });
 
   it.each(["requests:read admin", "admin", "requests:read openid", "admin offline_access"])("refuses an authorization request for %s with invalid_scope, and issues no code", async (scope) => {
