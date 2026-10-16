@@ -17,11 +17,19 @@ The public repository holds only the paths that the allowlist allows, and `priva
 
 ### GP-2 Nothing personal or secret in the tree
 
-- No file names the maintainer's own email address or a home folder's path: `git grep -n -I -e '/Users/' -e '/home/'` and a `git grep -n -i -F` for each of the maintainer's own addresses find nothing that is meant to stay private.
+- A file beside the checkout, `../personal.txt`, kept outside the repository and never committed, lists one per line what names the maintainer: each of their own email addresses, any name of theirs other than the public author's, and the user name of every machine the repository was worked on. A home folder's path carries that user name, and so does an agent's scratch folder, which writes the path with dashes, as `-Users-<user name>-`.
+- No file names any of them, or a real person's home folder. From the checkout, the commands below print nothing but the home folders of the made-up people that specs and tests use as examples: the first finds each line of `../personal.txt`, the second any home folder's path, written with slashes or with dashes. The scan of GP-7 reads the history the same way, binary files included.
+
+  ```sh docs-test=tree-personal-data
+  git grep -n -I -i -F -f ../personal.txt
+  git grep -n -I -E -e '(^|[^[:alnum:]_.-])/(Users|home)/[[:alnum:]_.-]' -e '-(Users|home)-[[:alnum:]_.]'
+  ```
+
 - The repository's own address is `github.com/tiehall/tiehall`. Some files still name its earlier address under the maintainer's personal account: the default source link of the running version (`DEFAULT_SOURCE_REPOSITORY`), which the reporting form of `SECURITY.md` follows, the packet package's repository and homepage, the plugin marketplace's owner, the plugin's install command in the docs and their test, the Action's README and the client-matrix log. Move each to `tiehall/tiehall`, tests first, before the switch; no task of the plan does it yet.
 - No mailbox exists at `tiehall.com` yet, so no page names an address there: `SECURITY.md` takes reports through GitHub's private vulnerability reporting alone (GP-13).
 - Secrets: the secret scan of GP-8 reads every commit, the tree's included.
 - Evidence: the default source link in [`packages/commands/src/running-version.ts`](../../packages/commands/src/running-version.ts), and [`tools/repo-checks/test/security-policy.test.ts`](../../tools/repo-checks/test/security-policy.test.ts), which finds no email address in `SECURITY.md` and its reporting form at the repository the source link names.
+- Evidence: this page's own check, [`tools/repo-checks/test/going-public.test.ts`](../../tools/repo-checks/test/going-public.test.ts), which runs the commands above on a scratch repository and finds each line of `personal.txt` and each home folder's path in it.
 
 ### GP-3 The license files
 
@@ -56,10 +64,21 @@ Task 30.3, a founder step: the founder's permission for the rewrite and its push
 - Work in a fresh clone that holds `main` alone, never in a working clone: `git clone --single-branch --branch main https://github.com/tiehall/tiehall.git tiehall-public`, then `git -C tiehall-public remote remove origin`, so that no other branch, no remote-tracking ref and no pull request ref is rewritten or pushed. The spikes' throwaway branches and merged branches stay out.
 - From a checkout of the same commit, beside the clone, list the paths to remove: `node tools/repo-checks/src/check-public-paths.ts ../tiehall-public --history > ../outside.txt`, which prints each path outside the allowlist on a line of its own.
 - In the clone, with [git filter-repo](https://github.com/newren/git-filter-repo) installed by the founder: `git filter-repo --invert-paths --paths-from-file ../outside.txt --mailmap ../mailmap`. The mailmap file is kept outside the repository and maps every identity that `git log --all --format='%an <%ae>%n%cn <%ce>' | sort -u` shows, except GitHub's own committer of merges made on the web, to the public author, one line each as `Proper Name <proper@email> Commit Name <commit@email>`. filter-repo drops the commits that the removal leaves empty, and their messages with them.
-- Read back the identities with the same `git log` command: only the public author and GitHub's own committer remain. Read the messages with `git log --all --format=%B`: they hold no email address but the public author's and the co-authors' no-reply addresses, no home folder's path and nothing from the planning notes that must stay private; `git filter-repo --replace-message` rewrites a message that does.
+- Read back the identities with the same `git log` command: only the public author and GitHub's own committer remain.
+- Scan every commit of the rewritten clone for personal data: its author and committer, its message and every line its changes add or remove, the first commit's and each side of a merge's included, binary files read as text. A path the rewrite keeps can still hold one in its history, so this reads the content, which the scans of GP-8 and GP-9 do not. From the clone, the commands below write the history to `../history.txt` and print nothing but the home folders of the made-up people of GP-2: the first finds each line of `../personal.txt` (GP-2), the second any home folder's path, written with slashes or with dashes. Above each hit, `../history.txt` shows the commit and the file that hold it.
+
+  ```sh docs-test=history-personal-data
+  git log --all --root --diff-merges=separate --no-renames --text -p --format='commit %H%n%an <%ae>%n%cn <%ce>%n%n%B' > ../history.txt
+  grep -a -n -i -F -f ../personal.txt ../history.txt
+  grep -a -n -E -e '(^|[^[:alnum:]_.-])/(Users|home)/[[:alnum:]_.-]' -e '-(Users|home)-[[:alnum:]_.]' ../history.txt
+  ```
+
+- What the scan finds is rewritten, never left: write each text to rewrite in `../replacements.txt`, kept outside the repository, one line each as `<text>==><replacement>` (filter-repo also takes `regex:<pattern>==><replacement>`), then start again from a fresh clone with `--replace-text ../replacements.txt --replace-message ../replacements.txt` added to the one rewrite, and scan again. On 2026-10-16, `main` held one such text in a path the rewrite keeps: two commits of task 21.3 add and remove a line of `tools/image-tests/test/install/backup.test.ts` that wrote to an agent's scratch folder under the maintainer's home folder. Once the scan prints nothing more, delete `../history.txt`.
+- Read the messages with `git log --all --format=%B`: they hold nothing from the planning notes that must stay private; `--replace-message` rewrites a message that does.
 - `.gitleaksignore` names its reviewed false positive by the commit that holds it, whose id the rewrite changes: replace it with the new id, from filter-repo's `.git/filter-repo/commit-map`, in a commit on top, made as the public author.
 - Every commit id changes: after the push, local clones and worktrees start again from the new `main`, and work on other branches moves over with `git rebase --onto`. Commit ids that notes in the repository already name, such as a CI run's, stay as written.
 - Evidence: [the plan's task 30.3](../../openspec/changes/add-tiehall-oss-v1/tasks.md#30-making-the-repository-public), and the check's history mode, [`tools/repo-checks/src/check-public-paths.ts`](../../tools/repo-checks/src/check-public-paths.ts) given `--history`.
+- Evidence: this page's own check, [`tools/repo-checks/test/going-public.test.ts`](../../tools/repo-checks/test/going-public.test.ts), which runs the scan above on a scratch repository whose personal data only a first commit, a removed file, a binary file, an author, a message and a merge's resolution hold, and finds each; and filter-repo's [manual](https://github.com/newren/git-filter-repo/blob/main/Documentation/git-filter-repo.txt), on `--replace-text` and `--replace-message`.
 
 ### GP-8 The secret scan of the rewritten history
 

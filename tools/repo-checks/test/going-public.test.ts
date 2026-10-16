@@ -1,9 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { fencedBlocks } from "../src/docs-commands.ts";
+import { docsCommands, fencedBlocks } from "../src/docs-commands.ts";
 import { headings, linkProblems, links, section } from "../src/markdown.ts";
 import { taskStates } from "../src/plan.ts";
 
@@ -16,7 +18,10 @@ import { taskStates } from "../src/plan.ts";
 // step the plan and the maintainer named, every item linked to its evidence,
 // every link resolving, every task it names being one of the plan's, every
 // pnpm script one of the repository's, the required checks of the branch
-// protection being the jobs CI runs, and nothing personal in the page.
+// protection being the jobs CI runs, and nothing personal in the page. The
+// scans for personal data of GP-2 and GP-7 are `sh` blocks named in their
+// info strings, such as ```sh docs-test=history-personal-data, which the
+// check runs on scratch repositories.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const PATH = "docs/maintainers/going-public.md";
@@ -37,6 +42,9 @@ function items(): Item[] {
       return { id, title: rest.join(" "), text: section(checklist, text) ?? "" };
     });
 }
+
+/** The text of the item with this id, such as GP-7, or "" when there is none. */
+const item = (id: string) => items().find((found) => found.id === id)?.text ?? "";
 
 /** The steps the checklist must cover, each found in one item's title. */
 const STEPS = [
@@ -150,5 +158,144 @@ describe("the checklist for making the repository public", () => {
       .map(({ text }) => text);
     expect(level2.length).toBeGreaterThanOrEqual(3);
     expect(checklist).toContain("founder step");
+  });
+});
+
+describe("the checklist's scans for personal data", () => {
+  let scratch: string;
+  let count = 0;
+
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), "tiehall-going-public-"));
+  });
+
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  /** What names the fixture's maintainer: personal.txt, kept beside the checkout and the clone. */
+  const PERSONAL = "kq7user\nkq7@example.invalid\n";
+  /** A personal.txt whose one line no fixture holds, so only the search for any home folder's path finds anything. */
+  const NO_ONE = "no-such-name-anywhere\n";
+
+  function git(cwd: string, ...args: string[]): void {
+    const run = spawnSync(
+      "git",
+      ["-c", "user.name=Public Author", "-c", "user.email=public@example.invalid", "-c", "commit.gpgsign=false", ...args],
+      { cwd, encoding: "utf8" },
+    );
+    if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
+  }
+
+  function commit(repo: string, files: Record<string, string | Buffer>, ...args: string[]): void {
+    for (const [file, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(repo, file)), { recursive: true });
+      writeFileSync(join(repo, file), content);
+    }
+    git(repo, "add", "--all");
+    git(repo, "commit", "--quiet", "--allow-empty", ...args);
+  }
+
+  /** A folder of its own holding personal.txt and a repository, <folder>/<name>, whose first commit holds the files given. */
+  function repository(name: string, files: Record<string, string | Buffer>): string {
+    const repo = join(scratch, `workspace-${++count}`, name);
+    mkdirSync(repo, { recursive: true });
+    git(repo, "init", "--quiet", "--initial-branch=main");
+    commit(repo, files, "-m", "Start");
+    return repo;
+  }
+
+  /** What the checklist's block with this name prints, run with sh in the repository with this personal.txt beside it. */
+  function scan(name: string, repo: string, personal: string): string {
+    const command = docsCommands(checklist).find(({ id }) => id === name);
+    expect(command, `${PATH} holds no block named ${name}`).toBeDefined();
+    writeFileSync(join(repo, "..", "personal.txt"), personal);
+    const run = spawnSync("sh", ["-c", command?.text ?? ""], {
+      cwd: repo,
+      encoding: "utf8",
+      // A user's git configuration that shows no diff for a first commit changes nothing.
+      env: { ...process.env, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "log.showRoot", GIT_CONFIG_VALUE_0: "false" },
+    });
+    if (run.error) throw run.error;
+    expect(run.stderr).toBe("");
+    return run.stdout;
+  }
+
+  /** Text that names no one: a web address whose path holds home, and a relative folder named home. */
+  const LINKS = "See https://example.com/news/home/2026 and ./home/readme.\n";
+
+  it("GP-2 finds, in the tree, each line of personal.txt and any home folder's path, written with slashes or dashes", () => {
+    expect(item("GP-2")).toContain("docs-test=tree-personal-data");
+    const repo = repository("checkout", {
+      "docs/notes.md": "Kept in /Users/kq7user/notes.\n",
+      "tools/backup.test.ts": "writeFileSync(`/private/tmp/claude-501/-Users-kq7user-Projects-app/out.txt`);\n",
+      "docs/contact.md": "Write to kq7@example.invalid.\n",
+      "docs/links.md": LINKS,
+    });
+
+    const named = scan("tree-personal-data", repo, PERSONAL);
+    for (const hit of ["docs/notes.md:1:", "tools/backup.test.ts:1:", "docs/contact.md:1:"]) expect(named).toContain(hit);
+    expect(named).not.toContain("docs/links.md");
+
+    const anyHome = scan("tree-personal-data", repo, NO_ONE);
+    for (const hit of ["docs/notes.md:1:", "tools/backup.test.ts:1:"]) expect(anyHome).toContain(hit);
+    expect(anyHome).not.toContain("docs/contact.md");
+    expect(anyHome).not.toContain("docs/links.md");
+  });
+
+  describe("GP-7, over the rewritten history", () => {
+    /**
+     * A history whose personal data only a first commit, a file a later
+     * commit removed, a binary file, an author, a message and a merge's
+     * resolution hold, the merge at the tip of a branch that is not checked out.
+     */
+    function history(): string {
+      const repo = repository("tiehall-public", { "README.md": "# App\n", "tools/first.ts": 'export const note = "first commit only: kq7user";\n' });
+      commit(repo, { "tools/backup.test.ts": "writeFileSync(`/private/tmp/claude-501/-Users-kq7user-Projects-app/out.txt`);\n" }, "-m", "Write the output");
+      git(repo, "rm", "--quiet", "tools/backup.test.ts");
+      commit(repo, {}, "-m", "Stop writing the output");
+      const binary = Buffer.concat([Buffer.from([0, 1, 2, 255]), Buffer.from("binary only: kq7user"), Buffer.from([0, 255])]);
+      commit(repo, { "tools/icon.bin": binary }, "--author=Pat <kq7@example.invalid>", "-m", "Add the icon");
+      commit(repo, { "docs/links.md": LINKS }, "-m", "Add the links\n\nmessage only: kq7user ran it in /Users/kq7user/app");
+      git(repo, "checkout", "--quiet", "-b", "side");
+      commit(repo, { "docs/side.md": "# Side\n" }, "-m", "Side");
+      git(repo, "checkout", "--quiet", "-b", "hosted", "main");
+      git(repo, "merge", "--quiet", "--no-ff", "--no-commit", "side");
+      commit(repo, { "deploy/merged.txt": "merge resolution only: kq7user\n" }, "-m", "Merge side");
+      git(repo, "checkout", "--quiet", "main");
+      return repo;
+    }
+
+    it("finds each line of personal.txt in every identity, message and line a commit adds or removes, binary files too", () => {
+      const found = scan("history-personal-data", history(), PERSONAL);
+      for (const hit of [
+        "first commit only: kq7user",
+        "-Users-kq7user-Projects-app",
+        "binary only: kq7user",
+        "Pat <kq7@example.invalid>",
+        "message only: kq7user",
+        "merge resolution only: kq7user",
+      ]) {
+        expect(found).toContain(hit);
+      }
+      expect(found).not.toContain("news/home");
+    });
+
+    it("finds any home folder's path, written with slashes or dashes, that personal.txt does not name", () => {
+      const found = scan("history-personal-data", history(), NO_ONE);
+      expect(found).toContain("-Users-kq7user-Projects-app");
+      expect(found).toContain("/Users/kq7user/app");
+      expect(found).not.toContain("first commit only");
+      expect(found).not.toContain("news/home");
+      expect(found).not.toContain("./home/readme");
+    });
+
+    it("scans the clone once rewritten, and rewrites what it finds from a fresh clone, messages included", () => {
+      const gp7 = item("GP-7");
+      const rewrite = gp7.indexOf("git filter-repo --invert-paths");
+      expect(rewrite).toBeGreaterThan(-1);
+      expect(gp7.indexOf("docs-test=history-personal-data")).toBeGreaterThan(rewrite);
+      expect(gp7).toContain("--replace-text ../replacements.txt --replace-message ../replacements.txt");
+    });
   });
 });
