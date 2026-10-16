@@ -72,9 +72,10 @@ import type { WorkerJob } from "./worker.ts";
 // documents (authorization-server.ts) refuses a document with a redirect URI
 // no such registration may hold, with invalid_client in Tiehall's words that
 // name it, and hands the library the document with a stand-in for each app's
-// scheme, made from a hash of the URI. The library stores the client itself
-// while it resolves the document during an authorization, and checks the
-// request's redirect URI against what it stored in the same request, so the
+// scheme: invalid.tiehall.redirect:/ followed by the URI itself
+// (documentStandInFor()). The library stores the client itself while it
+// resolves the document during an authorization, and checks the request's
+// redirect URI against what it stored in the same request, so the
 // database adapter writes, in the library's own write of the client's row,
 // the URI each stand-in stands for over it (documentRedirectsRestored()). A
 // stand-in carries its URI as its path, so it is read back from the stand-in
