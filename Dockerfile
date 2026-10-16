@@ -7,8 +7,9 @@
 # Its settings come only from environment variables and *_FILE secrets
 # (self-host-install: One `.env` holds the install settings).
 
-# Node 24 LTS, pinned by digest. Renovate proposes a new digest only after the
-# 7-day release age, through a reviewed pull request.
+# Node 24 LTS, pinned by digest. Renovate proposes a new version, with its tag
+# and digest, only after the 7-day release age, through a reviewed pull request;
+# it proposes no new digest for the same tag, which carries no release time.
 FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS base
 
 FROM base AS build

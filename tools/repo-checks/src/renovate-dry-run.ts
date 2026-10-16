@@ -22,8 +22,13 @@ export interface DryRunSummary {
   proposed: DryRunUpdate[];
   /** Updates Renovate holds back until they pass the minimum release age. */
   held: DryRunUpdate[];
-  /** Proposed updates younger than the minimum release age, or of unknown age. */
+  /** Proposed updates younger than the minimum release age, or of unknown age, that need no maintainer's tick. */
   tooYoung: DryRunUpdate[];
+  /**
+   * Updates the lookup found but Renovate made no branch for, because renovate.json turns them off, such as a new
+   * digest for the same image tag. Known only from a log that lists the branches Renovate returns.
+   */
+  dropped: DryRunUpdate[];
   /** Dependencies the run could not look up, once each, for example action pins without a GitHub token. */
   notLookedUp: { depName: string; reason: string }[];
   /**
@@ -41,6 +46,7 @@ interface LogUpdate {
   releaseTimestamp?: string;
   pendingChecks?: boolean;
   dependencyDashboardApproval?: boolean;
+  branchName?: string;
 }
 
 interface LogDependency {
@@ -81,10 +87,19 @@ export function summarizeDryRun(log: string, minimumAgeDays = MINIMUM_RELEASE_AG
   const dropped = lines
     .map((line) => /^Filtered out (\d+) disabled update/.exec(String(line["msg"])))
     .find((match) => match !== null);
+  // The branches Renovate would open: after it drops the updates renovate.json turns off, it returns its branches and
+  // logs each one that is not wholly pending. A log without that list, such as an older one, counts every update.
+  const branchesListed = lines.some((line) => /^Returning \d+ branch\(es\)$/.test(String(line["msg"])));
+  const openBranches = new Set(
+    lines
+      .filter((line) => line["msg"] === "Branch is not pending, removing pending upgrades" && typeof line["branch"] === "string")
+      .map((line) => line["branch"] as string),
+  );
   const summary: DryRunSummary = {
     proposed: [],
     held: [],
     tooYoung: [],
+    dropped: [],
     notLookedUp: [],
     disabled: dropped?.[1] === undefined ? 0 : Number(dropped[1]),
   };
@@ -112,7 +127,14 @@ export function summarizeDryRun(log: string, minimumAgeDays = MINIMUM_RELEASE_AG
             summary.held.push(entry);
             continue;
           }
+          if (branchesListed && update.branchName !== undefined && !openBranches.has(update.branchName)) {
+            summary.dropped.push(entry);
+            continue;
+          }
           summary.proposed.push(entry);
+          // An update that waits for a maintainer's tick on the Dependency Dashboard opens no pull request by itself,
+          // such as a new digest for the same image tag, which carries no release time for the release age to hold.
+          if (entry.needsApproval) continue;
           if (Number.isNaN(released) || now - released < minimumAgeDays * DAY_MS) summary.tooYoung.push(entry);
         }
       }

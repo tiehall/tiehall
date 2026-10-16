@@ -26,6 +26,6 @@ None.
 
 - **Code:** the runtime stage of the `Dockerfile`; a new check of the Dockerfile in `tools/repo-checks`, with its fixtures; the image tests in `tools/image-tests`.
 - **The image:** each build carries the Debian updates published by the time it is built. The digest still pins what a build produced, and the SBOM that a release attests lists the upgraded packages.
-- **Pipeline:** the build workflow, its scan and Renovate's configuration are unchanged. The base image stays pinned by digest, and Renovate still proposes a new digest weekly, after 7 days, through a reviewed pull request.
+- **Pipeline:** the build workflow, its scan and Renovate's configuration are unchanged. The base image stays pinned by digest, and Renovate still proposes a new version of it, with its tag and digest, weekly, after 7 days (and, since 2026-10-17, no new digest for the same tag, which carries no release time: add-tiehall-oss-v1, task 2.5), through a reviewed pull request.
 - **Operators:** nothing changes in `.env`, in the Compose file or in the upgrade path; a new release carries the updates.
 - **Ordering:** this change is archived after add-tiehall-oss-v1, whose `self-host-install` spec it modifies.

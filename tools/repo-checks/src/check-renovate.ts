@@ -4,8 +4,11 @@
 // dry run on the local checkout and fails when Renovate would propose an update
 // younger than 7 days, or one whose age it cannot tell. Renovate runs from its
 // image pinned by digest, with the checkout mounted read-only; the dry run
-// needs the network to look up versions, and it gets no token, so it cannot
-// look up GitHub Actions pins (the report lists them). renovate.json must be
+// needs the network to look up versions. Without a token it cannot look up
+// GitHub Actions pins (the report lists them); task 2.5's run gives it a
+// read-only token in RENOVATE_GITHUB_COM_TOKEN, a fine-grained token with
+// read access to public repositories alone, which reaches the container
+// through the environment and never the command line. renovate.json must be
 // tracked or staged, because Renovate finds files through git.
 // Usage: node tools/repo-checks/src/check-renovate.ts [repo] [--save-log <file>]
 //        node tools/repo-checks/src/check-renovate.ts --log <Renovate JSON log>
@@ -63,6 +66,8 @@ function main(): number {
         "--env=GIT_CONFIG_COUNT=1",
         "--env=GIT_CONFIG_KEY_0=safe.directory",
         "--env=GIT_CONFIG_VALUE_0=*",
+        // The token's name alone: Docker takes its value from this process's environment.
+        ...(process.env["RENOVATE_GITHUB_COM_TOKEN"] ? ["--env=RENOVATE_GITHUB_COM_TOKEN"] : []),
         `--volume=${repo}:/usr/src/app:ro`,
         RENOVATE_IMAGE,
       ],
@@ -85,6 +90,7 @@ function main(): number {
 
   for (const update of summary.proposed) console.log(`proposed      ${describeUpdate(update)}`);
   for (const update of summary.held) console.log(`held back     ${describeUpdate(update)}`);
+  for (const update of summary.dropped) console.log(`dropped       ${describeUpdate(update)}`);
   if (summary.notLookedUp.length > 0) {
     const names = summary.notLookedUp.map(({ depName, reason }) => `${depName} (${reason})`).join(", ");
     console.log(`not looked up ${names}`);
@@ -92,7 +98,7 @@ function main(): number {
   if (summary.disabled > 0) {
     console.log(
       `Renovate dropped ${summary.disabled} disabled update(s), such as majors that renovate.json turns off; ` +
-        "its log does not say which, so they are listed above too.",
+        "the ones it made no branch for are listed above as dropped, and the rest as proposed or held.",
     );
   }
   console.log(
