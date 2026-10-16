@@ -15,12 +15,15 @@ import { checkWorkflows, loadPolicy } from "../src/workflows.ts";
 // to public (GP-22 and GP-23 of docs/maintainers/going-public.md) through
 // .github/workflows/pages.yml. It is plain HTML and CSS: no script of any
 // kind, nothing loaded from another host, no font file and no tracker, so it
-// works without JavaScript and tells its visitors' browsers to run none. The
+// works without JavaScript and tells its visitors' browsers to run none; the
+// one exception is the film, which a frame of the page plays in YouTube's
+// privacy-enhanced player only once the visitor starts it (the change
+// play-film-from-youtube). The
 // check reads the folder as GitHub Pages serves it: every file it holds is one
 // the allowlist of public paths holds; every link and image of each page
 // resolves, to a file of the folder or to one of the few addresses it may
 // name, the public repository, its files and the README's headings, and the
-// film's attachment once the switch has uploaded it; the CNAME names the
+// film's player and page on YouTube; the CNAME names the
 // domain; the meta tags give search engines and link previews the name, the
 // sentence and the social preview; the brand's images are the brand's own,
 // byte for byte; the content says what the README says; the pages are
@@ -39,8 +42,14 @@ const TAGLINE = /^export const TAGLINE = "([^"]+)";$/m.exec(read("packages/comma
 const REPOSITORY = "https://github.com/tiehall/tiehall";
 /** Where the page is served, as its meta tags name it. */
 const ORIGIN = "https://tiehall.com";
-/** The address GitHub gives a file attached to a Markdown page, such as the README's film once GP-19 uploads it. */
-const ATTACHMENT = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36}$/;
+/** The film on YouTube, on the channel of the maintainers' public brand, MamiBot (the change play-film-from-youtube). */
+const FILM_ID = "5Fk84aDl-r0";
+/** The host of YouTube's privacy-enhanced player, the only host a frame of the page may load. */
+const FILM_HOST = "https://www.youtube-nocookie.com";
+/** The film in that player, playing at once, which the film's own page links. */
+const FILM_PLAYER = `${FILM_HOST}/embed/${FILM_ID}?autoplay=1&rel=0`;
+/** The film's page on YouTube, the page's plain link to it. */
+const FILM_WATCH = `https://youtu.be/${FILM_ID}`;
 
 /** Every file under a folder of the repository, by its path from the root with forward slashes, sorted. */
 function filesUnder(folder: string): string[] {
@@ -57,7 +66,7 @@ interface Tag {
   attributes: Record<string, string>;
 }
 
-/** The page without its comments, which name the film's attachment as an example and are no part of what it shows. */
+/** The page without its comments, which are no part of what it shows. */
 const withoutComments = (html: string) => html.replace(/<!--[\s\S]*?-->/g, "");
 
 /** The start tags of a page, in order, each with its attributes; an attribute without a value has the empty one. */
@@ -144,14 +153,14 @@ const plan = taskStates(read("openspec/changes/add-tiehall-oss-v1/tasks.md"));
  * Why an address a page names does not resolve, or undefined when it does: a file of the site, with an id of that
  * page for a fragment; an id of the page itself; or one of the addresses the page may name outside it, the public
  * repository's page, with the README itself or one of its headings, a file or folder the public repository holds on
- * main, the film's attachment, and the page's own address on tiehall.com.
+ * main, the film's player and page on YouTube, and the page's own address on tiehall.com.
  */
 function unresolved(page: string, value: string): string | undefined {
   if (value === "") return "an empty address";
   if (value.startsWith("#")) return idsOf(read(page)).has(value.slice(1)) ? undefined : `no element of ${page} has the id ${value.slice(1)}`;
   if (/^https?:|^\/\//i.test(value)) {
     if (value === REPOSITORY || value === `${REPOSITORY}#readme`) return undefined;
-    if (ATTACHMENT.test(value)) return undefined;
+    if (value === FILM_PLAYER || value === FILM_WATCH) return undefined;
     const anchor = new RegExp(`^${REPOSITORY}#(.+)$`).exec(value)?.[1];
     if (anchor !== undefined) return readmeAnchors.has(anchor) ? undefined : `the README has no heading whose anchor is ${anchor}`;
     const file = new RegExp(`^${REPOSITORY}/(blob|tree)/main/([^#?]+)$`).exec(value);
@@ -192,8 +201,8 @@ const BRAND_COPIES: Readonly<Record<string, string>> = {
 };
 
 describe("the landing page's folder", () => {
-  it("holds the two pages, the stylesheet, the CNAME and the brand's images, and nothing else", () => {
-    expect(filesUnder(SITE)).toEqual(["site/404.html", "site/CNAME", ...Object.keys(BRAND_COPIES).sort(), "site/index.html", "site/style.css"].sort());
+  it("holds the two pages, the film's page, the stylesheet, the CNAME and the brand's images, and nothing else", () => {
+    expect(filesUnder(SITE)).toEqual(["site/404.html", "site/CNAME", ...Object.keys(BRAND_COPIES).sort(), "site/film.html", "site/index.html", "site/style.css"].sort());
   });
 
   it("holds only files the allowlist of public paths holds, and the allowlist takes no script or other kind of file there", () => {
@@ -226,23 +235,28 @@ describe("the landing page's pages", () => {
     const html = read(page);
     expect(html).not.toBe("");
     const all = tags(html);
-    expect(all.filter(({ name }) => ["script", "iframe", "object", "embed", "form", "base", "noscript"].includes(name)).map(({ name }) => name)).toEqual([]);
+    expect(all.filter(({ name }) => ["script", "object", "embed", "form", "base", "noscript"].includes(name)).map(({ name }) => name)).toEqual([]);
+    // One frame, on the home page, holds the film's own page; nothing else is framed.
+    expect(all.filter(({ name }) => name === "iframe").map(({ attributes }) => attributes["src"])).toEqual(page === "site/index.html" ? ["film.html"] : []);
     expect(all.flatMap(({ name, attributes }) => Object.keys(attributes).filter((attribute) => attribute.startsWith("on")).map((attribute) => `${name} ${attribute}`))).toEqual([]);
     expect(references(html).filter(({ value }) => /^\s*(?:javascript|data|vbscript):/i.test(value))).toEqual([]);
     // What a browser loads with the page, its stylesheet, icons and images, is the site's own.
     const loaded = all.flatMap(({ name, attributes }) => {
       if (name === "link" && attributes["rel"] !== "canonical") return [attributes["href"] ?? ""];
+      if (name === "iframe") return [attributes["src"] ?? ""];
       if (["img", "source", "video", "audio", "track", "input"].includes(name)) return [attributes["src"] ?? "", attributes["srcset"] ?? "", attributes["poster"] ?? ""];
       return [];
     });
     expect(loaded.filter((value) => value !== "" && /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value))).toEqual([]);
     expect(all.filter(({ name, attributes }) => name === "link" && attributes["rel"] === "stylesheet").map(({ attributes }) => attributes["href"])).toHaveLength(1);
-    // The browser runs no script and loads nothing from another host, whatever the page holds.
+    // The browser runs no script and loads nothing from another host, whatever the page holds, but for the frame's
+    // YouTube player once the visitor starts the film.
     const policy = all.find(({ name, attributes }) => name === "meta" && attributes["http-equiv"]?.toLowerCase() === "content-security-policy")?.attributes["content"] ?? "";
     const directives = Object.fromEntries(policy.split(";").map((part) => part.trim().split(/\s+/)).filter(([name]) => name !== undefined && name !== "").map(([name = "", ...values]) => [name, values]));
     expect(directives["default-src"]).toEqual(["'none'"]);
     expect(directives["script-src"] ?? ["'none'"]).toEqual(["'none'"]);
     for (const directive of ["style-src", "img-src"]) expect(directives[directive], directive).toEqual(["'self'"]);
+    expect(directives["frame-src"]).toEqual(page === "site/index.html" ? ["'self'", FILM_HOST] : undefined);
     expect(directives["base-uri"]).toEqual(["'none'"]);
     expect(directives["form-action"]).toEqual(["'none'"]);
   });
@@ -382,16 +396,40 @@ describe("the landing page's content", () => {
     }
   });
 
-  it("shows the film's poster, linked to the README's film until the switch and to the film's attachment from then on (task 30.5)", () => {
-    const film = tags(index).find(({ name, attributes }) => name === "a" && attributes["data-film"] !== undefined)?.attributes ?? {};
-    expect(["placeholder", "attachment"]).toContain(film["data-film"]);
-    if (film["data-film"] === "placeholder") expect(film["href"]).toBe(`${REPOSITORY}#readme`);
-    else expect(film["href"]).toMatch(ATTACHMENT);
-    if (plan.get("30.5") === true) expect(film["data-film"]).toBe("attachment");
-    // The placeholder says, where the page's source shows it, what replaces it and when.
-    if (film["data-film"] === "placeholder") expect(index).toMatch(/<!--[^>]*GP-22[^>]*https:\/\/github\.com\/user-attachments\/assets\/<id>[^>]*-->/);
-    const poster = tags(index).find(({ name, attributes }) => name === "img" && attributes["src"] === "assets/every-teams-line-poster.jpg")?.attributes;
-    expect(poster?.["alt"]).toMatch(/\S/);
+  it("plays the film in a large frame on the page, in YouTube's privacy-enhanced player once the visitor starts it (the change play-film-from-youtube)", () => {
+    // The frame holds the film's own page, with what YouTube's player needs to play at once, fill the screen and be
+    // told where it is shown, which it refuses to play without.
+    const frame = tags(index).find(({ name }) => name === "iframe")?.attributes ?? {};
+    expect(frame["src"]).toBe("film.html");
+    expect(frame["title"]).toMatch(/\bfilm\b/i);
+    expect((frame["allow"] ?? "").split(";").map((feature) => feature.trim()).sort()).toEqual(["autoplay", "encrypted-media", "fullscreen", "picture-in-picture"]);
+    expect(frame["allowfullscreen"]).toBe("");
+    expect(frame["referrerpolicy"]).toBe("strict-origin-when-cross-origin");
+    // The frame stands in its own section, as wide as the page's content, rather than in a column beside the hero.
+    expect(textOf(index, "film")).toMatch(/\S/);
+    expect(withoutComments(index).indexOf('id="film"')).toBeGreaterThan(withoutComments(index).indexOf("</section>"));
+    // The film's page shows the poster and its label, the site's own files, as one link to the player, so that nothing
+    // comes from YouTube until the visitor starts the film.
+    const film = read("site/film.html");
+    const filmTags = tags(film);
+    expect(filmTags.filter(({ name }) => ["script", "iframe", "object", "embed", "form", "base", "noscript"].includes(name)).map(({ name }) => name)).toEqual([]);
+    expect(filmTags.flatMap(({ name, attributes }) => Object.keys(attributes).filter((attribute) => attribute.startsWith("on")).map((attribute) => `${name} ${attribute}`))).toEqual([]);
+    expect(filmTags.filter(({ name }) => name === "a").map(({ attributes }) => attributes["href"])).toEqual([FILM_PLAYER]);
+    expect(references(film).filter(({ tag }) => tag !== "a").map(({ value }) => value).filter((value) => /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value))).toEqual([]);
+    for (const { value } of references(film)) expect(unresolved("site/film.html", value), value).toBeUndefined();
+    expect(filmTags.find(({ name, attributes }) => name === "img" && attributes["src"] === "assets/every-teams-line-poster.jpg")?.attributes["alt"]).toMatch(/\S/);
+    expect(textOf(film)).toMatch(/Watch the film/);
+    const policy = filmTags.find(({ name, attributes }) => name === "meta" && attributes["http-equiv"]?.toLowerCase() === "content-security-policy")?.attributes["content"] ?? "";
+    expect(policy.split(";").map((part) => part.trim()).filter(Boolean).sort()).toEqual(["base-uri 'none'", "default-src 'none'", "form-action 'none'", "img-src 'self'", "style-src 'self'"]);
+    expect(meta(film, "referrer")).toBe("strict-origin-when-cross-origin");
+    // Under the frame, a plain link to the film on YouTube; and no link is left to the README's attachment, which
+    // GitHub serves only to people signed in to it.
+    expect(references(index).map(({ value }) => value)).toContain(FILM_WATCH);
+    expect([...references(index), ...references(film)].filter(({ value }) => value.includes("user-attachments"))).toEqual([]);
+    // The footer says what the page loads, the film's player included.
+    expect(textOf(index)).toMatch(/sets no cookies and runs no scripts/);
+    expect(textOf(index)).toMatch(/YouTube/);
+    expect(textOf(index)).not.toMatch(/loads nothing from another host/);
   });
 
   it("claims no Jira mirror while the plan has not built it, and no address under the install's own host", () => {

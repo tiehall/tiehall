@@ -301,16 +301,18 @@ describe("the checklist for making the repository public", () => {
     expect(section(design, "Open Questions") ?? "").toContain("**Where the landing page is served**");
   });
 
-  it("builds the landing page in site/ with its workflow, and gives the film's link the attachment's address at the switch (task 30.15)", () => {
+  it("builds the landing page in site/ with its workflow, and plays the film there from YouTube (task 30.15; the change play-film-from-youtube)", () => {
     const gp22 = item("GP-22");
     const targets = links(gp22).map(({ target }) => target);
     expect(targets).toEqual(expect.arrayContaining(["../../site", "../../.github/workflows/pages.yml", "../../tools/repo-checks/test/site.test.ts"]));
     expect(gp22).toMatch(/task 30\.15/);
     expect(gp22).toContain("GP-23");
-    // The page links the README's film until the switch; then its link takes the address GP-19's upload gives.
-    expect(gp22).toContain("`data-film`");
-    expect(gp22).toContain("`https://github.com/user-attachments/assets/<id>`");
-    expect(gp22.indexOf("`data-film`")).toBeGreaterThan(gp22.indexOf("At the switch"));
+    // The README's attachment answers 404 to visitors who are not signed in to GitHub, so the page frames its own
+    // film page, whose poster leads to YouTube's privacy-enhanced player once a visitor starts the film.
+    expect(gp22).toContain("`site/film.html`");
+    expect(gp22).toContain("`https://www.youtube-nocookie.com`");
+    expect(links(gp22).map(({ target }) => target)).toContain("../../openspec/changes/play-film-from-youtube/design.md");
+    expect(gp22).not.toContain("`data-film`");
   });
 
   it("points tiehall.com at GitHub Pages through Turhost's DNS, once the domain is verified, and enforces HTTPS once GitHub has its certificate (task 30.15)", () => {
