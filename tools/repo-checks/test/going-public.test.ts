@@ -419,6 +419,55 @@ describe("the checklist's scans for personal data", () => {
     expect(heads("tiehall-working.bundle")).toEqual(expect.arrayContaining(["refs/heads/main", "refs/heads/spike/local"]));
   });
 
+  it("GP-7 clones GitHub's main only at the working main's commit, and lists the paths to remove by the clone's own allowlist", () => {
+    const gp7 = item("GP-7");
+    const order = ["history-backup", "history-fresh-clone", "history-outside", "history-rewrite"].map((name) => gp7.indexOf(`docs-test=${name}`));
+    expect(order.every((at) => at > -1), String(order)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(item("GP-9")).toContain("`node ../tiehall-public/tools/repo-checks/src/check-public-paths.ts ../tiehall-public --history`");
+
+    // The check reads the allowlist beside its own script, so the clone's copy reads the one the public main will hold.
+    const allowlist = (paths: string[]) => `${JSON.stringify({ paths: { public: paths }, ignored: ["private/"] })}\n`;
+    const check = Object.fromEntries(
+      ["check-public-paths.ts", "public-paths.ts"].map((file) => [`tools/repo-checks/src/${file}`, readFileSync(join(root, "tools/repo-checks/src", file), "utf8")]),
+    );
+    const checkout = repository("checkout", {
+      ...check,
+      ".gitignore": "private/\n",
+      "README.md": "# App\n",
+      "tools/repo-checks/public-paths.json": allowlist(["README.md", ".gitignore", "tools/**"]),
+    });
+    commit(checkout, { "docs/film.mp4": "an encode\n" }, "-m", "Add the film");
+    git(checkout, "rm", "--quiet", "docs/film.mp4");
+    commit(checkout, {}, "-m", "Keep the film out");
+    const github = join(checkout, "..", "github.git");
+    git(checkout, "init", "--quiet", "--bare", "--initial-branch=main", github);
+    git(checkout, "remote", "add", "origin", github);
+    git(checkout, "push", "--quiet", "origin", "main");
+    commit(checkout, { "README.md": "# App, not pushed yet\n" }, "-m", "Not pushed yet");
+
+    const run = (name: string) => {
+      const block = docsCommands(checklist).find(({ id }) => id === name)?.text ?? "";
+      expect(block, `${PATH} holds no block named ${name}`).not.toBe("");
+      return spawnSync("sh", ["-c", block.replaceAll("https://github.com/tiehall/tiehall.git", github)], { cwd: checkout, encoding: "utf8" });
+    };
+    const head = (repo: string, ref: string) => spawnSync("git", ["rev-parse", ref], { cwd: repo, encoding: "utf8" }).stdout.trim();
+    const clone = join(checkout, "..", "tiehall-public");
+
+    // GitHub's main lacks a commit of the working main: no clone is made.
+    expect(run("history-fresh-clone").status).not.toBe(0);
+    expect(existsSync(clone)).toBe(false);
+    git(checkout, "push", "--quiet", "origin", "main");
+    const cloned = run("history-fresh-clone");
+    expect(cloned.status, cloned.stderr).toBe(0);
+    expect(head(clone, "HEAD")).toBe(head(checkout, "main"));
+
+    // A checkout whose allowlist holds more than the clone's changes nothing of the list.
+    writeFileSync(join(checkout, "tools/repo-checks/public-paths.json"), allowlist(["**"]));
+    expect(run("history-outside").status).toBe(1);
+    expect(readFileSync(join(checkout, "..", "outside.txt"), "utf8")).toBe("docs/film.mp4\n");
+  });
+
   describe("GP-7, over the rewritten history", () => {
     /**
      * A history whose personal data only a first commit, a file a later
