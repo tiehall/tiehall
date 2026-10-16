@@ -216,13 +216,49 @@ describe("the checklist for making the repository public", () => {
     expect(gp17).toMatch(/Read back: `gh api orgs\/tiehall --jq '\{two_factor_requirement_enabled, default_repository_permission, members_can_create_public_repositories\}'` gives `\{"two_factor_requirement_enabled":true,/);
   });
 
-  it("sets the new repository up again: its homepage, its workflow permissions and the image package's Actions access (design.md, D38 (3))", () => {
+  it("sets the new repository up again: its homepage and its workflow permissions (design.md, D38 (3))", () => {
     expect(item("GP-11")).toContain("--homepage https://tiehall.com");
     expect(item("GP-15")).toMatch(/new repository \(GP-10\)/);
+  });
+
+  it("deletes the archive's image package, builds it again from the new repository and makes it public, read back without credentials (design.md, D38 (7))", () => {
     const gp16 = item("GP-16");
-    expect(gp16).toContain("Manage Actions access");
-    expect(gp16).toContain("`tiehall/tiehall` the Write role");
-    expect(gp16).toContain("The image's package after the move to a new repository");
+    const at = (text: string) => {
+      const found = gp16.indexOf(text);
+      expect(found, text).toBeGreaterThan(-1);
+      return found;
+    };
+    // The archive's package refuses the new repository's push and holds the private history's images, so it is deleted
+    // and the new repository's Build run creates it again, connected to tiehall/tiehall; no Write role is given.
+    expect(gp16).toContain("D38 (7)");
+    expect(gp16).toContain("denied: permission_denied: write_package");
+    expect(gp16).not.toMatch(/the Write role/);
+    expect(at("gh run rerun")).toBeGreaterThan(at("Delete this package"));
+    expect(gp16).toContain("org.opencontainers.image.source");
+    // The organization allows public packages before the package's visibility can change.
+    expect(at("Package creation")).toBeLessThan(at("Change visibility"));
+    // A new package holds no image of an earlier main commit, which the backup and upgrade jobs need.
+    for (const job of ["`Image / Backup and restore`", "`Image / Upgrade and rollback`", "No previous image found"]) at(job);
+    expect(gp16).toMatch(/Read back[^\n]*`curl -sS 'https:\/\/ghcr\.io\/token\?scope=repository:tiehall\/tiehall:pull'/);
+    const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
+    expect(section(design, "Open Questions") ?? "").not.toContain("The image's package after the move to a new repository");
+    expect(design).toMatch(/\*\*\(7\) The image's package is deleted and built again from the public history\.\*\*/);
+  });
+
+  it("merges the first pull request, whose image jobs have no earlier image, once as an administrator, and protects main for administrators again right after", () => {
+    const gp19 = item("GP-19");
+    const at = (text: string) => {
+      const found = gp19.indexOf(text);
+      expect(found, text).toBeGreaterThan(-1);
+      return found;
+    };
+    const lifted = at("`gh api -X DELETE repos/tiehall/tiehall/branches/main/protection/enforce_admins`");
+    const merged = at("--squash --admin");
+    const restored = at("`gh api -X POST repos/tiehall/tiehall/branches/main/protection/enforce_admins`");
+    expect(lifted).toBeLessThan(merged);
+    expect(merged).toBeLessThan(restored);
+    expect(at("No previous image found")).toBeLessThan(lifted);
+    expect(gp19.slice(restored)).toMatch(/[Rr]ead back `gh api repos\/tiehall\/tiehall\/branches\/main\/protection\/enforce_admins --jq \.enabled`, which gives `true`/);
   });
 
   it("installs no app on the new repository before the switch, and Renovate's only after its dry run, read back (design.md, D38 (3))", () => {
@@ -292,13 +328,16 @@ describe("the checklist for making the repository public", () => {
     expect(gp22).toContain("https://github.com/tiehall/tiehall");
     expect(gp22).toMatch(/Read back: `curl -sSI https:\/\/tiehall\.com`/);
     expect(gp22).toContain("`https://tiehall.com/schemas/`");
-    // The maintainer's answer named what the page is and when it goes live, not where it is served: that waits on the
-    // maintainer, as an Open Question of the design.
-    expect(gp22).toContain("the maintainers' choice");
-    expect(gp22).toContain("or from another static host");
-    expect(gp22).toContain('"Where the landing page is served"');
+    // Where the page is served was an Open Question of the design until the maintainer answered it on 2026-10-16:
+    // GitHub Pages, from this repository's site/.
+    expect(gp22).toContain("D38 (8)");
+    expect(gp22).not.toContain("the maintainers' choice");
+    expect(gp22).not.toContain("Open Question");
     const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
-    expect(section(design, "Open Questions") ?? "").toContain("**Where the landing page is served**");
+    expect(section(design, "Open Questions") ?? "").not.toContain("Where the landing page is served");
+    expect(design).toMatch(/\*\*\(8\) The landing page is served on GitHub Pages from this repository's `site\/`/);
+    // A resolver that still holds the domain's earlier address answers for another host: the read-back can pin GitHub's.
+    expect(gp22).toContain("--resolve tiehall.com:443:185.199.108.153");
   });
 
   it("builds the landing page in site/ with its workflow, and plays the film there from YouTube (task 30.15; the change play-film-from-youtube)", () => {
@@ -346,6 +385,9 @@ describe("the checklist for making the repository public", () => {
     expect(at("Verified and approved domains")).toBeLessThan(records);
     expect(gp23).toMatch(/Read back: `gh api graphql[^`]*organization\(login: \\?"tiehall\\?"\)[^`]*domains[^`]*isVerified/);
     for (const name of ["A tiehall.com", "AAAA tiehall.com", "CNAME www.tiehall.com"]) expect(gp23).toContain(`\`dig +short ${name}\``);
+    // Turhost's zone editor offers no AAAA type, so the four A records alone serve the page, over IPv4.
+    expect(gp23).toMatch(/Turhost's zone editor offers no `AAAA`/);
+    expect(gp23).toMatch(/`dig \+short AAAA tiehall\.com` prints nothing at Turhost/);
     // GitHub Pages publishes the workflow's upload, under the custom domain, which the API sets: a workflow's upload has no CNAME file GitHub reads.
     const pages = at("gh api -X POST repos/tiehall/tiehall/pages -f build_type=workflow");
     const domain = at("gh api -X PUT repos/tiehall/tiehall/pages -f cname=tiehall.com");
