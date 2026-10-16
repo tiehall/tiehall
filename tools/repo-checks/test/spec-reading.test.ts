@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { findContentsCalls, findReaderDependencies, loadReaderDenylist, serverPackages, WORKSPACE_FOLDERS } from "../src/spec-reading.ts";
 
 // Nothing on the server reads OpenAPI documents (contract-changes: Contract
@@ -35,12 +36,30 @@ describe("the server packages", () => {
   });
 });
 
+/** The folders a pnpm-workspace.yaml's text makes workspace packages of, as its packages list writes them, without the ones it leaves out. */
+function workspaceGlobs(workspace: string): string[] {
+  const { packages } = parse(workspace) as { packages?: unknown };
+  return Array.isArray(packages) ? packages.map(String).filter((glob) => !glob.startsWith("!")) : [];
+}
+
 describe("the workspace packages", () => {
   it("are found one folder deep in each folder pnpm-workspace.yaml makes workspace packages of, and nowhere else", () => {
-    const listed = readFileSync(new URL("pnpm-workspace.yaml", `file://${repoRoot}`), "utf8")
-      .split("\n")
-      .flatMap((line) => /^ {2}- "?([^"!][^"]*)"?$/.exec(line)?.[1] ?? []);
+    const listed = workspaceGlobs(readFileSync(new URL("pnpm-workspace.yaml", `file://${repoRoot}`), "utf8"));
     expect(listed).toEqual(WORKSPACE_FOLDERS.map((folder) => `${folder}/*`));
+  });
+
+  it("are read from the packages list only, not from the other lists of pnpm-workspace.yaml, such as its exclusions from the release age", () => {
+    const workspace = [
+      "packages:",
+      "  - apps/*",
+      "  - packages/*",
+      '  - "!spikes/**"',
+      "minimumReleaseAge: 10080",
+      "minimumReleaseAgeExclude:",
+      '  - "undici@7.16.1"',
+      "",
+    ].join("\n");
+    expect(workspaceGlobs(workspace)).toEqual(["apps/*", "packages/*"]);
   });
 
   it("leave out a package kept outside those folders, even one a server app names", () => {
