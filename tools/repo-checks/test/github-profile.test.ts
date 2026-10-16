@@ -93,6 +93,13 @@ describe("the drafts of what the maintainer applies on GitHub", () => {
     expect(targets.map(reached)).toEqual(expect.arrayContaining(["docs/assets/brand/mark.svg", "docs/install.md", "SECURITY.md", `README#${headingAnchor("Connect your agents")}`]));
   });
 
+  it("link the film where it plays, the repository's README, and not the MP4, whose page on GitHub shows no player", () => {
+    const profile = block("profile-readme");
+    const film = links(profile).filter(({ text }) => /\bfilm\b/i.test(text));
+    expect(film.map(({ target }) => reached(target))).toEqual(["the repository"]);
+    expect(links(profile).filter(({ target }) => /\.mp4$/i.test(target))).toEqual([]);
+  });
+
   it("name no email address, since no mailbox exists yet", () => {
     expect(page).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.-]+/);
     expect(page).not.toMatch(/mailto:/i);

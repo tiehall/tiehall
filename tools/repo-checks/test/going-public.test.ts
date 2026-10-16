@@ -48,6 +48,10 @@ function items(): Item[] {
 /** The text of the item with this id, such as GP-7, or "" when there is none. */
 const item = (id: string) => items().find((found) => found.id === id)?.text ?? "";
 
+/** GitHub's documentation of the files its file view renders, which names no video, and of the files a Markdown page takes as attachments. */
+const NON_CODE_FILES = "https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files";
+const ATTACHING_FILES = "https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files";
+
 /** The steps the checklist must cover, each found in one item's title. */
 const STEPS = [
   "allowlist",
@@ -160,6 +164,25 @@ describe("the checklist for making the repository public", () => {
     const readBack = gp10.split("\n").find((line) => line.startsWith("- Read back: ")) ?? "";
     expect(readBack).toContain("`git ls-remote https://github.com/tiehall/tiehall.git`");
     expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
+  });
+
+  it("puts GitHub's player for the film in the README right after the switch, and reads it back signed out (task 30.11)", () => {
+    // GitHub's file view plays no video, so the README's poster, which links the committed MP4, offers the film only
+    // for download; a video attached to a Markdown page plays there, and a private repository's attachments show to
+    // its members alone, so the attachment waits for the switch.
+    const gp4 = item("GP-4");
+    expect(links(gp4).map(({ target }) => target)).toContain(NON_CODE_FILES);
+    expect(gp4).toContain("GP-19");
+    const gp19 = item("GP-19");
+    const steps = gp19.split("\n").filter((line) => line.startsWith("- "));
+    const film = steps.find((line) => line.includes("`docs/assets/film/every-teams-line.mp4`")) ?? "";
+    expect(film).toContain("`https://github.com/user-attachments/assets/<id>`");
+    expect(film).toContain("pull request");
+    expect(steps.indexOf(film)).toBeGreaterThan(steps.findIndex((line) => line.includes("--visibility public")));
+    const readBack = steps.filter((line) => line.startsWith("- Read back")).join("\n");
+    expect(readBack).toContain("signed out");
+    expect(readBack).toContain("player");
+    expect(links(gp19).map(({ target }) => target)).toContain(ATTACHING_FILES);
   });
 
   it("keeps personal data out: the repository's public address only, no mailbox, no local path, no earlier email", () => {

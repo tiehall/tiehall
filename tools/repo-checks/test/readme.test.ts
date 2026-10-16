@@ -21,6 +21,8 @@ import { taskStates } from "../src/plan.ts";
 // it names each agent client the client-matrix log records a sign-in for,
 // and that it claims nothing the plan has not built: no Jira mirror while
 // group 25 is open, and no release before the first public one (task 30.5).
+// Once the repository is public it shows the film in GitHub's player, since
+// GitHub's file view plays no video and a link to the MP4 only downloads it.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const README = "README.md";
@@ -49,6 +51,13 @@ const SECTIONS = [
 
 const FILM = "docs/assets/film/every-teams-line.mp4";
 const POSTER = "docs/assets/film/every-teams-line-poster.jpg";
+
+/**
+ * Whether this text holds GitHub's player for a video: the address GitHub gives an attachment, on a line of its own
+ * between empty lines, outside any HTML block. GitHub's file view plays no video, so a link to the committed MP4 offers
+ * the film only for download (GP-4 and GP-19 of the checklist for making the repository public).
+ */
+const hasPlayer = (text: string) => /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]+\n\n/.test(`\n\n${text}`);
 
 /** The plan's tasks, each done or not. */
 const plan = taskStates(readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/tasks.md"), "utf8"));
@@ -95,11 +104,14 @@ describe("the README", () => {
     const targets = links(header).map(({ target }) => target);
     expect(targets).toContain("docs/assets/brand/mark.svg");
     expect(header).toMatch(/<h1\b[^>]*>Tiehall<\/h1>|^# Tiehall$/m);
-    const attachment = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]+$/m.test(header);
-    if (!attachment) {
+    if (!hasPlayer(header)) {
       expect(header).toMatch(new RegExp(`<a href="${FILM}"><img src="${POSTER}" alt="[^"]+"`));
       expect(links(header).filter(({ target, text }) => target === FILM && /^Watch\b/.test(text))).toHaveLength(1);
     }
+  });
+
+  it("plays the film in GitHub's player once the repository is public, where GP-19 of the checklist puts it (task 30.5)", () => {
+    if (plan.get("30.5") === true) expect(hasPlayer(header)).toBe(true);
   });
 
   it("draws how it works and names the live hall (task 30.13)", () => {
