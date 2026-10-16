@@ -224,6 +224,33 @@ describe("the checklist for making the repository public", () => {
     expect(gp16).toContain("The image's package after the move to a new repository");
   });
 
+  it("installs no app on the new repository before the switch, and Renovate's only after its dry run, read back (design.md, D38 (3))", () => {
+    // An app that writes to the new repository, such as Renovate's, which opens a branch and a pull request for each
+    // update renovate.json allows, would give it refs that GP-19's read-back, HEAD and main alone, takes for the old
+    // history's; and running GP-10 again, as GP-19 then says, would install the app again.
+    const gp10 = item("GP-10");
+    expect(gp10).not.toMatch(/app installations?, such as Renovate's/);
+    const setUp = gp10.split("\n").find((line) => line.startsWith("- Set the new repository up")) ?? "";
+    expect(setUp).toContain("Install no app on it before the switch");
+    expect(setUp).toContain("GP-21");
+    // An app installed for all of the organization's repositories reaches the new one as soon as it is created, so
+    // the check comes before the creation.
+    const installations = gp10.indexOf(
+      "`gh api orgs/tiehall/installations --jq '.installations[] | {app_slug, repository_selection}'` lists no installation whose `repository_selection` is `all`",
+    );
+    expect(installations).toBeGreaterThan(-1);
+    expect(installations).toBeLessThan(gp10.indexOf("`gh repo create tiehall/tiehall"));
+    const steps = item("GP-21").split("\n").filter((line) => line.startsWith("- "));
+    const dryRun = steps.findIndex((line) => line.includes("the Renovate dry run"));
+    const install = steps.findIndex((line) => line.includes("https://github.com/apps/renovate"));
+    expect(dryRun).toBeGreaterThan(-1);
+    expect(install).toBeGreaterThan(dryRun);
+    const installing = steps[install] ?? "";
+    expect(installing).toContain("for `tiehall/tiehall` alone");
+    expect(installing).toMatch(/Read back: `gh api orgs\/tiehall\/installations --jq '\.installations\[\] \| select\(\.app_slug == "renovate"\) \| \.repository_selection'` gives `selected`/);
+    expect(installing).toContain("`gh issue list --repo tiehall/tiehall --app renovate");
+  });
+
   it("switches in order: the organization's settings, the visibility, then protection, workflows, the film and the landing page (design.md, D38 (6))", () => {
     const gp19 = item("GP-19");
     const at = (text: string) => {
