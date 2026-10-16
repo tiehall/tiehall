@@ -207,6 +207,15 @@ describe("the checklist for making the repository public", () => {
     expect(item("GP-9")).toContain("GP-14");
   });
 
+  it("takes every change to main through a pull request, which required checks alone do not, and reads it back", () => {
+    // With required checks alone, a commit whose checks have passed can be pushed to main directly, and its branch's
+    // other commits with it; a required pull request with no approval keeps a pull request's own commits off main.
+    const gp14 = item("GP-14");
+    expect(gp14).toContain('`"required_pull_request_reviews": {"required_approving_review_count": 0}`');
+    expect(gp14).toMatch(/Read back[^\n]*pull_requests: \.required_pull_request_reviews\.required_approving_review_count/);
+    expect(gp14).toMatch(/strict: \.required_status_checks\.strict/);
+  });
+
   it("requires two-factor authentication and stops members creating public repositories at the switch, reading both back (design.md, D38 (6))", () => {
     const gp17 = item("GP-17");
     expect(gp17).toMatch(/at the switch/);
@@ -214,11 +223,38 @@ describe("the checklist for making the repository public", () => {
     expect(gp17).toContain("orgs/tiehall/members?filter=2fa_disabled");
     expect(gp17).toContain("gh api -X PATCH orgs/tiehall -F members_can_create_public_repositories=false");
     expect(gp17).toMatch(/Read back: `gh api orgs\/tiehall --jq '\{two_factor_requirement_enabled, default_repository_permission, members_can_create_public_repositories\}'` gives `\{"two_factor_requirement_enabled":true,/);
+    // GitHub restricts members to private repositories alone only on GitHub Enterprise Cloud, so on the free plan the
+    // setting stays true, and the design asks the maintainer how to meet D38 (6).
+    const question = "Members creating public repositories on the free plan";
+    expect(gp17).toContain("GitHub Enterprise Cloud");
+    expect(gp17).toContain(`Open Question "${question}"`);
+    const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
+    expect(section(design, "Open Questions") ?? "").toContain(`**${question}**`);
+    expect(design).toMatch(new RegExp(`\\*\\*\\(6\\) [^\\n]*Open Question "${question}"`));
+    // GP-16 allowed the organization public packages, which lets members publish them too: GP-17 names that setting.
+    expect(gp17).toMatch(/Package creation[^\n]*Read back/);
   });
 
   it("sets the new repository up again: its homepage and its workflow permissions (design.md, D38 (3))", () => {
     expect(item("GP-11")).toContain("--homepage https://tiehall.com");
     expect(item("GP-15")).toMatch(/new repository \(GP-10\)/);
+    expect(item("GP-15")).toMatch(
+      /Read back: `gh api repos\/tiehall\/tiehall\/actions\/permissions\/fork-pr-contributor-approval` gives `\{"approval_policy":"all_external_contributors"\}`/,
+    );
+  });
+
+  it("sets up before the switch only GP-11 and GP-15, which a private repository takes, and the other settings after it", () => {
+    // GitHub shows the social preview's setting, and the free plan offers private vulnerability reporting and branch
+    // protection, only on a public repository; the package is built again by the first Build run on main (GP-16).
+    const setUp = item("GP-10").split("\n").find((line) => line.startsWith("- Set the new repository up")) ?? "";
+    expect(setUp).toContain("as GP-11 and GP-15 say");
+    expect(setUp).toContain("GP-12 to GP-14 and GP-16 follow the switch");
+    const steps = item("GP-19").split("\n").filter((line) => line.startsWith("- "));
+    expect(steps[0]).toContain("GP-11 and GP-15 are set on the new repository: apply the organization's settings of GP-17");
+    expect(steps[0]).toMatch(/GP-12's social preview follows the switch[^\n]*GP-16/);
+    const recovery = steps.find((line) => line.includes("gh repo delete tiehall/tiehall")) ?? "";
+    expect(recovery).toContain("run GP-10 again from its creation and GP-11 and GP-15 after it");
+    expect(item("GP-12")).toMatch(/Upload it to the new repository[^\n]*after the switch/);
   });
 
   it("deletes the archive's image package, builds it again from the new repository and makes it public, read back without credentials (design.md, D38 (7))", () => {
@@ -259,6 +295,25 @@ describe("the checklist for making the repository public", () => {
     expect(merged).toBeLessThan(restored);
     expect(at("No previous image found")).toBeLessThan(lifted);
     expect(gp19.slice(restored)).toMatch(/[Rr]ead back `gh api repos\/tiehall\/tiehall\/branches\/main\/protection\/enforce_admins --jq \.enabled`, which gives `true`/);
+  });
+
+  it("deletes the archive's package before the film's merge, and makes the image public once that merge's Build run has pushed it (GP-16)", () => {
+    // The archive's package refuses the new repository's push, so it goes before the first push to main that the
+    // workflows see, the film's merge; the image that push builds is then made public.
+    const steps = item("GP-19").split("\n").filter((line) => line.startsWith("- "));
+    const step = (text: string) => {
+      const found = steps.findIndex((line) => line.includes(text));
+      expect(found, text).toBeGreaterThan(-1);
+      return found;
+    };
+    const deletion = step("delete the archive's image package");
+    const merge = step("--squash --admin");
+    const published = step("make the image public");
+    expect(deletion).toBeGreaterThan(step("actions/permissions -F enabled=true"));
+    expect(deletion).toBeLessThan(merge);
+    expect(published).toBeGreaterThan(merge);
+    for (const found of [deletion, published]) expect(steps[found]).toContain("(GP-16)");
+    expect(steps[merge]).toContain("the first push to `main` since the workflows were turned on");
   });
 
   it("installs no app on the new repository before the switch, and Renovate's only after its dry run, read back (design.md, D38 (3))", () => {
@@ -384,6 +439,8 @@ describe("the checklist for making the repository public", () => {
     expect(at("`_github-pages-challenge-tiehall.tiehall.com`")).toBeLessThan(records);
     expect(at("Verified and approved domains")).toBeLessThan(records);
     expect(gp23).toMatch(/Read back: `gh api graphql[^`]*organization\(login: \\?"tiehall\\?"\)[^`]*domains[^`]*isVerified/);
+    // That read-back needs the admin:org scope; the organization's verified flag reads back without it.
+    expect(gp23).toContain("`gh api orgs/tiehall --jq .is_verified`");
     for (const name of ["A tiehall.com", "AAAA tiehall.com", "CNAME www.tiehall.com"]) expect(gp23).toContain(`\`dig +short ${name}\``);
     // Turhost's zone editor offers no AAAA type, so the four A records alone serve the page, over IPv4.
     expect(gp23).toMatch(/Turhost's zone editor offers no `AAAA`/);
