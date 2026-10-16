@@ -13,11 +13,11 @@
 </p>
 
 <p align="center">
-  <a href="docs/assets/film/every-teams-line.mp4"><img src="docs/assets/film/every-teams-line-poster.jpg" alt="The title frame of Every Team's Line, a film about Tiehall: the mark beside the name" width="720"></a>
+  <img src="docs/assets/film/every-teams-line-poster.jpg" alt="The title frame of Every Team's Line, a film about Tiehall: the mark beside the name" width="720">
 </p>
 
 <p align="center">
-  <a href="docs/assets/film/every-teams-line.mp4">Watch "Every Team's Line"</a>, 53 seconds with English narration (MP4, 9.2 MB).
+  "Every Team's Line", a film of 53 seconds with English narration, plays here once it is uploaded at the switch to public (<a href="docs/maintainers/going-public.md#gp-19-the-switch-to-public">GP-19</a>).
 </p>
 
 ## What Tiehall is

@@ -55,8 +55,7 @@
       "docs/assets/brand/*.svg",
       "docs/assets/brand/*.png"
     ],
-    "The README's film, an encode under 10 MB of a source that stays outside the repository, and its poster (task 30.11)": [
-      "docs/assets/film/*.mp4",
+    "The poster of the README's film; the film's encode stays outside the repository and is uploaded at the switch as the README's attachment (task 30.11; D38 (2))": [
       "docs/assets/film/*.jpg"
     ],
     "OpenSpec: its configuration, the archived specs and the changes, except the hosted-service change, which stays out of the public repository (D33, D38)": [

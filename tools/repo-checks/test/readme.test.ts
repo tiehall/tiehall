@@ -21,8 +21,11 @@ import { taskStates } from "../src/plan.ts";
 // it names each agent client the client-matrix log records a sign-in for,
 // and that it claims nothing the plan has not built: no Jira mirror while
 // group 25 is open, and no release before the first public one (task 30.5).
-// Once the repository is public it shows the film in GitHub's player, since
-// GitHub's file view plays no video and a link to the MP4 only downloads it.
+// The repository holds the film's poster alone (design.md, D38 (2)): until
+// the switch to public the README shows the poster, with a caption that says
+// the film plays there once GP-19 of the checklist has uploaded it as the
+// README's attachment, and from then on GitHub's player, since GitHub's file
+// view plays no video.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const README = "README.md";
@@ -49,13 +52,14 @@ const SECTIONS = [
   "Documentation",
 ];
 
-const FILM = "docs/assets/film/every-teams-line.mp4";
 const POSTER = "docs/assets/film/every-teams-line-poster.jpg";
+/** The checklist's step that uploads the film as the README's attachment, right after the switch to public. */
+const PLAYER_STEP = "docs/maintainers/going-public.md#gp-19-the-switch-to-public";
 
 /**
  * Whether this text holds GitHub's player for a video: the address GitHub gives an attachment, on a line of its own
- * between empty lines, outside any HTML block. GitHub's file view plays no video, so a link to the committed MP4 offers
- * the film only for download (GP-4 and GP-19 of the checklist for making the repository public).
+ * between empty lines, outside any HTML block. GitHub's file view plays no video, and the repository holds no encode of
+ * the film, which GP-19 of the checklist for making the repository public uploads as the README's attachment.
  */
 const hasPlayer = (text: string) => /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]+\n\n/.test(`\n\n${text}`);
 
@@ -100,14 +104,21 @@ describe("the README", () => {
     expect(headings(readme).filter(({ level }) => level === 2).map(({ text }) => text)).toEqual(SECTIONS);
   });
 
-  it("shows, above its sections, the mark, the name and the film: its poster linked to it, or GitHub's player (task 30.13)", () => {
+  it("shows, above its sections, the mark, the name and the film: its poster with a caption, or GitHub's player (task 30.13)", () => {
     const targets = links(header).map(({ target }) => target);
     expect(targets).toContain("docs/assets/brand/mark.svg");
     expect(header).toMatch(/<h1\b[^>]*>Tiehall<\/h1>|^# Tiehall$/m);
     if (!hasPlayer(header)) {
-      expect(header).toMatch(new RegExp(`<a href="${FILM}"><img src="${POSTER}" alt="[^"]+"`));
-      expect(links(header).filter(({ target, text }) => target === FILM && /^Watch\b/.test(text))).toHaveLength(1);
+      expect(header).toMatch(new RegExp(`<img src="${POSTER}" alt="[^"]+"`));
+      // The poster links nothing, since the repository holds no encode; its caption says where and when the film plays.
+      expect(header).not.toMatch(new RegExp(`<a\\b[^>]*>\\s*<img src="${POSTER}"`));
+      const caption = header.split(/\n\s*\n/).find((block) => links(block).some(({ target }) => target === PLAYER_STEP)) ?? "";
+      expect(caption.replace(/\s+/g, " ")).toMatch(/plays here once it is uploaded at the switch to public/);
     }
+  });
+
+  it("links no video, since the repository holds none: the film is the README's attachment (task 30.11)", () => {
+    expect(links(readme).filter(({ target }) => /\.(?:mp4|m4v|mov|webm)$/i.test(target.split("#")[0] ?? ""))).toEqual([]);
   });
 
   it("plays the film in GitHub's player once the repository is public, where GP-19 of the checklist puts it (task 30.5)", () => {

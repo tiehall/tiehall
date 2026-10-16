@@ -166,16 +166,18 @@ describe("the checklist for making the repository public", () => {
     expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
   });
 
-  it("puts GitHub's player for the film in the README right after the switch, and reads it back signed out (task 30.11)", () => {
-    // GitHub's file view plays no video, so the README's poster, which links the committed MP4, offers the film only
-    // for download; a video attached to a Markdown page plays there, and a private repository's attachments show to
-    // its members alone, so the attachment waits for the switch.
+  it("keeps the film's encode out of the repository, and puts GitHub's player for it in the README right after the switch, read back signed out (task 30.11)", () => {
+    // The repository holds the film's poster alone (design.md, D38 (2)). GitHub's file view plays no video; a video
+    // attached to a Markdown page plays there, and a private repository's attachments show to its members alone, so the
+    // attachment waits for the switch. The encode is made and checked outside the repository, then uploaded.
     const gp4 = item("GP-4");
     expect(links(gp4).map(({ target }) => target)).toContain(NON_CODE_FILES);
     expect(gp4).toContain("GP-19");
+    expect(gp4).toContain("node tools/repo-checks/src/check-film.ts ");
     const gp19 = item("GP-19");
     const steps = gp19.split("\n").filter((line) => line.startsWith("- "));
-    const film = steps.find((line) => line.includes("`docs/assets/film/every-teams-line.mp4`")) ?? "";
+    const film = steps.find((line) => line.includes("`every-teams-line.mp4`")) ?? "";
+    expect(film).not.toContain("docs/assets/film/every-teams-line.mp4");
     expect(film).toContain("`https://github.com/user-attachments/assets/<id>`");
     expect(film).toContain("pull request");
     expect(steps.indexOf(film)).toBeGreaterThan(steps.findIndex((line) => line.includes("--visibility public")));

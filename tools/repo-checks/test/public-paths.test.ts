@@ -291,6 +291,8 @@ describe("the committed allowlist", () => {
     "docs/assets/brand/mark.psd",
     "docs/assets/brand/drafts/mark.svg",
     "docs/assets/notes.md",
+    // The film's encode is the README's attachment, uploaded at the switch; the repository holds its poster alone (design.md, D38 (2)).
+    "docs/assets/film/every-teams-line.mp4",
   ])("leaves out %s, which stays out of the public repository", (path) => {
     expect(isPublic(path, patterns)).toBe(false);
   });
@@ -317,6 +319,7 @@ describe("the committed allowlist", () => {
     "docs/assets/brand/mark.svg",
     "docs/assets/brand/mark-on-dark.png",
     "docs/assets/brand/social-preview.png",
+    "docs/assets/film/every-teams-line-poster.jpg",
   ])("holds %s", (path) => {
     expect(isPublic(path, patterns)).toBe(true);
   });
