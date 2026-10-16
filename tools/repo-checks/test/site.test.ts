@@ -496,6 +496,53 @@ function resolve(value: string): string {
   return next === undefined ? value : resolve(next).toUpperCase();
 }
 
+describe("the landing page's motion (the change landing-page-motion)", () => {
+  const all = tags(index);
+  const classes = ({ attributes }: Tag) => (attributes["class"] ?? "").split(/\s+/);
+  const hero = withoutComments(index).slice(withoutComments(index).indexOf('<section class="hero"'), withoutComments(index).indexOf("</section>"));
+  const steps = withoutComments(index).slice(withoutComments(index).indexOf('<ol class="steps"'), withoutComments(index).indexOf("</ol>"));
+
+  it("draws the hall beside the hero's text: the six teams' switchboards and the cords between them, in one SVG named for screen readers", () => {
+    const art = tags(hero).find((tag) => tag.name === "svg" && classes(tag).includes("hall-art"));
+    expect(art?.attributes["role"]).toBe("img");
+    expect(art?.attributes["aria-label"]).toMatch(/\bteams?\b/);
+    expect(tags(hero).filter((tag) => tag.name === "g" && classes(tag).includes("hall-node"))).toHaveLength(6);
+    expect(tags(hero).filter((tag) => tag.name === "path" && classes(tag).includes("hall-cord")).length).toBeGreaterThanOrEqual(6);
+    // A request travels one cord, its question comes back, the answer follows, and the line turns to done.
+    for (const pulse of ["pulse-request", "pulse-question", "pulse-answer"]) {
+      expect(tags(hero).filter((tag) => tag.name === "path" && classes(tag).includes(pulse)), pulse).toHaveLength(1);
+    }
+  });
+
+  it("puts a backdrop of drifting shapes behind the hero, which screen readers skip and no pointer reaches", () => {
+    const backdrop = tags(hero).find((tag) => tag.name === "svg" && classes(tag).includes("backdrop"));
+    expect(backdrop?.attributes["aria-hidden"]).toBe("true");
+    expect(tags(hero).filter((tag) => classes(tag).includes("shape")).length).toBeGreaterThanOrEqual(6);
+    const rule = stylesheet.rules.find((candidate) => candidate.context.length === 0 && selectorsOf(candidate).includes(".backdrop"));
+    expect(rule?.declarations).toContainEqual(expect.objectContaining({ property: "pointer-events", value: "none" }));
+  });
+
+  it("gives each of the three steps a small moving picture that screen readers skip", () => {
+    const pictures = tags(steps).filter(({ name }) => name === "svg");
+    expect(pictures.map(({ attributes }) => attributes["aria-hidden"])).toEqual(["true", "true", "true"]);
+  });
+
+  it("moves only through the stylesheet's animations, never through SVG's own animation elements or inline styles, which the policy would block", () => {
+    expect(all.filter(({ name }) => ["animate", "animatemotion", "animatetransform", "set"].includes(name)).map(({ name }) => name)).toEqual([]);
+    for (const page of [...PAGES, "site/film.html"]) {
+      expect(tags(read(page)).filter(({ attributes }) => "style" in attributes).map(({ name }) => name), page).toEqual([]);
+    }
+    const keyframes = stylesheet.rules.filter(({ context }) => context.some((at) => at.startsWith("@keyframes")));
+    expect(keyframes.length).toBeGreaterThan(0);
+  });
+
+  it("stops every animation and transition for people who ask for reduced motion", () => {
+    const reduced = stylesheet.rules.filter(({ context }) => context.some((at) => /prefers-reduced-motion:\s*reduce/.test(at))).flatMap(({ declarations }) => declarations);
+    expect(reduced).toContainEqual(expect.objectContaining({ property: "animation", value: "none", important: true }));
+    expect(reduced).toContainEqual(expect.objectContaining({ property: "transition", value: "none", important: true }));
+  });
+});
+
 describe("the landing page's colors", () => {
   it("are the web UI's Navy & Gold tokens of its dark theme, with its system font stack", () => {
     expect(site["--ground"]).toBe("#0A1428");

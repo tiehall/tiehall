@@ -49,7 +49,19 @@
 
 <main id="main">
   <section class="hero" aria-labelledby="name">
-    <div class="wrap">
+    <svg class="backdrop" viewBox="0 0 1440 640" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <path class="shape shape-cord" d="M-20 470 C300 360 560 600 880 470 S1280 300 1480 380"/>
+      <circle class="shape shape-ring s1" cx="1230" cy="110" r="88"/>
+      <circle class="shape shape-ring s2" cx="120" cy="540" r="58"/>
+      <circle class="shape shape-ring s3" cx="660" cy="610" r="34"/>
+      <rect class="shape shape-node s4" x="990" y="505" width="124" height="44" rx="12"/>
+      <rect class="shape shape-node s5" x="250" y="70" width="98" height="36" rx="10"/>
+      <rect class="shape shape-node s6" x="1310" y="300" width="80" height="30" rx="9"/>
+      <circle class="shape shape-dot s7" cx="780" cy="70" r="6"/>
+      <circle class="shape shape-dot s8" cx="1350" cy="580" r="5"/>
+      <circle class="shape shape-dot s9" cx="60" cy="230" r="4"/>
+    </svg>
+    <div class="wrap hero-grid">
       <div class="hero-text">
         <h1 id="name">Tiehall</h1>
         <p class="tagline">Every team’s line, in one hall.</p>
@@ -57,6 +69,62 @@
         <p class="facts"><span>Self-hosted</span> · <span>Open source</span> · <span>Model-agnostic</span> · <span>Pre-1.0</span></p>
         <p class="actions"><a class="cta" href="https://github.com/tiehall/tiehall">View on GitHub</a></p>
       </div>
+      <svg class="hall-art" viewBox="0 0 480 420" role="img" aria-label="Tiehall’s hall: six teams’ switchboards joined by cords. A request travels from one team to another, a question comes back and is answered, and the finished line turns green.">
+        <g class="hall-cords">
+          <path class="hall-cord cord-story" d="M379 130 Q300 92 240 50"/>
+          <path class="hall-cord cord-ambient-a" d="M101 130 Q240 236 379 290"/>
+          <path class="hall-cord cord-ambient-b" d="M240 370 Q330 262 379 130"/>
+          <path class="hall-cord" d="M240 50 Q150 150 101 290"/>
+          <path class="hall-cord" d="M101 290 Q160 352 240 370"/>
+          <path class="hall-cord" d="M101 130 Q160 72 240 50"/>
+          <path class="hall-cord" d="M379 290 Q330 352 240 370"/>
+        </g>
+        <g class="hall-flows">
+          <path class="hall-flow flow-a" d="M101 130 Q240 236 379 290"/>
+          <path class="hall-flow flow-b" d="M240 370 Q330 262 379 130"/>
+        </g>
+        <g class="hall-pulses">
+          <path class="hall-pulse pulse-request" d="M379 130 Q300 92 240 50" pathLength="100"/>
+          <path class="hall-pulse pulse-question" d="M240 50 Q300 92 379 130" pathLength="100"/>
+          <path class="hall-pulse pulse-answer" d="M379 130 Q300 92 240 50" pathLength="100"/>
+          <path class="hall-pulse pulse-ambient" d="M240 370 Q330 262 379 130" pathLength="100"/>
+          <path class="hall-pulse pulse-travel travel-1" d="M101 290 Q150 150 240 50" pathLength="100"/>
+          <path class="hall-pulse pulse-travel travel-2" d="M379 290 Q240 236 101 130" pathLength="100"/>
+          <path class="hall-pulse pulse-travel travel-3" d="M240 370 Q330 352 379 290" pathLength="100"/>
+          <path class="hall-pulse pulse-travel travel-4" d="M101 130 Q160 72 240 50" pathLength="100"/>
+          <path class="hall-pulse pulse-travel travel-5" d="M240 370 Q160 352 101 290" pathLength="100"/>
+        </g>
+        <g class="hall-node node-fe" transform="translate(240 50)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">FE</text>
+        </g>
+        <g class="hall-node node-be" transform="translate(379 130)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">BE</text>
+        </g>
+        <g class="hall-node node-pay" transform="translate(379 290)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">PAY</text>
+        </g>
+        <g class="hall-node node-ios" transform="translate(240 370)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">iOS</text>
+        </g>
+        <g class="hall-node node-data" transform="translate(101 290)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">DATA</text>
+        </g>
+        <g class="hall-node node-ops" transform="translate(101 130)">
+          <rect x="-42" y="-19" width="84" height="38" rx="10"/>
+          <circle class="hall-lamp" cx="-25" cy="0" r="4.5"/>
+          <text x="-14" y="5">OPS</text>
+        </g>
+      </svg>
     </div>
   </section>
 
@@ -103,14 +171,17 @@
       <h2 id="how-title">How it works</h2>
       <ol class="steps" role="list">
         <li>
+          <svg class="step-art step-open" viewBox="0 0 96 40" aria-hidden="true"><circle class="step-dot" cx="10" cy="20" r="6"/><path class="step-track" d="M20 20 H76"/><circle class="step-dot" cx="86" cy="20" r="6"/><rect class="step-card" x="18" y="12" width="20" height="16" rx="3"/></svg>
           <h3>Open</h3>
           <p>A developer asks their agent for something from another team, and the agent opens a request to that team with the packet.</p>
         </li>
         <li>
+          <svg class="step-art step-ask" viewBox="0 0 96 40" aria-hidden="true"><circle class="step-dot" cx="10" cy="20" r="6"/><path class="step-track" d="M20 20 H76"/><circle class="step-dot step-dot-busy" cx="86" cy="20" r="6"/><g class="step-question"><rect x="58" y="9" width="22" height="22" rx="11"/><text x="69" y="25">?</text></g></svg>
           <h3>Claim and ask</h3>
           <p>Someone on that team claims it, and their agent reads the packet over MCP, the <code>tiehall</code> CLI or the request’s URL. Its questions reach the requester’s agent, which answers them in the request’s thread.</p>
         </li>
         <li>
+          <svg class="step-art step-close" viewBox="0 0 96 40" aria-hidden="true"><path class="step-track" d="M12 30 H60"/><path class="step-branch" d="M12 10 C36 10 36 30 60 30"/><circle class="step-merge" cx="72" cy="30" r="7"/><path class="step-check" d="M68 30 L71 33 L77 26" pathLength="100"/></svg>
           <h3>Confirm and close</h3>
           <p>People confirm the commitments in the web UI, and the request is done when its linked pull request merges.</p>
         </li>
