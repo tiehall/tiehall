@@ -119,9 +119,9 @@ Source: D23; D28 #75; D50 (10); D55 (77); design.md, Decisions this change rests
 
 ### Requirement: Clients identified by a Client ID Metadata Document are preferred
 
-While metadata-document fetching is on, Tiehall SHALL accept clients whose `client_id` is an HTTPS URL pointing to a Client ID Metadata Document, and SHALL treat such a client as identified by that URL only when the fetched document's `client_id` equals the URL exactly. Tiehall SHALL fetch metadata documents only through the outbound fetcher that the agent-safety capability defines, which refuses loopback, private, link-local and cloud metadata addresses and redirects to them. Tiehall SHALL fetch at most 60 metadata documents per minute from any one host; an authorization request that Tiehall cannot check because that host's limit is used up SHALL be refused with HTTP 429 and a `Retry-After` header. A `client_id` URL SHALL have at most 1,024 characters, and a document SHALL give a client name of 1 to 100 characters and at most 10 redirect URIs of at most 2,048 characters each. An authorization request whose `client_id` URL is longer, which Tiehall SHALL refuse without fetching anything, or whose document breaks one of these bounds, SHALL be refused with the OAuth error `invalid_client`, and SHALL never be answered with a 500.
+While metadata-document fetching is on, Tiehall SHALL accept clients whose `client_id` is an HTTPS URL pointing to a Client ID Metadata Document, and SHALL treat such a client as identified by that URL only when the fetched document's `client_id` equals the URL exactly. Tiehall SHALL fetch metadata documents only through the outbound fetcher that the agent-safety capability defines, which refuses loopback, private, link-local and cloud metadata addresses and redirects to them. Tiehall SHALL fetch at most 60 metadata documents per minute from any one host; an authorization request that Tiehall cannot check because that host's limit is used up SHALL be refused with HTTP 429 and a `Retry-After` header. A `client_id` URL SHALL have at most 1,024 characters, and a document SHALL give a client name of 1 to 100 characters and at most 10 redirect URIs of at most 2,048 characters each. An authorization request whose `client_id` URL is longer, which Tiehall SHALL refuse without fetching anything, or whose document breaks one of these bounds, SHALL be refused with the OAuth error `invalid_client`, and SHALL never be answered with a 500. A document that names no `application_type`, or names `native`, SHALL have its redirect URIs held to the rule that the requirement on Dynamic Client Registration gives a registration that names no type or `native`: a redirect URI with a native app's own scheme, as that requirement defines it, which needs no dot, SHALL be accepted, and an authorization request whose document gives a redirect URI that holds a fragment or user information, or is none of an `https` URI on a host other than a loopback one, an `http` URI on `localhost`, `127.0.0.1` or `[::1]`, and a URI with a native app's own scheme, SHALL be refused with the OAuth error `invalid_client`, with an `error_description` that names that redirect URI, and SHALL get no consent screen.
 
-Source: D28 #43; D55 (25); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
+Source: D28 #43; D55 (15), (25); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
 #### Scenario: A matching metadata document identifies the client
 
@@ -158,6 +158,18 @@ Source: D28 #43; D55 (25); design.md, Decisions this change rests on; design.md,
 
 - **WHEN** the document served at a client's `client_id` URL gives a client name of 101 characters, or lists 11 redirect URIs
 - **THEN** Tiehall refuses the authorization request with the OAuth error `invalid_client`
+- **AND** no consent screen is shown
+
+#### Scenario: A metadata document with an app's own scheme
+
+- **WHEN** the document served at a client's `client_id` URL names no `application_type` and gives the one redirect URI `cursor://anysphere.cursor-mcp/oauth/callback`, and a signed-in member's authorization request names that redirect URI with a PKCE `S256` challenge
+- **THEN** authorization continues to the consent screen, which shows the scheme `cursor:` and that whole URI as where the sign-in ends
+- **AND** once the member has approved the client, its authorization code reaches that redirect URI
+
+#### Scenario: A metadata document with a scheme that is no app's own
+
+- **WHEN** the document served at a client's `client_id` URL gives the redirect URI `mailto:agent@vendor.example`, or `ws://agent.vendor.example/callback`, beside `http://127.0.0.1:33418/callback`
+- **THEN** Tiehall refuses the authorization request with the OAuth error `invalid_client`, whose `error_description` names `mailto:agent@vendor.example`, or `ws://agent.vendor.example/callback`
 - **AND** no consent screen is shown
 
 ### Requirement: Dynamic Client Registration stays on, limited and unverified
@@ -323,7 +335,7 @@ Source: D55 (17); design.md, Decisions this change rests on; design.md, Rules ca
 
 ### Requirement: OAuth scopes are coarse
 
-Tiehall SHALL offer exactly three OAuth scopes: `requests:read`, `requests:write` and `contracts:report`. There SHALL be no `admin` scope, because admin operations run only in the web UI; an authorization request that asks for a scope Tiehall does not offer SHALL be refused with the OAuth error `invalid_scope`, except `offline_access`, which Tiehall SHALL ignore: it SHALL NOT be listed in `scopes_supported`, shown on the consent screen or carried among a token's scopes, and every grant SHALL bring a refresh token whether or not the client asked for one. An authorization request that names no scope, or only `offline_access`, SHALL be granted `requests:read` and `requests:write`, which the consent screen SHALL show before the person approves; `contracts:report` SHALL be granted only to a request that names it. `contract.report` itself SHALL accept only the CI caller, as the requirement on CI below and the contract-changes capability define, so no OAuth token or personal access token can report contract changes, whatever scopes it carries. The `contracts:report` scope SHALL guard attaching classified contract changes to a request by hand: the MCP tool `attach_contract_changes` and its REST operation SHALL need `contracts:report`, as the contract-changes capability defines.
+Tiehall SHALL offer exactly three OAuth scopes: `requests:read`, `requests:write` and `contracts:report`. There SHALL be no `admin` scope, because admin operations run only in the web UI; an authorization request that asks for a scope Tiehall does not offer SHALL be refused with the OAuth error `invalid_scope`, except `offline_access`, which Tiehall SHALL ignore: it SHALL NOT be listed in `scopes_supported`, shown on the consent screen or carried among a token's scopes, and every grant SHALL bring a refresh token whether or not the client asked for one. An authorization request that names no scope, or only `offline_access`, SHALL be granted `requests:read` and `requests:write`, which the consent screen SHALL show before the person approves; `contracts:report` SHALL be granted only to a request that names it. Where an agent client learns which scopes to ask for, Tiehall SHALL name only `requests:read` and `requests:write`: the `scopes_supported` of the protected resource metadata of `/mcp` and of the authorization server metadata SHALL list those two and not `contracts:report`. `contracts:report` SHALL stay offered: a request that names it SHALL be granted it once the person approves the consent screen that shows it, and the answer to a Dynamic Client Registration SHALL name it among the scopes the client may ask for. `contract.report` itself SHALL accept only the CI caller, as the requirement on CI below and the contract-changes capability define, so no OAuth token or personal access token can report contract changes, whatever scopes it carries. The `contracts:report` scope SHALL guard attaching classified contract changes to a request by hand: the MCP tool `attach_contract_changes` and its REST operation SHALL need `contracts:report`, as the contract-changes capability defines.
 
 Source: D28 #48; D30 (3); D55 (12), (13); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -369,9 +381,15 @@ Source: D28 #48; D30 (3); D55 (12), (13); design.md, Decisions this change rests
 - **THEN** the consent screen showed `requests:read` and `requests:write`
 - **AND** the issued access token carries those two scopes and not `contracts:report`
 
+#### Scenario: The metadata names the two scopes an agent asks for
+
+- **WHEN** an MCP client fetches the protected resource metadata of `https://tiehall.example.com/mcp`, or the authorization server metadata
+- **THEN** its `scopes_supported` lists `requests:read` and `requests:write`, and not `contracts:report`
+- **AND** an authorization request whose `scope` is `requests:read requests:write contracts:report` is still granted all three once the person approves it, after the consent screen showed `contracts:report`
+
 ### Requirement: The consent screen shows who is asking
 
-The consent screen SHALL show the client's name; for a client identified by a Client ID Metadata Document, its verified host; for a DCR client, an "unverified client" warning; and where the sign-in ends: the host name of the redirect URI, or, for a redirect URI with a native app's own scheme, that scheme and the whole URI, without showing the URI's host as a host the browser returns to; and every other place the client registered, where a later sign-in of it may end, named the same way. It SHALL show a warning when every redirect URI of the client is on localhost. The consent screen SHALL be served only to a signed-in member, as the sign-in capability defines, and SHALL ask for no choice of org, because an install has one org.
+The consent screen SHALL show the client's name; for a client identified by a Client ID Metadata Document, its verified host; for a DCR client, an "unverified client" warning; and where the sign-in ends: the host name of the redirect URI, or, for a redirect URI with a native app's own scheme, that scheme and the whole URI, without showing the URI's host as a host the browser returns to; and every other place the client registered, where a later sign-in of it may end, named the same way. It SHALL show a warning whenever the sign-in returns to a program on the person's computer, that is when the authorization request's redirect URI is an `http` URI on `localhost`, `127.0.0.1` or `[::1]`, or has a native app's own scheme, whatever other redirect URIs the client registered; a sign-in that ends at an `https` URI SHALL get no such warning. The consent screen SHALL be served only to a signed-in member, as the sign-in capability defines, and SHALL ask for no choice of org, because an install has one org.
 
 Source: D55 (15); design.md, Decisions this change rests on; design.md, Rules carried from earlier changes
 
@@ -384,7 +402,7 @@ Source: D55 (15); design.md, Decisions this change rests on; design.md, Rules ca
 #### Scenario: Localhost-only redirect URIs are flagged
 
 - **WHEN** every redirect URI of a client is on `localhost`
-- **THEN** the consent screen shows a warning about localhost redirect URIs
+- **THEN** the consent screen shows the warning that the sign-in returns to a program on the person's computer
 
 #### Scenario: An app's own scheme is shown with its whole URI
 
@@ -397,6 +415,17 @@ Source: D55 (15); design.md, Decisions this change rests on; design.md, Rules ca
 - **WHEN** a DCR client registered the redirect URIs `https://www.cursor.com/agents/mcp/oauth/callback` and `http://localhost:8787/callback`, and its authorization request names the first
 - **THEN** the consent screen shows the host name `www.cursor.com` as where the sign-in ends
 - **AND** it shows `localhost` as another place where a sign-in of the client may end
+
+#### Scenario: A sign-in that returns to an app is flagged
+
+- **WHEN** a DCR client's authorization request names its redirect URI `cursor://anysphere.cursor-mcp/oauth/callback`
+- **THEN** the consent screen shows the warning that the sign-in returns to a program on the person's computer
+
+#### Scenario: Only a sign-in that ends on localhost is flagged beside an https redirect URI
+
+- **WHEN** a DCR client registered the redirect URIs `https://www.cursor.com/agents/mcp/oauth/callback` and `http://localhost:8787/callback`, and its authorization request names the second
+- **THEN** the consent screen shows the warning that the sign-in returns to a program on the person's computer
+- **AND** for an authorization request of the same client that names the first, the consent screen shows no such warning
 
 ### Requirement: The CLI signs in through a restricted device flow
 
