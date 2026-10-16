@@ -110,7 +110,8 @@ describe("the film", () => {
   const moov = top.find(({ type }) => type === "moov");
 
   it("is the MP4 and its poster in docs/assets/film/, which the allowlist holds, and nothing else", () => {
-    expect(existsSync(join(root, FOLDER)) ? readdirSync(join(root, FOLDER)).sort() : []).toEqual(["every-teams-line-poster.jpg", "every-teams-line.mp4"]);
+    const listed = existsSync(join(root, FOLDER)) ? readdirSync(join(root, FOLDER)).filter((file) => !file.startsWith(".")) : [];
+    expect(listed.sort()).toEqual(["every-teams-line-poster.jpg", "every-teams-line.mp4"]);
     const { patterns } = loadPublicPaths();
     expect([FILM, POSTER].filter((path) => !isPublic(path, patterns))).toEqual([]);
     expect([`${FOLDER}/source.mov`, `${FOLDER}/notes.md`, `${FOLDER}/every-teams-line.png`].filter((path) => isPublic(path, patterns))).toEqual([]);

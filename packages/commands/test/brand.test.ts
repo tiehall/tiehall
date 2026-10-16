@@ -59,7 +59,8 @@ describe("the brand's images", () => {
       "mark.svg",
       "social-preview.png",
     ]);
-    expect(existsSync(FOLDER) ? readdirSync(FOLDER).sort() : []).toEqual(files);
+    // Hidden files, such as a file manager's .DS_Store, which git ignores, are not the brand's.
+    expect(existsSync(FOLDER) ? readdirSync(FOLDER).filter((file) => !file.startsWith(".")).sort() : []).toEqual(files);
   });
 
   it("draw the mark on its tile as the install's icon does, and on its own in navy and in gold", () => {

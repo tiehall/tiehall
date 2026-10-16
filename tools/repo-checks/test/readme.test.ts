@@ -53,12 +53,21 @@ const POSTER = "docs/assets/film/every-teams-line-poster.jpg";
 /** The plan's tasks, each done or not. */
 const plan = taskStates(readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/tasks.md"), "utf8"));
 
-/** The clients that a table of the client-matrix log records a sign-in for: each row whose sign-in cell is more than "Not run". */
+/** The clients that a table of the client-matrix log records a sign-in for: each row of a matrix table whose sign-in cell is more than "Not run". */
 function clientsWithASignIn(): string[] {
   const log = readFileSync(join(root, "docs/client-matrix/log.md"), "utf8");
-  const rows = log.split("\n").filter((line) => /^\| [^-]/.test(line) && !line.startsWith("| Client |"));
-  const signedIn = rows.map((row) => row.split("|").map((cell) => cell.trim())).filter((cells) => cells[3] !== undefined && cells[3] !== "Not run");
-  return [...new Set(signedIn.map((cells) => cells[1] ?? ""))].filter((client) => !/^Each of/.test(client));
+  const cells = (line: string) => line.split("|").slice(1, -1).map((cell) => cell.trim());
+  const clients = new Set<string>();
+  let signIn = -1;
+  for (const line of log.split("\n")) {
+    if (!line.startsWith("|")) signIn = -1;
+    else if (line.startsWith("| Client |")) signIn = cells(line).findIndex((cell) => cell.startsWith("Sign-in path"));
+    else if (signIn > 0 && !/^\|\s*-/.test(line)) {
+      const [client = "", ...rest] = cells(line);
+      if (rest[signIn - 1] !== "Not run" && !client.startsWith("Each of")) clients.add(client);
+    }
+  }
+  return [...clients];
 }
 
 /** The README's sentences outside code, each with its white space made single spaces. */
