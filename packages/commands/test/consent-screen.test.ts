@@ -16,8 +16,8 @@ import { CLIENT_REDIRECT_URI, pkcePair, startAgentAccess, type AgentAccessHarnes
 // Tiehall; the verified host of a client identified by its metadata document,
 // or a warning that a registered client is unverified; the host name the
 // browser returns to, with every other place the client registered; a warning
-// when every address the client can return to is on the computer it runs on;
-// and what the client may do for the member.
+// whenever the sign-in returns to a program on the person's computer; and what
+// the client may do for the member.
 // It asks for no choice of org, since the install has one. A browser without
 // a session is sent to sign in first, and comes back; so does one that starts
 // an authorization before it has signed in, which the sign-in page brings
@@ -138,12 +138,37 @@ describe("the consent screen's content", () => {
     expect(textOf({ ...REGISTERED, client: twoPaths, redirectUri: "https://agent.vendor.example/a" })).not.toContain("other places");
   });
 
-  it("warns when every redirect URI of the client is on localhost, and not when one is not", () => {
-    const loopback: ConsentView = { ...REGISTERED, client: { ...REGISTERED.client, redirectUris: ["http://localhost:4000/cb", "http://127.0.0.1:4000/cb"] } };
-    expect(textOf(loopback)).toMatch(/localhost/);
-    expect(textOf(loopback)).toMatch(/every address/i);
-    const mixed: ConsentView = { ...REGISTERED, client: { ...REGISTERED.client, redirectUris: ["http://127.0.0.1:4000/cb", "https://agent.vendor.example/cb"] } };
-    expect(textOf(mixed)).not.toMatch(/every address/i);
+  // One warning, whenever this sign-in returns to a program on the person's computer: at an http URI on localhost,
+  // 127.0.0.1 or [::1], or at an app's own scheme, whatever other redirect URIs the client registered, since a sign-in
+  // that someone else started ends there where the person cannot see it; a sign-in that ends at an https URI gets none
+  // (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the maintainer answered on
+  // 2026-10-16; task 27.8).
+  it("warns whenever the sign-in returns to a program on the person's computer, at a loopback URI or an app's scheme, whatever else the client registered", () => {
+    const HOSTED = "https://www.cursor.com/agents/mcp/oauth/callback";
+    const view = (redirectUris: string[], redirectUri: string): ConsentView => ({ ...REGISTERED, client: { ...REGISTERED.client, redirectUris }, redirectUri });
+    const warned = (consent: ConsentView) =>
+      consentReview(consent).lines.filter((line) => "text" in line && line.text.includes("This sign-in returns to a program on your computer"));
+    const WARNING = {
+      text: "This sign-in returns to a program on your computer, not to a web site. Continue only if you started it yourself, from an agent on this computer.",
+      warning: true,
+    };
+    for (const [redirectUris, redirectUri] of [
+      // A client of localhost alone keeps its warning, on any of the loopback hosts and on any port.
+      [["http://localhost:4000/cb", "http://127.0.0.1:4000/cb"], "http://127.0.0.1:4000/cb"],
+      [["http://[::1]:4000/cb"], "http://[::1]:4000/cb"],
+      // Cursor's sign-in to its loopback URI beside its hosted callback.
+      [[HOSTED, "http://localhost:8787/callback"], "http://localhost:61234/callback"],
+      // An app's own scheme, alone or beside an https URI.
+      [["cursor://anysphere.cursor-mcp/oauth/callback"], "cursor://anysphere.cursor-mcp/oauth/callback"],
+      [[HOSTED, "com.example.app:/callback"], "com.example.app:/callback"],
+    ] as const) {
+      expect(warned(view([...redirectUris], redirectUri)), redirectUri).toEqual([WARNING]);
+    }
+    // A sign-in that ends at an https URI gets none, whatever else the client registered, which the screen names.
+    for (const redirectUris of [[HOSTED], [HOSTED, "http://localhost:8787/callback"], [HOSTED, "cursor://anysphere.cursor-mcp/oauth/callback"]]) {
+      expect(warned(view(redirectUris, HOSTED)), redirectUris.join(" ")).toEqual([]);
+    }
+    expect(textOf(view([HOSTED, "http://localhost:8787/callback"], HOSTED))).toContain("may end once you approve it: localhost.");
   });
 
   // A browser applies a page's form-action to every redirect that follows its form's post, and the approval's last

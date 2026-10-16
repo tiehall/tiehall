@@ -491,6 +491,28 @@ describe("https redirect URIs beside local ones", () => {
     },
   );
 
+  // The consent screen warns whenever the sign-in returns to a program on the person's computer, whatever else the
+  // client registered (decisions-from-groups-15-28: design.md, Decisions this change rests on: D55 (15), as the
+  // maintainer answered on 2026-10-16; task 27.8).
+  it("of Cursor's sign-ins: the consent screen warns for one to its loopback URI or its cursor: URI, which return to a program on the person's computer, and not for one to its hosted callback", async () => {
+    const consentOf = async (registration: Record<string, unknown>, redirectUri: string): Promise<string> => {
+      const registered = await registerAsSent(registration);
+      expect(registered.status).toBe(201);
+      const client = { clientId: ((await registered.json()) as { client_id: string }).client_id, redirectUri };
+      const consent = locationOf(await harness.authorize(ana.cookie, client, pkcePair(), { scope: "requests:read requests:write" }));
+      expect(consent.pathname, redirectUri).toBe("/consent");
+      const page = await harness.handle(new Request(consent, { headers: { cookie: ana.cookie, accept: "text/html" } }));
+      expect(page.status, redirectUri).toBe(200);
+      return decoded(await page.text());
+    };
+    const WARNING = "This sign-in returns to a program on your computer, not to a web site.";
+    expect(await consentOf(CURSOR_FIRST, LOOPBACK)).toContain(WARNING);
+    expect(await consentOf(CURSOR_FIRST, "http://localhost:61234/callback")).toContain(WARNING);
+    const CURSOR = "cursor://anysphere.cursor-mcp/oauth/callback";
+    expect(await consentOf({ ...CURSOR_FIRST, redirect_uris: [CURSOR] }, CURSOR)).toContain(WARNING);
+    expect(await consentOf(CURSOR_FIRST, HOSTED)).not.toContain(WARNING);
+  });
+
   it("alone keep the web type, as Cursor's second registration, of its hosted callback alone, does", async () => {
     for (const redirects of [[HOSTED], [HOSTED, "https://agent.vendor.example/callback"]]) {
       const answer = await registerAsSent({ ...CURSOR_FIRST, redirect_uris: redirects });

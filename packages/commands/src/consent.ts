@@ -30,8 +30,13 @@ import type { OrgContext } from "./with-org.ts";
 //   client registered, named the same way, since once the person approves
 //   the client a later sign-in of it may end at any of them, as Cursor's
 //   first registration has its hosted callback beside one on localhost (D55
-//   (15), as the maintainer answered on 2026-10-16); and a warning when every
-//   redirect URI of the client is on the computer it runs on (localhost);
+//   (15), as the maintainer answered on 2026-10-16); and a warning whenever
+//   this sign-in returns to a program on the person's computer, at an http
+//   URI on localhost, 127.0.0.1 or [::1] or at an app's own scheme, whatever
+//   other redirect URIs the client registered, since a sign-in that someone
+//   else started ends there where the person cannot see it, and none when it
+//   ends at an https URI (D55 (15), as the maintainer answered later that
+//   day);
 // - what the client may do for the member: the scopes it asks for, which
 //   are only ones Tiehall offers; a page whose address names anything else,
 //   which the authorization server never sends a browser to, is refused with
@@ -158,6 +163,24 @@ function isLocalhost(uri: string): boolean {
 }
 
 /**
+ * Whether a sign-in that ends at this redirect URI returns to a program on
+ * the person's computer: an http URI on localhost, 127.0.0.1 or [::1], or a
+ * native app's own scheme, which the browser hands to the app that opens it.
+ */
+function returnsToThisComputer(uri: string): boolean {
+  try {
+    const { protocol } = new URL(uri);
+    return protocol === "http:" || protocol === "https:" ? isLocalhost(uri) : true;
+  } catch {
+    return false;
+  }
+}
+
+/** The consent screen's warning for a sign-in that returns to a program on the person's computer. */
+const RETURNS_TO_THIS_COMPUTER =
+  "This sign-in returns to a program on your computer, not to a web site. Continue only if you started it yourself, from an agent on this computer.";
+
+/**
  * Where the sign-in ends, as the consent screen says it: for an http or https
  * redirect URI, the host name the browser returns to; for any other, a native
  * app's own scheme (RFC 8252, 7.1), the app that opens the scheme's addresses
@@ -208,12 +231,8 @@ export function consentReview({ client, redirectUri, scopes }: ConsentView): Rev
   const here = placeOf(redirectUri);
   const others = [...new Set(client.redirectUris.map(placeOf))].filter((place) => place !== here);
   if (others.length > 0) lines.push({ text: `It registered other places too, where a later sign-in of it may end once you approve it: ${others.join("; ")}.` });
-  if (client.redirectUris.length > 0 && client.redirectUris.every(isLocalhost)) {
-    lines.push({
-      text: "Every address this client can send you back to is on localhost, the computer it runs on. Continue only if you started this from an agent on your own computer.",
-      warning: true,
-    });
-  }
+  // Wherever else the client may send a later sign-in, this one's code goes to a program on the person's computer.
+  if (returnsToThisComputer(redirectUri)) lines.push({ text: RETURNS_TO_THIS_COMPUTER, warning: true });
   lines.push({ text: "It asks to:" });
   for (const scope of scopes) lines.push({ text: SCOPE_TEXTS[scope] ?? scope });
   lines.push({
