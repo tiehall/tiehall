@@ -224,13 +224,14 @@ describe("the checklist for making the repository public", () => {
     expect(gp17).toContain("gh api -X PATCH orgs/tiehall -F members_can_create_public_repositories=false");
     expect(gp17).toMatch(/Read back: `gh api orgs\/tiehall --jq '\{two_factor_requirement_enabled, default_repository_permission, members_can_create_public_repositories\}'` gives `\{"two_factor_requirement_enabled":true,/);
     // GitHub restricts members to private repositories alone only on GitHub Enterprise Cloud, so on the free plan the
-    // setting stays true, and the design asks the maintainer how to meet D38 (6).
+    // maintainer answered that members create no repository at all (D38 (6)), which GP-17 sets and reads back.
     const question = "Members creating public repositories on the free plan";
     expect(gp17).toContain("GitHub Enterprise Cloud");
-    expect(gp17).toContain(`Open Question "${question}"`);
+    expect(gp17).toContain("gh api -X PATCH orgs/tiehall -F members_can_create_repositories=false");
+    expect(gp17).toMatch(/`gh api orgs\/tiehall --jq '\{members_can_create_repositories, members_can_create_public_repositories, members_can_create_private_repositories\}'` gave all three `false`/);
     const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
-    expect(section(design, "Open Questions") ?? "").toContain(`**${question}**`);
-    expect(design).toMatch(new RegExp(`\\*\\*\\(6\\) [^\\n]*Open Question "${question}"`));
+    expect(section(design, "Open Questions") ?? "").not.toContain(`**${question}**`);
+    expect(design).toMatch(/\*\*\(6\) [^\n]*members_can_create_repositories/);
     // GP-16 allowed the organization public packages, which lets members publish them too: GP-17 names that setting.
     expect(gp17).toMatch(/Package creation[^\n]*Read back/);
   });

@@ -536,6 +536,17 @@ describe("the landing page's motion (the change landing-page-motion)", () => {
     expect(keyframes.length).toBeGreaterThan(0);
   });
 
+  it("keeps every drawing hidden until the stylesheet that draws it loads, so an old or missing stylesheet leaves the text alone", () => {
+    const drawings = all.filter(({ name }) => name === "svg");
+    expect(drawings.length).toBeGreaterThanOrEqual(5);
+    // SVG's own display attribute, which any rule of the stylesheet overrides; HTML's hidden attribute hides no SVG.
+    expect(drawings.filter(({ attributes }) => attributes["display"] !== "none").map((tag) => classes(tag).join(" "))).toEqual([]);
+    for (const selector of [".backdrop", ".hall-art", ".step-art"]) {
+      const shown = stylesheet.rules.find((rule) => rule.context.length === 0 && selectorsOf(rule).includes(selector))?.declarations.find(({ property }) => property === "display");
+      expect(shown?.value, selector).toMatch(/^(?:block|inline-block)$/);
+    }
+  });
+
   it("stops every animation and transition for people who ask for reduced motion", () => {
     const reduced = stylesheet.rules.filter(({ context }) => context.some((at) => /prefers-reduced-motion:\s*reduce/.test(at))).flatMap(({ declarations }) => declarations);
     expect(reduced).toContainEqual(expect.objectContaining({ property: "animation", value: "none", important: true }));
