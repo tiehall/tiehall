@@ -29,8 +29,11 @@ const MADE_UP = new Set(["sam", "kq7user"]);
 /** A home folder's path, with the user name as its group: /Users/<name> or /home/<name>, or -Users-<name>- as an agent's scratch folder writes it. */
 const HOME_FOLDERS = [/(?:^|[^\w.-])\/(?:Users|home)\/([\w.-]+)/g, /-(?:Users|home)-([\w.]+)/g];
 
-/** An email address, not the user information of a URL or of git's own address form, whose last label is a word. */
-const EMAIL = /(?<![\w.%+\-/:])([\w.%+-]+)@((?:[\w-]+\.)+[A-Za-z]{2,})(?![\w-])/g;
+/**
+ * An email address whose last label is a word, a mailto: link's included, and not the user information of a URL: a
+ * user after scheme:// or a password after scheme://user:.
+ */
+const EMAIL = /(?<![\w.%+\-/])(?<!\/\/[^\s/?#@]*:)([\w.%+-]+)@((?:[\w-]+\.)+[A-Za-z]{2,})(?![\w-])/g;
 
 /** Domains kept for examples (RFC 2606 and 6761), and their subdomains. */
 const PLACEHOLDER_DOMAIN = /(?:^|\.)(?:example\.(?:com|org|net)|example|invalid|test|localhost)$/i;
@@ -73,7 +76,7 @@ function userNameOutside(files: TextFile[], user: string, publicAddress: string)
 describe("personal data in the repository", () => {
   const files = trackedTextFiles(root).filter(({ path }) => path !== "tools/repo-checks/test/personal-data.test.ts");
 
-  it("finds a real person's home folder, written with slashes or dashes, and an address that is no placeholder's", () => {
+  it("finds a real person's home folder, written with slashes or dashes, and an address that is no placeholder's, a mailto: link's too", () => {
     const fixture: TextFile[] = [
       {
         path: "docs/notes.md",
@@ -83,11 +86,18 @@ describe("personal data in the repository", () => {
           "Fine: /home/sam/web, -Users-kq7user-Projects-app, https://example.com/news/home/2026, ./home/readme.",
           "Mail pat@pat.dev or kim@school.edu.",
           "Fine: alice@acme.example, bob@example.com, x@example.invalid, noreply@github.com, https://user@api.github.com, tiehall@1.3.0.",
+          "Report it [by mail](mailto:security@tiehall.com) or to <mailto:pat@pat.dev?subject=Tiehall>.",
+          "Fine: mailto:bob@example.com, postgres://tiehall:s3cret@db.acme.dev:5432/app, https://x-access-token:a:b@github.com/acme/app.git.",
         ].join("\n"),
       },
     ];
     expect(realHomeFolders(fixture)).toEqual(["docs/notes.md:1: pat", "docs/notes.md:1: kim", "docs/notes.md:2: pat"]);
-    expect(realAddresses(fixture, "1+someone@users.noreply.github.com")).toEqual(["docs/notes.md:4: pat@pat.dev", "docs/notes.md:4: kim@school.edu"]);
+    expect(realAddresses(fixture, "1+someone@users.noreply.github.com")).toEqual([
+      "docs/notes.md:4: pat@pat.dev",
+      "docs/notes.md:4: kim@school.edu",
+      "docs/notes.md:6: security@tiehall.com",
+      "docs/notes.md:6: pat@pat.dev",
+    ]);
     expect(userNameOutside(fixture, "kim", "1+someone@users.noreply.github.com")).toEqual(["docs/notes.md:1", "docs/notes.md:4"]);
   });
 
