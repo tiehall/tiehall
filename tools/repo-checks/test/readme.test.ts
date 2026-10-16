@@ -5,14 +5,22 @@ import { describe, expect, it } from "vitest";
 import { fencedBlocks, installDocsCommands } from "../src/docs-commands.ts";
 import { loadLicenseMap } from "../src/licenses.ts";
 import { headings, isExternal, linkProblems, links, repositoryFiles, section } from "../src/markdown.ts";
+import { taskStates } from "../src/plan.ts";
 
-// The README of the public repository (task 28.2; design.md, Decisions this
-// change rests on: D38): what Tiehall is, a quickstart taken from the install
-// docs, the license of each directory and links to the docs. The check finds
-// each section, finds that every link resolves, that every page of docs/ is
-// linked from the Documentation section, that the quickstart runs only
-// commands of the install docs, which their CI jobs run, and that the
-// licenses it names by directory are the license map's.
+// The README of the public repository (tasks 28.2 and 30.13; design.md,
+// Decisions this change rests on: D38): the front door, which links into the
+// docs rather than repeating them. Above its sections it shows the mark, the
+// name, one sentence of what Tiehall is and the film; then what Tiehall is
+// and why, how it works, what an install gives, a quickstart taken from the
+// install docs, connecting agents, where it fits, security and privacy, the
+// license of each directory, the status, contributing and the docs. The
+// check finds each section in that order, finds that every link resolves,
+// that every page of docs/ is linked from the Documentation section, that
+// the quickstart runs only commands of the install docs, which their CI jobs
+// run, that the licenses it names by directory are the license map's, that
+// it names each agent client the client-matrix log records a sign-in for,
+// and that it claims nothing the plan has not built: no Jira mirror while
+// group 25 is open, and no release before the first public one (task 30.5).
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const README = "README.md";
@@ -21,12 +29,101 @@ const readme = readFileSync(join(root, README), "utf8");
 /** A section of the README, or the empty text when it has none. */
 const part = (heading: string) => section(readme, heading) ?? "";
 
+/** The README above its first section: the mark, the name, the sentence and the film. */
+const header = readme.split(/^## /m)[0] ?? "";
+
+/** The README's sections, in the order a newcomer reads them. */
+const SECTIONS = [
+  "What Tiehall is",
+  "How it works",
+  "What you get",
+  "Quickstart",
+  "Connect your agents",
+  "Where it fits",
+  "Security and privacy",
+  "Licenses by directory",
+  "Status",
+  "Contributing",
+  "Documentation",
+];
+
+const FILM = "docs/assets/film/every-teams-line.mp4";
+const POSTER = "docs/assets/film/every-teams-line-poster.jpg";
+
+/** The plan's tasks, each done or not. */
+const plan = taskStates(readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/tasks.md"), "utf8"));
+
+/** The clients that a table of the client-matrix log records a sign-in for: each row whose sign-in cell is more than "Not run". */
+function clientsWithASignIn(): string[] {
+  const log = readFileSync(join(root, "docs/client-matrix/log.md"), "utf8");
+  const rows = log.split("\n").filter((line) => /^\| [^-]/.test(line) && !line.startsWith("| Client |"));
+  const signedIn = rows.map((row) => row.split("|").map((cell) => cell.trim())).filter((cells) => cells[3] !== undefined && cells[3] !== "Not run");
+  return [...new Set(signedIn.map((cells) => cells[1] ?? ""))].filter((client) => !/^Each of/.test(client));
+}
+
+/** The README's sentences outside code, each with its white space made single spaces. */
+function sentences(): string[] {
+  const prose = readme.replace(/^```[\s\S]*?^```/gm, "").replace(/`[^`\n]*`/g, "code");
+  return prose
+    .split(/(?<=[.!?])\s+|\n\s*\n|\n(?=[-|<]|\d+\. )/)
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => sentence !== "");
+}
+
 describe("the README", () => {
   it("has a section for what Tiehall is, the quickstart, the documentation and the licenses by directory", () => {
     const level2 = headings(readme).filter(({ level }) => level === 2).map(({ text }) => text);
     expect(level2).toEqual(expect.arrayContaining(["What Tiehall is", "Quickstart", "Documentation", "Licenses by directory"]));
     expect(level2.indexOf("What Tiehall is")).toBe(0);
     expect(part("What Tiehall is").replace(/\s+/g, " ")).toMatch(/Tiehall runs no LLM of its own/);
+  });
+
+  it("has its sections in the order a newcomer reads them (task 30.13)", () => {
+    expect(headings(readme).filter(({ level }) => level === 2).map(({ text }) => text)).toEqual(SECTIONS);
+  });
+
+  it("shows, above its sections, the mark, the name and the film: its poster linked to it, or GitHub's player (task 30.13)", () => {
+    const targets = links(header).map(({ target }) => target);
+    expect(targets).toContain("docs/assets/brand/mark.svg");
+    expect(header).toMatch(/<h1\b[^>]*>Tiehall<\/h1>|^# Tiehall$/m);
+    const attachment = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]+$/m.test(header);
+    if (!attachment) {
+      expect(header).toMatch(new RegExp(`<a href="${FILM}"><img src="${POSTER}" alt="[^"]+"`));
+      expect(links(header).filter(({ target, text }) => target === FILM && /^Watch\b/.test(text))).toHaveLength(1);
+    }
+  });
+
+  it("draws how it works and names the live hall (task 30.13)", () => {
+    const blocks = fencedBlocks(part("How it works"));
+    expect(blocks.map(({ info }) => info)).toContain("mermaid");
+    expect(part("How it works")).toContain("`/hall`");
+  });
+
+  it("names each agent client the client-matrix log records a sign-in for, and links the pages on connecting agents (task 30.13)", () => {
+    const clients = clientsWithASignIn();
+    expect(clients).toEqual(expect.arrayContaining(["Claude Code", "Cursor", "Codex"]));
+    const connect = part("Connect your agents");
+    expect(clients.filter((client) => !connect.includes(client))).toEqual([]);
+    expect(links(connect).map(({ target }) => target.split("#")[0])).toEqual(
+      expect.arrayContaining(["docs/agents.md", "docs/claude-code-plugin.md", "docs/client-matrix/log.md", "docs/api.md"]),
+    );
+  });
+
+  it("says the Jira Cloud mirror is not built yet, wherever it names Jira, while a task of group 25 is open (task 30.13)", () => {
+    const jiraOpen = [...plan].some(([task, done]) => task.startsWith("25.") && !done);
+    const jira = sentences().filter((sentence) => /\bJira\b/.test(sentence));
+    expect(jira.length).toBeGreaterThan(0);
+    if (jiraOpen) expect(jira.filter((sentence) => !sentence.includes("not built yet"))).toEqual([]);
+  });
+
+  it("says, until the first public release, that there is no release yet (task 30.13)", () => {
+    if (plan.get("30.5") !== true) expect(part("Status").replace(/\s+/g, " ")).toContain("no release yet");
+  });
+
+  it("links the security policy and the trust docs from its security section, and says that an install sends no telemetry (task 30.13)", () => {
+    const security = part("Security and privacy");
+    expect(links(security).map(({ target }) => target.split("#")[0])).toEqual(expect.arrayContaining(["SECURITY.md", "docs/security-and-trust.md"]));
+    expect(security.replace(/\s+/g, " ")).toMatch(/no telemetry/i);
   });
 
   it("has links that all resolve, and none to the git-ignored planning folder", () => {
