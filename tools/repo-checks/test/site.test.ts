@@ -514,6 +514,14 @@ describe("the landing page's motion (the change landing-page-motion)", () => {
     }
   });
 
+  it("puts a backdrop of drifting shapes behind the hero, which screen readers skip and no pointer reaches", () => {
+    const backdrop = tags(hero).find((tag) => tag.name === "svg" && classes(tag).includes("backdrop"));
+    expect(backdrop?.attributes["aria-hidden"]).toBe("true");
+    expect(tags(hero).filter((tag) => classes(tag).includes("shape")).length).toBeGreaterThanOrEqual(6);
+    const rule = stylesheet.rules.find((candidate) => candidate.context.length === 0 && selectorsOf(candidate).includes(".backdrop"));
+    expect(rule?.declarations).toContainEqual(expect.objectContaining({ property: "pointer-events", value: "none" }));
+  });
+
   it("gives each of the three steps a small moving picture that screen readers skip", () => {
     const pictures = tags(steps).filter(({ name }) => name === "svg");
     expect(pictures.map(({ attributes }) => attributes["aria-hidden"])).toEqual(["true", "true", "true"]);

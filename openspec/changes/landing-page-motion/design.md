@@ -17,3 +17,5 @@ The landing page (the main change's task 30.15, and the change `play-film-from-y
 (5) **Accessible.** The hall is one image to a screen reader, with a label that says what it shows; the steps' pictures are hidden from screen readers, since each step's heading and text say the same.
 
 (6) **Phones.** Under 900 pixels the hall stands under the hero's text at the content's width, 328 pixels on a 360-pixel screen; from 900 it stands beside the text.
+
+(7) **A backdrop that moves** (the maintainer's request of 2026-10-17, "shapes in the background"). Behind the hero, faint switchboards, rings, gold dots and a flowing cord float on paces of their own in one SVG hidden from screen readers and pointers; soft glows in the live hall's blue (`--glow`) and the page's gold (`--attention-glow`) drift behind the hero, the film and two bands. They are radial gradients of the page's tokens, so they load nothing, and the reduced-motion rule holds them still.
