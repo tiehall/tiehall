@@ -77,6 +77,23 @@ describe("CONTRIBUTING.md", () => {
     }
   });
 
+  // self-host-install: Release pipeline integrity; release-age-maintainer-exception: design.md, Decisions this change rests on.
+  it("says how an update a maintainer's recorded answer calls for takes a version younger than the 7-day release age: its record names the answer and the review", () => {
+    const text = part("Building and testing");
+    for (const phrase of [
+      "An update that a maintainer's recorded answer calls for",
+      "once a supply-chain review of that version comes out clean",
+      "in place of the advisory",
+      "the day the answer was given and where it is recorded",
+      "what it compared, the version's provenance, its install scripts and its dependencies",
+      "never both",
+      "Everything else is as for a security fix",
+    ]) {
+      expect(text, phrase).toContain(phrase);
+    }
+    expect(text).not.toContain("the one exception to the 7 days");
+  });
+
   it("says that tests come first, and how a test written ahead of its task is committed", () => {
     const text = part("Tests first");
     for (const phrase of ["failing test", "`it.fails`", "`it.todo`", "timeout"]) expect(text, phrase).toContain(phrase);
