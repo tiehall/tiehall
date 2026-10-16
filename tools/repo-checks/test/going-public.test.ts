@@ -183,6 +183,13 @@ describe("the checklist for making the repository public", () => {
     const readBack = gp10.split("\n").find((line) => line.startsWith("- Read back: ")) ?? "";
     expect(readBack).toContain("`git ls-remote https://github.com/tiehall/tiehall.git`");
     expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
+    // The working clone's origin names the old address, which is the new repository's once it is created: a push from it
+    // would put the old history there. So it points at the archive right after the rename, before the creation.
+    const setUrl = gp10.indexOf("git remote set-url origin https://github.com/tiehall/tiehall-private.git");
+    expect(setUrl).toBeGreaterThan(rename);
+    expect(setUrl).toBeLessThan(create);
+    const pointed = gp10.split("\n").find((line) => line.startsWith("- ") && line.includes("git remote set-url origin")) ?? "";
+    expect(pointed).toMatch(/Read back: `git remote -v`/);
   });
 
   it("allows squash merges alone on the new repository, with a linear history, and reads both back (design.md, D38 (5))", () => {
@@ -226,6 +233,14 @@ describe("the checklist for making the repository public", () => {
     };
     const visibility = at("--visibility public");
     expect(at("GP-17")).toBeLessThan(visibility);
+    // GP-10's archive follows the switch, so the switch cannot wait for all of GP-10.
+    expect(gp19).not.toMatch(/GP-1 to GP-10 pass/);
+    // A push from a clone of the old history since GP-10 would have put it in the new repository: its refs are read
+    // back again right before the change of visibility.
+    const refs = at("`git ls-remote https://github.com/tiehall/tiehall.git` lists `HEAD` and `refs/heads/main` and nothing else");
+    expect(refs).toBeGreaterThan(at("GP-17"));
+    expect(refs).toBeLessThan(visibility);
+    expect(gp19.slice(refs, visibility)).toContain("merge-base --is-ancestor");
     // GP-10 keeps the new repository's workflows off until the switch; the film's pull request needs its required checks.
     const workflows = at("gh api -X PUT repos/tiehall/tiehall/actions/permissions -F enabled=true");
     expect(workflows).toBeGreaterThan(visibility);
