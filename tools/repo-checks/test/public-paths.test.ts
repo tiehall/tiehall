@@ -144,7 +144,11 @@ describe("the public-paths check", () => {
   });
 
   describe("with --history", () => {
-    /** A repository whose history holds paths outside the allowlist that its tree no longer holds. */
+    /**
+     * A repository whose history holds paths outside the allowlist that the
+     * checked-out tree does not: a file a later commit removed, a branch no
+     * one merged, and a merge whose resolution alone adds a path.
+     */
     function repositoryWithHistory(): string {
       const repo = repository(PUBLIC);
       write(repo, { "docs/HANDOFF.md": "# Notes\n" });
@@ -157,18 +161,18 @@ describe("the public-paths check", () => {
       write(repo, { "spikes/github-app/README.md": "# Spike\n" });
       git(repo, "add", ".");
       git(repo, "commit", "--quiet", "-m", "Spike");
-      // A path that only a merge commit adds, which plain git log lists in no diff.
+      // A path that only a merge's resolution adds, which plain git log lists in no diff. The merge stays at the tip
+      // of a branch of its own, so no later commit's diff lists the path either.
       git(repo, "checkout", "--quiet", "-b", "side", "main");
       write(repo, { "docs/agents.md": "# Agents\n" });
       git(repo, "add", ".");
       git(repo, "commit", "--quiet", "-m", "Side");
-      git(repo, "checkout", "--quiet", "main");
+      git(repo, "checkout", "--quiet", "-b", "hosted", "main");
       git(repo, "merge", "--quiet", "--no-ff", "--no-commit", "side");
       write(repo, { "deploy/compose.saas.yaml": "services: {}\n" });
       git(repo, "add", ".");
       git(repo, "commit", "--quiet", "-m", "Merge side");
-      git(repo, "rm", "--quiet", "deploy/compose.saas.yaml");
-      git(repo, "commit", "--quiet", "-m", "Remove the overlay");
+      git(repo, "checkout", "--quiet", "main");
       return repo;
     }
 
@@ -182,10 +186,12 @@ describe("the public-paths check", () => {
       expect(run.stderr).toContain("3 paths that commits of the repository's refs hold lie outside the allowlist");
     });
 
-    it("finds a path in the history's first commit", () => {
+    it("finds a path that only the history's first commit adds", () => {
+      // The path stays at the tip, so only the first commit's diff lists it.
       const repo = repository({ ...PUBLIC, "notes.md": "# Notes\n" });
-      git(repo, "rm", "--quiet", "notes.md");
-      git(repo, "commit", "--quiet", "-m", "Remove the notes");
+      write(repo, { "docs/agents.md": "# Agents\n" });
+      git(repo, "add", ".");
+      git(repo, "commit", "--quiet", "-m", "Add a page");
 
       const run = spawnSync(process.execPath, [script, repo, "--history"], {
         encoding: "utf8",
