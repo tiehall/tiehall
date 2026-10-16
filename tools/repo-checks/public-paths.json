@@ -51,6 +51,10 @@
       "docs/maintainers/**",
       "docs/security/**"
     ],
+    "The images of the README and of the organization's profile: the brand's mark, avatar and social preview, drawn from the mark's source (task 30.10)": [
+      "docs/assets/brand/*.svg",
+      "docs/assets/brand/*.png"
+    ],
     "OpenSpec: its configuration, the archived specs and the changes, except the hosted-service change, which stays out of the public repository (D33, D38)": [
       "openspec/config.yaml",
       "openspec/specs/**",

@@ -25,6 +25,7 @@
     "lint:migrations": "node packages/db/src/check-migrations.ts",
     "assets:digests": "node packages/commands/src/write-asset-digests.ts",
     "icons:generate": "node packages/commands/src/write-icons.ts && node packages/commands/src/write-asset-digests.ts",
+    "brand:generate": "node packages/commands/src/write-brand.ts",
     "openapi:generate": "node packages/catalog/src/write-openapi.ts",
     "check:openapi": "node packages/catalog/src/check-openapi.ts",
     "mcp:generate": "node packages/catalog/src/write-tool-snapshot.ts",

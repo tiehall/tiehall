@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { ASSET_FILES, createAssetRoute } from "../src/assets.ts";
 import { FAVICON_SIDES, ICONS, MARK_CIRCLES, MARK_PATHS, markStroke, markSvg } from "../src/mark.ts";
+import { attributesOf, iconColors, isColor, pngSize } from "./support/images.ts";
 
 // The mark, the favicon and the app icon (web-ui: The mark, the favicon and
 // the app icon; web-ui: The install serves its own assets; design.md,
@@ -20,82 +20,9 @@ import { FAVICON_SIDES, ICONS, MARK_CIRCLES, MARK_PATHS, markStroke, markSvg } f
 const ASSETS = fileURLToPath(new URL("../assets/", import.meta.url));
 const read = (file: string) => readFileSync(`${ASSETS}${file}`);
 
-/** A PNG's width and height, from its IHDR chunk. */
-function pngSize(bytes: Uint8Array): { width: number; height: number } {
-  expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  expect(new TextDecoder().decode(bytes.subarray(12, 16))).toBe("IHDR");
-  return { width: view.getUint32(16), height: view.getUint32(20) };
-}
-
 /** The icon's navy tile and the mark's gold stroke (D59 (3)). */
 const NAVY = [0x0a, 0x14, 0x28] as const;
 const GOLD = [0xe3, 0xb3, 0x41] as const;
-
-/** A PNG's pixels as RGBA, decoded from its 8-bit, non-interlaced RGB or RGBA image data, as Chrome writes them. */
-function pngPixels(bytes: Uint8Array): { width: number; height: number; at: (x: number, y: number) => [number, number, number, number] } {
-  const { width, height } = pngSize(bytes);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const [depth, colorType, interlace] = [bytes[24], bytes[25], bytes[28]];
-  expect([depth, interlace]).toEqual([8, 0]);
-  expect([2, 6]).toContain(colorType);
-  const channels = colorType === 6 ? 4 : 3;
-  const chunks: Uint8Array[] = [];
-  for (let offset = 8; offset < bytes.byteLength; ) {
-    const length = view.getUint32(offset);
-    const type = new TextDecoder().decode(bytes.subarray(offset + 4, offset + 8));
-    if (type === "IDAT") chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
-    offset += 12 + length;
-  }
-  const data = inflateSync(Buffer.concat(chunks));
-  const stride = width * channels;
-  const pixels = new Uint8Array(height * stride);
-  for (let y = 0; y < height; y += 1) {
-    const filter = data[y * (stride + 1)];
-    for (let x = 0; x < stride; x += 1) {
-      const raw = data[y * (stride + 1) + 1 + x] ?? 0;
-      const left = x >= channels ? (pixels[y * stride + x - channels] ?? 0) : 0;
-      const up = y > 0 ? (pixels[(y - 1) * stride + x] ?? 0) : 0;
-      const upLeft = x >= channels && y > 0 ? (pixels[(y - 1) * stride + x - channels] ?? 0) : 0;
-      const paeth = () => {
-        const p = left + up - upLeft;
-        const [pa, pb, pc] = [Math.abs(p - left), Math.abs(p - up), Math.abs(p - upLeft)];
-        return pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
-      };
-      const predicted = [0, left, up, (left + up) >> 1, paeth()][filter ?? 0] ?? 0;
-      pixels[y * stride + x] = (raw + predicted) & 255;
-    }
-  }
-  return {
-    width,
-    height,
-    at: (x, y) => {
-      const start = y * stride + x * channels;
-      return [pixels[start] ?? 0, pixels[start + 1] ?? 0, pixels[start + 2] ?? 0, channels === 4 ? (pixels[start + 3] ?? 0) : 255];
-    },
-  };
-}
-
-/** Whether a pixel is this color, opaque, within a step or two of rounding. */
-const isColor = ([r, g, b, a]: readonly number[], color: readonly number[]) => a === 255 && [r, g, b].every((channel, index) => Math.abs((channel ?? 0) - (color[index] ?? 0)) <= 2);
-
-/** The icon's colors, read from its pixels: the tile above the mark, and the mark's brightest pixel. */
-function iconColors(bytes: Uint8Array): { tile: [number, number, number, number]; brightest: [number, number, number, number] } {
-  const { width, height, at } = pngPixels(bytes);
-  let brightest: [number, number, number, number] = [0, 0, 0, 0];
-  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    const pixel = at(x, y);
-    if (pixel[3] === 255 && pixel[0] + pixel[1] + pixel[2] > brightest[0] + brightest[1] + brightest[2]) brightest = pixel;
-  }
-  // The middle of the side, a tenth of the way down: on the tile, above the mark, which starts at 32 percent.
-  return { tile: at(Math.floor(width / 2), Math.floor(height / 10)), brightest };
-}
-
-/** The attributes of the first element of this name in an SVG's text. */
-function attributesOf(svg: string, element: string, index = 0): Record<string, string> {
-  const tag = [...svg.matchAll(new RegExp(`<${element}\\b([^>]*)>`, "g"))][index]?.[1] ?? "";
-  return Object.fromEntries([...tag.matchAll(/([A-Za-z-]+)="([^"]*)"/g)].map(([, name = "", value = ""]) => [name, value]));
-}
 
 describe("the mark", () => {
   it("is TM1: the two paths and the two circles of radius 2.4 in a 32 by 32 view box", () => {

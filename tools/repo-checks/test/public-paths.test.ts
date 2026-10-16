@@ -286,6 +286,11 @@ describe("the committed allowlist", () => {
     ".claude/settings.local.json",
     ".claude/worktrees/build-public/README.md",
     "notes.md",
+    // The brand's folder holds its SVG and PNG images alone (task 30.10).
+    "docs/assets/brand/notes.md",
+    "docs/assets/brand/mark.psd",
+    "docs/assets/brand/drafts/mark.svg",
+    "docs/assets/notes.md",
   ])("leaves out %s, which stays out of the public repository", (path) => {
     expect(isPublic(path, patterns)).toBe(false);
   });
@@ -309,6 +314,9 @@ describe("the committed allowlist", () => {
     "deploy/.env.example",
     "openapi/v1.json",
     "mcp/tools.json",
+    "docs/assets/brand/mark.svg",
+    "docs/assets/brand/mark-on-dark.png",
+    "docs/assets/brand/social-preview.png",
   ])("holds %s", (path) => {
     expect(isPublic(path, patterns)).toBe(true);
   });

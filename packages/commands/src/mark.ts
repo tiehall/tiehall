@@ -25,7 +25,7 @@ export function markStroke(size: number): number {
 }
 
 /** The mark's paths and circles, as SVG elements. */
-function markElements(): string {
+export function markElements(): string {
   return [...MARK_PATHS.map((d) => `<path d="${d}"/>`), ...MARK_CIRCLES.map(({ cx, cy, r }) => `<circle cx="${cx}" cy="${cy}" r="${r}"/>`)].join("");
 }
 
