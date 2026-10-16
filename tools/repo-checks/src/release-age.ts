@@ -4,24 +4,33 @@ import { parse } from "yaml";
 
 // Reviewed exceptions to the release age (self-host-install: Release pipeline
 // integrity; decisions-from-groups-15-28: design.md, Decisions this change
-// rests on: D55 (86); Technical decisions: T16). pnpm resolves only versions
-// published at least 7 days ago (minimumReleaseAge in pnpm-workspace.yaml),
-// the same age Renovate waits for. When the image scan reports a fixable HIGH
-// or CRITICAL finding in Node's binary or in an npm package, and the fixed
-// version is younger than that, a reviewed pull request may take exactly the
-// version the advisory names as fixed before it is 7 days old: it excludes
-// that one version from the release age (minimumReleaseAgeExclude, as
-// `<package>@<version>`), records the exception in
-// tools/repo-checks/release-age-exceptions.json with the advisory, the label
+// rests on: D55 (86); Technical decisions: T16; release-age-maintainer-exception:
+// design.md, Decisions this change rests on; Technical decisions: T1). pnpm
+// resolves only versions published at least 7 days ago (minimumReleaseAge in
+// pnpm-workspace.yaml), the same age Renovate waits for. A reviewed pull
+// request may take a version younger than that in two cases: exactly the
+// version an advisory names as fixed, when the image scan reports a fixable
+// HIGH or CRITICAL finding in Node's binary or in an npm package; or exactly
+// the version of an npm package that a maintainer's recorded answer calls
+// for, once a supply-chain review of that version comes out clean. Either way
+// it excludes that one version from the release age
+// (minimumReleaseAgeExclude, as `<package>@<version>`), records the exception
+// in tools/repo-checks/release-age-exceptions.json with the label
 // release-age-exception and the day the version turns 7 days old, and carries
-// that label. Such an update is never proposed or merged automatically.
+// that label. The record names the advisory, or, in its place, the answer, by
+// the day it was given and where it is recorded, and the review, by its day
+// and where it is recorded, with what it compared, the version's provenance,
+// its install scripts and its dependencies; never both. Such an update is
+// never proposed or merged automatically.
 //
 // The workflow check (pnpm check:workflows, workflows.ts) fails an exclusion
 // that names a package without one exact version, one the list does not
-// record, a record without its advisory, its label or its day, one whose day
-// has passed, which is then removed with its exclusion, and a record of an
-// exclusion the workspace does not make, so the list holds exactly the
-// exceptions in force. The API-compatibility workflow's label step
+// record, a record without its label or its day, a record that names neither
+// an advisory nor an answer or names both, an advisory that is none, an
+// answer or a review without one of its parts, a record whose day has passed,
+// which is then removed with its exclusion, and a record of an exclusion the
+// workspace does not make, so the list holds exactly the exceptions in
+// force. The API-compatibility workflow's label step
 // (check-release-age-label.ts) fails a pull request that adds an exclusion
 // without the label, and the release notes list the exceptions a release
 // carries (release-notes.ts).
@@ -32,19 +41,63 @@ export const RELEASE_AGE_EXCEPTIONS = "tools/repo-checks/release-age-exceptions.
 /** The label a pull request that adds an exception carries. */
 export const RELEASE_AGE_LABEL = "release-age-exception";
 
-/** An exception to the release age, as the list records it. */
+/** The maintainer's answer that calls for an update, as an exception's record names it. */
+export interface MaintainerAnswer {
+  /** The day the answer was given, such as 2026-10-16. */
+  day: string;
+  /** Where the answer is recorded, such as an OpenSpec change's design.md. */
+  recordedIn: string;
+}
+
+/** The supply-chain review of a version that a maintainer's answer calls for, as an exception's record names it. */
+export interface SupplyChainReview {
+  /** The day of the review, such as 2026-10-16. */
+  day: string;
+  /** Where the review is recorded. */
+  recordedIn: string;
+  /** What the review compared, such as every published file of the old version against the new. */
+  compared: string;
+  /** The version's provenance, as the review found it: its checksums, signatures and the workflow that published it. */
+  provenance: string;
+  /** The version's install scripts, as the review found them. */
+  scripts: string;
+  /** The version's dependencies, as the review found them. */
+  dependencies: string;
+}
+
+/** An exception to the release age, as the list records it: one that rests on an advisory, or on a maintainer's answer and a review. */
 export interface ReleaseAgeException {
   /** The package, such as undici or @octokit/request. */
   package: string;
-  /** The one exact version the exception lets in, the one the advisory names as fixed. */
+  /** The one exact version the exception lets in. */
   version: string;
-  /** The advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345. */
-  advisory: string;
+  /** The advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345; absent for an answer's exception. */
+  advisory?: string;
+  /** The maintainer's answer that calls for the version; absent for an advisory's exception. */
+  answer?: MaintainerAnswer;
+  /** The supply-chain review of the version that the answer rests on; absent for an advisory's exception. */
+  review?: SupplyChainReview;
   /** The label of the pull request that adds it: release-age-exception. */
   label: string;
   /** The day the version turns 7 days old, after which the exception must go, such as 2026-10-19. */
   agedOn: string;
 }
+
+/** The parts of a maintainer's answer, each with what a record that lacks it must record. */
+const ANSWER_PARTS: readonly (readonly [keyof MaintainerAnswer, string])[] = [
+  ["day", "the day the maintainer's answer that calls for it was given, such as 2026-10-16"],
+  ["recordedIn", "where the maintainer's answer that calls for it is recorded"],
+];
+
+/** The parts of a supply-chain review, each with what a record that lacks it must record. */
+const REVIEW_PARTS: readonly (readonly [keyof SupplyChainReview, string])[] = [
+  ["day", "the day of the supply-chain review of the version, such as 2026-10-16"],
+  ["recordedIn", "where the supply-chain review of the version is recorded"],
+  ["compared", "what the supply-chain review of the version compared"],
+  ["provenance", "the version's provenance, as the supply-chain review found it"],
+  ["scripts", "the version's install scripts, as the supply-chain review found them"],
+  ["dependencies", "the version's dependencies, as the supply-chain review found them"],
+];
 
 /** A violation of the rule, as the workflow check reports it: the file it is in, and what is wrong. */
 export interface ReleaseAgeViolation {
@@ -96,12 +149,20 @@ function recordsAt(root: string): Mapping[] | undefined {
   return exceptions.map((each) => (isMapping(each) ? each : {}));
 }
 
+/** A record's part as written: each of these fields as a text, empty when it is missing. */
+function textsOf<K extends string>(value: unknown, fields: readonly (readonly [K, string])[]): Record<K, string> {
+  const part = isMapping(value) ? value : {};
+  return Object.fromEntries(fields.map(([field]) => [field, typeof part[field] === "string" ? part[field] : ""])) as Record<K, string>;
+}
+
 /** The exceptions to the release age the repository at this root records, which its release notes list; none when it records none. */
 export function releaseAgeExceptions(root: string): ReleaseAgeException[] {
   return (recordsAt(root) ?? []).map((record) => ({
     package: String(record["package"] ?? ""),
     version: String(record["version"] ?? ""),
-    advisory: String(record["advisory"] ?? ""),
+    ...("advisory" in record ? { advisory: String(record["advisory"] ?? "") } : {}),
+    ...("answer" in record ? { answer: textsOf(record["answer"], ANSWER_PARTS) } : {}),
+    ...("review" in record ? { review: textsOf(record["review"], REVIEW_PARTS) } : {}),
     label: String(record["label"] ?? ""),
     agedOn: String(record["agedOn"] ?? ""),
   }));
@@ -142,7 +203,7 @@ export function releaseAgeViolations(root: string, today: string): ReleaseAgeVio
     const name = `${exception.package}@${exception.version}`;
     const record = (what: string) => violation(RELEASE_AGE_EXCEPTIONS, `the exception for ${name} must record ${what}`);
     if (!EXACT_VERSION.test(name)) record("one package and one exact version of it, such as undici and 7.16.1");
-    if (!ADVISORY.test(exception.advisory)) record("the advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345");
+    for (const problem of basisProblems(exception)) record(problem);
     if (exception.label !== RELEASE_AGE_LABEL) record(`the label ${RELEASE_AGE_LABEL}`);
     if (!isDay(exception.agedOn)) record("the day the version turns 7 days old, such as 2026-10-19");
     if (EXACT_VERSION.test(name) && !excluded.has(name)) {
@@ -150,6 +211,33 @@ export function releaseAgeViolations(root: string, today: string): ReleaseAgeVio
     }
   }
   return violations;
+}
+
+/**
+ * What an exception's record lacks of what it rests on, each as what it must
+ * record: an advisory that names the version as fixed, or, in its place, the
+ * maintainer's answer that calls for the version and the supply-chain review
+ * of the version, each with every one of its parts; never both.
+ */
+function basisProblems({ advisory, answer, review }: ReleaseAgeException): string[] {
+  const answered = answer !== undefined || review !== undefined;
+  if (advisory !== undefined && answered) return ["either the advisory that names the version as fixed or the maintainer's answer that calls for it, not both"];
+  if (advisory !== undefined) return ADVISORY.test(advisory) ? [] : ["the advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345"];
+  if (!answered) {
+    return [
+      "the advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345, or the maintainer's answer that calls for it and the supply-chain review of the version",
+    ];
+  }
+  const lacking = (part: Record<string, string>, parts: readonly (readonly [string, string])[]) =>
+    parts.filter(([field]) => (field === "day" ? !isDay(part[field] ?? "") : (part[field] ?? "").trim() === "")).map(([, problem]) => problem);
+  return [
+    ...(answer === undefined
+      ? ["the maintainer's answer that calls for it, with the day it was given and where it is recorded"]
+      : lacking({ ...answer }, ANSWER_PARTS)),
+    ...(review === undefined
+      ? ["the supply-chain review of the version, with its day, where it is recorded, what it compared, the version's provenance, its install scripts and its dependencies"]
+      : lacking({ ...review }, REVIEW_PARTS)),
+  ];
 }
 
 /**

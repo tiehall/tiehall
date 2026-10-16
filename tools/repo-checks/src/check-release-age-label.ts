@@ -9,7 +9,8 @@ import { exclusionsIn, releaseAgeLabelProblems } from "./release-age.ts";
 
 // The API-compatibility workflow's label step for exceptions to the release
 // age (self-host-install: Release pipeline integrity;
-// decisions-from-groups-15-28: design.md, Technical decisions: T16): it
+// decisions-from-groups-15-28: design.md, Technical decisions: T16;
+// release-age-maintainer-exception: design.md, Technical decisions: T1): it
 // compares the exclusions from the 7-day release age in pnpm-workspace.yaml
 // at the pull request's merge base with the pull request's, and fails a pull
 // request that adds one without the release-age-exception label. pnpm
@@ -40,7 +41,8 @@ if (problems.length === 0) {
 } else {
   for (const problem of problems) console.error(problem);
   console.error(
-    "A fixable HIGH or CRITICAL finding outside Debian may take the version its advisory names as fixed before it is 7 days old, " +
+    "An exclusion from the 7-day release age takes, before it is 7 days old, exactly the version an advisory names as fixed for a fixable HIGH or CRITICAL finding of the image scan, " +
+      "or the version a maintainer's recorded answer calls for, after a supply-chain review of it, " +
       "in a reviewed pull request with the release-age-exception label that records the exception in tools/repo-checks/release-age-exceptions.json.",
   );
   process.exitCode = 1;

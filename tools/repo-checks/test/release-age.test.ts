@@ -28,6 +28,12 @@ import { checkWorkflows } from "../src/workflows.ts";
 // API-compatibility workflow's label step fails a pull request that adds an
 // exclusion without the label, and the release notes list the exceptions a
 // release carries.
+//
+// A record may rest, in place of an advisory, on a maintainer's recorded
+// answer that calls for the update and the supply-chain review of the
+// version, with the same label, the same day and the same listing in the
+// release notes (release-age-maintainer-exception: design.md, Decisions this
+// change rests on; Technical decisions: T1).
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const checkWorkflowsScript = fileURLToPath(new URL("../src/check-workflows.ts", import.meta.url));
@@ -39,6 +45,24 @@ const UNDICI: ReleaseAgeException = {
   advisory: "GHSA-2222-3333-4444",
   label: RELEASE_AGE_LABEL,
   agedOn: "2026-10-19",
+};
+
+// The record of an update that a maintainer's recorded answer calls for, as the
+// answer of 2026-10-16 calls for Better Auth 1.7.10.
+const BETTER_AUTH: ReleaseAgeException = {
+  package: "better-auth",
+  version: "1.7.10",
+  answer: { day: "2026-10-16", recordedIn: "release-age-maintainer-exception, design.md: Decisions this change rests on" },
+  review: {
+    day: "2026-10-16",
+    recordedIn: "release-age-maintainer-exception, design.md: Context",
+    compared: "every published file of 1.7.5 against 1.7.10: no eval, new Function or child_process, no new network call, no minified code",
+    provenance: "each tarball's SHA-512 is the registry's, and npm audit signatures verifies the signatures and the provenance of the library's release.yml",
+    scripts: "no install script",
+    dependencies: "no new dependency; better-call moves to 1.4.2",
+  },
+  label: RELEASE_AGE_LABEL,
+  agedOn: "2026-10-22",
 };
 
 const roots: string[] = [];
@@ -128,6 +152,82 @@ describe("an exclusion from the release age", () => {
   });
 });
 
+describe("an exclusion for an update a maintainer's recorded answer calls for", () => {
+  /** The details of the violations of a repository that excludes better-auth@1.7.10 with this record, on 2026-10-17. */
+  const detailsWith = (record: unknown) => detailsOf(repository(["better-auth@1.7.10"], [record]), "2026-10-17");
+  /** What the list reports about the record of better-auth@1.7.10. */
+  const must = (problem: string) => `${RELEASE_AGE_EXCEPTIONS}: the exception for better-auth@1.7.10 must record ${problem}`;
+  const { answer, review, ...withoutBasis } = BETTER_AUTH;
+
+  it("passes when its record names, in place of an advisory, the answer and the supply-chain review of the version, with its label and its day", () => {
+    const root = repository(["better-auth@1.7.10"], [BETTER_AUTH]);
+    expect(detailsOf(root, "2026-10-17")).toEqual([]);
+    expect(releaseAgeExceptions(root)).toEqual([BETTER_AUTH]);
+    // An advisory's record and an answer's sit side by side in one list.
+    expect(detailsOf(repository(["better-auth@1.7.10", "undici@7.16.1"], [BETTER_AUTH, UNDICI]), "2026-10-17")).toEqual([]);
+  });
+
+  it("passes on the day the version turns 7 days old, and fails once that day has passed, as an advisory's exception does", () => {
+    const root = repository(["better-auth@1.7.10"], [BETTER_AUTH]);
+    expect(detailsOf(root, "2026-10-22")).toEqual([]);
+    expect(detailsOf(root, "2026-10-23")).toEqual([
+      "pnpm-workspace.yaml: better-auth@1.7.10 turned 7 days old on 2026-10-22, so it needs no exception any more: remove its exclusion from the release age and its record",
+    ]);
+  });
+
+  it("fails a record that names neither an advisory nor an answer, and one that names both", () => {
+    expect(detailsWith(withoutBasis)).toEqual([
+      must(
+        "the advisory that names the version as fixed, such as GHSA-xxxx-xxxx-xxxx or CVE-2026-12345, or the maintainer's answer that calls for it and the supply-chain review of the version",
+      ),
+    ]);
+    expect(detailsWith({ ...BETTER_AUTH, advisory: "GHSA-2222-3333-4444" })).toEqual([
+      must("either the advisory that names the version as fixed or the maintainer's answer that calls for it, not both"),
+    ]);
+  });
+
+  it("fails an answer without its day or without where it is recorded, and a review without its answer", () => {
+    expect(detailsWith({ ...BETTER_AUTH, answer: { day: "yesterday", recordedIn: "release-age-maintainer-exception" } })).toEqual([
+      must("the day the maintainer's answer that calls for it was given, such as 2026-10-16"),
+    ]);
+    expect(detailsWith({ ...BETTER_AUTH, answer: { day: "2026-10-16", recordedIn: " " } })).toEqual([must("where the maintainer's answer that calls for it is recorded")]);
+    expect(detailsWith({ ...withoutBasis, review })).toEqual([
+      must("the maintainer's answer that calls for it, with the day it was given and where it is recorded"),
+    ]);
+  });
+
+  it("fails an answer without the supply-chain review of the version, and a review without one of its parts", () => {
+    expect(detailsWith({ ...withoutBasis, answer })).toEqual([
+      must("the supply-chain review of the version, with its day, where it is recorded, what it compared, the version's provenance, its install scripts and its dependencies"),
+    ]);
+    for (const [part, problem] of [
+      ["day", "the day of the supply-chain review of the version, such as 2026-10-16"],
+      ["recordedIn", "where the supply-chain review of the version is recorded"],
+      ["compared", "what the supply-chain review of the version compared"],
+      ["provenance", "the version's provenance, as the supply-chain review found it"],
+      ["scripts", "the version's install scripts, as the supply-chain review found them"],
+      ["dependencies", "the version's dependencies, as the supply-chain review found them"],
+    ] as const) {
+      const { [part]: _left, ...rest } = review ?? {};
+      expect(detailsWith({ ...BETTER_AUTH, review: rest }), part).toEqual([must(problem)]);
+      expect(detailsWith({ ...BETTER_AUTH, review: { ...review, [part]: "" } }), part).toEqual([must(problem)]);
+    }
+  });
+
+  it("fails a record without the label, as it fails an advisory's", () => {
+    expect(detailsWith({ ...BETTER_AUTH, label: "" })).toEqual([must(`the label ${RELEASE_AGE_LABEL}`)]);
+    expect(detailsWith({ ...BETTER_AUTH, label: "api-breaking" })).toEqual([must(`the label ${RELEASE_AGE_LABEL}`)]);
+  });
+
+  it("fails the workflow check, which CI runs as pnpm check:workflows", () => {
+    const root = repository(["better-auth@1.7.10"], [{ ...withoutBasis, answer }]);
+    expect(checkWorkflows(root).map(({ rule }) => rule)).toContain("release-age");
+    const run = spawnSync(process.execPath, [checkWorkflowsScript, root], { encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("must record the supply-chain review of the version");
+  });
+});
+
 describe("the label step of a pull request", () => {
   it("requires the release-age-exception label on a pull request that adds an exclusion, and on no other", () => {
     expect(releaseAgeLabelProblems({ base: [], revision: ["undici@7.16.1"], labels: [] })).toEqual([
@@ -160,6 +260,9 @@ describe("the label step of a pull request", () => {
     const refused = run([]);
     expect(refused.status).toBe(1);
     expect(refused.stderr).toContain(`which only a reviewed pull request with the ${RELEASE_AGE_LABEL} label may do`);
+    // It says what an exclusion may take: an advisory's fixed version, or the version a maintainer's answer calls for.
+    expect(refused.stderr).toContain("exactly the version an advisory names as fixed for a fixable HIGH or CRITICAL finding of the image scan");
+    expect(refused.stderr).toContain("or the version a maintainer's recorded answer calls for, after a supply-chain review of it");
     expect(run([RELEASE_AGE_LABEL]).status).toBe(0);
   });
 

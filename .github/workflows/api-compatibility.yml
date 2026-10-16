@@ -58,11 +58,12 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-      # An exclusion from the 7-day release age, which takes the version an
-      # advisory names as fixed before it is 7 days old, passes only on a pull
-      # request with the release-age-exception label; pnpm check:workflows
-      # checks the exclusion's record in tools/repo-checks/release-age-exceptions.json
-      # and its day. The labels come from the event, through the environment,
+      # An exclusion from the 7-day release age, which takes before it is 7
+      # days old the version an advisory names as fixed, or the version a
+      # maintainer's recorded answer calls for after a supply-chain review,
+      # passes only on a pull request with the release-age-exception label;
+      # pnpm check:workflows checks the exclusion's record in
+      # tools/repo-checks/release-age-exceptions.json and its day. The labels come from the event, through the environment,
       # never into the script.
       - run: node tools/repo-checks/src/check-release-age-label.ts
         env:

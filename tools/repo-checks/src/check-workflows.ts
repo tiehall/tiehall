@@ -8,7 +8,9 @@
 // run install scripts outside the allowlist in pnpm-workspace.yaml, or when
 // pnpm-workspace.yaml excludes a version from the 7-day release age that
 // tools/repo-checks/release-age-exceptions.json does not record as a reviewed
-// exception, or one whose day has passed (release-age.ts).
+// exception, with the advisory, or the maintainer's answer and the
+// supply-chain review, it rests on, or one whose day has passed
+// (release-age.ts).
 // Usage: node tools/repo-checks/src/check-workflows.ts [root]
 import { resolve } from "node:path";
 import process from "node:process";
