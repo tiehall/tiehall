@@ -51,6 +51,41 @@ describe("the Renovate dry-run check", () => {
     expect(run.status).toBe(0);
   });
 
+  it("passes when an update of unknown age waits for a maintainer's tick on the Dependency Dashboard, and lists it", () => {
+    // A new digest for the same image tag carries no release time, so the 7-day release age cannot hold it back;
+    // renovate.json gates it on the Dependency Dashboard instead, where no pull request opens before a maintainer ticks it.
+    const summary = summarizeDryRun(readFileSync(fixture("gates-unknown-age-digests"), "utf8"));
+    expect(summary.tooYoung).toEqual([]);
+    expect(summary.proposed).toEqual([expect.objectContaining({ depName: "caddy", updateType: "digest", ageDays: undefined, needsApproval: true })]);
+
+    const run = check(fixture("gates-unknown-age-digests"));
+    expect(run.stderr).toBe("");
+    expect(run.stdout).toContain("caddy digest 2.11.4@sha256:14a9c00d4e83 -> 2.11.4@sha256:0c994536bddb in deploy/compose.yaml (no release time, waits for approval on the Dependency Dashboard)");
+    expect(run.status).toBe(0);
+  });
+
+  it("proposes no new digest for the same image tag, which carries no release time for the 7-day release age, in renovate.json", () => {
+    // A new image version still comes, after 7 days, with its tag and digest; the Tiehall image takes Debian's security
+    // updates when it is built (the change image-os-security-updates).
+    const config = JSON.parse(readFileSync(fileURLToPath(new URL("../../../renovate.json", import.meta.url)), "utf8")) as {
+      packageRules: { matchDatasources?: string[]; matchUpdateTypes?: string[]; enabled?: boolean }[];
+    };
+    expect(config.packageRules).toContainEqual(expect.objectContaining({ matchDatasources: ["docker"], matchUpdateTypes: ["digest"], enabled: false }));
+  });
+
+  it("counts an update as proposed only when Renovate makes a branch for it, so an update renovate.json turns off is not", () => {
+    // Renovate's lookup lists every update it found, the ones renovate.json turns off as well; the branches it returns
+    // after dropping them are the pull requests it would open.
+    const summary = summarizeDryRun(readFileSync(fixture("drops-disabled-digest"), "utf8"));
+    expect(summary.proposed.map((update) => [update.depName, update.updateType])).toEqual([["caddy", "patch"]]);
+    expect(summary.dropped.map((update) => [update.depName, update.updateType])).toEqual([["caddy", "digest"]]);
+    expect(summary.tooYoung).toEqual([]);
+
+    const run = check(fixture("drops-disabled-digest"));
+    expect(run.stdout).toContain("dropped       caddy digest 2.11.4@sha256:14a9c00d4e83 -> 2.11.4@sha256:0c994536bddb in deploy/compose.yaml");
+    expect(run.status).toBe(0);
+  });
+
   it("fails when Renovate did not finish its lookup", () => {
     expect(() => summarizeDryRun(readFileSync(fixture("unfinished"), "utf8"))).toThrow(/packageFiles with updates/);
     expect(check(fixture("unfinished")).status).toBe(2);

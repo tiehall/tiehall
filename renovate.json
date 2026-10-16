@@ -31,7 +31,7 @@
       "automerge": false
     },
     {
-      "description": "Image digests (Node, Postgres, Caddy and the CI tools) are bumped weekly, and never merged without review.",
+      "description": "Images (Node, Postgres, Caddy and the CI tools) stay pinned by digest; a new version's tag and digest are bumped weekly, after the 7-day release age, and never merged without review.",
       "matchDatasources": [
         "docker"
       ],
@@ -40,6 +40,16 @@
       "schedule": [
         "* 0-5 * * 1"
       ]
+    },
+    {
+      "description": "No new digest is proposed for the same image tag: it carries no release time, so the 7-day release age could not hold it back. A new version comes with its own tag and digest, and the Tiehall image takes Debian's security updates when it is built (the change image-os-security-updates).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "enabled": false
     },
     {
       "description": "The Node base image: every bump, digest or version, opens its own pull request, labelled for review before merge.",
