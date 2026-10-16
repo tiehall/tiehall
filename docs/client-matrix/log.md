@@ -226,3 +226,38 @@ None.
 ### Findings
 
 - F9. Cursor's first registration names its hosted `https` callback beside a loopback one, with no `application_type`; the install kept it a web client's and refused it, with the sign-in library's text naming the loopback URI, and Cursor's second registration, of its hosted callback alone, signed it in, at the cost of a refused registration at each sign-in. The maintainer answered the same day that `https` URIs beside loopback URIs or app's schemes, which RFC 8252, section 7.2, lets a native app claim, leave a registration that names no type a native client's, while `https` URIs alone stay a web client's, as D55 (15) now says, and task 27.6 builds it, tests first: Cursor's first registration, as Cursor sends it, is a native client's that keeps both URIs; an authorization with PKCE to either reaches the consent screen, which names both places, and the approved client gets its code at either and exchanges it; and a redirect URI that no client may register, beside an `https` one, is refused in Tiehall's words, which name that URI, instead of the library's.
+
+## 2026-10-16: Cursor's sign-in on a build with task 27.6 (task 27.1)
+
+- **Date:** 2026-10-16. The maintainer signed Cursor out of `tiehall` and back in at about 10:47 UTC; the install recorded the run's registrations and approvals from 10:47:08 to 10:47:41 UTC.
+- **Client:** Cursor, the app, with Tiehall as the remote MCP server of its user settings, which its log names `user-tiehall`, and the Claude Code plugin's MCP server, which Cursor loads on its own, named `plugin-tiehall-tiehall`; Cursor's version was not recorded.
+- **OS:** macOS, on the maintainer's Mac; its version was not recorded.
+- **Install:** the maintainer's local Docker Compose install at the trial URL `http://localhost:3000`, its image built from `main` at `1820fea2`, with tasks 27.5 and 27.6; its people and teams were not recorded for this run.
+- **Task:** 27.1 [agent-access: Sign-in is tested on the four main clients; agent-surfaces: Tested MCP clients], Cursor's cell, re-run once the install had task 27.6.
+
+### Steps
+
+1. Signed Cursor out of `tiehall`, and signed it in again, at about 10:47 UTC.
+
+### Seen
+
+- Every registration Cursor sent was taken at its first try, each with the redirect URIs `https://www.cursor.com/agents/mcp/oauth/callback` and `http://localhost:8787/callback`: four registrations from 10:47:08 to 10:47:39 UTC, for Cursor's two Tiehall servers, its own `user-tiehall` and the Claude Code plugin's `plugin-tiehall-tiehall`.
+- The install recorded two `agent_client.approved` events, at 10:47:32 and 10:47:41 UTC. The two registered clients that no sign-in used are removed 7 days after they registered, as a client never used is.
+- Cursor's log showed both servers connected, each with 12 tools, the server's 12 in `mcp/tools.json`.
+- Earlier the same morning, on `dc4b5a1e`, the install refused Cursor's first registration of that pair, and Cursor registered again with its hosted callback alone (F9, in the entry of 2026-10-16 for task 27.6, which fixed it).
+
+Cursor's cell, against the server's 12 tools; the protocol version Cursor spoke was not recorded:
+
+| Client | Metadata-document fetching | Sign-in path, or the failure | Tools shown |
+| --- | --- | --- | --- |
+| Cursor | on | Dynamic Client Registration, its first registration, of its hosted `https` callback and a loopback one, taken | 12 of 12, on each of its two servers |
+
+### Not exercised
+
+- Which redirect URI each sign-in returned to, what the consent screen showed, and which scopes the two grants hold, were not recorded.
+- What install URL the plugin's server was given, which failed without `TIEHALL_URL` in the run of 2026-10-15 (F8), was not recorded.
+- The protocol version Cursor spoke, `TIEHALL_CLIENT_METADATA_FETCH=off`, and the other clients: the matrix's other cells.
+
+### Findings
+
+None.
