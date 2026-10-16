@@ -200,9 +200,22 @@ const BRAND_COPIES: Readonly<Record<string, string>> = {
   "site/assets/every-teams-line-poster.jpg": "docs/assets/film/every-teams-line-poster.jpg",
 };
 
+/**
+ * The screenshots of the web UI the page shows, from the repository's own browser test with its made-up people and
+ * teams, packages/commands/test/screens-browser.test.ts (the change landing-page-showcase, decision (1)), each with
+ * the file of test-results/screens/ it was cropped from.
+ */
+const SCREENSHOTS: Readonly<Record<string, string>> = {
+  "site/assets/screen-confirm.jpg": "admin--confirm-proposal--1280x800--dark.png",
+  "site/assets/screen-hall.jpg": "admin--hall--1280x800--dark.png",
+  "site/assets/screen-requests.jpg": "admin--requests-list-all--1280x800--dark.png",
+};
+
 describe("the landing page's folder", () => {
-  it("holds the two pages, the film's page, the stylesheet, the CNAME and the brand's images, and nothing else", () => {
-    expect(filesUnder(SITE)).toEqual(["site/404.html", "site/CNAME", ...Object.keys(BRAND_COPIES).sort(), "site/film.html", "site/index.html", "site/style.css"].sort());
+  it("holds the two pages, the film's page, the stylesheet, the CNAME, the brand's images and the screenshots, and nothing else", () => {
+    expect(filesUnder(SITE)).toEqual(
+      ["site/404.html", "site/CNAME", ...Object.keys(BRAND_COPIES), ...Object.keys(SCREENSHOTS), "site/film.html", "site/index.html", "site/style.css"].sort(),
+    );
   });
 
   it("holds only files the allowlist of public paths holds, and the allowlist takes no script or other kind of file there", () => {
@@ -500,7 +513,9 @@ describe("the landing page's motion (the change landing-page-motion)", () => {
   const all = tags(index);
   const classes = ({ attributes }: Tag) => (attributes["class"] ?? "").split(/\s+/);
   const hero = withoutComments(index).slice(withoutComments(index).indexOf('<section class="hero"'), withoutComments(index).indexOf("</section>"));
-  const steps = withoutComments(index).slice(withoutComments(index).indexOf('<ol class="steps"'), withoutComments(index).indexOf("</ol>"));
+  // The steps' list, to its own end: other ordered lists of the page come before it.
+  const stepsAt = withoutComments(index).indexOf('<ol class="steps"');
+  const steps = withoutComments(index).slice(stepsAt, withoutComments(index).indexOf("</ol>", stepsAt));
 
   it("draws the hall beside the hero's text: the six teams' switchboards and the cords between them, in one SVG named for screen readers", () => {
     const art = tags(hero).find((tag) => tag.name === "svg" && classes(tag).includes("hall-art"));
@@ -551,6 +566,186 @@ describe("the landing page's motion (the change landing-page-motion)", () => {
     const reduced = stylesheet.rules.filter(({ context }) => context.some((at) => /prefers-reduced-motion:\s*reduce/.test(at))).flatMap(({ declarations }) => declarations);
     expect(reduced).toContainEqual(expect.objectContaining({ property: "animation", value: "none", important: true }));
     expect(reduced).toContainEqual(expect.objectContaining({ property: "transition", value: "none", important: true }));
+  });
+});
+
+/** The width and height a PNG or JPEG gives in its header, or undefined for any other kind of file. */
+function imageSize(bytes: Buffer): { kind: "png" | "jpeg"; width: number; height: number } | undefined {
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { kind: "png", width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  let offset = 2;
+  while (offset + 9 < bytes.length && bytes[offset] === 0xff) {
+    const marker = bytes[offset + 1] ?? 0;
+    // A start-of-frame segment, baseline or progressive, holds the size; 0xC4, 0xC8 and 0xCC are other segments.
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return { kind: "jpeg", height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+    offset += 2 + bytes.readUInt16BE(offset + 2);
+  }
+  return undefined;
+}
+
+/** The markup of the page's section with this id, which no section of the page nests in another. */
+const sectionOf = (id: string) => new RegExp(`<section\\b[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?<\\/section>`).exec(withoutComments(index))?.[0] ?? "";
+
+/** The commands of docs/install.md's blocks that its docs test runs, by the block's name. */
+const installBlocks = Object.fromEntries([...read("docs/install.md").matchAll(/^```sh docs-test=([a-z0-9-]+)\n([\s\S]*?)^```$/gm)].map(([, name = "", body = ""]) => [name, body]));
+
+/** A command as a reader copies it, with white space made single spaces. */
+const command = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** The keyframes rules of the stylesheet, by their name, each with its frames' rules. */
+function keyframesByName(): Map<string, CssRule[]> {
+  const found = new Map<string, CssRule[]>();
+  for (const rule of stylesheet.rules) {
+    const at = rule.context.find((context) => context.startsWith("@keyframes "));
+    if (at === undefined) continue;
+    const name = at.slice("@keyframes ".length).trim();
+    found.set(name, [...(found.get(name) ?? []), rule]);
+  }
+  return found;
+}
+
+/** The declarations a keyframes rule gives at one offset, such as 0% or 100%, each as "property: value", sorted. */
+function frameAt(frames: CssRule[], offset: string): string[] {
+  const aliases: Record<string, string> = { "0%": "from", "100%": "to" };
+  return frames
+    .filter((frame) => selectorsOf(frame).some((selector) => selector === offset || selector === aliases[offset]))
+    .flatMap(({ declarations }) => declarations.map(({ property, value }) => `${property}: ${value}`))
+    .sort();
+}
+
+describe("the landing page's showcase (the change landing-page-showcase)", () => {
+  const all = tags(index);
+  const classes = ({ attributes }: Tag) => (attributes["class"] ?? "").split(/\s+/);
+
+  it("shows real screenshots of the web UI, each a JPEG of the site of at most 250 KB, with its alt text, its size and lazy loading, as a link to itself", () => {
+    const screens = sectionOf("screens");
+    expect(screens).not.toBe("");
+    const images = tags(screens).filter(({ name, attributes }) => name === "img" && (attributes["src"] ?? "").startsWith("assets/screen-"));
+    expect(images.map(({ attributes }) => `site/${attributes["src"] ?? ""}`).sort()).toEqual(Object.keys(SCREENSHOTS).sort());
+    for (const { attributes } of images) {
+      const path = `site/${attributes["src"] ?? ""}`;
+      const bytes = existsSync(join(root, path)) ? readFileSync(join(root, path)) : Buffer.alloc(0);
+      expect(bytes.length, path).toBeGreaterThan(0);
+      expect(bytes.length, path).toBeLessThanOrEqual(250 * 1024);
+      const size = imageSize(bytes);
+      expect(size?.kind, path).toBe("jpeg");
+      expect([attributes["width"], attributes["height"]], path).toEqual([String(size?.width), String(size?.height)]);
+      expect(attributes["alt"]?.length ?? 0, path).toBeGreaterThan(40);
+      expect(attributes["loading"], path).toBe("lazy");
+      expect(attributes["decoding"], path).toBe("async");
+      // The window is a link to the full image, so a visitor can read it at its size.
+      expect(new RegExp(`<a\\b[^>]*\\bhref="${attributes["src"] ?? ""}"[^>]*>(?:(?!</a>)[\\s\\S])*<img\\b[^>]*\\bsrc="${attributes["src"] ?? ""}"`).test(screens), path).toBe(true);
+    }
+    // The change's design says how each was made, from which screenshot of the repository's own browser test.
+    const design = read("openspec/changes/landing-page-showcase/design.md");
+    expect(design).toContain("packages/commands/test/screens-browser.test.ts");
+    for (const [copy, source] of Object.entries(SCREENSHOTS)) {
+      expect(design, copy).toContain(copy);
+      expect(design, copy).toContain(source);
+    }
+  });
+
+  it("shows a live request card, FE-142, with its typed packet, a question and its answer, and its pull request merged, as one image beside the same story in five steps of text", () => {
+    const request = sectionOf("request");
+    expect(request).not.toBe("");
+    const card = tags(request).find((tag) => classes(tag).includes("req"));
+    expect(card?.attributes["role"]).toBe("img");
+    for (const words of [/FE-142/, /\bBE\b/, /\bFE\b/, /packet/, /question/, /answer/, /pull request/, /\bdone\b/]) expect(card?.attributes["aria-label"]).toMatch(words);
+    const text = textOf(index, "request");
+    for (const words of ["FE-142", "need", "acceptance_criteria", "code_refs", "due_date", "merged"]) expect(text).toContain(words);
+    expect(tags(request).filter(({ name }) => ["svg", "script", "button"].includes(name))).toEqual([]);
+    const story = /<ol\b[^>]*\bclass="story"[^>]*>([\s\S]*?)<\/ol>/.exec(request)?.[1] ?? "";
+    expect(story.match(/<li\b/g)).toHaveLength(5);
+    expect(request.indexOf('class="story"')).toBeGreaterThan(-1);
+  });
+
+  it("rests the request card on done: each of its keyframes rules starts and ends on the same frame", () => {
+    const card = [...keyframesByName()].filter(([name]) => name.startsWith("req-"));
+    expect(card.length).toBeGreaterThanOrEqual(5);
+    for (const [name, frames] of card) {
+      expect(frameAt(frames, "0%").length, name).toBeGreaterThan(0);
+      expect(frameAt(frames, "0%"), name).toEqual(frameAt(frames, "100%"));
+    }
+  });
+
+  it("sets the copy and paste of the past beside Tiehall's one line, in a section labelled by its heading and in the README's words", () => {
+    const section = sectionOf("before-after");
+    expect(section).not.toBe("");
+    const label = tags(section).find(({ name }) => name === "section")?.attributes["aria-labelledby"] ?? "";
+    expect(new RegExp(`<h2\\b[^>]*\\bid="${label}"`).test(section)).toBe(true);
+    const text = plain(textOf(index, "before-after"));
+    for (const words of [/where replies bury it/, /does not make it across/, /typed handoff packet/, /when its pull request merges/]) expect(text).toMatch(words);
+    for (const words of ["where replies bury it", "does not make it across", "typed handoff packet"]) expect(plain(read("README.md"))).toContain(words);
+    // The drawing of a team chat says what the text beside it says, so screen readers skip it.
+    const chat = tags(section).filter((tag) => classes(tag).includes("chat"));
+    expect(chat.length).toBeGreaterThan(0);
+    expect(chat.map(({ attributes }) => attributes["aria-hidden"])).toEqual(chat.map(() => "true"));
+    // Its messages are written twice for a loop without a seam; the second copy is hidden from a page without the
+    // stylesheet, which shows it.
+    const runs = tags(section).filter((tag) => classes(tag).includes("chat-run"));
+    expect(runs.map(({ attributes }) => attributes["hidden"])).toEqual([undefined, ""]);
+    const run = stylesheet.rules.find((rule) => rule.context.length === 0 && selectorsOf(rule).includes(".chat-run"));
+    expect(run?.declarations.find(({ property }) => property === "display")?.value).toBe("grid");
+  });
+
+  it("gives the install commands of docs/install.md word for word, read from the doc so they cannot drift, and says that they wait for the first release", () => {
+    const blocks = ["install-download", "install-init", "install-up", "install-setup-code"].map((name) => installBlocks[name] ?? "");
+    expect(blocks.filter((block) => block === "")).toEqual([]);
+    const section = sectionOf("install");
+    expect(section).not.toBe("");
+    const shown = [...section.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/g)].map(([, inner = ""]) => command(decodeEntities(inner.replace(/<[^>]*>/g, ""))));
+    expect(shown).toEqual(blocks.map(command));
+    expect(plain(textOf(index, "install"))).toMatch(/There is no release yet/);
+    expect(references(section).map(({ value }) => value)).toContain(`${REPOSITORY}/blob/main/docs/install.md`);
+    // No copy button: one would take a script.
+    expect(all.filter(({ name }) => name === "button")).toEqual([]);
+    expect(references(index).filter(({ value }) => value === "#install").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("sets the tagline's last words in gold, and the name's gradient only where the browser can clip it to the text", () => {
+    const tagline = /<p\b[^>]*\bclass="tagline"[^>]*>([\s\S]*?)<\/p>/.exec(index)?.[1] ?? "";
+    expect(tagline).toMatch(/<span class="accent">in one hall\.<\/span>/);
+    const accent = stylesheet.rules.find((rule) => rule.context.length === 0 && selectorsOf(rule).some((selector) => selector.endsWith(".accent")));
+    expect(resolve(accent?.declarations.find(({ property }) => property === "color")?.value ?? "")).toBe(site["--signal"]);
+    // A transparent text color, which the gradient shows through, only inside the @supports that clips the gradient to the text.
+    const clear = stylesheet.rules.filter((rule) => rule.declarations.some(({ property, value }) => /^(?:color|-webkit-text-fill-color)$/.test(property) && value === "transparent"));
+    expect(clear.length).toBeGreaterThan(0);
+    for (const rule of clear) expect(rule.context.some((at) => /^@supports\b.*background-clip:\s*text/.test(at)), rule.selector).toBe(true);
+  });
+
+  it("ties animations to scrolling only where the browser supports it and the visitor has not asked for reduced motion", () => {
+    const tied = stylesheet.rules.filter((rule) => rule.declarations.some(({ property, value }) => property === "animation-timeline" || (property === "animation" && /\b(?:view|scroll)\(/.test(value))));
+    expect(tied.length).toBeGreaterThan(0);
+    for (const rule of tied) {
+      expect(rule.context.some((at) => /^@supports \(animation-timeline: (?:view|scroll)\(\)\)/.test(at)), rule.selector).toBe(true);
+      expect(rule.context.some((at) => /prefers-reduced-motion:\s*no-preference/.test(at)), rule.selector).toBe(true);
+    }
+    // And the keyframes they run never make a part unseen, so that a tool that captures the whole page without
+    // scrolling it, where a part below the screen waits at its first frame, still shows every part.
+    const names = tied.flatMap(({ declarations }) => declarations.filter(({ property }) => property === "animation").map(({ value }) => value.split(/\s+/)[0] ?? ""));
+    expect(names.length).toBeGreaterThan(0);
+    const keyframes = keyframesByName();
+    for (const name of names) {
+      const unseen = (keyframes.get(name) ?? []).flatMap(({ declarations }) => declarations.filter(({ property, value }) => property === "opacity" && Number(value) === 0));
+      expect(keyframes.has(name), name).toBe(true);
+      expect(unseen, name).toEqual([]);
+    }
+  });
+
+  it("hides nothing until an animation shows it: outside a keyframes rule, only the travelling dots start unseen", () => {
+    const hidden = stylesheet.rules
+      .filter(({ context }) => !context.some((at) => at.startsWith("@keyframes")))
+      .filter((rule) => rule.declarations.some(({ property, value }) => (property === "opacity" && Number(value) === 0) || (property === "visibility" && value === "hidden")))
+      .map(({ selector }) => selector);
+    expect(hidden.sort()).toEqual([".hall-pulse", ".req-dot"]);
+  });
+
+  it("moves the page through transforms, opacity and colors, never through an animated filter, shadow or size outside the hall's drawing", () => {
+    const allowed = new Set(["transform", "translate", "rotate", "scale", "opacity", "stroke-dashoffset", "stroke", "stroke-width", "fill", "color", "background-color", "border-color", "background-position", "content"]);
+    const animated = [...keyframesByName()]
+      .filter(([name]) => !name.startsWith("hall-"))
+      .flatMap(([name, frames]) => frames.flatMap(({ declarations }) => declarations.filter(({ property }) => !allowed.has(property)).map(({ property }) => `${name}: ${property}`)));
+    expect(animated).toEqual([]);
   });
 });
 

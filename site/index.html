@@ -40,6 +40,7 @@
     <nav aria-label="On this page">
       <ul role="list">
         <li><a href="#how">How it works</a></li>
+        <li><a href="#install">Run it</a></li>
         <li><a href="#clients">Agents</a></li>
         <li><a href="#licenses">Licenses</a></li>
       </ul>
@@ -64,10 +65,15 @@
     <div class="wrap hero-grid">
       <div class="hero-text">
         <h1 id="name">Tiehall</h1>
-        <p class="tagline">Every team’s line, in one hall.</p>
+        <p class="tagline">Every team’s line, <span class="accent">in one hall.</span></p>
         <p class="lede">Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions, status and commitments between them until a pull request closes the request, on a server your company runs.</p>
-        <p class="facts"><span>Self-hosted</span> · <span>Open source</span> · <span>Model-agnostic</span> · <span>Pre-1.0</span></p>
-        <p class="actions"><a class="cta" href="https://github.com/tiehall/tiehall">View on GitHub</a></p>
+        <p class="actions"><a class="cta" href="https://github.com/tiehall/tiehall">View on GitHub</a> <a class="ghost" href="#install">Run it</a></p>
+        <ul class="facts" role="list">
+          <li>Self-hosted</li>
+          <li>Open source</li>
+          <li>Model-agnostic</li>
+          <li>Pre-1.0</li>
+        </ul>
       </div>
       <svg class="hall-art" display="none" viewBox="0 0 480 420" role="img" aria-label="Tiehall’s hall: six teams’ switchboards joined by cords. A request travels from one team to another, a question comes back and is answered, and the finished line turns green.">
         <g class="hall-cords">
@@ -142,6 +148,152 @@
     </div>
   </section>
 
+  <!-- The before and after (the change landing-page-showcase, decision (3)): how a request travels by hand, and the one
+       line Tiehall gives it, both in the words of the README's "What Tiehall is". -->
+  <section class="band" id="before-after" aria-labelledby="before-after-title">
+    <div class="wrap">
+      <h2 id="before-after-title">From a pasted message to one line</h2>
+      <div class="ba">
+        <div class="ba-panel ba-before">
+          <p class="ba-label">Before</p>
+          <h3>By hand, in the team chat</h3>
+          <p>A developer asks their agent to write the request up and pastes the result into the team chat or a tracker, where replies bury it. The other team pastes it into their own agent, whose questions come back the same way, and the context that mattered does not make it across.</p>
+          <div class="chat" aria-hidden="true">
+            <div class="chat-scroll">
+              <div class="chat-run">
+                <div class="msg msg-paste"><span class="msg-who who-be">BE</span><div class="msg-body"><p>Pasted from my agent: the export page still calls the v1 dates API, which we retire, so it needs to move to v2 before…</p><span class="msg-wall"></span><span class="msg-wall"></span><span class="msg-wall msg-wall-short"></span></div></div>
+                <div class="msg"><span class="msg-who who-ops">OPS</span><p class="msg-body">deploy is red again</p></div>
+                <div class="msg msg-ask"><span class="msg-who who-fe">FE</span><p class="msg-body">which API is this about?</p></div>
+                <div class="msg"><span class="msg-who who-pay">PAY</span><p class="msg-body">is staging down for anyone else?</p></div>
+                <div class="msg"><span class="msg-who who-data">DATA</span><p class="msg-body">+1</p></div>
+                <div class="msg"><span class="msg-who who-ios">iOS</span><p class="msg-body">lunch?</p></div>
+                <div class="msg msg-ask"><span class="msg-who who-fe">FE</span><p class="msg-body">sorry, which API was this about? <span class="msg-flag">asked twice</span></p></div>
+                <div class="msg"><span class="msg-who who-be">BE</span><p class="msg-body">scroll up, it’s in my first message</p></div>
+              </div>
+              <div class="chat-run" hidden>
+                <div class="msg msg-paste"><span class="msg-who who-be">BE</span><div class="msg-body"><p>Pasted from my agent: the export page still calls the v1 dates API, which we retire, so it needs to move to v2 before…</p><span class="msg-wall"></span><span class="msg-wall"></span><span class="msg-wall msg-wall-short"></span></div></div>
+                <div class="msg"><span class="msg-who who-ops">OPS</span><p class="msg-body">deploy is red again</p></div>
+                <div class="msg msg-ask"><span class="msg-who who-fe">FE</span><p class="msg-body">which API is this about?</p></div>
+                <div class="msg"><span class="msg-who who-pay">PAY</span><p class="msg-body">is staging down for anyone else?</p></div>
+                <div class="msg"><span class="msg-who who-data">DATA</span><p class="msg-body">+1</p></div>
+                <div class="msg"><span class="msg-who who-ios">iOS</span><p class="msg-body">lunch?</p></div>
+                <div class="msg msg-ask"><span class="msg-who who-fe">FE</span><p class="msg-body">sorry, which API was this about? <span class="msg-flag">asked twice</span></p></div>
+                <div class="msg"><span class="msg-who who-be">BE</span><p class="msg-body">scroll up, it’s in my first message</p></div>
+              </div>
+            </div>
+          </div>
+          <ul class="ba-notes" role="list">
+            <li>Buried under replies</li>
+            <li>The same question twice</li>
+            <li>Context lost</li>
+          </ul>
+        </div>
+        <div class="ba-panel ba-after">
+          <p class="ba-label ba-label-after">With Tiehall</p>
+          <h3>One line, from the request to the merge</h3>
+          <p>A developer’s agent opens a request to a team, such as FE, as a typed handoff packet. Questions, answers and status go back to the requester’s agent, and the request closes when its pull request merges.</p>
+          <div class="line-wrap">
+            <ol class="line" role="list">
+              <li class="line-open"><span><span class="key">FE-142</span> opened, with its typed packet: the need, the acceptance criteria, the code it concerns and a due date</span></li>
+              <li class="line-ask"><span>FE’s agent asks in the request’s thread: does v2 send times in UTC?</span></li>
+              <li class="line-answer"><span>BE’s agent answers in the same thread</span></li>
+              <li class="line-done"><span>The linked pull request merges, and <strong>FE-142 is done</strong></span></li>
+            </ol>
+          </div>
+          <ul class="ba-notes ba-notes-after" role="list">
+            <li>An address for each team</li>
+            <li>One thread</li>
+            <li>Done when the pull request merges</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The live request card (decision (2)): one image to a screen reader, with the same story in five steps of text
+       beside it. Its resting state, which the first and last frame of each of its animations repeat, is the request
+       done, with all of its packet, thread and pull request shown. -->
+  <section class="band" id="request" aria-labelledby="request-title">
+    <div class="wrap">
+      <h2 id="request-title">One request, from open to done</h2>
+      <p class="section-lede">Requests go to a team rather than to a person’s chat, and each gets a key from the team’s counter, such as FE-142, and a URL on your install.</p>
+      <div class="request-grid">
+        <div class="req-stage">
+          <div class="ring ring-request">
+            <div class="req" role="img" aria-label="A request card. BE’s agent opens FE-142 to team FE with a typed packet: its need, acceptance criteria, code refs and due date. FE claims it, FE’s agent asks a question, and BE’s agent answers it in the thread. The linked pull request merges, and the request is done.">
+              <div class="req-route">
+                <span class="req-team req-from">BE</span>
+                <span class="req-cord"><span class="req-dot dot-packet"></span><span class="req-dot dot-question"></span><span class="req-dot dot-answer"></span></span>
+                <span class="req-team req-to">FE</span>
+              </div>
+              <div class="req-head">
+                <span class="key">FE-142</span>
+                <span class="req-state"></span>
+              </div>
+              <p class="req-title">Move the export page to the v2 dates API</p>
+              <dl class="req-packet">
+                <div class="req-field"><dt>need</dt><dd>The export page still calls the v1 dates API, which BE retires.</dd></div>
+                <div class="req-field f2"><dt>acceptance_criteria</dt><dd>It calls v2; the dates match the page.</dd></div>
+                <div class="req-field f3"><dt>code_refs</dt><dd><span class="mono">web</span> app/export/page.tsx</dd></div>
+                <div class="req-field f4"><dt>due_date</dt><dd>2026-11-03</dd></div>
+              </dl>
+              <div class="req-thread">
+                <p class="bubble bubble-q"><span class="bubble-who">FE’s agent asks</span> Does v2 send times in UTC?</p>
+                <p class="bubble bubble-a"><span class="bubble-who">BE’s agent answers</span> Yes, as ISO 8601 in UTC.</p>
+              </div>
+              <p class="req-pr"><span class="pr-icon"></span><span class="pr-name">Pull request #318, linked</span> <span class="pr-state">merged</span></p>
+            </div>
+          </div>
+        </div>
+        <ol class="story" role="list">
+          <li class="story-1"><span><strong>Open.</strong> BE’s agent opens FE-142 with a typed packet: the need, the acceptance criteria, the code it concerns and a due date.</span></li>
+          <li class="story-2"><span><strong>Claim.</strong> It reaches FE’s address, and someone on FE claims it.</span></li>
+          <li class="story-3"><span><strong>Ask.</strong> FE’s agent asks a blocking question, which reaches BE’s agent.</span></li>
+          <li class="story-4"><span><strong>Answer.</strong> BE’s agent answers it in the request’s thread.</span></li>
+          <li class="story-5"><span><strong>Done.</strong> The linked pull request merges, and FE-142 is done.</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- The web UI's own pages (decision (1)), from the repository's browser test with its made-up people and teams; each
+       window is a link to the full image. -->
+  <section class="band" id="screens" aria-labelledby="screens-title">
+    <div class="wrap">
+      <h2 id="screens-title">The web UI, where people follow the work</h2>
+      <p class="section-lede">Every member sees the requests between teams and who is at work on them as they change, in the live hall, and people confirm what binds a team on a review page. These are the web UI’s own pages, from the repository’s browser tests, with made-up people and teams.</p>
+      <div class="shots">
+        <figure class="shot shot-main">
+          <a class="shot-link" href="assets/screen-hall.jpg">
+            <span class="shot-window">
+              <span class="shot-bar" aria-hidden="true"><span class="lamps"></span><span class="shot-url">tiehall.example.com/hall</span></span>
+              <img src="assets/screen-hall.jpg" alt="The live hall in the web UI’s dark theme: the switchboards of teams BE, FE and QA joined by lines, chips for the people and agents at work on each request, QA glowing gold with a question waiting, and a list of what happened on the lines." width="1280" height="776" loading="lazy" decoding="async">
+            </span>
+          </a>
+          <figcaption>The live hall: the teams, the lines between them, and who is at work on each request.</figcaption>
+        </figure>
+        <figure class="shot">
+          <a class="shot-link" href="assets/screen-requests.jpg">
+            <span class="shot-window">
+              <span class="shot-bar" aria-hidden="true"><span class="lamps"></span><span class="shot-url">tiehall.example.com/requests</span></span>
+              <img src="assets/screen-requests.jpg" alt="The web UI’s list of every request between the teams, in which QA-1 needs info, FE-2 is in progress and FE-1 is open, each with the team that opened it, the team it is addressed to and who claimed it." width="1280" height="560" loading="lazy" decoding="async">
+            </span>
+          </a>
+          <figcaption>Every request between the teams, with its state.</figcaption>
+        </figure>
+        <figure class="shot">
+          <a class="shot-link" href="assets/screen-confirm.jpg">
+            <span class="shot-window">
+              <span class="shot-bar" aria-hidden="true"><span class="lamps"></span><span class="shot-url">tiehall.example.com/confirm</span></span>
+              <img src="assets/screen-confirm.jpg" alt="The confirm page of a proposal for FE-1: an agent proposed to decline it, and a person confirms or rejects the proposal." width="1280" height="560" loading="lazy" decoding="async">
+            </span>
+          </a>
+          <figcaption>A person confirms what an agent proposed.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
   <section class="band" id="points" aria-labelledby="points-title">
     <div class="wrap">
       <h2 id="points-title">What Tiehall gives your teams</h2>
@@ -186,6 +338,45 @@
           <p>People confirm the commitments in the web UI, and the request is done when its linked pull request merges.</p>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <!-- Run it (decision (4)): the commands of docs/install.md's blocks install-download, install-init, install-up and
+       install-setup-code, word for word, which tools/repo-checks/test/site.test.ts reads from the doc. The "$" before
+       each command comes from the stylesheet, so a selection copies the command alone. -->
+  <section class="band" id="install" aria-labelledby="install-title">
+    <div class="wrap install">
+      <div class="install-text">
+        <h2 id="install-title">Run it on your own server</h2>
+        <p>Docker Compose runs Tiehall and Postgres from one <code>.env</code>. You need a host with Docker and the Docker Compose plugin, a GitHub organization where you can create and install a GitHub App, and a host name for the install served over HTTPS.</p>
+        <p class="install-note">There is no release yet, so these commands, which name a release’s files and image, wait for the first one.</p>
+        <p><a href="https://github.com/tiehall/tiehall/blob/main/docs/install.md">Installing and running Tiehall</a></p>
+      </div>
+      <div class="ring ring-terminal">
+        <div class="terminal">
+          <p class="terminal-bar" aria-hidden="true"><span class="lamps"></span><span>the install’s folder</span></p>
+          <ol class="terminal-steps" role="list">
+            <li>
+              <p>Download the release’s files, where <code>&lt;release&gt;</code> is the address of the release’s files that the release notes give:</p>
+<pre><code><span class="ln">for file in compose.yaml Caddyfile backup.sh restore.sh; do curl <span class="w">--fail</span> <span class="w">--silent</span> <span class="w">--show-error</span> <span class="w">--location</span> <span class="w">--remote-name "&lt;release&gt;/$file";</span> done</span>
+<span class="ln">curl <span class="w">--fail</span> <span class="w">--silent</span> <span class="w">--show-error</span> <span class="w">--location</span> <span class="w">--output .env.example</span> <span class="w">"&lt;release&gt;/env.example"</span></span>
+<span class="ln">chmod +x backup.sh restore.sh</span></code></pre>
+            </li>
+            <li>
+              <p>Write <code>.env</code>, with fresh secrets, for the install’s URL and the release’s image <code>&lt;image&gt;</code>:</p>
+<pre><code><span class="ln">(umask 077 &amp;&amp; docker run <span class="w">--rm &lt;image&gt;</span> init <span class="w">--url https://tiehall.example.com</span> <span class="w">--image &lt;image&gt;</span> <span class="w">&gt; .env)</span></span></code></pre>
+            </li>
+            <li>
+              <p>Start Postgres, the migrations and the app:</p>
+<pre><code><span class="ln">docker compose up <span class="w">-d</span></span></code></pre>
+            </li>
+            <li>
+              <p>Read the one-time setup code from the app’s log, then open <code>/setup</code> at the install’s URL:</p>
+<pre><code><span class="ln ln-last">docker compose logs app</span></code></pre>
+            </li>
+          </ol>
+        </div>
+      </div>
     </div>
   </section>
 
