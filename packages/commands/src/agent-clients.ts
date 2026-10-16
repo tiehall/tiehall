@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -76,10 +76,15 @@ import type { WorkerJob } from "./worker.ts";
 // while it resolves the document during an authorization, and checks the
 // request's redirect URI against what it stored in the same request, so the
 // database adapter writes, in the library's own write of the client's row,
-// the URI each stand-in stands for over it (documentRedirectsRestored()); the
-// process keeps the latest 10,000 stand-ins it made, as many URIs as the
-// library's 1,000 documents of 10 redirect URIs each can hold, and a stand-in
-// is only ever written over with a URI that passed the rule.
+// the URI each stand-in stands for over it (documentRedirectsRestored()). A
+// stand-in carries its URI as its path, so it is read back from the stand-in
+// alone, whatever other documents the process read or refused meanwhile; the
+// fetcher makes stand-ins only for a document within the bounds and with no
+// NUL character. The adapter writes over a stand-in only a URI with an app's
+// own scheme, and only in a metadata-document client's row; a document that
+// gives a URI of a stand-in's form itself has it made into a stand-in too, as
+// any app's scheme, so its client's row holds that URI as the document gives
+// it.
 //
 // An IPv6 client is counted by its /64, since one host commonly holds a
 // whole /64: every address in one /64 shares the 10 registrations an hour
@@ -253,9 +258,9 @@ function isHttpsRedirect(uri: unknown): boolean {
 }
 
 /**
- * The scheme of the stand-ins the sign-in library is handed for a native
- * registration's app's schemes: one it takes, a reverse-domain scheme written
- * with no host, which no app opens.
+ * The scheme of the stand-ins the sign-in library is handed for the app's
+ * schemes of a native registration or a metadata document: one it takes, a
+ * reverse-domain scheme written with no host, which no app opens.
  */
 const STAND_IN_SCHEME = "invalid.tiehall.redirect";
 
@@ -268,26 +273,27 @@ function redirectRuleBroken(whose: string, atFault: unknown): string {
   return `Every redirect URI ${whose} holds no fragment and no user information, and is an https URI on a host other than localhost and the loopback addresses of 127.0.0.0/8 and ::1, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`;
 }
 
-/** How many of the stand-ins made for metadata documents the process keeps, the latest: the library's 1,000 documents of 10 redirect URIs each. */
-export const DOCUMENT_STAND_INS_KEPT = 10_000;
-
-/** The stand-ins handed to the sign-in library for metadata documents' app's schemes, each with the URI it stands for, the oldest first. */
-const documentStandIns = new Map<string, string>();
-
 /**
  * The stand-in of a metadata document's redirect URI with an app's own
- * scheme: the stand-in scheme with a hash of the URI, so the same URI always
- * gets the same stand-in, which the process keeps as one of its latest.
+ * scheme: the stand-in scheme with the URI itself as its path, so that the URI
+ * is read back from the stand-in alone, with nothing kept in between, and the
+ * same URI always gets the same stand-in.
  */
 function documentStandInFor(uri: string): string {
-  const standIn = `${STAND_IN_SCHEME}:/${createHash("sha256").update(uri, "utf8").digest("base64url").slice(0, 22)}`;
-  documentStandIns.delete(standIn);
-  documentStandIns.set(standIn, uri);
-  for (const oldest of documentStandIns.keys()) {
-    if (documentStandIns.size <= DOCUMENT_STAND_INS_KEPT) break;
-    documentStandIns.delete(oldest);
-  }
-  return standIn;
+  return `${STAND_IN_SCHEME}:/${uri}`;
+}
+
+/**
+ * The URI a metadata document's stand-in stands for: what follows the stand-in
+ * scheme's colon and slash, when that is a URI with an app's own scheme;
+ * undefined for anything else, a registration's stand-in, whose path is a
+ * random UUID, among them.
+ */
+function documentRedirectOf(standIn: unknown): string | undefined {
+  const prefix = `${STAND_IN_SCHEME}:/`;
+  if (typeof standIn !== "string" || !standIn.startsWith(prefix)) return undefined;
+  const uri = standIn.slice(prefix.length);
+  return isAppSchemeRedirect(uri) ? uri : undefined;
 }
 
 /**
@@ -316,12 +322,16 @@ type TransactionAdapter = Parameters<Parameters<Adapter["transaction"]>[0]>[0];
 /** The sign-in library's model of agent clients, by the names it gives the adapter: its own, and the table's it is told. */
 const CLIENT_MODELS: ReadonlySet<string> = new Set(["oauthClient", "oauthClients"]);
 
-/** A client's row to write, with each stand-in made for a metadata document written over with the URI it stands for. */
+/**
+ * A client's row to write, with each stand-in made for a metadata document
+ * written over with the URI it stands for, when the row is a metadata-document
+ * client's: one the library writes with the metadata documents' discovery.
+ */
 function withDocumentRedirects<T>(data: T): T {
   if (typeof data !== "object" || data === null) return data;
-  const redirects = (data as Record<string, unknown>)["redirectUris"];
-  if (!Array.isArray(redirects) || !redirects.some((uri) => typeof uri === "string" && documentStandIns.has(uri))) return data;
-  return { ...data, redirectUris: redirects.map((uri) => (typeof uri === "string" ? (documentStandIns.get(uri) ?? uri) : uri)) };
+  const { redirectUris: redirects, clientDiscoveryId: discovery } = data as Record<string, unknown>;
+  if (discovery !== "cimd" || !Array.isArray(redirects) || !redirects.some((uri) => documentRedirectOf(uri) !== undefined)) return data;
+  return { ...data, redirectUris: redirects.map((uri) => documentRedirectOf(uri) ?? uri) };
 }
 
 /** The adapter, or a transaction's, writing a metadata document's redirect URIs over the stand-ins it was handed. */

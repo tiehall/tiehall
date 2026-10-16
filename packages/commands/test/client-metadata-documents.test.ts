@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { connect as netConnect, type AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { documentRedirectsRestored, metadataDocumentForLibrary } from "../src/agent-clients.ts";
 import { createOutboundFetcher, type ConnectTarget } from "../src/index.ts";
 import { URL_OF_INSTALL } from "./support/install.ts";
 import { CLIENT_REDIRECT_URI, hiddenField, pkcePair, startAgentAccess, type AgentAccessHarness, type SignedIn } from "./support/agent-access.ts";
@@ -29,11 +31,15 @@ const HOSTS: Readonly<Record<string, string>> = {
   "quiet.example": "93.184.215.16",
   "ports.example": "93.184.215.17",
   "apps.example": "93.184.215.18",
+  "crowd.example": "93.184.215.19",
   "internal.vendor.example": "10.0.0.5",
 };
 
 /** Cursor's redirect URI, its app's own scheme, which holds no dot. */
 const CURSOR = "cursor://anysphere.cursor-mcp/oauth/callback";
+
+/** A redirect URI with an app's own scheme, the stand-ins' own, that no app opens, written as a stand-in of a javascript: URI would be. */
+const STAND_IN_FORM = "invalid.tiehall.redirect:/javascript://agent.vendor.example/%0Aalert(1)";
 
 /**
  * Redirect URIs that no native client may have, by D55 (15)'s rule: the web's schemes and those that reach a program
@@ -57,6 +63,8 @@ let fetched: string[];
 let connections: ConnectTarget[];
 let harness: AgentAccessHarness;
 let ana: SignedIn;
+/** What a test runs once a document's URL is fetched, while the sign-in library goes on to store the document's client. */
+const whileStored = new Map<string, () => void>();
 
 /** A client's metadata document, as the MCP 2026-07-28 profile asks for it. */
 function documentFor(clientId: string, overrides: Record<string, unknown> = {}): string {
@@ -96,8 +104,18 @@ beforeAll(async () => {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: redirects }));
     }
     // Documents whose redirect URIs have an app's own scheme, or a URI no native client may have (task 27.9).
-    if (request.url === "/oauth/cursor.json") {
+    if (request.url === "/oauth/cursor.json" || request.url?.startsWith("/oauth/cursor-") === true) {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Cursor", redirect_uris: [CURSOR] }));
+    }
+    // A document that gives a stand-in's form itself, beside Cursor's URI.
+    if (request.url === "/oauth/stand-in-form.json") {
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { client_name: "Cursor", redirect_uris: [STAND_IN_FORM, CURSOR] }));
+    }
+    // A document past the bounds, of 6,000 redirect URIs with an app's scheme of its own, within the 64 KB the fetcher reads.
+    const crowded = /^\/oauth\/crowded\/([a-z])\.json$/.exec(request.url ?? "");
+    if (crowded !== null) {
+      const redirects = Array.from({ length: 6000 }, (_, index) => `${crowded[1] ?? ""}:/${index}`);
+      return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: redirects }));
     }
     if (request.url === "/oauth/path-form.json") {
       return response.writeHead(200, { "content-type": "application/json" }).end(documentFor(url, { redirect_uris: [CLIENT_REDIRECT_URI, "myapp:/oauth/callback", CURSOR] }));
@@ -115,7 +133,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   port = (server.address() as AddressInfo).port;
-  const fetchDocument = createOutboundFetcher({
+  const outbound = createOutboundFetcher({
     maxRedirects: 0,
     resolve: async (hostname) => (HOSTS[hostname] === undefined ? [] : [HOSTS[hostname]]),
     connect: (target) => {
@@ -123,6 +141,14 @@ beforeAll(async () => {
       return netConnect({ host: "127.0.0.1", port });
     },
   });
+  // Once a document is fetched, what a test runs meanwhile runs before the sign-in library writes the client's row,
+  // which waits on the database at least once.
+  const fetchDocument: typeof outbound = async (url) => {
+    const document = await outbound(url);
+    const meanwhile = whileStored.get(url);
+    if (meanwhile !== undefined) setImmediate(meanwhile);
+    return document;
+  };
   harness = await startAgentAccess({ clientMetadata: { fetchDocument } });
   ana = await harness.member("ana-k");
 }, 60_000);
@@ -326,6 +352,18 @@ describe("an app's own scheme in a metadata document", () => {
     return rows[0]?.redirect_uris;
   }
 
+  /** A client's row as the sign-in library's own write of it goes through the database adapter, which answers with what it writes. */
+  async function writtenRow(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const answering = {
+      create: async ({ data: written }: { data: unknown }) => written,
+      update: async ({ update }: { update: unknown }) => update,
+      updateMany: async () => 0,
+      transaction: async (callback: (adapter: unknown) => Promise<unknown>) => callback(answering),
+    };
+    const adapter = documentRedirectsRestored((() => answering) as unknown as Parameters<typeof documentRedirectsRestored>[0])({});
+    return adapter.create<Record<string, unknown>, Record<string, unknown>>({ model: "oauthClient", data });
+  }
+
   it("of Cursor's is taken: the consent screen names the scheme and the whole URI, the approved client gets its code there and exchanges it, and its row holds the URI, fetched again too", async () => {
     const clientId = "https://apps.example/oauth/cursor.json";
     const client = { clientId, redirectUri: CURSOR };
@@ -409,6 +447,61 @@ describe("an app's own scheme in a metadata document", () => {
     expect(answer.status).toBe(400);
     expect(answer.headers.get("location")).toBeNull();
     expect(await storedRedirects(clientId)).toBeUndefined();
+  });
+
+  // The stand-in a document's app's scheme is handed to the library as is read back from the stand-in alone, in the
+  // library's write of the client's row, whatever else the process did meanwhile: other documents, read or refused, leave
+  // it as it was (decisions-from-groups-15-28: Technical decisions: T4).
+  it("is stored with its URI however many other documents are handed to the library while its client is stored", async () => {
+    const clientId = "https://apps.example/oauth/cursor-meanwhile.json";
+    // 1,001 documents of ten app's schemes each, all within the bounds, as other clients' fetches might hand on meanwhile.
+    whileStored.set(clientId, () => {
+      for (let other = 0; other < 1001; other += 1) {
+        const redirects = Array.from({ length: 10 }, (_, index) => `other${other}:/callback/${index}`);
+        metadataDocumentForLibrary({ client_id: `https://crowd.example/oauth/${other}.json`, client_name: "Another agent", redirect_uris: redirects });
+      }
+    });
+    try {
+      const answer = await harness.authorize(ana.cookie, { clientId, redirectUri: CURSOR }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.95" });
+      expect(answer.status).toBe(302);
+      expect(new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL).pathname).toBe("/consent");
+      expect(await storedRedirects(clientId)).toEqual([CURSOR]);
+    } finally {
+      whileStored.delete(clientId);
+    }
+  });
+
+  it("has its stand-in written over with its URI after documents past the bounds are refused: two of 6,000 app's schemes each", async () => {
+    const clientId = "https://apps.example/oauth/cursor-crowded.json";
+    const handed = metadataDocumentForLibrary(JSON.parse(documentFor(clientId, { client_name: "Cursor", redirect_uris: [CURSOR] })));
+    const standIns = "document" in handed ? (handed.document as { redirect_uris: string[] }).redirect_uris : [];
+    expect(standIns).toHaveLength(1);
+    expect(standIns[0]).not.toBe(CURSOR);
+    for (const scheme of ["a", "b"]) {
+      const crowded = `https://crowd.example/oauth/crowded/${scheme}.json`;
+      const answer = await harness.authorize(ana.cookie, { clientId: crowded, redirectUri: `${scheme}:/0` }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.96" });
+      expect(answer.status, scheme).toBe(400);
+      expect(await answer.json(), scheme).toMatchObject({ error: "invalid_client", error_description: "A client has at most 10 redirect URIs." });
+      expect(await storedRedirects(crowded), scheme).toBeUndefined();
+    }
+    // The library's write of the client's row, which the database adapter answers with what it wrote.
+    const row = await writtenRow({ clientId, clientDiscoveryId: "cimd", redirectUris: standIns });
+    expect(row["redirectUris"]).toEqual([CURSOR]);
+  });
+
+  it("holds a URI of the stand-ins' own form, as a document gives it, and never the URI it would stand for", async () => {
+    const clientId = "https://apps.example/oauth/stand-in-form.json";
+    const answer = await harness.authorize(ana.cookie, { clientId, redirectUri: CURSOR }, pkcePair(), { scope: "requests:read" }, { "x-forwarded-for": "198.51.100.97" });
+    expect(answer.status).toBe(302);
+    expect(new URL(answer.headers.get("location") ?? "", URL_OF_INSTALL).pathname).toBe("/consent");
+    expect(await storedRedirects(clientId)).toEqual([STAND_IN_FORM, CURSOR]);
+    // The adapter writes over a stand-in only a URI with an app's own scheme, and only in a metadata-document client's
+    // row: never a javascript: URI, a registration's stand-in or a registered client's URI.
+    const registrationStandIn = `invalid.tiehall.redirect:/${randomUUID()}`;
+    const kept = [STAND_IN_FORM, registrationStandIn];
+    expect((await writtenRow({ clientId, clientDiscoveryId: "cimd", redirectUris: kept }))["redirectUris"]).toEqual(kept);
+    const registered = [`invalid.tiehall.redirect:/${CURSOR}`];
+    expect((await writtenRow({ clientId: "a-registered-client", clientDiscoveryId: null, redirectUris: registered }))["redirectUris"]).toEqual(registered);
   });
 });
 
