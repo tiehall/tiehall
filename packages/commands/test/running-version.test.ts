@@ -31,6 +31,7 @@ describe("the running version's source link", () => {
   });
 
   it("takes the public Tiehall repository when the build names none", () => {
+    expect(DEFAULT_SOURCE_REPOSITORY).toBe("https://github.com/tiehall/tiehall");
     expect(runningVersion({ TIEHALL_VERSION: "1.3.0" }).sourceUrl).toBe(`${DEFAULT_SOURCE_REPOSITORY}/tree/v1.3.0`);
     expect(runningVersion({ TIEHALL_VERSION: "1.3.0", TIEHALL_SOURCE_REPOSITORY: "" }).sourceUrl).toBe(`${DEFAULT_SOURCE_REPOSITORY}/tree/v1.3.0`);
   });

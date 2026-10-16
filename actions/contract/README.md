@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # The commit of the release you pin, with the release as a comment, so dependency-update tools can bump both.
-      - uses: muhmmdcnkl/Tiehall/actions/contract@9c4e2b7a1f3d5e8c6b0a2d4f7e9c1b3a5d7f9e2c # v0.1.0
+      - uses: tiehall/tiehall/actions/contract@9c4e2b7a1f3d5e8c6b0a2d4f7e9c1b3a5d7f9e2c # v0.1.0
         with:
           install-url: https://tiehall.example.com
           api: payments-api

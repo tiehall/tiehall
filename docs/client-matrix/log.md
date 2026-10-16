@@ -37,7 +37,7 @@ The maintainers' record of each run of Tiehall against a real agent client, made
 
 ### Not exercised
 
-- The plugin came from a local checkout's marketplace file, not from GitHub with `claude plugin marketplace add muhmmdcnkl/Tiehall`, and not at a release tag.
+- The plugin came from a local checkout's marketplace file, not from GitHub with `claude plugin marketplace add tiehall/tiehall`, and not at a release tag.
 - `/hooks` was not opened; the hooks' run is the next entry.
 - Whether a later session reuses the MCP connection without signing in again was not recorded.
 - The protocol versions, Dynamic Client Registration and `TIEHALL_CLIENT_METADATA_FETCH=off` belong to the client matrix, group 27.

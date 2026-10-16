@@ -56,7 +56,8 @@ describe("the @tiehall/packet package", () => {
     expect(manifest["private"]).toBeUndefined();
     const packet = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as { dependencies: Record<string, string> };
     expect(manifest["dependencies"]).toEqual({ ajv: packet.dependencies["ajv"] });
-    expect(manifest["repository"]).toEqual({ type: "git", url: "git+https://github.com/muhmmdcnkl/Tiehall.git", directory: "packages/packet" });
+    expect(manifest["repository"]).toEqual({ type: "git", url: "git+https://github.com/tiehall/tiehall.git", directory: "packages/packet" });
+    expect(manifest["homepage"]).toBe("https://github.com/tiehall/tiehall/tree/main/packages/packet#readme");
     expect(readFileSync(join(out, "LICENSE"), "utf8")).toBe(readFileSync(join(directory, "LICENSE"), "utf8"));
   });
 

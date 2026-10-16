@@ -28,7 +28,7 @@ import { parseArgs } from "node:util";
 export const DIRECTORY = fileURLToPath(new URL("../", import.meta.url));
 
 /** The repository the package is built from, as its manifest names it for npm's provenance. */
-export const REPOSITORY = { type: "git", url: "git+https://github.com/muhmmdcnkl/Tiehall.git", directory: "packages/packet" } as const;
+export const REPOSITORY = { type: "git", url: "git+https://github.com/tiehall/tiehall.git", directory: "packages/packet" } as const;
 
 /** The release-URL tree, which holds no release until the schema is published. */
 export const RELEASES = join(DIRECTORY, "releases");
@@ -90,7 +90,7 @@ function manifest(version: string): Record<string, unknown> {
     license: "Apache-2.0",
     type: "module",
     keywords: ["tiehall", "packet", "json-schema", "handoff"],
-    homepage: "https://github.com/muhmmdcnkl/Tiehall/tree/main/packages/packet#readme",
+    homepage: "https://github.com/tiehall/tiehall/tree/main/packages/packet#readme",
     repository: REPOSITORY,
     engines: { node: ">=22" },
     exports: {

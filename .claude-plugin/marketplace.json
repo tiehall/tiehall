@@ -3,7 +3,7 @@
   "description": "Tiehall's Claude Code plugin, from Tiehall's public repository: the MCP connection to your Tiehall install, the Tiehall skill and the requester loop's hooks.",
   "owner": {
     "name": "The Tiehall maintainers",
-    "url": "https://github.com/muhmmdcnkl/Tiehall"
+    "url": "https://github.com/tiehall/tiehall"
   },
   "plugins": [
     {

@@ -16,7 +16,7 @@ import type { Environment } from "./settings.ts";
 // TIEHALL_SOURCE_URL in .env to their own source, and the link points there.
 
 /** The public Tiehall repository, for an image whose build named none, such as a local build. */
-export const DEFAULT_SOURCE_REPOSITORY = "https://github.com/muhmmdcnkl/Tiehall";
+export const DEFAULT_SOURCE_REPOSITORY = "https://github.com/tiehall/tiehall";
 
 /** The version a development build carries, which is no release. */
 const DEVELOPMENT = /-dev$/;

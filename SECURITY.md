@@ -4,7 +4,7 @@ A Tiehall install runs inside a company's network with its data: its requests an
 
 ## Reporting a vulnerability
 
-Report a vulnerability privately, through GitHub's private vulnerability reporting: on the repository's Security tab, choose "Report a vulnerability", or open [the reporting form](https://github.com/muhmmdcnkl/Tiehall/security/advisories/new) directly. The report becomes a draft security advisory that only you and the maintainers can read. Do not report a vulnerability in a public issue, a pull request, a discussion or anywhere else in public.
+Report a vulnerability privately, through GitHub's private vulnerability reporting: on the repository's Security tab, choose "Report a vulnerability", or open [the reporting form](https://github.com/tiehall/tiehall/security/advisories/new) directly. The report becomes a draft security advisory that only you and the maintainers can read. Do not report a vulnerability in a public issue, a pull request, a discussion or anywhere else in public.
 
 Say in the report:
 

@@ -84,7 +84,7 @@ const TOPICS: Topic[] = [
     heading: "Installing the plugin",
     says: [
       "`TIEHALL_URL`",
-      "claude plugin marketplace add muhmmdcnkl/Tiehall",
+      "claude plugin marketplace add tiehall/tiehall",
       "claude plugin install tiehall@tiehall",
       "#v1.3.0",
       "claude plugin marketplace remove tiehall",

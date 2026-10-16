@@ -25,10 +25,11 @@ The public repository holds only the paths that the allowlist allows, and `priva
   git grep -n -I -E -e '(^|[^[:alnum:]_.-])/(Users|home)/[[:alnum:]_.-]' -e '-(Users|home)-[[:alnum:]_.]'
   ```
 
-- The repository's own address is `github.com/tiehall/tiehall`. Some files still name its earlier address under the maintainer's personal account: the default source link of the running version (`DEFAULT_SOURCE_REPOSITORY`), which the reporting form of `SECURITY.md` follows, the packet package's repository and homepage, the plugin marketplace's owner, the plugin's install command in the docs and their test, the Action's README and the client-matrix log. Move each to `tiehall/tiehall`, tests first, before the switch; no task of the plan does it yet.
+- The repository's own address is `github.com/tiehall/tiehall`, and every file that names it says so: the default source link of the running version (`DEFAULT_SOURCE_REPOSITORY`), which the reporting form of `SECURITY.md` follows, the packet package's repository and homepage, the plugin marketplace's owner, the plugin's install command in the docs, and the contract Action's `uses:` line. Task 30.7 moved them from the repository's earlier address under the maintainer's personal account. Examples of someone's own copy keep a placeholder owner, such as `acme`.
 - No mailbox exists at `tiehall.com` yet, so no page names an address there: `SECURITY.md` takes reports through GitHub's private vulnerability reporting alone (GP-13).
 - Secrets: the secret scan of GP-8 reads every commit, the tree's included.
 - Evidence: the default source link in [`packages/commands/src/running-version.ts`](../../packages/commands/src/running-version.ts), and [`tools/repo-checks/test/security-policy.test.ts`](../../tools/repo-checks/test/security-policy.test.ts), which finds no email address in `SECURITY.md` and its reporting form at the repository the source link names.
+- Evidence: [`tools/repo-checks/test/repository-address.test.ts`](../../tools/repo-checks/test/repository-address.test.ts), which finds every GitHub address of the repository, `uses:` line of the contract Action and marketplace command in the tree naming `tiehall/tiehall` or a placeholder owner (task 30.7).
 - Evidence: this page's own check, [`tools/repo-checks/test/going-public.test.ts`](../../tools/repo-checks/test/going-public.test.ts), which runs the commands above on a scratch repository and finds each line of `personal.txt` and each home folder's path in it.
 
 ### GP-3 The license files
