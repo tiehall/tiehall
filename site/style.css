@@ -175,18 +175,20 @@ p {
   color: var(--ink);
 }
 
-/* The hero: the name, the tagline, the README's sentence, the call to action and the film, on the social preview's
-   grid of dots. */
-.hero {
-  padding: 48px 0 64px;
+/* The hero: the name, the tagline, the README's sentence and the call to action, and under it the film, on the
+   social preview's grid of dots. */
+.hero,
+.film-band {
   background-image: radial-gradient(var(--border) 1.2px, transparent 1.2px);
   background-size: 24px 24px;
 }
 
-.hero-grid {
-  display: grid;
-  gap: 40px;
-  align-items: center;
+.hero {
+  padding: 48px 0 40px;
+}
+
+.hero-text {
+  max-width: 760px;
 }
 
 h1 {
@@ -242,37 +244,71 @@ h1 {
   background: var(--button-hover);
 }
 
+.film-band {
+  padding: 0 0 64px;
+}
+
+/* The film, as wide as the page's content: a 16:9 frame that holds the film's own page, film.html, which shows the
+   poster until the visitor starts the film and then YouTube's privacy-enhanced player. */
 .film {
   margin: 0;
 }
 
-.film a {
-  position: relative;
-  display: block;
+.film-frame {
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   box-shadow: 0 16px 48px var(--attention-glow);
+  background: var(--surface);
 }
 
-.film a:focus-visible {
-  outline-offset: 4px;
+.film-frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
-/* The poster's label, so that it reads as a film to open. */
+/* The film's own page, inside the frame: the poster filling it, with its label in a corner, clear of the mark. */
+.film-page {
+  margin: 0;
+  overflow: hidden;
+}
+
+.film-start {
+  position: relative;
+  display: block;
+  height: 100vh;
+}
+
+.film-start img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.film-start:focus-visible {
+  outline-offset: -6px;
+}
+
+/* The poster's label, so that it reads as a film to start. */
 .play {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  left: 3%;
+  bottom: 5%;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px 6px 10px;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
   border-radius: 999px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
+  white-space: nowrap;
   color: var(--button-ink);
   background: var(--button);
+  box-shadow: 0 8px 32px var(--attention-glow);
 }
 
 .play::before {
@@ -280,8 +316,12 @@ h1 {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 6px 0 6px 10px;
+  border-width: 5px 0 5px 8px;
   border-color: transparent transparent transparent var(--button-ink);
+}
+
+.film-start:hover .play {
+  background: var(--button-hover);
 }
 
 .film figcaption {
@@ -450,6 +490,17 @@ h3 {
     --page-gutter: 32px;
   }
 
+  /* In the film's frame, as wide as the page's content on a wider screen, a larger label. */
+  .play {
+    gap: 12px;
+    padding: 12px 22px 12px 18px;
+    font-size: 1.125rem;
+  }
+
+  .play::before {
+    border-width: 8px 0 8px 13px;
+  }
+
   .cards {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -464,12 +515,11 @@ h3 {
 
 @media (min-width: 900px) {
   .hero {
-    padding: 80px 0 96px;
+    padding: 80px 0 56px;
   }
 
-  .hero-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 56px;
+  .film-band {
+    padding-bottom: 96px;
   }
 
   .pair {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self' https://www.youtube-nocookie.com; base-uri 'none'; form-action 'none'">
 <title>Tiehall · Every team’s line, in one hall</title>
 <meta name="description" content="Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions and commitments back, on your own server.">
 <link rel="canonical" href="https://tiehall.com/">
@@ -49,7 +49,7 @@
 
 <main id="main">
   <section class="hero" aria-labelledby="name">
-    <div class="wrap hero-grid">
+    <div class="wrap">
       <div class="hero-text">
         <h1 id="name">Tiehall</h1>
         <p class="tagline">Every team’s line, in one hall.</p>
@@ -57,13 +57,19 @@
         <p class="facts"><span>Self-hosted</span> · <span>Open source</span> · <span>Model-agnostic</span> · <span>Pre-1.0</span></p>
         <p class="actions"><a class="cta" href="https://github.com/tiehall/tiehall">View on GitHub</a></p>
       </div>
+    </div>
+  </section>
+
+  <section class="film-band" id="film" aria-labelledby="film-caption">
+    <div class="wrap">
       <figure class="film">
-        <!-- The film: the address of the README's attachment, which GP-19 of docs/maintainers/going-public.md uploaded at the switch to public, so the film plays from GitHub. -->
-        <a href="https://github.com/user-attachments/assets/a56bd0fc-e1ac-457a-8f28-ad5f05d057a5" data-film="attachment">
-          <img src="assets/every-teams-line-poster.jpg" alt="Watch Every Team’s Line, a film about Tiehall: its title frame, the mark beside the name" width="1280" height="720" decoding="async">
-          <span class="play" aria-hidden="true">Watch the film</span>
-        </a>
-        <figcaption>“Every Team’s Line”, a film of 53 seconds with English narration.</figcaption>
+        <!-- The film's own page, film.html, shows the poster until the visitor starts the film, and then the film plays
+             here in YouTube's privacy-enhanced player, from the channel of the maintainers' public brand, MamiBot (the
+             change play-film-from-youtube). -->
+        <div class="film-frame">
+          <iframe src="film.html" title="Every Team’s Line, a film about Tiehall, in YouTube’s player" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        </div>
+        <figcaption id="film-caption">“Every Team’s Line”, a film of 53 seconds with English narration and captions in English and Turkish. <a href="https://youtu.be/5Fk84aDl-r0">Watch it on YouTube</a></figcaption>
       </figure>
     </div>
   </section>
@@ -144,7 +150,7 @@
       <li><a href="https://github.com/tiehall/tiehall/blob/main/SECURITY.md">Security policy</a></li>
       <li><a href="https://github.com/tiehall/tiehall/blob/main/LICENSE">License</a></li>
     </ul>
-    <p class="foot-note">This page sets no cookies, runs no scripts and loads nothing from another host.</p>
+    <p class="foot-note">This page sets no cookies and runs no scripts. The film plays in YouTube’s privacy-enhanced player, which loads from YouTube only once you start it.</p>
   </div>
 </footer>
 </body>
