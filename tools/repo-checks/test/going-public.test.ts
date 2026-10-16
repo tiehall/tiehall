@@ -187,8 +187,13 @@ describe("the checklist for making the repository public", () => {
 
   it("allows squash merges alone on the new repository, with a linear history, and reads both back (design.md, D38 (5))", () => {
     const gp14 = item("GP-14");
-    expect(gp14).toContain("gh api -X PATCH repos/tiehall/tiehall -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false");
-    expect(gp14).toContain("`gh api repos/tiehall/tiehall --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge}'`");
+    // The squashed commit takes the pull request's title and description, as the contributors' guide says.
+    expect(gp14).toContain(
+      "gh api -X PATCH repos/tiehall/tiehall -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY",
+    );
+    expect(gp14).toContain(
+      "`gh api repos/tiehall/tiehall --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge, squash_merge_commit_title, squash_merge_commit_message}'`",
+    );
     expect(gp14).toContain("required_linear_history");
     expect(gp14).toMatch(/linear: \.required_linear_history\.enabled/);
     expect(item("GP-9")).toContain("GP-14");
@@ -210,6 +215,40 @@ describe("the checklist for making the repository public", () => {
     expect(gp16).toContain("Manage Actions access");
     expect(gp16).toContain("`tiehall/tiehall` the Write role");
     expect(gp16).toContain("The image's package after the move to a new repository");
+  });
+
+  it("switches in order: the organization's settings, the visibility, then protection, workflows, the film and the landing page (design.md, D38 (6))", () => {
+    const gp19 = item("GP-19");
+    const at = (text: string) => {
+      const found = gp19.indexOf(text);
+      expect(found, text).toBeGreaterThan(-1);
+      return found;
+    };
+    const visibility = at("--visibility public");
+    expect(at("GP-17")).toBeLessThan(visibility);
+    // GP-10 keeps the new repository's workflows off until the switch; the film's pull request needs its required checks.
+    const workflows = at("gh api -X PUT repos/tiehall/tiehall/actions/permissions -F enabled=true");
+    expect(workflows).toBeGreaterThan(visibility);
+    expect(at("`every-teams-line.mp4`")).toBeGreaterThan(workflows);
+    expect(at("GP-22")).toBeGreaterThan(at("`every-teams-line.mp4`"));
+    expect(gp19).toContain("`gh api repos/tiehall/tiehall/actions/permissions --jq .enabled`");
+  });
+
+  it("changes the film's end card when the first release ships, and puts the new encode in the README's player (design.md, D38 (1))", () => {
+    const gp20 = item("GP-20");
+    expect(gp20).toContain("Coming soon");
+    expect(gp20).toContain("node tools/repo-checks/src/check-film.ts ");
+    expect(gp20).toContain("pull request");
+    expect(gp20).toMatch(/Read back[^\n]*signed out/);
+    expect(item("GP-4")).toContain("GP-20");
+  });
+
+  it("puts the landing page live only at the switch, as a simple introduction that sends people to the repository", () => {
+    const gp22 = item("GP-22");
+    expect(gp22).toContain("goes live only at the switch");
+    expect(gp22).toContain("https://github.com/tiehall/tiehall");
+    expect(gp22).toMatch(/Read back: `curl -sSI https:\/\/tiehall\.com`/);
+    expect(gp22).toContain("`https://tiehall.com/schemas/`");
   });
 
   it("reads back every change it makes on GitHub", () => {

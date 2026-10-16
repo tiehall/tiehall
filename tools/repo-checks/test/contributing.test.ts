@@ -106,6 +106,10 @@ describe("CONTRIBUTING.md", () => {
     }
   });
 
+  it("says that a pull request is squash-merged, so its title and description become main's one commit (design.md, D38 (5))", () => {
+    expect(part("The OpenSpec workflow")).toMatch(/pull request is squash-merged/);
+  });
+
   it("names the license of each directory as the license map gives it, and the import rule", () => {
     const text = part("The license of each directory");
     const map = loadLicenseMap();

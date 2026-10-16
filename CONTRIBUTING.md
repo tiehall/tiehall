@@ -76,6 +76,7 @@ Tiehall is planned with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Chan
 - Build only what an approved change and its tasks describe. Anything the specs do not cover, or any change of behavior, becomes a new OpenSpec change that the maintainers approve before it is built. A change in progress that modifies another's requirements says so, and its text governs where it does.
 - Every requirement says what people, agents, admins and other systems can observe, uses SHALL or MUST, and has at least one scenario in WHEN/THEN form that can become a test. Every requirement carries a `Source:` line that points to the section of its change's `design.md` it comes from.
 - Work through `tasks.md` in order, tests first, and check a task off in the commit that makes its verification pass.
+- A pull request is squash-merged once its required checks pass, so `main` gets one commit for it, whose subject and body are the pull request's title and description: write them as a commit's.
 - Validate every change before you commit OpenSpec text:
 
 ```sh
