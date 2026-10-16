@@ -1,106 +1,312 @@
 {
   "$comment": "The API changelog (public-api: The changelog page and the release notes). A pull request that announces something about the API adds a dated entry under unreleased: a breaking change released without notice, allowed only for an urgent security fix and, before the first release, for a break of a beta operation that an approved OpenSpec change names, needs the api-breaking label, an entry of kind breaking and a bump of info.version in openapi/v1.json (public-api: The `api-breaking` label for urgent security fixes; decisions-from-groups-15-28, D55 (47)). Before the packet schema is published, a breaking packet change needs the api-breaking label and an entry of kind breaking with \"schemas\": [\"packet\"], dated the day it is announced, and no release contains it until 14 days later (handoff-packet: Breaking packet changes before publication). The maintainers' decision to graduate an operation to stable is an entry of kind graduation that names it in operationIds, dated the day they decided: an operation other than contract.report carries x-stability-level stable only with one, decided at least four weeks after the last breaking change to it and after the release that first offered it, and pnpm check:graduation fails without it (public-api: Each operation graduates on its own). Entries are shown with the release that carries them, on /docs/api/changelog and in the release notes.",
-  "unreleased": [
+  "unreleased": [],
+  "releases": [
     {
-      "date": "2026-10-12",
-      "kind": "note",
-      "text": "Every operation that takes a body may answer 503 with the new problem type busy and Retry-After: 5, when the web process is already receiving as many request bodies as it holds at once, 64 MiB. The body was not read and nothing ran, so the same call can be sent again after that time."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "note",
-      "operationIds": [
-        "requests.inbox"
+      "version": "1.0.0",
+      "date": "2026-10-16",
+      "apiVersion": "0.3.0",
+      "entries": [
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "Every operation that takes a body may answer 503 with the new problem type busy and Retry-After: 5, when the web process is already receiving as many request bodies as it holds at once, 64 MiB. The body was not read and nothing ran, so the same call can be sent again after that time."
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "GET /api/v1/inbox, which list_inbox and tiehall inbox run, now leaves out the requests that are done, declined or withdrawn unless state names one state; with state, it lists the requests in that state, a finished one included.",
+          "operationIds": [
+            "requests.inbox"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "breaking",
+          "text": "Each entry of GET /api/v1/events/wait now names its request and its team as requestKey and teamKey, as the rest of the API names its fields, instead of request_key and team_key. The break is made before the first release, without the notice period, because no released install serves the old names and the approved OpenSpec change decisions-from-groups-15-28 names it; info.version is 0.2.0.",
+          "operationIds": [
+            "events.wait"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "breaking",
+          "text": "POST /api/v1/proposals with the kind withdraw_proposal now answers 200 with the proposal it ended, as { \"proposal\": … }, instead of 202: a withdrawal makes no commitment and takes effect at once, and the 200 answer allows that body. A commitment proposed through the same operation still answers 202, and the MCP tool propose answers as before. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it.",
+          "operationIds": [
+            "proposals.propose"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "breaking",
+          "text": "GET /api/v1/events and POST /api/v1/events/acknowledge are no longer offered: they read and acknowledged every domain event of the install, outside the scope of whats_new, on the cursor each client shares with it. Read and acknowledge your updates with POST /api/v1/updates, which whats_new and tiehall updates run, and wait for them with GET /api/v1/events/wait. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it.",
+          "operationIds": [
+            "events.read",
+            "events.acknowledge"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A registered API whose consumers would take even a page that begins with it past the 32,000 characters goes on from one page to the next: the page ends inside its consumers, where the API carries continuedOnNextPage, and the next page begins with the same API, carrying continuedFromPreviousPage, and the consumers after the last one listed, so none is left out; a team whose intakeNotesWrittenBy would do the same goes on the same way. A team's intake notes hold at most 4,000 characters.",
+          "operationIds": [
+            "directory.get"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "POST /api/v1/updates, which whats_new and tiehall updates run, and GET /api/v1/events/wait now leave out every event that one of your own agents made, through MCP, the CLI or a personal access token, so an agent is never told of what it or another agent of yours did. What you did in the web UI, such as confirming your agent's proposal or answering a question, is still in them.",
+          "operationIds": [
+            "updates.read",
+            "events.wait"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "A client that has no read cursor yet, such as a new MCP client or the CLI's first login, now starts at your web inbox's place instead of at the first event, and keeps its own place from its first read. POST /api/v1/updates and GET /api/v1/events/wait take a new optional readAfter: furthest_cursor reads, or waits, after the furthest cursor of your CLI and your other agent clients instead of the caller's own, and moves no cursor, so it takes no acknowledge; the Claude Code hooks read this way, so what your agent acknowledged through whats_new is not announced again.",
+          "operationIds": [
+            "updates.read",
+            "events.wait"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "breaking",
+          "text": "Two changes to the packet schema before its publication, on its path for breaking changes. In a request packet's contract section, such as a classified diff a developer attaches by hand with tiehall contract diff or attach_contract_changes, provider_pr and provider_status may be left out, since the two refs may be in no pull request yet, while a contract_change packet, which a contract report opens, still carries both; a reader of a request packet's contract section handles one without them. And every URL field, a link's url and the provider pull request's url, now carries a pattern that admits only http and https URLs, besides the uri format, so a validator that skips formats, as @tiehall/packet's does, refuses a javascript: or data: URL, as Tiehall already did. The approved OpenSpec change decisions-from-groups-15-28 names both; no release contains them before 2026-10-26, and info.version is 0.3.0.",
+          "schemas": [
+            "packet"
+          ]
+        },
+        {
+          "date": "2026-10-12",
+          "kind": "note",
+          "text": "The provider change of a contract-change request, in every answer that returns a request, now names the team that provides its API as provider, and carries the API's name, which an admin wrote and so is that team's text, as untrusted.api. providerChange.api, which holds the same name outside untrusted, is deprecated, and is removed on or after its sunset, 2026-11-09: read untrusted.api instead.",
+          "operationIds": [
+            "contract.attach_changes",
+            "messages.post",
+            "proposals.propose",
+            "requests.claim",
+            "requests.create",
+            "requests.get",
+            "requests.inbox",
+            "requests.link_pr",
+            "requests.list",
+            "requests.propose",
+            "requests.read",
+            "requests.set_status",
+            "updates.read"
+          ]
+        },
+        {
+          "date": "2026-10-15",
+          "kind": "breaking",
+          "text": "A team that the MCP tool directory lists across pages, because the teams its intake notes' writer belonged to would pass a page, is now named on each later page by its id and key only, with the rest of intakeNotesWrittenBy and continuedFromPreviousPage: its requiredFields and untrusted, which holds its name and its intake notes, are given once, on the page that begins with it, and are absent from a part that goes on, as they already were from the tool's text. The break is made before the first release, without the notice period, because no released install serves the old shape and the approved OpenSpec change decisions-from-groups-15-28 names it.",
+          "operationIds": [
+            "directory.get"
+          ]
+        }
       ],
-      "text": "GET /api/v1/inbox, which list_inbox and tiehall inbox run, now leaves out the requests that are done, declined or withdrawn unless state names one state; with state, it lists the requests in that state, a finished one included."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "breaking",
-      "operationIds": [
-        "events.wait"
-      ],
-      "text": "Each entry of GET /api/v1/events/wait now names its request and its team as requestKey and teamKey, as the rest of the API names its fields, instead of request_key and team_key. The break is made before the first release, without the notice period, because no released install serves the old names and the approved OpenSpec change decisions-from-groups-15-28 names it; info.version is 0.2.0."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "breaking",
-      "operationIds": [
-        "proposals.propose"
-      ],
-      "text": "POST /api/v1/proposals with the kind withdraw_proposal now answers 200 with the proposal it ended, as { \"proposal\": … }, instead of 202: a withdrawal makes no commitment and takes effect at once, and the 200 answer allows that body. A commitment proposed through the same operation still answers 202, and the MCP tool propose answers as before. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "breaking",
-      "operationIds": [
-        "events.read",
-        "events.acknowledge"
-      ],
-      "text": "GET /api/v1/events and POST /api/v1/events/acknowledge are no longer offered: they read and acknowledged every domain event of the install, outside the scope of whats_new, on the cursor each client shares with it. Read and acknowledge your updates with POST /api/v1/updates, which whats_new and tiehall updates run, and wait for them with GET /api/v1/events/wait. The break is made before the first release, without the notice period, because the approved OpenSpec change decisions-from-groups-15-28 names it."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "note",
-      "operationIds": [
-        "directory.get"
-      ],
-      "text": "The MCP tool directory now answers in pages: teams by key, then registered APIs by name, at most 50 of each and at most 32,000 characters a page, and next names the cursor of the following page while more remain, which the tool takes as cursor. A registered API whose consumers would take even a page that begins with it past the 32,000 characters goes on from one page to the next: the page ends inside its consumers, where the API carries continuedOnNextPage, and the next page begins with the same API, carrying continuedFromPreviousPage, and the consumers after the last one listed, so none is left out; a team whose intakeNotesWrittenBy would do the same goes on the same way. A team's intake notes hold at most 4,000 characters."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "note",
-      "operationIds": [
-        "updates.read",
-        "events.wait"
-      ],
-      "text": "POST /api/v1/updates, which whats_new and tiehall updates run, and GET /api/v1/events/wait now leave out every event that one of your own agents made, through MCP, the CLI or a personal access token, so an agent is never told of what it or another agent of yours did. What you did in the web UI, such as confirming your agent's proposal or answering a question, is still in them."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "note",
-      "operationIds": [
-        "updates.read",
-        "events.wait"
-      ],
-      "text": "A client that has no read cursor yet, such as a new MCP client or the CLI's first login, now starts at your web inbox's place instead of at the first event, and keeps its own place from its first read. POST /api/v1/updates and GET /api/v1/events/wait take a new optional readAfter: furthest_cursor reads, or waits, after the furthest cursor of your CLI and your other agent clients instead of the caller's own, and moves no cursor, so it takes no acknowledge; the Claude Code hooks read this way, so what your agent acknowledged through whats_new is not announced again."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "breaking",
-      "schemas": [
-        "packet"
-      ],
-      "text": "Two changes to the packet schema before its publication, on its path for breaking changes. In a request packet's contract section, such as a classified diff a developer attaches by hand with tiehall contract diff or attach_contract_changes, provider_pr and provider_status may be left out, since the two refs may be in no pull request yet, while a contract_change packet, which a contract report opens, still carries both; a reader of a request packet's contract section handles one without them. And every URL field, a link's url and the provider pull request's url, now carries a pattern that admits only http and https URLs, besides the uri format, so a validator that skips formats, as @tiehall/packet's does, refuses a javascript: or data: URL, as Tiehall already did. The approved OpenSpec change decisions-from-groups-15-28 names both; no release contains them before 2026-10-26, and info.version is 0.3.0."
-    },
-    {
-      "date": "2026-10-12",
-      "kind": "note",
-      "operationIds": [
-        "contract.attach_changes",
-        "messages.post",
-        "proposals.propose",
-        "requests.claim",
-        "requests.create",
-        "requests.get",
-        "requests.inbox",
-        "requests.link_pr",
-        "requests.list",
-        "requests.propose",
-        "requests.read",
-        "requests.set_status",
-        "updates.read"
-      ],
-      "text": "The provider change of a contract-change request, in every answer that returns a request, now names the team that provides its API as provider, and carries the API's name, which an admin wrote and so is that team's text, as untrusted.api. providerChange.api, which holds the same name outside untrusted, is deprecated, and is removed on or after its sunset, 2026-11-09: read untrusted.api instead."
-    },
-    {
-      "date": "2026-10-15",
-      "kind": "breaking",
-      "operationIds": [
-        "directory.get"
-      ],
-      "text": "A team that the MCP tool directory lists across pages, because the teams its intake notes' writer belonged to would pass a page, is now named on each later page by its id and key only, with the rest of intakeNotesWrittenBy and continuedFromPreviousPage: its requiredFields and untrusted, which holds its name and its intake notes, are given once, on the page that begins with it, and are absent from a part that goes on, as they already were from the tool's text. The break is made before the first release, without the notice period, because no released install serves the old shape and the approved OpenSpec change decisions-from-groups-15-28 names it."
+      "changes": [
+        {
+          "id": "api-security-component-added",
+          "level": 1,
+          "text": "the component security scheme `bearer` was added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/contract-reports",
+          "operationId": "contract.report",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/events/wait",
+          "operationId": "events.wait",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/inbox",
+          "operationId": "requests.inbox",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/messages/{messageId}",
+          "operationId": "messages.get",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/messages/{messageId}/versions",
+          "operationId": "messages.edit",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/proposals",
+          "operationId": "proposals.propose",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/proposals/{proposal}",
+          "operationId": "proposals.get",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests",
+          "operationId": "requests.list",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests",
+          "operationId": "requests.create",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}",
+          "operationId": "requests.get",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/claim",
+          "operationId": "requests.claim",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/contract-changes",
+          "operationId": "contract.attach_changes",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/messages",
+          "operationId": "messages.post",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}/packet",
+          "operationId": "packets.get",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}/packet/changes",
+          "operationId": "packets.changes",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/packet/revisions",
+          "operationId": "packets.add_revision",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{key}/packet/revisions/{revision}",
+          "operationId": "packets.get_revision",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/proposals",
+          "operationId": "requests.propose",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/pull-requests",
+          "operationId": "requests.link_pr",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/requests/{key}/status",
+          "operationId": "requests.set_status",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/requests/{request}/pages",
+          "operationId": "requests.read",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/teams/{key}",
+          "operationId": "teams.get",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "POST",
+          "path": "/api/v1/updates",
+          "operationId": "updates.read",
+          "text": "endpoint added"
+        },
+        {
+          "id": "endpoint-added",
+          "level": 1,
+          "method": "GET",
+          "path": "/api/v1/whoami",
+          "operationId": "users.whoami",
+          "text": "endpoint added"
+        }
+      ]
     }
-  ],
-  "releases": []
+  ]
 }

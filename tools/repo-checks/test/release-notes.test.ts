@@ -266,6 +266,26 @@ describe("the notes of a release with a deprecation, a contract step and a relea
     git("checkout", "--quiet", "--", "openapi/changelog.json");
   });
 
+  // The change first-release-packet-notice: before Tiehall's first release no install, published schema or reader
+  // depends on the packet's old shape, so the first release and its candidates carry a breaking packet change announced
+  // any day before them; every later release keeps the 14 days of notice.
+  it("of the first release and its candidates carry a breaking packet change of any age", () => {
+    const file = join(repo, "openapi/changelog.json");
+    const recorded = JSON.parse(readFileSync(file, "utf8")) as { unreleased: unknown[]; releases: { version: string; entries: unknown[] }[] };
+    const [final] = recorded.releases as [{ version: string; entries: unknown[] }];
+    const today = new Date().toISOString().slice(0, 10);
+    const breaking = { date: today, kind: "breaking", schemas: ["packet"], text: "Every packet names its acceptance criteria." };
+    try {
+      writeFileSync(file, JSON.stringify({ ...recorded, unreleased: [breaking], releases: [] }, null, 2));
+      expect(recordedApiChanges(repo, "1.0.0-rc.1", undefined, today)).toMatchObject({ final: "1.0.0", entries: [breaking] });
+      writeFileSync(file, JSON.stringify({ ...recorded, unreleased: [], releases: [{ ...final, version: "1.0.0", entries: [breaking] }] }, null, 2));
+      expect(recordedApiChanges(repo, "1.0.0", undefined, today)).toMatchObject({ version: "1.0.0", entries: [breaking] });
+      expect(recordedApiChanges(repo, "1.0.0-rc.2", undefined, today)).toMatchObject({ version: "1.0.0", entries: [breaking] });
+    } finally {
+      git("checkout", "--quiet", "--", "openapi/changelog.json");
+    }
+  });
+
   // handoff-packet: Breaking packet changes before publication. A release candidate is a release too, so neither
   // contains a breaking packet change until 14 days after its notice: the release workflow checks the entries a
   // release carries on the day it runs, its final version's record or, before that is made, the waiting entries.

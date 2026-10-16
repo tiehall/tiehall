@@ -15,12 +15,14 @@ import { releaseAgeExceptions, type ReleaseAgeException } from "./release-age.ts
 //   changelog page of an install running it lists. A release candidate gets no
 //   record of its own (design.md, Technical decisions: T13, R-e): its notes
 //   carry its final version's record once that is made, and before it the
-//   entries waiting under unreleased, which that record will collect. No
-//   release, a release candidate included, contains a breaking packet change
-//   until 14 days after its notice (handoff-packet: Breaking packet changes
-//   before publication), so the entries it carries are checked on the day the
-//   release is made: recording a final version checks them only on its
-//   record's day, and a candidate tagged before that record has none;
+//   entries waiting under unreleased, which that record will collect. Once
+//   Tiehall has a release, no later release, a release candidate included,
+//   contains a breaking packet change until 14 days after its notice
+//   (handoff-packet: Breaking packet changes before publication), so the
+//   entries it carries are checked on the day the release is made: recording a
+//   final version checks them only on its record's day, and a candidate tagged
+//   before that record has none. The first release and its candidates carry
+//   one announced any day before them (the change first-release-packet-notice);
 // - the contract steps it adds since the previous release: the migrations of
 //   packages/db/migrations marked `-- migrate: contract after <release>` that
 //   the previous release's tag does not hold. A contract step ships at least
@@ -160,7 +162,8 @@ export function recordedApiChanges(
   const final = finalVersionOf(version);
   const release = changelog.releases.find((each) => each.version === (final ?? version));
   if (release === undefined && final !== undefined) {
-    refuseEarlyPacketChanges(changelog.unreleased, date);
+    // A candidate of the first release, with no release recorded before it, carries any packet change (see below).
+    if (changelog.releases.length > 0) refuseEarlyPacketChanges(changelog.unreleased, date);
     const apiVersion = (JSON.parse(readFileSync(join(root, DOCUMENT), "utf8")) as { info?: { version?: string } }).info?.version ?? "";
     return { final, apiVersion, entries: changelog.unreleased };
   }
@@ -177,7 +180,9 @@ export function recordedApiChanges(
         "the document changed after the release was recorded, so record the release again.",
     );
   }
-  refuseEarlyPacketChanges(release.entries, date);
+  // The first release, and a candidate of it tagged after its record, is the one no earlier release precedes: it may
+  // carry a breaking packet change announced any day before it (the change first-release-packet-notice).
+  if (changelog.releases.some((each) => compareVersions(each.version, release.version) < 0)) refuseEarlyPacketChanges(release.entries, date);
   return release;
 }
 

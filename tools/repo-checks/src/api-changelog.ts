@@ -63,8 +63,10 @@ export async function recordRelease(options: ReleaseToRecord): Promise<{ changel
   const raw = JSON.parse(options.changelog) as Record<string, unknown>;
   const changelog = parseChangelog(options.changelog);
   if (changelog.releases.some(({ version }) => version === options.version)) throw new Error(`Release ${options.version} is already recorded.`);
-  // No release contains a breaking packet change until 14 days after its notice (handoff-packet: Breaking packet changes before publication).
-  const early = packetNoticeProblems(changelog.unreleased, options.date);
+  // Once Tiehall has a release, no later release contains a breaking packet change until 14 days after its notice
+  // (handoff-packet: Breaking packet changes before publication); the first release, which no install, published
+  // schema or reader precedes, may carry one announced any day before it (the change first-release-packet-notice).
+  const early = changelog.releases.length === 0 ? [] : packetNoticeProblems(changelog.unreleased, options.date);
   if (early.length > 0) throw new Error(early.join("\n"));
   const apiVersion = (JSON.parse(options.document) as { info?: { version?: string } }).info?.version ?? "";
   const release: ChangelogRelease = {
