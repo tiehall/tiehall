@@ -145,16 +145,16 @@ Task 30.4 reads each repository setting back through GitHub's API. GitHub's free
 
 ### GP-11 The repository's description, homepage and topics
 
-- `gh repo edit tiehall/tiehall --description "<description>" --homepage https://tiehall.com --add-topic <topic>`, with the description in the README's own words, such as "A request layer for software teams that use coding agents. Self-hosted, open source.", and topics such as `coding-agents`, `mcp`, `model-context-protocol`, `self-hosted`, `developer-tools`, `openapi`, `claude-code` and `typescript`. The homepage is set once `tiehall.com` serves the landing page (GP-22).
+- Run the `gh repo edit tiehall/tiehall` command of [What to apply on GitHub](github-profile.md#the-repositorys-description-and-topics), which sets the description, the README's own sentence of what Tiehall is, and the topics, such as `coding-agents`, `mcp`, `model-context-protocol`, `self-hosted`, `developer-tools`, `openapi`, `claude-code` and `typescript` (task 30.14). Set the homepage, `--homepage https://tiehall.com`, once `tiehall.com` serves the landing page (GP-22).
 - Issues stay on and the wiki off, since the docs live in the repository; whether to open Discussions is the maintainers' choice.
 - Read back: `gh api repos/tiehall/tiehall --jq '{description, homepage, topics, has_issues, has_wiki, has_discussions}'`.
-- Evidence: [`README.md`](../../README.md), whose opening the description follows, and GitHub's [Classifying your repository with topics](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics).
+- Evidence: [`README.md`](../../README.md), whose opening the description follows; the drafts, [`github-profile.md`](github-profile.md), with their check, [`tools/repo-checks/test/github-profile.test.ts`](../../tools/repo-checks/test/github-profile.test.ts), which holds the description to the README's sentence and GitHub's 350 characters, and the topics to GitHub's form; and GitHub's [Classifying your repository with topics](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics).
 
 ### GP-12 The social preview
 
-- A PNG of 1280 by 640 pixels, under 1 MB: the mark TM1, gold on a navy tile, with the name Tiehall, in the web UI's navy and gold. Upload it under Settings, General, Social preview, which no API sets; the image need not be committed.
+- The PNG of 1280 by 640 pixels, under 1 MB, [`docs/assets/brand/social-preview.png`](../assets/brand/social-preview.png): the mark TM1, gold on a navy tile, with the name Tiehall and its tagline, in the web UI's navy and gold, drawn from the mark's source by `pnpm brand:generate` (task 30.10). Upload it under Settings, General, Social preview, which no API sets, as [What to apply on GitHub](github-profile.md#the-social-preview) says.
 - Read back: `gh api graphql -f query='query { repository(owner: "tiehall", name: "tiehall") { usesCustomOpenGraphImage openGraphImageUrl } }'`.
-- Evidence: the mark, [`packages/commands/assets/icon.svg`](../../packages/commands/assets/icon.svg), and GitHub's [Customizing your repository's social media preview](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview).
+- Evidence: the mark, [`packages/commands/assets/icon.svg`](../../packages/commands/assets/icon.svg), the image's check, [`packages/commands/test/brand.test.ts`](../../packages/commands/test/brand.test.ts), and GitHub's [Customizing your repository's social media preview](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview).
 
 ### GP-13 Private vulnerability reporting and the security features
 
@@ -196,10 +196,10 @@ A founder step, for the organization `tiehall`.
 
 A founder step.
 
-- The avatar is the mark TM1, gold on a navy tile; the display name Tiehall; a one-line description in the README's words; the URL `https://tiehall.com` once it serves (GP-22); and no email address until a mailbox exists.
-- A public repository `tiehall/.github` holds `profile/README.md`, which GitHub shows on the organization's page: what Tiehall is, with links to the repository, the install docs and the landing page. Pin `tiehall/tiehall` on the organization's page.
+- The avatar is the mark TM1, gold on a navy tile, [`docs/assets/brand/avatar.png`](../assets/brand/avatar.png), 500 by 500 pixels (task 30.10); the display name Tiehall; the one-line description of [What to apply on GitHub](github-profile.md#the-organizations-profile); the URL `https://tiehall.com` once it serves (GP-22); and no email address until a mailbox exists.
+- A public repository `tiehall/.github` holds `profile/README.md`, which GitHub shows on the organization's page: the draft of [What to apply on GitHub](github-profile.md#the-profile-readme), which says what Tiehall is and links the repository, the install docs, connecting agents, the film and `SECURITY.md`, with the landing page added once it serves (task 30.14). Pin `tiehall/tiehall` on the organization's page.
 - Read back: `gh api orgs/tiehall --jq '{name, description, blog, email}'` and `gh api repos/tiehall/.github/contents/profile/README.md --jq .path`.
-- Evidence: the mark as an image of 512 by 512 pixels, [`packages/commands/assets/icon-512.png`](../../packages/commands/assets/icon-512.png); the [README](../../README.md)'s opening; and GitHub's [Customizing your organization's profile](https://docs.github.com/en/organizations/collaborating-with-groups-in-organizations/customizing-your-organizations-profile).
+- Evidence: the avatar and its check, [`packages/commands/test/brand.test.ts`](../../packages/commands/test/brand.test.ts); the drafts, [`github-profile.md`](github-profile.md), and their check, [`tools/repo-checks/test/github-profile.test.ts`](../../tools/repo-checks/test/github-profile.test.ts), which finds every link of the profile README reaching a file or a heading of the public repository; the [README](../../README.md)'s opening; and GitHub's [Customizing your organization's profile](https://docs.github.com/en/organizations/collaborating-with-groups-in-organizations/customizing-your-organizations-profile).
 
 ## The switch and what follows
 

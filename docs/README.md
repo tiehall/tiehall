@@ -30,6 +30,7 @@ These pages are for the people who use a Tiehall install, the admins and operato
 - [The client-matrix log](client-matrix/log.md): the record of each run of Tiehall against a real agent client, by hand.
 - [The security review checklist](security/review-checklist.md), with the [record of each review](security/reviews).
 - [Making the repository public](maintainers/going-public.md): the maintainers' checklist, from the allowlist of public paths and the history rewrite to GitHub's settings and the first public release.
+- [What to apply on GitHub](maintainers/github-profile.md): the drafts of the repository's description and topics, its social preview, and the organization's avatar, description and profile README.
 - [The brand's images](assets/brand) and [the film](assets/film), which the README shows: the mark, the organization's avatar and the social preview, drawn by `pnpm brand:generate`, and the film with its poster.
 
 ## How Tiehall is built
