@@ -264,6 +264,13 @@ describe("the checklist for making the repository public", () => {
     expect(gp22).toContain("https://github.com/tiehall/tiehall");
     expect(gp22).toMatch(/Read back: `curl -sSI https:\/\/tiehall\.com`/);
     expect(gp22).toContain("`https://tiehall.com/schemas/`");
+    // The maintainer's answer named what the page is and when it goes live, not where it is served: that waits on the
+    // maintainer, as an Open Question of the design.
+    expect(gp22).toContain("the maintainers' choice");
+    expect(gp22).toContain("or from another static host");
+    expect(gp22).toContain('"Where the landing page is served"');
+    const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
+    expect(section(design, "Open Questions") ?? "").toContain("**Where the landing page is served**");
   });
 
   it("reads back every change it makes on GitHub", () => {
