@@ -54,6 +54,7 @@ Then create teams, invite people or let your organization's members sign in, con
 
 ## Documentation
 
+- [The docs' index](docs/README.md): every page of the docs, grouped by who reads it.
 - [Installing and running Tiehall](docs/install.md): the release files, `.env`, TLS, the setup screen, GitHub's modes, backups, restore, upgrades, rollbacks, the commands on the host and the connections an install makes.
 - [Agents and Tiehall](docs/agents.md): the four ways in, the MCP server, the `tiehall` CLI, the Claude Code plugin and request URLs, how agents sign in, and personal access tokens and bot users.
 - [The Claude Code plugin](docs/claude-code-plugin.md): installing it, its skill and its hooks.
