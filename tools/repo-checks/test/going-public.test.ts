@@ -151,6 +151,15 @@ describe("the checklist for making the repository public", () => {
     expect(item("GP-10")).toContain("git remote add origin https://github.com/tiehall/tiehall.git");
   });
 
+  it("leaves the rewritten main alone on GitHub, with no other branch, tag or pull request ref beside it", () => {
+    const gp10 = item("GP-10");
+    // A force push replaces main alone: the current repository's other branches keep the old history.
+    expect(gp10).toContain("git push origin --delete <branch>");
+    const readBack = gp10.split("\n").find((line) => line.startsWith("- Read back: ")) ?? "";
+    expect(readBack).toContain("`git ls-remote https://github.com/tiehall/tiehall.git`");
+    expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
+  });
+
   it("keeps personal data out: the repository's public address only, no mailbox, no local path, no earlier email", () => {
     expect(checklist).toContain("github.com/tiehall/tiehall");
     expect(links(checklist).filter(({ target }) => target.startsWith("mailto:"))).toEqual([]);
