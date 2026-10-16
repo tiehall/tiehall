@@ -146,24 +146,56 @@ describe("the checklist for making the repository public", () => {
     expect(listed.sort()).toEqual(expected.sort());
   });
 
-  it("rewrites a fresh clone, as filter-repo requires, and gives the rewritten clone its remote only to push it", () => {
+  it("rewrites a fresh clone with filter-repo run through uvx, unforced, and gives the rewritten clone its remote only to push it", () => {
     const gp7 = item("GP-7");
-    const rewrite = gp7.indexOf("git filter-repo");
+    // filter-repo runs through uvx, so that nothing is installed system-wide (design.md, D38 (4)).
+    const rewrite = gp7.indexOf(FILTER_REPO);
     expect(rewrite).toBeGreaterThan(-1);
+    expect(gp7).not.toMatch(/(?<!-)\bgit filter-repo\b/);
+    expect(gp7).toContain(`\`${FILTER_REPO} --version\``);
     // filter-repo refuses a clone whose origin is gone unless forced, which turns off its other checks too, and
     // removes origin itself after the rewrite.
     expect(gp7.slice(0, rewrite)).not.toMatch(/\bremote (?:remove|rm) origin\b/);
-    expect(gp7).not.toMatch(/git filter-repo [^\n`]*--force/);
+    expect(gp7).not.toMatch(/git-filter-repo [^\n`]*--force/);
+    expect(gp7).toContain("--force");
     expect(item("GP-10")).toContain("git remote add origin https://github.com/tiehall/tiehall.git");
   });
 
-  it("leaves the rewritten main alone on GitHub, with no other branch, tag or pull request ref beside it", () => {
+  it("drops the film's encode from the rewritten history and reads its blob back as gone (design.md, D38 (2))", () => {
+    expect(item("GP-7")).toContain("`docs/assets/film/every-teams-line.mp4`");
+    const gp9 = item("GP-9");
+    expect(gp9).toContain("rev-list --all --objects");
+    expect(gp9).toMatch(/`git -C \.\.\/tiehall-public cat-file -e [0-9a-f]{40}`/);
+  });
+
+  it("pushes the rewritten main alone to a new repository, the current one renamed and kept private as the archive (design.md, D38 (3))", () => {
     const gp10 = item("GP-10");
-    // A force push replaces main alone: the current repository's other branches keep the old history.
-    expect(gp10).toContain("git push origin --delete <branch>");
+    const rename = gp10.indexOf("gh repo rename tiehall-private --repo tiehall/tiehall");
+    const create = gp10.indexOf("gh repo create tiehall/tiehall --private");
+    const push = gp10.indexOf("git push origin main");
+    expect(rename).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(rename);
+    expect(push).toBeGreaterThan(create);
+    // Nothing of the old repository is pushed over or deleted: a force push would leave its pull request refs and branches.
+    expect(gp10).not.toMatch(/git push [^\n`]*(?:--force|-f\b|--delete)/);
+    expect(gp10).not.toMatch(/GitHub Support to remove/);
+    expect(gp10).toContain("gh repo archive tiehall/tiehall-private");
     const readBack = gp10.split("\n").find((line) => line.startsWith("- Read back: ")) ?? "";
     expect(readBack).toContain("`git ls-remote https://github.com/tiehall/tiehall.git`");
     expect(readBack).toContain("nothing else: no other branch, no tag and no pull request ref");
+  });
+
+  it("reads back every change it makes on GitHub", () => {
+    // A step that changes GitHub, its repositories or its organization says how to read the result back.
+    const changes = /`gh repo (?:create|rename|archive|edit)\b|`gh api -X (?:PUT|PATCH|POST|DELETE)\b/;
+    const unread = items()
+      .filter(({ text }) => changes.test(text) && !/\bread (?:it )?back\b/i.test(text))
+      .map(({ id }) => id);
+    expect(unread).toEqual([]);
+    for (const step of ["gh repo rename", "gh repo create", "gh repo archive"]) {
+      const bullet = item("GP-10").split("\n").find((line) => line.startsWith("- ") && line.includes(step)) ?? "";
+      expect(bullet, step).toMatch(/Read back: `gh api repos\/tiehall\//);
+    }
   });
 
   it("keeps the film's encode out of the repository, and puts GitHub's player for it in the README right after the switch, read back signed out (task 30.11)", () => {
@@ -290,6 +322,37 @@ describe("the checklist's scans for personal data", () => {
     expect(anyHome).not.toContain("docs/links.md");
   });
 
+  it("GP-7 backs up, first, every ref of the repository on GitHub, its pull request refs included, and the working clone's own branches", () => {
+    const gp7 = item("GP-7");
+    expect(gp7.indexOf("docs-test=history-backup")).toBeGreaterThan(-1);
+    expect(gp7.indexOf("docs-test=history-backup")).toBeLessThan(gp7.indexOf("docs-test=history-rewrite"));
+    // GitHub's repository: main, a branch beside it and a pull request's ref, which only a mirror fetches.
+    const checkout = repository("checkout", { "README.md": "# App\n" });
+    const github = join(checkout, "..", "github.git");
+    git(checkout, "init", "--quiet", "--bare", "--initial-branch=main", github);
+    git(checkout, "remote", "add", "origin", github);
+    git(checkout, "push", "--quiet", "origin", "main");
+    git(checkout, "checkout", "--quiet", "-b", "deps/base-image");
+    commit(checkout, { "Dockerfile": "FROM node\n" }, "-m", "Update the base image");
+    git(checkout, "push", "--quiet", "origin", "deps/base-image", "deps/base-image:refs/pull/1/head");
+    // A branch of the working clone that was never pushed, such as a spike's.
+    git(checkout, "checkout", "--quiet", "-b", "spike/local", "main");
+    commit(checkout, { "spikes/app.js": "// spike\n" }, "-m", "Spike");
+    git(checkout, "checkout", "--quiet", "main");
+
+    const block = docsCommands(checklist).find(({ id }) => id === "history-backup")?.text ?? "";
+    expect(block).toContain("https://github.com/tiehall/tiehall.git");
+    const run = spawnSync("sh", ["-c", block.replaceAll("https://github.com/tiehall/tiehall.git", github)], { cwd: checkout, encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    const heads = (bundle: string) =>
+      spawnSync("git", ["bundle", "list-heads", join(checkout, "..", bundle)], { cwd: checkout, encoding: "utf8" })
+        .stdout.split("\n")
+        .map((line) => line.split(" ")[1] ?? "")
+        .filter((ref) => ref !== "");
+    expect(heads("tiehall-backup.bundle")).toEqual(expect.arrayContaining(["refs/heads/main", "refs/heads/deps/base-image", "refs/pull/1/head"]));
+    expect(heads("tiehall-working.bundle")).toEqual(expect.arrayContaining(["refs/heads/main", "refs/heads/spike/local"]));
+  });
+
   describe("GP-7, over the rewritten history", () => {
     /**
      * A history whose personal data only a first commit, a file a later
@@ -381,6 +444,9 @@ describe("the checklist's scans for personal data", () => {
 /** The example ids that stand for the spikes' App, account and installation (packages/testing/test/fixtures/github-app-spike/README.md). */
 const EXAMPLE_IDS = new Set(["1000001", "2000001", "3000001"]);
 
+/** filter-repo, as uvx runs it, so that nothing is installed system-wide (design.md, D38 (4)). */
+const FILTER_REPO = "uvx --from git-filter-repo git-filter-repo";
+
 /** The rewrite's files, from the root and from the clone's root alike. */
 const REWRITE = "docs/maintainers/history-rewrite";
 
@@ -431,7 +497,7 @@ describe("the rewrite's command and its files", () => {
   it("removes the paths outside the allowlist and maps every identity to the public author, GitHub's own aside", () => {
     expect(publicAddress).not.toBe("");
     const command = rewriteCommand();
-    expect(command).toMatch(/^git filter-repo --invert-paths --paths-from-file \.\.\/outside\.txt /);
+    expect(command.startsWith(`${FILTER_REPO} --invert-paths --paths-from-file ../outside.txt `)).toBe(true);
     expect(command).toContain(`--mailmap ${REWRITE}/mailmap`);
     // filter-repo runs the body as def email_callback(email): ..., on bytes.
     expect(command).toContain(`--email-callback 'return email if email == b"noreply@github.com" else b"${publicAddress}"'`);
