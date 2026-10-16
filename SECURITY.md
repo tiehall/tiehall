@@ -21,7 +21,7 @@ The maintainers answer in the advisory, work out the impact with you, and fix th
 
 ## Which releases get fixes
 
-Tiehall has no release yet. Until its first release, fixes go to the `main` branch.
+Tiehall's first release, 1.0.0, came out on 2026-10-16; every release is on the [releases page](https://github.com/tiehall/tiehall/releases).
 
 - A security fix comes in a new patch release of the latest release. Earlier releases are not patched: an install gets the fix by upgrading to the latest release, as the [upgrade docs](docs/install.md#upgrade) describe. Releases use semantic versions, and releases can be skipped, because the migrations run in order; the release notes name any release that must not be skipped.
 - The image applies the security updates of its Debian base each time it is built, so each new release also carries the operating system's fixes published by then.

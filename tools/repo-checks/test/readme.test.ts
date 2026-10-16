@@ -148,8 +148,13 @@ describe("the README", () => {
     if (jiraOpen) expect(jira.filter((sentence) => !sentence.includes("not built yet"))).toEqual([]);
   });
 
-  it("says, until the first public release, that there is no release yet (task 30.13)", () => {
-    if (plan.get("30.5") !== true) expect(part("Status").replace(/\s+/g, " ")).toContain("no release yet");
+  it("says, until the first public release, that there is no release yet, and from then on names the release that is out (task 30.13; GP-4)", () => {
+    const status = part("Status").replace(/\s+/g, " ");
+    if (plan.get("30.5") !== true) expect(status).toContain("no release yet");
+    else {
+      expect(status).toMatch(/first release, \[1\.0\.0\]\(https:\/\/github\.com\/tiehall\/tiehall\/releases\/tag\/v1\.0\.0\)/);
+      expect(readme).not.toMatch(/no release yet/i);
+    }
   });
 
   it("links the security policy and the trust docs from its security section, and says that an install sends no telemetry (task 30.13)", () => {

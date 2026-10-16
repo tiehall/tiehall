@@ -161,6 +161,8 @@ function unresolved(page: string, value: string): string | undefined {
   if (/^https?:|^\/\//i.test(value)) {
     if (value === REPOSITORY || value === `${REPOSITORY}#readme`) return undefined;
     if (value === FILM_PLAYER || value === FILM_WATCH) return undefined;
+    // The public repository's releases, and a release's own page by its version tag.
+    if (new RegExp(`^${REPOSITORY}/releases(?:/tag/v\\d+\\.\\d+\\.\\d+)?$`).test(value)) return undefined;
     const anchor = new RegExp(`^${REPOSITORY}#(.+)$`).exec(value)?.[1];
     if (anchor !== undefined) return readmeAnchors.has(anchor) ? undefined : `the README has no heading whose anchor is ${anchor}`;
     const file = new RegExp(`^${REPOSITORY}/(blob|tree)/main/([^#?]+)$`).exec(value);
@@ -695,7 +697,8 @@ describe("the landing page's showcase (the change landing-page-showcase)", () =>
     expect(section).not.toBe("");
     const shown = [...section.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/g)].map(([, inner = ""]) => command(decodeEntities(inner.replace(/<[^>]*>/g, ""))));
     expect(shown).toEqual(blocks.map(command));
-    expect(plain(textOf(index, "install"))).toMatch(/There is no release yet/);
+    expect(plain(textOf(index, "install"))).toMatch(/install the latest release/);
+    expect(plain(textOf(index, "install"))).not.toMatch(/no release yet/);
     expect(references(section).map(({ value }) => value)).toContain(`${REPOSITORY}/blob/main/docs/install.md`);
     // No copy button: one would take a script.
     expect(all.filter(({ name }) => name === "button")).toEqual([]);

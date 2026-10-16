@@ -60,7 +60,7 @@ describe("SECURITY.md", () => {
     expect(links(section(policy, "Reporting a vulnerability") ?? "").map(({ target }) => target)).toEqual([`${repository}/security/advisories/new`]);
 
     const releases = part("Which releases get fixes");
-    expect(releases).toContain("Until its first release, fixes go to the `main` branch.");
+    expect(releases).toContain("Tiehall's first release, 1.0.0, came out on 2026-10-16");
     expect(releases).toContain("A security fix comes in a new patch release of the latest release. Earlier releases are not patched");
 
     expect(part("What happens after a report")).toContain("credits you unless you ask not to be named");
