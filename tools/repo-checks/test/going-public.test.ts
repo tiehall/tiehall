@@ -20,9 +20,10 @@ import { trackedTextFiles } from "../src/tracked-files.ts";
 // every link resolving, every task it names being one of the plan's, every
 // pnpm script one of the repository's, the required checks of the branch
 // protection being the jobs CI runs, and nothing personal in the page. The
-// scans for personal data of GP-2 and GP-7 are `sh` blocks named in their
-// info strings, such as ```sh docs-test=history-personal-data, which the
-// check runs on scratch repositories.
+// scans for personal data of GP-2 and GP-7 and GP-7's read-back of the
+// identities are `sh` blocks named in their info strings, such as ```sh
+// docs-test=history-personal-data, which the check runs on scratch
+// repositories.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const PATH = "docs/maintainers/going-public.md";
@@ -309,6 +310,24 @@ describe("the checklist's scans for personal data", () => {
       expect(found).not.toContain("first commit only");
       expect(found).not.toContain("news/home");
       expect(found).not.toContain("./home/readme");
+    });
+
+    it("reads back, once rewritten, every author and committer of every ref, each once", () => {
+      const gp7 = item("GP-7");
+      const readBack = gp7.split("\n").find((line) => line.startsWith("- Read back the identities")) ?? "";
+      expect(readBack).toContain("the command below");
+      expect(gp7.indexOf("docs-test=history-identities")).toBeGreaterThan(gp7.indexOf("docs-test=history-rewrite"));
+      // A committer that is no commit's author, on a branch that is not checked out, as GitHub commits a merge made on the web.
+      const repo = history();
+      git(repo, "checkout", "--quiet", "-b", "web");
+      commit(repo, { "docs/web.md": "# Web\n" }, "-m", "Web");
+      git(repo, "-c", "user.name=Web Committer", "-c", "user.email=web@example.invalid", "commit", "--quiet", "--amend", "--no-edit");
+      git(repo, "checkout", "--quiet", "main");
+      expect(scan("history-identities", repo, NO_ONE).split("\n").filter((line) => line !== "")).toEqual([
+        "Pat <kq7@example.invalid>",
+        "Public Author <public@example.invalid>",
+        "Web Committer <web@example.invalid>",
+      ]);
     });
 
     it("scans the clone once rewritten, and rewrites what it finds from a fresh clone, messages included", () => {
