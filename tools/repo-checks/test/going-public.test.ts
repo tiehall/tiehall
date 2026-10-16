@@ -325,8 +325,19 @@ describe("the checklist for making the repository public", () => {
     for (const address of ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"]) expect(gp23).toContain(`\`${address}\``);
     for (const address of ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c0:8002::153", "2606:50c0:8003::153"]) expect(gp23).toContain(`\`${address}\``);
     expect(gp23).toMatch(/`www`[^\n]*`CNAME`[^\n]*`tiehall\.github\.io`/);
-    // No other record at the apex or for www, and no wildcard, which GitHub warns lets another account take the domain over.
-    expect(gp23).toMatch(/wildcard/);
+    // Only what conflicts with GitHub Pages leaves the zone: another A, AAAA, ALIAS or ANAME record or a forward at the
+    // apex, any record for www, and any wildcard, which GitHub warns lets another account take a subdomain over. The
+    // zone's NS and SOA records stay, and so do its MX, TXT and CAA records, a mailbox's among them once one exists.
+    const zone = gp23.split("\n").find((line) => line.includes("Turhost's DNS zone")) ?? "";
+    expect(zone).not.toMatch(/\bremove every other record\b/);
+    const keep = zone.indexOf("Keep ");
+    expect(keep, "the step says which records stay").toBeGreaterThan(-1);
+    const [removed, kept] = [zone.slice(0, keep), zone.slice(keep)];
+    for (const type of ["A", "AAAA", "ALIAS", "ANAME"]) expect(removed).toContain(`\`${type}\``);
+    expect(removed).toMatch(/\bforward\b/);
+    expect(removed).toMatch(/any record for `www`/);
+    expect(removed).toMatch(/wildcard record \(`\*`\)/);
+    for (const type of ["NS", "SOA", "MX", "TXT", "CAA"]) expect(kept).toContain(`\`${type}\``);
     // The domain is verified for the organization and for GitHub Pages before any record points at GitHub's servers.
     const records = at("`185.199.108.153`");
     expect(at("`_github-pages-challenge-tiehall.tiehall.com`")).toBeLessThan(records);
