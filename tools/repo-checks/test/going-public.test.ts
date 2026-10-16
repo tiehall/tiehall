@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import { docsCommands, fencedBlocks } from "../src/docs-commands.ts";
 import { headings, linkProblems, links, section } from "../src/markdown.ts";
 import { taskStates } from "../src/plan.ts";
+import { trackedTextFiles } from "../src/tracked-files.ts";
 
 // The checklist for making the repository public (task 30.2; design.md,
 // Decisions this change rests on: D38), docs/maintainers/going-public.md.
@@ -167,9 +168,9 @@ describe("the checklist for making the repository public", () => {
     expect(checklist).not.toMatch(/gmail\.com/i);
     // A home folder's path names its owner; the bare prefixes, as a search names them, do not.
     expect(checklist).not.toMatch(/\/(?:Users|home)\/\w/);
-    // Every address it names is the public identity the history will show, or a placeholder.
+    // Every address it names is the public identity the history will show, or GitHub's own committer of merges made on the web.
     const addresses = [...checklist.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map(([address]) => address);
-    expect([...new Set(addresses)].filter((address) => !address.endsWith("@users.noreply.github.com"))).toEqual([]);
+    expect([...new Set(addresses)].filter((address) => !address.endsWith("@users.noreply.github.com") && address !== "noreply@github.com")).toEqual([]);
   });
 
   it("says what each part is for in its opening, and names the founder steps", () => {
@@ -312,10 +313,149 @@ describe("the checklist's scans for personal data", () => {
 
     it("scans the clone once rewritten, and rewrites what it finds from a fresh clone, messages included", () => {
       const gp7 = item("GP-7");
-      const rewrite = gp7.indexOf("git filter-repo --invert-paths");
+      const rewrite = gp7.indexOf("docs-test=history-rewrite");
       expect(rewrite).toBeGreaterThan(-1);
       expect(gp7.indexOf("docs-test=history-personal-data")).toBeGreaterThan(rewrite);
-      expect(gp7).toContain("--replace-text ../replacements.txt --replace-message ../replacements.txt");
+      const command = rewriteCommand();
+      expect(command).toContain(`--replace-text ${REWRITE}/replace-text.txt`);
+      expect(command).toContain(`--replace-message ${REWRITE}/replace-text.txt`);
     });
+  });
+});
+
+// The rewrite's plan (task 30.9): GP-7 names what the scans of every branch's
+// history found, by commit and path and never by value, and gives the one
+// `git filter-repo` command of task 30.3, whose files are kept in
+// docs/maintainers/history-rewrite/. The mailmap names the public author
+// alone; the maintainer's own address is replaced by --email-callback, which
+// names no address of theirs. Each line of replace-text.txt, which
+// filter-repo reads for --replace-text and --replace-message alike, is a
+// pattern that names no personal value: the check applies the rules, as
+// filter-repo does with Python's re.sub, to made-up fixtures of each finding's
+// form, and to every file of the tree, which they leave as it is.
+
+/** The example ids that stand for the spikes' App, account and installation (packages/testing/test/fixtures/github-app-spike/README.md). */
+const EXAMPLE_IDS = new Set(["1000001", "2000001", "3000001"]);
+
+/** The rewrite's files, from the root and from the clone's root alike. */
+const REWRITE = "docs/maintainers/history-rewrite";
+
+/** The rewrite's command, the block of GP-7 named history-rewrite, as one line. */
+function rewriteCommand(): string {
+  return (docsCommands(item("GP-7")).find(({ id }) => id === "history-rewrite")?.text ?? "").replace(/\\\n\s*/g, " ");
+}
+
+/** One rule of replace-text.txt: a pattern, and its replacement in Python's re.sub form. */
+interface Rule {
+  line: string;
+  pattern: RegExp;
+  replacement: string;
+}
+
+/** The rules of replace-text.txt, as filter-repo reads them: a line is a rule, split at its last ==>. */
+function rules(): Rule[] {
+  const text = readFileSync(join(root, REWRITE, "replace-text.txt"), "utf8");
+  return text
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => {
+      const at = line.lastIndexOf("==>");
+      const [pattern, replacement] = at === -1 ? [line, "***REMOVED***"] : [line.slice(0, at), line.slice(at + 3)];
+      // A literal rule names the very text it removes; only a pattern can name none.
+      expect(pattern.startsWith("regex:"), line).toBe(true);
+      return { line, pattern: new RegExp(pattern.slice("regex:".length), "g"), replacement };
+    });
+}
+
+/** The text with every rule applied in order, a replacement's \1 or \g<1> standing for a group and \n for a newline, as in re.sub. */
+function applyRules(text: string): string {
+  return rules().reduce(
+    (current, { pattern, replacement }) =>
+      current.replace(pattern, (...match: unknown[]) =>
+        replacement.replace(/\\(?:g<(\d+)>|(\d+)|n)/g, (_escape, named?: string, numbered?: string) =>
+          named === undefined && numbered === undefined ? "\n" : String(match[Number(named ?? numbered)] ?? ""),
+        ),
+      ),
+    text,
+  );
+}
+
+describe("the rewrite's command and its files", () => {
+  /** The public author's no-reply address, as GP-7 names it. */
+  const publicAddress = /`[^`<]+<(\d+\+[\w-]+@users\.noreply\.github\.com)>`/.exec(item("GP-7"))?.[1] ?? "";
+
+  it("removes the paths outside the allowlist and maps every identity to the public author, GitHub's own aside", () => {
+    expect(publicAddress).not.toBe("");
+    const command = rewriteCommand();
+    expect(command).toMatch(/^git filter-repo --invert-paths --paths-from-file \.\.\/outside\.txt /);
+    expect(command).toContain(`--mailmap ${REWRITE}/mailmap`);
+    // filter-repo runs the body as def email_callback(email): ..., on bytes.
+    expect(command).toContain(`--email-callback 'return email if email == b"noreply@github.com" else b"${publicAddress}"'`);
+    expect(command).not.toMatch(/--force\b/);
+    for (const [, path] of command.matchAll(/\s(docs\/maintainers\/history-rewrite\/\S+)/g)) expect(existsSync(join(root, path ?? "")), path).toBe(true);
+  });
+
+  it("has a mailmap that names the public author alone, by their no-reply address", () => {
+    const lines = readFileSync(join(root, REWRITE, "mailmap"), "utf8")
+      .split("\n")
+      .map((line) => line.replace(/#.*/, "").trim())
+      .filter((line) => line !== "");
+    const author = /`([^`<]+) <\d+\+[\w-]+@users\.noreply\.github\.com>`/.exec(item("GP-7"))?.[1] ?? "";
+    expect(lines).toEqual([`${author} <${publicAddress}> <${publicAddress}>`]);
+  });
+
+  it("names no personal value in a rule: patterns only, with no address, home folder, user name or identifier", () => {
+    const user = /\+([\w-]+)@/.exec(publicAddress)?.[1] ?? "";
+    expect(user).not.toBe("");
+    for (const { line } of rules()) {
+      expect(line, line).not.toMatch(/@/);
+      expect(line, line).not.toMatch(/\/(?:Users|home)\/\w|-(?:Users|home)-\w/);
+      expect([...line.matchAll(/\d{5,}/g)].map(([number]) => number).filter((number) => !EXAMPLE_IDS.has(number)), line).toEqual([]);
+      expect(line, line).not.toMatch(/Iv1\.|Iv23li/);
+      expect(line.toLowerCase(), line).not.toContain(user.toLowerCase());
+    }
+  });
+
+  it("rewrites the form of each finding in a made-up fixture", () => {
+    // An agent's scratch folder under a home folder, written with dashes (backup.test.ts, task 21.3); built from parts, so that
+    // the rule leaves this file alone.
+    const scratch = ["/private/tmp/claude-501", "-Users-kq7user-Projects-Tiehall", "0f1e2d3c-4b5a-4978-8a9b-0c1d2e3f4a5b", "scratchpad/fix21"].join("/");
+    expect(applyRules(`      writeFileSync(\`${scratch}/restore-x.txt\`, out);\n`)).toBe("      writeFileSync(`/tmp/scratchpad/fix21/restore-x.txt`, out);\n");
+    // The spikes' GitHub App's name and slug, as the fixtures of the GitHub stub held them; built from parts, so that this file holds neither.
+    const name = ["Tiehall", "spike", "localhost"].join(" ");
+    const slug = ["tiehall", "spike", "localhost"].join("-");
+    expect(applyRules(`"name": "${name}",\n"slug": "${slug}",\n"htmlUrl": "https://github.com/apps/${slug}"\n`)).toBe(
+      '"name": "Tiehall example localhost",\n"slug": "tiehall-example-localhost",\n"htmlUrl": "https://github.com/apps/tiehall-example-localhost"\n',
+    );
+    // The App's id, as the setup gate's test stored it beside the stub's slug.
+    expect(applyRules('        id: 1234567,\n        slug: "tiehall-localhost",\n')).toBe('        id: 2000001,\n        slug: "tiehall-localhost",\n');
+    // Text that only looks alike stays.
+    const alike = 'id: 1234567,\nname: "x"\n/private/tmp/claude-501/-Users-kq7user-Projects-app/out.txt Tiehall spikes localhost\n';
+    expect(applyRules(alike)).toBe(alike);
+  });
+
+  it("changes no file of the tree, which holds the rewritten values already", () => {
+    const changed = trackedTextFiles(root)
+      .filter(({ text }) => applyRules(text) !== text)
+      .map(({ path }) => path);
+    expect(changed).toEqual([]);
+  });
+
+  it("names each finding of the scans by its commit and path, and no value", () => {
+    const gp7 = item("GP-7");
+    for (const path of [
+      "tools/image-tests/test/install/backup.test.ts",
+      "packages/commands/test/setup-gate.test.ts",
+      "packages/testing/test/github-stub-contract.test.ts",
+      "spikes/mcp-auth/src/app.js",
+    ]) {
+      expect(gp7, path).toContain(`\`${path}\``);
+    }
+    for (const commit of ["b2898ea4", "2af52a9d", "019680b3", "bbaf7edd", "1d7ee604", "6099409f"]) expect(gp7, commit).toContain(`\`${commit}\``);
+    for (const branch of ["spike/github-app", "spike/m0-claude-hooks", "spike/m0-mcp-auth"]) expect(gp7, branch).toContain(`\`${branch}\``);
+    // No App id, installation id or client id: no number of six or more digits but the public author's user id.
+    const numbers = [...checklist.matchAll(/(?<![\w.])\d{6,}(?![\w.])/g)].map(([number]) => number);
+    expect(numbers.filter((number) => !publicAddress.startsWith(`${number}+`) && !EXAMPLE_IDS.has(number))).toEqual([]);
+    expect(checklist).not.toMatch(/Iv1\.[0-9a-f]|Iv23li/);
   });
 });

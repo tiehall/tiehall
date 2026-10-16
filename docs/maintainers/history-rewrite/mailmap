@@ -1,0 +1,5 @@
+# The public history's one identity, for the rewrite of task 30.3 (docs/maintainers/going-public.md, GP-7).
+# git filter-repo --mailmap reads it as git's mailmap: Proper Name <proper@email> <commit@email>.
+# The command's --email-callback gives every identity but GitHub's own this address, so that no file
+# of the repository names an address of the maintainer's own, and this line gives the address its one name.
+Muhammed Çınaklı <33037014+muhmmdcnkl@users.noreply.github.com> <33037014+muhmmdcnkl@users.noreply.github.com>
