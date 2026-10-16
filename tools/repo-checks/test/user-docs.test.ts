@@ -65,6 +65,8 @@ const TOPICS: Topic[] = [
       "`https://www.cursor.com/agents/mcp/oauth/callback` beside `http://localhost:8787/callback`",
       "a client that registers only `https:` URIs counts as a web application",
       "the install refuses it and names that URI",
+      "an `https:` URI on a host other than localhost and the loopback addresses",
+      "or a redirect URI with a fragment or user information",
     ],
   },
   {

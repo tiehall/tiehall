@@ -429,8 +429,9 @@ describe("a native app's own scheme", () => {
 // redirect URIs, which RFC 8252, section 7.2, lets a native app claim, beside loopback URIs or app's schemes leave a
 // registration that names no type a native client's, while https URIs alone keep the web type. A redirect URI that no
 // client may register is refused in Tiehall's words, which name it, not in the sign-in library's, which name the first
-// URI it does not take for a web client, often a loopback one. PKCE stays required, and the consent screen names every
-// place a sign-in of the client may end.
+// URI it does not take for a web client, often a loopback one. No client may register an https URI on a loopback host,
+// which RFC 8252 keeps to http, nor a redirect URI with a fragment or user information. PKCE stays required, and the
+// consent screen names every place a sign-in of the client may end.
 describe("https redirect URIs beside local ones", () => {
   const HOSTED = "https://www.cursor.com/agents/mcp/oauth/callback";
   const LOOPBACK = "http://localhost:8787/callback";
@@ -498,14 +499,29 @@ describe("https redirect URIs beside local ones", () => {
     }
   });
 
-  it.each([
+  // An https URI on a loopback host, localhost or an address of 127.0.0.0/8 or ::1, however it is written, which RFC
+  // 8252 keeps to http, and any redirect URI with a fragment or user information, are no client's either.
+  const NO_CLIENTS = [
     "ws://agent.vendor.example/callback",
     "mailto:agent@vendor.example",
     "javascript://agent.vendor.example/%0Aalert(1)",
     "http://agent.vendor.example/callback",
     "cursor://anysphere.cursor-mcp/oauth/callback#done",
     "microsoft-edge:https://agent.vendor.example/callback",
-  ])(
+    "https://localhost/callback",
+    "https://localhost./callback",
+    "https://127.0.0.1/callback",
+    "https://127.0.0.2:8443/callback",
+    "https://0x7f000001/callback",
+    "https://[::1]/callback",
+    "https://[::ffff:127.0.0.1]/callback",
+    "https://agent.vendor.example/callback#done",
+    "https://agent@agent.vendor.example/callback",
+    "http://127.0.0.1:8787/callback#done",
+    "http://agent@127.0.0.1:8787/callback",
+  ];
+
+  it.each(NO_CLIENTS)(
     "beside them cannot carry %s: the registration, with no type or as native, gets 400 invalid_redirect_uri, whose description names it in Tiehall's words, and no client",
     async (uri) => {
       const before = await clientCount();
@@ -530,12 +546,33 @@ describe("https redirect URIs beside local ones", () => {
     },
   );
 
-  it("still refuse an https URI on localhost, which no client may register, beside a loopback one as alone", async () => {
-    for (const redirects of [["https://localhost/callback", LOOPBACK], ["https://localhost/callback"]]) {
-      const answer = await registerAsSent({ ...CURSOR_FIRST, redirect_uris: redirects });
-      expect(answer.status, JSON.stringify(redirects)).toBe(400);
-      expect(await answer.json()).toMatchObject({ error: "invalid_redirect_uri" });
-    }
+  it.each(NO_CLIENTS)(
+    "cannot be %s alone, or beside a loopback one only: the registration, with no type or as native, gets 400 invalid_redirect_uri in Tiehall's words, which name it, and no client",
+    async (uri) => {
+      const before = await clientCount();
+      for (const [type, redirects] of [
+        [{}, [uri]],
+        [{}, [uri, LOOPBACK]],
+        [{ application_type: "native" }, [uri]],
+        [{ application_type: "native" }, [uri, LOOPBACK]],
+      ] as const) {
+        const answer = await registerAsSent({ ...CURSOR_FIRST, ...type, redirect_uris: redirects });
+        const label = JSON.stringify([type, redirects]);
+        expect(answer.status, label).toBe(400);
+        const body = (await answer.json()) as { error?: string; error_description?: string; client_id?: string };
+        expect(body.error, label).toBe("invalid_redirect_uri");
+        expect(body.error_description, label).toContain(`; ${uri} is none of these.`);
+        expect(body.client_id).toBeUndefined();
+      }
+      expect(await clientCount()).toBe(before);
+    },
+  );
+
+  it("beside a loopback one may be on a host that only looks local, as a native client's", async () => {
+    const redirects = ["https://localhost.vendor.example/callback", "https://127.0.0.1.vendor.example/callback", LOOPBACK];
+    const answer = await registerAsSent({ ...CURSOR_FIRST, redirect_uris: redirects });
+    expect(answer.status).toBe(201);
+    expect(await answer.json()).toMatchObject({ application_type: "native", redirect_uris: redirects });
   });
 });
 

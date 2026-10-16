@@ -33,11 +33,14 @@ import type { WorkerJob } from "./worker.ts";
 // design.md, Decisions this change rests on: D55 (15), as the maintainer
 // answered on 2026-10-16). A registration of https URIs alone keeps the web
 // type. A registration that names no type, or names native, with a redirect
-// URI that is none of an https URI, an http URI on localhost, 127.0.0.1 or
-// [::1], and a URI with an app's own scheme, is refused with 400
-// invalid_redirect_uri in Tiehall's words, which name that URI, before the
-// sign-in library sees it: the library would name the first URI it does not
-// take for a web client, often a loopback one a native client may use.
+// URI that holds a fragment or user information, or is none of an https URI
+// on a host other than a loopback one, localhost or an address of
+// 127.0.0.0/8 or ::1, which RFC 8252 keeps to http, an http URI on
+// localhost, 127.0.0.1 or [::1], and a URI with an app's own scheme, is
+// refused with 400 invalid_redirect_uri in Tiehall's words, which name that
+// URI, before the sign-in library sees it: the library would name the first
+// URI it does not take for a web client, often a loopback one a native client
+// may use, and, for a fragment, only the URI's place in the list.
 //
 // A native app's own scheme needs no dot (decisions-from-groups-15-28:
 // design.md, Decisions this change rests on: D55 (15), as the maintainer
@@ -187,15 +190,21 @@ export function isAppSchemeRedirect(uri: unknown): boolean {
   return url.host === "" ? afterScheme.startsWith("/") && !afterScheme.startsWith("//") : url.pathname.startsWith("/");
 }
 
-/** Whether a redirect URI is an http URI on the client's own computer: localhost, 127.0.0.1 or [::1]. */
-function isLoopbackRedirect(uri: unknown): boolean {
-  if (typeof uri !== "string") return false;
+/** A redirect URI, parsed, when it is one and holds no fragment and no user information, which no client's redirect URI holds (RFC 6749, 3.1.2). */
+function redirectUrlOf(uri: unknown): URL | undefined {
+  if (typeof uri !== "string" || uri.includes("#")) return undefined;
   try {
     const url = new URL(uri);
-    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    return url.username === "" && url.password === "" ? url : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** Whether a redirect URI is an http URI on the client's own computer: localhost, 127.0.0.1 or [::1]. */
+function isLoopbackRedirect(uri: unknown): boolean {
+  const url = redirectUrlOf(uri);
+  return url?.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
 }
 
 /** Whether a redirect URI is a native client's: on the client's own computer (a loopback address over http) or with a native app's own scheme. */
@@ -204,17 +213,27 @@ function isNativeRedirect(uri: unknown): boolean {
 }
 
 /**
- * Whether a redirect URI is an https URI, which a web client registers and a
- * native one may claim (RFC 8252, 7.2), and which the sign-in library judges
- * itself, for a native client as for a web one.
+ * Whether a URL's host is a loopback one, as the sign-in library judges an
+ * https redirect URI's: localhost, with or without trailing dots, or an
+ * address of 127.0.0.0/8 or ::1, an IPv4 one also as an IPv4-mapped IPv6
+ * address, each as a URL writes it (0x7f000001 is 127.0.0.1).
+ */
+function onLoopbackHost(url: URL): boolean {
+  const host = url.hostname;
+  if (/^localhost\.*$/.test(host)) return true;
+  if (isIP(host) === 4) return host.startsWith("127.");
+  return host === "[::1]" || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(host);
+}
+
+/**
+ * Whether a redirect URI is an https URI a client may register, which a web
+ * client registers and a native one may claim (RFC 8252, 7.2): on a host that
+ * is not a loopback one, which RFC 8252 keeps to http. The sign-in library
+ * takes it as sent, for a native client as for a web one.
  */
 function isHttpsRedirect(uri: unknown): boolean {
-  if (typeof uri !== "string") return false;
-  try {
-    return new URL(uri).protocol === "https:";
-  } catch {
-    return false;
-  }
+  const url = redirectUrlOf(uri);
+  return url?.protocol === "https:" && !onLoopbackHost(url);
 }
 
 /**
@@ -340,7 +359,7 @@ export function clientRegistrations(options: ClientRegistrationOptions): BetterA
             if (atFault !== undefined) {
               throw new APIError("BAD_REQUEST", {
                 error: "invalid_redirect_uri",
-                error_description: `Every redirect URI a client registers is an https URI, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with no fragment and no user information, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`,
+                error_description: `Every redirect URI a client registers holds no fragment and no user information, and is an https URI on a host other than localhost and the loopback addresses of 127.0.0.0/8 and ::1, an http URI on localhost, 127.0.0.1 or [::1], or a URI with an app's own scheme: written in printable ASCII with no space, with a scheme that is none of ${[...EXCLUDED_SCHEMES].join(", ")}, and with a path, or // with a host and a path, after its scheme; ${typeof atFault === "string" ? atFault : "one of its redirect URIs"} is none of these.`,
               });
             }
             // A registration with a native redirect URI is a native client's, whether or not it says so, and whether or
