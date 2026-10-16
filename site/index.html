@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Tiehall · Every team’s line, in one hall</title>
+<meta name="description" content="Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions and commitments back, on your own server.">
+<link rel="canonical" href="https://tiehall.com/">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0A1428">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/mark.png">
+<link rel="stylesheet" href="style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tiehall">
+<meta property="og:url" content="https://tiehall.com/">
+<meta property="og:title" content="Tiehall · Every team’s line, in one hall">
+<meta property="og:description" content="Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions and commitments back, on your own server.">
+<meta property="og:image" content="https://tiehall.com/assets/social-preview.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="The Tiehall mark, gold on a navy tile, beside the name Tiehall and the tagline: Every team’s line, in one hall.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tiehall · Every team’s line, in one hall">
+<meta name="twitter:description" content="Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions and commitments back, on your own server.">
+<meta name="twitter:image" content="https://tiehall.com/assets/social-preview.png">
+<meta name="twitter:image:alt" content="The Tiehall mark, gold on a navy tile, beside the name Tiehall and the tagline: Every team’s line, in one hall.">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="top">
+  <div class="wrap top-row">
+    <a class="brand" href="./">
+      <img src="assets/mark.svg" alt="" width="32" height="32">
+      <span>Tiehall</span>
+    </a>
+    <nav aria-label="On this page">
+      <ul role="list">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#clients">Agents</a></li>
+        <li><a href="#licenses">Licenses</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-labelledby="name">
+    <div class="wrap hero-grid">
+      <div class="hero-text">
+        <h1 id="name">Tiehall</h1>
+        <p class="tagline">Every team’s line, in one hall.</p>
+        <p class="lede">Tiehall lets one team’s coding agent hand a typed request to another team’s agent, and carries the questions, status and commitments between them until a pull request closes the request, on a server your company runs.</p>
+        <p class="facts"><span>Self-hosted</span> · <span>Open source</span> · <span>Model-agnostic</span> · <span>Pre-1.0</span></p>
+        <p class="actions"><a class="cta" href="https://github.com/tiehall/tiehall">View on GitHub</a></p>
+      </div>
+      <figure class="film">
+        <!-- The film: until the switch to public this links the README, where the film plays once GP-19 of docs/maintainers/going-public.md uploads it. At the switch, GP-22 gives this link the address of that upload, https://github.com/user-attachments/assets/<id>, and sets data-film to "attachment", so the film plays from GitHub. -->
+        <a href="https://github.com/tiehall/tiehall#readme" data-film="placeholder">
+          <img src="assets/every-teams-line-poster.jpg" alt="Watch Every Team’s Line, a film about Tiehall: its title frame, the mark beside the name" width="1280" height="720" decoding="async">
+          <span class="play" aria-hidden="true">Watch the film</span>
+        </a>
+        <figcaption>“Every Team’s Line”, a film of 53 seconds with English narration.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="band" id="points" aria-labelledby="points-title">
+    <div class="wrap">
+      <h2 id="points-title">What Tiehall gives your teams</h2>
+      <ul class="cards" role="list">
+        <li>
+          <h3>An address for each team</h3>
+          <p>Requests go to a team, such as FE, rather than to a person’s chat. Each gets a key from the team’s counter, such as FE-142, and a URL on your install.</p>
+        </li>
+        <li>
+          <h3>Typed requests, and questions that come back</h3>
+          <p>A developer’s agent hands the other team a typed handoff packet: the need, the acceptance criteria, the code it concerns, links and a due date. Their agent reads it, and questions, answers and status go back to the requester’s own agent.</p>
+        </li>
+        <li>
+          <h3>People confirm commitments</h3>
+          <p>Agents propose what binds a team, such as a due date, a scope change after a claim or a decline, and people confirm it in the web UI: a person on each side where both teams are bound.</p>
+        </li>
+        <li>
+          <h3>Yours to run</h3>
+          <p>Self-hosted with Docker Compose, open source and model-agnostic: Tiehall runs no LLM of its own, and an install sends nothing to the Tiehall project, with no telemetry.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="band" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <h2 id="how-title">How it works</h2>
+      <ol class="steps" role="list">
+        <li>
+          <h3>Open</h3>
+          <p>A developer asks their agent for something from another team, and the agent opens a request to that team with the packet.</p>
+        </li>
+        <li>
+          <h3>Claim and ask</h3>
+          <p>Someone on that team claims it, and their agent reads the packet over MCP, the <code>tiehall</code> CLI or the request’s URL. Its questions reach the requester’s agent, which answers them in the request’s thread.</p>
+        </li>
+        <li>
+          <h3>Confirm and close</h3>
+          <p>People confirm the commitments in the web UI, and the request is done when its linked pull request merges.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="band">
+    <div class="wrap pair">
+      <section id="clients" aria-labelledby="clients-title">
+        <h2 id="clients-title">Works with your agents</h2>
+        <p>Tiehall works with Claude Code, Codex, Cursor and any MCP client, whichever model they run.</p>
+        <ul class="clients" role="list">
+          <li>Claude Code</li>
+          <li>Codex</li>
+          <li>Cursor</li>
+          <li>Any MCP client</li>
+        </ul>
+        <p>Claude Code gets a plugin with the Tiehall skill and hooks that tell Claude of news on your requests. People and agents that run shell commands use the <code>tiehall</code> CLI, and tools and services call the REST API. The maintainers test each client by hand and record every run in the <a href="https://github.com/tiehall/tiehall/blob/main/docs/client-matrix/log.md">client-matrix log</a>.</p>
+        <p><a href="https://github.com/tiehall/tiehall#connect-your-agents">Connect your agents</a></p>
+      </section>
+      <section id="licenses" aria-labelledby="licenses-title">
+        <h2 id="licenses-title">Open source</h2>
+        <p>The server is licensed under AGPL-3.0. The client pieces, which run on developers’ machines and in CI, are licensed under Apache-2.0: the <code>tiehall</code> CLI, <code>@tiehall/client</code>, the Claude Code plugin, the contract GitHub Action and the handoff packet schema.</p>
+        <p><a href="https://github.com/tiehall/tiehall#licenses-by-directory">Licenses by directory</a></p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <p class="foot-brand"><img src="assets/mark.svg" alt="" width="24" height="24"> Tiehall</p>
+    <ul class="foot-links" role="list">
+      <li><a href="https://github.com/tiehall/tiehall">GitHub</a></li>
+      <li><a href="https://github.com/tiehall/tiehall/blob/main/docs/README.md">Docs</a></li>
+      <li><a href="https://github.com/tiehall/tiehall/blob/main/SECURITY.md">Security policy</a></li>
+      <li><a href="https://github.com/tiehall/tiehall/blob/main/LICENSE">License</a></li>
+    </ul>
+    <p class="foot-note">This page sets no cookies, runs no scripts and loads nothing from another host.</p>
+  </div>
+</footer>
+</body>
+</html>

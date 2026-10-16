@@ -76,6 +76,7 @@ const STEPS = [
   "first public release",
   "Actions minutes",
   "landing page",
+  "DNS records",
 ];
 
 describe("the checklist for making the repository public", () => {
@@ -298,6 +299,55 @@ describe("the checklist for making the repository public", () => {
     expect(gp22).toContain('"Where the landing page is served"');
     const design = readFileSync(join(root, "openspec/changes/add-tiehall-oss-v1/design.md"), "utf8");
     expect(section(design, "Open Questions") ?? "").toContain("**Where the landing page is served**");
+  });
+
+  it("builds the landing page in site/ with its workflow, and gives the film's link the attachment's address at the switch (task 30.15)", () => {
+    const gp22 = item("GP-22");
+    const targets = links(gp22).map(({ target }) => target);
+    expect(targets).toEqual(expect.arrayContaining(["../../site", "../../.github/workflows/pages.yml", "../../tools/repo-checks/test/site.test.ts"]));
+    expect(gp22).toMatch(/task 30\.15/);
+    expect(gp22).toContain("GP-23");
+    // The page links the README's film until the switch; then its link takes the address GP-19's upload gives.
+    expect(gp22).toContain("`data-film`");
+    expect(gp22).toContain("`https://github.com/user-attachments/assets/<id>`");
+    expect(gp22.indexOf("`data-film`")).toBeGreaterThan(gp22.indexOf("At the switch"));
+  });
+
+  it("points tiehall.com at GitHub Pages through Turhost's DNS, once the domain is verified, and enforces HTTPS once GitHub has its certificate (task 30.15)", () => {
+    const gp23 = item("GP-23");
+    const at = (text: string) => {
+      const found = gp23.indexOf(text);
+      expect(found, text).toBeGreaterThan(-1);
+      return found;
+    };
+    expect(gp23).toContain("Turhost");
+    // GitHub Pages' addresses for an apex domain, and the organization's default domain for www.
+    for (const address of ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"]) expect(gp23).toContain(`\`${address}\``);
+    for (const address of ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c0:8002::153", "2606:50c0:8003::153"]) expect(gp23).toContain(`\`${address}\``);
+    expect(gp23).toMatch(/`www`[^\n]*`CNAME`[^\n]*`tiehall\.github\.io`/);
+    // No other record at the apex or for www, and no wildcard, which GitHub warns lets another account take the domain over.
+    expect(gp23).toMatch(/wildcard/);
+    // The domain is verified for the organization and for GitHub Pages before any record points at GitHub's servers.
+    const records = at("`185.199.108.153`");
+    expect(at("`_github-pages-challenge-tiehall.tiehall.com`")).toBeLessThan(records);
+    expect(at("Verified and approved domains")).toBeLessThan(records);
+    expect(gp23).toMatch(/Read back: `gh api graphql[^`]*organization\(login: \\?"tiehall\\?"\)[^`]*domains[^`]*isVerified/);
+    for (const name of ["A tiehall.com", "AAAA tiehall.com", "CNAME www.tiehall.com"]) expect(gp23).toContain(`\`dig +short ${name}\``);
+    // GitHub Pages publishes the workflow's upload, under the custom domain, which the API sets: a workflow's upload has no CNAME file GitHub reads.
+    const pages = at("gh api -X POST repos/tiehall/tiehall/pages -f build_type=workflow");
+    const domain = at("gh api -X PUT repos/tiehall/tiehall/pages -f cname=tiehall.com");
+    expect(pages).toBeLessThan(domain);
+    expect(gp23).toContain("`site/CNAME`");
+    // HTTPS is enforced only once GitHub's DNS check has passed and its certificate exists.
+    const health = at("gh api repos/tiehall/tiehall/pages/health");
+    const https = at("gh api -X PUT repos/tiehall/tiehall/pages -F https_enforced=true");
+    expect(health).toBeLessThan(https);
+    expect(domain).toBeLessThan(https);
+    expect(at("gh workflow run pages.yml --repo tiehall/tiehall")).toBeGreaterThan(domain);
+    expect(gp23).toMatch(/Read back: `gh api repos\/tiehall\/tiehall\/pages --jq '[^']*https_enforced[^']*'`/);
+    expect(gp23).toContain("`curl -sSI http://tiehall.com`");
+    expect(item("GP-17")).toContain("GP-23");
+    expect(item("GP-22")).toContain("GP-23");
   });
 
   it("reads back every change it makes on GitHub", () => {

@@ -173,7 +173,7 @@ describe("the workflow check", () => {
     expect(run.stdout).toContain("ci.yml#test");
   });
 
-  it("leaves packages: write to the build job, the release's writes to its push and release jobs, the OIDC token to the packet's publish job, and no write permission to any other job", () => {
+  it("leaves packages: write to the build job, the release's writes to its push and release jobs, the OIDC token to the packet's publish job, GitHub Pages' two to the landing page's deploy job, and no write permission to any other job", () => {
     const writes = jobPermissions(repoRoot).flatMap(({ job, permissions }) =>
       Object.entries((permissions ?? {}) as Record<string, string>)
         .filter(([, level]) => level === "write")
@@ -183,6 +183,8 @@ describe("the workflow check", () => {
     expect(writes).toEqual([
       "build.yml#build: packages",
       "packet-package.yml#publish: id-token",
+      "pages.yml#deploy: id-token",
+      "pages.yml#deploy: pages",
       "release.yml#push: attestations",
       "release.yml#push: id-token",
       "release.yml#push: packages",

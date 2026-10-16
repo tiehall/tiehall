@@ -7,6 +7,10 @@
     "packet-package.yml#publish": [
       "id-token"
     ],
+    "pages.yml#deploy": [
+      "id-token",
+      "pages"
+    ],
     "release.yml#push": [
       "attestations",
       "id-token",

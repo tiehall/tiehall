@@ -10,6 +10,8 @@
 spikes
 openspec
 docs
+# The landing page for tiehall.com, which GitHub Pages serves.
+site
 # The git-ignored planning folder on the maintainer's machine.
 private
 deploy

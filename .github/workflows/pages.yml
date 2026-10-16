@@ -1,0 +1,62 @@
+name: Pages
+
+# Publishes the landing page at https://tiehall.com, the folder site/, on GitHub Pages (task 30.15; design.md,
+# Decisions this change rests on: D38): plain HTML and CSS with no script and no build step, uploaded as it is. It
+# runs on a push to main that changes site/ or this workflow, and when a maintainer starts it, as GP-23 of
+# docs/maintainers/going-public.md does once GitHub Pages is on for the repository at the switch to public. GitHub
+# Pages publishes a workflow's upload under the custom domain its settings name, which GP-23 sets through the API: it
+# reads no CNAME file from the upload, and site/CNAME only records the domain.
+#
+# GitHub's free plan serves GitHub Pages from a public repository alone, so the jobs run only in the public
+# tiehall/tiehall: in a private repository, such as the archive tiehall/tiehall-private, or in a fork, they are
+# skipped. The build job can only read. The deploy job holds the two permissions GitHub Pages needs to publish, pages
+# and the OIDC token through which it checks the deployment, and nothing else, and it runs only GitHub's own action
+# (self-host-install: Release pipeline integrity; .github/workflow-policy.json).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+# One deployment at a time, and none cancelled halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package the landing page
+    if: github.repository == 'tiehall/tiehall' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The folder as it is: no file of it is built or changed.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/
+
+  deploy:
+    name: Publish the landing page
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # GitHub Pages publishes the build job's upload, and checks the deployment with the job's OIDC token.
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,586 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, posix } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { contrast, parseCss, selectorsOf, type CssRule } from "../../../packages/commands/test/support/css.ts";
+import { headings } from "../src/markdown.ts";
+import { taskStates } from "../src/plan.ts";
+import { isPublic, loadPublicPaths } from "../src/public-paths.ts";
+import { checkWorkflows, loadPolicy } from "../src/workflows.ts";
+
+// The landing page at tiehall.com (task 30.15; design.md, Decisions this
+// change rests on: D38), the folder site/: a simple introduction that sends
+// people to the public repository, which GitHub Pages publishes at the switch
+// to public (GP-22 and GP-23 of docs/maintainers/going-public.md) through
+// .github/workflows/pages.yml. It is plain HTML and CSS: no script of any
+// kind, nothing loaded from another host, no font file and no tracker, so it
+// works without JavaScript and tells its visitors' browsers to run none. The
+// check reads the folder as GitHub Pages serves it: every file it holds is one
+// the allowlist of public paths holds; every link and image of each page
+// resolves, to a file of the folder or to one of the few addresses it may
+// name, the public repository, its files and the README's headings, and the
+// film's attachment once the switch has uploaded it; the CNAME names the
+// domain; the meta tags give search engines and link previews the name, the
+// sentence and the social preview; the brand's images are the brand's own,
+// byte for byte; the content says what the README says; the pages are
+// accessible, with landmarks, alt text and a focus ring; and every color is
+// a token of the web UI's Navy & Gold palette whose text and background
+// contrast at least 4.5:1, computed as the web UI's own contrast test does.
+
+const root = fileURLToPath(new URL("../../../", import.meta.url));
+const SITE = "site";
+const read = (path: string) => (existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : "");
+
+/** The brand's tagline, as the setup screen, the film and the social preview give it (packages/commands/src/brand.ts). */
+const TAGLINE = /^export const TAGLINE = "([^"]+)";$/m.exec(read("packages/commands/src/brand.ts"))?.[1] ?? "";
+
+/** The public repository, where every link of the page that leaves it points. */
+const REPOSITORY = "https://github.com/tiehall/tiehall";
+/** Where the page is served, as its meta tags name it. */
+const ORIGIN = "https://tiehall.com";
+/** The address GitHub gives a file attached to a Markdown page, such as the README's film once GP-19 uploads it. */
+const ATTACHMENT = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36}$/;
+
+/** Every file under a folder of the repository, by its path from the root with forward slashes, sorted. */
+function filesUnder(folder: string): string[] {
+  const absolute = join(root, folder);
+  if (!existsSync(absolute)) return [];
+  return readdirSync(absolute, { recursive: true, encoding: "utf8" })
+    .filter((path) => statSync(join(absolute, path)).isFile())
+    .map((path) => posix.join(folder, path.split("\\").join("/")))
+    .sort();
+}
+
+interface Tag {
+  name: string;
+  attributes: Record<string, string>;
+}
+
+/** The page without its comments, which name the film's attachment as an example and are no part of what it shows. */
+const withoutComments = (html: string) => html.replace(/<!--[\s\S]*?-->/g, "");
+
+/** The start tags of a page, in order, each with its attributes; an attribute without a value has the empty one. */
+function tags(html: string): Tag[] {
+  return [...withoutComments(html).matchAll(/<([a-zA-Z][a-zA-Z0-9-]*)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g)].map(([, name = "", rest = ""]) => ({
+    name: name.toLowerCase(),
+    attributes: Object.fromEntries(
+      [...rest.matchAll(/([^\s=/>"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)].map(([, attribute = "", double, single, bare]) => [
+        attribute.toLowerCase(),
+        decodeEntities(double ?? single ?? bare ?? ""),
+      ]),
+    ),
+  }));
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&rsquo;/g, "’")
+    .replace(/&middot;/g, "·")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+}
+
+/** The text a page shows, inside this element if one is named by its id, with white space made single spaces. */
+function textOf(html: string, id?: string): string {
+  let part = withoutComments(html);
+  if (id !== undefined) {
+    const start = new RegExp(`<([a-z0-9]+)\\b[^>]*\\bid="${id}"[^>]*>`).exec(part);
+    if (start === null) return "";
+    const name = start[1] ?? "";
+    const rest = part.slice(start.index);
+    // The element ends at the closing tag that balances it; the elements a check names by id do not nest in their own kind.
+    const end = rest.indexOf(`</${name}>`);
+    part = end < 0 ? rest : rest.slice(0, end);
+  }
+  return decodeEntities(part.replace(/<head\b[\s\S]*?<\/head>/, "").replace(/<[^>]*>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A text with set type's apostrophe made a typewriter's, so that the README's words and the page's compare. */
+const plain = (text: string) => text.replace(/’/g, "'").replace(/\s+/g, " ").trim();
+
+/** The content of a page's meta tag, by its name or property. */
+function meta(html: string, key: string): string | undefined {
+  return tags(html).find(({ name, attributes }) => name === "meta" && (attributes["name"] === key || attributes["property"] === key))?.attributes["content"];
+}
+
+/** Every address a page names: each link, image, stylesheet and icon, and the addresses its meta tags give. */
+function references(html: string): { tag: string; attribute: string; value: string }[] {
+  const found: { tag: string; attribute: string; value: string }[] = [];
+  for (const { name, attributes } of tags(html)) {
+    for (const attribute of ["href", "src", "srcset", "poster", "action", "data", "formaction", "background"]) {
+      const value = attributes[attribute];
+      if (value !== undefined) found.push({ tag: name, attribute, value });
+    }
+    const content = attributes["content"];
+    if (name === "meta" && content !== undefined && /^(?:https?:)?\/\//.test(content)) found.push({ tag: name, attribute: "content", value: content });
+  }
+  return found;
+}
+
+/** The ids of a page's elements. */
+const idsOf = (html: string) => new Set(tags(html).flatMap(({ attributes }) => (attributes["id"] === undefined ? [] : [attributes["id"]])));
+
+/** The README's one sentence of what Tiehall is: the paragraph under its name. */
+function readmeSentence(): string {
+  const header = read("README.md").split(/^## /m)[0] ?? "";
+  return [...header.matchAll(/<p align="center">\s*([^<]+?)\s*<\/p>/g)].map(([, text = ""]) => plain(text)).find((text) => text.startsWith("Tiehall ")) ?? "";
+}
+
+/** The anchors GitHub gives the README's headings, which a link to the repository's page may name. */
+const readmeAnchors = new Set(headings(read("README.md")).map(({ anchor }) => anchor));
+
+/** The plan's tasks, each done or not. */
+const plan = taskStates(read("openspec/changes/add-tiehall-oss-v1/tasks.md"));
+
+/**
+ * Why an address a page names does not resolve, or undefined when it does: a file of the site, with an id of that
+ * page for a fragment; an id of the page itself; or one of the addresses the page may name outside it, the public
+ * repository's page, with the README itself or one of its headings, a file or folder the public repository holds on
+ * main, the film's attachment, and the page's own address on tiehall.com.
+ */
+function unresolved(page: string, value: string): string | undefined {
+  if (value === "") return "an empty address";
+  if (value.startsWith("#")) return idsOf(read(page)).has(value.slice(1)) ? undefined : `no element of ${page} has the id ${value.slice(1)}`;
+  if (/^https?:|^\/\//i.test(value)) {
+    if (value === REPOSITORY || value === `${REPOSITORY}#readme`) return undefined;
+    if (ATTACHMENT.test(value)) return undefined;
+    const anchor = new RegExp(`^${REPOSITORY}#(.+)$`).exec(value)?.[1];
+    if (anchor !== undefined) return readmeAnchors.has(anchor) ? undefined : `the README has no heading whose anchor is ${anchor}`;
+    const file = new RegExp(`^${REPOSITORY}/(blob|tree)/main/([^#?]+)$`).exec(value);
+    if (file !== null) {
+      const [, kind = "", path = ""] = file;
+      const absolute = join(root, path);
+      if (!existsSync(absolute)) return `the repository holds no ${path}`;
+      if (kind === "blob" && !statSync(absolute).isFile()) return `${path} is no file`;
+      if (kind === "tree" && !statSync(absolute).isDirectory()) return `${path} is no folder`;
+      if (kind === "blob" && !isPublic(path, loadPublicPaths().patterns)) return `the public repository does not hold ${path}`;
+      return undefined;
+    }
+    const own = new RegExp(`^${ORIGIN}(/[^#?]*)$`).exec(value)?.[1];
+    if (own !== undefined) return unresolved(page, own);
+    return `an address outside the site that it may not name: ${value}`;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return `an address of another kind: ${value}`;
+  const [path = "", fragment] = value.split("#", 2);
+  const target = path.startsWith("/") ? posix.join(SITE, path) : posix.join(posix.dirname(page), path);
+  const file = target.endsWith("/") || target === SITE ? posix.join(target, "index.html") : target;
+  if (!file.startsWith(`${SITE}/`)) return `points outside the site: ${value}`;
+  if (!existsSync(join(root, file)) || !statSync(join(root, file)).isFile()) return `the site holds no ${file}`;
+  if (fragment !== undefined && !idsOf(read(file)).has(fragment)) return `no element of ${file} has the id ${fragment}`;
+  return undefined;
+}
+
+const PAGES = ["site/index.html", "site/404.html"];
+const index = read("site/index.html");
+const notFound = read("site/404.html");
+const stylesheet = parseCss(read("site/style.css"));
+
+/** The images of the brand that the site shows, each with the file of the repository it is a copy of. */
+const BRAND_COPIES: Readonly<Record<string, string>> = {
+  "site/assets/mark.svg": "docs/assets/brand/mark.svg",
+  "site/assets/mark.png": "docs/assets/brand/mark.png",
+  "site/assets/social-preview.png": "docs/assets/brand/social-preview.png",
+  "site/assets/every-teams-line-poster.jpg": "docs/assets/film/every-teams-line-poster.jpg",
+};
+
+describe("the landing page's folder", () => {
+  it("holds the two pages, the stylesheet, the CNAME and the brand's images, and nothing else", () => {
+    expect(filesUnder(SITE)).toEqual(["site/404.html", "site/CNAME", ...Object.keys(BRAND_COPIES).sort(), "site/index.html", "site/style.css"].sort());
+  });
+
+  it("holds only files the allowlist of public paths holds, and the allowlist takes no script or other kind of file there", () => {
+    const { patterns } = loadPublicPaths();
+    expect(filesUnder(SITE).filter((path) => !isPublic(path, patterns))).toEqual([]);
+    for (const path of ["site/app.js", "site/assets/app.js", "site/assets/tracker.mjs", "site/notes.md", "site/drafts/index.html", "site/schemas/packet/v1.json"]) {
+      expect(isPublic(path, patterns), path).toBe(false);
+    }
+  });
+
+  it("names the domain in its CNAME, one line", () => {
+    expect(read("site/CNAME")).toBe("tiehall.com\n");
+  });
+
+  it("shows the brand's own images, byte for byte, so they never drift from what the mark's source draws", () => {
+    for (const [copy, source] of Object.entries(BRAND_COPIES)) {
+      expect(existsSync(join(root, copy)), copy).toBe(true);
+      expect(readFileSync(join(root, copy)).equals(readFileSync(join(root, source))), copy).toBe(true);
+    }
+  });
+
+  it("serves nothing under /schemas/, which the published packet schemas keep (D26)", () => {
+    expect(filesUnder(SITE).filter((path) => path.startsWith("site/schemas/"))).toEqual([]);
+    for (const page of PAGES) expect(references(read(page)).filter(({ value }) => /(^|\/)schemas\//.test(value)), page).toEqual([]);
+  });
+});
+
+describe("the landing page's pages", () => {
+  it.each(PAGES)("%s runs no script and loads nothing from another host", (page) => {
+    const html = read(page);
+    expect(html).not.toBe("");
+    const all = tags(html);
+    expect(all.filter(({ name }) => ["script", "iframe", "object", "embed", "form", "base", "noscript"].includes(name)).map(({ name }) => name)).toEqual([]);
+    expect(all.flatMap(({ name, attributes }) => Object.keys(attributes).filter((attribute) => attribute.startsWith("on")).map((attribute) => `${name} ${attribute}`))).toEqual([]);
+    expect(references(html).filter(({ value }) => /^\s*(?:javascript|data|vbscript):/i.test(value))).toEqual([]);
+    // What a browser loads with the page, its stylesheet, icons and images, is the site's own.
+    const loaded = all.flatMap(({ name, attributes }) => {
+      if (name === "link" && attributes["rel"] !== "canonical") return [attributes["href"] ?? ""];
+      if (["img", "source", "video", "audio", "track", "input"].includes(name)) return [attributes["src"] ?? "", attributes["srcset"] ?? "", attributes["poster"] ?? ""];
+      return [];
+    });
+    expect(loaded.filter((value) => value !== "" && /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value))).toEqual([]);
+    expect(all.filter(({ name, attributes }) => name === "link" && attributes["rel"] === "stylesheet").map(({ attributes }) => attributes["href"])).toHaveLength(1);
+    // The browser runs no script and loads nothing from another host, whatever the page holds.
+    const policy = all.find(({ name, attributes }) => name === "meta" && attributes["http-equiv"]?.toLowerCase() === "content-security-policy")?.attributes["content"] ?? "";
+    const directives = Object.fromEntries(policy.split(";").map((part) => part.trim().split(/\s+/)).filter(([name]) => name !== undefined && name !== "").map(([name = "", ...values]) => [name, values]));
+    expect(directives["default-src"]).toEqual(["'none'"]);
+    expect(directives["script-src"] ?? ["'none'"]).toEqual(["'none'"]);
+    for (const directive of ["style-src", "img-src"]) expect(directives[directive], directive).toEqual(["'self'"]);
+    expect(directives["base-uri"]).toEqual(["'none'"]);
+    expect(directives["form-action"]).toEqual(["'none'"]);
+  });
+
+  it("has a stylesheet that loads nothing: no import, no font face and no address", () => {
+    expect(read("site/style.css")).not.toBe("");
+    expect(stylesheet.statements).toEqual([]);
+    expect(stylesheet.rules.filter(({ selector }) => selector.startsWith("@font-face"))).toEqual([]);
+    expect(read("site/style.css").replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/url\(/i);
+  });
+
+  it.each(PAGES)("%s has links and images that all resolve, to the site's own files or to the public repository", (page) => {
+    const problems = references(read(page)).flatMap(({ tag, attribute, value }) => {
+      const problem = unresolved(page, value);
+      return problem === undefined ? [] : [`<${tag} ${attribute}="${value}">: ${problem}`];
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it("names its own files by addresses from the site's root on the 404 page, which GitHub Pages serves at any depth", () => {
+    const local = references(notFound).filter(({ value }) => !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(value));
+    expect(local.length).toBeGreaterThan(0);
+    expect(local.filter(({ value }) => !value.startsWith("/"))).toEqual([]);
+  });
+
+  it.each(PAGES)("%s names no email address and no tracker", (page) => {
+    const html = read(page);
+    expect(html).not.toMatch(/mailto:/i);
+    expect(withoutComments(html)).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    expect(html).not.toMatch(/google-analytics|googletagmanager|plausible|matomo|segment\.|hotjar|gtag\(|_paq/i);
+  });
+});
+
+describe("the landing page's meta tags", () => {
+  it("name the page's language, its characters first, and a viewport for phones", () => {
+    expect(tags(index).find(({ name }) => name === "html")?.attributes["lang"]).toBe("en");
+    const head = tags(index.slice(0, index.indexOf("</head>")));
+    expect(head.find(({ name }) => name === "meta")?.attributes["charset"]?.toLowerCase()).toBe("utf-8");
+    expect(meta(index, "viewport")).toBe("width=device-width, initial-scale=1");
+  });
+
+  it("give the name, a description within 160 characters and the page's address", () => {
+    const title = /<title>([^<]+)<\/title>/.exec(index)?.[1] ?? "";
+    expect(decodeEntities(title)).toMatch(/^Tiehall\b/);
+    const description = meta(index, "description") ?? "";
+    expect(description).toMatch(/^Tiehall /);
+    expect(description.length).toBeLessThanOrEqual(160);
+    expect(tags(index).find(({ name, attributes }) => name === "link" && attributes["rel"] === "canonical")?.attributes["href"]).toBe(`${ORIGIN}/`);
+  });
+
+  it("give link previews the name, the description and the social preview, as Open Graph and Twitter's card", () => {
+    const title = decodeEntities(/<title>([^<]+)<\/title>/.exec(index)?.[1] ?? "");
+    const description = meta(index, "description");
+    expect(meta(index, "og:type")).toBe("website");
+    expect(meta(index, "og:site_name")).toBe("Tiehall");
+    expect(meta(index, "og:url")).toBe(`${ORIGIN}/`);
+    expect(meta(index, "og:title")).toBe(title);
+    expect(meta(index, "og:description")).toBe(description);
+    expect(meta(index, "og:image")).toBe(`${ORIGIN}/assets/social-preview.png`);
+    expect(meta(index, "og:image:type")).toBe("image/png");
+    expect([meta(index, "og:image:width"), meta(index, "og:image:height")]).toEqual(["1280", "640"]);
+    expect(meta(index, "og:image:alt")).toMatch(/\S/);
+    expect(meta(index, "twitter:card")).toBe("summary_large_image");
+    expect(meta(index, "twitter:title")).toBe(title);
+    expect(meta(index, "twitter:description")).toBe(description);
+    expect(meta(index, "twitter:image")).toBe(`${ORIGIN}/assets/social-preview.png`);
+    expect(meta(index, "twitter:image:alt")).toBe(meta(index, "og:image:alt"));
+  });
+
+  it.each(PAGES)("%s takes its icon from the brand's mark and its color from the navy ground", (page) => {
+    const html = read(page);
+    const link = (rel: string) => tags(html).find(({ name, attributes }) => name === "link" && attributes["rel"] === rel)?.attributes;
+    expect(link("icon")).toEqual(expect.objectContaining({ type: "image/svg+xml" }));
+    expect(link("icon")?.["href"]).toMatch(/^\/?assets\/mark\.svg$/);
+    expect(link("apple-touch-icon")?.["href"]).toMatch(/^\/?assets\/mark\.png$/);
+    expect(meta(html, "theme-color")).toBe("#0A1428");
+    expect(meta(html, "color-scheme")).toBe("dark");
+  });
+
+  it("keep the 404 page out of search engines", () => {
+    expect(meta(notFound, "robots")).toBe("noindex");
+    expect(decodeEntities(/<title>([^<]+)<\/title>/.exec(notFound)?.[1] ?? "")).toMatch(/Tiehall/);
+  });
+});
+
+describe("the landing page's content", () => {
+  it("names Tiehall in its one heading of the first level, with the tagline and the README's own sentence", () => {
+    expect(tags(index).filter(({ name }) => name === "h1")).toHaveLength(1);
+    expect(/<h1\b[^>]*>([\s\S]*?)<\/h1>/.exec(index)?.[1]?.replace(/<[^>]*>/g, "").trim()).toBe("Tiehall");
+    expect(readmeSentence()).not.toBe("");
+    expect(plain(textOf(index))).toContain(readmeSentence());
+    expect(textOf(index)).toContain(TAGLINE);
+  });
+
+  it("has one call to action, View on GitHub, to the public repository", () => {
+    const actions = [...withoutComments(index).matchAll(/<a\b([^>]*\bclass="[^"]*\bcta\b[^"]*"[^>]*)>([\s\S]*?)<\/a>/g)];
+    expect(actions).toHaveLength(1);
+    const [action] = actions;
+    expect(/\bhref="([^"]+)"/.exec(action?.[1] ?? "")?.[1]).toBe(REPOSITORY);
+    expect((action?.[2] ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()).toBe("View on GitHub");
+  });
+
+  it("makes four points: an address for each team, typed requests with questions going back, people confirming commitments, and an install that is the company's own", () => {
+    const points = textOf(index, "points");
+    expect(withoutComments(index).match(/<li\b/g)?.length).toBeGreaterThan(0);
+    const items = /<[a-z]+\b[^>]*\bid="points"[^>]*>([\s\S]*?)<\/section>/.exec(withoutComments(index))?.[1]?.match(/<li\b/g) ?? [];
+    expect(items).toHaveLength(4);
+    for (const words of [/\baddress\b/, /\btyped\b/, /\bquestions\b/, /\bconfirm/, /\bself-hosted\b/i, /\bopen source\b/i, /\bmodel-agnostic\b/i, /\bno telemetry\b/i]) {
+      expect(points).toMatch(words);
+    }
+  });
+
+  it("says how it works in three steps", () => {
+    const how = /<[a-z]+\b[^>]*\bid="how"[^>]*>([\s\S]*?)<\/section>/.exec(withoutComments(index))?.[1] ?? "";
+    expect(how.match(/<ol\b/g)).toHaveLength(1);
+    expect(how.match(/<li\b/g)).toHaveLength(3);
+  });
+
+  it("names the clients it works with: Claude Code, Codex, Cursor and any MCP client", () => {
+    const clients = textOf(index, "clients");
+    for (const client of ["Claude Code", "Codex", "Cursor", "any MCP client"]) expect(clients).toContain(client);
+  });
+
+  it("names the licenses: the server under AGPL-3.0, the client pieces under Apache-2.0, and links the README's map", () => {
+    const licenses = textOf(index, "licenses");
+    for (const words of ["AGPL-3.0", "Apache-2.0", "tiehall", "@tiehall/client", "Claude Code plugin", "contract", "packet schema"]) {
+      expect(licenses).toContain(words);
+    }
+    expect(references(index).map(({ value }) => value)).toContain(`${REPOSITORY}#licenses-by-directory`);
+  });
+
+  it("ends with a footer that links the repository and the security policy", () => {
+    for (const page of PAGES) {
+      const footer = /<footer\b[\s\S]*?<\/footer>/.exec(withoutComments(read(page)))?.[0] ?? "";
+      const targets = references(footer).map(({ value }) => value);
+      expect(targets, page).toEqual(expect.arrayContaining([REPOSITORY, `${REPOSITORY}/blob/main/SECURITY.md`]));
+    }
+  });
+
+  it("shows the film's poster, linked to the README's film until the switch and to the film's attachment from then on (task 30.5)", () => {
+    const film = tags(index).find(({ name, attributes }) => name === "a" && attributes["data-film"] !== undefined)?.attributes ?? {};
+    expect(["placeholder", "attachment"]).toContain(film["data-film"]);
+    if (film["data-film"] === "placeholder") expect(film["href"]).toBe(`${REPOSITORY}#readme`);
+    else expect(film["href"]).toMatch(ATTACHMENT);
+    if (plan.get("30.5") === true) expect(film["data-film"]).toBe("attachment");
+    // The placeholder says, where the page's source shows it, what replaces it and when.
+    if (film["data-film"] === "placeholder") expect(index).toMatch(/<!--[^>]*GP-22[^>]*https:\/\/github\.com\/user-attachments\/assets\/<id>[^>]*-->/);
+    const poster = tags(index).find(({ name, attributes }) => name === "img" && attributes["src"] === "assets/every-teams-line-poster.jpg")?.attributes;
+    expect(poster?.["alt"]).toMatch(/\S/);
+  });
+
+  it("claims no Jira mirror while the plan has not built it, and no address under the install's own host", () => {
+    const jiraOpen = [...plan].some(([task, done]) => task.startsWith("25.") && !done);
+    if (jiraOpen) expect(textOf(index)).not.toMatch(/\bJira\b/);
+    expect(index).not.toContain("localhost");
+  });
+});
+
+describe("the landing page's accessibility", () => {
+  it.each(PAGES)("%s has a header, one main and a footer, and a link that skips to the main content first", (page) => {
+    const html = withoutComments(read(page));
+    const all = tags(html);
+    expect(all.filter(({ name }) => name === "main")).toHaveLength(1);
+    expect(all.find(({ name }) => name === "main")?.attributes["id"]).toBe("main");
+    expect(all.filter(({ name }) => name === "header").length).toBeGreaterThan(0);
+    expect(all.filter(({ name }) => name === "footer")).toHaveLength(1);
+    expect(all.find(({ name }) => name === "a")?.attributes["href"]).toBe("#main");
+  });
+
+  it.each(PAGES)("%s gives every image an alt text and every link a name", (page) => {
+    const html = withoutComments(read(page));
+    expect(tags(html).filter(({ name, attributes }) => name === "img" && attributes["alt"] === undefined)).toEqual([]);
+    const nameless = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].filter(([, attributes = "", content = ""]) => {
+      const alts = [...content.matchAll(/\balt="([^"]*)"/g)].map(([, alt = ""]) => alt).join("");
+      return content.replace(/<[^>]*>/g, "").trim() === "" && alts.trim() === "" && !/\baria-label="[^"]+"/.test(attributes);
+    });
+    expect(nameless.map(([link]) => link)).toEqual([]);
+  });
+
+  it.each(PAGES)("%s has headings that skip no level, and labels each section by its heading", (page) => {
+    const html = withoutComments(read(page));
+    const levels = [...html.matchAll(/<h([1-6])\b/g)].map(([, level = ""]) => Number(level));
+    expect(levels[0]).toBe(1);
+    expect(levels.filter((level, at) => at > 0 && level > (levels[at - 1] ?? 0) + 1)).toEqual([]);
+    const ids = idsOf(html);
+    const sections = tags(html).filter(({ name }) => name === "section");
+    for (const { attributes } of sections) expect(ids.has(attributes["aria-labelledby"] ?? ""), JSON.stringify(attributes)).toBe(true);
+  });
+});
+
+/** The custom properties of the rules with this selector, outside any at-rule or inside the one given. */
+function tokensOf(rules: CssRule[], selector: string, context: string[] = []): Record<string, string> {
+  return Object.fromEntries(
+    rules
+      .filter((rule) => rule.selector === selector && JSON.stringify(rule.context) === JSON.stringify(context))
+      .flatMap(({ declarations }) => declarations.filter(({ property }) => property.startsWith("--")).map(({ property, value }) => [property, value])),
+  );
+}
+
+const site = tokensOf(stylesheet.rules, ":root");
+const webUi = parseCss(read("packages/commands/assets/tiehall.css")).rules;
+/** The web UI's dark theme, its light tokens with the dark ones over them, and its type, which no theme changes. */
+const webUiDark = { ...tokensOf(webUi, ":root"), ...tokensOf(webUi, ":root", ["@media (prefers-color-scheme: dark)"]) };
+/** The colors the page may take: the web UI's dark theme, and the live hall's own for the tokens only the hall has, such as its glows. */
+const palette = { ...tokensOf(webUi, ".hall"), ...webUiDark };
+/** A color as the stylesheet writes one. */
+const COLOR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i;
+
+/** A value that names a token, followed through the tokens it names in turn, as a color, or the value itself. */
+function resolve(value: string): string {
+  const name = /^var\((--[a-z0-9-]+)\)$/.exec(value)?.[1];
+  const next = name === undefined ? undefined : site[name];
+  return next === undefined ? value : resolve(next).toUpperCase();
+}
+
+describe("the landing page's colors", () => {
+  it("are the web UI's Navy & Gold tokens of its dark theme, with its system font stack", () => {
+    expect(site["--ground"]).toBe("#0A1428");
+    expect(site["--ink"]).toBe("#E9EDF5");
+    expect(site["--button"]).toBe("#E3B341");
+    expect(site["--font-sans"]).toBe(webUiDark["--font-sans"]);
+    const colors = Object.entries(site).filter(([, value]) => value.startsWith("#"));
+    expect(colors.map(([token]) => token)).toEqual(expect.arrayContaining(["--ground", "--surface", "--border", "--ink", "--ink-2", "--line", "--focus", "--button", "--button-ink"]));
+    expect(colors.filter(([token, value]) => palette[token] !== value).map(([token, value]) => `${token}: ${value} where the web UI has ${palette[token] ?? "no such token"}`)).toEqual([]);
+  });
+
+  it("are tokens wherever the stylesheet sets one, never a color written into a rule", () => {
+    const written = stylesheet.rules.flatMap((rule) =>
+      rule.declarations.filter(({ property, value }) => !property.startsWith("--") && COLOR.test(value)).map(({ property, value }) => `${rule.selector} { ${property}: ${value} }`),
+    );
+    expect(written).toEqual([]);
+    // A token is a color of its own, #RRGGBB or with its alpha, or holds none, as a length or the font stack does.
+    expect(Object.entries(site).filter(([, value]) => !/^#[0-9A-F]{6}(?:[0-9A-F]{2})?$/.test(value) && COLOR.test(value)).map(([token]) => token)).toEqual([]);
+  });
+
+  it("contrast at least 4.5:1 for text and 3:1 for the focus ring, on every background the page uses", () => {
+    for (const text of ["--ink", "--ink-2", "--line", "--line-hover"]) {
+      for (const background of ["--ground", "--surface"]) {
+        expect(contrast(resolve(`var(${text})`), resolve(`var(${background})`)), `${text} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    for (const background of ["--button", "--button-hover"]) {
+      expect(contrast(resolve("var(--button-ink)"), resolve(`var(${background})`)), `--button-ink on ${background}`).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const background of ["--ground", "--surface"]) {
+      expect(contrast(resolve("var(--focus)"), resolve(`var(${background})`)), `--focus on ${background}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("contrast at least 4.5:1 in every rule that sets both a background and a text color", () => {
+    const checked: string[] = [];
+    for (const rule of stylesheet.rules) {
+      const background = rule.declarations.find(({ property }) => property === "background" || property === "background-color")?.value;
+      const text = rule.declarations.find(({ property }) => property === "color")?.value;
+      if (background === undefined || text === undefined || !background.startsWith("var(")) continue;
+      const [back, fore] = [resolve(background), resolve(text)];
+      expect(back, `${rule.selector} { background: ${background} }`).toMatch(/^#[0-9A-F]{6}$/);
+      expect(fore, `${rule.selector} { color: ${text} }`).toMatch(/^#[0-9A-F]{6}$/);
+      expect(contrast(fore, back), `${rule.selector} { color: ${text}; background: ${background} }`).toBeGreaterThanOrEqual(4.5);
+      checked.push(rule.selector);
+    }
+    expect(checked.length).toBeGreaterThan(2);
+  });
+
+  it("draws a focus ring in the focus color on whatever the keyboard reaches, and takes no outline away", () => {
+    const focus = stylesheet.rules.find((rule) => selectorsOf(rule).includes(":focus-visible"));
+    expect(focus?.declarations).toContainEqual(expect.objectContaining({ property: "outline", value: "2px solid var(--focus)" }));
+    const removed = stylesheet.rules.flatMap((rule) =>
+      rule.declarations.filter(({ property, value }) => property === "outline" && /^(?:none|0)$/.test(value)).map(() => rule.selector),
+    );
+    expect(removed).toEqual([]);
+  });
+
+  it("sets the page's text in the system's fonts and fits phones from 360 pixels wide", () => {
+    const body = stylesheet.rules.find((rule) => rule.context.length === 0 && selectorsOf(rule).includes("body"));
+    expect(body?.declarations).toContainEqual(expect.objectContaining({ property: "font-family", value: "var(--font-sans)" }));
+    expect(body?.declarations).toContainEqual(expect.objectContaining({ property: "background", value: "var(--ground)" }));
+    const images = stylesheet.rules.find((rule) => rule.context.length === 0 && selectorsOf(rule).includes("img"));
+    expect(images?.declarations).toEqual(expect.arrayContaining([expect.objectContaining({ property: "max-width", value: "100%" }), expect.objectContaining({ property: "height", value: "auto" })]));
+    // Outside a media query for wider screens, nothing is set wider than a 360-pixel screen less its two 16-pixel gutters.
+    const wide = stylesheet.rules
+      .filter(({ context }) => !context.some((at) => /min-width/.test(at)))
+      .flatMap((rule) =>
+        rule.declarations
+          .filter(({ property }) => ["width", "min-width", "flex-basis"].includes(property))
+          .filter(({ value }) => [...value.matchAll(/(\d+(?:\.\d+)?)px/g)].some(([, pixels = "0"]) => Number(pixels) > 328))
+          .map(({ property, value }) => `${rule.selector} { ${property}: ${value} }`),
+      );
+    expect(wide).toEqual([]);
+  });
+
+  it("stops every transition for people who ask for reduced motion", () => {
+    const moves = stylesheet.rules.some((rule) => rule.declarations.some(({ property }) => property.startsWith("transition") || property.startsWith("animation")));
+    if (moves) expect(stylesheet.rules.some(({ context }) => context.some((at) => /prefers-reduced-motion:\s*reduce/.test(at)))).toBe(true);
+  });
+});
+
+describe("the workflow that publishes the landing page", () => {
+  interface Step {
+    uses?: string;
+    with?: Record<string, unknown>;
+  }
+  interface Job {
+    if?: string;
+    needs?: string | string[];
+    permissions?: Record<string, string>;
+    environment?: { name?: string };
+    steps?: Step[];
+  }
+  const file = read(".github/workflows/pages.yml");
+  const workflow = (file === "" ? {} : parse(file)) as { on?: Record<string, unknown>; permissions?: unknown; jobs?: Record<string, Job> };
+  const jobs = workflow.jobs ?? {};
+
+  it("runs on a push to main that changes the site, and when a maintainer starts it, never on a pull request", () => {
+    expect(Object.keys(workflow.on ?? {}).sort()).toEqual(["push", "workflow_dispatch"]);
+    const push = (workflow.on?.["push"] ?? {}) as { branches?: string[]; paths?: string[] };
+    expect(push.branches).toEqual(["main"]);
+    expect(push.paths).toEqual(expect.arrayContaining(["site/**", ".github/workflows/pages.yml"]));
+  });
+
+  it("uploads the folder as it is in a job that can only read, and publishes it in a job that holds only what GitHub Pages needs", () => {
+    expect(workflow.permissions).toEqual({});
+    expect(Object.keys(jobs).sort()).toEqual(["build", "deploy"]);
+    expect(jobs["build"]?.permissions).toEqual({ contents: "read" });
+    const uploads = (jobs["build"]?.steps ?? []).filter(({ uses }) => uses?.startsWith("actions/upload-pages-artifact@") === true);
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]?.with?.["path"]).toBe("site/");
+    expect(jobs["deploy"]?.needs).toBe("build");
+    expect(jobs["deploy"]?.permissions).toEqual({ pages: "write", "id-token": "write" });
+    expect(jobs["deploy"]?.environment?.name).toBe("github-pages");
+    expect((jobs["deploy"]?.steps ?? []).map(({ uses }) => uses?.split("@")[0])).toEqual(["actions/deploy-pages"]);
+    expect(loadPolicy(root).writePermissions["pages.yml#deploy"]).toEqual(["id-token", "pages"]);
+    expect(checkWorkflows(root).filter((violation) => violation.file === "pages.yml")).toEqual([]);
+  });
+
+  it("runs only in the public repository, so the private archive and forks publish nothing", () => {
+    const condition = jobs["build"]?.if ?? "";
+    expect(condition).toContain("github.repository == 'tiehall/tiehall'");
+    expect(condition).toContain("github.event.repository.private == false");
+  });
+});

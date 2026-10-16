@@ -58,6 +58,14 @@
     "The poster of the README's film; the film's encode stays outside the repository and is uploaded at the switch as the README's attachment (task 30.11; D38 (2))": [
       "docs/assets/film/*.jpg"
     ],
+    "The landing page at tiehall.com, which GitHub Pages publishes at the switch: plain HTML and CSS with no script, its CNAME, and copies of the brand's images and the film's poster (task 30.15)": [
+      "site/*.html",
+      "site/*.css",
+      "site/CNAME",
+      "site/assets/*.svg",
+      "site/assets/*.png",
+      "site/assets/*.jpg"
+    ],
     "OpenSpec: its configuration, the archived specs and the changes, except the hosted-service change, which stays out of the public repository (D33, D38)": [
       "openspec/config.yaml",
       "openspec/specs/**",
