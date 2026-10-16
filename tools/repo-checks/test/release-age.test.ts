@@ -301,6 +301,19 @@ describe("the release notes", () => {
     );
   });
 
+  it("list an update a maintainer's answer calls for with the answer, the review and the day it turns 7 days old, beside an advisory's", () => {
+    const notes = notesWith([BETTER_AUTH, UNDICI]);
+    expect(notes).toContain(
+      "This release takes these versions sooner, through a reviewed pull request with the `release-age-exception` label, each the version an advisory names as fixed, " +
+        "for a vulnerability the image scan found, or the version a maintainer's recorded answer calls for, after a supply-chain review of it:",
+    );
+    expect(notes).toContain(
+      "- `better-auth` 1.7.10, which the maintainer's answer of 2026-10-16 calls for (release-age-maintainer-exception, design.md: Decisions this change rests on), " +
+        "after a supply-chain review of 2026-10-16 (release-age-maintainer-exception, design.md: Context), taken before it turns 7 days old on 2026-10-22",
+    );
+    expect(notes).toContain("- `undici` 7.16.1, the version advisory GHSA-2222-3333-4444 names as fixed, taken before it turns 7 days old on 2026-10-19");
+  });
+
   it("say that a release carries no exception when it has none", () => {
     expect(notesWith([])).toContain("This release takes no dependency younger than the 7-day release age.");
   });

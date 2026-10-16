@@ -21,9 +21,12 @@ import type { ContractStep, NoSkipRelease } from "./release-sources.ts";
 // backup taken before the upgrade (self-host-install: Upgrades apply
 // migrations before the app starts; self-host-install: Migrations expand,
 // then contract); they list the exceptions to the 7-day release age the
-// release carries, each version an advisory names as fixed that it takes
-// before it is 7 days old (self-host-install: Release pipeline integrity;
-// decisions-from-groups-15-28, D55 (86)); and the notes end with the
+// release carries, each version it takes before it is 7 days old with the
+// advisory that names it as fixed, or with the maintainer's answer that calls
+// for it and the supply-chain review of it (self-host-install: Release
+// pipeline integrity; decisions-from-groups-15-28, D55 (86);
+// release-age-maintainer-exception: design.md, Technical decisions: T2); and
+// the notes end with the
 // release's API changes, the same entries as the changelog page of an install
 // running it (public-api: The changelog page and the release notes).
 //
@@ -186,12 +189,20 @@ function releaseAgeSection(exceptions: readonly ReleaseAgeException[]): string[]
   if (exceptions.length === 0) return ["## Exceptions to the release age", "This release takes no dependency younger than the 7-day release age."];
   return [
     "## Exceptions to the release age",
-    "Tiehall takes only dependency versions published at least 7 days ago. To fix a vulnerability the image scan found, this release takes " +
-      `these versions sooner, each the one its advisory names as fixed, through a reviewed pull request with the \`${RELEASE_AGE_LABEL}\` label:`,
-    exceptions
-      .map(({ package: name, version, advisory, agedOn }) => `- \`${name}\` ${version}, the version advisory ${advisory} names as fixed, taken before it turns 7 days old on ${agedOn}`)
-      .join("\n"),
+    `Tiehall takes only dependency versions published at least 7 days ago. This release takes these versions sooner, through a reviewed pull request with the \`${RELEASE_AGE_LABEL}\` label, ` +
+      "each the version an advisory names as fixed, for a vulnerability the image scan found, or the version a maintainer's recorded answer calls for, after a supply-chain review of it:",
+    exceptions.map(exceptionLine).join("\n"),
   ];
+}
+
+/** The notes' line for one exception: the version, what it rests on, and the day it turns 7 days old. */
+function exceptionLine({ package: name, version, advisory, answer, review, agedOn }: ReleaseAgeException): string {
+  const taken = `taken before it turns 7 days old on ${agedOn}`;
+  if (answer === undefined || review === undefined) return `- \`${name}\` ${version}, the version advisory ${advisory ?? ""} names as fixed, ${taken}`;
+  return (
+    `- \`${name}\` ${version}, which the maintainer's answer of ${answer.day} calls for (${answer.recordedIn}), ` +
+    `after a supply-chain review of ${review.day} (${review.recordedIn}), ${taken}`
+  );
 }
 
 /** The marketplace and the plugin it lists, as the repository at this root holds them; it throws when the marketplace check fails. */
