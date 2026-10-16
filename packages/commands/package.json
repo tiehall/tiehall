@@ -27,9 +27,9 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p assets/tsconfig.json"
   },
   "dependencies": {
-    "@better-auth/cimd": "1.7.5",
-    "@better-auth/mcp": "1.7.5",
-    "@better-auth/oauth-provider": "1.7.5",
+    "@better-auth/cimd": "1.7.10",
+    "@better-auth/mcp": "1.7.10",
+    "@better-auth/oauth-provider": "1.7.10",
     "@modelcontextprotocol/server": "2.1.0",
     "@octokit/auth-app": "8.3.1",
     "@octokit/core": "7.0.8",
@@ -37,7 +37,7 @@
     "@tiehall/core": "workspace:*",
     "@tiehall/db": "workspace:*",
     "@tiehall/packet": "workspace:*",
-    "better-auth": "1.7.5",
+    "better-auth": "1.7.10",
     "drizzle-orm": "catalog:",
     "jose": "6.2.12",
     "nodemailer": "10.0.10",

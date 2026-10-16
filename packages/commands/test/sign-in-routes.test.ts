@@ -74,6 +74,23 @@ describe("the route inventory", () => {
     ]);
     for (const route of Object.values(SIGN_IN_ROUTES)) expect(route.why.length).toBeGreaterThan(20);
   });
+
+  it("blocks every route that manages an agent client, such as the key rotation the library's 1.7.10 adds, for the same reason", () => {
+    const clients = SIGN_IN_ROUTES["POST /oauth2/create-client"];
+    expect(clients?.kind).toBe("blocked");
+    for (const route of [
+      "GET /oauth2/get-client",
+      "GET /oauth2/get-clients",
+      "POST /oauth2/update-client",
+      "POST /oauth2/delete-client",
+      "POST /oauth2/client/rotate-secret",
+      "POST /oauth2/client/rotate-keys",
+      "POST /admin/oauth2/create-client",
+      "PATCH /admin/oauth2/update-client",
+    ]) {
+      expect(SIGN_IN_ROUTES[route], route).toEqual(clients);
+    }
+  });
 });
 
 // The sign-in library turns its origin and CSRF checks off by itself when NODE_ENV is test or TEST is set, as Vitest

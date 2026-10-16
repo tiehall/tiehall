@@ -123,6 +123,7 @@ export const SIGN_IN_ROUTES: Readonly<Record<string, SignInRouteClass>> = {
   "POST /oauth2/update-client": { kind: "blocked", why: CLIENTS },
   "POST /oauth2/delete-client": { kind: "blocked", why: CLIENTS },
   "POST /oauth2/client/rotate-secret": { kind: "blocked", why: CLIENTS },
+  "POST /oauth2/client/rotate-keys": { kind: "blocked", why: CLIENTS },
   "POST /admin/oauth2/create-client": { kind: "blocked", why: CLIENTS },
   "PATCH /admin/oauth2/update-client": { kind: "blocked", why: CLIENTS },
   "GET /admin/oauth2/resources": { kind: "blocked", why: RESOURCES },

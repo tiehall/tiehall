@@ -1,4 +1,203 @@
 {
   "$comment": "The reviewed exceptions to the 7-day release age that pnpm-workspace.yaml makes (self-host-install: Release pipeline integrity; decisions-from-groups-15-28, D55 (86); release-age-maintainer-exception). A reviewed pull request with the release-age-exception label may take, before it is 7 days old, exactly the version an advisory names as fixed, when the image scan reports a fixable HIGH or CRITICAL finding in Node's binary or in an npm package, or exactly the version of an npm package that a maintainer's recorded answer calls for, once a supply-chain review of it comes out clean. It adds \"<package>@<version>\" to minimumReleaseAgeExclude in pnpm-workspace.yaml and records the exception here, with the package, the version, the label and the day the version turns 7 days old (agedOn), and with the advisory, or, in its place, the answer (its day and recordedIn) and the review (its day, recordedIn, compared, provenance, scripts and dependencies); after agedOn, pnpm check:workflows fails until the exclusion and its record are removed. The list holds exactly the exceptions in force, and the release notes list them. CONTRIBUTING.md says how.",
-  "exceptions": []
+  "exceptions": [
+    {
+      "package": "better-auth",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of better-auth 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-Paf0X8cHKQc8jCgM3vl4AoxRicWdNf0zw8Aggn1q6aNSWCDDxSZCb6rkXa/O9cPc8idjVPK0rV/eHPHAbs07ZA==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions: its @better-auth/* packages at 1.7.10, better-call 1.4.2, which the same review covered and which is past its 7 days, and @better-auth/utils 0.5.0, which the lockfile already holds; no other package comes with the update"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/cimd",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/cimd 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-WKx/NwLAqXTdMTmKTqTtVN/o3iOuGqZ88NwQq0UovF1A2z2mFfIEaPj/vx3Ole6npQQ94+uN7CmOm+h83DWjXQ==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/core",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/core 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-c5vxtnk7UxWe/iF/X5sKSgmPcN5n6biuwJBs2dMkceMwvMWBHLosue6h/vmvKns9SYKbkBNWsurFe7yIbv13dQ==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/drizzle-adapter",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/drizzle-adapter 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-Uc/Eh9cnvorIWA6J97Hv8zjR8sCVUP6G7M3xHJGTD9qJXC69zoY4ULmNGA73AmGJB1q+VEYs2cRMtJ6fR6HP6g==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/kysely-adapter",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/kysely-adapter 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-ZWWc6h5lgcwQMTcqMLNWw+jTEMFfrqJHD+VamiCUdaAxZzVAkjLZzVA2r0vZ5w7xnTY9vWS7wuNVqAKNLRTlYQ==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/mcp",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/mcp 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-r6yq0CM1LDnvkIaoZ4kBUr+wjy4ZQjapjUd9tv3sb1avxXcHTljS2oTBg22GtjJss6JPZo6QPrewf3at9YVbaQ==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/memory-adapter",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/memory-adapter 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-3Di7y8BK5I2pCdpRaJ2ggkVliO/Swr6a/J+y9RFdwkbxhEMU1o9WD9IwoG3LFH8dvFF3kVo+GilsZsVNlYD+sw==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/mongo-adapter",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/mongo-adapter 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-7z48PlXtlSKGvdOXfVmbjZE1vRmYyOQqHiPbeLpw+NvAPSTI9N4r7OO47u2MebA3q25e3GoGEwk5BAEE07u+PQ==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/oauth-provider",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/oauth-provider 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-4amjFIuLYiUxlUzvvRagiyLPUz977OTMfS74A1IWW0WFu0PC4x7+daWnTXcLYywrf09ulBjTUJEzVGS2jmc4jA==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/prisma-adapter",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/prisma-adapter 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-hNlhn0Kcq/O76SehvqznFsjqfEMdM2m2ctazU/BLv+jT8+hGvvxCInXZi6x86/xpAyDTgU7t7KsK50r6mdNR1g==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    },
+    {
+      "package": "@better-auth/telemetry",
+      "version": "1.7.10",
+      "answer": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Decisions this change rests on"
+      },
+      "review": {
+        "day": "2026-10-16",
+        "recordedIn": "release-age-maintainer-exception, design.md: Context; first recorded in decisions-from-groups-15-28's design.md in commit 9101ae97",
+        "compared": "every published file of @better-auth/telemetry 1.7.5 against 1.7.10: no install script, no new dependency, no eval, new Function or child_process, no network call that 1.7.5 does not make, and no minified or obfuscated code",
+        "provenance": "the tarball's SHA-512, sha512-1OamUtbGRaYHB0tRjKK3Jv6hzI6mZMv3pujkg8k7tr3idQuToMoVXsWAD9oFbUTmOLeix58n+grzsl7r0fR0Sw==, is the registry's and the lockfile's, and npm audit signatures verifies its signature and its provenance, which names the release.yml workflow of github.com/better-auth/better-auth; checked again on 2026-10-16 before the update",
+        "scripts": "no install script: no preinstall, install, postinstall or prepare",
+        "dependencies": "the packages 1.7.5 depends on, at the update's versions; no package comes with it that the update does not list"
+      },
+      "label": "release-age-exception",
+      "agedOn": "2026-10-22"
+    }
+  ]
 }
