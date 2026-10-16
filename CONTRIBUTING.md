@@ -28,6 +28,7 @@ pnpm test
 pnpm lint:deps
 pnpm lint:migrations
 pnpm check:licenses
+pnpm check:public-paths
 pnpm check:model-sdks
 pnpm check:openapi
 pnpm check:mcp-tools
@@ -40,6 +41,8 @@ pnpm check:confirmations
 pnpm check:security-events
 pnpm check:error-model
 ```
+
+`pnpm check:public-paths` fails on a tracked file outside [`tools/repo-checks/public-paths.json`](tools/repo-checks/public-paths.json), the allowlist of the paths the repository holds, and on a `.gitignore` that no longer ignores `private/`. A file in a folder the allowlist already holds whole, such as `packages/` or `openspec/changes/`, needs nothing; a new file at the root or a new folder needs a pattern there, which is reviewed like any change that makes more of the repository public.
 
 Some files are generated, committed, and compared by CI with what the code generates: the OpenAPI document `openapi/v1.json`, the MCP tool snapshot `mcp/tools.json`, the packet schema `packages/packet/schema/v1-beta.json` with the packet's types `packages/packet/src/types.ts`, and the generated part of `@tiehall/client`. When a change touches an operation, a tool or the packet, regenerate them and commit them with it:
 

@@ -21,6 +21,7 @@
     "test:install": "pnpm --filter @tiehall/image-tests test:install",
     "check:renovate": "node tools/repo-checks/src/check-renovate.ts",
     "check:licenses": "node tools/repo-checks/src/check-licenses.ts",
+    "check:public-paths": "node tools/repo-checks/src/check-public-paths.ts",
     "lint:migrations": "node packages/db/src/check-migrations.ts",
     "assets:digests": "node packages/commands/src/write-asset-digests.ts",
     "icons:generate": "node packages/commands/src/write-icons.ts && node packages/commands/src/write-asset-digests.ts",

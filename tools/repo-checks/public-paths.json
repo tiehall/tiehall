@@ -1,0 +1,66 @@
+{
+  "$comment": "The paths the public repository holds (design.md, Decisions this change rests on: D38; task 30.1). Every tracked file must match a pattern below, and the repository's own .gitignore must ignore each folder of \"ignored\": private/, where the planning material that stays out of the public repository lives on a maintainer's machine (task 3.4). The patterns are grouped by why the repository holds them. A pattern is a path from the root in which * stands for any characters but a slash and **, a whole segment, for any number of folders, so folder/** holds a folder and everything in it; a pattern that starts with ! takes back what an earlier one allowed, and the last pattern that matches a path decides. tools/repo-checks/src/check-public-paths.ts enforces the list in CI, and, given --history, over every path a commit of any ref holds, as the history rewrite of task 30.3 is checked. A new pattern makes more of the repository public, so it needs review like a license change.",
+  "ignored": ["private/"],
+  "paths": {
+    "The repository's own files at its root: the guides, the licenses, the image and the workspace's configuration": [
+      ".dependency-cruiser.cjs",
+      ".dockerignore",
+      ".gitignore",
+      ".gitleaksignore",
+      ".node-version",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "CONTRIBUTING.md",
+      "Dockerfile",
+      "LICENSE",
+      "README.md",
+      "SECURITY.md",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "renovate.json",
+      "tsconfig.base.json",
+      "tsconfig.json",
+      "vitest.config.ts"
+    ],
+    "The source: the server, the client pieces, the repository's checks and the container tests, each folder whole": [
+      "actions/**",
+      "apps/**",
+      "packages/**",
+      "tools/**"
+    ],
+    "CI's workflows, their permission policy and the repository's other GitHub files": [
+      ".github/**"
+    ],
+    "The public contracts the catalog generates, and the releases that must not be skipped": [
+      "openapi/*.json",
+      "mcp/*.json",
+      "release/*.json"
+    ],
+    "The release's files for an install; deploy/secrets/ holds a local run's secrets and is git-ignored, and the hosted plan's Compose overlay stays out (D33)": [
+      "deploy/.env.example",
+      "deploy/Caddyfile",
+      "deploy/backup.sh",
+      "deploy/compose.yaml",
+      "deploy/restore.sh"
+    ],
+    "The public docs; every page at the top of docs/ is linked from the README, and the planning hand-off kept there before task 3.4 moved it to private/ stays out": [
+      "docs/*.md",
+      "!docs/HANDOFF.md",
+      "docs/client-matrix/**",
+      "docs/maintainers/**",
+      "docs/security/**"
+    ],
+    "OpenSpec: its configuration, the archived specs and the changes, except the hosted-service change, which stays out of the public repository (D33, D38)": [
+      "openspec/config.yaml",
+      "openspec/specs/**",
+      "openspec/changes/**",
+      "!openspec/changes/add-tiehall-beta/**"
+    ],
+    "The Claude Code plugin's marketplace, and the OpenSpec commands and skills for agents that work on the repository; a person's own Claude Code settings stay out": [
+      ".claude-plugin/marketplace.json",
+      ".claude/commands/opsx/*.md",
+      ".claude/skills/openspec-*/SKILL.md"
+    ]
+  }
+}
