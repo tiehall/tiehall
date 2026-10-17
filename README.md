@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Self-hosted · Open source · Model-agnostic · Pre-1.0, no release yet
+  Self-hosted · Open source · Model-agnostic · 1.0.0
 </p>
 
 https://github.com/user-attachments/assets/a56bd0fc-e1ac-457a-8f28-ad5f05d057a5
@@ -69,7 +69,7 @@ Contract changes take the same path: when a pull request breaks an OpenAPI descr
 
 ## Quickstart
 
-There is no release yet, so these commands, which name a release's files and image, wait for the first one. You need a host with Docker and the Docker Compose plugin, a GitHub organization where you can create and install a GitHub App, and a host name for the install served over HTTPS; for a trial on one machine, `http://localhost:3000` works without TLS, in a browser profile that visits no other local server, since the browser shares a trial's cookies with every server on `localhost`, as [Start the install](docs/install.md#start-the-install) explains. The [install docs](docs/install.md) cover each step in full, with TLS, backups, upgrades and the connections an install makes.
+These commands install the latest release, such as the first, [1.0.0](https://github.com/tiehall/tiehall/releases/tag/v1.0.0). You need a host with Docker and the Docker Compose plugin, a GitHub organization where you can create and install a GitHub App, and a host name for the install served over HTTPS; for a trial on one machine, `http://localhost:3000` works without TLS, in a browser profile that visits no other local server, since the browser shares a trial's cookies with every server on `localhost`, as [Start the install](docs/install.md#start-the-install) explains. The [install docs](docs/install.md) cover each step in full, with TLS, backups, upgrades and the connections an install makes.
 
 1. In a new folder, download the release's files, where `<release>` is the address of the release's files that the release notes give:
 
@@ -160,7 +160,7 @@ CI holds the line: each package's license field must match this map, each client
 
 ## Status
 
-Tiehall is pre-1.0, in development toward an open-source, self-hosted v1. There is no release yet: no image and no npm package has been published, so the quickstart waits for the first release. The API and the packet schema are labeled beta.
+Tiehall's first release, [1.0.0](https://github.com/tiehall/tiehall/releases/tag/v1.0.0), came out on 2026-10-16. Its image, `ghcr.io/tiehall/tiehall:1.0.0`, carries signed build-provenance and SBOM attestations, which `gh attestation verify` checks against this repository as its release notes show. The `tiehall` CLI and the client packages are not on npm yet, and the packet schema is not published yet. The API and the packet schema are labeled beta.
 
 What is tested:
 
@@ -168,7 +168,7 @@ What is tested:
 - It builds the image and runs it the way an operator does: a fresh install, an end-to-end run, an upgrade with a rollback, a backup and restore, the polling mode, and an egress test that fails on any connection the docs do not list.
 - The client matrix, by hand, as [Connect your agents](#connect-your-agents) shows.
 
-Still to come: the Jira Cloud mirror, which is not built yet; GitHub Copilot and the second MCP protocol version in the client matrix; and the first release, whose image carries signed attestations, once this repository is public.
+Still to come: the Jira Cloud mirror, which is not built yet; GitHub Copilot and the second MCP protocol version in the client matrix; and the `tiehall` CLI and the client packages on npm.
 
 ## Contributing
 

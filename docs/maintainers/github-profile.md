@@ -78,7 +78,7 @@ Tiehall lets one team's coding agent hand a typed request to another team's agen
 - [Connect your agents](https://github.com/tiehall/tiehall#connect-your-agents): Claude Code, Codex, Cursor and other MCP clients, the CLI or the REST API.
 - [Watch the film](https://github.com/tiehall/tiehall), "Every Team's Line", 53 seconds, at the top of the repository's README.
 
-Tiehall is pre-1.0, with no release yet. The server is licensed under AGPL-3.0 and the client pieces under Apache-2.0. Report a vulnerability privately, as [SECURITY.md](https://github.com/tiehall/tiehall/blob/main/SECURITY.md) describes, never in a public issue.
+Tiehall's first release, 1.0.0, is out. The server is licensed under AGPL-3.0 and the client pieces under Apache-2.0. Report a vulnerability privately, as [SECURITY.md](https://github.com/tiehall/tiehall/blob/main/SECURITY.md) describes, never in a public issue.
 ```
 
 Read back with `gh api orgs/tiehall --jq '{name, description, blog, email}'` and `gh api repos/tiehall/.github/contents/profile/README.md --jq .path`.
