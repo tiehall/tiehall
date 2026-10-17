@@ -428,8 +428,8 @@ importers:
         specifier: 6.2.12
         version: 6.2.12
       nodemailer:
-        specifier: 10.0.10
-        version: 10.0.10
+        specifier: 10.1.0
+        version: 10.1.0
       pg-boss:
         specifier: 12.33.2
         version: 12.33.2
@@ -3199,8 +3199,8 @@ packages:
       sass:
         optional: true
 
-  nodemailer@10.0.10:
-    resolution: {integrity: sha512-He9XskOFms62SyAKkLu8CcGcYHAo+BSHSsORI8s4PJH8qZgZY4L4lDfvyN0twvmbpyG+eGrxpyBlskj9d9rJ8A==}
+  nodemailer@10.1.0:
+    resolution: {integrity: sha512-fXW8AulB25aOTuwfRYV6lqHyfz2VM4rr4SGXH03mE7x5znEUpzL5mu6anARUpZN7744Ziwkmr4AxSLPJsBQspg==}
     engines: {node: '>=20.0.0'}
 
   non-error@0.1.0:
@@ -6635,7 +6635,7 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
-  nodemailer@10.0.10: {}
+  nodemailer@10.1.0: {}
 
   non-error@0.1.0: {}
 
