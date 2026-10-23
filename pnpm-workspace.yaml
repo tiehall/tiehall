@@ -11,24 +11,6 @@ packages:
 # Resolve only versions published at least 7 days ago (10080 minutes), the same
 # release age Renovate waits for (self-host-install: Release pipeline integrity).
 minimumReleaseAge: 10080
-# Reviewed exceptions, each one exact version, recorded with what it rests on in
-# tools/repo-checks/release-age-exceptions.json and removed with its record once
-# the version is 7 days old (checked by `pnpm check:workflows`; CONTRIBUTING.md).
-# Better Auth 1.7.10 and its @better-auth/* packages, which the maintainer's
-# answer of 2026-10-16 calls for (release-age-maintainer-exception), turn 7 days
-# old on 2026-10-22; the better-call 1.4.2 they take is past its 7 days already.
-minimumReleaseAgeExclude:
-  - "better-auth@1.7.10"
-  - "@better-auth/cimd@1.7.10"
-  - "@better-auth/core@1.7.10"
-  - "@better-auth/drizzle-adapter@1.7.10"
-  - "@better-auth/kysely-adapter@1.7.10"
-  - "@better-auth/mcp@1.7.10"
-  - "@better-auth/memory-adapter@1.7.10"
-  - "@better-auth/mongo-adapter@1.7.10"
-  - "@better-auth/oauth-provider@1.7.10"
-  - "@better-auth/prisma-adapter@1.7.10"
-  - "@better-auth/telemetry@1.7.10"
 
 # Dependency install scripts are denied unless listed here as true, and an
 # install fails while a dependency's script is on neither side of the list
