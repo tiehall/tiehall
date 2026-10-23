@@ -26,7 +26,7 @@
     "@tiehall/client": "workspace:*",
     "@tiehall/packet": "workspace:*",
     "@types/node": "catalog:",
-    "rolldown": "1.2.9",
+    "rolldown": "1.2.14",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
