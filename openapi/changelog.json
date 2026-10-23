@@ -3,6 +3,13 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "1.0.1",
+      "date": "2026-10-23",
+      "apiVersion": "0.3.0",
+      "entries": [],
+      "changes": []
+    },
+    {
       "version": "1.0.0",
       "date": "2026-10-16",
       "apiVersion": "0.3.0",
