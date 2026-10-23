@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Self-hosted · Open source · Model-agnostic · 1.0.0
+  Self-hosted · Open source · Model-agnostic · 1.0.1
 </p>
 
 https://github.com/user-attachments/assets/a56bd0fc-e1ac-457a-8f28-ad5f05d057a5
