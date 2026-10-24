@@ -45,7 +45,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/client": "2.3.0",
     "@tiehall/testing": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
