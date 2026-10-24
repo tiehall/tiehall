@@ -64,3 +64,6 @@ packageExtensions:
 # `pnpm check:model-sdks`).
 overrides:
   "@scalar/api-reference>@scalar/agent-chat": "-"
+minimumReleaseAgeExclude:
+  # Renovate security update: @modelcontextprotocol/server@2.3.0
+  - "@modelcontextprotocol/server@2.3.0"
