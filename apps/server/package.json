@@ -21,7 +21,7 @@
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "pg": "catalog:",
-    "rolldown": "1.2.9",
+    "rolldown": "1.2.15",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
